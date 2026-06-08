@@ -6,7 +6,7 @@ import { ASCII_HEADER } from "../../../viewUtils.js"
 import { BRAND_COLORS } from "../../../designSystem.js"
 import { CHALK, COLORS, DOT_SEPARATOR, GLYPHS, CLI_VERSION, ASCII_ONLY } from "../theme.js"
 
-type LandingVariant = "board" | "split" | "compact"
+export type LandingVariant = "hero" | "board" | "split" | "compact" | "micro" | "suppressed"
 
 type LandingContext = {
   contentWidth: number
@@ -14,6 +14,8 @@ type LandingContext = {
   chromeLabel: string
   configLabel: string
   cwd: string
+  sessionLabel?: string | null
+  statusLabel?: string | null
   variant: LandingVariant
   borderStyle: "round" | "single"
   showAsciiArt: boolean
@@ -87,11 +89,17 @@ const padAnsi = (value: string, width: number, align: "left" | "right" | "center
 
 const buildTitleLine = (width: number, box: ReturnType<typeof resolveBoxChars>, leftLabel: string, rightLabel?: string) => {
   const inner = width - 2
-  const leftText = `${box.h.repeat(2)} ${stripAnsiCodes(leftLabel).trim()} `
-  const rightText = rightLabel ? ` ${stripAnsiCodes(rightLabel).trim()} ${box.h.repeat(2)}` : ""
+  const leftPlain = stripAnsiCodes(leftLabel).trim()
+  const rightPlain = rightLabel ? stripAnsiCodes(rightLabel).trim() : ""
+  const leftText = `${box.h.repeat(2)} ${leftPlain} `
+  const rightText = rightPlain ? ` ${rightPlain} ${box.h.repeat(2)}` : ""
+  if (stringWidth(leftText) + stringWidth(rightText) > inner) {
+    const compact = truncatePlain(rightPlain ? `${leftPlain}${DOT_SEPARATOR}${rightPlain}` : leftPlain, inner)
+    return `${frameColor(box.tl)}${frameColor(padAnsi(compact, inner))}${frameColor(box.tr)}`
+  }
   const gap = Math.max(0, inner - stringWidth(leftText) - stringWidth(rightText))
   const left = `${frameColor(box.h.repeat(2))} ${leftLabel.trim()} `
-  const right = rightLabel ? ` ${rightLabel.trim()} ${frameColor(box.h.repeat(2))}` : ""
+  const right = rightPlain ? ` ${rightLabel?.trim()} ${frameColor(box.h.repeat(2))}` : ""
   const line = `${left}${frameColor(box.h.repeat(gap))}${right}`
   return `${frameColor(box.tl)}${line}${frameColor(box.tr)}`
 }
@@ -135,9 +143,17 @@ const renderAsciiLines = (width: number) =>
   return padAnsi(colored, width, "center")
 })
 
+const landingSafeWidth = (contentWidth: number): number =>
+  // Preserved-scrollback rows must never autowrap at the terminal edge. A line
+  // that exactly fills the last column can move the cursor to the next row in
+  // real terminals, shifting the active composer band and stranding stale
+  // prompt rows after width shrink. Keep a real gutter rather than one
+  // nominal column because terminals disagree on a few brand-glyph widths.
+  Math.max(1, Math.floor(contentWidth) - 6)
+
 const buildBoardLines = (context: LandingContext) => {
   const BOX = resolveBoxChars(context.borderStyle)
-  const width = Math.max(1, context.contentWidth)
+  const width = landingSafeWidth(context.contentWidth)
   const leftPad = 0
   const inner = width - 2
   const leftWidth = Math.floor((inner - 1) * 0.55)
@@ -201,7 +217,7 @@ const buildBoardLines = (context: LandingContext) => {
 }
 
 const buildSplitLines = (context: LandingContext) => {
-  const width = Math.max(1, context.contentWidth)
+  const width = landingSafeWidth(context.contentWidth)
   const asciiWidth = Math.max(...ASCII_HEADER.map((line) => line.length))
   const leftWidth = Math.min(width - 20, asciiWidth + 2)
   const gap = 3
@@ -223,9 +239,20 @@ const buildSplitLines = (context: LandingContext) => {
   return lines
 }
 
+const buildMicroLines = (context: LandingContext) => {
+  const width = landingSafeWidth(context.contentWidth)
+  const identity = [
+    `BreadBoard v${CLI_VERSION}`,
+    formatModel(context.modelLabel),
+    context.chromeLabel || formatConfig(context.configLabel),
+    context.cwd,
+  ].filter(Boolean).join(DOT_SEPARATOR)
+  return [CHALK.hex(COLORS.textMuted)(truncatePlain(identity, width))]
+}
+
 const buildCompactLines = (context: LandingContext) => {
   const BOX = resolveBoxChars(context.borderStyle)
-  const width = Math.max(1, context.contentWidth)
+  const width = landingSafeWidth(context.contentWidth)
   const leftPad = 0
   const inner = width - 2
   const contentWidth = Math.max(1, inner - 2)
@@ -233,6 +260,18 @@ const buildCompactLines = (context: LandingContext) => {
   const modelLine = `${formatModel(context.modelLabel)}${context.chromeLabel ? `${DOT_SEPARATOR}${context.chromeLabel}` : ""}`
   const configLine = `Config: ${formatConfig(context.configLabel)}`
   const cwdLine = context.cwd
+  if (!context.showAsciiArt) {
+    const identity = CHALK.hex(COLORS.textMuted)(
+      truncatePlain(`${formatModel(context.modelLabel)}${DOT_SEPARATOR}${context.chromeLabel || formatConfig(context.configLabel)}${DOT_SEPARATOR}${cwdLine}`, contentWidth),
+    )
+    const slimLines = [identity].map((line: string) => padAnsi(line, contentWidth, "center"))
+    const top = `${" ".repeat(leftPad)}${buildTitleLine(width, BOX, frameColor.bold(`BreadBoard v${CLI_VERSION}`), frameColor("By Kyle McCleary"))}`
+    const bottom = `${" ".repeat(leftPad)}${buildFooterLine(width, BOX)}`
+    const body = slimLines.map(
+      (line) => `${" ".repeat(leftPad)}${frameColor(BOX.v)} ${line} ${frameColor(BOX.v)}`,
+    )
+    return [top, ...body, bottom]
+  }
   const infoLines = [
     CHALK.hex(COLORS.info).bold(truncatePlain(configLine, contentWidth)),
     CHALK.hex(COLORS.textMuted)(truncatePlain(modelLine, contentWidth)),
@@ -258,21 +297,99 @@ const buildCompactLines = (context: LandingContext) => {
 }
 
 export const buildScrollbackLanding = (context: LandingContext): React.ReactNode => {
-  const lines =
-    context.variant === "split" ? buildSplitLines(context) : context.variant === "compact" ? buildCompactLines(context) : buildBoardLines(context)
+  const lines = buildScrollbackLandingLines(context)
+  if (lines.length === 0) return null
   return (
     <Box flexDirection="column" marginBottom={0}>
       {lines.map((line, index) => (
-        <Text key={`landing-${index}`}>{line}</Text>
+        <Text key={`landing-${index}`} wrap="truncate-end">{line}</Text>
       ))}
     </Box>
   )
 }
 
+export const buildScrollbackSessionHeaderLines = (context: LandingContext): string[] => {
+  const width = landingSafeWidth(context.contentWidth)
+  const title = CHALK.hex(COLORS.info).bold(
+    truncatePlain(`BreadBoard${context.chromeLabel ? `${DOT_SEPARATOR}${context.chromeLabel}` : ""}`, width),
+  )
+  const detailParts = [
+    formatModel(context.modelLabel),
+    context.cwd,
+    context.statusLabel?.trim() || null,
+    context.sessionLabel?.trim() || null,
+  ].filter((value): value is string => Boolean(value && value.length > 0))
+  const detail = CHALK.hex(COLORS.textMuted)(truncatePlain(detailParts.join(`  ${DOT_SEPARATOR}  `), width))
+  return [title, detail]
+}
+
+export const buildScrollbackSessionHeader = (context: LandingContext): React.ReactNode => {
+  const lines = buildScrollbackSessionHeaderLines(context)
+  return (
+    <Box flexDirection="column" marginBottom={0}>
+      {lines.map((line, index) => (
+        <Text key={`session-header-${index}`} wrap="truncate-end">{line}</Text>
+      ))}
+    </Box>
+  )
+}
+
+export const buildScrollbackLandingLines = (context: LandingContext): string[] =>
+  context.variant === "suppressed"
+    ? []
+    : context.variant === "micro"
+      ? buildMicroLines(context)
+      : context.variant === "split"
+    ? buildSplitLines(context)
+    : context.variant === "compact"
+      ? buildCompactLines(context)
+      : buildBoardLines(context)
+
+export const getScrollbackLandingRowCount = (context: LandingContext): number =>
+  buildScrollbackLandingLines(context).length
+
 export const resolveLandingVariant = (contentWidth: number): LandingVariant => {
-  if (contentWidth >= 92) return "board"
+  if (contentWidth >= 92) return "hero"
   if (contentWidth >= 76) return "split"
-  return "compact"
+  if (contentWidth >= 56) return "compact"
+  return "micro"
+}
+
+export const resolveLandingVariantForViewport = (context: {
+  contentWidth: number
+  maxRows: number
+  preferredVariant: "auto" | LandingVariant
+  modelLabel: string
+  chromeLabel: string
+  configLabel: string
+  cwd: string
+  borderStyle: "round" | "single"
+  showAsciiArt: boolean
+}): LandingVariant => {
+  const preferred = context.preferredVariant === "auto" ? resolveLandingVariant(context.contentWidth) : context.preferredVariant
+  if (preferred === "suppressed") return "suppressed"
+  const candidates: LandingVariant[] =
+    preferred === "hero" || preferred === "board"
+      ? ["hero", "split", "compact", "micro"]
+      : preferred === "split"
+        ? ["split", "compact", "micro"]
+        : preferred === "compact"
+          ? ["compact", "micro"]
+          : ["micro"]
+  for (const variant of candidates) {
+    const rows = getScrollbackLandingRowCount({
+      contentWidth: context.contentWidth,
+      modelLabel: context.modelLabel,
+      chromeLabel: context.chromeLabel,
+      configLabel: context.configLabel,
+      cwd: context.cwd,
+      variant,
+      borderStyle: context.borderStyle,
+      showAsciiArt: context.showAsciiArt,
+    })
+    if (rows <= context.maxRows) return variant
+  }
+  return "suppressed"
 }
 
 export const buildLandingContext = (context: {
@@ -281,6 +398,8 @@ export const buildLandingContext = (context: {
   chromeLabel: string
   configLabel: string
   cwd: string
+  sessionLabel?: string | null
+  statusLabel?: string | null
   variant: "auto" | LandingVariant
   borderStyle: "round" | "single"
   showAsciiArt: boolean
@@ -290,6 +409,8 @@ export const buildLandingContext = (context: {
   chromeLabel: context.chromeLabel,
   configLabel: context.configLabel,
   cwd: context.cwd,
+  sessionLabel: context.sessionLabel ?? null,
+  statusLabel: context.statusLabel ?? null,
   variant: context.variant === "auto" ? resolveLandingVariant(context.contentWidth) : context.variant,
   borderStyle: context.borderStyle,
   showAsciiArt: context.showAsciiArt,

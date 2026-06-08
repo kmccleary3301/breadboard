@@ -2,9 +2,13 @@ import { Command, Args, Options } from "@effect/cli"
 import { Console, Effect, Option } from "effect"
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { ApiError } from "../api/client.js"
 import type { SessionFileInfo } from "../api/types.js"
-import { CliProviders } from "../providers/cliProviders.js"
+import { getCliApi, reportApiCommandError } from "./commandRuntime.js"
+import { normalizeTableJsonOutputMode } from "./commandOutput.js"
+import { renderSimpleTable } from "./commandTable.js"
+import { printCommandPresentation } from "./commandPresentation.js"
+import { reportValidationError } from "./commandValidation.js"
+import { renderActionItemsLine, renderSavedToLine } from "./commandListDetail.js"
 
 const sessionArg = Args.text({ name: "session-id" })
 const pathArg = Args.text({ name: "path" }).pipe(Args.optional)
@@ -16,11 +20,10 @@ export const formatFileList = (files: SessionFileInfo[]): string => {
   if (files.length === 0) {
     return "(empty)"
   }
-  const headers = ["Type", "Path", "Size"]
-  const data = files.map((file) => [file.type, file.path, file.size != null ? String(file.size) : "-"])
-  const widths = headers.map((header, index) => Math.max(header.length, ...data.map((row) => row[index].length)))
-  const formatRow = (row: string[]) => row.map((cell, index) => cell.padEnd(widths[index], " ")).join("  ")
-  return [formatRow(headers), formatRow(widths.map((w) => "".padEnd(w, "-"))), ...data.map(formatRow)].join("\n")
+  return renderSimpleTable(
+    ["Type", "Path", "Size"],
+    files.map((file) => [file.type, file.path, file.size != null ? String(file.size) : "-"]),
+  )
 }
 
 const readStdin = async (): Promise<string> =>
@@ -59,21 +62,11 @@ const filesLsCommand = Command.make("ls", { session: sessionArg, path: pathArg, 
   Effect.tryPromise(async () => {
     try {
       const pathValue = Option.getOrNull(path)
-      const files = await CliProviders.sdk.api().listSessionFiles(session, pathValue ?? undefined)
-      if (output === "json") {
-        await Console.log(JSON.stringify(files, null, 2))
-      } else {
-        await Console.log(formatFileList(files))
-      }
+      const files = await getCliApi().listSessionFiles(session, pathValue ?? undefined)
+      const mode = normalizeTableJsonOutputMode(output)
+      await printCommandPresentation({ mode, jsonValue: files, text: formatFileList(files) })
     } catch (error) {
-      if (error instanceof ApiError) {
-        await Console.error(`Failed to list files (status ${error.status})`)
-        if (error.body) {
-          await Console.error(JSON.stringify(error.body))
-        }
-      } else {
-        await Console.error((error as Error).message)
-      }
+      await reportApiCommandError("list files", error)
       throw error
     }
   }),
@@ -82,25 +75,18 @@ const filesLsCommand = Command.make("ls", { session: sessionArg, path: pathArg, 
 const filesCatCommand = Command.make("cat", { session: sessionArg, file: catPathArg, out: catOutOption }, ({ session, file, out }) =>
   Effect.tryPromise(async () => {
     try {
-      const result = await CliProviders.sdk.api().readSessionFile(session, file)
+      const result = await getCliApi().readSessionFile(session, file)
       const outValue = Option.getOrNull(out)
       if (outValue && outValue.trim().length > 0) {
         const target = path.resolve(outValue)
         await fs.mkdir(path.dirname(target), { recursive: true })
         await fs.writeFile(target, result.content, "utf8")
-        await Console.log(`File saved to ${target}`)
+        await Console.log(renderSavedToLine("File", target))
       } else {
         await Console.log(result.content)
       }
     } catch (error) {
-      if (error instanceof ApiError) {
-        await Console.error(`Failed to read file (status ${error.status})`)
-        if (error.body) {
-          await Console.error(JSON.stringify(error.body))
-        }
-      } else {
-        await Console.error((error as Error).message)
-      }
+      await reportApiCommandError("read file", error)
       throw error
     }
   }),
@@ -122,33 +108,24 @@ export const filesApplyCommand = Command.make(
           payloadDiff = diffFileValue === "-" ? await readStdin() : await fs.readFile(diffFileValue, "utf8")
         }
         if (!payloadDiff) {
-          await Console.error("Provide --diff text or --diff-file path")
+          await reportValidationError("Provide --diff text or --diff-file path")
           return
         }
         if (payloadDiff.trim().length === 0) {
-          await Console.error("Diff content is empty; nothing to apply.")
+          await reportValidationError("Diff content is empty; nothing to apply.")
           return
         }
         const affected = summarizeDiffFiles(payloadDiff)
-        if (affected.length > 0) {
-          await Console.log(`Applying diff affecting ${affected.join(", ")}`)
-        } else {
-          await Console.log("Applying diff (no file headers detected).")
-        }
-        await CliProviders.sdk.api().postCommand(session, {
+        await Console.log(
+          renderActionItemsLine("Applying diff affecting", affected, "Applying diff (no file headers detected)."),
+        )
+        await getCliApi().postCommand(session, {
           command: "apply_diff",
           payload: { diff: payloadDiff },
         })
         await Console.log("Diff applied")
       } catch (error) {
-        if (error instanceof ApiError) {
-          await Console.error(`Failed to apply diff (status ${error.status})`)
-          if (error.body) {
-            await Console.error(JSON.stringify(error.body))
-          }
-        } else {
-          await Console.error((error as Error).message)
-        }
+        await reportApiCommandError("apply diff", error)
         throw error
       }
     }),

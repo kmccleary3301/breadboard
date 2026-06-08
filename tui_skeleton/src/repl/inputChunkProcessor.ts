@@ -1,5 +1,9 @@
 const BRACKET_START = "\u001B[200~"
 const BRACKET_END = "\u001B[201~"
+const BRACKET_START_VISIBLE = "[200~"
+const BRACKET_END_VISIBLE = "[201~"
+const START_MARKERS = [BRACKET_START, BRACKET_START_VISIBLE]
+const END_MARKERS = [BRACKET_END, BRACKET_END_VISIBLE]
 
 export interface PasteTracker {
   capturing: boolean
@@ -75,14 +79,27 @@ const maybeFlushBurst = (tracker: PasteTracker, callbacks: ChunkCallbacks, curre
   }
 }
 
-const longestStartPrefix = (text: string): number => {
-  const max = Math.min(BRACKET_START.length - 1, text.length)
+const longestMarkerPrefix = (text: string, markers: readonly string[]): number => {
+  const max = Math.min(Math.max(...markers.map((marker) => marker.length - 1)), text.length)
   for (let length = max; length > 0; length -= 1) {
-    if (BRACKET_START.startsWith(text.slice(text.length - length))) {
+    const suffix = text.slice(text.length - length)
+    if (markers.some((marker) => marker.startsWith(suffix))) {
       return length
     }
   }
   return 0
+}
+
+const findFirstMarker = (text: string, markers: readonly string[]): { index: number; marker: string } | null => {
+  let best: { index: number; marker: string } | null = null
+  for (const marker of markers) {
+    const index = text.indexOf(marker)
+    if (index === -1) continue
+    if (!best || index < best.index || (index === best.index && marker.length > best.marker.length)) {
+      best = { index, marker }
+    }
+  }
+  return best
 }
 
 export const processInputChunk = (
@@ -148,12 +165,12 @@ export const processInputChunk = (
     if (tracker.capturing) {
       tracker.buffer += text
       while (true) {
-        const endIndex = tracker.buffer.indexOf(BRACKET_END)
-        if (endIndex === -1) {
+        const endMarker = findFirstMarker(tracker.buffer, END_MARKERS)
+        if (!endMarker) {
           return true
         }
-        const payload = tracker.buffer.slice(0, endIndex)
-        const remainder = tracker.buffer.slice(endIndex + BRACKET_END.length)
+        const payload = tracker.buffer.slice(0, endMarker.index)
+        const remainder = tracker.buffer.slice(endMarker.index + endMarker.marker.length)
         tracker.capturing = false
         tracker.buffer = ""
         callbacks.handlePastePayload(payload)
@@ -168,9 +185,9 @@ export const processInputChunk = (
     tracker.pendingStart = ""
 
     while (combined.length > 0) {
-      const startIndex = combined.indexOf(BRACKET_START)
-      if (startIndex === -1) {
-        const prefixLength = longestStartPrefix(combined)
+      const startMarker = findFirstMarker(combined, START_MARKERS)
+      if (!startMarker) {
+        const prefixLength = longestMarkerPrefix(combined, START_MARKERS)
         const processableLength = combined.length - prefixLength
         if (processableLength > 0) {
           const segment = combined.slice(0, processableLength)
@@ -182,12 +199,12 @@ export const processInputChunk = (
         return true
       }
 
-      const before = combined.slice(0, startIndex)
+      const before = combined.slice(0, startMarker.index)
       if (!handleChars(before)) {
         return false
       }
       flushBurst(tracker, callbacks)
-      combined = combined.slice(startIndex + BRACKET_START.length)
+      combined = combined.slice(startMarker.index + startMarker.marker.length)
       tracker.capturing = true
       tracker.buffer = ""
       if (!process(combined)) {

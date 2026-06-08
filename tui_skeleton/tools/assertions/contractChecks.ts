@@ -73,6 +73,16 @@ const extractCallId = (event: AnyEvent): string | null => {
   return toolId ?? null
 }
 
+const isBootstrapTodoSnapshotResult = (event: AnyEvent): boolean => {
+  if (event?.type !== "tool_result") return false
+  const callId = extractCallId(event)
+  if (!callId || !(callId === "todo:snapshot:init" || callId.startsWith("todo:snapshot:connect:"))) {
+    return false
+  }
+  const payload = event?.payload ?? event?.data ?? null
+  return payload?.todo?.op === "snapshot"
+}
+
 const extractSeq = (event: AnyEvent): number | null => {
   const seq = event?.seq ?? event?.sequence ?? null
   return typeof seq === "number" && Number.isFinite(seq) ? seq : null
@@ -134,10 +144,10 @@ export const runContractChecks = async (ssePath: string, options?: ContractOptio
         eventId,
         eventType: type,
       })
-    } else if (dataValue == null) {
+    } else if (dataValue == null && event?.payload == null) {
       warnings.push({
         code: "data-missing",
-        message: "Missing data payload; legacy payload only.",
+        message: "Missing both data and payload fields.",
         eventIndex: index,
         eventId,
         eventType: type,
@@ -156,7 +166,7 @@ export const runContractChecks = async (ssePath: string, options?: ContractOptio
     }
 
     const seq = extractSeq(event)
-    if (seq === null && strictSeq) {
+    if (seq === null && strictSeq && !isBootstrapTodoSnapshotResult(event)) {
       errors.push({
         code: "seq-missing",
         message: "Missing seq in event; contract requires seq for ordering.",
@@ -164,7 +174,7 @@ export const runContractChecks = async (ssePath: string, options?: ContractOptio
         eventId,
         eventType: type,
       })
-    } else if (seq === null) {
+    } else if (seq === null && !isBootstrapTodoSnapshotResult(event)) {
       warnings.push({
         code: "seq-missing",
         message: "Missing seq in event; ordering checks skipped for this entry.",
@@ -258,6 +268,9 @@ export const runContractChecks = async (ssePath: string, options?: ContractOptio
           eventId,
           eventType: type,
         })
+      } else if (isBootstrapTodoSnapshotResult(event)) {
+        // Bootstrap todo snapshots may be emitted as a synthetic initial tool_result
+        // without a prior tool_call in legacy/live wrapper streams.
       } else if (!toolCallIds.has(callId)) {
         errors.push({
           code: "tool-result-without-call",

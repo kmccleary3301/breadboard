@@ -1,12 +1,14 @@
 import { Command, Options } from "@effect/cli"
 import { Console, Effect } from "effect"
 import { existsSync } from "node:fs"
-import { ApiClient, ApiError } from "../api/client.js"
 import type { HealthResponse } from "../api/types.js"
 import { DEFAULT_CONFIG_PATH, loadAppConfig } from "../config/appConfig.js"
 import { getUserConfigPath } from "../config/userConfig.js"
 import { resolveBreadboardRepoPath } from "../utils/paths.js"
 import { shutdownEngine } from "../engine/engineSupervisor.js"
+import { getCliApi, reportApiFailure } from "./commandRuntime.js"
+import { renderOptionalReportLine } from "./commandReport.js"
+import { renderDetailPresentation } from "./commandDetailPresentation.js"
 
 const configOption = Options.text("config").pipe(Options.withDefault(DEFAULT_CONFIG_PATH))
 
@@ -26,91 +28,86 @@ export const doctorCommand = Command.make(
   },
   ({ config }) =>
     Effect.tryPromise(async () => {
+      const api = getCliApi()
       const appConfig = loadAppConfig()
       const configPath = resolveBreadboardRepoPath(config)
       const configExists = existsSync(configPath)
       const userConfigPath = getUserConfigPath()
 
-      await Console.log("Breadboard doctor")
-      await Console.log(`Base URL: ${appConfig.baseUrl}`)
-      await Console.log(`Auth token: ${maskToken(appConfig.authToken)}`)
-      await Console.log(`User config: ${userConfigPath}`)
-      await Console.log(`Config path: ${configPath}${configExists ? "" : " (missing)"}`)
+      const headerLines = [
+        `Base URL: ${appConfig.baseUrl}`,
+        `Auth token: ${maskToken(appConfig.authToken)}`,
+        `User config: ${userConfigPath}`,
+        `Config path: ${configPath}${configExists ? "" : " (missing)"}`,
+      ]
 
       let health: HealthResponse | null = null
       try {
-        health = await ApiClient.health()
+        health = await api.health()
         await Console.log(
           `Engine health: ${formatValue(health.status)} (protocol ${formatValue(health.protocol_version)})`,
         )
       } catch (error) {
-        if (error instanceof ApiError) {
-          await Console.error(`Engine health check failed (${error.status}).`)
-        } else {
-          await Console.error(`Engine health check failed: ${(error as Error).message}`)
-        }
+        await reportApiFailure("Engine health check failed", error)
       }
 
       try {
-        const catalog = await ApiClient.getModelCatalog(configPath)
-        await Console.log(
-          `Models: ${catalog.models.length} (default: ${formatValue(catalog.default_model)})`,
-        )
+        const catalog = await api.getModelCatalog(configPath)
+        await Console.log(`Models: ${catalog.models.length} (default: ${formatValue(catalog.default_model)})`)
       } catch (error) {
-        if (error instanceof ApiError) {
-          await Console.error(`Model catalog failed (${error.status}).`)
-        } else {
-          await Console.error(`Model catalog failed: ${(error as Error).message}`)
-        }
+        await reportApiFailure("Model catalog failed", error)
       }
 
-      if (health?.protocol_version) {
-        await Console.log(`Protocol version: ${health.protocol_version}`)
-      }
+      const reportLines = [
+        ...headerLines,
+        health?.protocol_version ? `Protocol version: ${health.protocol_version}` : null,
+        health?.served_revision?.commit
+          ? `Served revision: ${health.served_revision.commit}${health.served_revision.dirty ? " dirty" : ""}`
+          : null,
+        health?.served_revision?.repo_root ? `Served root: ${health.served_revision.repo_root}` : null,
+        health?.started_at ? `Started at: ${health.started_at}` : null,
+      ].filter((line): line is string => line !== null)
+
+      const sections = [] as Array<{ title: string; lines: string[] }>
       try {
-        const status = await ApiClient.engineStatus()
+        const status = await api.engineStatus()
+        const branchLine = renderOptionalReportLine("Served branch", status.served_revision?.branch)
+        if (branchLine) {
+          reportLines.push(branchLine)
+        }
         const eventlog = status.eventlog
         if (eventlog) {
           const enabled = eventlog.enabled ? "enabled" : "disabled"
-          await Console.log(`Event log: ${enabled}${eventlog.dir ? ` (${eventlog.dir})` : ""}`)
-          if (eventlog.bootstrap) {
-            await Console.log(`Event log bootstrap: ${eventlog.bootstrap}`)
-          }
-          if (eventlog.replay) {
-            await Console.log(`Event log replay: ${eventlog.replay}`)
-          }
-          if (eventlog.max_mb) {
-            await Console.log(`Event log max MB: ${eventlog.max_mb}`)
-          }
-          if (eventlog.sessions !== undefined && eventlog.sessions !== null) {
-            await Console.log(`Event log sessions: ${eventlog.sessions}`)
-          }
-          if (eventlog.last_activity) {
-            await Console.log(`Event log last activity: ${eventlog.last_activity}`)
-          }
-          if (eventlog.capped) {
-            await Console.log("Event log capped: true")
-          }
+          sections.push({
+            title: "Event log",
+            lines: [
+              `Status: ${enabled}${eventlog.dir ? ` (${eventlog.dir})` : ""}`,
+              ...(eventlog.bootstrap ? [`Bootstrap: ${eventlog.bootstrap}`] : []),
+              ...(eventlog.replay ? [`Replay: ${eventlog.replay}`] : []),
+              ...(eventlog.max_mb ? [`Max MB: ${eventlog.max_mb}`] : []),
+              ...(eventlog.sessions !== undefined && eventlog.sessions !== null ? [`Sessions: ${eventlog.sessions}`] : []),
+              ...(eventlog.last_activity ? [`Last activity: ${eventlog.last_activity}`] : []),
+              ...(eventlog.capped ? ["Capped: true"] : []),
+            ],
+          })
         }
         const index = status.session_index
         if (index) {
           const idxEnabled = index.enabled ? "enabled" : "disabled"
           const engineLabel = index.engine ? ` engine=${index.engine}` : ""
-          await Console.log(`Session index: ${idxEnabled}${engineLabel}${index.dir ? ` (${index.dir})` : ""}`)
-          if (index.sessions !== undefined && index.sessions !== null) {
-            await Console.log(`Session index sessions: ${index.sessions}`)
-          }
-          if (index.last_activity) {
-            await Console.log(`Session index last activity: ${index.last_activity}`)
-          }
+          sections.push({
+            title: "Session index",
+            lines: [
+              `Status: ${idxEnabled}${engineLabel}${index.dir ? ` (${index.dir})` : ""}`,
+              ...(index.sessions !== undefined && index.sessions !== null ? [`Sessions: ${index.sessions}`] : []),
+              ...(index.last_activity ? [`Last activity: ${index.last_activity}`] : []),
+            ],
+          })
         }
       } catch (error) {
-        if (error instanceof ApiError) {
-          await Console.error(`Engine status failed (${error.status}).`)
-        } else {
-          await Console.error(`Engine status failed: ${(error as Error).message}`)
-        }
+        await reportApiFailure("Engine status failed", error)
       }
+      await Console.log(renderDetailPresentation("Breadboard doctor", { lines: reportLines, sections }))
       await shutdownEngine().catch(() => undefined)
     }),
 )

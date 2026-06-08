@@ -1,0 +1,37 @@
+[
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "turn_start",
+      "payload": { "summary": "collapsed detail inspection" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Detail line 01\nDetail line 02\nDetail line 03\nDetail line 04\nDetail line 05\nDetail line 06\nDetail line 07\nDetail line 08\nDetail line 09\nDetail line 10\nDetail line 11\nDetail line 12\nDetail line 13\nDetail line 14\nDetail line 15\nDetail line 16\nDetail line 17\nDetail line 18\nDetail line 19\nDetail line 20\nDetail line 21\nDetail line 22\nDetail line 23\nDetail line 24\nDetail line 25\nDetail line 26\nDetail line 27\nDetail line 28\nDetail line 29\nDetail line 30",
+        "message": {
+          "role": "assistant",
+          "content": "Detail line 01\nDetail line 02\nDetail line 03\nDetail line 04\nDetail line 05\nDetail line 06\nDetail line 07\nDetail line 08\nDetail line 09\nDetail line 10\nDetail line 11\nDetail line 12\nDetail line 13\nDetail line 14\nDetail line 15\nDetail line 16\nDetail line 17\nDetail line 18\nDetail line 19\nDetail line 20\nDetail line 21\nDetail line 22\nDetail line 23\nDetail line 24\nDetail line 25\nDetail line 26\nDetail line 27\nDetail line 28\nDetail line 29\nDetail line 30"
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 100,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "collapsed-detail" } }
+    }
+  },
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "run_finished",
+      "payload": { "eventCount": 4 }
+    }
+  }
+]

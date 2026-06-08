@@ -1,15 +1,18 @@
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useRef, useState, type MutableRefObject } from "react"
 import type { ClipboardImage } from "../../../../../util/clipboard.js"
 import type { QueuedAttachment } from "../../../../types.js"
+import { findHistorySearchMatch, type HistorySearchCursor } from "../../composer/historySearchModel.js"
+import { writeComposerEventDebugRecord } from "../../controller/qcDebugLog.js"
 
 interface ComposerControllerOptions {
   readonly inputLocked: boolean
   readonly shortcutsOpen: boolean
   readonly setShortcutsOpen: (value: boolean) => void
+  readonly shortcutsOpenedAtRef?: MutableRefObject<number | null>
 }
 
 export const useComposerController = (options: ComposerControllerOptions) => {
-  const { inputLocked, shortcutsOpen, setShortcutsOpen } = options
+  const { inputLocked, shortcutsOpen, setShortcutsOpen, shortcutsOpenedAtRef } = options
 
   const [input, setInput] = useState("")
   const [cursor, setCursor] = useState(0)
@@ -17,12 +20,14 @@ export const useComposerController = (options: ComposerControllerOptions) => {
   const [historyEntries, setHistoryEntries] = useState<string[]>([])
   const [historyPos, setHistoryPos] = useState(0)
   const historyDraftRef = useRef("")
+  const historySearchRef = useRef<HistorySearchCursor | null>(null)
   const [suppressSuggestions, setSuppressSuggestions] = useState(false)
   const [attachments, setAttachments] = useState<QueuedAttachment[]>([])
   const [inputTextVersion, setInputTextVersion] = useState(0)
   const inputValueRef = useRef("")
 
   const handleAttachment = useCallback((attachment: ClipboardImage) => {
+    writeComposerEventDebugRecord({ type: "attachment.add", mime: attachment.mime, size: attachment.size })
     setAttachments((prev) => [
       ...prev,
       {
@@ -35,10 +40,15 @@ export const useComposerController = (options: ComposerControllerOptions) => {
   }, [])
 
   const removeLastAttachment = useCallback(() => {
-    setAttachments((prev) => prev.slice(0, -1))
+    setAttachments((prev) => {
+      const removed = prev[prev.length - 1]
+      if (removed) writeComposerEventDebugRecord({ type: "attachment.remove", id: removed.id, mime: removed.mime, size: removed.size })
+      return prev.slice(0, -1)
+    })
   }, [])
 
   const clearAttachments = useCallback(() => {
+    writeComposerEventDebugRecord({ type: "attachment.clear" })
     setAttachments([])
   }, [])
 
@@ -47,9 +57,19 @@ export const useComposerController = (options: ComposerControllerOptions) => {
       const prevValue = inputValueRef.current
       inputValueRef.current = nextValue
       if (nextValue !== prevValue) {
+        writeComposerEventDebugRecord({
+          type: "line.edit",
+          prevLength: prevValue.length,
+          nextLength: nextValue.length,
+          cursor: Math.max(0, Math.min(nextCursor, nextValue.length)),
+        })
         setInputTextVersion((prev) => prev + 1)
         if (suppressSuggestions) {
           setSuppressSuggestions(false)
+        }
+        const activeSearch = historySearchRef.current
+        if (activeSearch && nextValue !== activeSearch.lastApplied) {
+          historySearchRef.current = null
         }
       }
       setInput(nextValue)
@@ -65,17 +85,21 @@ export const useComposerController = (options: ComposerControllerOptions) => {
     (nextValue: string, nextCursor: number) => {
       if (inputLocked) return
       if (!shortcutsOpen && nextValue === "?" && inputValueRef.current.trim() === "") {
+        if (shortcutsOpenedAtRef) {
+          shortcutsOpenedAtRef.current = Date.now()
+        }
         setShortcutsOpen(true)
         handleLineEdit("", 0)
         return
       }
       handleLineEdit(nextValue, nextCursor)
     },
-    [handleLineEdit, inputLocked, setShortcutsOpen, shortcutsOpen],
+    [handleLineEdit, inputLocked, setShortcutsOpen, shortcutsOpen, shortcutsOpenedAtRef],
   )
 
   const pushHistoryEntry = useCallback((entry: string) => {
     if (!entry.trim()) return
+    writeComposerEventDebugRecord({ type: "history.push", length: entry.length, preview: entry.slice(0, 120) })
     setHistoryEntries((prev) => {
       if (entry === prev[prev.length - 1]) {
         setHistoryPos(prev.length)
@@ -86,6 +110,7 @@ export const useComposerController = (options: ComposerControllerOptions) => {
       return next
     })
     historyDraftRef.current = ""
+    historySearchRef.current = null
   }, [])
 
   const recallHistory = useCallback(
@@ -99,6 +124,7 @@ export const useComposerController = (options: ComposerControllerOptions) => {
         if (prev === length) {
           historyDraftRef.current = input
         }
+        historySearchRef.current = null
         if (next === length) {
           handleLineEdit(historyDraftRef.current, historyDraftRef.current.length)
         } else {
@@ -109,6 +135,38 @@ export const useComposerController = (options: ComposerControllerOptions) => {
       })
     },
     [handleLineEdit, historyEntries, input],
+  )
+
+  const searchHistory = useCallback(
+    (direction: -1 | 1) => {
+      if (historyEntries.length === 0) return false
+      const currentInput = inputValueRef.current
+      const result = findHistorySearchMatch(historyEntries, currentInput, direction, historySearchRef.current)
+      if (!result) return false
+      const { entry, index: foundIndex, cursor: nextCursor } = result
+      writeComposerEventDebugRecord({
+        type: "history.search",
+        direction,
+        query: nextCursor.query,
+        foundIndex,
+        historyLength: historyEntries.length,
+        preview: entry.slice(0, 120),
+      })
+      if (process.env.BREADBOARD_INPUT_DEBUG === "1") {
+        console.error(JSON.stringify({
+          historySearch: direction === -1 ? "reverse" : "forward",
+          query: nextCursor.query,
+          foundIndex,
+          entry,
+          historyLength: historyEntries.length,
+        }))
+      }
+      historySearchRef.current = nextCursor
+      setHistoryPos(foundIndex)
+      handleLineEdit(entry, entry.length)
+      return true
+    },
+    [handleLineEdit, historyEntries],
   )
 
   const moveCursorVertical = useCallback(
@@ -157,6 +215,7 @@ export const useComposerController = (options: ComposerControllerOptions) => {
     handleLineEditGuarded,
     pushHistoryEntry,
     recallHistory,
+    searchHistory,
     moveCursorVertical,
   }
 }

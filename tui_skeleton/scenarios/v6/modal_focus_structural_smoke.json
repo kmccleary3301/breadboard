@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_modal_focus_structural_smoke",
+  "title": "V6 modal focus structural smoke",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed",
+      "modal"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "files": [
+        {
+          "path": "docs/a.md",
+          "content": "A\n"
+        },
+        {
+          "path": "docs/b.md",
+          "content": "B\n"
+        }
+      ],
+      "gitInit": true
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "modal-pre",
+        "text": "BB_V5_MODAL_PRE_HISTORY_SENTINEL"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 120000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 118,
+      "rows": 34
+    },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "open",
+      "surface": "model-picker"
+    },
+    {
+      "kind": "resize",
+      "cols": 86,
+      "rows": 28,
+      "settleMs": 250
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "wait",
+      "ms": 500
+    },
+    {
+      "kind": "submit",
+      "text": "Confirm focus returned after picker resize."
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "Focus returned to the composer after picker resize."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "Focus returned to the composer"
+      },
+      "timeoutMs": 45000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "picker-final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "MODAL-OPEN-CONFIRMED",
+      "severity": "blocker"
+    },
+    {
+      "id": "MODAL-CLOSE-CONFIRMED",
+      "severity": "blocker"
+    },
+    {
+      "id": "MODAL-FOCUS-RETURNS-TO-COMPOSER",
+      "severity": "blocker"
+    },
+    {
+      "id": "COMPOSER-EMPTY-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-NO-STALE-BORDER",
+      "severity": "blocker"
+    }
+  ],
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  },
+  "family": "modal",
+  "campaign": "p14-v6-invariant-expansion",
+  "actionRequirements": {
+    "modalOpened": "required",
+    "modalClosed": "required",
+    "focusReturned": "required"
+  }
+}

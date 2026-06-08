@@ -11,6 +11,7 @@ export const handleGlobalOverlayKeys = (
     shortcutsOpen,
     shortcutsOpenedAtRef,
     setShortcutsOpen,
+    reclaimShortcutsOverlay,
     usageOpen,
     setUsageOpen,
     inspectMenu,
@@ -107,7 +108,7 @@ export const handleGlobalOverlayKeys = (
   )
   if (keymapHandled) return true
 
-  if (shortcutsOpen && (char === "?" || key.escape)) {
+  if (shortcutsOpen && (char === "?" || key.escape || char === "\u001b")) {
     if (char === "?" && process.env.BREADBOARD_SHORTCUTS_STICKY === "1") {
       return true
     }
@@ -116,6 +117,9 @@ export const handleGlobalOverlayKeys = (
       return true
     }
     shortcutsOpenedAtRef.current = null
+    if (typeof reclaimShortcutsOverlay === "function") {
+      reclaimShortcutsOverlay()
+    }
     setShortcutsOpen(false)
     return true
   }
@@ -157,7 +161,7 @@ export const handleGlobalOverlayKeys = (
       }
     }
   }
-  if ((matchesActionBinding(profile, "toggle_transcript_viewer", char, key) || isCtrlShiftTKey) && keymap !== "claude") {
+  if (matchesActionBinding(profile, "toggle_transcript_viewer", char, key) || isCtrlShiftTKey) {
     setCtreeOpen(false)
     if (transcriptViewerOpen) {
       exitTranscriptViewer()
@@ -168,13 +172,7 @@ export const handleGlobalOverlayKeys = (
   }
   if (matchesActionBinding(profile, "toggle_todos_panel", char, key) || isCtrlTKey) {
     setCtreeOpen(false)
-    if (keymap === "claude") {
-      toggleTodosOpen()
-    } else if (transcriptViewerOpen) {
-      exitTranscriptViewer()
-    } else {
-      enterTranscriptViewer()
-    }
+    toggleTodosOpen()
     return true
   }
   if (matchesActionBinding(profile, "toggle_tasks_panel", char, key) || isCtrlBKey) {

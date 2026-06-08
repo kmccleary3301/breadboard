@@ -1,0 +1,135 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "turn": 1, "payload": { "summary": "p14 h5 operational cells" } } },
+  { "delayMs": 120, "event": { "type": "assistant_message", "turn": 1, "payload": { "text": "H5_ASSISTANT_INTRO before operational cells." } } },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "tool_call",
+      "turn": 1,
+      "payload": {
+        "call_id": "h5-tool-success",
+        "tool": { "name": "bash", "args": { "command": "printf H5_TOOL_SUCCESS" } }
+      }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "tool_result",
+      "turn": 1,
+      "payload": {
+        "call_id": "h5-tool-success",
+        "tool": { "name": "bash", "status": "success", "stdout": "H5_TOOL_SUCCESS\n", "exit_code": 0 },
+        "display": {
+          "title": "Bash(printf H5_TOOL_SUCCESS)",
+          "summary": "stdout 1 line · exit 0",
+          "detail": ["stdout:", "H5_TOOL_SUCCESS", "exit_code=0"]
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "tool_result",
+      "turn": 1,
+      "payload": {
+        "call_id": "h5-tool-error",
+        "status": "error",
+        "error": "H5_TOOL_ERROR",
+        "tool": { "name": "bash", "status": "error", "stderr": "H5_TOOL_ERROR\n", "exit_code": 2 },
+        "display": {
+          "title": "Bash(false)",
+          "summary": "stderr 1 line · exit 2",
+          "detail": ["stderr:", "H5_TOOL_ERROR", "exit_code=2"]
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "tool_result",
+      "turn": 1,
+      "payload": {
+        "call_id": "h5-tool-long",
+        "tool": { "name": "bash", "status": "success", "output": "H5_LONG_OUTPUT" },
+        "display": {
+          "title": "Bash(generate-long-output)",
+          "summary": "Output 20 lines",
+          "detail": [
+            "H5_LONG_LINE_01",
+            "H5_LONG_LINE_02",
+            "H5_LONG_LINE_03",
+            "H5_LONG_LINE_04",
+            "H5_LONG_LINE_05",
+            "H5_LONG_LINE_06",
+            "H5_LONG_LINE_07",
+            "H5_LONG_LINE_08",
+            "H5_LONG_LINE_09",
+            "H5_LONG_LINE_10",
+            "H5_LONG_LINE_11",
+            "H5_LONG_LINE_12",
+            "H5_LONG_LINE_13",
+            "H5_LONG_LINE_14",
+            "H5_LONG_LINE_15",
+            "H5_LONG_LINE_16",
+            "H5_LONG_LINE_17",
+            "H5_LONG_LINE_18",
+            "H5_LONG_LINE_19",
+            "H5_LONG_LINE_20"
+          ],
+          "detail_truncated": { "hidden": 14, "mode": "head_tail", "tail": 2, "hint": "H5_DETAIL_TRUNCATED" }
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "tool_result",
+      "turn": 1,
+      "payload": {
+        "call_id": "h5-tool-diff",
+        "tool": {
+          "name": "apply_patch",
+          "status": "success",
+          "args": {
+            "path": "src/h5_example.ts",
+            "diff": "diff --git a/src/h5_example.ts b/src/h5_example.ts\nindex 1111111..2222222 100644\n--- a/src/h5_example.ts\n+++ b/src/h5_example.ts\n@@ -1,2 +1,2 @@\n-export const h5 = 'old'\n+export const h5 = 'new'\n"
+          },
+          "output": "Patched src/h5_example.ts"
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "permission_request",
+      "turn": 1,
+      "payload": {
+        "request_id": "h5-perm-1",
+        "tool": "write_files",
+        "kind": "edit",
+        "summary": "H5_PERMISSION_SUMMARY Tool requests permission to edit src/h5_example.ts.",
+        "rewindable": true,
+        "default_scope": "project",
+        "rule_suggestion": "write:src/h5_example.ts",
+        "diff": "diff --git a/src/h5_example.ts b/src/h5_example.ts\nindex 1111111..2222222 100644\n--- a/src/h5_example.ts\n+++ b/src/h5_example.ts\n@@ -1,2 +1,2 @@\n-export const h5 = 'old'\n+export const h5 = 'new'\n"
+      }
+    }
+  },
+  { "awaitCommand": true, "command": "permission_decision", "timeoutMs": 30000 },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "permission_response",
+      "turn": 1,
+      "payload": { "request_id": "h5-perm-1", "decision": "allow-once", "summary": "H5_PERMISSION_ALLOWED" }
+    }
+  },
+  { "delayMs": 100, "event": { "type": "assistant_message", "turn": 1, "payload": { "text": "H5_ASSISTANT_FINAL operational cells complete." } } },
+  { "delayMs": 80, "event": { "type": "completion", "turn": 1, "payload": { "summary": { "completed": true, "reason": "h5" } } } },
+  { "delayMs": 0, "event": { "type": "run_finished", "turn": 1, "payload": { "eventCount": 16 } } }
+]

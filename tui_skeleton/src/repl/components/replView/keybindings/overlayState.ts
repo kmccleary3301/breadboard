@@ -14,6 +14,10 @@ export interface OverlayFlags {
   readonly tasksOpen: boolean
   readonly ctreeOpen: boolean
   readonly transcriptViewerOpen: boolean
+  readonly recentSessionsOpen: boolean
+  readonly resultDetailOpen: boolean
+  readonly artifactPreviewOpen: boolean
+  readonly collapsedDetailOpen: boolean
   readonly claudeChrome: boolean
 }
 
@@ -30,7 +34,11 @@ export const computeInputLocked = (flags: OverlayFlags): boolean =>
   flags.todosOpen ||
   flags.tasksOpen ||
   flags.ctreeOpen ||
-  flags.transcriptViewerOpen
+  flags.transcriptViewerOpen ||
+  flags.recentSessionsOpen ||
+  flags.resultDetailOpen ||
+  flags.artifactPreviewOpen ||
+  flags.collapsedDetailOpen
 
 export const computeOverlayActive = (flags: OverlayFlags): boolean =>
   flags.modelMenuOpen ||
@@ -45,7 +53,11 @@ export const computeOverlayActive = (flags: OverlayFlags): boolean =>
   flags.todosOpen ||
   flags.tasksOpen ||
   flags.ctreeOpen ||
-  flags.transcriptViewerOpen
+  flags.transcriptViewerOpen ||
+  flags.recentSessionsOpen ||
+  flags.resultDetailOpen ||
+  flags.artifactPreviewOpen ||
+  flags.collapsedDetailOpen
 
 export const getTopLayer = (flags: OverlayFlags): LayerName => {
   if (
@@ -60,7 +72,11 @@ export const getTopLayer = (flags: OverlayFlags): LayerName => {
     flags.todosOpen ||
     flags.tasksOpen ||
     flags.ctreeOpen ||
-    flags.transcriptViewerOpen
+    flags.transcriptViewerOpen ||
+    flags.recentSessionsOpen ||
+    flags.resultDetailOpen ||
+    flags.artifactPreviewOpen ||
+    flags.collapsedDetailOpen
   ) {
     return "modal"
   }
@@ -79,7 +95,11 @@ export const getOverlayFocusLabel = (flags: OverlayFlags): string | null => {
   if (flags.todosOpen) return "Todos"
   if (flags.tasksOpen) return "Tasks"
   if (flags.ctreeOpen) return "Context Tree"
+  if (flags.artifactPreviewOpen) return "Artifact"
+  if (flags.resultDetailOpen) return "Result detail"
   if (flags.transcriptViewerOpen) return "Transcript"
+  if (flags.recentSessionsOpen) return "Sessions"
+  if (flags.collapsedDetailOpen) return "Detail"
   if (flags.paletteOpen) return "Palette"
   if (flags.shortcutsOpen && !flags.claudeChrome) return "Shortcuts"
   return null

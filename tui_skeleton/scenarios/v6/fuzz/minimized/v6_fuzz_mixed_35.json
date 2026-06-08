@@ -1,0 +1,282 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_fuzz_mixed_35",
+  "title": "V6 fuzz seed 35 (mixed)",
+  "family": "fuzz",
+  "campaign": "p14-v6-fuzz-minimization",
+  "claimScope": "fuzz",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# v6_fuzz_mixed_35\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "fuzz-pre",
+        "text": "BB_V6_FUZZ_PRE_MIXED_35"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 103,
+      "rows": 25
+    },
+    "resizePolicy": "fuzzed",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "open",
+      "surface": "shortcuts"
+    },
+    {
+      "kind": "wait",
+      "ms": 160
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "wait",
+      "ms": 120
+    },
+    {
+      "kind": "submit",
+      "text": "Run V6 fuzz seed 35 with mixed stress."
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "tool",
+      "event": {
+        "kind": "start",
+        "toolId": "v6_fuzz_mixed_35_tool_35",
+        "name": "shell_command",
+        "args": {
+          "command": "printf fuzz-35"
+        }
+      }
+    },
+    {
+      "kind": "tool",
+      "event": {
+        "kind": "stdout",
+        "toolId": "v6_fuzz_mixed_35_tool_35",
+        "text": "fuzz 35 tool line 1\nfuzz 35 tool line 2\nfuzz 35 tool line 3\nfuzz 35 tool line 4\nfuzz 35 tool line 5\nfuzz 35 tool line 6\nfuzz 35 tool line 7\nfuzz 35 tool line 8\nfuzz 35 tool line 9\n",
+        "stream": false
+      }
+    },
+    {
+      "kind": "tool",
+      "event": {
+        "kind": "result",
+        "toolId": "v6_fuzz_mixed_35_tool_35",
+        "status": "ok",
+        "summary": "fuzz tool 35 completed",
+        "output": "fuzz-35"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "markdown-fixture",
+        "streamId": "s1",
+        "fixture": "long-list",
+        "chunking": {
+          "mode": "char",
+          "seed": 35
+        }
+      }
+    },
+    {
+      "kind": "resize",
+      "cols": 76,
+      "rows": 22,
+      "settleMs": 60
+    },
+    {
+      "kind": "resize",
+      "cols": 90,
+      "rows": 24,
+      "settleMs": 40
+    },
+    {
+      "kind": "resize",
+      "cols": 103,
+      "rows": 25,
+      "settleMs": 80
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "V6 fuzz seed 35 profile mixed complete."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "V6 fuzz seed 35 profile mixed complete."
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "fuzz-final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DESTRUCTIVE-CLEAR",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DUPLICATE-ASSISTANT-TAIL",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-COMPOSER-PROMPT-REPLAY",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "MD-FINAL-TEXT-COMPLETE",
+      "severity": "blocker"
+    },
+    {
+      "id": "TOOL-START-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "TOOL-RESULT-SINGULAR",
+      "severity": "blocker"
+    },
+    {
+      "id": "MODAL-OPEN-CONFIRMED",
+      "severity": "blocker"
+    },
+    {
+      "id": "MODAL-FOCUS-RETURNS-TO-COMPOSER",
+      "severity": "blocker"
+    }
+  ],
+  "actionRequirements": {
+    "waitTargetsObserved": "required",
+    "resizeObserved": "required"
+  },
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 8000000,
+    "maxFrames": 1800,
+    "maxStateDumps": 3000
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "at-least-once"
+  },
+  "mutationProfile": {
+    "seed": 35,
+    "dimensions": [
+      "mixed",
+      "cols:103",
+      "rows:25",
+      "chunk:char",
+      "fixture:long-list"
+    ]
+  },
+  "minimization": {
+    "enabled": true,
+    "preserveSteps": [
+      "launch",
+      "checkpoint:fuzz-final",
+      "seed:35"
+    ]
+  },
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  }
+}

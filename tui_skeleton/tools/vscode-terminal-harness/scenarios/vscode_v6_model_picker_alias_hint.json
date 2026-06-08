@@ -1,0 +1,28 @@
+{
+  "id": "vscode_v6_model_picker_alias_hint",
+  "terminal": { "initialCols": 120, "initialRows": 36 },
+  "v6": {
+    "expectedFinalMode": "repl",
+    "maxProviderWarningCount": 0,
+    "minScreenshotCount": 4,
+    "requiresStableViewport": true
+  },
+  "steps": [
+    { "kind": "write", "text": "mkdir -p docs src && printf '# V6 model picker workspace\\n' > README.md\r" },
+    { "kind": "sleep", "ms": 500 },
+    { "kind": "write", "text": "bb\r" },
+    { "kind": "waitForText", "text": "Type your request", "timeoutMs": 20000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 700, "timeoutMs": 8000 },
+    { "kind": "screenshot", "label": "00-startup" },
+    { "kind": "write", "text": "\u000b" },
+    { "kind": "waitForText", "text": "Models", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "screenshot", "label": "01-models-open" },
+    { "kind": "write", "text": "codex" },
+    { "kind": "sleep", "ms": 1000 },
+    { "kind": "screenshot", "label": "02-models-codex-filter" },
+    { "kind": "key", "key": "escape" },
+    { "kind": "sleep", "ms": 600 },
+    { "kind": "screenshot", "label": "03-after-models-escape" },
+    { "kind": "terminate" }
+  ]
+}

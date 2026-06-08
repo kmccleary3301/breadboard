@@ -1,0 +1,18 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 20000 },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "waitFor", "text": "Models", "timeoutMs": 15000, "mode": "frame" },
+  { "action": "snapshot", "label": "model-picker-open", "mode": "frame", "maxLines": 120 },
+  { "action": "type", "text": "gpt" },
+  { "action": "wait", "ms": 600 },
+  { "action": "snapshot", "label": "model-picker-filtered", "mode": "frame", "maxLines": 120 },
+  { "action": "resize", "cols": 88, "rows": 30, "delayMs": 500 },
+  { "action": "snapshot", "label": "model-picker-resized-88", "mode": "frame", "maxLines": 120 },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 500 },
+  { "action": "snapshot", "label": "model-picker-resized-132", "mode": "frame", "maxLines": 120 },
+  { "action": "press", "key": "escape" },
+  { "action": "waitForComposerReady", "timeoutMs": 10000 },
+  { "action": "type", "text": "picker-close-probe", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "picker-close-probe", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "model-picker-closed", "mode": "frame", "maxLines": 120 }
+]

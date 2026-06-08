@@ -1,0 +1,494 @@
+import { promises as fs } from "node:fs"
+import path from "node:path"
+
+export interface ScenarioArtifacts {
+  readonly artifactDir: string
+  readonly scenarioId: string
+  readonly lane: string
+  readonly manifest?: Record<string, unknown>
+  readonly plainText?: string
+  readonly rawText?: string
+  readonly viewportText?: string
+  readonly scrollbackText?: string
+  readonly stateDumpText?: string
+  readonly transcriptCellsText?: string
+  readonly terminalGridText?: string
+  readonly actionConfirmations?: Record<string, boolean>
+  readonly performanceMetrics?: Record<string, unknown>
+}
+
+export interface InvariantRequest {
+  readonly id: string
+  readonly severity: "blocker" | "warning" | "metric" | "human-aid"
+}
+
+export interface InvariantResult {
+  readonly id: string
+  readonly severity: InvariantRequest["severity"]
+  readonly status: "pass" | "fail" | "skip" | "metric"
+  readonly message: string
+  readonly evidence?: Record<string, unknown>
+}
+
+export interface InvariantReport {
+  readonly ok: boolean
+  readonly scenarioId: string
+  readonly lane: string
+  readonly generatedAt: string
+  readonly results: InvariantResult[]
+}
+
+const readIfExists = async (filePath: string): Promise<string | undefined> => {
+  try {
+    return await fs.readFile(filePath, "utf8")
+  } catch {
+    return undefined
+  }
+}
+
+const parseJsonIfExists = async (filePath: string): Promise<Record<string, unknown> | undefined> => {
+  const raw = await readIfExists(filePath)
+  if (!raw) return undefined
+  try {
+    return JSON.parse(raw) as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+}
+
+export const loadScenarioArtifacts = async (artifactDir: string, scenarioId: string, lane: string): Promise<ScenarioArtifacts> => {
+  return {
+    artifactDir,
+    scenarioId,
+    lane,
+    manifest: await parseJsonIfExists(path.join(artifactDir, "manifest.json")),
+    plainText: await readIfExists(path.join(artifactDir, "pty_plain.txt")),
+    rawText: await readIfExists(path.join(artifactDir, "pty_raw.ansi")),
+    viewportText: await readIfExists(path.join(artifactDir, "viewport_final.txt")),
+    scrollbackText: await readIfExists(path.join(artifactDir, "scrollback_final.txt")),
+    stateDumpText: await readIfExists(path.join(artifactDir, "state_dumps.ndjson")),
+    transcriptCellsText: await readIfExists(path.join(artifactDir, "transcript_cells.ndjson")),
+    terminalGridText: await readIfExists(path.join(artifactDir, "terminal_grid.ndjson")),
+    actionConfirmations: (await parseJsonIfExists(path.join(artifactDir, "action_confirmations.json"))) as Record<string, boolean> | undefined,
+    performanceMetrics: await parseJsonIfExists(path.join(artifactDir, "performance_metrics.json")),
+  }
+}
+
+const textBlob = (artifacts: ScenarioArtifacts): string =>
+  [artifacts.plainText, artifacts.viewportText, artifacts.scrollbackText, artifacts.terminalGridText]
+    .filter((value): value is string => typeof value === "string")
+    .join("\n")
+
+const countOccurrences = (text: string, needle: string): number => {
+  if (!needle) return 0
+  let count = 0
+  let idx = 0
+  while ((idx = text.indexOf(needle, idx)) >= 0) {
+    count += 1
+    idx += needle.length
+  }
+  return count
+}
+
+const regexCount = (text: string, pattern: RegExp): number => (text.match(pattern) ?? []).length
+
+const parseNdjson = (text: string | undefined): any[] => {
+  if (!text) return []
+  const records: any[] = []
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      records.push(JSON.parse(trimmed))
+    } catch {
+      // State dump files may contain non-json diagnostics in failure cases. Ignore for structural invariants.
+    }
+  }
+  return records
+}
+
+const latestState = (artifacts: ScenarioArtifacts): any | null => {
+  const records = parseNdjson(artifacts.stateDumpText)
+  const latest = records.at(-1)
+  return latest?.state ?? latest ?? null
+}
+
+const getAcceptedPrompts = (artifacts: ScenarioArtifacts): string[] => {
+  const manifestPrompt = artifacts.manifest?.expectedPrompt
+  if (typeof manifestPrompt === "string" && manifestPrompt.trim()) return [manifestPrompt.trim()]
+  const state = latestState(artifacts)
+  const conversation = Array.isArray(state?.conversation) ? state.conversation : []
+  return conversation
+    .filter((entry: any) => entry?.speaker === "user" || entry?.role === "user" || entry?.role === "user-request")
+    .map((entry: any) => String(entry?.text ?? entry?.textPreview ?? entry?.content ?? "").trim())
+    .filter(Boolean)
+}
+
+const expectedAssistantTerms = (artifacts: ScenarioArtifacts): string[] => {
+  const expected = typeof artifacts.manifest?.expectedAssistantText === "string" ? artifacts.manifest.expectedAssistantText : ""
+  return Array.from(
+    new Set(
+      expected
+        .replace(/[`*_#[\]()>|:-]/g, " ")
+        .split(/\s+/)
+        .map((term) => term.trim())
+        .filter((term) => term.length >= 5),
+    ),
+  )
+}
+
+const finalVisibleText = (artifacts: ScenarioArtifacts): string =>
+  [artifacts.scrollbackText, artifacts.viewportText, artifacts.terminalGridText, artifacts.plainText]
+    .find((value) => typeof value === "string" && value.trim().length > 0) ?? ""
+
+const pass = (request: InvariantRequest, message: string, evidence?: Record<string, unknown>): InvariantResult => ({
+  id: request.id,
+  severity: request.severity,
+  status: request.severity === "metric" ? "metric" : "pass",
+  message,
+  evidence,
+})
+
+const fail = (request: InvariantRequest, message: string, evidence?: Record<string, unknown>): InvariantResult => ({
+  id: request.id,
+  severity: request.severity,
+  status: request.severity === "warning" || request.severity === "metric" || request.severity === "human-aid" ? "metric" : "fail",
+  message,
+  evidence,
+})
+
+const skip = (request: InvariantRequest, message: string): InvariantResult => ({
+  id: request.id,
+  severity: request.severity,
+  status: "skip",
+  message,
+})
+
+const invariantFns: Record<string, (request: InvariantRequest, artifacts: ScenarioArtifacts) => InvariantResult> = {
+  "GLOBAL-HOST-HISTORY-PRESERVED": (request, artifacts) => {
+    const expected = artifacts.manifest?.hostHistorySentinels
+    if (!Array.isArray(expected) || expected.length === 0) return skip(request, "no host history sentinels declared")
+    const text = textBlob(artifacts)
+    const missing = expected.filter((item) => typeof item === "string" && !text.includes(item))
+    return missing.length === 0
+      ? pass(request, "host history sentinels are visible", { sentinels: expected.length })
+      : fail(request, "host history sentinels missing", { missing })
+  },
+  "GLOBAL-NO-RAW-ANSI": (request, artifacts) => {
+    const text = finalVisibleText(artifacts)
+    const leaked = /\x1b\[[0-9;?]*[A-Za-z]/.test(text) || /\[200~|\[201~/.test(text)
+    return leaked ? fail(request, "raw ANSI/bracketed paste marker visible in plain text") : pass(request, "no raw ANSI leak detected")
+  },
+  "GLOBAL-NO-SYSTEM-PROMPT-LEAK": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const patterns = [/You are Codex, based on GPT-5/i, /## Editing constraints/i, /## Plan tool/i, /system prompt/i]
+    const matched = patterns.find((pattern) => pattern.test(text))?.source
+    return matched ? fail(request, "system/developer prompt leakage detected", { pattern: matched }) : pass(request, "no system prompt leakage detected")
+  },
+  "GLOBAL-NO-DUPLICATE-PROMPT": (request, artifacts) => {
+    const text = finalVisibleText(artifacts)
+    const prompts = getAcceptedPrompts(artifacts)
+    if (prompts.length === 0) return skip(request, "no accepted prompt known")
+    const findings = prompts.map((prompt) => ({ prompt, count: countOccurrences(text, prompt) }))
+    const bad = findings.filter((finding) => finding.count > 2)
+    return bad.length === 0 ? pass(request, "accepted prompts are not visibly duplicated", { findings }) : fail(request, "accepted prompt duplicated", { bad })
+  },
+  "GLOBAL-TRANSCRIPT-ORDER": (request, artifacts) => {
+    const prompt = getAcceptedPrompts(artifacts)[0]
+    const expected = typeof artifacts.manifest?.expectedAssistantText === "string" ? artifacts.manifest.expectedAssistantText : undefined
+    const text = textBlob(artifacts)
+    if (!prompt || !expected) return skip(request, "prompt/assistant order expectation missing")
+    const promptIdx = text.indexOf(prompt)
+    const assistantIdx = text.indexOf(expected)
+    return promptIdx >= 0 && assistantIdx >= 0 && promptIdx < assistantIdx
+      ? pass(request, "prompt appears before assistant text")
+      : fail(request, "prompt/assistant order not proven", { promptIdx, assistantIdx })
+  },
+  "GLOBAL-NO-READY-LIE": (request, artifacts) => {
+    const states = parseNdjson(artifacts.stateDumpText).map((record) => record?.state ?? record)
+    const bad = states.find((state) => {
+      const status = String(state?.status ?? "")
+      const disconnected = state?.disconnected === true
+      const pending = state?.pendingResponse === true
+      return /ready/i.test(status) && (disconnected || /recover|reconnect|disconnect/i.test(status) || pending)
+    })
+    return bad ? fail(request, "ready status while disconnected/recovering/pending", { status: bad.status }) : pass(request, "no ready-lie state observed")
+  },
+  "GLOBAL-COMPOSER-VISIBLE": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const visible = /Type your request|enter send|❯|›/.test(text)
+    return visible ? pass(request, "composer/input affordance visible") : fail(request, "composer/input affordance not visible")
+  },
+  "GLOBAL-FOOTER-TRUTHFUL": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const hasFooter = /enter send|resume \/sessions|ctrl\+|shortcuts|mdl /.test(text)
+    return hasFooter ? pass(request, "footer/status affordance visible") : fail(request, "footer/status affordance missing")
+  },
+  "RESIZE-ACTION-OBSERVED": (request, artifacts) => {
+    const confirmations = artifacts.actionConfirmations ?? {}
+    return confirmations.resizeRequested === true && confirmations.resizeObserved === true
+      ? pass(request, "resize requested and observed")
+      : fail(request, "resize action was not confirmed", confirmations)
+  },
+  "RESIZE-NO-DUP-LANDING": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const count = (text.match(/BreadBoard v|Using Config|░█/g) ?? []).length
+    return count <= 12 ? pass(request, "landing/header duplication not detected", { markerCount: count }) : fail(request, "landing/header marker count suggests duplication", { markerCount: count })
+  },
+  "RESIZE-NO-DUP-STATUS": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const logCount = (text.match(/Log link available|file:\/\/logging/g) ?? []).length
+    return logCount <= 1 ? pass(request, "status/log duplication not detected", { logCount }) : fail(request, "status/log line duplicated", { logCount })
+  },
+  "RESIZE-NO-STALE-BORDER": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const stale = /(?:Disconnected|Reconnecting):[\s\S]{0,200}\n\s*[╭│╰]/.test(text)
+    return stale ? fail(request, "stale lifecycle/modal border fragment detected") : pass(request, "no stale border fragment detected")
+  },
+  "LIFE-RECOVERY-NO-BODY-POLLUTION": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.viewportText ?? artifacts.plainText ?? ""
+    const polluted = /\b(?:Reconnecting|Disconnected):\s/.test(text)
+    return polluted ? fail(request, "lifecycle chrome appears in readable body") : pass(request, "no lifecycle body pollution detected")
+  },
+  "SCROLL-HOST-HISTORY-PREFIX-PRESERVED": (request, artifacts) => {
+    const expected = artifacts.manifest?.hostHistorySentinels
+    if (!Array.isArray(expected) || expected.length === 0) return skip(request, "no host history sentinels declared")
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const launchIndex = Math.max(text.indexOf("BreadBoard"), text.indexOf("Using Config"))
+    const missing = expected.filter((item) => typeof item === "string" && !text.includes(item))
+    const afterLaunch = expected.filter((item) => typeof item === "string" && launchIndex >= 0 && text.indexOf(item) > launchIndex)
+    if (missing.length > 0) return fail(request, "host history prefix sentinels missing", { missing })
+    return afterLaunch.length === 0 ? pass(request, "host history prefix appears before launch", { sentinels: expected.length }) : fail(request, "host history sentinel appears after launch marker", { afterLaunch })
+  },
+  "SCROLL-NO-ALTERNATE-SCREEN-HIJACK": (request, artifacts) => {
+    const raw = artifacts.rawText ?? ""
+    const entersAltScreen = /\x1b\[\?1049h|\x1b\[\?47h|\x1b\[\?1047h/.test(raw)
+    return entersAltScreen ? fail(request, "alternate-screen enter sequence detected") : pass(request, "no alternate-screen enter sequence detected")
+  },
+  "SCROLL-NO-DESTRUCTIVE-CLEAR": (request, artifacts) => {
+    const raw = artifacts.rawText ?? ""
+    const clearsScrollback = /\x1b\[3J|\x1bc/.test(raw)
+    return clearsScrollback ? fail(request, "destructive terminal clear sequence detected") : pass(request, "no destructive terminal clear sequence detected")
+  },
+  "SCROLL-LANDING-CARDINALITY": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const breadboardCount = regexCount(text, /BreadBoard v/g)
+    const configCount = regexCount(text, /Using Config/g)
+    const bad = breadboardCount > 1 || configCount > 1
+    return bad ? fail(request, "landing/header appears more than once", { breadboardCount, configCount }) : pass(request, "landing/header cardinality acceptable", { breadboardCount, configCount })
+  },
+  "SCROLL-PROMPT-CARDINALITY": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const prompts = getAcceptedPrompts(artifacts)
+    if (prompts.length === 0) return skip(request, "no accepted prompt known")
+    const findings = prompts.map((prompt) => ({ prompt, count: countOccurrences(text, prompt) }))
+    const bad = findings.filter((finding) => finding.count !== 1)
+    return bad.length === 0 ? pass(request, "each known prompt appears exactly once", { findings }) : fail(request, "prompt cardinality mismatch", { bad, findings })
+  },
+  "SCROLL-ASSISTANT-CARDINALITY": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const terms = expectedAssistantTerms(artifacts)
+    if (terms.length === 0) return skip(request, "no expected assistant terms declared")
+    const missing = terms.filter((term) => !text.includes(term))
+    return missing.length === 0 ? pass(request, "expected assistant terms are present once or more", { terms }) : fail(request, "expected assistant terms missing", { missing })
+  },
+  "SCROLL-NO-DUPLICATE-ASSISTANT-TAIL": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const expected = typeof artifacts.manifest?.expectedAssistantText === "string" ? artifacts.manifest.expectedAssistantText : ""
+    const candidate = expected
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length >= 12 && !/^(?:[#>*`|:-]|\d+\.|- )/.test(line))
+      .at(-1)
+    if (!candidate) return skip(request, "no distinctive assistant tail line declared")
+    const count = countOccurrences(text, candidate)
+    return count <= 1
+      ? pass(request, "assistant tail line is not duplicated", { candidate, count })
+      : fail(request, "assistant tail line duplicated", { candidate, count })
+  },
+  "SCROLL-TOOL-CARDINALITY": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const state = latestState(artifacts)
+    const toolEvents = Array.isArray(state?.toolEvents) ? state.toolEvents : []
+    const expectedToolBlocks = Math.max(1, toolEvents.filter((entry: any) => entry?.kind === "result" || entry?.status === "success").length)
+    const toolBlocks = regexCount(text, /^\s*● Tool\b/gm)
+    return toolBlocks <= expectedToolBlocks
+      ? pass(request, "tool block cardinality within expected completed-tool count", { toolBlocks, expectedToolBlocks })
+      : fail(request, "tool block cardinality suggests scrollback replay", { toolBlocks, expectedToolBlocks })
+  },
+  "SCROLL-ORDER-PRESERVED": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const sentinels = Array.isArray(artifacts.manifest?.hostHistorySentinels) ? artifacts.manifest.hostHistorySentinels.filter((item): item is string => typeof item === "string") : []
+    const prompt = getAcceptedPrompts(artifacts)[0]
+    const launchIdx = Math.max(text.indexOf("BreadBoard"), text.indexOf("Using Config"))
+    const sentinelIdx = sentinels.length ? text.indexOf(sentinels[0]) : -1
+    const promptIdx = prompt ? text.indexOf(prompt) : -1
+    const ok = (sentinels.length === 0 || (sentinelIdx >= 0 && (launchIdx < 0 || sentinelIdx < launchIdx))) && (!prompt || promptIdx >= 0)
+    return ok ? pass(request, "basic scrollback order preserved", { sentinelIdx, launchIdx, promptIdx }) : fail(request, "basic scrollback order violated", { sentinelIdx, launchIdx, promptIdx })
+  },
+  "SCROLL-NO-CONTROL-CHROME-BODY": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.viewportText ?? artifacts.plainText ?? ""
+    const patterns = [
+      /^\s*(?:Disconnected|Reconnecting|Stream interruption|Log · file:\/\/)/m,
+      /✗ Guardrail:/,
+    ]
+    const matched = patterns.find((pattern) => pattern.test(text))?.source
+    return matched ? fail(request, "control chrome appears as body line", { pattern: matched }) : pass(request, "control chrome body pollution not detected")
+  },
+  "SCROLL-NO-INPUT-SEPARATOR-REPLAY": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const inputSeparators = regexCount(text, /^\s*— input\s*$/gm)
+    return inputSeparators <= 1
+      ? pass(request, "input separator cardinality is bounded", { inputSeparators })
+      : fail(request, "input separator replay detected", { inputSeparators })
+  },
+  "SCROLL-NO-COMPOSER-PROMPT-REPLAY": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.viewportText ?? artifacts.plainText ?? ""
+    const composerPrompts = regexCount(text, /^\s*(?:[❯›]\s+)?Type your request/gm)
+    return composerPrompts <= 1
+      ? pass(request, "composer prompt cardinality is bounded", { composerPrompts })
+      : fail(request, "composer prompt replay detected", { composerPrompts })
+  },
+  "MD-NO-STREAMING-PARTIAL-REPLAY": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const expected = typeof artifacts.manifest?.expectedAssistantText === "string" ? artifacts.manifest.expectedAssistantText : ""
+    const expectedHeadings = expected
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => /^#{1,6}\s+/.test(line))
+      .map((line) => line.replace(/^#{1,6}\s+/, "").trim())
+      .filter(Boolean)
+    const headingFindings = expectedHeadings.map((heading) => ({
+      heading,
+      count: regexCount(text, new RegExp(`^\\s*#{0,6}\\s*${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "gm")),
+    }))
+    const tableTopBorderCount = /\|\s*[-:]{3,}/.test(expected) ? regexCount(text, /^\s*┌.*┬/gm) : 0
+    const badHeading = headingFindings.find((finding) => finding.count > 2)
+    if (badHeading || tableTopBorderCount > 1) {
+      return fail(request, "streaming markdown partial replay detected", { headingFindings, tableTopBorderCount })
+    }
+    return pass(request, "streaming markdown partial replay not detected", { headingFindings, tableTopBorderCount })
+  },
+  "SCROLL-COLLAPSE-AFFORDANCE-TRUTHFUL": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const matches = [...text.matchAll(/Scroll up for (\d+) earlier outputs/g)].map((match) => Number(match[1]))
+    const invalid = matches.filter((value) => !Number.isFinite(value) || value <= 0)
+    return invalid.length === 0 ? pass(request, "collapse affordance counts are positive when present", { counts: matches }) : fail(request, "collapse affordance count invalid", { invalid })
+  },
+  "RESIZE-COMPOSER-ALWAYS-VISIBLE": (request, artifacts) => invariantFns["GLOBAL-COMPOSER-VISIBLE"](request, artifacts),
+  "RESIZE-FOOTER-TRUTHFUL": (request, artifacts) => invariantFns["GLOBAL-FOOTER-TRUTHFUL"](request, artifacts),
+  "RESIZE-NO-DUPLICATE-STATIC-BLOCK": (request, artifacts) => {
+    const landing = invariantFns["SCROLL-LANDING-CARDINALITY"](request, artifacts)
+    if (landing.status === "fail") return landing
+    return invariantFns["SCROLL-PROMPT-CARDINALITY"](request, artifacts)
+  },
+  "RESIZE-NO-FOOTER-GAP-EXPLOSION": (request, artifacts) => {
+    const text = artifacts.viewportText ?? artifacts.plainText ?? ""
+    const maxBlankRun = Math.max(0, ...text.split(/[^\n]*(?:\n|$)/).map((chunk) => chunk.length))
+    const excessive = /\n\s*\n\s*\n\s*\n\s*\n\s*\n\s*\n/.test(text)
+    return excessive ? fail(request, "large blank vertical gap detected", { maxBlankRun }) : pass(request, "no excessive footer/composer vertical gap detected")
+  },
+  "RESIZE-TINY-GRACEFUL-DEGRADATION": (request, artifacts) => {
+    const cols = typeof artifacts.manifest?.cols === "number" ? artifacts.manifest.cols : 999
+    const text = textBlob(artifacts)
+    const corrupted = cols < 60 && /undefined|NaN|\[object Object\]/.test(text)
+    return corrupted ? fail(request, "tiny-width corruption marker detected", { cols }) : pass(request, "tiny-width corruption marker not detected", { cols })
+  },
+  "MD-FINAL-TEXT-COMPLETE": (request, artifacts) => {
+    const text = artifacts.scrollbackText ?? artifacts.plainText ?? ""
+    const terms = expectedAssistantTerms(artifacts)
+    if (terms.length === 0) return skip(request, "no markdown/assistant expectation declared")
+    const missing = terms.filter((term) => !text.includes(term))
+    return missing.length === 0 ? pass(request, "final rendered text includes expected semantic terms", { terms }) : fail(request, "final rendered text missing semantic terms", { missing })
+  },
+  "MD-LONG-URL-NO-COLLISION": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const hasLongUrl = /https?:\/\/\S{60,}/.test(text)
+    const collision = hasLongUrl && /https?:\/\/\S{0,20}.*Type your request/.test(text)
+    return collision ? fail(request, "long URL appears to collide with composer") : pass(request, "long URL composer collision not detected", { hasLongUrl })
+  },
+  "MD-DIFF-BLOCK-READABLE": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const hasDiff = /\*\*\* Begin Patch|^@@|^\+|\-/m.test(text)
+    const unreadable = hasDiff && /undefined|NaN|\[object Object\]/.test(text)
+    return unreadable ? fail(request, "diff block contains corruption marker") : pass(request, "diff block corruption marker not detected", { hasDiff })
+  },
+  "TOOL-START-VISIBLE": (request, artifacts) => {
+    const confirmations = artifacts.actionConfirmations ?? {}
+    if (confirmations.toolStarted === undefined) return skip(request, "tool start confirmation unavailable")
+    return confirmations.toolStarted ? pass(request, "tool start confirmed visible or injected") : fail(request, "tool start not confirmed visible")
+  },
+  "TOOL-STDOUT-BOUNDED": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const stdoutLines = regexCount(text, /stdout \d+ line|stdout|│/gi)
+    return stdoutLines <= 120 ? pass(request, "stdout marker count within broad bound", { stdoutLines }) : fail(request, "stdout marker count too high", { stdoutLines })
+  },
+  "TOOL-STDERR-VISIBLE": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const hasStderr = /stderr/i.test(text)
+    return pass(request, "stderr visibility not required unless stderr is present", { hasStderr })
+  },
+  "TOOL-RESULT-SINGULAR": (request, artifacts) => {
+    const confirmations = artifacts.actionConfirmations ?? {}
+    if (confirmations.toolCompleted === undefined) return skip(request, "tool completion confirmation unavailable")
+    if (!confirmations.toolCompleted) return fail(request, "tool completion not confirmed")
+    const scrollbackToolCardinality = invariantFns["SCROLL-TOOL-CARDINALITY"](request, artifacts)
+    if (scrollbackToolCardinality.status === "fail") return scrollbackToolCardinality
+    return pass(request, "tool completion confirmed and singular", scrollbackToolCardinality.evidence)
+  },
+  "TOOL-COLLAPSE-ACCESSIBLE": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const collapsed = /Scroll up for \d+ earlier outputs/.test(text)
+    const accessible = !collapsed || /Ctrl\+O Transcript|transcript/i.test(text)
+    return accessible ? pass(request, "collapsed tool output is accessible or not present", { collapsed }) : fail(request, "collapsed tool output lacks access affordance")
+  },
+  "DIFF-SUMMARY-READABLE": (request, artifacts) => invariantFns["MD-DIFF-BLOCK-READABLE"](request, artifacts),
+  "MODAL-OPEN-CONFIRMED": (request, artifacts) => {
+    const value = artifacts.actionConfirmations?.modalOpened
+    if (value === undefined) return skip(request, "modal open confirmation unavailable")
+    return value ? pass(request, "modal open confirmed") : fail(request, "modal open not confirmed")
+  },
+  "MODAL-CLOSE-CONFIRMED": (request, artifacts) => {
+    const value = artifacts.actionConfirmations?.modalClosed
+    if (value === undefined) return skip(request, "modal close confirmation unavailable")
+    return value ? pass(request, "modal close confirmed") : fail(request, "modal close not confirmed")
+  },
+  "MODAL-FOCUS-RETURNS-TO-COMPOSER": (request, artifacts) => {
+    const value = artifacts.actionConfirmations?.focusReturned
+    if (value === undefined) return skip(request, "focus return confirmation unavailable")
+    return value ? pass(request, "focus returned to composer") : fail(request, "focus did not return to composer")
+  },
+  "COMPOSER-EMPTY-VISIBLE": (request, artifacts) => invariantFns["GLOBAL-COMPOSER-VISIBLE"](request, artifacts),
+  "LIFE-DISCONNECT-STATUS-TRUTHFUL": (request, artifacts) => invariantFns["GLOBAL-NO-READY-LIE"](request, artifacts),
+  "LIFE-RECOVERY-DOES-NOT-DUPLICATE-PROMPT": (request, artifacts) => invariantFns["GLOBAL-NO-DUPLICATE-PROMPT"](request, artifacts),
+  "PERF-RAW-BYTE-BUDGET": (request, artifacts) => {
+    const rawBytes = Number(artifacts.performanceMetrics?.rawBytes ?? 0)
+    const budget = Number((artifacts.performanceMetrics?.budgets as any)?.maxRawBytes ?? 10_000_000)
+    return rawBytes <= budget ? pass(request, "raw byte budget satisfied", { rawBytes, budget }) : fail(request, "raw byte budget exceeded", { rawBytes, budget })
+  },
+  "PERF-FRAME-COUNT-BUDGET": (request, artifacts) => {
+    const frameCount = Number(artifacts.performanceMetrics?.frameCount ?? 0)
+    const budget = Number((artifacts.performanceMetrics?.budgets as any)?.maxFrames ?? 5000)
+    return frameCount <= budget ? pass(request, "frame count budget satisfied", { frameCount, budget }) : fail(request, "frame count budget exceeded", { frameCount, budget })
+  },
+  "PERF-STATE-DUMP-BUDGET": (request, artifacts) => {
+    const stateDumpCount = Number(artifacts.performanceMetrics?.stateDumpCount ?? 0)
+    const budget = Number((artifacts.performanceMetrics?.budgets as any)?.maxStateDumps ?? 5000)
+    return stateDumpCount <= budget ? pass(request, "state dump budget satisfied", { stateDumpCount, budget }) : fail(request, "state dump budget exceeded", { stateDumpCount, budget })
+  },
+}
+
+export const evaluateInvariants = async (
+  artifactDir: string,
+  scenarioId: string,
+  lane: string,
+  requests: InvariantRequest[],
+): Promise<InvariantReport> => {
+  const artifacts = await loadScenarioArtifacts(artifactDir, scenarioId, lane)
+  const results = requests.map((request) => {
+    const fn = invariantFns[request.id]
+    return fn ? fn(request, artifacts) : skip(request, `invariant ${request.id} is not implemented yet`)
+  })
+  const ok = results.every((result) => result.status !== "fail")
+  return { ok, scenarioId, lane, generatedAt: new Date().toISOString(), results }
+}

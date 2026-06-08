@@ -30,8 +30,11 @@ type ReplViewBaseContentProps = {
   metaNodes: React.ReactNode[]
   guardrailNotice: GuardrailNotice | null
   networkBanner: NetworkBanner
+  networkBannerWidth?: number
   showLandingInline: boolean
+  showSessionHeaderInline: boolean
   landingNode: React.ReactNode | null
+  sessionHeaderNode: React.ReactNode | null
   transcriptNodes: React.ReactNode[]
   toolNodes: React.ReactNode[]
   overlayActive: boolean
@@ -39,6 +42,7 @@ type ReplViewBaseContentProps = {
   liveSlotNodes: React.ReactNode[]
   collapsedHintNode: React.ReactNode | null
   virtualizationHintNode: React.ReactNode | null
+  activeBodyMinRows?: number
   composerPanelContext: Record<string, any>
 }
 
@@ -61,8 +65,11 @@ export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
   metaNodes,
   guardrailNotice,
   networkBanner,
+  networkBannerWidth,
   showLandingInline,
+  showSessionHeaderInline,
   landingNode,
+  sessionHeaderNode,
   transcriptNodes,
   toolNodes,
   overlayActive,
@@ -70,9 +77,19 @@ export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
   liveSlotNodes,
   collapsedHintNode,
   virtualizationHintNode,
+  activeBodyMinRows = 0,
   composerPanelContext,
 }) => {
   const bodyMarginTop = scrollbackMode ? 0 : claudeChrome || footerV2Enabled ? 0 : 1
+  const resolvedActiveBodyMinRows =
+    scrollbackMode && Number.isFinite(activeBodyMinRows)
+      ? Math.max(0, Math.floor(activeBodyMinRows))
+      : undefined
+  const resolvedNetworkBannerWidth =
+    typeof networkBannerWidth === "number" && Number.isFinite(networkBannerWidth)
+      ? Math.max(20, Math.floor(networkBannerWidth))
+      : undefined
+  const networkBannerPaddingX = resolvedNetworkBannerWidth && resolvedNetworkBannerWidth <= 50 ? 1 : 2
   return (
     <Box flexDirection="column" paddingX={claudeChrome ? 0 : 1} marginTop={bodyMarginTop}>
       {!claudeChrome && !footerV2Enabled && (
@@ -95,42 +112,40 @@ export const ReplViewBaseContent: React.FC<ReplViewBaseContentProps> = ({
           flexDirection="column"
           borderStyle="round"
           borderColor={networkBanner.tone === "error" ? COLORS.error : COLORS.warning}
-          paddingX={2}
+          paddingX={networkBannerPaddingX}
           paddingY={1}
           marginTop={1}
+          width={resolvedNetworkBannerWidth}
         >
-          <Text color={networkBanner.tone === "error" ? COLORS.error : COLORS.warning}>
+          <Text color={networkBanner.tone === "error" ? COLORS.error : COLORS.warning} wrap="wrap">
             {CHALK.bold(`${networkBanner.label}:`)} {networkBanner.message}
           </Text>
-          <Text color="gray">If this persists, retry the command or restart the session.</Text>
+          <Text color="gray" wrap="wrap">If this persists, retry the command or restart the session.</Text>
         </Box>
       )}
 
-    <Box flexDirection="column" marginTop={claudeChrome ? 0 : 1}>
-      {showLandingInline && landingNode}
-      {transcriptNodes.length > 0 && (
-        <Box flexDirection="column">{transcriptNodes}</Box>
-      )}
-      {toolNodes.length > 0 && (
-        <Box marginTop={1} flexDirection="column">
-          {toolNodes}
-        </Box>
-      )}
-      {!overlayActive && subagentStripNode && (
-        <Box marginTop={1}>{subagentStripNode}</Box>
-      )}
-      {!overlayActive && liveSlotNodes.length > 0 && (
-        <Box marginTop={1} flexDirection="column">
-          {liveSlotNodes}
-        </Box>
-      )}
-      {!overlayActive && collapsedHintNode && <Box marginTop={1}>{collapsedHintNode}</Box>}
-      {!overlayActive && virtualizationHintNode && (
-        <Box marginTop={collapsedHintNode ? 0 : 1}>{virtualizationHintNode}</Box>
-      )}
-    </Box>
+      <Box flexDirection="column" marginTop={scrollbackMode || claudeChrome ? 0 : 1} minHeight={resolvedActiveBodyMinRows}>
+        {showLandingInline && landingNode}
+        {showSessionHeaderInline && !showLandingInline && sessionHeaderNode}
+        {transcriptNodes.length > 0 && <Box flexDirection="column">{transcriptNodes}</Box>}
+        {toolNodes.length > 0 && (
+          <Box marginTop={1} flexDirection="column">
+            {toolNodes}
+          </Box>
+        )}
+        {!overlayActive && subagentStripNode && <Box marginTop={1}>{subagentStripNode}</Box>}
+        {!overlayActive && liveSlotNodes.length > 0 && (
+          <Box marginTop={1} flexDirection="column">
+            {liveSlotNodes}
+          </Box>
+        )}
+        {!overlayActive && collapsedHintNode && <Box marginTop={1}>{collapsedHintNode}</Box>}
+        {!overlayActive && virtualizationHintNode && (
+          <Box marginTop={collapsedHintNode ? 0 : 1}>{virtualizationHintNode}</Box>
+        )}
+      </Box>
 
-      <ComposerPanel context={composerPanelContext} />
+      {(!scrollbackMode || !overlayActive) && <ComposerPanel context={composerPanelContext} />}
     </Box>
   )
 }

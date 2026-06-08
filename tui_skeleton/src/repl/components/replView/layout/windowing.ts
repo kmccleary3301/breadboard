@@ -3,6 +3,7 @@ export interface WindowSlice<T> {
   readonly hiddenCount: number
   readonly usedLines: number
   readonly truncated: boolean
+  readonly budgetClipped?: boolean
 }
 
 export const trimTailByLineCount = <T,>(

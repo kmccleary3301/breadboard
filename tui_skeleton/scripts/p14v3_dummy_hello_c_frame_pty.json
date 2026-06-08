@@ -1,0 +1,10 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "snapshot", "label": "startup", "mode": "frame", "maxLines": 180 },
+  { "action": "type", "text": "Create a tiny C hello-world project in this workspace. Add hello.c, a Makefile that builds a hello binary, and README.md with build/run instructions. Run make before finishing, then give a concise final answer with files changed and verification result." },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "after-submit", "mode": "frame", "maxLines": 260 },
+  { "action": "waitForState", "timeoutMs": 420000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "final", "mode": "frame", "maxLines": 700 }
+]

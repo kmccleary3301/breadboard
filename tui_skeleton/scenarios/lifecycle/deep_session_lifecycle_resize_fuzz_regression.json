@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "id": "deep_session_lifecycle_resize_fuzz_regression",
+  "title": "Deep session lifecycle resize regression placeholder",
+  "claimScope": "lifecycle",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "tool", "fault", "time", "workspace"],
+    "forbiddenBypass": ["controller", "transcript-store", "renderer", "engine-lifecycle"]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        { "path": "package.json", "content": "{\"scripts\":{\"test\":\"node test.js\"}}" },
+        { "path": "test.js", "content": "console.log('ok')\n" }
+      ]
+    },
+    "prelaunchShellHistory": [
+      { "id": "pre-alpha", "text": "BB_V5_DEEP_PRE_ALPHA" }
+    ]
+  },
+  "launch": { "mode": "classic", "engineMode": "test-owned", "startupWait": { "composerReady": true, "timeoutMs": 20000 }, "timeoutMs": 120000 },
+  "terminal": { "lanes": ["pty"], "initial": { "cols": 132, "rows": 36 }, "resizePolicy": "scripted", "captureGrid": true, "captureScrollback": true },
+  "fixtures": { "seedTurns": { "count": 10, "throughProductionIngestion": true, "contentMix": ["short-user", "assistant-bullets", "tool-summary"] } },
+  "timeline": [
+    { "kind": "submit", "text": "Run a deep-session tool-heavy scenario." },
+    { "kind": "assistant", "event": { "kind": "start", "streamId": "s1" } },
+    { "kind": "tool", "event": { "kind": "start", "toolId": "t1", "name": "run_tests" } },
+    { "kind": "tool", "event": { "kind": "stdout", "toolId": "t1", "text": "test 1/10\n" } },
+    { "kind": "resize", "cols": 78, "rows": 22, "settleMs": 100 },
+    { "kind": "assistant", "event": { "kind": "delta", "streamId": "s1", "text": "Recovered deep-session placeholder result." } },
+    { "kind": "tool", "event": { "kind": "result", "toolId": "t1", "status": "ok", "summary": "Tests ran" } },
+    { "kind": "assistant", "event": { "kind": "complete", "streamId": "s1" } },
+    { "kind": "waitFor", "target": { "text": "Recovered deep-session placeholder result." }, "timeoutMs": 45000 },
+    { "kind": "checkpoint", "id": "final" }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-NO-DUPLICATE-PROMPT", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" },
+    { "id": "RESIZE-NO-STALE-BORDER", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report"] },
+  "minimization": { "enabled": true, "preserveSteps": ["launch", "checkpoint:final"] }
+}

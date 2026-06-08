@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url"
 import pty from "node-pty"
 import stripAnsi from "strip-ansi"
 
+import { waitForPlainComposerReady } from "./opentuiStartupReady"
+
 type Scenario = "smoke" | "restart" | "all"
 
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -131,8 +133,8 @@ const main = async () => {
       cols: 120,
       timeoutMs: args.timeoutMs,
       artifactDir: dir,
-      actions: async ({ term, waitForPlainIncludes }) => {
-        await waitForPlainIncludes("Enter submit", 40_000)
+      actions: async ({ term, waitForPlainIncludes, getPlain }) => {
+        await waitForPlainComposerReady(() => getPlain(), { timeoutMs: 40_000, label: "phaseB restart" })
         term.write("first message")
         await sleep(50)
         term.write("\r")

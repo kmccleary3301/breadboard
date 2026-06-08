@@ -20,6 +20,7 @@ export const handleMenuOverlayKeys = (
     skillsVisibleRows,
     modelMenu,
     onModelMenuCancel,
+    reclaimOverlayRegion,
     filteredModels,
     modelIndex,
     onModelSelect,
@@ -110,13 +111,17 @@ export const handleMenuOverlayKeys = (
   if (modelMenu.status === "hidden") return false
   if (key.escape || char === "\u001b") {
     onModelMenuCancel()
+    if (typeof reclaimOverlayRegion === "function") reclaimOverlayRegion("close")
     return true
   }
   if (modelMenu.status === "loading") {
     return true
   }
   if (modelMenu.status === "error") {
-    if (key.return) onModelMenuCancel()
+    if (key.return) {
+      onModelMenuCancel()
+      if (typeof reclaimOverlayRegion === "function") reclaimOverlayRegion("close")
+    }
     return true
   }
   if (modelMenu.status !== "ready") {
@@ -124,7 +129,10 @@ export const handleMenuOverlayKeys = (
   }
   if (isReturnKey) {
     const choice = filteredModels[modelIndex]
-    if (choice) void onModelSelect(choice)
+    if (choice) {
+      void onModelSelect(choice)
+      if (typeof reclaimOverlayRegion === "function") reclaimOverlayRegion("close")
+    }
     return true
   }
   if ((key.backspace || key.delete) && modelSearch.length > 0) {

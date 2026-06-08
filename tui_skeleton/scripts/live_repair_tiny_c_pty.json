@@ -1,0 +1,14 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  {
+    "action": "type",
+    "text": "You are in a standalone disposable git repo with a tiny C project. The smoke test currently fails because calc.c has one arithmetic bug. Inspect only this workspace, fix calc.c cleanly, do not create a replacement main.c/app project, do not rewrite the Makefile unless absolutely necessary, then run make clean all and bash smoke_test.sh. When finished, summarize files changed and exact verification commands."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn1-after-submit", "mode": "frame" },
+  { "action": "waitForState", "timeoutMs": 300000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "snapshot", "label": "turn1-first-success-tool", "mode": "history", "maxLines": 260 },
+  { "action": "waitForState", "timeoutMs": 900000, "fresh": true, "pendingResponse": false },
+  { "action": "wait", "ms": 1000 },
+  { "action": "snapshot", "label": "turn1-final-history", "mode": "history", "maxLines": 700 }
+]

@@ -1,0 +1,137 @@
+{
+  "id": "vscode_long_answer_resize",
+  "terminal": {
+    "initialCols": 124,
+    "initialRows": 38
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "Write a markdown answer with one heading, three bullets, a tiny table, and a fenced code block. End with the single word formed by joining LONG, ANSWER, and DONE with no separators.\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "LONGANSWERDONE",
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 1000,
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "resize",
+      "cols": 86,
+      "rows": 26
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 900,
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "LONGANSWERDONE"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        },
+        {
+          "kind": "notContains",
+          "scope": "viewport",
+          "text": "Log link available"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        }
+      ]
+    },
+    {
+      "kind": "screenshot",
+      "label": "long-answer-after-resize"
+    },
+    {
+      "kind": "exportBreadBoardState",
+      "label": "long-answer-state"
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "LONGANSWERDONE"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "You are Codex"
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    },
+    {
+      "kind": "notContains",
+      "scope": "viewport",
+      "text": "Log link available"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    }
+  ]
+}

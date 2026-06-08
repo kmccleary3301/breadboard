@@ -19,24 +19,26 @@ const main = async () => {
 
   const failures: string[] = []
 
-  const breadboardCount = countMatches(body, /BreadBoard v(?:0\.2\.0|0\.0\.0a)/g)
-  if (breadboardCount < 1) {
-    failures.push(`expected at least 1 landing header in history, found ${breadboardCount}`)
+  const requiredPresence: Array<{ label: string; pattern: RegExp }> = [
+    { label: "landing header", pattern: /BreadBoard v(?:0\.2\.0|0\.0\.0a)/g },
+    { label: "landing config row", pattern: /Using Config `[^`]+`/g },
+    { label: "landing model row", pattern: /gpt-[^\s]+ · Codex/g },
+    { label: "landing workspace row", pattern: /\/shared_folders\/querylake_server\/ray_testing\/ray_SCE/g },
+  ]
+
+  for (const check of requiredPresence) {
+    const count = countMatches(body, check.pattern)
+    if (count < 1) {
+      failures.push(`expected at least 1 ${check.label} block in history, found ${count}`)
+    }
+    if (count > 1) {
+      failures.push(`expected <=1 ${check.label} block in history, found ${count}`)
+    }
   }
 
-  const tipsCount = countMatches(body, /Tips for getting started/g)
-  if (tipsCount < 1) {
-    failures.push(`expected at least 1 landing tips block in history, found ${tipsCount}`)
-  }
-
-  const activityCount = countMatches(body, /Recent activity/g)
-  if (activityCount < 1) {
-    failures.push(`expected at least 1 landing activity block in history, found ${activityCount}`)
-  }
-
-  const promptCount = countMatches(body, /Try "refactor <filepath>"/g)
-  if (promptCount > 30) {
-    failures.push(`expected <=30 prompt echoes in history, found ${promptCount}`)
+  const footerShortcutCount = countMatches(body, /\? shortcuts/g)
+  if (footerShortcutCount > 30) {
+    failures.push(`expected <=30 footer shortcut echoes in history, found ${footerShortcutCount}`)
   }
 
   const footerCount = countMatches(body, /\/ commands · @ files/g)

@@ -3,17 +3,7 @@ import { Box, Text } from "ink"
 import type { TranscriptItem } from "../../../transcriptModel.js"
 import { buildCommandResultEntry, COMMAND_RESULT_LIMIT } from "./commandResults.js"
 import type { StaticFeedItem } from "../types.js"
-
-const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return fallback
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
-
-const LANDING_ALWAYS = parseBoolEnv(process.env.BREADBOARD_TUI_LANDING_ALWAYS, true)
+import { writeScrollbackFeedDebugRecord } from "../controller/qcDebugLog.js"
 
 interface ScrollbackFeedOptions {
   readonly enabled: boolean
@@ -21,15 +11,22 @@ interface ScrollbackFeedOptions {
   readonly viewClearAt?: number | null
   readonly headerLines: string[]
   readonly headerSubtitleLines: string[]
-  readonly landingNode: React.ReactNode | null
-  readonly transcriptEntries: TranscriptItem[]
-  readonly streamingEntries: TranscriptItem[]
+  readonly historyLandingNode: React.ReactNode | null
+  readonly historyLandingLineCount: number
+  readonly appendHeaderToFeed: boolean
+  readonly appendLandingToFeed: boolean
+  readonly transcriptEntries: ReadonlyArray<TranscriptItem>
+  readonly streamingEntries: ReadonlyArray<TranscriptItem>
+  readonly staticMarkdownChunks?: ReadonlyArray<StaticFeedItem>
+  readonly allowTranscriptAppend?: boolean
   readonly renderTranscriptEntry: (entry: TranscriptItem, key?: string) => React.ReactNode
+  readonly measureTranscriptEntryLines: (entry: TranscriptItem) => number
   readonly transcriptViewerOpen: boolean
 }
 
 export interface ScrollbackFeedState {
   readonly staticFeed: StaticFeedItem[]
+  readonly staticFeedLineCount: number
   readonly pushCommandResult: (title: string, lines: string[]) => void
   readonly headerPrintedRef: React.MutableRefObject<boolean>
   readonly landingPrintedRef: React.MutableRefObject<boolean>
@@ -43,10 +40,16 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
     viewClearAt,
     headerLines,
     headerSubtitleLines,
-    landingNode,
+    historyLandingNode,
+    historyLandingLineCount,
+    appendHeaderToFeed,
+    appendLandingToFeed,
     transcriptEntries,
     streamingEntries,
+    staticMarkdownChunks = [],
+    allowTranscriptAppend = true,
     renderTranscriptEntry,
+    measureTranscriptEntryLines,
     transcriptViewerOpen,
   } = options
   const [staticFeed, setStaticFeed] = useState<StaticFeedItem[]>([])
@@ -54,6 +57,8 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
   const landingPrintedRef = useRef(false)
   const printedTranscriptIdsRef = useRef(new Set<string>())
   const lastConversationSignatureRef = useRef<{ sig: string; createdAt?: number | null } | null>(null)
+  const spacerCounterRef = useRef(0)
+  const feedEpoch = viewClearAt ?? "initial"
 
   const pushCommandResult = useCallback((title: string, lines: string[]) => {
     const entry = buildCommandResultEntry(title, lines)
@@ -64,13 +69,20 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
     })
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!enabled) return
     headerPrintedRef.current = false
     landingPrintedRef.current = false
     printedTranscriptIdsRef.current.clear()
     lastConversationSignatureRef.current = null
+    spacerCounterRef.current = 0
     setStaticFeed([])
+    writeScrollbackFeedDebugRecord({
+      event: "feed_reset",
+      sessionId,
+      viewClearAt: viewClearAt ?? null,
+      enabled,
+    })
   }, [enabled, sessionId, viewClearAt])
 
   useLayoutEffect(() => {
@@ -80,98 +92,142 @@ export const useScrollbackFeed = (options: ScrollbackFeedOptions): ScrollbackFee
       let next = prev
       let changed = false
 
-      const landingActive =
-        Boolean(landingNode) &&
-        (LANDING_ALWAYS || (transcriptEntries.length === 0 && streamingEntries.length === 0))
-
-      if (!headerPrintedRef.current) {
-        if (!landingActive) {
-          const headerNode = (
-            <Box flexDirection="column">
-              {headerLines.map((line, index) => (
-                <Text key={`header-${index}`}>{line}</Text>
-              ))}
-              {headerSubtitleLines.map((line, index) => (
-                <Text key={`header-sub-${index}`}>{line}</Text>
-              ))}
-            </Box>
-          )
-          next = [...next, { id: `header-${sessionId}`, node: headerNode }]
-          changed = true
-        }
+      if (!headerPrintedRef.current && appendHeaderToFeed) {
+        const itemId = `header-${sessionId}-${feedEpoch}`
+        const headerNode = (
+          <Box flexDirection="column">
+            {headerLines.map((line, index) => (
+              <Text key={`header-${index}`}>{line}</Text>
+            ))}
+            {headerSubtitleLines.map((line, index) => (
+              <Text key={`header-sub-${index}`}>{line}</Text>
+            ))}
+          </Box>
+        )
+        next = [...next, { id: itemId, node: headerNode, lineCount: headerLines.length + headerSubtitleLines.length }]
+        changed = true
         headerPrintedRef.current = true
+        writeScrollbackFeedDebugRecord({
+          event: "append_header",
+          sessionId,
+          itemId,
+          lineCount: headerLines.length + headerSubtitleLines.length,
+        })
       }
 
-      if (landingActive && landingNode && !landingPrintedRef.current) {
-        next = [...next, { id: `landing-${sessionId}`, node: landingNode }]
+      if (appendLandingToFeed && historyLandingNode && !landingPrintedRef.current) {
+        const itemId = `landing-${sessionId}-${feedEpoch}`
+        next = [...next, { id: itemId, node: historyLandingNode, lineCount: historyLandingLineCount }]
         landingPrintedRef.current = true
         changed = true
+        writeScrollbackFeedDebugRecord({
+          event: "append_landing",
+          sessionId,
+          itemId,
+          lineCount: historyLandingLineCount,
+        })
       }
 
-      const pending: Array<{ id: string; node: React.ReactNode; order: number; seq: number }> = []
-      let seq = 0
+      if (allowTranscriptAppend) {
+        const pending: Array<{ id: string; node: React.ReactNode; order: number; seq: number; lineCount: number }> = []
+        let seq = 0
 
-      for (const entry of transcriptEntries) {
-        if (printedTranscriptIdsRef.current.has(entry.id)) continue
-        if (entry.kind === "message") {
-          const sig = `${entry.speaker}|${entry.text}`
-          const createdAt = Number.isFinite(entry.createdAt) ? entry.createdAt : null
-          const lastSig = lastConversationSignatureRef.current
-          const isDup =
-            lastSig &&
-            lastSig.sig === sig &&
-            ((createdAt != null && lastSig.createdAt != null && Math.abs(createdAt - lastSig.createdAt) < 2000) ||
-              (createdAt == null && lastSig.createdAt == null))
-          if (isDup) {
-            printedTranscriptIdsRef.current.add(entry.id)
-            continue
+        for (const entry of transcriptEntries) {
+          if (printedTranscriptIdsRef.current.has(entry.id)) continue
+          if (entry.kind === "message") {
+            const sig = `${entry.speaker}|${entry.text}`
+            const createdAt = Number.isFinite(entry.createdAt) ? entry.createdAt : null
+            const lastSig = lastConversationSignatureRef.current
+            const isDup =
+              lastSig &&
+              lastSig.sig === sig &&
+              ((createdAt != null && lastSig.createdAt != null && Math.abs(createdAt - lastSig.createdAt) < 2000) ||
+                (createdAt == null && lastSig.createdAt == null))
+            if (isDup) {
+              printedTranscriptIdsRef.current.add(entry.id)
+              continue
+            }
+            lastConversationSignatureRef.current = { sig, createdAt }
           }
-          lastConversationSignatureRef.current = { sig, createdAt }
+          printedTranscriptIdsRef.current.add(entry.id)
+          const node = renderTranscriptEntry(entry, `static-${entry.id}`)
+          if (node) {
+            pending.push({
+              id: `tx-${entry.id}`,
+              node,
+              order: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(),
+              seq: seq++,
+              lineCount: Math.max(1, measureTranscriptEntryLines(entry)),
+            })
+          }
         }
-        printedTranscriptIdsRef.current.add(entry.id)
-        const node = renderTranscriptEntry(entry, `static-${entry.id}`)
-        if (node) {
-          pending.push({
-            id: `tx-${entry.id}`,
-            node,
-            order: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now(),
-            seq: seq++,
+
+        if (pending.length > 0) {
+          pending.sort((a, b) => (a.order - b.order) || (a.seq - b.seq))
+          const spaced: StaticFeedItem[] = []
+          const lastExistingId = next.length > 0 ? next[next.length - 1]?.id ?? "" : ""
+          let needsSpacer = next.length > 0 && !lastExistingId.startsWith("md-static-")
+          for (const item of pending) {
+            if (needsSpacer) {
+              const spacerId = spacerCounterRef.current++
+              spaced.push({ id: `spacer-${sessionId}-${spacerId}`, node: <Text> </Text>, lineCount: 1 })
+            }
+            spaced.push({ id: item.id, node: item.node, lineCount: item.lineCount })
+            needsSpacer = true
+          }
+          next = [...next, ...spaced]
+          changed = true
+          writeScrollbackFeedDebugRecord({
+            event: "append_transcript_batch",
+            sessionId,
+            appendedIds: pending.map((item) => item.id),
+            appendedCount: pending.length,
+            spacerCount: spaced.filter((item) => item.id.startsWith(`spacer-${sessionId}-`)).length,
+            totalStaticItems: next.length,
           })
         }
       }
 
-      if (pending.length > 0) {
-        pending.sort((a, b) => (a.order - b.order) || (a.seq - b.seq))
-        const spaced: StaticFeedItem[] = []
-        let needsSpacer = next.length > 0
-        let spacerIndex = 0
-        for (const item of pending) {
-          if (needsSpacer) {
-            spaced.push({ id: `spacer-${sessionId}-${spacerIndex++}`, node: <Text> </Text> })
-          }
-          spaced.push({ id: item.id, node: item.node })
-          needsSpacer = true
+      if (staticMarkdownChunks.length > 0) {
+        const pendingChunks = staticMarkdownChunks.filter((item) => !printedTranscriptIdsRef.current.has(item.id))
+        if (pendingChunks.length > 0) {
+          next = [...next, ...pendingChunks]
+          for (const item of pendingChunks) printedTranscriptIdsRef.current.add(item.id)
+          changed = true
+          writeScrollbackFeedDebugRecord({
+            event: "append_markdown_static_chunks",
+            sessionId,
+            appendedIds: pendingChunks.map((item) => item.id),
+            appendedCount: pendingChunks.length,
+            totalStaticItems: next.length,
+          })
         }
-        next = [...next, ...spaced]
-        changed = true
       }
 
       return changed ? next : prev
     })
   }, [
     enabled,
+    appendHeaderToFeed,
+    appendLandingToFeed,
     headerLines,
     headerSubtitleLines,
-    landingNode,
+    historyLandingNode,
+    historyLandingLineCount,
+    feedEpoch,
     transcriptEntries,
     streamingEntries,
+    staticMarkdownChunks,
+    allowTranscriptAppend,
     renderTranscriptEntry,
+    measureTranscriptEntryLines,
     sessionId,
     transcriptViewerOpen,
   ])
 
   return {
     staticFeed,
+    staticFeedLineCount: staticFeed.reduce((total, item) => total + Math.max(1, item.lineCount ?? 1), 0),
     pushCommandResult,
     headerPrintedRef,
     landingPrintedRef,

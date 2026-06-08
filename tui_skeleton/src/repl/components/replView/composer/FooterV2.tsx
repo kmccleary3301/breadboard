@@ -27,6 +27,7 @@ type ControlDeckState = {
 
 type FooterV2Input = {
   readonly pendingResponse: boolean
+  readonly mainFollowTail: boolean
   readonly overlayActive: boolean
   readonly overlayLabel: string | null
   readonly keymap: string
@@ -38,6 +39,9 @@ type FooterV2Input = {
   readonly todos: ReadonlyArray<TodoItem>
   readonly tasks: ReadonlyArray<TaskEntry>
   readonly stats: StreamStats
+  readonly sessionId?: string | null
+  readonly transcriptViewerOpen?: boolean
+  readonly transcriptSearchOpen?: boolean
   readonly width: number
 }
 
@@ -67,8 +71,14 @@ const normalizeShortcutLabel = (value: string): string =>
   value.replace(/\bctrl\+/g, `${resolveShortcutControlPrefix()}+`)
 
 const buildKeyHintItems = (input: FooterV2Input): ReadonlyArray<ControlDeckItem> => {
-  const compactShortcuts = Math.max(24, Math.floor(input.width)) < 120
-  const todoHint = input.keymap === "claude" ? "ctrl+t todos" : "ctrl+t transcript"
+  const safeWidth = Math.max(24, Math.floor(input.width))
+  const compactShortcuts = safeWidth < 120
+  const todoOrDetailHint = input.keymap === "claude" ? "ctrl+t todos" : "ctrl+o detailed"
+  const transcriptHint = normalizeShortcutLabel(input.keymap === "claude" ? "ctrl+o transcript" : "ctrl+t transcript")
+  const tasksHint = normalizeShortcutLabel("ctrl+b tasks")
+  const modelHint = normalizeShortcutLabel("ctrl+k model")
+  const recentSessionsHint = input.sessionId || input.stats.lastTurn != null ? "resume /sessions" : "/sessions recent"
+  const attachHint = "@ attach"
   if (input.overlayActive) {
     const closeTarget = String(input.overlayLabel ?? "overlay").trim().toLowerCase()
     return [
@@ -81,25 +91,26 @@ const buildKeyHintItems = (input: FooterV2Input): ReadonlyArray<ControlDeckItem>
   if (input.pendingResponse) {
     return [
       { id: "interrupt", label: "esc interrupt" },
-      { id: "tasks", label: normalizeShortcutLabel("ctrl+b tasks") },
-      { id: "todo", label: normalizeShortcutLabel(todoHint) },
+      { id: "follow", label: input.mainFollowTail ? "/follow pause" : "/follow resume" },
+      { id: "transcript", label: transcriptHint },
+      { id: "tasks", label: tasksHint },
+      { id: input.keymap === "claude" ? "todo" : "detail", label: normalizeShortcutLabel(todoOrDetailHint) },
       { id: "shortcuts", label: "? shortcuts" },
     ]
   }
   if (compactShortcuts) {
     return [
-      { id: "tasks", label: normalizeShortcutLabel("ctrl+b tasks") },
-      { id: "todo", label: normalizeShortcutLabel(todoHint) },
-      { id: "model", label: normalizeShortcutLabel("ctrl+k model") },
+      { id: "resume", label: recentSessionsHint },
+      { id: "transcript", label: transcriptHint },
+      { id: "attach", label: attachHint },
       { id: "shortcuts", label: "? shortcuts" },
     ]
   }
   return [
-    { id: "commands", label: "/ commands" },
-    { id: "files", label: "@ files" },
-    { id: "tasks", label: normalizeShortcutLabel("ctrl+b tasks") },
-    { id: "todo", label: normalizeShortcutLabel(todoHint) },
-    { id: "model", label: normalizeShortcutLabel("ctrl+k model") },
+    { id: "resume", label: recentSessionsHint },
+    { id: "attach", label: attachHint },
+    { id: "transcript", label: transcriptHint },
+    { id: "model", label: modelHint },
     { id: "shortcuts", label: "? shortcuts" },
   ]
 }
@@ -138,11 +149,27 @@ const alignSummaryLine = (
   return `${truncateLine(left, leftBudget)} ${right}`
 }
 
+const padVisibleEnd = (value: string, width: number): string => {
+  const safeWidth = Math.max(24, Math.floor(width))
+  const truncated = stripAnsiCodes(value).length > safeWidth ? truncateLine(value, safeWidth) : value
+  const visibleLength = stripAnsiCodes(truncated).length
+  return visibleLength >= safeWidth ? truncated : `${truncated}${" ".repeat(safeWidth - visibleLength)}`
+}
+
+const clearLineForScrollback = (value: string): string => `${value}\u001b[K`
+
 const compactModelLabel = (rawModel: string): string => {
   const normalized = String(rawModel ?? "").trim()
   if (!normalized) return "unknown"
   const tail = normalized.split("/").pop() ?? normalized
   return tail.length <= 18 ? tail : `${tail.slice(0, 15)}...`
+}
+
+const compactSessionLabel = (rawSessionId: string | null | undefined): string | null => {
+  const normalized = String(rawSessionId ?? "").trim()
+  if (!normalized) return null
+  const tail = normalized.length > 8 ? normalized.slice(-8) : normalized
+  return tail
 }
 
 const buildStatsItems = (
@@ -154,12 +181,16 @@ const buildStatsItems = (
   const safeWidth = Math.max(24, Math.floor(input.width))
   const modelLabel = compactModelLabel(input.stats.model)
   const networkLabel = input.stats.remote ? "remote" : "local"
+  const turnLabel = input.stats.lastTurn != null ? `turn ${input.stats.lastTurn}` : null
+  const sessionLabel = compactSessionLabel(input.sessionId)
   const opsParts = [`r${runningTasks}`, `f${failedTasks}`, `e${formatTokenCount(input.stats.eventCount)}`]
   if (input.stats.toolCount > 0) opsParts.push(`t${formatTokenCount(input.stats.toolCount)}`)
   const statsItems: ControlDeckItem[] = []
 
   // Keep a compact but always-present session identity.
   statsItems.push({ id: "model", label: `mdl ${modelLabel}` })
+  if (turnLabel) statsItems.push({ id: "turn", label: turnLabel })
+  if (sessionLabel && safeWidth >= 136) statsItems.push({ id: "session", label: `sess ${sessionLabel}` })
   if (safeWidth >= 120) statsItems.push({ id: "network", label: `net ${networkLabel}` })
   statsItems.push({ id: "todo", label: `todo ${todoPending}/${input.todos.length}` })
   statsItems.push({ id: "ops", label: `ops ${opsParts.join("/")}` })
@@ -177,6 +208,7 @@ const buildStatsItems = (
   if (safeWidth < 96) {
     return [
       { id: "model", label: `mdl ${modelLabel}` },
+      ...(turnLabel ? [{ id: "turn", label: turnLabel }] : []),
       { id: "todo", label: `todo ${todoPending}/${input.todos.length}` },
       { id: "ops", label: `ops ${opsParts.join("/")}` },
     ]
@@ -213,6 +245,8 @@ export const buildFooterV2Model = (input: FooterV2Input): FooterV2Model => {
   })()
   const controlLabel = input.overlayActive
     ? `esc close ${String(input.overlayLabel ?? "overlay").trim().toLowerCase()}`
+    : phase.id === "recovery" || phase.id === "disconnected"
+      ? "use /retry or /resume"
     : input.pendingResponse
       ? "esc interrupt"
       : "enter send"
@@ -220,6 +254,7 @@ export const buildFooterV2Model = (input: FooterV2Input): FooterV2Model => {
   const phaseChip = CHALK.bold(`[${phase.label}]`)
   const phaseSegments: string[] = []
   if (elapsedLabel) phaseSegments.push(elapsedLabel)
+  if (input.pendingResponse && !input.overlayActive) phaseSegments.push(`follow ${input.mainFollowTail ? "live" : "paused"}`)
   phaseSegments.push(controlLabel)
   const phaseLine = `${phaseGlyph} ${phaseChip} ${uiText(phaseSegments.join(DOT_SEPARATOR))}`
 
@@ -250,16 +285,48 @@ export const buildFooterV2Model = (input: FooterV2Input): FooterV2Model => {
   }
 }
 
-export const FooterV2: React.FC<{ enabled: boolean; input: FooterV2Input }> = ({ enabled, input }) => {
+export const FooterV2: React.FC<{
+  enabled: boolean
+  input: FooterV2Input
+  compactTopMargin?: boolean
+  singleLine?: boolean
+  padLines?: boolean
+  clearLineBeforeRender?: boolean
+}> = ({ enabled, input, compactTopMargin = false, singleLine = false, padLines = true, clearLineBeforeRender = false }) => {
   const model = useMemo(() => (enabled ? buildFooterV2Model(input) : null), [enabled, input])
   if (!enabled || !model) return null
+  if (singleLine) {
+    const line = `${model.phaseLine}  ${model.summaryLine}`
+    const renderedLine = clearLineBeforeRender
+      ? clearLineForScrollback(line)
+      : padLines
+        ? padVisibleEnd(line, input.width)
+        : line
+    return (
+      <Box marginTop={compactTopMargin ? 0 : 1}>
+        <Text color={toneToColor(model.tone)} wrap="truncate-end">
+          {renderedLine}
+        </Text>
+      </Box>
+    )
+  }
+  const phaseLine = clearLineBeforeRender
+    ? clearLineForScrollback(model.phaseLine)
+    : padLines
+      ? padVisibleEnd(model.phaseLine, input.width)
+      : model.phaseLine
+  const summaryLine = clearLineBeforeRender
+    ? clearLineForScrollback(model.summaryLine)
+    : padLines
+      ? padVisibleEnd(model.summaryLine, input.width)
+      : model.summaryLine
   return (
-    <Box marginTop={1} flexDirection="column">
+    <Box marginTop={compactTopMargin ? 0 : 1} flexDirection="column">
       <Text color={toneToColor(model.tone)} wrap="truncate-end">
-        {model.phaseLine}
+        {phaseLine}
       </Text>
       <Text wrap="truncate-end">
-        {model.summaryLine}
+        {summaryLine}
       </Text>
     </Box>
   )

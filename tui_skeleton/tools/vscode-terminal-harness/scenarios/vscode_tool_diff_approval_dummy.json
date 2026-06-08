@@ -1,0 +1,205 @@
+{
+  "id": "vscode_tool_diff_approval_dummy",
+  "terminal": {
+    "initialCols": 124,
+    "initialRows": 38
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "git init >/dev/null && git config user.email bb@example.invalid && git config user.name BreadBoard && mkdir -p src && printf 'export const base = 1;\\n' > src/app.ts && git add src/app.ts README.md && git commit -m baseline >/dev/null && printf 'export const added = 2;\\n' >> src/app.ts && printf 'untracked note\\n' > notes.txt && echo BB_VSCODE_DIFF_READY\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_DIFF_READY",
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "/diff\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Working-tree diff (read-only)",
+      "timeoutMs": 15000
+    },
+    {
+      "kind": "waitForText",
+      "text": "src/app.ts",
+      "timeoutMs": 15000
+    },
+    {
+      "kind": "waitForText",
+      "text": "Review/approval actions: read-only",
+      "timeoutMs": 15000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Working-tree diff (read-only)"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "src/app.ts"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Review/approval actions: read-only"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "+export const added = 2;"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "notes.txt"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        }
+      ]
+    },
+    {
+      "kind": "resize",
+      "cols": 90,
+      "rows": 30
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Working-tree diff (read-only)"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "src/app.ts"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Review/approval actions: read-only"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        }
+      ]
+    },
+    {
+      "kind": "screenshot",
+      "label": "diff-final"
+    },
+    {
+      "kind": "exportBreadBoardState",
+      "label": "diff-state"
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "Working-tree diff (read-only)"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "src/app.ts"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "Review/approval actions: read-only"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "+export const added = 2;"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "notes.txt"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "You are Codex"
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    }
+  ]
+}

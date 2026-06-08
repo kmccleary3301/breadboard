@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { useStdout } from "ink"
+import { appendFileSync } from "node:fs"
+import { useInput, useStdout } from "ink"
+import { resolveActualStdoutRows } from "../../../inkScrollbackStdout.js"
 import type { Block, InlineNode } from "@stream-mdx/core/types"
 import type {
   ConversationEntry,
@@ -24,8 +26,9 @@ import type {
   ThinkingArtifact,
   ThinkingPreviewState,
   ActivitySnapshot,
+  ToolDisplayPayload,
 } from "../../../types.js"
-import type { ReplViewProps } from "../replViewTypes.js"
+import type { RecentSessionRow, ReplViewProps } from "../replViewTypes.js"
 import type { SlashCommandInfo, SlashSuggestion } from "../../../slashCommands.js"
 import { ASCII_HEADER } from "../../../viewUtils.js"
 import { STATUS_VERBS } from "../../../designSystem.js"
@@ -58,7 +61,10 @@ import {
 import { clampCommandLines, formatListCommandLines } from "../features/filePicker/atCommands.js"
 import { formatSizeDetail } from "../utils/files.js"
 import type { TranscriptMatch } from "../types.js"
+import type { TranscriptMessageItem } from "../../../transcriptModel.js"
+import type { TranscriptToolTarget } from "./transcriptViewerModel.js"
 import { useReplLayout } from "../layout/useReplLayout.js"
+import { useTerminalSize } from "../../../hooks/useTerminalSize.js"
 import { formatIsoTimestamp } from "../utils/diff.js"
 import { stripAnsiCodes } from "../utils/ansi.js"
 import { computeInputLocked, computeOverlayActive } from "../keybindings/overlayState.js"
@@ -70,7 +76,20 @@ import { useGlobalKeys } from "./keyHandlers/useGlobalKeys.js"
 import { useReplViewPanels } from "./useReplViewPanels.js"
 import { useReplViewMenus } from "./useReplViewMenus.js"
 import { useReplViewInputHandlers } from "./useReplViewInputHandlers.js"
+import { useOverlayKeys } from "./keyHandlers/useOverlayKeys.js"
 import { useReplViewScrollback } from "./useReplViewScrollback.js"
+import { shouldSuppressThinkingPreview } from "./streamingSurfacePolicy.js"
+import { resolveScrollbackEnabled } from "../../../../config/frontendMode.js"
+
+const traceKeyDiagnostic = (event: Record<string, unknown>) => {
+  const target = process.env.BREADBOARD_TUI_KEY_TRACE_FILE
+  if (!target) return
+  try {
+    appendFileSync(target, `${JSON.stringify({ timestamp: Date.now(), ...event })}\n`, "utf8")
+  } catch {
+    // Diagnostic tracing must never affect TUI behavior.
+  }
+}
 import {
   ALWAYS_ALLOW_SCOPE,
   BOX_CHARS,
@@ -93,6 +112,7 @@ import {
   normalizePermissionLabel,
   normalizeProviderKey,
   resolveGreetingName,
+  buildTranscriptViewerDetailLabel,
 } from "./replViewControllerUtils.js"
 import { useReplViewModalStack } from "./useReplViewModalStack.js"
 import { ReplViewBaseContent } from "./ReplViewBaseContent.js"
@@ -105,6 +125,7 @@ import {
   deriveTaskFocusCadencePlan,
   type TaskFocusCadenceState,
 } from "./taskFocusCadence.js"
+import { shouldSuppressAssistantToolEcho } from "./displayProjectionPolicy.js"
 
 const META_LINE_COUNT = 2
 const COMPOSER_MIN_ROWS = 6
@@ -115,6 +136,19 @@ const TOOL_LABEL_WIDTH = 12
 const LABEL_WIDTH = 9
 const DEFAULT_TASK_FOCUS_TAIL_LINES = 24
 const DEFAULT_TASK_FOCUS_REFRESH_MS = 1500
+
+const normalizeToolDisplayLines = (value: string | ReadonlyArray<string> | null | undefined): string[] => {
+  if (Array.isArray(value)) {
+    return value
+      .map((line) => (typeof line === "string" ? line : ""))
+      .filter((line) => line.length > 0)
+  }
+  if (typeof value !== "string") return []
+  return normalizeNewlines(value)
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0)
+}
 
 type TaskboardSessionPrefs = {
   readonly statusFilter: "all" | "running" | "blocked" | "completed" | "failed" | "cancelled" | "pending"
@@ -140,13 +174,6 @@ const parseIntEnv = (value: string | undefined, fallback: number, minimum: numbe
   return Math.max(minimum, Math.min(maximum, Math.floor(parsed)))
 }
 
-const resolveScrollbackMode = (): boolean => {
-  const explicitMode = (process.env.BREADBOARD_TUI_MODE ?? "").trim().toLowerCase()
-  if (explicitMode === "window") return false
-  if (explicitMode === "scrollback") return true
-  return parseBoolEnv(process.env.BREADBOARD_TUI_SCROLLBACK, true)
-}
-
 const resolveScreenReaderMode = (): boolean => parseBoolEnv(process.env.BREADBOARD_TUI_SCREEN_READER, false)
 
 const resolveScreenReaderProfile = (): "concise" | "balanced" | "verbose" => {
@@ -164,6 +191,7 @@ export const useReplViewController = ({
   liveSlots,
   status,
   pendingResponse,
+  mainFollowTail,
   disconnected,
   mode,
   permissionMode,
@@ -208,18 +236,75 @@ export const useReplViewController = ({
   onGuardrailToggle,
   onGuardrailDismiss,
   onPermissionDecision,
+  onTaskAction,
   onRewindClose,
   onRewindRestore,
   onListFiles,
   onReadFile,
+  onReadWorkingTreeDiff,
+  onExportWorkingTreeDiffPatch,
+  onCopyWorkingTreeDiffPatch,
+  onListRecentSessions,
+  onAttachSession,
   onCtreeRequest,
   onCtreeRefresh,
+  liveShellOwnershipMode = "inline-scrollback",
+  liveShellRendererHost = "ink-managed",
+  liveShellSceneStrategy = "scene-owned-runtime",
 }: ReplViewProps) => {
+  // Controller ownership is semantic, not presentational:
+  // - derive the canonical hot/warm/cold surface state
+  // - route active-surface input ownership
+  // - prepare render-model inputs for shell, bottom band, and viewer
+  // It should not directly simulate fullscreen viewport repair in default
+  // inline mode; shell and explicit viewer modes own that separately.
   const tuiConfig = useTuiConfig()
-  const SCROLLBACK_MODE = useMemo(() => resolveScrollbackMode(), [])
+  const OWNED_LIVE_SHELL = liveShellOwnershipMode === "owned-live"
+  const SCROLLBACK_MODE = useMemo(() => (OWNED_LIVE_SHELL ? false : resolveScrollbackEnabled()), [OWNED_LIVE_SHELL])
   const SCREEN_READER_MODE = useMemo(() => resolveScreenReaderMode(), [])
   const SCREEN_READER_PROFILE = useMemo(() => resolveScreenReaderProfile(), [])
   const FOOTER_V2_ENABLED = useMemo(() => parseBoolEnv(process.env.BREADBOARD_TUI_FOOTER_V2, true), [])
+  const { stdout } = useStdout()
+  const terminalSize = useTerminalSize(stdout)
+  const buildLineAboveActiveBandClearSequence = (rowsAboveCursor: number): string => {
+    const moveUpRows = Math.max(1, Math.floor(rowsAboveCursor))
+    return `\u001b7\r\u001b[${moveUpRows}A\u001b[2K\u001b8`
+  }
+  const buildLineRangeAboveActiveBandClearSequence = (rowsAboveCursor: number, lineCount: number): string => {
+    const startRows = Math.max(1, Math.floor(rowsAboveCursor))
+    const count = Math.max(1, Math.floor(lineCount))
+    return Array.from({ length: count }, (_, index) => buildLineAboveActiveBandClearSequence(startRows + index)).join("")
+  }
+  const reclaimOverlayRegion = useCallback((mode: "bounded" | "close" = "bounded") => {
+    if (!SCROLLBACK_MODE) return
+    if (!stdout?.isTTY) return
+    try {
+      const rows = Math.max(1, resolveActualStdoutRows(stdout?.rows))
+      const clearRows = mode === "close"
+        ? Math.max(1, Math.min(rows - 1, 24))
+        : Math.max(1, Math.min(rows, 24))
+      stdout.write(buildLineRangeAboveActiveBandClearSequence(1, clearRows))
+    } catch {
+      // Ignore write failures; Ink will still handle the state transition.
+    }
+  }, [SCROLLBACK_MODE, stdout])
+  const reclaimShortcutsOverlay = useCallback(() => {
+    reclaimOverlayRegion("close")
+  }, [reclaimOverlayRegion])
+  const reclaimOwnedLiveModalRegion = useCallback(() => {
+    if (SCROLLBACK_MODE) return
+    if (!stdout?.isTTY) return
+    try {
+      const rows = Math.max(1, resolveActualStdoutRows(stdout?.rows))
+      const reclaimRows = Math.min(rows, 24)
+      stdout.write(`\r\u001b[999B\r\u001b[${reclaimRows}A\r\u001b[J`)
+    } catch {
+      // Ignore reclaim failures; Ink will still render the modal state.
+    }
+  }, [SCROLLBACK_MODE, stdout])
+  const openModelMenuInTransientSurface = useCallback(async () => {
+    await onModelMenuOpen()
+  }, [onModelMenuOpen])
   const collapsedEntriesRef = useRef(new Map<string, boolean>())
   const [collapsedVersion, setCollapsedVersion] = useState(0)
   const [selectedCollapsibleEntryId, setSelectedCollapsibleEntryId] = useState<string | null>(null)
@@ -241,6 +326,47 @@ export const useReplViewController = ({
     usageOpen,
     setUsageOpen,
   } = useModalController()
+  useInput((input, key) => {
+    if (!shortcutsOpen) return
+    const isCloseKey = input === "?" || input === "\u001b" || key.escape
+    if (!isCloseKey) return
+    if (input === "?" && process.env.BREADBOARD_SHORTCUTS_STICKY === "1") return
+    const openedAt = shortcutsOpenedAtRef.current
+    if (input === "?" && openedAt && Date.now() - openedAt < 200) return
+    shortcutsOpenedAtRef.current = null
+    reclaimShortcutsOverlay()
+    setShortcutsOpen(false)
+  })
+  const shortcutsOpenedDuringRecoveryRef = useRef(false)
+  useEffect(() => {
+    if (!shortcutsOpen) {
+      shortcutsOpenedDuringRecoveryRef.current = false
+      return
+    }
+    const lifecycleText = `${status ?? ""}`.toLowerCase()
+    const recoveryStateActive =
+      pendingResponse ||
+      disconnected ||
+      lifecycleText.includes("reconnect") ||
+      lifecycleText.includes("restart") ||
+      lifecycleText.includes("recover") ||
+      lifecycleText.includes("session missing")
+    if (!recoveryStateActive) return
+    shortcutsOpenedDuringRecoveryRef.current = true
+    if (shortcutsOpenedDuringRecoveryRef.current && (disconnected || !pendingResponse)) {
+      shortcutsOpenedAtRef.current = null
+      reclaimShortcutsOverlay()
+      setShortcutsOpen(false)
+    }
+  }, [
+    disconnected,
+    pendingResponse,
+    reclaimShortcutsOverlay,
+    setShortcutsOpen,
+    shortcutsOpen,
+    shortcutsOpenedAtRef,
+    status,
+  ])
   const [inspectRawOpen, setInspectRawOpen] = useState(false)
   const [inspectRawScroll, setInspectRawScroll] = useState(0)
   const [modelSearch, setModelSearch] = useState("")
@@ -270,7 +396,9 @@ export const useReplViewController = ({
   const [taskScroll, setTaskScroll] = useState(0)
   const [taskIndex, setTaskIndex] = useState(0)
   const [taskNotice, setTaskNotice] = useState<string | null>(null)
+  const [taskActionNotice, setTaskActionNotice] = useState<string | null>(null)
   const [taskSearchQuery, setTaskSearchQuery] = useState("")
+  const taskboardInputQuarantineUntilRef = useRef(0)
   const [taskStatusFilter, setTaskStatusFilter] = useState<
     "all" | "running" | "blocked" | "completed" | "failed" | "cancelled" | "pending"
   >("all")
@@ -284,6 +412,7 @@ export const useReplViewController = ({
   const [taskFocusViewOpen, setTaskFocusViewOpen] = useState(false)
   const [taskFocusFollowTail, setTaskFocusFollowTail] = useState(true)
   const [taskFocusRawMode, setTaskFocusRawMode] = useState(false)
+  const previousTaskRowIdSignatureRef = useRef("")
   const taskFocusDefaultTailLines = useMemo(
     () => parseIntEnv(process.env.BREADBOARD_SUBAGENTS_FOCUS_MAX_LINES_INITIAL, DEFAULT_TASK_FOCUS_TAIL_LINES, 8, 400),
     [],
@@ -305,6 +434,7 @@ export const useReplViewController = ({
   const [ctrlCPrimedAt, setCtrlCPrimedAt] = useState<number | null>(null)
   const [verboseOutput, setVerboseOutput] = useState(false)
   const [transcriptViewerOpen, setTranscriptViewerOpen] = useState(false)
+  const [transcriptViewerRawMode, setTranscriptViewerRawMode] = useState(false)
   const [transcriptViewerScroll, setTranscriptViewerScroll] = useState(0)
   const [transcriptViewerFollowTail, setTranscriptViewerFollowTail] = useState(true)
   const [transcriptSearchQuery, setTranscriptSearchQuery] = useState("")
@@ -313,11 +443,28 @@ export const useReplViewController = ({
   const [transcriptExportNotice, setTranscriptExportNotice] = useState<string | null>(null)
   const [transcriptToolIndex, setTranscriptToolIndex] = useState(0)
   const [transcriptNudge, setTranscriptNudge] = useState(0)
+  const [resultDetailOpen, setResultDetailOpen] = useState(false)
+  const [resultDetailScroll, setResultDetailScroll] = useState(0)
+  const [artifactPreviewOpen, setArtifactPreviewOpen] = useState(false)
+  const [artifactPreviewScroll, setArtifactPreviewScroll] = useState(0)
+  const [artifactPreviewLines, setArtifactPreviewLines] = useState<string[]>([])
+  const [artifactPreviewPath, setArtifactPreviewPath] = useState<string | null>(null)
+  const [artifactPreviewNotice, setArtifactPreviewNotice] = useState<string | null>(null)
+  const transcriptInspectionTargetRef = useRef<TranscriptToolTarget | null>(null)
+  const [recentSessionsOpen, setRecentSessionsOpen] = useState(false)
+  const [recentSessionsStatus, setRecentSessionsStatus] = useState<"idle" | "loading" | "ready" | "error">("idle")
+  const [recentSessionsError, setRecentSessionsError] = useState<string | null>(null)
+  const [recentSessionsRows, setRecentSessionsRows] = useState<RecentSessionRow[]>([])
+  const [recentSessionsIndex, setRecentSessionsIndex] = useState(0)
+  const [recentSessionsScroll, setRecentSessionsScroll] = useState(0)
+  const [recentSessionsAttachingId, setRecentSessionsAttachingId] = useState<string | null>(null)
+  const recentSessionsOpenedAtRef = useRef<number | null>(null)
+  const [collapsedDetailOpen, setCollapsedDetailOpen] = useState(false)
+  const [collapsedDetailScroll, setCollapsedDetailScroll] = useState(0)
   const draftAppliedRef = useRef(false)
   const draftLoadSeq = useRef(0)
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSavedDraftRef = useRef<{ text: string; cursor: number } | null>(null)
-  const { stdout } = useStdout()
   const [, forceShikiRefresh] = useState(0)
   const pushCommandResultRef = useRef<(title: string, lines: string[]) => void>(() => {})
   const pushCommandResult = useCallback((title: string, lines: string[]) => {
@@ -338,11 +485,22 @@ export const useReplViewController = ({
       if (!entry || typeof entry.text !== "string") return true
       const trimmed = entry.text.trim().toLowerCase()
       if (entry.speaker === "assistant" && trimmed === "none") return false
+      if (shouldSuppressAssistantToolEcho(entry, toolEventsProp)) return false
       return true
     })
     if (!viewClearAt) return filtered
     return filtered.filter((entry) => entry.createdAt >= viewClearAt)
-  }, [conversationProp, viewClearAt])
+  }, [conversationProp, toolEventsProp, viewClearAt])
+  const suppressThinkingPreview = useMemo(
+    () =>
+      shouldSuppressThinkingPreview({
+        activityPrimary: activity?.primary ?? null,
+        conversation,
+        pendingResponse,
+        previewEventCount: Number((thinkingPreview as ThinkingPreviewState | null | undefined)?.eventCount ?? 0),
+      }),
+    [activity?.primary, conversation, pendingResponse, thinkingPreview],
+  )
   const toolEvents = useMemo(() => {
     const base = viewPrefs.rawStream ? [...toolEventsProp, ...rawEvents] : toolEventsProp
     const filteredBase = base.filter((entry) => {
@@ -401,6 +559,14 @@ export const useReplViewController = ({
   const claudeChrome = chromeMode === "claude"
   const filePickerResources = useMemo(() => loadFilePickerResources(), [])
   const [, forceRedraw] = useState(0)
+  const repaintOwnedLiveModalRegion = useCallback(() => {
+    reclaimOwnedLiveModalRegion()
+    if (SCROLLBACK_MODE) return
+    setTimeout(() => {
+      reclaimOwnedLiveModalRegion()
+      forceRedraw((value) => value + 1)
+    }, 30)
+  }, [SCROLLBACK_MODE, forceRedraw, reclaimOwnedLiveModalRegion])
   useEffect(() => {
     configureShikiTheme(tuiConfig.markdown.shikiTheme)
     const unsubscribe = subscribeShiki(() => {
@@ -411,19 +577,16 @@ export const useReplViewController = ({
   }, [forceShikiRefresh, tuiConfig.markdown.shikiTheme])
   const fixedFrameWidthRaw = (process.env.BREADBOARD_TUI_FRAME_WIDTH ?? "").toString().trim()
   const fixedFrameWidth = fixedFrameWidthRaw ? Number(fixedFrameWidthRaw) : NaN
-  const resolvedColumns =
-    stdout?.columns && Number.isFinite(stdout.columns) && stdout.columns > 0 ? stdout.columns : null
+  const resolvedColumns = terminalSize.columns
   const columnWidth =
     Number.isFinite(fixedFrameWidth) && fixedFrameWidth > 0
-      ? resolvedColumns
-        ? Math.min(fixedFrameWidth, resolvedColumns)
-        : fixedFrameWidth
-      : resolvedColumns ?? 80
+      ? Math.min(fixedFrameWidth, resolvedColumns)
+      : resolvedColumns
   const contentWidth = useMemo(
     () => Math.max(10, columnWidth - (claudeChrome ? 0 : 2)),
     [claudeChrome, columnWidth],
   )
-  const rowCount = stdout?.rows && Number.isFinite(stdout.rows) ? stdout.rows : 40
+  const rowCount = terminalSize.rows
   useEffect(() => {
     if (inspectMenu.status === "hidden") {
       setInspectRawOpen(false)
@@ -445,6 +608,57 @@ export const useReplViewController = ({
     }
     setPendingStartedAt(null)
   }, [pendingResponse])
+  const refreshRecentSessions = useCallback(async () => {
+    setRecentSessionsStatus("loading")
+    setRecentSessionsError(null)
+    try {
+      const rows = await onListRecentSessions()
+      setRecentSessionsRows(rows)
+      setRecentSessionsStatus("ready")
+      setRecentSessionsIndex((prev) => Math.max(0, Math.min(prev, Math.max(0, rows.length - 1))))
+      setRecentSessionsScroll(0)
+      return rows
+    } catch (error) {
+      setRecentSessionsRows([])
+      setRecentSessionsStatus("error")
+      setRecentSessionsError((error as Error).message || String(error))
+      return []
+    }
+  }, [onListRecentSessions])
+  const attachRecentSession = useCallback(
+    async (targetSessionId: string) => {
+      const openedAt = recentSessionsOpenedAtRef.current
+      if (openedAt && Date.now() - openedAt < 200) {
+        return false
+      }
+      recentSessionsOpenedAtRef.current = null
+      const next = String(targetSessionId ?? "").trim()
+      if (!next) return false
+      setRecentSessionsAttachingId(next)
+      try {
+        const ok = await onAttachSession(next)
+        if (ok) {
+          setRecentSessionsOpen(false)
+          setRecentSessionsScroll(0)
+          setRecentSessionsIndex(0)
+          setRecentSessionsStatus("idle")
+          setRecentSessionsError(null)
+          setCollapsedDetailOpen(false)
+          setCollapsedDetailScroll(0)
+        }
+        return ok
+      } finally {
+        setRecentSessionsAttachingId((prev) => (prev === next ? null : prev))
+      }
+    },
+    [onAttachSession],
+  )
+  useEffect(() => {
+    if (!recentSessionsOpen) return
+    if (recentSessionsStatus === "loading") return
+    if (recentSessionsStatus === "ready" && recentSessionsRows.length > 0) return
+    void refreshRecentSessions()
+  }, [recentSessionsOpen, recentSessionsRows.length, recentSessionsStatus, refreshRecentSessions])
   const inspectRawViewportRows = useMemo(() => Math.max(10, Math.min(24, Math.floor(rowCount * 0.6))), [rowCount])
   const panels = useReplViewPanels({
     inspectRawOpen,
@@ -465,6 +679,7 @@ export const useReplViewController = ({
     paletteState,
     confirmState,
     shortcutsOpen,
+    shortcutsOpenedAtRef,
     usageOpen,
     permissionRequest,
     rewindMenu,
@@ -472,6 +687,9 @@ export const useReplViewController = ({
     tasksOpen,
     ctreeOpen,
     transcriptViewerOpen,
+    transcriptViewerRawMode,
+    recentSessionsOpen,
+    collapsedDetailOpen,
     claudeChrome,
     setShortcutsOpen,
     conversation,
@@ -482,6 +700,7 @@ export const useReplViewController = ({
     keymap,
     transcriptSearchQuery,
     transcriptSearchIndex,
+    transcriptToolIndex,
     transcriptViewerScroll,
     transcriptViewerFollowTail,
     setTranscriptToolIndex,
@@ -505,14 +724,23 @@ export const useReplViewController = ({
     taskSearchQuery,
     taskStatusFilter,
     taskLaneFilter,
+    taskNotice,
+    taskActionNotice,
+    taskTailLines,
+    taskTailPath,
     setTaskNotice,
+    setTaskActionNotice,
     setTaskTailLines,
     setTaskTailPath,
+    onTaskAction,
     ctreeTree,
     ctreeCollapsedNodes,
     ctreeIndex,
     ctreeIncludePreviews,
     onReadFile,
+    onReadWorkingTreeDiff,
+    onExportWorkingTreeDiffPatch,
+    onCopyWorkingTreeDiffPatch,
   })
   const {
     inspectRawLines,
@@ -547,6 +775,7 @@ export const useReplViewController = ({
     handleLineEditGuarded,
     pushHistoryEntry,
     recallHistory,
+    searchHistory,
     moveCursorVertical,
     suggestions,
     activeSlashQuery,
@@ -560,7 +789,9 @@ export const useReplViewController = ({
     suggestionWindow,
     paletteItems,
     transcriptViewerLines,
+    transcriptViewerExportLines,
     transcriptToolLines,
+    selectedTranscriptToolTarget,
     transcriptViewerBodyRows,
     transcriptViewerMaxScroll,
     transcriptViewerEffectiveScroll,
@@ -569,6 +800,7 @@ export const useReplViewController = ({
     transcriptSearchActiveLine,
     transcriptSearchLineMatches,
     jumpTranscriptToLine,
+    jumpTranscriptToAnchor,
     permissionDiffSections,
     permissionDiffPreview,
     permissionSelectedFileIndex,
@@ -586,7 +818,9 @@ export const useReplViewController = ({
     taskRows,
     taskGroups,
     taskLaneOrder,
+    taskLaneFilterLabel,
     taskFocusLaneLabel,
+    taskActionsEnabled,
     taskViewportRows,
     taskMaxScroll,
     selectedTaskIndex,
@@ -602,7 +836,25 @@ export const useReplViewController = ({
     formatCTreeNodePreview,
     formatCTreeNodeFlags,
     requestTaskTail,
+    exportTaskLog,
+    runTaskAction,
   } = panels
+  const taskRowIdSignature = useMemo(
+    () => taskRows.map((row: any) => String(row?.id ?? "")).join("\u001f"),
+    [taskRows],
+  )
+  const taskRowIds = useMemo(
+    () => taskRowIdSignature.split("\u001f").filter((id) => id.length > 0),
+    [taskRowIdSignature],
+  )
+  const taskGroupKeySignature = useMemo(
+    () => taskGroups.map((group: any) => String(group?.key ?? "")).join("\u001f"),
+    [taskGroups],
+  )
+  const taskCollapsedGroupSignature = useMemo(
+    () => Array.from(taskCollapsedGroupKeys).sort().join("\u001f"),
+    [taskCollapsedGroupKeys],
+  )
 
   const todoPreviewModel = useMemo(() => {
     if (!claudeChrome) return null
@@ -645,12 +897,16 @@ export const useReplViewController = ({
     if (!claudeChrome) return null
     if (overlayActive) return null
     if (runtimeFlags?.thinkingPreviewEnabled === false) return null
+    // Once answer text is visible, the task-tree/thinking preview becomes a
+    // high-churn secondary surface. Hiding it keeps the active composer band
+    // stable during tall streamed responses.
+    if (suppressThinkingPreview) return null
     return buildThinkingPreviewModel(thinkingPreview as ThinkingPreviewState | null, thinkingArtifact as ThinkingArtifact | null, {
       cols: contentWidth,
       maxLines: Math.max(1, Number(runtimeFlags?.thinkingPreviewMaxLines ?? 5)),
-      showWhenClosed: true,
+      showWhenClosed: pendingResponse,
     })
-  }, [claudeChrome, contentWidth, overlayActive, runtimeFlags, thinkingArtifact, thinkingPreview])
+  }, [suppressThinkingPreview, claudeChrome, contentWidth, overlayActive, pendingResponse, runtimeFlags, thinkingArtifact, thinkingPreview])
 
   const runtimeStatusChips = useMemo(() => {
     if (disconnected) {
@@ -661,7 +917,10 @@ export const useReplViewController = ({
       const label = phase.includes("think") ? "thinking" : "responding"
       return [{ id: label, label, tone: "info" as const }]
     }
-    if (status === "halted") {
+    if (activity?.primary === "reconnecting") {
+      return [{ id: "reconnecting", label: "reconnecting", tone: "warning" as const }]
+    }
+    if (activity?.primary === "halted" || status === "halted") {
       return [{ id: "halted", label: "halted", tone: "warning" as const }]
     }
     return []
@@ -673,10 +932,12 @@ export const useReplViewController = ({
         ? ({ id: "disconnected", label: "disconnected", tone: "error" } as const)
         : pendingResponse
           ? ({ id: "responding", label: "responding", tone: "info" } as const)
-          : status === "halted"
+          : activity?.primary === "reconnecting"
+            ? ({ id: "reconnecting", label: "reconnecting", tone: "warning" } as const)
+          : activity?.primary === "halted" || status === "halted"
             ? ({ id: "halted", label: "halted", tone: "warning" } as const)
             : ({ id: "ready", label: "ready", tone: "muted" } as const),
-    [disconnected, pendingResponse, status],
+    [activity?.primary, disconnected, pendingResponse, status],
   )
 
   useEffect(() => {
@@ -697,7 +958,7 @@ export const useReplViewController = ({
       }
       return changed ? next : prev
     })
-  }, [taskGroups])
+  }, [taskGroupKeySignature, taskGroups])
   useEffect(() => {
     const activeSessionId = String(sessionId ?? "").trim()
     if (!activeSessionId) return
@@ -706,7 +967,11 @@ export const useReplViewController = ({
     setTaskStatusFilter(stored.statusFilter)
     setTaskGroupMode(stored.groupMode)
     setTaskLaneFilter(stored.laneFilter)
-    setTaskCollapsedGroupKeys(new Set(stored.collapsedGroups))
+    setTaskCollapsedGroupKeys((prev) => {
+      const next = new Set(stored.collapsedGroups)
+      if (prev.size === next.size && Array.from(prev).every((key) => next.has(key))) return prev
+      return next
+    })
   }, [sessionId])
   useEffect(() => {
     const activeSessionId = String(sessionId ?? "").trim()
@@ -717,18 +982,26 @@ export const useReplViewController = ({
       laneFilter: taskLaneFilter,
       collapsedGroups: Array.from(taskCollapsedGroupKeys),
     })
-  }, [sessionId, taskCollapsedGroupKeys, taskGroupMode, taskLaneFilter, taskStatusFilter])
+  }, [sessionId, taskCollapsedGroupSignature, taskCollapsedGroupKeys, taskGroupMode, taskLaneFilter, taskStatusFilter])
   useEffect(() => {
-    if (!tasksOpen || !selectedTask?.id) return
-    if (taskSelectedTaskId === selectedTask.id) return
-    setTaskSelectedTaskId(selectedTask.id)
-  }, [selectedTask?.id, taskSelectedTaskId, tasksOpen])
-  useEffect(() => {
-    if (!tasksOpen || !taskSelectedTaskId) return
-    const stableIndex = taskRows.findIndex((row: any) => row?.id === taskSelectedTaskId)
-    if (stableIndex < 0 || stableIndex === selectedTaskIndex) return
-    setTaskIndex(stableIndex)
-  }, [selectedTaskIndex, setTaskIndex, taskRows, taskSelectedTaskId, tasksOpen])
+    const previousSignature = previousTaskRowIdSignatureRef.current
+    const rowsChanged = previousSignature !== taskRowIdSignature
+    previousTaskRowIdSignatureRef.current = taskRowIdSignature
+    if (!tasksOpen) return
+
+    if (rowsChanged && taskSelectedTaskId) {
+      const stableIndex = taskRowIds.indexOf(taskSelectedTaskId)
+      if (stableIndex >= 0 && stableIndex !== selectedTaskIndex) {
+        setTaskIndex((prev) => (prev === stableIndex ? prev : stableIndex))
+        return
+      }
+    }
+
+    const selectedId = typeof selectedTask?.id === "string" && selectedTask.id.length > 0 ? selectedTask.id : null
+    if (selectedId !== taskSelectedTaskId) {
+      setTaskSelectedTaskId(selectedId)
+    }
+  }, [selectedTask?.id, selectedTaskIndex, taskRowIdSignature, taskRowIds, taskSelectedTaskId, tasksOpen])
   const skillsSelection = skillsMenu.status === "ready" ? skillsMenu.selection : null
   const menus = useReplViewMenus({
     skillsMenu,
@@ -776,6 +1049,7 @@ export const useReplViewController = ({
     setTaskIndex,
     setTaskScroll,
     setTaskNotice,
+    setTaskActionNotice,
     setTaskSearchQuery,
     setTaskStatusFilter,
     setTaskLaneFilter,
@@ -784,11 +1058,13 @@ export const useReplViewController = ({
     setTaskTailLines,
     setTaskTailPath,
     setTaskFocusLaneId,
+    taskFocusViewOpen,
     setTaskFocusViewOpen,
     setTaskFocusFollowTail,
     setTaskFocusRawMode,
     setTaskFocusTailLines,
     taskFocusDefaultTailLines,
+    exportTaskLog,
     taskRows,
     taskMaxScroll,
     ctreeOpen,
@@ -814,7 +1090,12 @@ export const useReplViewController = ({
     setCtrlCPrimedAt,
     DOUBLE_CTRL_C_WINDOW_MS,
     stdout,
+    liveShellOwnershipMode,
+    liveShellRendererHost,
     transcriptViewerOpen,
+    transcriptViewerScroll,
+    transcriptViewerFollowTail,
+    setTranscriptViewerRawMode,
     setTranscriptViewerOpen,
     setTranscriptViewerFollowTail,
     setTranscriptViewerScroll,
@@ -823,6 +1104,7 @@ export const useReplViewController = ({
     setTranscriptSearchIndex,
     setTranscriptExportNotice,
     transcriptViewerLines,
+    transcriptViewerExportLines,
     pushCommandResult,
     verboseOutput,
     permissionNote,
@@ -853,8 +1135,8 @@ export const useReplViewController = ({
     applyPaletteItem,
     handleAtCommand,
     handleLineSubmit,
+    queuedPrompt,
     clearScreen,
-    handleOverlayKeys,
     handleEditorKeys,
     handlePaletteKeys,
   } = useReplViewInputHandlers({
@@ -869,16 +1151,24 @@ export const useReplViewController = ({
     filePickerResources,
     fileMentionConfig,
     onListFiles,
+    onListRecentSessions,
+    onAttachSession,
     handleLineEdit,
     onReadFile,
+    onReadWorkingTreeDiff,
+    onExportWorkingTreeDiffPatch,
+    onCopyWorkingTreeDiffPatch,
     pushCommandResult,
     setSuggestIndex,
     setSuppressSuggestions,
     attachments,
+    clearAttachments,
     onSubmit,
     setTodosOpen,
     setUsageOpen,
     setTasksOpen,
+    setRecentSessionsOpen,
+    recentSessionsOpenedAtRef,
     enterTranscriptViewer,
     closePalette,
     closeConfirm,
@@ -903,6 +1193,7 @@ export const useReplViewController = ({
     inspectRawOpen,
     inspectRawViewportRows,
     jumpTranscriptToLine,
+    jumpTranscriptToAnchor,
     keymap,
     modelIndex,
     modelMenu,
@@ -911,8 +1202,9 @@ export const useReplViewController = ({
     modelSearch,
     modelVisibleRows: MODEL_VISIBLE_ROWS,
     normalizeProviderKey,
+    reclaimOverlayRegion,
     onCtreeRefresh,
-    onModelMenuOpen,
+    onModelMenuOpen: openModelMenuInTransientSurface,
     onModelMenuCancel,
     onModelSelect,
     onPermissionDecision,
@@ -921,6 +1213,9 @@ export const useReplViewController = ({
     onSkillsMenuCancel,
     onSkillsMenuOpen,
     pendingResponse,
+    disconnected,
+    permissionMode,
+    permissionQueueDepth,
     permissionDecisionTimerRef,
     permissionDiffSections,
     permissionInputSnapshotRef,
@@ -963,6 +1258,8 @@ export const useReplViewController = ({
     setSkillsSearch,
     setTaskIndex,
     setTaskScroll,
+    setTaskNotice,
+    setTaskActionNotice,
     setTaskSearchQuery,
     setTaskStatusFilter,
     setTaskLaneFilter,
@@ -973,6 +1270,7 @@ export const useReplViewController = ({
     setTaskFocusFollowTail,
     setTaskFocusRawMode,
     setTaskFocusTailLines,
+    taskboardInputQuarantineUntilRef,
     setTodoScroll,
     setTranscriptSearchIndex,
     setTranscriptSearchOpen,
@@ -980,6 +1278,7 @@ export const useReplViewController = ({
     setTranscriptToolIndex,
     setTranscriptViewerFollowTail,
     setTranscriptViewerScroll,
+    transcriptViewerInputQuarantineUntilRef: menus.transcriptViewerInputQuarantineUntilRef,
     shortcutsOpen,
     shortcutsOpenedAtRef,
     skillsData,
@@ -996,6 +1295,7 @@ export const useReplViewController = ({
     taskSearchQuery,
     taskStatusFilter,
     taskLaneFilter,
+    taskLaneFilterLabel,
     taskGroupMode,
     taskCollapsedGroupKeys,
     taskFocusLaneId,
@@ -1026,12 +1326,14 @@ export const useReplViewController = ({
     selectedTaskRow,
     selectedTask,
     requestTaskTail,
+    exportTaskLog,
     usageOpen,
     suggestIndex,
     suggestions,
     removeLastAttachment,
     pushHistoryEntry,
     recallHistory,
+    searchHistory,
     moveCursorVertical,
     applySkillsSelection,
     forceRedraw,
@@ -1082,10 +1384,18 @@ export const useReplViewController = ({
     insertResourceMention,
     queueFileMention,
   } = filePickerController
+  const landingAlways = useMemo(() => {
+    const raw = (process.env.BREADBOARD_TUI_LANDING_ALWAYS ?? "").trim().toLowerCase()
+    return ["1", "true", "yes", "on"].includes(raw)
+  }, [])
+
   const {
     visibleModelRows,
     headerLines,
     landingNode,
+    sessionHeaderNode,
+    showSessionHeaderInline,
+    warmLandingVisible,
     usageSummary,
     modeBadge,
     permissionBadge,
@@ -1094,6 +1404,11 @@ export const useReplViewController = ({
     pendingClaudeStatus,
     networkBanner,
     compactMode,
+    bodyBudgetRows,
+    activeBodyMinRows,
+    composerRowsAboveCursor,
+    managedViewportRowsAboveCursor,
+    managedViewportResetKey,
     statusGlyph,
     modelGlyph,
     remoteGlyph,
@@ -1131,6 +1446,7 @@ export const useReplViewController = ({
     permissionMode,
     claudeChrome,
     pendingResponse,
+    mainFollowTail,
     disconnected,
     status,
     contentWidth,
@@ -1181,6 +1497,7 @@ export const useReplViewController = ({
     setSelectedCollapsibleEntryId,
     animationTick,
     spinner,
+    liveShellOwnershipMode,
     liveSlots,
     keymap,
     footerV2Enabled: FOOTER_V2_ENABLED,
@@ -1199,6 +1516,412 @@ export const useReplViewController = ({
     ctrlCPrimedAt,
     escPrimedAt,
     tuiConfig,
+    landingAlways,
+  })
+  const volatileActiveBand = useMemo(
+    () =>
+      SCROLLBACK_MODE &&
+      !overlayActive &&
+      !pendingResponse &&
+      !transcriptViewerOpen &&
+      suggestions.length === 0 &&
+      (
+        filePickerActive ||
+        input.length > 0 ||
+        attachments.length > 0 ||
+        fileMentions.length > 0
+      ),
+    [
+      SCROLLBACK_MODE,
+      attachments.length,
+      fileMentions.length,
+      filePickerActive,
+      input.length,
+      overlayActive,
+      pendingResponse,
+      suggestions.length,
+      transcriptViewerOpen,
+    ],
+  )
+  const recentSessionsViewportRows = useMemo(() => Math.max(8, Math.min(16, Math.floor(rowCount * 0.4))), [rowCount])
+  const recentSessionsMaxScroll = useMemo(
+    () => Math.max(0, recentSessionsRows.length - recentSessionsViewportRows),
+    [recentSessionsRows.length, recentSessionsViewportRows],
+  )
+  const recentSessionsVisible = useMemo(
+    () => recentSessionsRows.slice(recentSessionsScroll, recentSessionsScroll + recentSessionsViewportRows),
+    [recentSessionsRows, recentSessionsScroll, recentSessionsViewportRows],
+  )
+  useEffect(() => {
+    if (!recentSessionsOpen) return
+    setRecentSessionsIndex((prev) => Math.max(0, Math.min(prev, Math.max(0, recentSessionsRows.length - 1))))
+    setRecentSessionsScroll((prev) => Math.max(0, Math.min(prev, recentSessionsMaxScroll)))
+  }, [recentSessionsMaxScroll, recentSessionsOpen, recentSessionsRows.length])
+
+  const selectedCollapsedEntry = useMemo(
+    () =>
+      (collapsibleEntries.find(
+        (entry): entry is TranscriptMessageItem =>
+          entry.kind === "message" && entry.id === selectedCollapsibleEntryId,
+      ) ?? null),
+    [collapsibleEntries, selectedCollapsibleEntryId],
+  )
+  const collapsedDetailLines = useMemo(() => {
+    if (!selectedCollapsedEntry) return []
+    const text = normalizeNewlines(selectedCollapsedEntry.text ?? "")
+    return text.length > 0 ? text.split("\n") : [""]
+  }, [selectedCollapsedEntry])
+  const resolveTranscriptToolTarget = useCallback(() => {
+    if (selectedTranscriptToolTarget) return selectedTranscriptToolTarget
+    const toolEntries = toolEvents.filter((entry) => entry.kind === "call" || entry.kind === "result" || entry.kind === "command")
+    if (toolEntries.length === 0) return null
+    const safeIndex = Math.max(0, Math.min(transcriptToolIndex, toolEntries.length - 1))
+    const entry = toolEntries[safeIndex]
+    if (!entry) return null
+    const display = (entry.display ?? null) as ToolDisplayPayload | null
+    const artifactRef = display?.detail_artifact ?? null
+    const title =
+      typeof display?.title === "string" && display.title.trim().length > 0
+        ? display.title.trim()
+        : normalizeNewlines(entry.text ?? "").split("\n")[0]?.trim() || "Tool"
+    return {
+      line: transcriptToolLines[safeIndex] ?? 0,
+      itemId: entry.id,
+      title,
+      summaryLines: normalizeToolDisplayLines(display?.summary ?? null),
+      detailLines: normalizeToolDisplayLines(display?.detail ?? null),
+      artifactPath:
+        typeof artifactRef?.path === "string" && artifactRef.path.trim().length > 0 ? artifactRef.path.trim() : null,
+      artifactPreviewLines: normalizeToolDisplayLines(artifactRef?.preview?.lines ?? null),
+      artifactPreviewNote:
+        typeof artifactRef?.preview?.note === "string" && artifactRef.preview.note.trim().length > 0
+          ? artifactRef.preview.note.trim()
+          : null,
+    }
+  }, [selectedTranscriptToolTarget, toolEvents, transcriptToolIndex, transcriptToolLines])
+  const activeTranscriptToolTarget = useMemo(
+    () => resolveTranscriptToolTarget() ?? transcriptInspectionTargetRef.current,
+    [resolveTranscriptToolTarget],
+  )
+  const collapsedDetailViewportRows = useMemo(() => Math.max(10, Math.min(24, Math.floor(rowCount * 0.55))), [rowCount])
+  const collapsedDetailMaxScroll = useMemo(
+    () => Math.max(0, collapsedDetailLines.length - collapsedDetailViewportRows),
+    [collapsedDetailLines.length, collapsedDetailViewportRows],
+  )
+  const collapsedDetailVisible = useMemo(
+    () => collapsedDetailLines.slice(collapsedDetailScroll, collapsedDetailScroll + collapsedDetailViewportRows),
+    [collapsedDetailLines, collapsedDetailScroll, collapsedDetailViewportRows],
+  )
+  const resultDetailLines = useMemo(() => {
+    if (!activeTranscriptToolTarget) return []
+    if (activeTranscriptToolTarget.detailLines.length > 0) return activeTranscriptToolTarget.detailLines
+    return activeTranscriptToolTarget.summaryLines
+  }, [activeTranscriptToolTarget])
+  const resultDetailViewportRows = useMemo(() => Math.max(10, Math.min(24, Math.floor(rowCount * 0.55))), [rowCount])
+  const resultDetailMaxScroll = useMemo(
+    () => Math.max(0, resultDetailLines.length - resultDetailViewportRows),
+    [resultDetailLines.length, resultDetailViewportRows],
+  )
+  const resultDetailVisible = useMemo(
+    () => resultDetailLines.slice(resultDetailScroll, resultDetailScroll + resultDetailViewportRows),
+    [resultDetailLines, resultDetailScroll, resultDetailViewportRows],
+  )
+  const artifactPreviewViewportRows = useMemo(() => Math.max(10, Math.min(24, Math.floor(rowCount * 0.55))), [rowCount])
+  const artifactPreviewMaxScroll = useMemo(
+    () => Math.max(0, artifactPreviewLines.length - artifactPreviewViewportRows),
+    [artifactPreviewLines.length, artifactPreviewViewportRows],
+  )
+  const artifactPreviewVisible = useMemo(
+    () => artifactPreviewLines.slice(artifactPreviewScroll, artifactPreviewScroll + artifactPreviewViewportRows),
+    [artifactPreviewLines, artifactPreviewScroll, artifactPreviewViewportRows],
+  )
+  useEffect(() => {
+    if (!collapsedDetailOpen) return
+    if (!selectedCollapsedEntry) {
+      setCollapsedDetailOpen(false)
+      setCollapsedDetailScroll(0)
+      return
+    }
+    setCollapsedDetailScroll((prev) => Math.max(0, Math.min(prev, collapsedDetailMaxScroll)))
+  }, [collapsedDetailMaxScroll, collapsedDetailOpen, selectedCollapsedEntry])
+  useEffect(() => {
+    if (!resultDetailOpen) return
+    if (!activeTranscriptToolTarget) {
+      traceKeyDiagnostic({ phase: "result-detail-effect-close", reason: "missing-active-target" })
+      setResultDetailOpen(false)
+      setResultDetailScroll(0)
+      return
+    }
+    traceKeyDiagnostic({
+      phase: "result-detail-effect-open",
+      title: activeTranscriptToolTarget.title,
+      detailLines: activeTranscriptToolTarget.detailLines.length,
+      summaryLines: activeTranscriptToolTarget.summaryLines.length,
+      artifactPath: activeTranscriptToolTarget.artifactPath,
+    })
+    setResultDetailScroll((prev) => Math.max(0, Math.min(prev, resultDetailMaxScroll)))
+  }, [activeTranscriptToolTarget, resultDetailMaxScroll, resultDetailOpen])
+  useEffect(() => {
+    if (!artifactPreviewOpen) return
+    setArtifactPreviewScroll((prev) => Math.max(0, Math.min(prev, artifactPreviewMaxScroll)))
+  }, [artifactPreviewMaxScroll, artifactPreviewOpen])
+  const openSelectedCollapsedDetail = useCallback(() => {
+    if (!selectedCollapsedEntry) return false
+    setCollapsedDetailScroll(0)
+    setCollapsedDetailOpen(true)
+    return true
+  }, [selectedCollapsedEntry])
+  const openSelectedTranscriptResultDetail = useCallback(() => {
+    const target = resolveTranscriptToolTarget()
+    traceKeyDiagnostic({
+      phase: "open-selected-transcript-result-detail",
+      found: Boolean(target),
+      title: target?.title ?? null,
+      detailLines: target?.detailLines.length ?? null,
+      summaryLines: target?.summaryLines.length ?? null,
+      artifactPath: target?.artifactPath ?? null,
+    })
+    if (!target) return false
+    transcriptInspectionTargetRef.current = target
+    setResultDetailScroll(0)
+    exitTranscriptViewer()
+    repaintOwnedLiveModalRegion()
+    setResultDetailOpen(true)
+    return true
+  }, [exitTranscriptViewer, repaintOwnedLiveModalRegion, resolveTranscriptToolTarget])
+  const openSelectedTranscriptArtifactPreview = useCallback(() => {
+    const target = resolveTranscriptToolTarget() ?? transcriptInspectionTargetRef.current
+    if (!target?.artifactPath) return false
+    transcriptInspectionTargetRef.current = target
+    setArtifactPreviewLines(
+      target.artifactPreviewLines.length > 0
+        ? [...target.artifactPreviewLines]
+        : ["Artifact preview unavailable."],
+    )
+    setArtifactPreviewPath(target.artifactPath)
+    setArtifactPreviewNotice(target.artifactPreviewNote ?? null)
+    setArtifactPreviewScroll(0)
+    exitTranscriptViewer()
+    repaintOwnedLiveModalRegion()
+    setArtifactPreviewOpen(true)
+    return true
+  }, [exitTranscriptViewer, repaintOwnedLiveModalRegion, resolveTranscriptToolTarget])
+  useInput((input, key) => {
+    if (!resultDetailOpen && !artifactPreviewOpen) return
+    const isReturnKey = key.return || input === "\r" || input === "\n"
+    if (artifactPreviewOpen) {
+      if (key.escape || input === "\u001b") {
+        setArtifactPreviewOpen(false)
+      }
+      return
+    }
+    if (key.escape || input === "\u001b") {
+      setResultDetailOpen(false)
+      return
+    }
+    if (isReturnKey && activeTranscriptToolTarget?.artifactPath) {
+      openSelectedTranscriptArtifactPreview()
+    }
+  })
+  const handleOverlayKeys = useOverlayKeys({
+    alwaysAllowScope: ALWAYS_ALLOW_SCOPE,
+    applySkillsSelection,
+    clearScreen,
+    closeConfirm,
+    confirmState,
+    ctrlCPrimedAt,
+    ctreeCollapsibleIds,
+    ctreeIncludePreviews,
+    ctreeMaxScroll,
+    ctreeOpen,
+    ctreeRows,
+    ctreeScroll,
+    ctreeSource,
+    ctreeStage,
+    ctreeViewportRows,
+    doubleCtrlWindowMs: DOUBLE_CTRL_C_WINDOW_MS,
+    enterTranscriptViewer,
+    escPrimedAt,
+    exitTranscriptViewer,
+    filteredModels,
+    handleLineEdit,
+    inputValueRef,
+    inspectMenu,
+    inspectRawMaxScroll,
+    inspectRawOpen,
+    inspectRawViewportRows,
+    resultDetailOpen,
+    resultDetailScroll,
+    resultDetailMaxScroll,
+    resultDetailViewportRows,
+    resultDetailArtifactPath: activeTranscriptToolTarget?.artifactPath ?? null,
+    resultDetailSourceLine: activeTranscriptToolTarget?.line ?? null,
+    setResultDetailOpen,
+    setResultDetailScroll,
+    artifactPreviewOpen,
+    artifactPreviewScroll,
+    artifactPreviewMaxScroll,
+    artifactPreviewViewportRows,
+    artifactPreviewSourceLine: activeTranscriptToolTarget?.line ?? null,
+    setArtifactPreviewOpen,
+    setArtifactPreviewScroll,
+    jumpTranscriptToLine,
+    jumpTranscriptToAnchor,
+    keymap,
+    modelIndex,
+    modelMenu,
+    modelProviderFilter,
+    modelProviderOrder,
+    modelSearch,
+    modelVisibleRows: MODEL_VISIBLE_ROWS,
+    normalizeProviderKey,
+    onCtreeRefresh,
+    onModelMenuCancel,
+    onModelSelect,
+    onPermissionDecision,
+    onRewindClose,
+    onRewindRestore,
+    onSubmit,
+    onSkillsMenuCancel,
+    onSkillsMenuOpen,
+    pendingResponse,
+    permissionDecisionTimerRef,
+    permissionDiffSections,
+    permissionInputSnapshotRef,
+    permissionNote,
+    permissionNoteCursor,
+    permissionNoteRef,
+    permissionRequest,
+    permissionScope,
+    permissionTab,
+    permissionTabRef,
+    permissionViewportRows,
+    resetSkillsSelection,
+    rewindIndex,
+    rewindMenu,
+    rewindVisibleLimit,
+    recentSessionsOpen,
+    recentSessionsRows,
+    recentSessionsIndex,
+    recentSessionsScroll,
+    recentSessionsMaxScroll,
+    recentSessionsViewportRows,
+    recentSessionsOpenedAtRef,
+    refreshRecentSessions,
+    attachRecentSession,
+    runConfirmAction,
+    saveTranscriptExport,
+    setCtreeCollapsedNodes,
+    setCtreeIndex,
+    setCtreeOpen,
+    setCtreeScroll,
+    setCtreeShowDetails,
+    setCtrlCPrimedAt,
+    setEscPrimedAt,
+    setInspectRawOpen,
+    setInspectRawScroll,
+    setModelIndex,
+    setModelOffset,
+    setModelProviderFilter,
+    setModelSearch,
+    setPermissionFileIndex,
+    setPermissionNote,
+    setPermissionNoteCursor,
+    setPermissionScroll,
+    setPermissionTab,
+    setRewindIndex,
+    setShortcutsOpen,
+    setSkillsIndex,
+    setSkillsOffset,
+    setSkillsSearch,
+    setTaskIndex,
+    setTaskScroll,
+    setTaskNotice,
+    setTaskActionNotice,
+    setTaskSearchQuery,
+    setTaskStatusFilter,
+    setTaskLaneFilter,
+    setTaskGroupMode,
+    setTaskCollapsedGroupKeys,
+    setTaskFocusLaneId,
+    setTaskFocusViewOpen,
+    setTaskFocusFollowTail,
+    setTaskFocusRawMode,
+    setTaskFocusTailLines,
+    setTasksOpen,
+    taskboardInputQuarantineUntilRef,
+    setRecentSessionsIndex,
+    setRecentSessionsOpen,
+    setRecentSessionsScroll,
+    setTodoScroll,
+    setTodosOpen,
+    setUsageOpen,
+    setTranscriptSearchIndex,
+    setTranscriptSearchOpen,
+    setTranscriptSearchQuery,
+    setTranscriptToolIndex,
+    setTranscriptViewerFollowTail,
+    setTranscriptViewerScroll,
+    transcriptViewerInputQuarantineUntilRef: menus.transcriptViewerInputQuarantineUntilRef,
+    shortcutsOpen,
+    shortcutsOpenedAtRef,
+    skillsData,
+    skillsMenu,
+    skillsSearch,
+    skillsSelectedEntry,
+    skillsVisibleRows: SKILLS_VISIBLE_ROWS,
+    stdout,
+    taskMaxScroll,
+    taskRows,
+    taskGroups,
+    taskLaneOrder,
+    taskScroll,
+    taskSearchQuery,
+    taskStatusFilter,
+    taskLaneFilter,
+    taskLaneFilterLabel,
+    taskGroupMode,
+    taskCollapsedGroupKeys,
+    taskFocusLaneId,
+    taskFocusViewOpen,
+    taskFocusFollowTail,
+    taskFocusRawMode,
+    taskFocusTailLines,
+    taskFocusMode,
+    taskFocusDefaultTailLines,
+    taskViewportRows,
+    tasksOpen,
+    todoMaxScroll,
+    todoViewportRows,
+    todosOpen,
+    toggleSkillsMode,
+    toggleSkillSelection,
+    transcriptSearchMatches,
+    transcriptSearchOpen,
+    transcriptToolLines,
+    transcriptViewerBodyRows,
+    transcriptViewerEffectiveScroll,
+    transcriptViewerFollowTail,
+    transcriptViewerMaxScroll,
+    transcriptViewerOpen,
+    activeTranscriptToolTarget,
+    openSelectedTranscriptResultDetail,
+    openSelectedTranscriptArtifactPreview,
+    collapsedDetailOpen,
+    collapsedDetailScroll,
+    collapsedDetailMaxScroll,
+    collapsedDetailViewportRows,
+    setCollapsedDetailOpen,
+    setCollapsedDetailScroll,
+    selectedCTreeIndex,
+    selectedCTreeRow,
+    selectedTaskIndex,
+    selectedTaskRow,
+    selectedTask,
+    requestTaskTail,
+    exportTaskLog,
+    runTaskAction,
+    usageOpen,
   })
 
   const handleGlobalKeys = useGlobalKeys({
@@ -1214,12 +1937,13 @@ export const useReplViewController = ({
     exitTranscriptViewer,
     guardrailNotice,
     handleLineEdit,
+    inputValueRef,
     keymap,
     modelMenu,
     onGuardrailDismiss,
     onGuardrailToggle,
     onModelMenuCancel,
-    onModelMenuOpen,
+    onModelMenuOpen: openModelMenuInTransientSurface,
     onRewindClose,
     onSkillsMenuCancel,
     onSkillsMenuOpen,
@@ -1232,6 +1956,9 @@ export const useReplViewController = ({
     permissionRequest,
     pushCommandResult,
     rewindMenu,
+    searchHistory,
+    reclaimShortcutsOverlay,
+    reclaimOverlayRegion,
     scrollbackMode: SCROLLBACK_MODE,
     setCtrlCPrimedAt,
     setCtreeOpen,
@@ -1242,6 +1969,7 @@ export const useReplViewController = ({
     setTranscriptNudge,
     setVerboseOutput,
     skillsMenu,
+    openSelectedCollapsedDetail,
     toggleSelectedCollapsibleEntry,
     transcriptViewerBodyRows,
     transcriptViewerOpen,
@@ -1251,45 +1979,57 @@ export const useReplViewController = ({
     overlayFlags,
     modal: handleOverlayKeys,
     palette: handlePaletteKeys,
-    editor: handleEditorKeys,
     global: handleGlobalKeys,
   })
 
-  const landingAlways = useMemo(() => {
-    const raw = (process.env.BREADBOARD_TUI_LANDING_ALWAYS ?? "").trim().toLowerCase()
-    return ["1", "true", "yes", "on"].includes(raw)
-  }, [])
+  const footerOverlayLabel = useMemo(() => {
+    if (!overlayActive) return null
+    if (transcriptSearchOpen) return "transcript search"
+    if (artifactPreviewOpen) return "artifact"
+    if (resultDetailOpen) return "result detail"
+    if (transcriptViewerOpen) return "transcript"
+    if (recentSessionsOpen) return "sessions"
+    if (collapsedDetailOpen) return "detail"
+    if (tasksOpen) return "tasks"
+    if (todosOpen) return "todos"
+    if (usageOpen) return "usage"
+    if (filePickerActive) return "files"
+    if (modelMenu.status !== "hidden") return "model"
+    return "overlay"
+  }, [artifactPreviewOpen, collapsedDetailOpen, filePickerActive, modelMenu.status, overlayActive, recentSessionsOpen, resultDetailOpen, tasksOpen, todosOpen, transcriptSearchOpen, transcriptViewerOpen, usageOpen])
 
-  const showLandingInline =
-    SCROLLBACK_MODE &&
-    !landingAlways &&
-    staticFeed.length === 0 &&
-    conversation.length === 0 &&
-    toolEvents.length === 0
+  const showLandingInline = SCROLLBACK_MODE && warmLandingVisible
 
   const composerPanelContext = {
-    claudeChrome, modelMenu, pendingClaudeStatus, todoPreviewModel, promptRule, input, cursor, inputLocked,
-    attachments, fileMentions, inputMaxVisibleLines, handleLineEditGuarded, handleLineSubmit, handleAttachment,
+    claudeChrome, scrollbackMode: SCROLLBACK_MODE, modelMenu, pendingClaudeStatus, todoPreviewModel, promptRule, input, cursor, inputLocked,
+    attachments, fileMentions, inputMaxVisibleLines, handleLineEditGuarded, handleLineSubmit, handleEditorKeys, handleAttachment, queuedPrompt,
     overlayActive, filePickerActive, fileIndexMeta, fileMenuMode, filePicker, fileMenuRows, fileMenuHasLarge,
     fileMenuWindow, fileMenuIndex, fileMenuNeedlePending, filePickerQueryParts, filePickerConfig, fileMentionConfig,
     selectedFileIsLarge, columnWidth, todosOpen, todos, todoRows, todoScroll, todoMaxScroll, todoViewportRows,
     suggestions, suggestionWindow, suggestionPrefix, suggestionLayout,
     buildSuggestionLines, suggestIndex, activeSlashQuery, hintNodes, shortcutHintNodes,
+    shortcutsOpen,
     runtimeStatusChips,
     thinkingPreviewModel,
     footerV2Enabled: FOOTER_V2_ENABLED,
     keymap,
     pendingResponse,
+    mainFollowTail,
+    conversationLength: conversation.length,
     phaseLineState,
     disconnected,
     status,
-    overlayLabel: overlayActive ? "overlay" : null,
+    overlayLabel: footerOverlayLabel,
     spinner,
     pendingStartedAtMs: pendingStartedAt,
     lastDurationMs,
     clockNowMs: Date.now(),
     tasks,
     stats,
+    sessionId,
+    transcriptViewerOpen,
+    transcriptSearchOpen,
+    scrollbackSuppressIdlePlaceholder: SCROLLBACK_MODE && !pendingResponse && conversation.length > 0,
     composerPromptPrefix: tuiConfig.composer.promptPrefix,
     composerPlaceholderClassic: tuiConfig.composer.placeholderClassic,
     composerPlaceholderClaude: tuiConfig.composer.placeholderClaude,
@@ -1314,10 +2054,13 @@ export const useReplViewController = ({
       turnGlyph={turnGlyph}
       usageSummary={usageSummary}
       metaNodes={metaNodes}
-      guardrailNotice={guardrailNotice ?? null}
+      guardrailNotice={SCROLLBACK_MODE ? null : guardrailNotice ?? null}
       networkBanner={networkBanner}
+      networkBannerWidth={contentWidth}
       showLandingInline={showLandingInline}
+      showSessionHeaderInline={showSessionHeaderInline}
       landingNode={landingNode}
+      sessionHeaderNode={sessionHeaderNode}
       transcriptNodes={transcriptNodes}
       toolNodes={toolNodes}
       overlayActive={overlayActive}
@@ -1325,20 +2068,45 @@ export const useReplViewController = ({
       liveSlotNodes={liveSlotNodes}
       collapsedHintNode={collapsedHintNode}
       virtualizationHintNode={virtualizationHintNode}
+      activeBodyMinRows={SCROLLBACK_MODE ? activeBodyMinRows : 0}
       composerPanelContext={composerPanelContext}
     />
   )
 
-  const transcriptDetailLabel = useMemo(() => {
-    const parts: string[] = []
-    if (verboseOutput) {
-      parts.push(uiText("Showing detailed transcript · Ctrl+O to toggle"))
-    }
-    if (transcriptExportNotice) {
-      parts.push(transcriptExportNotice)
-    }
-    return parts.join(DOT_SEPARATOR)
-  }, [transcriptExportNotice, verboseOutput])
+  const transcriptDetailLabel = useMemo(() =>
+    buildTranscriptViewerDetailLabel({
+      followTail: transcriptViewerFollowTail,
+      lineCount: transcriptViewerLines.length,
+      effectiveScroll: transcriptViewerEffectiveScroll,
+      bodyRows: transcriptViewerBodyRows,
+      searchOpen: transcriptSearchOpen,
+      searchQuery: transcriptSearchQuery,
+      searchMatchCount: transcriptSearchMatches.length,
+      searchSafeIndex: transcriptSearchSafeIndex,
+      verboseOutput,
+      exportNotice: transcriptExportNotice,
+      selectedToolLabel: activeTranscriptToolTarget?.title ?? null,
+      selectedToolOrdinal:
+        activeTranscriptToolTarget != null && transcriptToolLines.length > 0 ? `${transcriptToolIndex + 1}/${transcriptToolLines.length}` : null,
+      selectedToolHasArtifact: Boolean(activeTranscriptToolTarget?.artifactPath),
+      rawMode: transcriptViewerRawMode,
+    }),
+  [
+    transcriptExportNotice,
+    transcriptSearchMatches.length,
+    transcriptSearchOpen,
+    transcriptSearchQuery,
+    transcriptSearchSafeIndex,
+    transcriptViewerBodyRows,
+    transcriptViewerEffectiveScroll,
+    transcriptViewerFollowTail,
+    transcriptViewerLines.length,
+    transcriptViewerRawMode,
+    transcriptToolIndex,
+    transcriptToolLines.length,
+    verboseOutput,
+    activeTranscriptToolTarget,
+  ])
 
   useEffect(() => {
     const nextCadence: TaskFocusCadenceState = {
@@ -1368,6 +2136,8 @@ export const useReplViewController = ({
     claudeChrome,
     isBreadboardProfile,
     columnWidth,
+    rowCount,
+    scrollbackMode: SCROLLBACK_MODE,
     contentWidth,
     sessionId,
     status: status ?? "",
@@ -1399,12 +2169,44 @@ export const useReplViewController = ({
     skillsDirty,
     rewindMenu,
     todosOpen,
+    recentSessionsOpen,
+    recentSessionsStatus,
+    recentSessionsError,
+    recentSessionsRows,
+    recentSessionsVisible,
+    recentSessionsIndex,
+    recentSessionsScroll,
+    recentSessionsMaxScroll,
+    recentSessionsViewportRows,
+    recentSessionsAttachingId,
+    refreshRecentSessions,
+    attachRecentSession,
     todoScroll,
     todos,
     usageOpen,
     inspectMenu,
     inspectRawOpen,
     inspectRawScroll,
+    resultDetailOpen,
+    resultDetailScroll,
+    resultDetailMaxScroll,
+    resultDetailViewportRows,
+    resultDetailVisible,
+    resultDetailSelectedTitle: activeTranscriptToolTarget?.title ?? null,
+    resultDetailArtifactPath: activeTranscriptToolTarget?.artifactPath ?? null,
+    artifactPreviewOpen,
+    artifactPreviewScroll,
+    artifactPreviewMaxScroll,
+    artifactPreviewViewportRows,
+    artifactPreviewVisible,
+    artifactPreviewPath,
+    artifactPreviewNotice,
+    collapsedDetailOpen,
+    collapsedDetailScroll,
+    collapsedDetailMaxScroll,
+    collapsedDetailViewportRows,
+    collapsedDetailVisible,
+    collapsedDetailSelectedId: selectedCollapsedEntry?.id ?? null,
     tasks,
     tasksOpen,
     taskFocusViewOpen,
@@ -1414,10 +2216,12 @@ export const useReplViewController = ({
     taskFocusMode,
     taskFocusLaneId,
     taskFocusLaneLabel,
+    taskActionsEnabled,
     taskScroll,
     taskSearchQuery,
     taskStatusFilter,
     taskLaneFilter,
+    taskLaneFilterLabel,
     taskGroupMode,
     taskCollapsedGroupKeys,
     permissionRequest,
@@ -1451,9 +2255,23 @@ export const useReplViewController = ({
     menus,
   })
   return {
+    liveShellOwnershipMode,
+    liveShellRendererHost,
+    liveShellSceneStrategy,
+    sessionId,
+    status,
+    pendingResponse,
+    disconnected,
+    stats,
     scrollbackMode: SCROLLBACK_MODE,
     staticFeed,
+    composerRowsAboveCursor,
+    managedViewportRowsAboveCursor,
+    managedViewportResetKey,
+    volatileActiveBand,
+    conversationCount: conversation.length,
     transcriptViewerOpen,
+    transcriptViewerRawMode,
     transcriptViewerLines,
     columnWidth,
     rowCount,

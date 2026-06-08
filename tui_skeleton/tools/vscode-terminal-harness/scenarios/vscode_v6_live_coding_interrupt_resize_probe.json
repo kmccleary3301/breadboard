@@ -1,0 +1,41 @@
+{
+  "id": "vscode_v6_live_coding_interrupt_resize_probe",
+  "terminal": { "initialCols": 132, "initialRows": 42 },
+  "v6": {
+    "expectedFinalMode": "repl",
+    "maxProviderWarningCount": 0,
+    "minScreenshotCount": 6,
+    "requiresStableViewport": true,
+    "forbiddenVisibleText": [
+      "Provider openrouter",
+      "response.keep_alive",
+      "response.created",
+      "Streaming fallback active"
+    ]
+  },
+  "steps": [
+    { "kind": "write", "text": "mkdir -p src tests docs && printf '# V6 SMTP dummy workspace\\n\\nBuild a tiny local-only SMTP prototype here.\\n' > README.md && printf 'PORT=2525\\n' > docs/spec.txt\r" },
+    { "kind": "sleep", "ms": 500 },
+    { "kind": "write", "text": "bb\r" },
+    { "kind": "waitForText", "text": "Type your request", "timeoutMs": 25000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 800, "timeoutMs": 10000 },
+    { "kind": "screenshot", "label": "00-live-coding-startup" },
+    { "kind": "paste", "text": "Please work in this dummy folder only. Build a minimal local-only SMTP server prototype in C. Create src/smtp_server.c, a Makefile, and docs/usage.md. Keep it safe: localhost only, no auth, no daemonizing. Use POSIX sockets, handle HELO/EHLO, MAIL FROM, RCPT TO, DATA, RSET, NOOP, QUIT, and write received messages to ./maildrop. After implementing, run a quick build check and summarize what changed.\r" },
+    { "kind": "sleep", "ms": 22000 },
+    { "kind": "screenshot", "label": "01-live-coding-after-22s" },
+    { "kind": "resize", "cols": 78, "rows": 26, "settleMs": 3000 },
+    { "kind": "screenshot", "label": "02-live-coding-narrow-after-resize" },
+    { "kind": "resize", "cols": 132, "rows": 42, "settleMs": 3000 },
+    { "kind": "screenshot", "label": "03-live-coding-wide-restored" },
+    { "kind": "key", "key": "ctrlc" },
+    { "kind": "sleep", "ms": 5000 },
+    { "kind": "screenshot", "label": "04-after-interrupt" },
+    { "kind": "write", "text": "/transcript\r" },
+    { "kind": "waitForText", "text": "breadboard transcript viewer", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "screenshot", "label": "05-transcript-after-live-interrupt" },
+    { "kind": "key", "key": "escape" },
+    { "kind": "waitForText", "text": "Type your request", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "exportBreadBoardState", "label": "v6-live-coding-interrupt-state" },
+    { "kind": "terminate" }
+  ]
+}

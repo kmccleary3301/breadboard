@@ -1,0 +1,21 @@
+[
+  { "action": "waitFor", "text": "Type your request", "timeoutMs": 30000 },
+  { "action": "type", "text": "First turn: answer with only the lowercase English word for 1+1." },
+  { "action": "press", "key": "enter" },
+  { "action": "snapshot", "label": "after-first-submit" },
+  { "action": "waitFor", "text": "two", "timeoutMs": 45000, "mode": "frame" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "after-first-answer" },
+  { "action": "type", "text": "Second turn: answer with only the lowercase English word for 2+1." },
+  { "action": "press", "key": "enter" },
+  { "action": "snapshot", "label": "after-second-submit" },
+  { "action": "waitFor", "text": "three", "timeoutMs": 45000, "mode": "frame" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "after-second-answer" },
+  { "action": "type", "text": "Third turn: answer with only the lowercase English word for 3+1." },
+  { "action": "press", "key": "enter" },
+  { "action": "snapshot", "label": "after-third-submit" },
+  { "action": "waitFor", "text": "four", "timeoutMs": 45000, "mode": "frame" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "after-third-answer" }
+]

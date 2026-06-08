@@ -6,6 +6,9 @@ import pty from "node-pty"
 import stripAnsi from "strip-ansi"
 import { PNG } from "pngjs"
 import { decode as decodeJpeg } from "jpeg-js"
+import { HeadlessTerminalMirror } from "./headlessTerminal"
+import { COMPOSER_READY_MARKERS, includesComposerReady } from "./composerReady"
+import { matchesStateWaitCriteria, type StateDumpRecord, type StateWaitCriteria } from "./stateDumpWait"
 
 export const MAX_BUFFER_SIZE = 200_000
 export const MAX_PLAIN_BUFFER_SIZE = 40_000
@@ -30,6 +33,7 @@ export type KeyName =
   | "ctrl+y"
   | "ctrl+k"
   | "ctrl+l"
+  | "ctrl+p"
   | "ctrl+o"
   | "ctrl+t"
   | "ctrl+v"
@@ -50,7 +54,12 @@ export type Step =
   | { readonly action: "paste"; readonly text: string }
   | { readonly action: "press"; readonly key: KeyName; readonly repeat?: number; readonly delayMs?: number }
   | { readonly action: "snapshot"; readonly label: string }
+  | { readonly action: "snapshotBurst"; readonly label: string; readonly count: number; readonly intervalMs?: number }
   | { readonly action: "waitFor"; readonly text: string; readonly timeoutMs?: number }
+  | { readonly action: "waitForComposerReady"; readonly timeoutMs?: number }
+  | ({
+      readonly action: "waitForState"
+    } & StateWaitCriteria)
   | { readonly action: "log"; readonly message: string }
   | { readonly action: "resize"; readonly cols: number; readonly rows: number; readonly delayMs?: number }
 
@@ -117,6 +126,7 @@ export interface SpectatorHarnessResult {
   readonly snapshots: SnapshotEntry[]
   readonly rawBuffer: string
   readonly plainBuffer: string
+  readonly terminalBufferText: string
   readonly frames: FrameEntry[]
   readonly clipboard?: ClipboardMetadata
   readonly metadata: {
@@ -230,11 +240,12 @@ const digestClipboard = (payload: ClipboardPayload | undefined): ClipboardMetada
   }
   const dataUri = parseDataUri(payload.text)
   if (dataUri) {
-    metadata.mime = dataUri.mime
-    metadata.bytes = dataUri.buffer.length
     const averageColor = computeAverageColor(dataUri.buffer, dataUri.mime)
-    if (averageColor) {
-      metadata.averageColor = averageColor
+    return {
+      ...metadata,
+      mime: dataUri.mime,
+      bytes: dataUri.buffer.length,
+      ...(averageColor ? { averageColor } : {}),
     }
   }
   return metadata
@@ -277,7 +288,7 @@ const normalizeWinchEvents = (value: unknown): WinchEvent[] => {
     return value.map(mapEvent)
   }
   if (typeof value === "object" && value !== null && Array.isArray((value as Record<string, unknown>).events)) {
-    return (value as Record<string, unknown>).events.map(mapEvent)
+    return ((value as Record<string, unknown>).events as unknown[]).map(mapEvent)
   }
   throw new Error("Winch script must be an array or an object with an 'events' array.")
 }
@@ -330,6 +341,8 @@ const resolveKey = (key: KeyName): string => {
       return "\u000b"
     case "ctrl+l":
       return "\f"
+    case "ctrl+p":
+      return "\u0010"
     case "ctrl+o":
       return "\u000f"
     case "ctrl+t":
@@ -361,21 +374,6 @@ const resolveKey = (key: KeyName): string => {
   }
 }
 
-const extractLatestFrame = (input: string): string => {
-  const markers = ["\u001b[2J", "\u001bc", "\u001b[H"]
-  let index = -1
-  for (const marker of markers) {
-    const candidate = input.lastIndexOf(marker)
-    if (candidate > index) {
-      index = candidate
-    }
-  }
-  if (index >= 0) {
-    return input.slice(index)
-  }
-  return input
-}
-
 export const runSpectatorHarness = async (
   options: SpectatorHarnessOptions,
 ): Promise<SpectatorHarnessResult> => {
@@ -399,6 +397,12 @@ export const runSpectatorHarness = async (
   if (options.baseUrl) {
     env.BREADBOARD_API_URL = options.baseUrl
   }
+  const preserveHome = (env.BREADBOARD_PTY_PRESERVE_HOME ?? "").trim().toLowerCase()
+  const shouldPreserveHome = preserveHome === "1" || preserveHome === "true" || preserveHome === "yes"
+  if (!shouldPreserveHome) {
+    env.HOME = env.BREADBOARD_PTY_HOME?.trim() || path.join(options.cwd ?? process.cwd(), ".tmp_pty_home")
+    env.USERPROFILE = env.HOME
+  }
   if (options.clipboardPayload) {
     env.BREADBOARD_FAKE_CLIPBOARD = options.clipboardPayload.text
   }
@@ -421,6 +425,7 @@ export const runSpectatorHarness = async (
   let observedUserLines = 0
   let hasPendingInput = false
   let pendingSubmit: { readonly deadline: number; readonly userLines: number } | null = null
+  const terminalMirror = new HeadlessTerminalMirror(options.cols, options.rows)
 
   const child = pty.spawn(executable, args, {
     name: "xterm-256color",
@@ -449,6 +454,7 @@ export const runSpectatorHarness = async (
 
   const applyResize = (cols: number, rows: number) => {
     child.resize(cols, rows)
+    terminalMirror.resize(cols, rows)
     logInput({ action: "resize", cols, rows })
     resizeStats.count += 1
     resizeStats.minCols = Math.min(resizeStats.minCols, cols)
@@ -485,6 +491,7 @@ export const runSpectatorHarness = async (
       buffer = buffer.slice(buffer.length - MAX_BUFFER_SIZE)
     }
     appendPlain(stripAnsi(data))
+    terminalMirror.write(data)
     updateUserLineStats()
     if (options.echo) {
       process.stdout.write(data)
@@ -531,6 +538,22 @@ export const runSpectatorHarness = async (
     checkDuration()
   }
 
+  const readLatestStateDumpRecord = async (): Promise<StateDumpRecord | null> => {
+    const target = (options.stateDumpPath ?? "").trim()
+    if (!target) return null
+    try {
+      const raw = await fs.readFile(target, "utf8")
+      const lines = raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0)
+      if (lines.length === 0) return null
+      return JSON.parse(lines[lines.length - 1]!) as StateDumpRecord
+    } catch {
+      return null
+    }
+  }
+
   const waitWithGuards = async (ms: number) => {
     if (ms <= 0) return
     const slice = 100
@@ -564,9 +587,38 @@ export const runSpectatorHarness = async (
     throw new Error(`Timed out waiting for output containing "${text}"`)
   }
 
-  const takeSnapshot = (label: string) => {
-    const frame = extractLatestFrame(buffer)
-    const plain = stripAnsi(frame)
+  const waitForComposerReady = async (timeoutMs = 10_000) => {
+    const start = Date.now()
+    while (Date.now() - start < timeoutMs) {
+      if (includesComposerReady(buffer) || includesComposerReady(plainBuffer)) return
+      await sleep(50)
+      checkGuards()
+    }
+    throw new Error(`Timed out waiting for composer readiness via markers: ${COMPOSER_READY_MARKERS.join(", ")}`)
+  }
+
+  const waitForState = async (
+    criteria: Extract<Step, { readonly action: "waitForState" }>,
+  ) => {
+    const timeoutMs = criteria.timeoutMs ?? 10_000
+    const start = Date.now()
+    const baseline = await readLatestStateDumpRecord()
+    const baselineTimestamp = baseline?.timestamp ?? 0
+
+    while (Date.now() - start < timeoutMs) {
+      const latest = await readLatestStateDumpRecord()
+      if (matchesStateWaitCriteria(latest, criteria, baselineTimestamp)) return
+      await sleep(50)
+      checkGuards()
+    }
+    throw new Error(`Timed out waiting for matching state criteria after ${timeoutMs}ms`)
+  }
+
+  const takeSnapshot = async (label: string) => {
+    await terminalMirror.flush()
+    await sleep(60)
+    await terminalMirror.flush()
+    const plain = terminalMirror.getViewportText()
     const lines = plain.split(/\r?\n/)
     const trimmed = lines.slice(-MAX_SNAPSHOT_LINES).join("\n")
     const promptLine = [...lines]
@@ -654,10 +706,27 @@ export const runSpectatorHarness = async (
           break
         }
         case "snapshot":
-          takeSnapshot(step.label)
+          await takeSnapshot(step.label)
           break
+        case "snapshotBurst": {
+          const count = Math.max(1, step.count)
+          const intervalMs = Math.max(0, step.intervalMs ?? 100)
+          for (let i = 0; i < count; i += 1) {
+            await takeSnapshot(`${step.label}-${i}`)
+            if (i + 1 < count && intervalMs > 0) {
+              await waitWithGuards(intervalMs)
+            }
+          }
+          break
+        }
         case "waitFor":
           await waitForOutput(step.text, step.timeoutMs)
+          break
+        case "waitForComposerReady":
+          await waitForComposerReady(step.timeoutMs)
+          break
+        case "waitForState":
+          await waitForState(step)
           break
         case "log":
           console.log(`[script] ${step.message}`)
@@ -694,6 +763,7 @@ export const runSpectatorHarness = async (
     snapshots,
     rawBuffer: buffer,
     plainBuffer,
+    terminalBufferText: terminalMirror.getBufferText(),
     frames,
     clipboard: clipboardMetadata,
     metadata: {

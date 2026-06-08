@@ -1,0 +1,7 @@
+{
+  "id": "v6_smoke",
+  "campaign": "p14-v6-runtime-hardening",
+  "scenarios": [
+    "scenarios/smoke/startup_history_prompt_smoke.json"
+  ]
+}

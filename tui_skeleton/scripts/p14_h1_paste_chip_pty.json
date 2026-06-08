@@ -1,0 +1,14 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "prefix ", "typingDelayMs": 8 },
+  { "action": "snapshot", "label": "before-paste", "mode": "frame", "maxLines": 80 },
+  { "action": "press", "key": "ctrl+v" },
+  { "action": "waitFor", "text": "[Pasted Content", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "after-paste", "mode": "frame", "maxLines": 80 },
+  { "action": "press", "key": "ctrl+z" },
+  { "action": "wait", "ms": 200 },
+  { "action": "snapshot", "label": "after-undo", "mode": "frame", "maxLines": 80 },
+  { "action": "press", "key": "ctrl+y" },
+  { "action": "waitFor", "text": "[Pasted Content", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "after-redo", "mode": "frame", "maxLines": 80 }
+]

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_replay_live_capture_smoke",
+  "description": "V6 replay/live-capture converted scenario smoke batch",
+  "scenarios": [
+    "scenarios/v6/live_capture_imports/replay_disconnect_render_autopsy_latekill.json",
+    "scenarios/v6/live_capture_imports/replay_e4_default_repair_live_fresh.json",
+    "scenarios/v6/live_capture_imports/replay_model_parity_drive.json",
+    "scenarios/v6/live_capture_imports/replay_wezterm_resize_latest_turn_loss_regression.json"
+  ]
+}

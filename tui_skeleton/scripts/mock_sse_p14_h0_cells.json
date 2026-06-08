@@ -1,0 +1,27 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "p14 h0 transcript cell smoke" }, "turn": 1 }
+  },
+  {
+    "delayMs": 80,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "H0_CELL_OK",
+        "message": {
+          "role": "assistant",
+          "content": "H0_CELL_OK"
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 80,
+    "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "p14-h0-cells" } } }
+  },
+  {
+    "delayMs": 0,
+    "event": { "type": "run_finished", "payload": { "eventCount": 4 } }
+  }
+]

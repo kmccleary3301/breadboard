@@ -1,0 +1,12 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000 },
+  { "action": "snapshot", "label": "startup" },
+  { "action": "resize", "cols": 90, "rows": 24, "delayMs": 4000 },
+  { "action": "snapshot", "label": "after-resize-small" },
+  { "action": "resize", "cols": 120, "rows": 36, "delayMs": 4000 },
+  { "action": "snapshot", "label": "after-resize-large" },
+  { "action": "type", "text": "Answer with exactly: RESIZE_OK" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitForState", "timeoutMs": 45000, "fresh": true, "pendingResponse": false, "conversationCountAtLeast": 2, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "Verification: verification receipt" },
+  { "action": "snapshot", "label": "after-answer" }
+]

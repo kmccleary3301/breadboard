@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": [
+    "scripts/p16_compositor_validate.ts",
+    "scripts/p16_compositor_render.tsx",
+    "scripts/p16_compositor_contact_sheet_guard.ts",
+    "tools/p16-compositor/**/*.ts",
+    "tools/p16-compositor/**/*.tsx",
+    "tests/p16Compositor*.test.ts"
+  ]
+}

@@ -1,0 +1,16 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "p14 h4 transcript raw copy" }, "turn": 1 } },
+  { "delayMs": 80, "event": { "type": "assistant.message.start", "payload": { "message_id": "h4m1", "channel": "text", "format": "markdown" } } },
+  { "delayMs": 80, "event": { "type": "assistant.message.delta", "payload": { "message_id": "h4m1", "channel": "text", "delta": "H4_ASSISTANT_INTRO before tool.\n" } } },
+  { "delayMs": 80, "event": { "type": "assistant.message.end", "payload": { "message_id": "h4m1", "channel": "text", "stop_reason": "tool_call" } } },
+  { "delayMs": 80, "event": { "type": "tool_call", "payload": { "call_id": "h4_call_1", "tool_name": "shell_command", "display": { "title": "Shell(echo H4_TOOL_SENTINEL)" } } } },
+  { "delayMs": 80, "event": { "type": "tool.exec.start", "payload": { "call_id": "h4_call_1", "exec_id": "h4_exec_1", "command": "echo H4_TOOL_SENTINEL", "tool_name": "shell_command" } } },
+  { "delayMs": 80, "event": { "type": "tool.exec.stdout.delta", "payload": { "call_id": "h4_call_1", "exec_id": "h4_exec_1", "delta": "H4_TOOL_SENTINEL\n" } } },
+  { "delayMs": 80, "event": { "type": "tool.exec.end", "payload": { "call_id": "h4_call_1", "exec_id": "h4_exec_1", "exit_code": 0 } } },
+  { "delayMs": 80, "event": { "type": "tool.result", "payload": { "call_id": "h4_call_1", "tool_name": "shell_command", "display": { "title": "Shell(echo H4_TOOL_SENTINEL)", "summary": ["H4_TOOL_SENTINEL"], "detail": ["exit_code=0", "stdout=H4_TOOL_SENTINEL"] } } } },
+  { "delayMs": 80, "event": { "type": "assistant.message.start", "payload": { "message_id": "h4m2", "channel": "text", "format": "markdown" } } },
+  { "delayMs": 80, "event": { "type": "assistant.message.delta", "payload": { "message_id": "h4m2", "channel": "text", "delta": "H4_ASSISTANT_FINAL after tool." } } },
+  { "delayMs": 80, "event": { "type": "assistant.message.end", "payload": { "message_id": "h4m2", "channel": "text", "stop_reason": "end_turn" } } },
+  { "delayMs": 50, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "p14-h4-transcript-raw-copy" } } } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 14 } } }
+]

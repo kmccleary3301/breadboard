@@ -1,0 +1,8 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 15000, "mode": "frame" },
+  { "action": "type", "text": "show mermaid fallback" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitForState", "timeoutMs": 8000, "fresh": true, "pendingResponse": true, "lastConversationSpeaker": "assistant", "lastConversationPhase": "streaming", "lastConversationPreviewIncludes": "A-->B" },
+  { "action": "waitForState", "timeoutMs": 15000, "fresh": true, "pendingResponse": false, "conversationCountAtLeast": 2, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "A-->B" },
+  { "action": "snapshot", "label": "mdx-render", "mode": "history" }
+]

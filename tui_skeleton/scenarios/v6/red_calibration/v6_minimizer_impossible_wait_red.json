@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_minimizer_impossible_wait_red",
+  "title": "V6 minimizer calibration red: impossible wait target",
+  "family": "red-calibration",
+  "campaign": "p14-v6-fuzz-minimization",
+  "claimScope": "pty",
+  "expectedOutcome": { "verdict": "fail", "failureClass": "harness.wait_target_timeout" },
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "time", "workspace"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "scrollback-feed"]
+  },
+  "environment": {
+    "dummyWorkspace": { "gitInit": true, "files": [{ "path": "README.md", "content": "# minimizer calibration\n" }] },
+    "prelaunchShellHistory": [{ "id": "min-pre", "text": "BB_V6_MINIMIZER_PRE" }]
+  },
+  "launch": { "mode": "classic", "engineMode": "test-owned", "startupWait": { "composerReady": true, "timeoutMs": 20000 }, "timeoutMs": 90000 },
+  "terminal": { "lanes": ["pty"], "initial": { "cols": 90, "rows": 24 }, "resizePolicy": "scripted", "captureGrid": true, "captureScrollback": true },
+  "timeline": [
+    { "kind": "wait", "ms": 50 },
+    { "kind": "submit", "text": "Run minimizer calibration." },
+    { "kind": "assistant", "event": { "kind": "start", "streamId": "s1" } },
+    { "kind": "assistant", "event": { "kind": "delta", "streamId": "s1", "text": "Visible calibration response." } },
+    { "kind": "assistant", "event": { "kind": "complete", "streamId": "s1" } },
+    { "kind": "resize", "cols": 72, "rows": 20, "settleMs": 50 },
+    { "kind": "waitFor", "target": { "text": "THIS_TEXT_IS_INTENTIONALLY_ABSENT_FOR_MINIMIZER" }, "timeoutMs": 500 },
+    { "kind": "checkpoint", "id": "minimizer-red-final" }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" }
+  ],
+  "performanceBudget": { "maxDurationMs": 90000, "maxRawBytes": 2000000, "maxFrames": 500, "maxStateDumps": 1000 },
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report"] }
+}

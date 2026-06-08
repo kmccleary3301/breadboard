@@ -66,6 +66,8 @@ const normalizeWorkStatus = (value: string | undefined, kind?: string): WorkStat
     raw === "ok" ||
     raw === "success" ||
     raw === "succeeded" ||
+    raw === "end" ||
+    raw === "ended" ||
     raw === "finished"
   ) {
     return "completed"

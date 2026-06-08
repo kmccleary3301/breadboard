@@ -1,0 +1,226 @@
+[
+  {
+    "action": "log",
+    "message": "Multiagent task focus controls PTY harness start"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "type",
+    "text": "Delegate SMTP work to reviewer, implementer, and tester agents, then inspect task focus controls.",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "waitFor",
+    "text": "Taskboard summary: reviewer done, implementer running, tester blocked.",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "press",
+    "key": "ctrl+b"
+  },
+  {
+    "action": "waitFor",
+    "text": "Background tasks",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "waitFor",
+    "text": "Filter: all",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "taskboard-all-open"
+  },
+  {
+    "action": "type",
+    "text": "4",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Filter: blocked",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "waitFor",
+    "text": "Run SMTP smoke tests",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "taskboard-blocked-filter"
+  },
+  {
+    "action": "type",
+    "text": "0",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Filter: all",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "type",
+    "text": "g",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Group: lane",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "taskboard-lane-grouping"
+  },
+  {
+    "action": "type",
+    "text": "l",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Lane: tester",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "taskboard-lane-filter-tester"
+  },
+  {
+    "action": "type",
+    "text": "l",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Lane: implementer",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "waitFor",
+    "text": "Implement SMTP server core",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "taskboard-lane-filter-implementer"
+  },
+  {
+    "action": "type",
+    "text": "f",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Task Focus",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "waitFor",
+    "text": "SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "task-focus-snippet-tail"
+  },
+  {
+    "action": "press",
+    "key": "tab"
+  },
+  {
+    "action": "waitFor",
+    "text": "View: raw",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "task-focus-raw-tail"
+  },
+  {
+    "action": "press",
+    "key": "tab"
+  },
+  {
+    "action": "waitFor",
+    "text": "View: snippet",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "type",
+    "text": "p",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "P follow",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "task-focus-follow-paused"
+  },
+  {
+    "action": "resize",
+    "cols": 92,
+    "rows": 24,
+    "delayMs": 350
+  },
+  {
+    "action": "waitFor",
+    "text": "Task Focus",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "waitFor",
+    "text": "SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "task-focus-after-resize"
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "waitFor",
+    "text": "Background tasks",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "taskboard-after-focus-return"
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "task-focus-controls-closed"
+  },
+  {
+    "action": "log",
+    "message": "Multiagent task focus controls PTY harness complete"
+  }
+]

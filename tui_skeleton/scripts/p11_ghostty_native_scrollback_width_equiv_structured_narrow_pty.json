@@ -1,0 +1,14 @@
+[
+  { "action": "wait", "ms": 14000 },
+  { "action": "snapshot", "label": "startup" },
+  { "action": "resize", "cols": 88, "rows": 26, "delayMs": 2200 },
+  { "action": "snapshot", "label": "final-width-before-input" },
+  {
+    "action": "type",
+    "text": "Write a markdown answer with a heading, three bullets, a small table, and a ts code block. Keep it medium length."
+  },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 24000 },
+  { "action": "snapshot", "label": "turn1-settled" },
+  { "action": "snapshot", "label": "after-width-shrink" }
+]

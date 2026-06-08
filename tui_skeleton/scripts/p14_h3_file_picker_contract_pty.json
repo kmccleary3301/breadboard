@@ -1,0 +1,14 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "@", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "Attach file", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "file-picker-open", "mode": "frame", "maxLines": 100 },
+  { "action": "resize", "cols": 72, "rows": 30, "delayMs": 400 },
+  { "action": "snapshot", "label": "file-picker-resized", "mode": "frame", "maxLines": 100 },
+  { "action": "type", "text": "src", "typingDelayMs": 8 },
+  { "action": "wait", "ms": 500 },
+  { "action": "snapshot", "label": "file-picker-filtered", "mode": "frame", "maxLines": 100 },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 300 },
+  { "action": "snapshot", "label": "file-picker-closed", "mode": "frame", "maxLines": 100 }
+]

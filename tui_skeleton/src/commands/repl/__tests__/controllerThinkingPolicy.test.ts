@@ -90,7 +90,7 @@ describe("ReplSessionController thinking policy modes", () => {
     expect(state.thinkingArtifact?.rawText).toBeNull()
   })
 
-  it("keeps reasoning peek summary-only unless explicit raw peek override is enabled", () => {
+  it("keeps reasoning out of transcript/tool rails while preserving preview policy", () => {
     const controller = createController()
     controller.viewPrefs = { ...controller.viewPrefs, showReasoning: true }
     controller.runtimeFlags = {
@@ -105,20 +105,16 @@ describe("ReplSessionController thinking policy modes", () => {
     controller.applyEvent(event(2, "assistant.reasoning.delta", { delta: "raw should stay hidden in peek" }))
     controller.applyEvent(event(3, "assistant.thought_summary.delta", { delta: "summary is allowed in peek" }))
     let state = controller.getState()
-    let reasoningLines = state.toolEvents
-      .map((entry: any) => entry.text)
-      .filter((line: string) => line.startsWith("[reasoning]"))
-    expect(reasoningLines.some((line: string) => line.includes("raw should stay hidden"))).toBe(false)
-    expect(reasoningLines.some((line: string) => line.includes("summary is allowed"))).toBe(true)
+    expect(state.toolEvents.some((entry: any) => String(entry.text ?? "").startsWith("[reasoning]"))).toBe(false)
+    expect(state.thinkingPreview?.lines.some((line: string) => line.includes("summary is allowed"))).toBe(true)
+    expect(state.thinkingPreview?.lines.some((line: string) => line.includes("raw should stay hidden"))).toBe(false)
 
     controller.runtimeFlags = { ...controller.runtimeFlags, allowRawThinkingPeek: true }
     controller.applyEvent(event(4, "turn_start"))
     controller.applyEvent(event(5, "assistant.reasoning.delta", { delta: "raw now visible" }))
     state = controller.getState()
-    reasoningLines = state.toolEvents
-      .map((entry: any) => entry.text)
-      .filter((line: string) => line.startsWith("[reasoning]"))
-    expect(reasoningLines.some((line: string) => line.includes("raw now visible"))).toBe(true)
+    expect(state.toolEvents.some((entry: any) => String(entry.text ?? "").startsWith("[reasoning]"))).toBe(false)
+    expect(state.thinkingPreview?.lines.some((line: string) => line.includes("raw now visible"))).toBe(true)
   })
 
   it("finalizes thinking artifact on cancel and error terminal paths", () => {

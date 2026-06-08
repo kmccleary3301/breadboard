@@ -1,0 +1,29 @@
+{
+  "id": "vscode_v6_raw_viewer_escape_status",
+  "terminal": { "initialCols": 124, "initialRows": 38 },
+  "v6": {
+    "expectedFinalMode": "repl",
+    "maxProviderWarningCount": 0,
+    "minScreenshotCount": 4,
+    "requiresStableViewport": true
+  },
+  "steps": [
+    { "kind": "write", "text": "mkdir -p docs src && printf '# V6 raw viewer workspace\\n' > README.md\r" },
+    { "kind": "sleep", "ms": 500 },
+    { "kind": "write", "text": "bb\r" },
+    { "kind": "waitForText", "text": "Type your request", "timeoutMs": 20000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 700, "timeoutMs": 8000 },
+    { "kind": "screenshot", "label": "00-startup" },
+    { "kind": "write", "text": "/raw\r" },
+    { "kind": "waitForText", "text": "raw event viewer", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 500, "timeoutMs": 8000 },
+    { "kind": "screenshot", "label": "01-raw-open" },
+    { "kind": "key", "key": "escape" },
+    { "kind": "waitForText", "text": "Type your request", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "screenshot", "label": "02-after-raw-escape" },
+    { "kind": "write", "text": "/status\r" },
+    { "kind": "sleep", "ms": 1200 },
+    { "kind": "screenshot", "label": "03-after-status" },
+    { "kind": "terminate" }
+  ]
+}

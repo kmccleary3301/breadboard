@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "id": "long_50_turn_resize_churn",
+  "title": "50 event-ingested turns with resize churn",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "tool", "time", "workspace"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "scrollback-feed"]
+  },
+  "environment": {
+    "dummyWorkspace": { "files": [{ "path": "README.md", "content": "dummy long-session workspace\n" }], "gitInit": true },
+    "prelaunchShellHistory": [{ "id": "long-pre", "text": "BB_V5_LONG_PRE_HISTORY_SENTINEL" }]
+  },
+  "launch": { "mode": "classic", "engineMode": "test-owned", "startupWait": { "composerReady": true, "timeoutMs": 20000 }, "timeoutMs": 180000 },
+  "terminal": { "lanes": ["pty"], "initial": { "cols": 118, "rows": 34 }, "resizePolicy": "scripted", "captureGrid": true, "captureScrollback": true },
+  "fixtures": { "seedTurns": { "count": 50, "throughProductionIngestion": true, "contentMix": ["plain", "markdown", "tool"] } },
+  "timeline": [
+    { "kind": "submit", "text": "Summarize the seeded transcript state briefly." },
+    { "kind": "assistant", "event": { "kind": "start", "streamId": "s1" } },
+    { "kind": "assistant", "event": { "kind": "delta", "streamId": "s1", "text": "Seeded 50-turn transcript remained readable after resize churn." } },
+    { "kind": "assistant", "event": { "kind": "complete", "streamId": "s1" } },
+    { "kind": "waitFor", "target": { "text": "Seeded 50-turn transcript remained readable" }, "timeoutMs": 45000 },
+    { "kind": "resize", "cols": 84, "rows": 28, "settleMs": 250 },
+    { "kind": "resize", "cols": 132, "rows": 36, "settleMs": 250 },
+    { "kind": "checkpoint", "id": "long-50-final" }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-NO-DUPLICATE-PROMPT", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" },
+    { "id": "RESIZE-NO-DUP-STATUS", "severity": "blocker" },
+    { "id": "RESIZE-NO-STALE-BORDER", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report"] }
+}

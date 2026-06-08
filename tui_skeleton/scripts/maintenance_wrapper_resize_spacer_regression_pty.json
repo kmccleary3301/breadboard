@@ -1,0 +1,17 @@
+[
+  { "action": "waitFor", "text": "❯", "timeoutMs": 20000, "mode": "frame", "fresh": true },
+  { "action": "type", "text": "What is 1+1? Answer with only the lowercase English word." },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "waitForState", "timeoutMs": 45000, "fresh": true, "pendingResponse": false, "conversationCountAtLeast": 2, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "Verification: verification receipt" },
+  { "action": "resize", "cols": 100, "rows": 28, "delayMs": 120 },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 120 },
+  { "action": "type", "text": "What is 2+2? Answer with only the lowercase English word." },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "waitForState", "timeoutMs": 45000, "fresh": true, "pendingResponse": false, "conversationCountAtLeast": 4, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "Verification: verification receipt" },
+  { "action": "resize", "cols": 92, "rows": 24, "delayMs": 120 },
+  { "action": "resize", "cols": 120, "rows": 36, "delayMs": 120 },
+  { "action": "type", "text": "What is 3+3? Answer with only the lowercase English word." },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "waitForState", "timeoutMs": 45000, "fresh": true, "pendingResponse": false, "conversationCountAtLeast": 6, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "Verification: verification receipt" },
+  { "action": "snapshot", "label": "after-resize-turn3" }
+]

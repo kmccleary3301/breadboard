@@ -5,6 +5,7 @@ import {
   filterTasksForTaskboard,
   flattenTaskGroups,
   formatTaskModeBadge,
+  formatTaskInspectorTabsLine,
   formatTaskStepLine,
   normalizeTaskStatusGroup,
   sortTasksForLaneGrouping,
@@ -203,5 +204,29 @@ describe("taskboardStatus", () => {
       detail: "cancel requested",
     })
     expect(cancelledLine).toContain("[cancelled/cancelled]")
+  })
+
+  it("summarizes Task Focus semantic inspector categories truthfully", () => {
+    const line = formatTaskInspectorTabsLine({
+      artifactPath: ".breadboard/subagents/task.jsonl",
+      error: "permission denied",
+      steps: [
+        {
+          kind: "tool",
+          label: "write_file",
+          status: "completed",
+          attempt: 2,
+          detail: "patch smtp_server.c",
+        },
+        {
+          kind: "note",
+          label: "permission review",
+          status: "failed",
+          detail: "approval denied",
+        },
+      ],
+    })
+
+    expect(line).toBe("Tools 1 | Diffs 1 | Approvals 1 | Artifacts 1 | Attempts 2 | Failures 2")
   })
 })

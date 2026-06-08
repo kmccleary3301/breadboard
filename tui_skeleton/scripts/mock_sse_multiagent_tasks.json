@@ -1,0 +1,199 @@
+{
+  "fileContents": {
+    ".breadboard/subagents/agent-task-implementer-01.jsonl": "{\"event\":\"start\",\"message\":\"SMTP focus artifact opened\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_01 create socket\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_02 bind localhost\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_03 listen\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_04 accept client\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_05 parse HELO\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_06 parse MAIL FROM\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_07 parse RCPT TO\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_08 parse DATA\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_09 persist eml\"}\n{\"event\":\"write\",\"path\":\"smtp_server.c\",\"message\":\"SMTP_FOCUS_TAIL_LINE_10 graceful QUIT\"}\n{\"event\":\"summary\",\"message\":\"SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker\"}\n"
+  },
+  "steps": [
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "turn_start",
+        "payload": { "summary": "multiagent taskboard probe" },
+        "turn": 1
+      }
+    },
+    {
+      "delayMs": 100,
+      "event": {
+        "type": "assistant_message",
+        "payload": {
+          "text": "Delegated 3 tasks to reviewer, implementer, and tester lanes.",
+          "message": {
+            "role": "assistant",
+            "content": "Delegated 3 tasks to reviewer, implementer, and tester lanes."
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "agent.spawn",
+        "id": "agent-spawn-reviewer",
+        "payload": {
+          "task_id": "task-reviewer-01",
+          "subagent_type": "reviewer",
+          "lane_label": "reviewer",
+          "summary": "Review SMTP server requirements",
+          "mode": "async",
+          "timestamp": 1735689600100
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "task_event",
+        "id": "task-reviewer-running",
+        "payload": {
+          "task_id": "task-reviewer-01",
+          "status": "running",
+          "description": "Review SMTP server requirements",
+          "subagent_type": "reviewer",
+          "lane_label": "reviewer",
+          "mode": "async",
+          "kind": "analysis",
+          "call_id": "review-step-1",
+          "detail": "checking protocol edge cases",
+          "timestamp": 1735689600200
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "agent.spawn",
+        "id": "agent-spawn-implementer",
+        "payload": {
+          "task_id": "task-implementer-01",
+          "subagent_type": "implementer",
+          "lane_label": "implementer",
+          "summary": "Implement SMTP server core",
+          "mode": "async",
+          "timestamp": 1735689600300
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "task_event",
+        "id": "task-implementer-running",
+        "payload": {
+          "task_id": "task-implementer-01",
+          "status": "running",
+          "description": "Implement SMTP server core",
+          "subagent_type": "implementer",
+          "lane_label": "implementer",
+          "mode": "async",
+          "kind": "tool_call",
+          "tool": "write_file",
+          "call_id": "impl-step-1",
+          "detail": "writing smtp_server.c",
+          "artifact_path": ".breadboard/subagents/agent-task-implementer-01.jsonl",
+          "timestamp": 1735689600400
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "agent.spawn",
+        "id": "agent-spawn-tester",
+        "payload": {
+          "task_id": "task-tester-01",
+          "subagent_type": "tester",
+          "lane_label": "tester",
+          "summary": "Run SMTP smoke tests",
+          "mode": "async",
+          "timestamp": 1735689600500
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "task_event",
+        "id": "task-tester-blocked",
+        "payload": {
+          "task_id": "task-tester-01",
+          "status": "blocked",
+          "description": "Run SMTP smoke tests",
+          "subagent_type": "tester",
+          "lane_label": "tester",
+          "mode": "async",
+          "kind": "test",
+          "call_id": "test-step-1",
+          "detail": "waiting for implementation artifact",
+          "timestamp": 1735689600600
+        }
+      }
+    },
+    {
+      "delayMs": 160,
+      "event": {
+        "type": "task_event",
+        "id": "task-reviewer-complete",
+        "payload": {
+          "task_id": "task-reviewer-01",
+          "status": "completed",
+          "description": "Review SMTP server requirements",
+          "subagent_type": "reviewer",
+          "lane_label": "reviewer",
+          "mode": "async",
+          "kind": "analysis",
+          "call_id": "review-step-1",
+          "output_excerpt": "Reviewed RFC-style SMTP constraints and recommended HELO/MAIL/RCPT/DATA/QUIT coverage.",
+          "timestamp": 1735689600800
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "agent.end",
+        "id": "agent-end-reviewer",
+        "payload": {
+          "task_id": "task-reviewer-01",
+          "subagent_type": "reviewer",
+          "lane_label": "reviewer",
+          "summary": "Reviewer finished requirements pass",
+          "timestamp": 1735689600900
+        }
+      }
+    },
+    {
+      "delayMs": 180,
+      "event": {
+        "type": "assistant_message",
+        "payload": {
+          "text": "Taskboard summary: reviewer done, implementer running, tester blocked.",
+          "message": {
+            "role": "assistant",
+            "content": "Taskboard summary: reviewer done, implementer running, tester blocked."
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 160,
+      "event": {
+        "type": "completion",
+        "payload": {
+          "summary": {
+            "completed": true,
+            "reason": "multiagent taskboard mock",
+            "total_tokens": 321,
+            "duration_ms": 1800
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "run_finished",
+        "payload": { "eventCount": 12 }
+      }
+    }
+  ]
+}

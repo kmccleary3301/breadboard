@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "id": "p16_wezterm_final_core",
+  "campaign": "p16-terminal-host-universality",
+  "scenarios": [
+    { "path": "scenarios/v6/smoke/v6_structural_scrollback_smoke.json", "lane": "wezterm" },
+    { "path": "scenarios/v6/generated/markdown/v6_markdown_markdown_01.json", "lane": "wezterm" },
+    { "path": "scenarios/v6/generated/tool/v6_tool_tool_01.json", "lane": "wezterm" },
+    { "path": "scenarios/v6/generated/modal/v6_modal_modal_01.json", "lane": "wezterm" },
+    { "path": "scenarios/v6/generated/composer/v6_composer_composer_01.json", "lane": "wezterm" },
+    { "path": "scenarios/v6/generated/lifecycle/v6_lifecycle_lifecycle_01.json", "lane": "wezterm" },
+    { "path": "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_31.json", "lane": "wezterm" }
+  ]
+}

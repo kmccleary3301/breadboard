@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import type { Block } from "@stream-mdx/core/types"
-import { blocksToLines, formatInlineNodes } from "../streamMdxAdapter.js"
+import { blocksToLines, blocksToLinesWithRawFallback, formatInlineNodes, renderMarkdownFallbackLines } from "../streamMdxAdapter.js"
 import { stripAnsiCodes } from "../../../utils/ansi.js"
 
 const paragraphBlock = (raw: string): Block => ({
@@ -85,6 +85,97 @@ describe("streamMdxAdapter", () => {
     expect(stripAnsiCodes(lines[0] ?? "")).toBe("+bar")
   })
 
+  it("shows a language cue when stream-mdx supplies structured codeLines", () => {
+    const blocks: Block[] = [
+      {
+        id: "code-lines-ts",
+        type: "code",
+        isFinalized: true,
+        payload: {
+          raw: "```ts\nconst answer = 42\n```",
+          meta: {
+            lang: "ts",
+            codeLines: [
+              {
+                text: "const answer = 42",
+                tokens: null,
+              },
+            ],
+          },
+        },
+      },
+    ]
+    const lines = blocksToLines(blocks)
+    expect(stripAnsiCodes(lines[0] ?? "")).toBe("code · ts")
+    expect(stripAnsiCodes(lines[1] ?? "")).toBe("const answer = 42")
+  })
+
+  it("renders common markdown structures without leaking raw markdown delimiters", () => {
+    const blocks: Block[] = [
+      {
+        id: "heading-1",
+        type: "heading",
+        isFinalized: true,
+        payload: {
+          raw: "Sample Markdown",
+          meta: { headingLevel: 1, headingText: "Sample Markdown" },
+          inline: [{ kind: "text", text: "Sample Markdown" }],
+        },
+      },
+      {
+        id: "paragraph-inline",
+        type: "paragraph",
+        isFinalized: true,
+        payload: {
+          raw: "**Bold text**, *italic text*, and `inline code`.",
+          inline: [
+            { kind: "strong", children: [{ kind: "text", text: "Bold text" }] },
+            { kind: "text", text: ", " },
+            { kind: "em", children: [{ kind: "text", text: "italic text" }] },
+            { kind: "text", text: ", and " },
+            { kind: "code", text: "inline code" },
+            { kind: "text", text: "." },
+          ],
+        },
+      },
+      {
+        id: "quote-1",
+        type: "blockquote",
+        isFinalized: true,
+        payload: {
+          raw: "A blockquote for emphasis.",
+          inline: [{ kind: "text", text: "A blockquote for emphasis." }],
+        },
+      },
+      {
+        id: "code-structured",
+        type: "code",
+        isFinalized: true,
+        payload: {
+          raw: "```python\ndef greet(name):\n    return f\"Hello, {name}!\"\n```",
+          meta: { lang: "python" },
+        },
+      },
+    ]
+    const lines = blocksToLines(blocks).map(stripAnsiCodes)
+    expect(lines).toContain("Sample Markdown")
+    expect(lines).toContain("Bold text, italic text, and inline code.")
+    expect(lines).toContain("A blockquote for emphasis.")
+    expect(lines).toContain("code · python")
+    expect(lines).toContain("def greet(name):")
+    expect(lines.join("\n")).not.toMatch(/(^|\n)#{1,6}\s/)
+    expect(lines.join("\n")).not.toContain("**Bold")
+    expect(lines.join("\n")).not.toContain("*italic")
+    expect(lines.join("\n")).not.toContain("`inline code`")
+    expect(lines.join("\n")).not.toContain("> A blockquote")
+    expect(lines.join("\n")).not.toContain("```")
+  })
+
+  it("renders fallback inline markdown without delimiter or padding artifacts", () => {
+    const lines = renderMarkdownFallbackLines("**Bold text**, *italic text*, and `inline code`.", { width: 80 }).map(stripAnsiCodes)
+    expect(lines).toEqual(["Bold text, italic text, and inline code."])
+  })
+
   it("falls back to raw diff line when tokens missing", () => {
     const blocks: Block[] = [
       {
@@ -127,5 +218,141 @@ describe("streamMdxAdapter", () => {
     ]
     const lines = blocksToLines(blocks)
     expect(stripAnsiCodes(lines[0] ?? "")).toBe("+qux")
+  })
+
+  it("falls back safely for unsupported fenced languages like mermaid", () => {
+    const blocks: Block[] = [
+      {
+        id: "code-5",
+        type: "code",
+        isFinalized: true,
+        payload: {
+          raw: "```mermaid\ngraph TD\nA-->B\n```",
+        },
+      },
+    ]
+    const lines = blocksToLines(blocks)
+    expect(stripAnsiCodes(lines[0] ?? "")).toBe("code · mermaid")
+    expect(stripAnsiCodes(lines[1] ?? "")).toBe("graph TD")
+    expect(stripAnsiCodes(lines[2] ?? "")).toBe("A-->B")
+  })
+
+  it("shows a stacked table cue when narrow layouts collapse columns", () => {
+    const blocks: Block[] = [
+      {
+        id: "table-1",
+        type: "table",
+        isFinalized: true,
+        payload: {
+          raw: "| Column | Value |\n| --- | --- |\n| Alpha | 1 |",
+          meta: {
+            header: [
+              [{ kind: "text", text: "Column" }],
+              [{ kind: "text", text: "Value" }],
+            ],
+            rows: [
+              [
+                [{ kind: "text", text: "Alpha" }],
+                [{ kind: "text", text: "1" }],
+              ],
+            ],
+          },
+        },
+      },
+    ]
+    const lines = blocksToLines(blocks, { width: 24 })
+    expect(stripAnsiCodes(lines[0] ?? "")).toBe("table · stacked 2 cols")
+    expect(stripAnsiCodes(lines[1] ?? "")).toContain("Column: Alpha")
+    expect(stripAnsiCodes(lines[2] ?? "")).toContain("Value: 1")
+  })
+
+  it("shows a language cue before fenced code blocks", () => {
+    const blocks: Block[] = [
+      {
+        id: "code-6",
+        type: "code",
+        isFinalized: true,
+        payload: {
+          raw: "```ts\nconst answer = 42\n```",
+        },
+      },
+    ]
+    const lines = blocksToLines(blocks)
+    expect(stripAnsiCodes(lines[0] ?? "")).toBe("code · ts")
+    expect(stripAnsiCodes(lines[1] ?? "")).toBe("const answer = 42")
+  })
+
+  it("renders transcript text that stream-mdx did not represent as rich blocks", () => {
+    const blocks: Block[] = [
+      {
+        id: "table-tail",
+        type: "table",
+        isFinalized: true,
+        payload: {
+          raw: "| name | value |\n| --- | --- |\n| alpha | 1 |\n| beta | 2 |",
+          meta: {
+            header: [
+              [{ kind: "text", text: "name" }],
+              [{ kind: "text", text: "value" }],
+            ],
+            rows: [
+              [
+                [{ kind: "text", text: "alpha" }],
+                [{ kind: "text", text: "1" }],
+              ],
+              [
+                [{ kind: "text", text: "beta" }],
+                [{ kind: "text", text: "2" }],
+              ],
+            ],
+          },
+        },
+      },
+    ]
+    const rawText = "| name | value |\n| --- | --- |\n| alpha | 1 |\n| beta | 2 |\nV6 markdown response 6 completed."
+    const lines = blocksToLinesWithRawFallback(blocks, rawText, { width: 80 }).map(stripAnsiCodes)
+    expect(lines).toContain("V6 markdown response 6 completed.")
+  })
+
+  it("does not append raw heading lines already represented by stream-mdx heading blocks", () => {
+    const blocks: Block[] = [
+      {
+        id: "heading-projection",
+        type: "heading",
+        isFinalized: true,
+        payload: {
+          raw: "Projection",
+          meta: { level: 3 },
+          inline: [{ kind: "text", text: "Projection" }],
+        },
+      },
+    ]
+    const lines = blocksToLinesWithRawFallback(blocks, "### Projection\nTail", { width: 80 }).map(stripAnsiCodes)
+    expect(lines.filter((line) => /Projection/.test(line))).toEqual(["Projection"])
+    expect(lines).toContain("Tail")
+  })
+
+  it("does not duplicate post-list tail text when stream-mdx folds it into the final list item", () => {
+    const blocks: Block[] = [
+      {
+        id: "list-tail",
+        type: "list",
+        isFinalized: false,
+        payload: {
+          raw: "- item 1\n- item 2\nV6 fuzz seed 31 profile mixed complete.",
+          meta: {
+            ordered: false,
+            items: [
+              [{ kind: "text", text: "item 1" }],
+              [{ kind: "text", text: "item 2\nV6 fuzz seed 31 profile mixed complete." }],
+            ],
+          },
+        },
+      },
+    ]
+    const rawText = "- item 1\n- item 2\nV6 fuzz seed 31 profile mixed complete."
+    const lines = blocksToLinesWithRawFallback(blocks, rawText, { width: 80 }).map(stripAnsiCodes)
+    expect(lines.filter((line) => line === "V6 fuzz seed 31 profile mixed complete.")).toHaveLength(1)
+    expect(lines.filter((line) => line === "- item 2")).toHaveLength(1)
   })
 })

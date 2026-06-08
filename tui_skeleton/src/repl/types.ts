@@ -6,8 +6,10 @@ export interface ConversationEntry {
   readonly text: string
   readonly phase: "final" | "streaming"
   readonly createdAt: number
+  readonly activePreviewLines?: number
   readonly richBlocks?: ReadonlyArray<Block>
   readonly markdownStreaming?: boolean
+  readonly markdownFinalized?: boolean
   readonly markdownError?: string | null
 }
 
@@ -515,6 +517,7 @@ export interface ModelMenuItem {
   readonly value: string
   readonly provider: string
   readonly detail?: string
+  readonly aliases?: readonly string[]
   readonly isDefault?: boolean
   readonly isCurrent?: boolean
   readonly contextTokens?: number | null
@@ -556,6 +559,15 @@ export interface PermissionRequest {
   readonly diffText?: string | null
   readonly ruleSuggestion?: string | null
   readonly defaultScope: PermissionRuleScope
+  readonly effectiveScope?: PermissionRuleScope | string | null
+  readonly cwd?: string | null
+  readonly reason?: string | null
+  readonly launchPermissionMode?: string | null
+  readonly enginePermissionMode?: string | null
+  readonly agentId?: string | null
+  readonly agentLabel?: string | null
+  readonly taskId?: string | null
+  readonly taskLabel?: string | null
   readonly createdAt: number
 }
 

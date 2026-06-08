@@ -1,0 +1,29 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  {
+    "action": "type",
+    "text": "You are in a disposable dummy workspace for BreadBoard harness parity testing. This is an inspection/reporting task, not a bug-fix task. Do not search parent directories, do not look for AGENTS.md, and do not touch files outside this directory. Use shell_command exactly once to inspect the workspace with: pwd && find . -maxdepth 3 -type f -not -path './.git/*' -not -path './.breadboard/*' | sort && sed -n '1,80p' notes.md && sed -n '1,80p' src/widget.ts. After that single tool call, stop using tools and answer with first line exactly HARNESS_PARITY_INSPECT_OK, and mention ALPHA_WIDGET and BETA_NOTE. Do not edit files yet."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "waitForState", "timeoutMs": 120000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "waitForState", "timeoutMs": 120000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "HARNESS_PARITY_INSPECT_OK" },
+  { "action": "snapshot", "label": "turn1-inspect-history", "mode": "history", "maxLines": 260 },
+
+  {
+    "action": "type",
+    "text": "Now perform one small edit in this same dummy workspace. Do not search parent directories and do not inspect unrelated files. Use shell_command exactly once to run this exact command: printf '%s\\n' HARNESS_PARITY_EDIT_FILE ALPHA_WIDGET_CONFIRMED BETA_NOTE_CONFIRMED > agent_notes.md && cat agent_notes.md. After that single tool call, stop using tools and answer with first line exactly HARNESS_PARITY_EDIT_OK and summarize only agent_notes.md."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "waitForState", "timeoutMs": 120000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "waitForState", "timeoutMs": 120000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "HARNESS_PARITY_EDIT_OK" },
+  { "action": "snapshot", "label": "turn2-edit-history", "mode": "history", "maxLines": 340 },
+
+  {
+    "action": "type",
+    "text": "Verify the edit by using shell_command exactly once to run: pwd && cat agent_notes.md && npm run check. After that single verification tool call, stop using tools and answer with first line exactly HARNESS_PARITY_VERIFY_OK and include dummy-check-ok."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "waitForState", "timeoutMs": 120000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "waitForState", "timeoutMs": 120000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "HARNESS_PARITY_VERIFY_OK" },
+  { "action": "snapshot", "label": "turn3-verify-history", "mode": "history", "maxLines": 420 }
+]

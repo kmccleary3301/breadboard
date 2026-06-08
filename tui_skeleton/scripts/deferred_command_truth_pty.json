@@ -1,0 +1,14 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "/goal implement smtp server", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "durable goal persistence", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "deferred-goal", "mode": "frame", "maxLines": 120 },
+  { "action": "type", "text": "/fork", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "backend session graph", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "deferred-fork", "mode": "frame", "maxLines": 120 },
+  { "action": "type", "text": "/", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "/resume", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "visible-root-suggestions", "mode": "frame", "maxLines": 120 }
+]

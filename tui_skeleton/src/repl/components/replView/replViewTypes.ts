@@ -25,10 +25,30 @@ import type {
   RewindMenuState,
 } from "../../types.js"
 import type { SessionFileInfo, SessionFileContent, CTreeTreeResponse } from "../../../api/types.js"
+import type {
+  WorkingTreeDiffSummary,
+  WorkingTreePatchCopyResult,
+  WorkingTreePatchWriteResult,
+} from "../../../commands/repl/workingTreeDiff.js"
 import type { ResolvedTuiConfig } from "../../../tui_config/types.js"
+import type { LiveShellOwnershipMode, LiveShellRendererHost, LiveShellSceneStrategy } from "../../../config/frontendMode.js"
+
+export interface RecentSessionRow {
+  readonly sessionId: string
+  readonly status: string
+  readonly createdAt: string
+  readonly lastActivityAt: string
+  readonly model?: string | null
+  readonly name?: string | null
+  readonly loggingDir?: string | null
+  readonly source: "backend" | "cache"
+}
 
 export interface ReplViewProps {
   readonly tuiConfig?: ResolvedTuiConfig
+  readonly liveShellOwnershipMode?: LiveShellOwnershipMode
+  readonly liveShellRendererHost?: LiveShellRendererHost
+  readonly liveShellSceneStrategy?: LiveShellSceneStrategy
   readonly configPath?: string | null
   readonly sessionId: string
   readonly conversation: ConversationEntry[]
@@ -37,6 +57,7 @@ export interface ReplViewProps {
   readonly liveSlots: LiveSlotEntry[]
   readonly status: string
   readonly pendingResponse: boolean
+  readonly mainFollowTail: boolean
   readonly disconnected: boolean
   readonly mode?: string | null
   readonly permissionMode?: string | null
@@ -82,6 +103,7 @@ export interface ReplViewProps {
   readonly onGuardrailToggle: () => void
   readonly onGuardrailDismiss: () => void
   readonly onPermissionDecision: (decision: PermissionDecision) => Promise<void>
+  readonly onTaskAction?: (action: "cancel" | "retry" | "pause_resume" | "merge", task: TaskEntry) => Promise<boolean>
   readonly onRewindClose: () => void
   readonly onRewindRestore: (checkpointId: string, mode: "conversation" | "code" | "both") => Promise<void>
   readonly onListFiles: (path?: string) => Promise<SessionFileInfo[]>
@@ -89,6 +111,11 @@ export interface ReplViewProps {
     path: string,
     options?: { mode?: "cat" | "snippet"; headLines?: number; tailLines?: number; maxBytes?: number },
   ) => Promise<SessionFileContent>
+  readonly onReadWorkingTreeDiff?: () => Promise<WorkingTreeDiffSummary>
+  readonly onExportWorkingTreeDiffPatch?: (targetPath?: string | null) => Promise<WorkingTreePatchWriteResult>
+  readonly onCopyWorkingTreeDiffPatch?: () => Promise<WorkingTreePatchCopyResult>
+  readonly onListRecentSessions: () => Promise<RecentSessionRow[]>
+  readonly onAttachSession: (sessionId: string) => Promise<boolean>
   readonly onCtreeRequest: (force?: boolean) => Promise<void>
   readonly onCtreeRefresh: (options?: { stage?: string; includePreviews?: boolean; source?: string }) => Promise<void>
 }

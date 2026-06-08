@@ -1,0 +1,164 @@
+{
+  "id": "vscode_stop_retry_interrupt",
+  "terminal": {
+    "initialCols": 118,
+    "initialRows": 36
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "Start a long validation answer. First print STOPTESTSTART, then continue with at least thirty numbered lines unless interrupted.\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "STOPTESTSTART",
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "sleep",
+      "ms": 1200
+    },
+    {
+      "kind": "key",
+      "key": "ctrlc"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 30000
+    },
+    {
+      "kind": "write",
+      "text": "Reply with the single word formed by joining RETRY, OK, and DONE with no separators.\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "RETRYOKDONE",
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 900,
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "BB_VSCODE_PRE_ALPHA"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "STOPTESTSTART"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "RETRYOKDONE"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "Type your request",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "kind": "screenshot",
+      "label": "stop-retry-final"
+    },
+    {
+      "kind": "exportBreadBoardState",
+      "label": "stop-retry-state"
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "BB_VSCODE_PRE_ALPHA"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "STOPTESTSTART"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "RETRYOKDONE"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "You are Codex"
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "Type your request",
+      "count": 1
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import path from "node:path"
-import { resolveBreadboardWorkspace } from "../paths.js"
+import { resolveBreadboardWorkspace, resolveBreadboardWorkspaceOrCwd } from "../paths.js"
 
 describe("resolveBreadboardWorkspace", () => {
   it("returns undefined when workspace is not provided", () => {
@@ -17,3 +17,17 @@ describe("resolveBreadboardWorkspace", () => {
   })
 })
 
+describe("resolveBreadboardWorkspaceOrCwd", () => {
+  it("defaults to cwd when workspace is omitted", () => {
+    const cwd = process.cwd()
+    const resolved = resolveBreadboardWorkspaceOrCwd(undefined, cwd)
+    expect(resolved).toBe(path.resolve(cwd))
+  })
+
+  it("preserves explicit workspace overrides", () => {
+    const resolved = resolveBreadboardWorkspaceOrCwd("tui_skeleton", "/tmp/ignored")
+    expect(typeof resolved).toBe("string")
+    expect(path.isAbsolute(resolved)).toBe(true)
+    expect(resolved).toContain("tui_skeleton")
+  })
+})

@@ -1,10 +1,12 @@
 import React from "react"
 import { Box, Text, useStdout } from "ink"
+import { useTerminalSize } from "../hooks/useTerminalSize.js"
 
 export interface ModalDescriptor {
   readonly id: string
   readonly render: () => React.ReactNode
   readonly layout?: "center" | "sheet"
+  readonly estimatedRows?: number
 }
 
 interface ModalHostProps {
@@ -14,9 +16,13 @@ interface ModalHostProps {
 
 export const ModalHost: React.FC<ModalHostProps> = ({ stack, children }) => {
   const { stdout } = useStdout()
+  const terminalSize = useTerminalSize(stdout)
   const topModal = stack.length > 0 ? stack[stack.length - 1] : null
-  const width = stdout?.columns && Number.isFinite(stdout.columns) ? stdout.columns : 80
-  const height = stdout?.rows && Number.isFinite(stdout.rows) ? stdout.rows : 40
+  const fixedFrameWidthRaw = String(process.env.BREADBOARD_TUI_FRAME_WIDTH ?? "").trim()
+  const fixedFrameWidth = fixedFrameWidthRaw.length > 0 ? Number(fixedFrameWidthRaw) : NaN
+  const width = Number.isFinite(fixedFrameWidth) && fixedFrameWidth > 0
+    ? Math.min(Math.floor(fixedFrameWidth), terminalSize.columns)
+    : terminalSize.columns
   const layout = topModal?.layout ?? "center"
 
   if (topModal && layout === "sheet") {
@@ -29,23 +35,21 @@ export const ModalHost: React.FC<ModalHostProps> = ({ stack, children }) => {
     )
   }
 
+  // Default inline mode does not get a terminal-height takeover surface. Even
+  // centered overlays stay in-flow below the active viewport so they remain a
+  // bounded interaction surface rather than a hidden fullscreen layer.
   const modalAlign = layout === "sheet" ? "stretch" : "center"
-  const modalPaddingBottom = layout === "sheet" ? 0 : 1
+  const modalMarginTop = layout === "sheet" ? 0 : 1
 
   return (
-    <Box flexDirection="column" width={width} height={height}>
-      <Box flexDirection="column" width="100%" height="100%">
-        {children}
-      </Box>
+    <Box flexDirection="column" width={width}>
+      {children}
       {topModal && (
         <Box
-          position="absolute"
           width="100%"
-          height="100%"
           flexDirection="column"
-          justifyContent="flex-end"
           alignItems={modalAlign}
-          paddingBottom={modalPaddingBottom}
+          marginTop={modalMarginTop}
         >
           {topModal.render()}
         </Box>

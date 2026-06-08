@@ -22,11 +22,11 @@ from ..orchestration.coordination import build_coordination_inspection_snapshot
 from ..todo.projection import project_store_snapshot_to_tui_envelope
 
 CANONICAL_KERNEL_EVENT_TYPES: dict[str, dict[str, str]] = {
-    "assistant_message": {"family": "message.assistant", "actor": "engine", "visibility": "model"},
-    "user_message": {"family": "message.user", "actor": "human", "visibility": "model"},
-    "provider_response": {"family": "provider.exchange", "actor": "provider", "visibility": "host"},
-    "tool_call": {"family": "tool.called", "actor": "engine", "visibility": "host"},
-    "tool_result": {"family": "tool.completed", "actor": "tool", "visibility": "host"},
+    "assistant_message": {"family": "message.assistant", "actor": "engine", "visibility": "transcript"},
+    "user_message": {"family": "message.user", "actor": "human", "visibility": "transcript"},
+    "provider_response": {"family": "provider.exchange", "actor": "provider", "visibility": "diagnostic"},
+    "tool_call": {"family": "tool.called", "actor": "engine", "visibility": "tool"},
+    "tool_result": {"family": "tool.completed", "actor": "tool", "visibility": "tool"},
     "permission_request": {"family": "permission.requested", "actor": "service", "visibility": "host"},
     "permission_response": {"family": "permission.decided", "actor": "service", "visibility": "host"},
     "task_event": {"family": "task.progress", "actor": "subagent", "visibility": "host"},
@@ -60,6 +60,42 @@ AUDIT_ONLY_RUNTIME_EVENT_TYPES: dict[str, dict[str, str]] = {
 PROJECTED_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in PROJECTION_ONLY_RUNTIME_EVENT_TYPES.values()}
 
 AUDIT_RUNTIME_EVENT_FAMILIES = {meta["family"] for meta in AUDIT_ONLY_RUNTIME_EVENT_TYPES.values()}
+
+
+def _sanitize_user_visible_content(content: Any) -> Any:
+    if not isinstance(content, str):
+        return content
+    normalized = content.replace("\r\n", "\n")
+    prompt_suffix_markers = (
+        "\n\nindustry_coder_refs/",
+        "\n\n<TOOLS_AVAILABLE>",
+        "\n\n**PRIMARY FORMAT",
+        "\n\n# PRIMARY FORMAT",
+    )
+    cutoff = len(normalized)
+    for marker in prompt_suffix_markers:
+        index = normalized.find(marker)
+        if index >= 0:
+            cutoff = min(cutoff, index)
+    return normalized[:cutoff].rstrip()
+
+
+def _is_internal_user_message(content: Any) -> bool:
+    if not isinstance(content, str):
+        return False
+    stripped = content.lstrip()
+    return stripped.startswith("<VALIDATION_ERROR>") or "<WORKSPACE_TOOL_REQUIRED>" in stripped
+
+
+def _attach_event_contract(payload: Dict[str, Any], event_record: Dict[str, Any]) -> Dict[str, Any]:
+    payload_out = dict(payload or {})
+    payload_out["_bb_event_contract"] = {
+        "classification": str(event_record.get("classification") or "legacy_unclassified"),
+        "family": str(event_record.get("family") or "legacy.unclassified"),
+        "actor": str(event_record.get("actor") or "engine"),
+        "visibility": str(event_record.get("visibility") or "audit"),
+    }
+    return payload_out
 
 
 class SessionState:
@@ -96,6 +132,13 @@ class SessionState:
             "total_calls": 0,
             "write_calls": 0,
             "successful_writes": 0,
+            "user_facing_write_calls": 0,
+            "successful_user_facing_writes": 0,
+            "requested_file_write_calls": 0,
+            "successful_requested_file_writes": 0,
+            "requested_write_targets": [],
+            "successful_user_facing_write_targets": [],
+            "successful_requested_write_targets": [],
             "run_shell_calls": 0,
             "test_commands": 0,
             "successful_tests": 0,
@@ -202,7 +245,7 @@ class SessionState:
     def _emit_event(self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> Optional[int]:
         seq = self._next_event_seq()
         event_record = self.build_kernel_event_record(event_type, payload, turn=turn, seq=seq)
-        payload_out = event_record["payload"]
+        payload_out = _attach_event_contract(event_record["payload"], event_record)
         if not self._event_emitter:
             return seq
         try:
@@ -352,7 +395,14 @@ class SessionState:
     
     def add_message(self, message: Dict[str, Any], to_provider: bool = True):
         """Add a message to the session state"""
-        self.messages.append(message)
+        should_store_message = True
+        if to_provider and self.messages:
+            try:
+                should_store_message = self.messages[-1] != message
+            except Exception:
+                should_store_message = True
+        if should_store_message:
+            self.messages.append(message)
         if to_provider:
             self.provider_messages.append(message.copy())
         if not isinstance(message, dict):
@@ -360,12 +410,17 @@ class SessionState:
 
         role = message.get("role")
         turn_hint = self._active_turn_index if isinstance(self._active_turn_index, int) else None
-        payload = {"message": message}
+        emitted_message = message
+        if role == "user":
+            emitted_message = dict(message)
+            emitted_message["content"] = _sanitize_user_visible_content(message.get("content"))
+
+        payload = {"message": emitted_message}
 
         try:
             message_payload = {
                 "role": role,
-                "content": message.get("content"),
+                "content": emitted_message.get("content"),
                 "tool_calls": message.get("tool_calls"),
                 "name": message.get("name"),
             }
@@ -384,6 +439,8 @@ class SessionState:
                         if isinstance(call, dict):
                             self._emit_event("tool_call", {"call": call}, turn=turn_hint)
         elif role == "user":
+            if _is_internal_user_message(message.get("content")):
+                return
             emit_now = (not to_provider) or (not self._turn_user_emitted)
             if emit_now:
                 self._emit_event("user_message", payload, turn=turn_hint)
@@ -732,6 +789,7 @@ class SessionState:
         *,
         success: bool,
         metadata: Optional[Dict[str, Any]] = None,
+        result: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Record a single tool invocation for watchdogs and guardrails."""
         meta = metadata or {}
@@ -757,6 +815,34 @@ class SessionState:
             self.tool_usage_summary["write_calls"] += 1
             if success:
                 self.tool_usage_summary["successful_writes"] += 1
+        if meta.get("is_user_facing_write"):
+            self.tool_usage_summary["user_facing_write_calls"] = int(self.tool_usage_summary.get("user_facing_write_calls", 0)) + 1
+            if success:
+                self.tool_usage_summary["successful_user_facing_writes"] = int(self.tool_usage_summary.get("successful_user_facing_writes", 0)) + 1
+                successful_user_targets = list(self.tool_usage_summary.get("successful_user_facing_write_targets") or [])
+                for target in meta.get("write_targets") or []:
+                    target_str = str(target or "")
+                    if target_str and target_str not in successful_user_targets:
+                        successful_user_targets.append(target_str)
+                self.tool_usage_summary["successful_user_facing_write_targets"] = successful_user_targets
+        requested_targets = meta.get("requested_write_targets")
+        if isinstance(requested_targets, list):
+            existing_targets = list(self.tool_usage_summary.get("requested_write_targets") or [])
+            for target in requested_targets:
+                target_str = str(target or "")
+                if target_str and target_str not in existing_targets:
+                    existing_targets.append(target_str)
+            self.tool_usage_summary["requested_write_targets"] = existing_targets
+        if meta.get("is_requested_file_write"):
+            self.tool_usage_summary["requested_file_write_calls"] = int(self.tool_usage_summary.get("requested_file_write_calls", 0)) + 1
+            if success:
+                self.tool_usage_summary["successful_requested_file_writes"] = int(self.tool_usage_summary.get("successful_requested_file_writes", 0)) + 1
+                successful_targets = list(self.tool_usage_summary.get("successful_requested_write_targets") or [])
+                for target in meta.get("requested_write_matches") or []:
+                    target_str = str(target or "")
+                    if target_str and target_str not in successful_targets:
+                        successful_targets.append(target_str)
+                self.tool_usage_summary["successful_requested_write_targets"] = successful_targets
         if meta.get("is_run_shell"):
             self.tool_usage_summary["run_shell_calls"] += 1
         if meta.get("is_test_command"):
@@ -772,6 +858,8 @@ class SessionState:
             "status": "ok" if success else "error",
             "error": (not bool(success)),
         }
+        if isinstance(result, dict) and result:
+            payload["result"] = dict(result)
         call_id = meta.get("call_id") or meta.get("tool_call_id") or meta.get("toolCallId")
         if isinstance(call_id, str) and call_id.strip():
             payload["call_id"] = call_id.strip()

@@ -1,0 +1,18 @@
+[
+  { "delayMs": 0, "event": { "id": "v7-replay-user-1", "type": "user_message", "payload": { "text": "Run deterministic V7 replay duplicate scenario." } } },
+  { "delayMs": 0, "event": { "id": "v7-replay-user-1", "type": "user_message", "payload": { "text": "Run deterministic V7 replay duplicate scenario." } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-turn-start", "type": "turn_start", "payload": { "summary": "v7 replay duplicate scenario" } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-assistant-start", "type": "assistant.message.start", "payload": { "message_id": "v7-replay-message", "channel": "text", "format": "markdown" } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-assistant-delta", "type": "assistant.message.delta", "payload": { "message_id": "v7-replay-message", "channel": "text", "delta": "V7_REPLAY_ASSISTANT_CHUNK" } } },
+  { "delayMs": 0, "event": { "id": "v7-replay-assistant-delta", "type": "assistant.message.delta", "payload": { "message_id": "v7-replay-message", "channel": "text", "delta": "V7_REPLAY_ASSISTANT_CHUNK" } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-assistant-end", "type": "assistant.message.end", "payload": { "message_id": "v7-replay-message", "stop_reason": "tool_call" } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-tool-call", "type": "tool_call", "payload": { "call_id": "v7_replay_call", "tool_name": "bash", "display": { "title": "Bash(v7-replay)" } } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-tool-start", "type": "tool.exec.start", "payload": { "call_id": "v7_replay_call", "exec_id": "v7_replay_exec", "command": "printf replay", "tool_name": "bash" } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-stdout", "type": "tool.exec.stdout.delta", "payload": { "call_id": "v7_replay_call", "exec_id": "v7_replay_exec", "delta": "V7_REPLAY_STDOUT_LINE\n" } } },
+  { "delayMs": 0, "event": { "id": "v7-replay-stdout", "type": "tool.exec.stdout.delta", "payload": { "call_id": "v7_replay_call", "exec_id": "v7_replay_exec", "delta": "V7_REPLAY_STDOUT_LINE\n" } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-tool-end", "type": "tool.exec.end", "payload": { "call_id": "v7_replay_call", "exec_id": "v7_replay_exec", "exit_code": 0 } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-tool-result", "type": "tool.result", "payload": { "call_id": "v7_replay_call", "tool_name": "bash", "display": { "title": "Bash(v7-replay)", "detail": ["V7_REPLAY_RESULT_LINE"] } } } },
+  { "delayMs": 0, "event": { "id": "v7-replay-tool-result", "type": "tool.result", "payload": { "call_id": "v7_replay_call", "tool_name": "bash", "display": { "title": "Bash(v7-replay)", "detail": ["V7_REPLAY_RESULT_LINE"] } } } },
+  { "delayMs": 50, "event": { "id": "v7-replay-completion", "type": "completion", "payload": { "summary": { "completed": true, "reason": "v7_replay_duplicates" } } } },
+  { "delayMs": 0, "event": { "id": "v7-replay-run-finished", "type": "run_finished", "payload": { "eventCount": 16 } } }
+]

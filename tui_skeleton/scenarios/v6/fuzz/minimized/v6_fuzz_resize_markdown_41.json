@@ -1,0 +1,220 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_fuzz_resize_markdown_41",
+  "title": "V6 fuzz seed 41 (resize-markdown)",
+  "family": "fuzz",
+  "campaign": "p14-v6-fuzz-minimization",
+  "claimScope": "fuzz",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# v6_fuzz_resize_markdown_41\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "fuzz-pre",
+        "text": "BB_V6_FUZZ_PRE_RESIZE-MARKDOWN_41"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 127,
+      "rows": 25
+    },
+    "resizePolicy": "fuzzed",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "submit",
+      "text": "Run V6 fuzz seed 41 with resize-markdown stress."
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "markdown-fixture",
+        "streamId": "s1",
+        "fixture": "table-rowwise",
+        "chunking": {
+          "mode": "char",
+          "seed": 41
+        }
+      }
+    },
+    {
+      "kind": "resize",
+      "cols": 112,
+      "rows": 22,
+      "settleMs": 60
+    },
+    {
+      "kind": "resize",
+      "cols": 120,
+      "rows": 24,
+      "settleMs": 40
+    },
+    {
+      "kind": "resize",
+      "cols": 127,
+      "rows": 25,
+      "settleMs": 80
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "V6 fuzz seed 41 profile resize-markdown complete."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "V6 fuzz seed 41 profile resize-markdown complete."
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "fuzz-final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DESTRUCTIVE-CLEAR",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DUPLICATE-ASSISTANT-TAIL",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-COMPOSER-PROMPT-REPLAY",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "MD-FINAL-TEXT-COMPLETE",
+      "severity": "blocker"
+    }
+  ],
+  "actionRequirements": {
+    "waitTargetsObserved": "required",
+    "resizeObserved": "required"
+  },
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 8000000,
+    "maxFrames": 1800,
+    "maxStateDumps": 3000
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "not-required"
+  },
+  "mutationProfile": {
+    "seed": 41,
+    "dimensions": [
+      "resize-markdown",
+      "cols:127",
+      "rows:25",
+      "chunk:char",
+      "fixture:table-rowwise"
+    ]
+  },
+  "minimization": {
+    "enabled": true,
+    "preserveSteps": [
+      "launch",
+      "checkpoint:fuzz-final",
+      "seed:41"
+    ]
+  },
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  }
+}

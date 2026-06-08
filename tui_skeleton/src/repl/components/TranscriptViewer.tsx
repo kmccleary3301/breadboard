@@ -45,12 +45,14 @@ export interface TranscriptViewerProps {
   readonly cols?: number
   readonly rows?: number
   readonly scroll: number
+  readonly searchOpen?: boolean
   readonly searchQuery?: string
   readonly matchLines?: ReadonlyArray<number>
   readonly matchCount?: number
   readonly activeMatchIndex?: number
   readonly activeMatchLine?: number | null
   readonly toggleHint?: string
+  readonly titleLabel?: string
   readonly detailLabel?: string
   readonly variant?: "default" | "claude"
 }
@@ -82,19 +84,21 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
   cols,
   rows,
   scroll,
+  searchOpen,
   searchQuery,
   matchLines,
   matchCount,
   activeMatchIndex,
   activeMatchLine,
   toggleHint,
+  titleLabel,
   detailLabel,
   variant = "default",
 }) => {
   const width = cols && Number.isFinite(cols) ? cols : DEFAULT_COLS
   const height = rows && Number.isFinite(rows) ? rows : DEFAULT_ROWS
   const trimmedQuery = (searchQuery ?? "").trim()
-  const hasSearch = trimmedQuery.length > 0
+  const hasSearch = Boolean(searchOpen) || trimmedQuery.length > 0
   const chromeRows =
     variant === "claude"
       ? (detailLabel ? 2 : 1) + (hasSearch ? 1 : 0)
@@ -170,16 +174,16 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
 
   return (
     <Box flexDirection="column" width={width} height={height}>
-      <Text wrap="truncate-end">{CHALK.hex(SEMANTIC_COLORS.info)("breadboard")} {CHALK.dim("transcript viewer")}</Text>
+      <Text wrap="truncate-end">{CHALK.hex(SEMANTIC_COLORS.info)("breadboard")} {CHALK.dim(titleLabel ?? "transcript viewer")}</Text>
       {detailLabel ? (
         <Text color="dim" wrap="truncate-end">
           {detailLabel}
         </Text>
       ) : null}
       <Text color="dim" wrap="truncate-end">
-        {searchQuery && searchQuery.trim().length > 0
+        {hasSearch
           ? uiText(
-              `Search: ${searchQuery}  ${typeof matchCount === "number" ? `• ${matchCount} match${matchCount === 1 ? "" : "es"}` : ""}${
+              `Search: ${searchQuery ?? ""}  ${typeof matchCount === "number" ? `• ${matchCount} match${matchCount === 1 ? "" : "es"}` : ""}${
                 typeof activeMatchIndex === "number" && typeof matchCount === "number" && matchCount > 0
                   ? ` • ${activeMatchIndex + 1}/${matchCount}`
                   : ""
@@ -189,7 +193,7 @@ export const TranscriptViewer: React.FC<TranscriptViewerProps> = ({
         {"  "}
         {CHALK.dim(
           uiText(
-            `Esc back • ↑/↓ scroll • PgUp/PgDn page${searchQuery && searchQuery.trim().length > 0 ? " • n/p match" : ""} • t tools • s save • ${
+            `Esc back • ↑/↓ scroll • PgUp/PgDn page • g top • G tail${hasSearch ? " • n/p match" : ""} • a/u/t/e/w anchors • s save • ${
               toggleHint ?? "Ctrl+T toggle"
             }`,
           ),

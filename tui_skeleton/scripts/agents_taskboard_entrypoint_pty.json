@@ -1,0 +1,23 @@
+[
+  { "action": "log", "message": "Agents taskboard entrypoint PTY harness start" },
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "Delegate SMTP work to reviewer, implementer, and tester agents.", "typingDelayMs": 10 },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "waitFor", "text": "Taskboard summary: reviewer done, implementer running, tester blocked.", "timeoutMs": 15000 },
+  { "action": "type", "text": "/agents", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Background tasks", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "waitFor", "text": "Implement SMTP server core", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "waitFor", "text": "Run SMTP smoke tests", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "waitFor", "text": "Reviewer finished requirements pass", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "snapshot", "label": "agents-taskboard-open", "mode": "frame", "maxLines": 140 },
+  { "action": "resize", "cols": 88, "rows": 24 },
+  { "action": "wait", "ms": 350 },
+  { "action": "waitFor", "text": "Background tasks", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "waitFor", "text": "Implement SMTP server core", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "snapshot", "label": "agents-taskboard-after-resize", "mode": "frame", "maxLines": 140 },
+  { "action": "press", "key": "escape" },
+  { "action": "waitForComposerReady", "timeoutMs": 5000, "mode": "frame" },
+  { "action": "snapshot", "label": "agents-taskboard-closed", "mode": "frame", "maxLines": 120 },
+  { "action": "log", "message": "Agents taskboard entrypoint PTY harness complete" }
+]

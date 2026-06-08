@@ -1,0 +1,10 @@
+{
+  "id": "v6_fuzz_tool_61_4",
+  "campaign": "p14-v6-fuzz-minimization",
+  "scenarios": [
+    "scenarios/v6/fuzz/minimized/v6_fuzz_tool_61.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_tool_62.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_tool_63.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_tool_64.json"
+  ]
+}

@@ -51,6 +51,112 @@ describe("ReplSessionController subagent routing", () => {
     expect(state.workGraph.itemOrder).toContain("task-2")
   })
 
+  it("normalizes agent.end as completed in task state and work graph", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/misc/test_simple_native.yaml",
+      workspace: ".",
+    }) as any
+    controller.runtimeFlags = {
+      ...controller.runtimeFlags,
+      subagentWorkGraphEnabled: true,
+      subagentCoalesceMs: 0,
+      subagentToastsEnabled: false,
+    }
+
+    controller.applyEvent(
+      event(1, "task_event", {
+        task_id: "task-agent-end",
+        status: "running",
+        description: "Review delegated work",
+        subagent_type: "reviewer",
+      }),
+    )
+    controller.applyEvent(
+      event(2, "agent.end", {
+        task_id: "task-agent-end",
+        summary: "Reviewer finished delegated work",
+        subagent_type: "reviewer",
+      }),
+    )
+
+    const state = controller.getState()
+    expect(state.tasks.find((task: any) => task.id === "task-agent-end")?.status).toBe("completed")
+    expect(state.workGraph.itemsById["task-agent-end"]?.status).toBe("completed")
+  })
+
+  it("preserves explicit failed status on agent.end", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/misc/test_simple_native.yaml",
+      workspace: ".",
+    }) as any
+    controller.runtimeFlags = {
+      ...controller.runtimeFlags,
+      subagentWorkGraphEnabled: true,
+      subagentCoalesceMs: 0,
+      subagentToastsEnabled: false,
+    }
+
+    controller.applyEvent(
+      event(1, "task_event", {
+        task_id: "task-agent-failed-end",
+        status: "running",
+        description: "Run delegated smoke tests",
+        subagent_type: "tester",
+      }),
+    )
+    controller.applyEvent(
+      event(2, "agent.end", {
+        task_id: "task-agent-failed-end",
+        status: "failed_retryable",
+        summary: "Tester failed delegated smoke tests",
+        subagent_type: "tester",
+      }),
+    )
+
+    const state = controller.getState()
+    expect(state.tasks.find((task: any) => task.id === "task-agent-failed-end")?.status).toBe("failed")
+    expect(state.workGraph.itemsById["task-agent-failed-end"]?.status).toBe("failed")
+  })
+
+  it("keeps task diagnostic fields sticky across sparse agent.end events", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/misc/test_simple_native.yaml",
+      workspace: ".",
+    }) as any
+    controller.runtimeFlags = {
+      ...controller.runtimeFlags,
+      subagentWorkGraphEnabled: true,
+      subagentCoalesceMs: 0,
+      subagentToastsEnabled: false,
+    }
+
+    controller.applyEvent(
+      event(1, "task_event", {
+        task_id: "task-sticky-failure",
+        status: "failed",
+        description: "Run SMTP failure reproduction",
+        subagent_type: "tester",
+        output_excerpt: "Failure excerpt",
+        artifact_path: ".breadboard/subagents/agent-task-sticky-failure.jsonl",
+        error: "SMTP_TEST_FAILURE missing DATA terminator",
+      }),
+    )
+    controller.applyEvent(
+      event(2, "agent.end", {
+        task_id: "task-sticky-failure",
+        status: "failed",
+        summary: "Tester failed delegated smoke tests",
+        subagent_type: "tester",
+      }),
+    )
+
+    const state = controller.getState()
+    const task = state.tasks.find((task: any) => task.id === "task-sticky-failure")
+    expect(task?.error).toBe("SMTP_TEST_FAILURE missing DATA terminator")
+    expect(task?.outputExcerpt).toBe("Failure excerpt")
+    expect(task?.artifactPath).toBe(".breadboard/subagents/agent-task-sticky-failure.jsonl")
+  })
+
   it("emits subagent toast slots when enabled", () => {
     const controller = new ReplSessionController({
       configPath: "agent_configs/misc/test_simple_native.yaml",

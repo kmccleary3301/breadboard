@@ -1,0 +1,31 @@
+{
+  "id": "v6_fuzz_f1_cross_profile_31_25",
+  "campaign": "p14-v6-fuzz-minimization-f1",
+  "scenarios": [
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_31.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_32.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_33.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_34.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_35.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_resize_markdown_41.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_resize_markdown_42.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_resize_markdown_43.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_resize_markdown_44.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_resize_markdown_45.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_modal_51.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_modal_52.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_modal_53.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_modal_54.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_modal_55.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_tool_61.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_tool_62.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_tool_63.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_tool_64.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_tool_65.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_lifecycle_71.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_lifecycle_72.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_lifecycle_73.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_lifecycle_74.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_lifecycle_75.json"
+  ]
+}

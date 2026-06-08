@@ -1,5 +1,5 @@
 [96mbreadboard — interactive session[39m
-(pending) [96m●[39m Finished [96m●[39m model openrouter/x-ai/grok-4-fast [30m○[39m local [30m○[39m events 0 [93m●[39m tools 2
+(pending) [96m●[39m Finished [96m●[39m model openai/gpt-5.4-mini [30m○[39m local [30m○[39m events 0 [93m●[39m tools 2
 
 
 [36m●[39m [1m[97mPatch(hello.c)[0m

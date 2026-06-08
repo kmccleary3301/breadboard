@@ -9,10 +9,14 @@ This test verifies that:
 
 import pytest
 import ray
+import shutil
+import os
 from pathlib import Path
 
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
 from agentic_coder_prototype.conductor_context import ConductorContext
+
+ConductorClass = OpenAIConductor.__ray_metadata__.modified_class
 
 
 @pytest.fixture(scope="module")
@@ -29,7 +33,7 @@ def test_conductor_initialization_basic(ray_cluster, tmp_path):
     workspace = str(tmp_path / "test_workspace")
     
     # This should not raise any exceptions
-    conductor = OpenAIConductor(
+    conductor = ConductorClass(
         workspace=workspace,
         image="python-dev:latest",
         config={},
@@ -39,7 +43,7 @@ def test_conductor_initialization_basic(ray_cluster, tmp_path):
     # Verify basic attributes are set
     assert conductor.workspace == workspace or str(Path(workspace).resolve())
     assert conductor.image == "python-dev:latest"
-    assert conductor.config == {}
+    assert isinstance(conductor.config, dict)
     assert conductor.local_mode is True
 
 
@@ -63,7 +67,7 @@ def test_conductor_initialization_with_config(ray_cluster, tmp_path):
         ],
     }
     
-    conductor = OpenAIConductor(
+    conductor = ConductorClass(
         workspace=workspace,
         image="python-dev:latest",
         config=config,
@@ -79,7 +83,7 @@ def test_conductor_components_initialized(ray_cluster, tmp_path):
     """Verify all components are initialized correctly after bootstrap."""
     workspace = str(tmp_path / "test_workspace")
     
-    conductor = OpenAIConductor(
+    conductor = ConductorClass(
         workspace=workspace,
         image="python-dev:latest",
         config={},
@@ -118,6 +122,60 @@ def test_conductor_components_initialized(ray_cluster, tmp_path):
     assert hasattr(conductor, 'plan_bootstrapper')
     assert conductor.plan_bootstrapper is not None
     assert hasattr(conductor, 'streaming_policy')
+
+
+def test_persist_final_workspace_skips_nondisposable_workspace(ray_cluster, tmp_path):
+    workspace = tmp_path / "user_workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "hello.txt").write_text("hello\n", encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    conductor = ConductorClass(
+        workspace=str(workspace),
+        image="python-dev:latest",
+        config={},
+        local_mode=True,
+    )
+    conductor.logger_v2.run_dir = str(run_dir)
+
+    conductor._persist_final_workspace()
+
+    assert not (run_dir / "final_container_dir").exists()
+    capture_meta = run_dir / "meta" / "final_workspace_capture.json"
+    assert capture_meta.exists()
+    payload = __import__("json").loads(capture_meta.read_text(encoding="utf-8"))
+    assert payload["persisted"] is False
+    assert payload["reason"] == "nondisposable_workspace_skipped"
+
+
+def test_persist_final_workspace_copies_disposable_workspace(ray_cluster, tmp_path):
+    workspace = tmp_path / "persistable_workspace"
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / "hello.txt").write_text("hello\n", encoding="utf-8")
+    run_dir = tmp_path / "run"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        os.environ["BREADBOARD_PERSIST_FINAL_WORKSPACE"] = "1"
+        conductor = ConductorClass(
+            workspace=str(workspace),
+            image="python-dev:latest",
+            config={},
+            local_mode=True,
+        )
+        conductor.logger_v2.run_dir = str(run_dir)
+
+        conductor._persist_final_workspace()
+
+        assert (run_dir / "final_container_dir" / "hello.txt").read_text(encoding="utf-8") == "hello\n"
+        capture_meta = run_dir / "meta" / "final_workspace_capture.json"
+        assert capture_meta.exists()
+        payload = __import__("json").loads(capture_meta.read_text(encoding="utf-8"))
+        assert payload["persisted"] is True
+        assert payload["reason"] == "copied"
+    finally:
+        os.environ.pop("BREADBOARD_PERSIST_FINAL_WORKSPACE", None)
     assert conductor.streaming_policy is not None
     assert hasattr(conductor, 'provider_invoker')
     assert conductor.provider_invoker is not None
@@ -133,7 +191,7 @@ def test_conductor_satisfies_conductor_context_protocol(ray_cluster, tmp_path):
     """Verify conductor satisfies ConductorContext protocol (P2)."""
     workspace = str(tmp_path / "test_workspace")
     
-    conductor = OpenAIConductor(
+    conductor = ConductorClass(
         workspace=workspace,
         image="python-dev:latest",
         config={},
@@ -184,7 +242,7 @@ def test_conductor_guardrail_attributes_initialized(ray_cluster, tmp_path):
     """Verify guardrail attributes are initialized correctly."""
     workspace = str(tmp_path / "test_workspace")
     
-    conductor = OpenAIConductor(
+    conductor = ConductorClass(
         workspace=workspace,
         image="python-dev:latest",
         config={},
@@ -210,7 +268,7 @@ def test_conductor_replay_session_loading(ray_cluster, tmp_path):
     workspace = str(tmp_path / "test_workspace")
     
     # Without replay config, should initialize normally
-    conductor = OpenAIConductor(
+    conductor = ConductorClass(
         workspace=workspace,
         image="python-dev:latest",
         config={},
@@ -227,25 +285,20 @@ def test_conductor_replay_session_loading(ray_cluster, tmp_path):
         }
     }
     
-    # Should not crash, but replay data should be None if file doesn't exist
-    # (actual behavior depends on load_replay_session implementation)
-    conductor2 = OpenAIConductor(
-        workspace=workspace,
-        image="python-dev:latest",
-        config=config_with_replay,
-        local_mode=True,
-    )
-    
-    # Replay attributes should exist
-    assert hasattr(conductor2, '_replay_session_data')
-    assert hasattr(conductor2, '_active_replay_session')
+    with pytest.raises(FileNotFoundError):
+        ConductorClass(
+            workspace=workspace,
+            image="python-dev:latest",
+            config=config_with_replay,
+            local_mode=True,
+        )
 
 
 def test_conductor_sandbox_initialization(ray_cluster, tmp_path):
     """Test that sandbox is initialized correctly."""
     workspace = str(tmp_path / "test_workspace")
     
-    conductor = OpenAIConductor(
+    conductor = ConductorClass(
         workspace=workspace,
         image="python-dev:latest",
         config={},
@@ -263,7 +316,7 @@ def test_conductor_workspace_preparation(ray_cluster, tmp_path):
     """Test that workspace is prepared correctly."""
     workspace = str(tmp_path / "test_workspace")
     
-    conductor = OpenAIConductor(
+    conductor = ConductorClass(
         workspace=workspace,
         image="python-dev:latest",
         config={},

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "p16_wezterm_slash_composer",
+  "campaign": "p16-final-design-complete-core-ux-host",
+  "scenarios": [
+    {
+      "path": "scenarios/p16/host_wezterm_slash_composer.json",
+      "lane": "wezterm"
+    }
+  ]
+}

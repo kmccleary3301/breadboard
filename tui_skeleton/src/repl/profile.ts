@@ -52,8 +52,7 @@ export const loadProfileConfig = (): ResolvedProfile => {
   const explicit =
     normalizeProfile(process.env.BREADBOARD_TUI_PROFILE) ??
     normalizeProfile(process.env.BREADBOARD_PROFILE)
-  const profile = explicit ?? "claude_v1"
+  const profile = explicit ?? "codex_v1"
   const resolved = resolveProfileDefinition(profile)
   return { name: profile, ...resolved }
 }
-

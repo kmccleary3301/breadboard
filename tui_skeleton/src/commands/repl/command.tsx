@@ -3,7 +3,6 @@ import { Command, Options } from "@effect/cli"
 import { Effect, Option } from "effect"
 import { render } from "ink"
 import type { Instance as InkInstance } from "ink"
-import { spawn } from "node:child_process"
 import { createWriteStream, promises as fs } from "node:fs"
 import path from "node:path"
 import { ReplView } from "../../repl/components/ReplView.js"
@@ -12,18 +11,23 @@ import { loadScript, runScript } from "./scriptRunner.js"
 import type { ScriptRunResult } from "./scriptRunner.js"
 import { renderStateToText } from "./renderText.js"
 import { forgetSession } from "../../cache/sessionCache.js"
-import type { ModelMenuItem, QueuedAttachment, SkillSelection } from "../../repl/types.js"
+import type { ModelMenuItem, QueuedAttachment, SkillSelection, TaskEntry } from "../../repl/types.js"
 import { CliProviders } from "../../providers/cliProviders.js"
 import type { PermissionDecision } from "../../repl/types.js"
-import { resolveBreadboardPath, resolveBreadboardRepoPath, resolveBreadboardWorkspace } from "../../utils/paths.js"
+import { resolveBreadboardPath } from "../../utils/paths.js"
 import { resolveAsciiOnly, resolveColorMode } from "../../repl/designSystem.js"
-import { resolveTuiConfig } from "../../tui_config/load.js"
+import { createScrollbackSafeInkStdout } from "../../repl/inkScrollbackStdout.js"
 import type { ResolvedTuiConfig } from "../../tui_config/types.js"
+import { DEFAULT_REPL_CONFIG_PATH, resolveReplLaunchContext } from "./launchContext.js"
+import { runOpenTui } from "./frontendLaunch.js"
+import { buildTranscript } from "../../repl/transcriptBuilder.js"
+import { dumpTranscriptCellRecords } from "../../repl/transcriptModel.js"
 
-const DEFAULT_CONFIG = process.env.BREADBOARD_DEFAULT_CONFIG ?? "agent_configs/misc/opencode_openrouter_grok4fast_cli_default.yaml"
+// Product-facing entry points default to the Codex E4 lane. Users and harnesses
+// may still override this via BREADBOARD_DEFAULT_CONFIG or --config.
 const DEFAULT_SCRIPT_MAX_DURATION_MS = 180_000
 
-const configOption = Options.text("config").pipe(Options.withDefault(DEFAULT_CONFIG))
+const configOption = Options.text("config").pipe(Options.withDefault(DEFAULT_REPL_CONFIG_PATH))
 const workspaceOption = Options.text("workspace").pipe(Options.optional)
 const modelOption = Options.text("model").pipe(Options.optional)
 const remoteStreamOption = Options.boolean("remote-stream").pipe(Options.optional)
@@ -38,75 +42,25 @@ const tuiOption = Options.text("tui").pipe(Options.optional)
 const tuiPresetOption = Options.text("tui-preset").pipe(Options.optional)
 const tuiConfigOption = Options.text("tui-config").pipe(Options.optional)
 const tuiConfigStrictOption = Options.boolean("tui-config-strict").pipe(Options.optional)
+const engineModeOption = Options.text("engine-mode").pipe(Options.optional)
 
 const getOptionValue = <T,>(value: Option.Option<T>): T | null => Option.getOrNull(value)
 
 type StateDumpMode = "summary" | "full"
-type TuiMode = "opentui" | "classic"
-
 const parseStateDumpMode = (value: string | undefined): StateDumpMode => {
   const normalized = (value ?? "").trim().toLowerCase()
   return normalized === "full" ? "full" : "summary"
 }
 
-const normalizeTuiMode = (value?: string | null): TuiMode | null => {
-  const normalized = (value ?? "").trim().toLowerCase()
-  if (normalized === "opentui" || normalized === "classic") return normalized
-  return null
-}
-
-const resolveTuiMode = (args: {
-  scriptPath?: string | null
-  cliValue?: string | null
-}): TuiMode => {
-  if (args.scriptPath) return "classic"
-  const cliMode = normalizeTuiMode(args.cliValue)
-  if (cliMode) return cliMode
-  const envMode = normalizeTuiMode(process.env.BREADBOARD_TUI_MODE)
-  if (envMode) return envMode
-  return "classic"
-}
-
-const runOpenTui = async (options: {
-  configPath: string
-  workspace?: string | null
-  permissionMode?: string | null
-}): Promise<void> => {
-  const opentuiRoot = resolveBreadboardRepoPath("opentui_slab")
-  const args = ["run", "phaseB/controller.ts"]
-  if (options.configPath) {
-    args.push("--config", options.configPath)
-  }
-  if (options.workspace) {
-    args.push("--workspace", options.workspace)
-  }
-  if (options.permissionMode) {
-    args.push("--permission-mode", options.permissionMode)
-  }
-  const child = spawn("bun", args, {
-    cwd: opentuiRoot,
-    stdio: "inherit",
-    env: {
-      ...process.env,
-      BREADBOARD_ENGINE_PREFER_BUNDLE: "0",
-    },
-  })
-
-  await new Promise<void>((resolve, reject) => {
-    child.once("error", (err) => reject(err))
-    child.once("exit", (code) => {
-      if (code && code !== 0) {
-        reject(new Error(`OpenTUI exited with code ${code}`))
-        return
-      }
-      resolve()
-    })
-  })
-}
-
 const summarizeStateForDump = (state: ReplState) => {
   const lastConversation = state.conversation.length > 0 ? state.conversation[state.conversation.length - 1] : null
   const lastToolEvent = state.toolEvents.length > 0 ? state.toolEvents[state.toolEvents.length - 1] : null
+  const transcript = buildTranscript({
+    conversation: state.conversation,
+    toolEvents: state.toolEvents,
+    rawEvents: state.rawEvents,
+  })
+  const transcriptCells = dumpTranscriptCellRecords([...transcript.committed, ...transcript.tail])
   const modelMenu =
     state.modelMenu.status === "ready"
       ? {
@@ -117,8 +71,11 @@ const summarizeStateForDump = (state: ReplState) => {
       : state.modelMenu
   return {
     sessionId: state.sessionId,
+    lifecycle: state.lifecycle ?? null,
+    lifecycleRestartCount: state.lifecycleRestartCount ?? 0,
     status: state.status,
     pendingResponse: state.pendingResponse,
+    mainFollowTail: state.mainFollowTail,
     disconnected: state.disconnected,
     stats: state.stats,
     viewPrefs: state.viewPrefs,
@@ -129,7 +86,9 @@ const summarizeStateForDump = (state: ReplState) => {
       toolEvents: state.toolEvents.length,
       liveSlots: state.liveSlots.length,
       hints: state.hints.length,
+      transcriptCells: transcriptCells.length,
     },
+    transcriptCells,
     lastConversation: lastConversation
       ? {
           id: lastConversation.id,
@@ -164,16 +123,36 @@ const startStateDump = async (
   await fs.mkdir(path.dirname(dumpPath), { recursive: true })
   const stream = createWriteStream(dumpPath, { flags: "a" })
   let lastWrite = 0
+  let lastCriticalSignature = ""
 
   const writeEntry = (state: ReplState, reason: string) => {
     const now = Date.now()
-    if (reason !== "final" && minIntervalMs > 0 && now - lastWrite < minIntervalMs) {
+    const lastConversation = state.conversation.length > 0 ? state.conversation[state.conversation.length - 1] : null
+    const lastToolEvent = state.toolEvents.length > 0 ? state.toolEvents[state.toolEvents.length - 1] : null
+    const criticalSignature = [
+      state.pendingResponse ? "pending" : "idle",
+      state.disconnected ? "disconnected" : "connected",
+      state.mainFollowTail ? "tail" : "paused",
+      state.status,
+      state.stats.eventCount,
+      state.conversation.length,
+      lastConversation?.speaker ?? "",
+      lastConversation?.phase ?? "",
+      lastToolEvent?.kind ?? "",
+      lastToolEvent?.status ?? "",
+      state.lifecycle?.mode ?? "",
+      state.lifecycle?.pid ?? "",
+      state.lifecycleRestartCount ?? 0,
+    ].join("|")
+    const criticalChanged = criticalSignature !== lastCriticalSignature
+    if (reason !== "final" && !criticalChanged && minIntervalMs > 0 && now - lastWrite < minIntervalMs) {
       return
     }
     lastWrite = now
+    lastCriticalSignature = criticalSignature
     const payload =
       mode === "full"
-        ? { timestamp: now, reason, state }
+        ? { timestamp: now, reason, state, transcriptCells: summarizeStateForDump(state).transcriptCells }
         : { timestamp: now, reason, state: summarizeStateForDump(state) }
     try {
       stream.write(`${JSON.stringify(payload)}\n`)
@@ -195,7 +174,13 @@ const startStateDump = async (
   }
 }
 
-const runInteractive = async (controller: ReplSessionController, tuiConfig: ResolvedTuiConfig) => {
+const runInteractive = async (
+  controller: ReplSessionController,
+  tuiConfig: ResolvedTuiConfig,
+  liveShellOwnershipMode: import("../../config/frontendMode.js").LiveShellOwnershipMode,
+  liveShellRendererHost: import("../../config/frontendMode.js").LiveShellRendererHost,
+  liveShellSceneStrategy: import("../../config/frontendMode.js").LiveShellSceneStrategy,
+) => {
   let state = controller.getState()
   let ink: InkInstance | null = null
 
@@ -239,6 +224,23 @@ const runInteractive = async (controller: ReplSessionController, tuiConfig: Reso
     await controller.respondToPermission(decision)
   }
 
+  const handleTaskAction = async (
+    action: "cancel" | "retry" | "pause_resume" | "merge",
+    task: TaskEntry,
+  ): Promise<boolean> => {
+    const taskId = String(task.id ?? "").trim()
+    if (!taskId) return false
+    const label = action === "pause_resume" ? "pause/resume" : action
+    const payload: Record<string, unknown> = {
+      action,
+      task_id: taskId,
+    }
+    if (task.sessionId) payload.task_session_id = task.sessionId
+    if (task.subagentType) payload.subagent_type = task.subagentType
+    if (task.status) payload.status = task.status
+    return await controller.runSessionCommand("task_action", payload, `Task ${label} requested for ${taskId}.`)
+  }
+
   const handleRewindClose = () => {
     controller.closeRewindMenu()
   }
@@ -251,11 +253,31 @@ const runInteractive = async (controller: ReplSessionController, tuiConfig: Reso
     return await controller.listFiles(path)
   }
 
+  const handleListRecentSessions = async () => {
+    return await controller.listRecentSessions()
+  }
+
+  const handleAttachSession = async (sessionId: string) => {
+    return await controller.attachExistingSession(sessionId)
+  }
+
   const handleReadFile = async (
     path: string,
     options?: { mode?: "cat" | "snippet"; headLines?: number; tailLines?: number; maxBytes?: number },
   ) => {
     return await controller.readFile(path, options)
+  }
+
+  const handleReadWorkingTreeDiff = async () => {
+    return await controller.readWorkingTreeDiff()
+  }
+
+  const handleExportWorkingTreeDiffPatch = async (targetPath?: string | null) => {
+    return await controller.exportWorkingTreeDiffPatch(targetPath)
+  }
+
+  const handleCopyWorkingTreeDiffPatch = async () => {
+    return await controller.copyWorkingTreeDiffPatch()
   }
 
   const handleCtreeRequest = async (force?: boolean) => {
@@ -272,6 +294,9 @@ const runInteractive = async (controller: ReplSessionController, tuiConfig: Reso
     ink.rerender(
       <ReplView
         tuiConfig={tuiConfig}
+        liveShellOwnershipMode={liveShellOwnershipMode}
+        liveShellRendererHost={liveShellRendererHost}
+        liveShellSceneStrategy={liveShellSceneStrategy}
         configPath={state.configPath ?? null}
         sessionId={state.sessionId}
         conversation={state.conversation}
@@ -280,6 +305,7 @@ const runInteractive = async (controller: ReplSessionController, tuiConfig: Reso
         liveSlots={state.liveSlots}
         status={state.status}
         pendingResponse={state.pendingResponse}
+        mainFollowTail={state.mainFollowTail}
         disconnected={state.disconnected}
         mode={state.mode}
         permissionMode={state.permissionMode}
@@ -325,10 +351,16 @@ const runInteractive = async (controller: ReplSessionController, tuiConfig: Reso
         onGuardrailToggle={handleGuardrailToggle}
         onGuardrailDismiss={handleGuardrailDismiss}
         onPermissionDecision={handlePermissionDecision}
+        onTaskAction={handleTaskAction}
         onRewindClose={handleRewindClose}
         onRewindRestore={handleRewindRestore}
         onListFiles={handleListFiles}
+        onListRecentSessions={handleListRecentSessions}
+        onAttachSession={handleAttachSession}
         onReadFile={handleReadFile}
+        onReadWorkingTreeDiff={handleReadWorkingTreeDiff}
+        onExportWorkingTreeDiffPatch={handleExportWorkingTreeDiffPatch}
+        onCopyWorkingTreeDiffPatch={handleCopyWorkingTreeDiffPatch}
         onCtreeRequest={handleCtreeRequest}
         onCtreeRefresh={handleCtreeRefresh}
       />,
@@ -345,6 +377,8 @@ const runInteractive = async (controller: ReplSessionController, tuiConfig: Reso
   ink = render(
       <ReplView
         tuiConfig={tuiConfig}
+        liveShellOwnershipMode={liveShellOwnershipMode}
+        liveShellRendererHost={liveShellRendererHost}
         configPath={state.configPath ?? null}
         sessionId={state.sessionId}
         conversation={state.conversation}
@@ -353,6 +387,7 @@ const runInteractive = async (controller: ReplSessionController, tuiConfig: Reso
         liveSlots={state.liveSlots}
         status={state.status}
         pendingResponse={state.pendingResponse}
+        mainFollowTail={state.mainFollowTail}
         disconnected={state.disconnected}
         mode={state.mode}
         permissionMode={state.permissionMode}
@@ -398,14 +433,23 @@ const runInteractive = async (controller: ReplSessionController, tuiConfig: Reso
         onGuardrailToggle={handleGuardrailToggle}
         onGuardrailDismiss={handleGuardrailDismiss}
         onPermissionDecision={handlePermissionDecision}
+        onTaskAction={handleTaskAction}
         onRewindClose={handleRewindClose}
         onRewindRestore={handleRewindRestore}
         onListFiles={handleListFiles}
+        onListRecentSessions={handleListRecentSessions}
+        onAttachSession={handleAttachSession}
         onReadFile={handleReadFile}
+        onReadWorkingTreeDiff={handleReadWorkingTreeDiff}
+        onExportWorkingTreeDiffPatch={handleExportWorkingTreeDiffPatch}
+        onCopyWorkingTreeDiffPatch={handleCopyWorkingTreeDiffPatch}
         onCtreeRequest={handleCtreeRequest}
         onCtreeRefresh={handleCtreeRefresh}
     />,
-    { exitOnCtrlC: false },
+    {
+      exitOnCtrlC: false,
+      stdout: createScrollbackSafeInkStdout(process.stdout, liveShellOwnershipMode === "inline-scrollback"),
+    },
   )
 
   const sigintHandler = async () => {
@@ -537,6 +581,7 @@ const buildReplCommand = (name: string) =>
       tuiPreset: tuiPresetOption,
       tuiConfigPath: tuiConfigOption,
       tuiConfigStrict: tuiConfigStrictOption,
+      engineMode: engineModeOption,
     },
     ({
       config,
@@ -554,25 +599,34 @@ const buildReplCommand = (name: string) =>
       tuiPreset,
       tuiConfigPath,
       tuiConfigStrict,
+      engineMode: _engineMode,
     }) =>
       Effect.tryPromise(async () => {
-        const scriptPath = getOptionValue(script)
-        const tuiMode = resolveTuiMode({ scriptPath, cliValue: getOptionValue(tui) })
-        const workspaceValue = getOptionValue(workspace)
-        const modelValue = getOptionValue(model)
-        const permissionValue = getOptionValue(permissionMode)
-        const remotePreference = Option.match(remoteStream, {
-          onNone: () => undefined,
-          onSome: (value) => value,
+        const launch = await resolveReplLaunchContext({
+          config,
+          workspace: getOptionValue(workspace),
+          model: getOptionValue(model),
+          remoteStream,
+          permissionMode: getOptionValue(permissionMode),
+          scriptPath: getOptionValue(script),
+          tui: getOptionValue(tui),
+          tuiPreset: getOptionValue(tuiPreset),
+          tuiConfigPath: getOptionValue(tuiConfigPath),
+          tuiConfigStrict: getOptionValue(tuiConfigStrict),
         })
-        const resolvedConfigPath = resolveBreadboardRepoPath(config)
-        const resolvedWorkspace = resolveBreadboardWorkspace(workspaceValue)
-        const resolvedTuiConfig = await resolveTuiConfig({
-          workspace: resolvedWorkspace,
-          cliPreset: getOptionValue(tuiPreset),
-          cliConfigPath: getOptionValue(tuiConfigPath),
-          cliStrict: getOptionValue(tuiConfigStrict),
-        })
+        const {
+          frontend: tuiMode,
+          liveShellOwnershipMode,
+          liveShellRendererHost,
+          liveShellSceneStrategy,
+          scriptPath,
+          resolvedConfigPath,
+          resolvedWorkspace,
+          modelValue,
+          permissionValue,
+          remotePreference,
+          resolvedTuiConfig,
+        } = launch
         for (const warning of resolvedTuiConfig.meta.warnings) {
           console.warn(`[tui config] ${warning}`)
         }
@@ -613,7 +667,13 @@ const buildReplCommand = (name: string) =>
             return
           }
 
-          await runInteractive(controller, resolvedTuiConfig)
+          await runInteractive(
+            controller,
+            resolvedTuiConfig,
+            liveShellOwnershipMode,
+            liveShellRendererHost,
+            liveShellSceneStrategy,
+          )
           if (process.env.BREADBOARD_PRINT_FINAL_STATE === "1") {
             const finalState = controller.getState()
             console.log(

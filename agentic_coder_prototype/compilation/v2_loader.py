@@ -481,11 +481,22 @@ def load_agent_config(config_path_str: str) -> Dict[str, Any]:
     # Prefer resolving extends first (so child files inherit version/mode/loop)
     doc = _resolve_extends(raw, config_path) if (isinstance(raw, dict) and raw.get("extends")) else raw
 
+    metadata = {
+        "config_path": str(config_path),
+        "config_dir": str(config_path.parent),
+        "repo_root": str(config_path.parent.parent.parent),
+    }
+
     # Gate on version and env
     env_enabled = os.environ.get("AGENT_SCHEMA_V2_ENABLED", "0") == "1"
     if is_v2_config(doc) or (env_enabled and ("modes" in doc or "loop" in doc)):
         _validate_v2(doc)
-        return _normalize_for_runtime(doc)
+        normalized = _normalize_for_runtime(doc)
+        normalized["_config_metadata"] = metadata
+        return normalized
 
     # Fallback: legacy load path, return as-is
+    if isinstance(raw, dict):
+        raw = dict(raw)
+        raw["_config_metadata"] = metadata
     return raw

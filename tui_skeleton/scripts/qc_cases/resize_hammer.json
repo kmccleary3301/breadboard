@@ -1,5 +1,5 @@
 [
-  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 20000 },
   { "action": "resize", "cols": 160, "rows": 45, "delayMs": 40 },
   { "action": "resize", "cols": 120, "rows": 36, "delayMs": 40 },
   { "action": "resize", "cols": 90, "rows": 28, "delayMs": 40 },
@@ -7,7 +7,7 @@
   { "action": "resize", "cols": 96, "rows": 30, "delayMs": 40 },
   { "action": "type", "text": "/models", "typingDelayMs": 8 },
   { "action": "press", "key": "enter" },
-  { "action": "waitFor", "text": "Select model", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "Models", "timeoutMs": 20000 },
   { "action": "resize", "cols": 142, "rows": 42, "delayMs": 40 },
   { "action": "resize", "cols": 88, "rows": 26, "delayMs": 40 },
   { "action": "resize", "cols": 136, "rows": 40, "delayMs": 40 },

@@ -1,0 +1,240 @@
+{
+  "id": "vscode_scrollback_recent_history",
+  "terminal": {
+    "initialCols": 124,
+    "initialRows": 38
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_BETA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_BETA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "Reply with the single word formed by joining FIRST, TURN, and OK with no separators.\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "FIRSTTURNOK",
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 900,
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "resize",
+      "cols": 84,
+      "rows": 30
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "FIRSTTURNOK"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Reply with the single word"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        },
+        {
+          "kind": "notContains",
+          "scope": "viewport",
+          "text": "Log link available"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "Type your request",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "kind": "write",
+      "text": "Reply with the single word formed by joining SECOND, TURN, and OK with no separators.\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "SECONDTURNOK",
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 900,
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "resize",
+      "cols": 124,
+      "rows": 38
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "BB_VSCODE_PRE_ALPHA"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "BB_VSCODE_PRE_BETA"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "FIRSTTURNOK"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "SECONDTURNOK"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        },
+        {
+          "kind": "notContains",
+          "scope": "viewport",
+          "text": "Log link available"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "Type your request",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "kind": "screenshot",
+      "label": "multiturn-final"
+    },
+    {
+      "kind": "exportBreadBoardState",
+      "label": "multiturn-final-state"
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "BB_VSCODE_PRE_ALPHA"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "BB_VSCODE_PRE_BETA"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "FIRSTTURNOK"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "SECONDTURNOK"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "You are Codex"
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    },
+    {
+      "kind": "notContains",
+      "scope": "viewport",
+      "text": "Log link available"
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "Type your request",
+      "count": 1
+    }
+  ]
+}

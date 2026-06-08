@@ -1,0 +1,38 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  {
+    "action": "type",
+    "text": "You are in a standalone disposable git repo. Build a small but real SMTP server in C in this repo only. Requirements: create smtp_server.c, smtp_server.h if useful, Makefile, README.md updates, and smoke_test.sh. The server should listen on localhost, support HELO/EHLO, MAIL FROM, RCPT TO, DATA, RSET, NOOP, QUIT, write accepted messages to ./maildrop as .eml files, handle basic errors, compile with gcc or cc under C11, and avoid touching files outside this workspace. Do not run ./smtp_server directly or with --help; it is a daemon and should only be exercised through smoke_test.sh. Use tools as needed. When finished, run make and timeout 20s bash smoke_test.sh, then summarize files changed and exact commands."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn1-after-submit", "mode": "frame" },
+  { "action": "waitForState", "timeoutMs": 300000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "snapshot", "label": "turn1-first-success-tool", "mode": "history", "maxLines": 240 },
+  { "action": "waitForState", "timeoutMs": 600000, "fresh": true, "pendingResponse": false },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "turn1-final-history", "mode": "history", "maxLines": 560 },
+
+  {
+    "action": "type",
+    "text": "Now verify the project like a normal code agent. Inspect only the local project files you created, run make clean all if supported or make, and run timeout 20s bash smoke_test.sh. Do not run ./smtp_server directly or with --help; it is a daemon and should only be exercised through smoke_test.sh. Do not delete requested deliverables such as Makefile, smtp_server.c, smtp_server.h, README.md, or smoke_test.sh. If make or smoke_test.sh fails, fix the local project files and rerun those exact verification commands. Once make and timeout 20s bash smoke_test.sh pass, stop using tools and summarize exactly what passed and what failed."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn2-after-submit", "mode": "history", "maxLines": 680 },
+  { "action": "waitForState", "timeoutMs": 300000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "snapshot", "label": "turn2-first-success-tool", "mode": "history", "maxLines": 760 },
+  { "action": "waitForState", "timeoutMs": 600000, "fresh": true, "pendingResponse": false },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "turn2-final-history", "mode": "history", "maxLines": 980 },
+
+  {
+    "action": "type",
+    "text": "Do one final maintenance pass. Add or improve comments and README usage only if needed, then run make clean all if supported or make, and timeout 20s bash smoke_test.sh again. Do not run ./smtp_server directly or with --help; use only the smoke script for runtime validation. Do not delete requested deliverables. Do not over-engineer. After make and timeout 20s bash smoke_test.sh pass, stop using tools. Final answer should tell me whether this dummy SMTP server is usable and list exact commands."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn3-after-submit", "mode": "history", "maxLines": 1040 },
+  { "action": "waitForState", "timeoutMs": 300000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "snapshot", "label": "turn3-first-success-tool", "mode": "history", "maxLines": 1120 },
+  { "action": "waitForState", "timeoutMs": 600000, "fresh": true, "pendingResponse": false },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "turn3-final-history", "mode": "history", "maxLines": 1300 }
+]

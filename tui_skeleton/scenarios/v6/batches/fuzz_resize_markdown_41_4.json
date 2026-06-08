@@ -1,0 +1,10 @@
+{
+  "id": "v6_fuzz_resize_markdown_41_4",
+  "campaign": "p14-v6-fuzz-minimization",
+  "scenarios": [
+    "scenarios/v6/fuzz/minimized/v6_fuzz_resize_markdown_41.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_resize_markdown_42.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_resize_markdown_43.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_resize_markdown_44.json"
+  ]
+}

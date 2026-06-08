@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "id": "smoke",
+  "scenarios": [
+    "scenarios/smoke/startup_history_prompt_smoke.json"
+  ]
+}

@@ -1,0 +1,19 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "/", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "/resume", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "root-popup-normal", "mode": "frame", "maxLines": 100 },
+  { "action": "press", "key": "ctrl+backspace" },
+  { "action": "type", "text": "/di", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "Open the diff", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "filter-feature-gated-diff", "mode": "frame", "maxLines": 100 },
+  { "action": "press", "key": "ctrl+backspace" },
+  { "action": "type", "text": "/diff", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Diff viewer commands are deferred to H5", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "feature-gated-diff-result", "mode": "frame", "maxLines": 100 },
+  { "action": "type", "text": "/debug-config", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "engine mode", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "hidden-debug-dispatch", "mode": "frame", "maxLines": 120 }
+]

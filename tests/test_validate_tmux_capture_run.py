@@ -63,7 +63,7 @@ def _build_minimal_run(
     png_path.write_text("", encoding="utf-8")
 
     record = {
-        "frame": 0,
+        "frame": 1,
         "text": str(text_path.relative_to(run_dir)),
         "ansi": str(ansi_path.relative_to(run_dir)),
         "png": str(png_path.relative_to(run_dir)),
@@ -164,3 +164,77 @@ def test_row_parity_summary_mismatch_is_detected(tmp_path):
     assert any("render_lock vs row parity summary mismatch" in e for e in strict.errors) or any(
         "index render_parity mismatch vs row parity summary" in e for e in strict.errors
     )
+
+
+def test_low_signal_extra_render_row_is_tolerated_in_strict_mode(tmp_path):
+    module = _load_module()
+    parity = {
+        "text_sha256_normalized": "deadbeef",
+        "missing_count": 0,
+        "extra_count": 2,
+        "row_span_delta": 0,
+        "mismatch_localization": [
+            {
+                "row": 35,
+                "text_nonempty": False,
+                "render_content": True,
+                "render_nonbg": True,
+                "edge_ratio": 0.0019,
+            },
+            {
+                "row": 37,
+                "text_nonempty": False,
+                "render_content": True,
+                "render_nonbg": True,
+                "edge_ratio": 0.0018,
+            }
+        ],
+    }
+    render_lock_payload = {
+        "schema_version": "tmux_render_lock_frame_v1",
+        "row_occupancy": parity,
+    }
+    run_dir = _build_minimal_run(tmp_path, render_lock_payload=render_lock_payload)
+    row_parity_path = run_dir / "frames" / "frame0.row_parity.json"
+    row_parity_path.write_text(
+        json.dumps({"schema_version": "tmux_row_parity_summary_v1", "parity": parity}),
+        encoding="utf-8",
+    )
+    idx_path = run_dir / "index.jsonl"
+    rows = [json.loads(line) for line in idx_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    rows[0]["render_parity_summary"] = "frames/frame0.row_parity.json"
+    rows[0]["render_parity"] = {"missing_count": 0, "extra_count": 2, "row_span_delta": 0}
+    _write_jsonl(idx_path, rows)
+
+    strict = module.validate_run_dir(run_dir, strict=True, expect_png=True, max_missing_frames=0)
+    assert strict.ok
+    assert strict.render_parity_violation_count == 0
+
+
+def test_meaningful_extra_render_row_still_fails_in_strict_mode(tmp_path):
+    module = _load_module()
+    parity = {
+        "text_sha256_normalized": "deadbeef",
+        "missing_count": 0,
+        "extra_count": 1,
+        "row_span_delta": 0,
+        "mismatch_localization": [
+            {
+                "row": 35,
+                "text_nonempty": False,
+                "render_content": True,
+                "render_nonbg": True,
+                "edge_ratio": 0.03,
+            }
+        ],
+    }
+    render_lock_payload = {
+        "schema_version": "tmux_render_lock_frame_v1",
+        "row_occupancy": parity,
+    }
+    run_dir = _build_minimal_run(tmp_path, render_lock_payload=render_lock_payload)
+
+    strict = module.validate_run_dir(run_dir, strict=True, expect_png=True, max_missing_frames=0)
+    assert not strict.ok
+    assert strict.render_parity_violation_count == 1
+    assert any("render parity out of bounds" in e for e in strict.errors)

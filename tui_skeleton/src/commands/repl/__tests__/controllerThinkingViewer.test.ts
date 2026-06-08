@@ -95,7 +95,7 @@ describe("thinking viewer slash command", () => {
     expect(lastTool?.text).not.toContain("line3-overflow")
   })
 
-  it("throttles repeated reasoning peek updates during delta bursts", () => {
+  it("keeps repeated reasoning peeks out of transcript rails during delta bursts", () => {
     const controller = createController()
     controller.viewPrefs = { ...controller.viewPrefs, showReasoning: true }
     controller.runtimeFlags = {
@@ -111,7 +111,23 @@ describe("thinking viewer slash command", () => {
     controller.applyEvent(event(3, "assistant.reasoning.delta", { delta: "second thought" }))
 
     const state = controller.getState()
-    const reasoningEntries = state.toolEvents.filter((entry: any) => entry.text.startsWith("[reasoning]"))
-    expect(reasoningEntries).toHaveLength(1)
+    const reasoningEntries = state.toolEvents.filter((entry: any) => String(entry.text ?? "").startsWith("[reasoning]"))
+    expect(reasoningEntries).toHaveLength(0)
+    expect(state.thinkingPreview?.lines.some((line: string) => line.includes("first thought"))).toBe(true)
+  })
+
+  it("shows a terse hint when no thinking summary is available", async () => {
+    const controller = createController()
+    controller.viewPrefs = { ...controller.viewPrefs, showReasoning: false }
+    controller.runtimeFlags = { ...controller.runtimeFlags, thinkingEnabled: true, allowFullThinking: false }
+    controller.applyEvent(event(1, "turn_start"))
+    controller.applyEvent(event(2, "assistant.reasoning.delta", { delta: "" }))
+
+    await controller.dispatchSlashCommand("thinking", [])
+
+    const state = controller.getState()
+    const lastTool = state.toolEvents[state.toolEvents.length - 1]
+    expect(lastTool?.text).toContain("No thinking summary available")
+    expect(state.hints.some((hint: string) => hint.includes("No thinking summary available"))).toBe(true)
   })
 })

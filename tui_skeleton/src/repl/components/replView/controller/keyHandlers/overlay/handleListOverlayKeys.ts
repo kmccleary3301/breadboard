@@ -57,19 +57,59 @@ export const handleListOverlayKeys = (
     setTaskCollapsedGroupKeys,
     setTaskSearchQuery,
     setTaskStatusFilter,
+    setTaskNotice,
+    setTaskActionNotice,
+    taskboardInputQuarantineUntilRef,
     selectedTaskIndex,
     selectedTaskRow,
     selectedTask,
     requestTaskTail,
+    exportTaskLog,
+    runTaskAction,
     rewindMenu,
     rewindVisibleLimit,
     rewindIndex,
     setRewindIndex,
     onRewindClose,
     onRewindRestore,
+    recentSessionsOpen,
+    recentSessionsRows,
+    recentSessionsIndex,
+    recentSessionsScroll,
+    recentSessionsMaxScroll,
+    recentSessionsViewportRows,
+    recentSessionsOpenedAtRef,
+    setRecentSessionsOpen,
+    setRecentSessionsIndex,
+    setRecentSessionsScroll,
+    refreshRecentSessions,
+    attachRecentSession,
+    collapsedDetailOpen,
+    collapsedDetailScroll,
+    collapsedDetailMaxScroll,
+    collapsedDetailViewportRows,
+    setCollapsedDetailOpen,
+    setCollapsedDetailScroll,
     confirmState,
     closeConfirm,
     runConfirmAction,
+    resultDetailOpen,
+    resultDetailScroll,
+    resultDetailMaxScroll,
+    resultDetailViewportRows,
+    resultDetailArtifactPath,
+    resultDetailSourceLine,
+    setResultDetailOpen,
+    setResultDetailScroll,
+    openSelectedTranscriptArtifactPreview,
+    artifactPreviewOpen,
+    artifactPreviewScroll,
+    artifactPreviewMaxScroll,
+    artifactPreviewViewportRows,
+    artifactPreviewSourceLine,
+    setArtifactPreviewOpen,
+    setArtifactPreviewScroll,
+    jumpTranscriptToLine,
   } = context
   const { char, key, lowerChar, isReturnKey, isTabKey, isCtrlT, isCtrlB, isCtrlY, isHomeKey, isEndKey } = info
   const keyName = typeof (key as Record<string, unknown>).name === "string"
@@ -77,6 +117,181 @@ export const handleListOverlayKeys = (
     : ""
   const isCtrlTKey = isCtrlT || char === "\u0014" || (key.ctrl && (lowerChar === "t" || keyName === "t"))
   const isCtrlBKey = isCtrlB || char === "\u0002" || (key.ctrl && (lowerChar === "b" || keyName === "b"))
+
+  if (artifactPreviewOpen) {
+    const clampScroll = (value: number) => Math.max(0, Math.min(artifactPreviewMaxScroll, value))
+    if (!key.ctrl && !key.meta && lowerChar === "j" && Number.isFinite(artifactPreviewSourceLine)) {
+      setArtifactPreviewOpen(false)
+      setResultDetailOpen(false)
+      jumpTranscriptToLine(Number(artifactPreviewSourceLine))
+      return true
+    }
+    if (key.escape || char === "\u001b") {
+      setArtifactPreviewOpen(false)
+      return true
+    }
+    if (key.pageUp) {
+      setArtifactPreviewScroll((prev: number) => clampScroll(prev - artifactPreviewViewportRows))
+      return true
+    }
+    if (key.pageDown) {
+      setArtifactPreviewScroll((prev: number) => clampScroll(prev + artifactPreviewViewportRows))
+      return true
+    }
+    if (key.upArrow) {
+      setArtifactPreviewScroll((prev: number) => clampScroll(prev - 1))
+      return true
+    }
+    if (key.downArrow) {
+      setArtifactPreviewScroll((prev: number) => clampScroll(prev + 1))
+      return true
+    }
+    if (isHomeKey || (!key.ctrl && !key.meta && lowerChar === "g")) {
+      setArtifactPreviewScroll(0)
+      return true
+    }
+    if (isEndKey || (!key.ctrl && !key.meta && char === "G")) {
+      setArtifactPreviewScroll(artifactPreviewMaxScroll)
+      return true
+    }
+    return true
+  }
+
+  if (resultDetailOpen) {
+    const clampScroll = (value: number) => Math.max(0, Math.min(resultDetailMaxScroll, value))
+    if (!key.ctrl && !key.meta && lowerChar === "j" && Number.isFinite(resultDetailSourceLine)) {
+      setResultDetailOpen(false)
+      jumpTranscriptToLine(Number(resultDetailSourceLine))
+      return true
+    }
+    if (key.escape || char === "\u001b") {
+      setResultDetailOpen(false)
+      return true
+    }
+    if (isReturnKey && resultDetailArtifactPath) {
+      return openSelectedTranscriptArtifactPreview()
+    }
+    if (key.pageUp) {
+      setResultDetailScroll((prev: number) => clampScroll(prev - resultDetailViewportRows))
+      return true
+    }
+    if (key.pageDown) {
+      setResultDetailScroll((prev: number) => clampScroll(prev + resultDetailViewportRows))
+      return true
+    }
+    if (key.upArrow) {
+      setResultDetailScroll((prev: number) => clampScroll(prev - 1))
+      return true
+    }
+    if (key.downArrow) {
+      setResultDetailScroll((prev: number) => clampScroll(prev + 1))
+      return true
+    }
+    if (isHomeKey || (!key.ctrl && !key.meta && lowerChar === "g")) {
+      setResultDetailScroll(0)
+      return true
+    }
+    if (isEndKey || (!key.ctrl && !key.meta && char === "G")) {
+      setResultDetailScroll(resultDetailMaxScroll)
+      return true
+    }
+    return true
+  }
+
+  if (recentSessionsOpen) {
+    const lastIndex = Math.max(0, recentSessionsRows.length - 1)
+    const clampScroll = (value: number) => Math.max(0, Math.min(recentSessionsMaxScroll, value))
+    if (key.escape || char === "\u001b") {
+      setRecentSessionsOpen(false)
+      return true
+    }
+    if (!key.ctrl && !key.meta && lowerChar === "r") {
+      void refreshRecentSessions()
+      return true
+    }
+    if (isReturnKey) {
+      const openedAt = recentSessionsOpenedAtRef?.current
+      if (openedAt && Date.now() - openedAt < 200) {
+        return true
+      }
+      if (recentSessionsOpenedAtRef) {
+        recentSessionsOpenedAtRef.current = null
+      }
+      const selected = recentSessionsRows[recentSessionsIndex]
+      if (selected?.sessionId) {
+        void attachRecentSession(selected.sessionId)
+      }
+      return true
+    }
+    if (key.pageUp) {
+      setRecentSessionsIndex((prev: number) => Math.max(0, prev - recentSessionsViewportRows))
+      setRecentSessionsScroll((prev: number) => clampScroll(prev - recentSessionsViewportRows))
+      return true
+    }
+    if (key.pageDown) {
+      setRecentSessionsIndex((prev: number) => Math.min(lastIndex, prev + recentSessionsViewportRows))
+      setRecentSessionsScroll((prev: number) => clampScroll(prev + recentSessionsViewportRows))
+      return true
+    }
+    if (key.upArrow) {
+      setRecentSessionsIndex((prev: number) => Math.max(0, prev - 1))
+      if (recentSessionsIndex <= recentSessionsScroll) {
+        setRecentSessionsScroll((prev: number) => clampScroll(prev - 1))
+      }
+      return true
+    }
+    if (key.downArrow) {
+      setRecentSessionsIndex((prev: number) => Math.min(lastIndex, prev + 1))
+      if (recentSessionsIndex >= recentSessionsScroll + recentSessionsViewportRows - 1) {
+        setRecentSessionsScroll((prev: number) => clampScroll(prev + 1))
+      }
+      return true
+    }
+    if (isHomeKey) {
+      setRecentSessionsIndex(0)
+      setRecentSessionsScroll(0)
+      return true
+    }
+    if (isEndKey) {
+      setRecentSessionsIndex(lastIndex)
+      setRecentSessionsScroll(recentSessionsMaxScroll)
+      return true
+    }
+    return true
+  }
+
+  if (collapsedDetailOpen) {
+    const clampScroll = (value: number) => Math.max(0, Math.min(collapsedDetailMaxScroll, value))
+    if (key.escape || char === "\u001b") {
+      setCollapsedDetailOpen(false)
+      return true
+    }
+    if (key.pageUp) {
+      setCollapsedDetailScroll((prev: number) => clampScroll(prev - collapsedDetailViewportRows))
+      return true
+    }
+    if (key.pageDown) {
+      setCollapsedDetailScroll((prev: number) => clampScroll(prev + collapsedDetailViewportRows))
+      return true
+    }
+    if (key.upArrow) {
+      setCollapsedDetailScroll((prev: number) => clampScroll(prev - 1))
+      return true
+    }
+    if (key.downArrow) {
+      setCollapsedDetailScroll((prev: number) => clampScroll(prev + 1))
+      return true
+    }
+    if (isHomeKey || (!key.ctrl && !key.meta && lowerChar === "g")) {
+      setCollapsedDetailScroll(0)
+      return true
+    }
+    if (isEndKey || (!key.ctrl && !key.meta && char === "G")) {
+      setCollapsedDetailScroll(collapsedDetailMaxScroll)
+      return true
+    }
+    return true
+  }
 
   if (todosOpen) {
     if (key.escape || char === "\u001b") {
@@ -222,6 +437,57 @@ export const handleListOverlayKeys = (
       setTaskLaneFilter(options[nextIndex] ?? "all")
     }
     const laneDelta = key.rightArrow || lowerChar === "]" ? 1 : key.leftArrow || lowerChar === "[" ? -1 : 0
+    const setTaskActionUnavailableNotice = (action: "pause" | "resume" | "cancel" | "retry" | "merge") => {
+      const taskId =
+        typeof selectedTask?.id === "string" && selectedTask.id.trim().length > 0
+          ? selectedTask.id.trim()
+          : typeof selectedTaskRow?.id === "string" && selectedTaskRow.id.trim().length > 0
+            ? selectedTaskRow.id.trim()
+            : null
+      const target = taskId ? ` for ${taskId}` : ""
+      const label = action === "resume" ? "pause/resume" : action
+      const notice = `${label} unavailable${target}.`
+      if (typeof setTaskActionNotice === "function") {
+        setTaskActionNotice(notice)
+      } else if (typeof setTaskNotice === "function") {
+        setTaskNotice(notice)
+      }
+    }
+    const handleTaskMutationKey = (): boolean => {
+      if (key.ctrl || key.meta) return false
+      if (lowerChar === "x") {
+        if (typeof runTaskAction === "function") void runTaskAction("cancel")
+        else setTaskActionUnavailableNotice("cancel")
+        return true
+      }
+      if (lowerChar === "y") {
+        if (typeof runTaskAction === "function") void runTaskAction("retry")
+        else setTaskActionUnavailableNotice("retry")
+        return true
+      }
+      if (lowerChar === "u") {
+        if (typeof runTaskAction === "function") void runTaskAction("pause_resume")
+        else setTaskActionUnavailableNotice("resume")
+        return true
+      }
+      if (lowerChar === "m") {
+        if (typeof runTaskAction === "function") void runTaskAction("merge")
+        else setTaskActionUnavailableNotice("merge")
+        return true
+      }
+      return false
+    }
+    const quarantineUntil = Number(taskboardInputQuarantineUntilRef?.current ?? 0)
+    const inOpenQuarantine = quarantineUntil > Date.now() && !key.ctrl && !key.meta
+    const isOpenResidue =
+      Boolean(char && char.length > 0) ||
+      isReturnKey ||
+      isTabKey ||
+      key.backspace ||
+      key.delete
+    if (inOpenQuarantine && isOpenResidue && !key.escape) {
+      return true
+    }
 
     if (taskFocusViewOpen) {
       if (key.escape || char === "\u001b" || (!key.ctrl && !key.meta && lowerChar === "f")) {
@@ -282,7 +548,7 @@ export const handleListOverlayKeys = (
         }
         return true
       }
-      if (key.return) {
+      if (isReturnKey) {
         void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
         return true
       }
@@ -304,6 +570,17 @@ export const handleListOverlayKeys = (
       }
       if (!key.ctrl && !key.meta && lowerChar === "r") {
         void requestTaskTail({ raw: taskFocusRawMode, tailLines: taskFocusTailLines })
+        return true
+      }
+      if (!key.ctrl && !key.meta && lowerChar === "o") {
+        if (typeof exportTaskLog === "function") {
+          void exportTaskLog()
+        } else {
+          setTaskNotice("Task log export unavailable.")
+        }
+        return true
+      }
+      if (handleTaskMutationKey()) {
         return true
       }
       return true
@@ -462,11 +739,11 @@ export const handleListOverlayKeys = (
       }
       return true
     }
-    if (key.return) {
+    if (isReturnKey) {
       void requestTaskTail()
       return true
     }
-    if (char && char.length > 0 && !key.ctrl && !key.meta && !key.return && !key.escape) {
+    if (char && char.length > 0 && !key.ctrl && !key.meta && !isReturnKey && !key.escape) {
       setTaskSearchQuery((prev: string) => prev + char)
       setTaskIndex(0)
       setTaskScroll(0)

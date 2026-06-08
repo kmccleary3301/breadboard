@@ -1,0 +1,8 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000 },
+  { "action": "type", "text": "Answer with exactly: PING_OK" },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "after-submit" },
+  { "action": "waitForState", "timeoutMs": 45000, "fresh": true, "pendingResponse": false, "conversationCountAtLeast": 2, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "Verification: verification receipt" },
+  { "action": "snapshot", "label": "after-answer" }
+]

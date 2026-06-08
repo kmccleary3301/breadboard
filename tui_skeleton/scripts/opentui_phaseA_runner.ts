@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url"
 import pty from "node-pty"
 import stripAnsi from "strip-ansi"
 
+import { waitForPlainComposerReady } from "./opentuiStartupReady"
+
 const THIS_DIR = path.dirname(fileURLToPath(import.meta.url))
 
 type RunMode = "external" | "auto"
@@ -157,7 +159,7 @@ const runPtyScenario = async (options: {
   readonly rows: number
   readonly cols: number
   readonly timeoutMs: number
-  readonly actions: (helpers: { term: pty.IPty; waitForPlainIncludes: (needle: string, timeoutMs?: number) => Promise<void> }) => Promise<void>
+  readonly actions: (helpers: { term: pty.IPty; waitForPlainIncludes: (needle: string, timeoutMs?: number) => Promise<void>; getPlainBuffer: () => string }) => Promise<void>
   readonly artifactDir: string
 }): Promise<PtyCapture> => {
   await fs.promises.mkdir(options.artifactDir, { recursive: true })
@@ -216,7 +218,7 @@ const runPtyScenario = async (options: {
     }
   })()
 
-  await Promise.race([options.actions({ term, waitForPlainIncludes }), timeoutPromise])
+  await Promise.race([options.actions({ term, waitForPlainIncludes, getPlainBuffer: () => plainBuffer }), timeoutPromise])
   await sleep(500)
   try {
     term.kill()
@@ -308,8 +310,8 @@ const runSmoke = async (ctx: {
     cols: ctx.cols,
     timeoutMs: ctx.timeoutMs,
     artifactDir,
-    actions: async ({ term, waitForPlainIncludes }) => {
-      await waitForPlainIncludes("Enter to submit", 40_000)
+    actions: async ({ term, getPlainBuffer }) => {
+      await waitForPlainComposerReady(getPlainBuffer, { timeoutMs: 40_000, label: "phaseA smoke" })
       term.write("Hello from PhaseA smoke")
       await sleep(50)
       term.write("\r")
@@ -362,8 +364,8 @@ const runResizeStorm = async (ctx: {
     cols: ctx.cols,
     timeoutMs: ctx.timeoutMs,
     artifactDir,
-    actions: async ({ term, waitForPlainIncludes }) => {
-      await waitForPlainIncludes("Enter to submit", 40_000)
+    actions: async ({ term, getPlainBuffer }) => {
+      await waitForPlainComposerReady(getPlainBuffer, { timeoutMs: 40_000, label: "phaseA resize_storm" })
       term.write("Resize storm prompt")
       await sleep(50)
       term.write("\r")
@@ -429,8 +431,8 @@ const runPasteTorture = async (ctx: {
     cols: ctx.cols,
     timeoutMs: ctx.timeoutMs,
     artifactDir,
-    actions: async ({ term, waitForPlainIncludes }) => {
-      await waitForPlainIncludes("Enter to submit", 40_000)
+    actions: async ({ term, getPlainBuffer }) => {
+      await waitForPlainComposerReady(getPlainBuffer, { timeoutMs: 40_000, label: "phaseA paste_torture" })
 
       const mkPayload = (bytes: number) => {
         const line = "0123456789abcdef".repeat(16) + "\n"
@@ -504,8 +506,8 @@ const runSustain = async (ctx: {
     cols: ctx.cols,
     timeoutMs: ctx.timeoutMs,
     artifactDir,
-    actions: async ({ term, waitForPlainIncludes }) => {
-      await waitForPlainIncludes("Enter to submit", 40_000)
+    actions: async ({ term, getPlainBuffer }) => {
+      await waitForPlainComposerReady(getPlainBuffer, { timeoutMs: 40_000, label: "phaseA sustain" })
       const started = Date.now()
       const durationMs = 12_000
       while (Date.now() - started < durationMs) {
@@ -566,8 +568,8 @@ const runStartStopLoop = async (ctx: {
       cols: ctx.cols,
       timeoutMs: 20_000,
       artifactDir: iterDir,
-      actions: async ({ term, waitForPlainIncludes }) => {
-        await waitForPlainIncludes("Enter to submit", 40_000)
+      actions: async ({ term, getPlainBuffer }) => {
+        await waitForPlainComposerReady(getPlainBuffer, { timeoutMs: 40_000, label: "phaseA start_stop_loop" })
         term.write("\x04")
         await sleep(800)
       },

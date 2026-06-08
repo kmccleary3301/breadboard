@@ -1,0 +1,89 @@
+[
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "turn_start",
+      "payload": { "summary": "p3 result actionability" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "tool_call",
+      "payload": {
+        "call_id": "call-write-report",
+        "tool_name": "write_file",
+        "display": {
+          "title": "Write(report.txt)"
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "tool_result",
+      "payload": {
+        "call_id": "call-write-report",
+        "tool_name": "write_file",
+        "display": {
+          "title": "Write(report.txt)",
+          "summary": "Saved report.txt",
+          "detail": [
+            "Saved report.txt",
+            "Artifact persisted for transcript inspection.",
+            "Use the artifact preview to inspect the generated output."
+          ],
+          "detail_artifact": {
+            "schema_version": "artifact_ref_v1",
+            "id": "artifact-p3-report",
+            "kind": "tool_output",
+            "mime": "text/plain",
+            "size_bytes": 144,
+            "sha256": "p3-report-demo",
+            "storage": "workspace_file",
+            "path": "scripts/fixtures/p3_result_actionability_report.txt",
+            "preview": {
+              "lines": [
+                "P3 artifact preview line 01",
+                "P3 artifact preview line 02",
+                "P3 artifact preview line 03",
+                "P3 artifact preview line 04"
+              ],
+              "omitted_lines": 2,
+              "note": "Preview truncated to 4 lines."
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 200,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "Saved report.txt and attached an artifact preview.",
+        "message": {
+          "role": "assistant",
+          "content": "Saved report.txt and attached an artifact preview."
+        }
+      }
+    }
+  },
+  {
+    "delayMs": 100,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "p3-result-actionability" } }
+    }
+  },
+  {
+    "delayMs": 0,
+    "event": {
+      "type": "run_finished",
+      "payload": { "eventCount": 6 }
+    }
+  }
+]

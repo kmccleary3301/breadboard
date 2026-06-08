@@ -1,0 +1,9 @@
+{
+  "id": "v6_terminal_ghostty_matrix_3",
+  "campaign": "p14-v6-terminal-matrix",
+  "scenarios": [
+    { "path": "scenarios/v6/smoke/v6_structural_scrollback_smoke.json", "lane": "ghostty" },
+    { "path": "scenarios/v6/generated/tool/v6_tool_tool_01.json", "lane": "ghostty" },
+    { "path": "scenarios/v6/generated/resize/v6_resize_resize_01.json", "lane": "ghostty" }
+  ]
+}

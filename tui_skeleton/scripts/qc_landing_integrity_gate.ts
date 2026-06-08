@@ -40,6 +40,13 @@ const assertExactlyOne = (section: SnapshotSection, label: string, pattern: RegE
   }
 }
 
+const assertAtMostOne = (section: SnapshotSection, label: string, pattern: RegExp, failures: string[]) => {
+  const count = countMatches(section.body, pattern)
+  if (count > 1) {
+    failures.push(`[${section.label}] expected at most 1 "${label}" marker, found ${count}`)
+  }
+}
+
 const main = async () => {
   const arg = process.argv[2]
   const target = arg?.trim() ? arg.trim() : "scripts/_tmp_qc_landing_no_duplicate_churn.txt"
@@ -52,10 +59,16 @@ const main = async () => {
 
   const failures: string[] = []
   for (const section of sections) {
-    assertExactlyOne(section, "landing header", /BreadBoard v(?:0\.2\.0|0\.0\.0a)/g, failures)
-    assertExactlyOne(section, "landing tips", /Tips for getting started/g, failures)
-    assertExactlyOne(section, "landing activity", /Recent activity/g, failures)
-    assertExactlyOne(section, "landing config", /Config:/g, failures)
+    // After meaningful interaction, warm landing is allowed to retire. The
+    // invariant here is not that the rich landing must always remain visible;
+    // it is that any landing chrome still in-frame must not duplicate.
+    assertAtMostOne(section, "landing header", /BreadBoard v(?:0\.2\.0|0\.0\.0a)/g, failures)
+    assertAtMostOne(section, "landing tips", /Tips for getting started/g, failures)
+    assertAtMostOne(section, "landing activity", /Recent activity/g, failures)
+    assertAtMostOne(section, "landing config", /Config:/g, failures)
+
+    assertExactlyOne(section, "submitted prompt", /^\s*❯ resize width probe$/gm, failures)
+    assertExactlyOne(section, "ready footer", /• \[ready\].*enter send/g, failures)
   }
 
   if (failures.length > 0) {

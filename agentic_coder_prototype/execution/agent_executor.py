@@ -69,7 +69,7 @@ class AgentToolExecutor:
         nb_override = conc_cfg.get("nonblocking_tools", []) or []
         default_nb = [
             'apply_unified_patch', 'apply_search_replace', 'create_file_from_block',
-            'read', 'read_file', 'glob', 'grep', 'list', 'list_dir', 'patch'
+            'read', 'read_file', 'glob', 'grep', 'list', 'list_dir', 'patch', 'apply_patch'
         ]
         source_nb = nb_override if nb_override else default_nb
         self.nonblocking_names = {self._canonical_tool_name(str(n)) for n in source_nb if n}
@@ -270,6 +270,13 @@ class AgentToolExecutor:
 
     def execute_tool_call(self, tool_call: Dict[str, Any], exec_func: Callable) -> Dict[str, Any]:
         """Execute a single tool call with enhanced executor support"""
+        tool_name = self._canonical_tool_name(str(tool_call.get("function") or ""))
+        if tool_name in {"apply_patch", "apply_unified_patch", "patch"}:
+            # Patch execution has BreadBoard-specific OpenCode/Codex parsing and
+            # direct-write fallback. The enhanced executor can short-circuit that
+            # path with raw git/apply errors, which breaks provider-native patch
+            # sessions.
+            return exec_func(tool_call)
         if self.enhanced_executor:
             try:
                 import asyncio

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shlex
+import signal
+import subprocess
 import uuid
 from pathlib import Path
 import random
@@ -30,8 +34,1628 @@ from ..orchestration.coordination import (
 )
 from ..state.session_state import SessionState
 from ..turns import TurnContext
+from ..utils.assistant_progress import assistant_is_progress_update
 from ..checkpointing.checkpoint_manager import CheckpointManager
 from ..hooks.model import HookResult
+from .components import latest_real_user_prompt, session_requires_workspace_tool_usage
+
+
+def _coerce_subprocess_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
+def _run_subprocess_capture_with_group_timeout(
+    args: List[str],
+    *,
+    cwd: str,
+    timeout: float,
+) -> Dict[str, Any]:
+    """Run a local verification command and kill its full process group on timeout."""
+
+    proc: Optional[subprocess.Popen[str]] = None
+    try:
+        proc = subprocess.Popen(
+            args,
+            cwd=cwd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        stdout, stderr = proc.communicate(timeout=timeout)
+        return {
+            "exit": int(proc.returncode or 0),
+            "stdout": stdout or "",
+            "stderr": stderr or "",
+            "timed_out": False,
+        }
+    except subprocess.TimeoutExpired as exc:
+        stdout = _coerce_subprocess_text(getattr(exc, "stdout", ""))
+        stderr = _coerce_subprocess_text(getattr(exc, "stderr", ""))
+        if proc is not None and proc.pid is not None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except Exception:
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            try:
+                out_after, err_after = proc.communicate(timeout=2)
+                stdout += _coerce_subprocess_text(out_after)
+                stderr += _coerce_subprocess_text(err_after)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                try:
+                    out_after, err_after = proc.communicate(timeout=2)
+                    stdout += _coerce_subprocess_text(out_after)
+                    stderr += _coerce_subprocess_text(err_after)
+                except Exception as kill_exc:
+                    stderr += f"\nFailed to collect process output after kill: {kill_exc}"
+            except Exception as collect_exc:
+                stderr += f"\nFailed to collect process output after termination: {collect_exc}"
+        if not stderr.strip():
+            stderr = f"Command timed out after {timeout:g} seconds"
+        elif "timed out" not in stderr.lower():
+            stderr = f"{stderr.rstrip()}\nCommand timed out after {timeout:g} seconds"
+        return {"exit": 124, "stdout": stdout or "", "stderr": stderr or "", "timed_out": True}
+    except Exception as exc:
+        return {"exit": 1, "stdout": "", "stderr": str(exc), "timed_out": False}
+
+
+def _auto_verify_smoke_command_from_prompt(prompt: str) -> str:
+    timeout_match = re.search(
+        r"\btimeout\s+([0-9]+(?:\.[0-9]+)?)(s?)\s+(?:bash|sh)\s+smoke_test\.sh\b",
+        prompt,
+        flags=re.IGNORECASE,
+    )
+    if timeout_match:
+        value = timeout_match.group(1)
+        suffix = timeout_match.group(2) or "s"
+        return f"timeout {value}{suffix} bash smoke_test.sh"
+    return "bash smoke_test.sh"
+
+
+def _latest_prompt_requests_tool_stop_after_observation(session_state: SessionState) -> bool:
+    latest_prompt = latest_real_user_prompt(session_state).lower()
+    return (
+        "exactly once" in latest_prompt
+        or "after that single tool call" in latest_prompt
+        or "after a single tool call" in latest_prompt
+        or "one tool call" in latest_prompt
+    )
+
+
+def _is_allowed_async_result_followup(parsed_calls: List[Any], prior_tool_activity: Any) -> bool:
+    if not parsed_calls:
+        return False
+    followup_names = {"taskoutput", "background_output"}
+    call_names = {
+        str(getattr(call, "function", "") or getattr(call, "provider_name", "") or "").strip().lower()
+        for call in parsed_calls
+    }
+    if not call_names or any(name not in followup_names for name in call_names):
+        return False
+    tools = (prior_tool_activity or {}).get("tools") if isinstance(prior_tool_activity, dict) else None
+    if not isinstance(tools, list):
+        return False
+    prior_names = {
+        str((tool or {}).get("name") or "").strip().lower()
+        for tool in tools
+        if isinstance(tool, dict)
+    }
+    return bool(prior_names & {"task", "background_task", "call_omo_agent"})
+
+
+def _async_result_task_id_from_activity(prior_tool_activity: Any) -> str:
+    tools = (prior_tool_activity or {}).get("tools") if isinstance(prior_tool_activity, dict) else None
+    if not isinstance(tools, list):
+        return ""
+    for tool in reversed(tools):
+        if not isinstance(tool, dict):
+            continue
+        name = str(tool.get("name") or "").strip().lower()
+        if name not in {"task", "background_task", "call_omo_agent"}:
+            continue
+        meta = tool.get("meta") if isinstance(tool.get("meta"), dict) else {}
+        for key in ("async_task_id", "task_id", "taskId", "agentId", "agent_id"):
+            value = str((meta or {}).get(key) or "").strip()
+            if value:
+                return value
+    return ""
+
+
+def _async_result_retrieval_tool_for_activity(prior_tool_activity: Any) -> str:
+    tools = (prior_tool_activity or {}).get("tools") if isinstance(prior_tool_activity, dict) else None
+    if not isinstance(tools, list):
+        return "TaskOutput"
+    names = {
+        str((tool or {}).get("name") or "").strip().lower()
+        for tool in tools
+        if isinstance(tool, dict)
+    }
+    if "background_task" in names or "call_omo_agent" in names:
+        return "background_output"
+    return "TaskOutput"
+
+
+def _inject_async_result_retrieval(
+    conductor: ConductorContext,
+    session_state: SessionState,
+    markdown_logger: MarkdownLogger,
+    prior_tool_activity: Any,
+    *,
+    reason: str,
+    stream_responses: bool,
+) -> bool:
+    task_id = _async_result_task_id_from_activity(prior_tool_activity)
+    if not task_id:
+        return False
+    retrieval_tool = _async_result_retrieval_tool_for_activity(prior_tool_activity)
+    args = {"task_id": task_id, "block": True, "timeout": 30000}
+    try:
+        exec_func = build_exec_func(conductor, session_state)
+        result = exec_func({"function": retrieval_tool, "arguments": args})
+    except Exception as exc:
+        result = {"error": str(exc), "__mvi_text_output": str(exc)}
+    result_dict = result if isinstance(result, dict) else {"output": str(result), "__mvi_text_output": str(result)}
+    success = not conductor.agent_executor.is_tool_failure(retrieval_tool, result_dict)
+    turn_index = session_state.get_provider_metadata("current_turn_index")
+    turn_index_int = turn_index if isinstance(turn_index, int) else None
+    metadata = {
+        "async_task_id": task_id,
+        "source": "auto_async_result_retrieval",
+        "reason": reason,
+    }
+    try:
+        session_state.record_tool_event(
+            turn_index_int,
+            retrieval_tool,
+            success=success,
+            metadata=metadata,
+            result=result_dict,
+        )
+    except Exception:
+        pass
+    try:
+        session_state.add_transcript_entry({
+            "auto_async_result_retrieval": {
+                "task_id": task_id,
+                "retrieval_tool": retrieval_tool,
+                "success": success,
+                "reason": reason,
+                "result": result_dict,
+            }
+        })
+    except Exception:
+        pass
+    output_text = str(
+        result_dict.get("__mvi_text_output")
+        or result_dict.get("output")
+        or result_dict.get("error")
+        or result_dict
+    )
+    marker = _required_final_answer_marker(session_state)
+    marker_instruction = f" Start with the exact marker `{marker}`." if marker else ""
+    followup = (
+        "<ASYNC_TASK_RESULT>\n"
+        f"tool: {retrieval_tool}\n"
+        f"task_id: {task_id}\n"
+        f"status: {'ok' if success else 'error'}\n\n"
+        f"{output_text.rstrip()}\n"
+        "</ASYNC_TASK_RESULT>\n\n"
+        "Use this retrieved async task result to give the final answer now. "
+        f"{marker_instruction} Do not call more tools unless the retrieved result is an explicit error."
+    )
+    session_state.add_message({"role": "user", "content": followup}, to_provider=True)
+    try:
+        markdown_logger.log_user_message(followup)
+    except Exception:
+        pass
+    session_state.set_provider_metadata(
+        "recent_tool_activity",
+        {
+            "tools": [
+                {
+                    "name": retrieval_tool,
+                    "read_only": True,
+                    "completion_action": False,
+                    "meta": metadata,
+                }
+            ],
+            "turn": turn_index,
+        },
+    )
+    if stream_responses:
+        try:
+            print("[guard] injected async task result retrieval")
+        except Exception:
+            pass
+    return False
+
+
+def _latest_prompt_requests_read_only_answer_after_observation(session_state: SessionState) -> bool:
+    latest_prompt = _strip_internal_prompt_blocks(latest_real_user_prompt(session_state))
+    prompt = latest_prompt.lower()
+    if not prompt or _prompt_requires_implementation_write_text(prompt):
+        return False
+    filename_like_target = bool(re.search(r"\b[\w.-]+\.(?:md|txt|json|yaml|yml|toml|py|ts|tsx|js|jsx|c|h|rs|go)\b", prompt))
+    observation_requested = bool(
+        re.search(r"\b(use tools?|inspect|read|list|count|summarize|check|run)\b", prompt)
+        and (
+            filename_like_target
+            or re.search(r"\b(file|files|workspace|repo|readme|notes|tasks|marker|git status|wc\b|pwd|ls\b|rg\b|cat\b)\b", prompt)
+        )
+    )
+    answer_requested = bool(
+        re.search(r"\bthen\s+(?:reply|answer|summarize|tell me|respond)\b", prompt)
+        or re.search(r"\breply with marker\b", prompt)
+        or re.search(r"\binclude marker\b", prompt)
+        or re.search(r"\bfinal (?:answer|summary)\b", prompt)
+    )
+    return observation_requested and answer_requested
+
+
+def _observed_tool_calls_since_read_only_prompt(session_state: SessionState) -> int:
+    prompt = _strip_internal_prompt_blocks(latest_real_user_prompt(session_state))
+    summary = getattr(session_state, "tool_usage_summary", {}) or {}
+    current_total = max(int(summary.get("run_shell_calls") or 0), int(summary.get("total_calls") or 0))
+    try:
+        stored_prompt = session_state.get_provider_metadata("read_only_observation_prompt")
+        if stored_prompt != prompt:
+            session_state.set_provider_metadata("read_only_observation_prompt", prompt)
+            session_state.set_provider_metadata("read_only_observation_base_tool_count", current_total)
+            return 0
+        base_total = int(session_state.get_provider_metadata("read_only_observation_base_tool_count") or 0)
+    except Exception:
+        base_total = 0
+    return max(0, current_total - base_total)
+
+
+def _requested_final_answer_terms(session_state: SessionState) -> List[str]:
+    latest_prompt = latest_real_user_prompt(session_state)
+    marker = _required_final_answer_marker(session_state)
+    explicit_marker_match = re.search(r"\bmarker\s+`?([A-Z0-9_:-]{3,})`?", latest_prompt)
+    if explicit_marker_match:
+        marker = explicit_marker_match.group(1)
+    terms = [
+        term
+        for term in re.findall(r"\b[A-Z][A-Z0-9_:-]{2,}\b", latest_prompt)
+        if term and term != marker
+    ]
+    if marker:
+        return [marker, *[term for term in terms if term != marker]]
+    return list(dict.fromkeys(terms))
+
+
+def _is_internal_validation_prompt(content: str) -> bool:
+    text = str(content or "")
+    return bool(
+        re.search(
+            r"<(?:VALIDATION_ERROR|WORKSPACE_TOOL_REQUIRED|WORKSPACE_RECEIPT_REQUIRED|BREADBOARD_INTERNAL)[\s>]",
+            text,
+            re.IGNORECASE,
+        )
+    )
+
+
+def _required_final_answer_marker(session_state: SessionState) -> str:
+    latest_prompt = latest_real_user_prompt(session_state)
+    marker_patterns = [
+        r"first line\s+(?:must\s+be\s+)?exactly\s+`?([A-Za-z0-9_:-]+)`?",
+        r"(?:exact|required)\s+marker\s+`?([A-Za-z0-9_:-]+)`?",
+        r"(?:answer|reply|respond)\s+with\s+(?:the\s+)?(?:exact\s+)?marker\s+`?([A-Za-z0-9_:-]+)`?",
+    ]
+    for pattern in marker_patterns:
+        marker_match = re.search(pattern, latest_prompt, re.IGNORECASE)
+        if marker_match:
+            return marker_match.group(1)
+    return ""
+
+
+def _required_final_answer_reminder(session_state: SessionState) -> str:
+    latest_prompt = latest_real_user_prompt(session_state)
+    marker_text = _required_final_answer_marker(session_state)
+    marker_clause = f" Your first line must be exactly `{marker_text}`." if marker_text else ""
+    requested_terms = [
+        term
+        for term in re.findall(r"\b[A-Z][A-Z0-9_]{2,}\b", latest_prompt)
+        if term != marker_text
+    ]
+    terms_clause = (
+        " Include these requested terms: " + ", ".join(dict.fromkeys(requested_terms[:8])) + "."
+        if requested_terms
+        else ""
+    )
+    return marker_clause + terms_clause
+
+
+def _strip_internal_prompt_blocks(text: str) -> str:
+    return re.sub(
+        r"<(?:VALIDATION_ERROR|WORKSPACE_TOOL_REQUIRED|WORKSPACE_RECEIPT_REQUIRED|BREADBOARD_INTERNAL)>.*?</(?:VALIDATION_ERROR|WORKSPACE_TOOL_REQUIRED|WORKSPACE_RECEIPT_REQUIRED|BREADBOARD_INTERNAL)>",
+        "",
+        str(text or ""),
+        flags=re.IGNORECASE | re.DOTALL,
+    ).strip()
+
+
+def _implementation_write_guard_config(conductor: ConductorContext) -> Dict[str, Any]:
+    cfg = conductor.config if isinstance(getattr(conductor, "config", None), dict) else {}
+    guard_cfg = (cfg.get("workloop_guards", {}) or {}) if isinstance(cfg, dict) else {}
+    impl_cfg = (guard_cfg.get("implementation_write_receipts", {}) or {}) if isinstance(guard_cfg, dict) else {}
+    if not isinstance(impl_cfg, dict):
+        impl_cfg = {}
+    return {
+        "enabled": impl_cfg.get("enabled", True),
+        "max_read_only_calls_before_write": impl_cfg.get("max_read_only_calls_before_write", 4),
+        "auto_verify_make_after_write_receipts": impl_cfg.get("auto_verify_make_after_write_receipts", False),
+    }
+
+
+def _prompt_requires_implementation_write_text(prompt_text: str) -> bool:
+    prompt = str(prompt_text or "").lower()
+    if not prompt:
+        return False
+    read_only_prompt = (
+        re.search(r"\bread[- ]only\b", prompt)
+        or re.search(r"\binspect[- ]only\b(?!\s+(?:this\s+)?workspace\b)", prompt)
+        or re.search(r"\b(?:do not|don't) (?:edit|modify|write|change)\b(?:\s+(?:any(?:thing)?|files?|code|the workspace))?\b", prompt)
+        or re.search(r"\bwithout (?:editing|modifying|writing|changing)\b(?:\s+(?:any(?:thing)?|files?|code|the workspace))?\b", prompt)
+    )
+    if (
+        "inspection/reporting task" in prompt
+        or "not a bug-fix task" in prompt
+        or read_only_prompt
+        or "do not edit files yet" in prompt
+    ):
+        return False
+    if re.search(r"^\s*(?:verify|check|test)\b", prompt) and not re.search(
+        r"\b(create|implement|write|modify|fix|add|update|generate|perform one small edit)\b",
+        prompt,
+    ):
+        return False
+    action_hit = re.search(r"\b(build|create|implement|write|modify|edit|fix|add|update|generate)\b", prompt)
+    artifact_hit = re.search(
+        r"\b(file|files|code|server|script|makefile|readme|test|smoke|compile|c11|smtp|workspace|repo)\b|"
+        r"\.[a-z0-9_+-]+\b",
+        prompt,
+    )
+    return bool(action_hit and artifact_hit)
+
+
+def _latest_implementation_prompt(session_state: SessionState) -> str:
+    prompts: List[str] = []
+    try:
+        for message in reversed(getattr(session_state, "messages", []) or []):
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            text = _strip_internal_prompt_blocks(str(message.get("content") or ""))
+            if text and not text.startswith("Tool execution results:"):
+                prompts.append(text)
+    except Exception:
+        pass
+    try:
+        for message in reversed(getattr(session_state, "provider_messages", []) or []):
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            text = _strip_internal_prompt_blocks(str(message.get("content") or ""))
+            if text and not text.startswith("Tool execution results:"):
+                prompts.append(text)
+    except Exception:
+        pass
+    try:
+        initial_prompt = _strip_internal_prompt_blocks(str(session_state.get_provider_metadata("initial_user_prompt") or ""))
+        if initial_prompt:
+            prompts.append(initial_prompt)
+    except Exception:
+        pass
+    latest_prompt = _strip_internal_prompt_blocks(latest_real_user_prompt(session_state))
+    if latest_prompt and not latest_prompt.startswith("Tool execution results:"):
+        prompts.append(latest_prompt)
+    for prompt in prompts:
+        if _prompt_requires_implementation_write_text(prompt):
+            return prompt
+    return latest_prompt
+
+
+def _implementation_prompt_candidates(session_state: SessionState) -> List[str]:
+    prompts: List[str] = []
+    try:
+        message_lists = [
+            getattr(session_state, "messages", []) or [],
+            getattr(session_state, "provider_messages", []) or [],
+        ]
+        for message_list in message_lists:
+            for message in reversed(message_list):
+                if not isinstance(message, dict) or message.get("role") != "user":
+                    continue
+                text = _strip_internal_prompt_blocks(str(message.get("content") or ""))
+                if not text or text.startswith("Tool execution results:"):
+                    continue
+                if _prompt_requires_implementation_write_text(text) and text not in prompts:
+                    prompts.append(text)
+    except Exception:
+        pass
+    try:
+        initial_prompt = _strip_internal_prompt_blocks(str(session_state.get_provider_metadata("initial_user_prompt") or ""))
+        if _prompt_requires_implementation_write_text(initial_prompt) and initial_prompt not in prompts:
+            prompts.append(initial_prompt)
+    except Exception:
+        pass
+    latest_prompt = _latest_implementation_prompt(session_state)
+    if latest_prompt and latest_prompt not in prompts:
+        prompts.append(latest_prompt)
+    return prompts
+
+
+def _latest_prompt_requires_implementation_write(session_state: SessionState) -> bool:
+    return _prompt_requires_implementation_write_text(_latest_implementation_prompt(session_state))
+
+
+def _shell_command_is_read_only(command: str) -> bool:
+    normalized = re.sub(r"\s+", " ", str(command or "").strip())
+    if not normalized:
+        return True
+    if re.search(r"(^|[;&|]\s*)(make|npm|pnpm|yarn|pytest|bash\s+smoke|sh\s+smoke|gcc|cc)\b", normalized):
+        return False
+    if re.search(r"(^|[;&|]\s*)(cat\s*>|tee\b|touch\b|mkdir\b|rm\b|mv\b|cp\b|chmod\b|python\b.*open\(|perl\b.*-pi|sed\b.*-i)\b", normalized):
+        return False
+    if re.search(r"(^|[^<>])>{1,2}[^>&]", normalized):
+        return False
+    segments = [segment.strip() for segment in re.split(r"[;&|]+", normalized) if segment.strip()]
+    if not segments:
+        return True
+    read_only_prefixes = (
+        "pwd",
+        "ls",
+        "find",
+        "rg",
+        "grep",
+        "cat",
+        "sed -n",
+        "head",
+        "tail",
+        "wc",
+        "printf",
+        "git status",
+        "git diff",
+        "git log",
+        "git show",
+    )
+    return all(segment.startswith(read_only_prefixes) or segment.startswith("[ -f ") for segment in segments)
+
+
+def _command_tunnels_apply_patch(command: str) -> bool:
+    return bool(re.search(r"(^|[;&|]\s*|\n\s*)apply_patch\s*<<", str(command or "")))
+
+
+def _path_is_user_facing_write_target(candidate: str) -> bool:
+    raw = str(candidate or "").strip().replace("\\", "/")
+    if raw.startswith("/"):
+        return False
+    normalized = raw
+    if not normalized or normalized == "/dev/null":
+        return False
+    normalized = re.sub(r"^[ab]/", "", normalized)
+    parts = [part for part in normalized.split("/") if part and part != "."]
+    if not parts:
+        return False
+    if parts[0] in {".git", ".breadboard"}:
+        return False
+    return not any(part.startswith(".") for part in parts)
+
+
+def _normalize_write_target(candidate: str) -> str:
+    normalized = str(candidate or "").strip().strip("`'\":;()[]").rstrip(",").replace("\\", "/")
+    normalized = re.sub(r"^[ab]/", "", normalized)
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    normalized = re.sub(r"/+", "/", normalized)
+    return normalized
+
+
+def _tool_call_write_targets(tool_name: str, args: Dict[str, Any]) -> List[str]:
+    name = str(tool_name or "")
+    payload = args if isinstance(args, dict) else {}
+    if name in {"create_file_from_block", "write", "write_file", "apply_search_replace"}:
+        target = _normalize_write_target(str(payload.get("file_name") or payload.get("path") or ""))
+        return [target] if target else []
+    if name not in {"apply_unified_patch", "patch", "apply_patch"}:
+        return []
+    patch_text = str(payload.get("patch") or payload.get("input") or payload.get("patchText") or "")
+    targets = re.findall(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", patch_text, flags=re.MULTILINE)
+    targets.extend(
+        target
+        for target in re.findall(r"^(?:---|\+\+\+) (?:[ab]/)?(.+)$", patch_text, flags=re.MULTILINE)
+        if target != "/dev/null"
+    )
+    return list(dict.fromkeys(_normalize_write_target(target) for target in targets if _normalize_write_target(target)))
+
+
+def _tool_call_delete_targets(tool_name: str, args: Dict[str, Any]) -> List[str]:
+    name = str(tool_name or "")
+    payload = args if isinstance(args, dict) else {}
+    if name not in {"apply_unified_patch", "patch", "apply_patch"}:
+        return []
+    patch_text = str(payload.get("patch") or payload.get("input") or payload.get("patchText") or "")
+    targets = re.findall(r"^\*\*\* Delete File: (.+)$", patch_text, flags=re.MULTILINE)
+    targets.extend(
+        target
+        for target in re.findall(r"^--- (?:[ab]/)?(.+)\n\+\+\+ /dev/null$", patch_text, flags=re.MULTILINE)
+        if target != "/dev/null"
+    )
+    return list(dict.fromkeys(_normalize_write_target(target) for target in targets if _normalize_write_target(target)))
+
+
+def _shell_command_delete_targets(command: str) -> List[str]:
+    text = str(command or "")
+    targets: List[str] = []
+    for match in re.findall(r"(?:^|[;&|]\s*)rm\s+(?:-[A-Za-z]+\s+)*([A-Za-z0-9_./-]+)", text):
+        target = _normalize_write_target(match)
+        if target and _path_is_user_facing_write_target(target):
+            targets.append(target)
+    return list(dict.fromkeys(targets))
+
+
+def _latest_prompt_forbidden_direct_commands(session_state: SessionState) -> List[str]:
+    prompt = _latest_implementation_prompt(session_state)
+    commands: List[str] = []
+    for match in re.findall(r"\bdo not run\s+(`?\.\/[A-Za-z0-9_.-]+`?)", prompt, flags=re.IGNORECASE):
+        command = match.strip("`")
+        if command and command not in commands:
+            commands.append(command)
+    return commands
+
+
+def _latest_prompt_requests_file_deletion(session_state: SessionState) -> bool:
+    prompt = _latest_implementation_prompt(session_state).lower()
+    return bool(re.search(r"\b(delete|remove|rm|clean up|drop)\b", prompt))
+
+
+def _shell_command_write_targets(command: str) -> List[str]:
+    text = str(command or "")
+    targets: List[str] = []
+    for match in re.findall(r"(?:^|[^2])>>?\s*([A-Za-z0-9_./-]+\.[A-Za-z0-9_+-]+|[A-Za-z0-9_./-]+)", text):
+        target = _normalize_write_target(match)
+        if target and _path_is_user_facing_write_target(target):
+            targets.append(target)
+    for match in re.findall(r"(?:^|[;&|]\s*)tee\s+(?:-[a-zA-Z]+\s+)*([A-Za-z0-9_./-]+)", text):
+        target = _normalize_write_target(match)
+        if target and _path_is_user_facing_write_target(target):
+            targets.append(target)
+    return list(dict.fromkeys(targets))
+
+
+def _tool_call_has_user_facing_write_target(tool_name: str, args: Dict[str, Any]) -> bool:
+    targets = _tool_call_write_targets(tool_name, args)
+    return any(_path_is_user_facing_write_target(target) for target in targets)
+
+
+def _write_payload_looks_placeholder(args: Dict[str, Any]) -> bool:
+    payload = args if isinstance(args, dict) else {}
+    text = "\n".join(str(value or "") for value in payload.values() if isinstance(value, str))
+    if not text:
+        return False
+    return bool(re.search(r"\b(placeholder|stub|todo|not implemented|fake implementation)\b", text, flags=re.IGNORECASE))
+
+
+def _requested_write_targets(session_state: SessionState) -> List[str]:
+    prompts: List[str] = _implementation_prompt_candidates(session_state)
+    if not prompts:
+        return []
+    targets: List[str] = []
+    file_pattern = (
+        r"(?<![\w./-])"
+        r"(?:[\w.-]+/)*[\w.-]+\."
+        r"(?:c|h|sh|md|txt|json|yaml|yml|toml|py|js|ts|tsx|jsx|rs|go|java|rb|php|sql)"
+        r"(?![\w-])"
+    )
+    def negated(span_start: int) -> bool:
+        prefix = prompt[max(0, span_start - 120):span_start].lower()
+        boundary = max(prefix.rfind("."), prefix.rfind("\n"), prefix.rfind(";"))
+        clause = prefix[boundary + 1 :]
+        return bool(re.search(r"\bdo not\b|\bdon't\b|\bnever\b|\bwithout\b", clause))
+
+    def verification_only_mention(span_start: int) -> bool:
+        prefix = prompt[max(0, span_start - 160):span_start].lower()
+        boundaries = [
+            prefix.rfind("."),
+            prefix.rfind("\n"),
+            prefix.rfind(";"),
+            prefix.rfind(" then "),
+        ]
+        boundary = max(boundaries)
+        clause = prefix[boundary + 1 :]
+        if re.search(r"\b(create|implement|write|modify|edit|fix|add|update|generate|repair)\b", clause):
+            return False
+        return bool(re.search(r"\b(run|bash|sh|node\s+--check|verify|verification|test|smoke|compile|build|make|check)\b", clause))
+
+    for prompt in prompts:
+        prompt_targets: List[str] = []
+        for match in re.finditer(file_pattern, prompt, flags=re.IGNORECASE):
+            if negated(match.start()) or verification_only_mention(match.start()):
+                continue
+            target = _normalize_write_target(match.group(0))
+            if target and _path_is_user_facing_write_target(target):
+                prompt_targets.append(target)
+        for special in ("Makefile", "Dockerfile"):
+            special_match = re.search(rf"(?<![\w.-]){re.escape(special)}(?![\w.-])", prompt)
+            if special_match and not negated(special_match.start()):
+                prompt_targets.append(special)
+        if (
+            not prompt_targets
+            and re.search(r"\breadme\b", prompt, flags=re.IGNORECASE)
+            and re.search(r"\b(add|improve|update|edit|write|document|usage|instructions?)\b", prompt, flags=re.IGNORECASE)
+        ):
+            prompt_targets.append("README.md")
+        if prompt_targets:
+            targets.extend(prompt_targets)
+            break
+    return list(dict.fromkeys(targets))
+
+
+def _successful_patch_result_paths(result: Dict[str, Any]) -> List[str]:
+    data = result.get("data") if isinstance(result, dict) else None
+    if not isinstance(data, dict):
+        return []
+    paths = data.get("paths")
+    if not isinstance(paths, list):
+        return []
+    out: List[str] = []
+    for path_value in paths:
+        target = _normalize_write_target(str(path_value or ""))
+        if target:
+            out.append(target)
+    return list(dict.fromkeys(out))
+
+
+def _write_target_matches_requested(target: str, requested_target: str) -> bool:
+    if str(target or "").strip().startswith("/"):
+        return False
+    actual = _normalize_write_target(target)
+    requested = _normalize_write_target(requested_target)
+    if not actual or not requested:
+        return False
+    return (
+        actual == requested
+        or actual.endswith("/" + requested)
+        or Path(actual).name == Path(requested).name
+    )
+
+
+def _requested_write_matches(write_targets: List[str], requested_targets: List[str]) -> List[str]:
+    matches: List[str] = []
+    for requested in requested_targets:
+        if any(_write_target_matches_requested(target, requested) for target in write_targets):
+            matches.append(_normalize_write_target(requested))
+    return list(dict.fromkeys(matches))
+
+
+def _implementation_task_anchor(session_state: SessionState, *, max_chars: int = 700) -> str:
+    prompt = _latest_implementation_prompt(session_state).strip()
+    if not prompt:
+        return ""
+    prompt = re.sub(r"<WORKSPACE_TOOL_REQUIRED>.*?</WORKSPACE_TOOL_REQUIRED>", "", prompt, flags=re.DOTALL).strip()
+    compact = re.sub(r"\s+", " ", prompt)
+    if len(compact) > max_chars:
+        compact = compact[: max_chars - 1].rstrip() + "..."
+    return f"\nOriginal request: {compact}"
+
+
+def _missing_requested_write_targets(session_state: SessionState) -> List[str]:
+    requested_targets = _requested_write_targets(session_state)
+    if not requested_targets:
+        return []
+    summary = getattr(session_state, "tool_usage_summary", {}) or {}
+    successful = {
+        _normalize_write_target(target)
+        for target in (summary.get("successful_requested_write_targets") or [])
+        if _normalize_write_target(str(target))
+    }
+    return [target for target in requested_targets if _normalize_write_target(target) not in successful]
+
+
+def _parsed_call_is_read_only_inspection(call: Any) -> bool:
+    fn = str(getattr(call, "function", "") or "").lower()
+    args = getattr(call, "arguments", {}) or {}
+    if fn in {"read_file", "list_dir", "glob", "grep", "update_plan"}:
+        return True
+    if fn in {"run_shell", "shell_command", "bash"}:
+        return _shell_command_is_read_only(str(args.get("command") or args.get("input") or ""))
+    return False
+
+
+def _implementation_write_receipt_missing(conductor: ConductorContext, session_state: SessionState) -> bool:
+    guard_cfg = _implementation_write_guard_config(conductor)
+    if not bool(guard_cfg.get("enabled", False)):
+        return False
+    if not _latest_prompt_requires_implementation_write(session_state):
+        return False
+    summary = getattr(session_state, "tool_usage_summary", {}) or {}
+    requested_targets = _requested_write_targets(session_state)
+    if requested_targets:
+        missing = _missing_requested_write_targets(session_state)
+        if not missing:
+            return False
+        try:
+            workspace = Path(str(getattr(conductor, "workspace", "") or "")).resolve(strict=False)
+            if workspace:
+                still_missing = []
+                for target in missing:
+                    candidate = (workspace / _normalize_write_target(target)).resolve(strict=False)
+                    try:
+                        candidate.relative_to(workspace)
+                    except Exception:
+                        still_missing.append(target)
+                        continue
+                    if not candidate.exists():
+                        still_missing.append(target)
+                if not still_missing:
+                    return False
+        except Exception:
+            pass
+        return True
+    return int(summary.get("successful_user_facing_writes") or 0) <= 0
+
+
+def _latest_prompt_requests_verification(session_state: SessionState) -> bool:
+    prompt = _latest_implementation_prompt(session_state).lower()
+    return bool(re.search(r"\b(verify|verification|test|smoke|compile|build|make|check)\b", prompt))
+
+
+def _successful_test_commands(session_state: SessionState) -> List[str]:
+    commands: List[str] = []
+    try:
+        for turn_payload in (getattr(session_state, "turn_tool_usage", {}) or {}).values():
+            for tool in (turn_payload or {}).get("tools", []) or []:
+                meta = (tool or {}).get("meta") or {}
+                if not meta.get("is_test_command"):
+                    continue
+                if meta.get("exit_code") != 0 or not bool((tool or {}).get("success")):
+                    continue
+                command = str(meta.get("command") or "").strip()
+                if command and command not in commands:
+                    commands.append(command)
+    except Exception:
+        return []
+    return commands
+
+
+def _requested_verification_commands_satisfied(session_state: SessionState) -> bool:
+    prompt = _latest_implementation_prompt(session_state).lower()
+    commands = [command.lower() for command in _successful_test_commands(session_state)]
+    make_any_ok = any(re.search(r"(^|[;&|]\s*)(?:timeout\s+\d+s?\s+)?make(\s|$)", command) for command in commands)
+    make_clean_all_ok = any(
+        re.search(r"(^|[;&|]\s*)(?:timeout\s+\d+s?\s+)?make\s+clean\s+all(\s|[;&|]|$)", command)
+        for command in commands
+    )
+    smoke_ok = any("smoke_test.sh" in command for command in commands)
+    node_check_match = re.search(r"node\s+--check\s+([^\s;&|`'\"]+)", prompt)
+    node_check_ok = True
+    if node_check_match:
+        requested_target = node_check_match.group(1).strip().rstrip(".,:;").lower()
+        node_check_ok = any(
+            re.search(rf"(^|[;&|]\s*)node\s+--check\s+{re.escape(requested_target)}(\s|[;&|]|$)", command)
+            for command in commands
+        )
+    if "smoke_test.sh" in prompt:
+        if not smoke_ok:
+            return False
+        if re.search(r"\bmake\s+clean\s+all\b", prompt) and not make_clean_all_ok:
+            return False
+        if re.search(r"\bmake\b", prompt) and not make_any_ok:
+            return False
+        if not node_check_ok:
+            return False
+        return True
+    if node_check_match:
+        return node_check_ok
+    if re.search(r"\bmake\s+clean\s+all\b", prompt):
+        return make_clean_all_ok
+    if re.search(r"\bsmoke\b", prompt):
+        return any("smoke" in command for command in commands)
+    if re.search(r"\bmake\b", prompt):
+        return make_any_ok
+    return bool(commands)
+
+
+def _implementation_verification_receipt_missing(conductor: ConductorContext, session_state: SessionState) -> bool:
+    guard_cfg = _implementation_write_guard_config(conductor)
+    if not bool(guard_cfg.get("enabled", False)):
+        return False
+    if not _latest_prompt_requires_implementation_write(session_state):
+        return False
+    if not _latest_prompt_requests_verification(session_state):
+        return False
+    if _implementation_write_receipt_missing(conductor, session_state):
+        return False
+    summary = getattr(session_state, "tool_usage_summary", {}) or {}
+    if int(summary.get("successful_tests") or 0) <= 0:
+        return True
+    return not _requested_verification_commands_satisfied(session_state)
+
+
+def _implementation_receipt_missing(conductor: ConductorContext, session_state: SessionState) -> bool:
+    return (
+        _implementation_write_receipt_missing(conductor, session_state)
+        or _implementation_verification_receipt_missing(conductor, session_state)
+    )
+
+
+def _implementation_receipts_satisfied(conductor: ConductorContext, session_state: SessionState) -> bool:
+    if not _latest_prompt_requires_implementation_write(session_state):
+        return False
+    return (
+        not _implementation_write_receipt_missing(conductor, session_state)
+        and not _implementation_verification_receipt_missing(conductor, session_state)
+    )
+
+
+def _maybe_auto_verify_make_after_write_receipts(
+    conductor: ConductorContext,
+    session_state: SessionState,
+) -> bool:
+    guard_cfg = _implementation_write_guard_config(conductor)
+    if not bool(guard_cfg.get("auto_verify_make_after_write_receipts", False)):
+        return False
+    if not _latest_prompt_requests_verification(session_state):
+        return False
+    if _implementation_write_receipt_missing(conductor, session_state):
+        return False
+    if not _implementation_verification_receipt_missing(conductor, session_state):
+        return False
+    summary = getattr(session_state, "tool_usage_summary", {}) or {}
+    successful_writes = int(summary.get("successful_writes") or 0)
+    attempted_at = int(session_state.get_provider_metadata("auto_verify_make_after_write_receipts_successful_writes") or 0)
+    if attempted_at >= successful_writes:
+        return False
+    workspace = Path(str(getattr(conductor, "workspace", "") or "")).resolve()
+    makefile = workspace / "Makefile"
+    prompt = _latest_implementation_prompt(session_state).lower()
+    smoke_script = workspace / "smoke_test.sh"
+    smoke_command = _auto_verify_smoke_command_from_prompt(prompt)
+    if makefile.is_file() and "smoke_test.sh" in prompt and smoke_script.is_file():
+        verify_command = f"make clean all && {smoke_command}"
+        subprocess_args = ["bash", "-lc", verify_command]
+    elif "smoke_test.sh" in prompt and smoke_script.is_file():
+        node_check_match = re.search(r"node\s+--check\s+([^\s;&|]+)", prompt)
+        if node_check_match:
+            check_target = node_check_match.group(1).strip().strip("`'\"").rstrip(".,:;")
+            candidate = (workspace / check_target).resolve(strict=False)
+            try:
+                candidate.relative_to(workspace)
+            except Exception:
+                candidate = workspace / "__invalid_check_target__"
+            if candidate.is_file():
+                verify_command = f"node --check {shlex.quote(check_target)} && {smoke_command}"
+                subprocess_args = ["bash", "-lc", verify_command]
+            else:
+                verify_command = smoke_command
+                subprocess_args = ["bash", "-lc", verify_command]
+        else:
+            verify_command = smoke_command
+            subprocess_args = ["bash", "-lc", verify_command]
+    elif makefile.is_file():
+        verify_command = "make"
+        subprocess_args = ["make"]
+    else:
+        return False
+    session_state.set_provider_metadata("auto_verify_make_after_write_receipts_successful_writes", successful_writes)
+    started = time.monotonic()
+    completed = _run_subprocess_capture_with_group_timeout(
+        subprocess_args,
+        cwd=str(workspace),
+        timeout=120,
+    )
+    exit_code = int(completed.get("exit") or 0)
+    stdout = str(completed.get("stdout") or "")
+    stderr = str(completed.get("stderr") or "")
+    success = exit_code == 0
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    result_payload = {
+        "tool": "shell_command",
+        "command": verify_command,
+        "exit": exit_code,
+        "stdout": stdout,
+        "stderr": stderr,
+        "elapsed_ms": elapsed_ms,
+        "source": "auto_verify_make_after_write_receipts",
+    }
+    try:
+        session_state.add_transcript_entry({"tool_result": result_payload})
+        session_state.record_guardrail_event(
+            "auto_verify_make_after_write_receipts",
+            {
+                "exit": exit_code,
+                "elapsed_ms": elapsed_ms,
+                "stdout_excerpt": stdout[:500],
+                "stderr_excerpt": stderr[:500],
+            },
+        )
+        turn_index = session_state.get_provider_metadata("current_turn_index")
+        session_state.record_tool_event(
+            turn_index if turn_index is not None else 0,
+            "run_shell",
+            success=success,
+            metadata={
+                "is_run_shell": True,
+                "command": verify_command,
+                "exit_code": exit_code,
+                "is_test_command": True,
+                "source": "auto_verify_make_after_write_receipts",
+            },
+            result=result_payload,
+        )
+    except Exception:
+        pass
+    if not success:
+        return False
+    # Auto verification is an opportunistic helper. It must not turn into a
+    # closure receipt unless the requested verification contract is satisfied.
+    return not _implementation_verification_receipt_missing(conductor, session_state)
+
+
+def _post_receipt_final_reminder(session_state: SessionState) -> str:
+    return (
+        "<VALIDATION_ERROR>\n"
+        "All requested implementation and verification receipts are already present. "
+        "Do not inspect more files or run more commands. Give the final answer now with files changed and exact verification commands/results."
+        f"{_implementation_task_anchor(session_state)}\n"
+        "</VALIDATION_ERROR>"
+    )
+
+
+def _force_post_receipt_final_answer(
+    session_state: SessionState,
+    *,
+    reason: str,
+) -> bool:
+    final_message = _build_post_receipt_final_message(session_state)
+    session_state.add_message({"role": "assistant", "content": final_message}, to_provider=False)
+    try:
+        summary = dict(getattr(session_state, "tool_usage_summary", {}) or {})
+        event_payload = {
+            "reason": reason,
+            "tool_usage": summary,
+            "targets": _post_receipt_final_targets(session_state),
+        }
+        session_state.record_guardrail_event("implementation_post_receipt_forced_closure", event_payload)
+        session_state.add_transcript_entry({"implementation_post_receipt_forced_closure": event_payload})
+    except Exception:
+        pass
+    session_state.completion_summary = {
+        "completed": True,
+        "method": "post_receipt_forced_closure",
+        "reason": reason,
+        "confidence": 0.8,
+        "source": "workloop_guard",
+        "final_message": final_message,
+    }
+    return True
+
+
+def _post_receipt_final_targets(session_state: SessionState) -> List[str]:
+    summary = dict(getattr(session_state, "tool_usage_summary", {}) or {})
+    targets = [
+        str(target)
+        for target in summary.get("successful_requested_write_targets", []) or []
+        if str(target).strip()
+    ]
+    user_facing_targets = [
+        str(target)
+        for target in summary.get("successful_user_facing_write_targets", []) or []
+        if str(target).strip()
+    ]
+    if user_facing_targets and (not targets or len(user_facing_targets) > len(targets)):
+        targets = user_facing_targets
+    if not targets:
+        targets = [
+            str(target)
+            for target in summary.get("requested_write_targets", []) or []
+            if str(target).strip()
+        ]
+    return targets
+
+
+def _build_post_receipt_final_message(session_state: SessionState) -> str:
+    summary = dict(getattr(session_state, "tool_usage_summary", {}) or {})
+    targets = _post_receipt_final_targets(session_state)
+    file_line = ", ".join(f"`{target}`" for target in targets) if targets else "requested project files"
+    successful_commands = _successful_test_commands(session_state)
+    if successful_commands:
+        verification_line = "; ".join(successful_commands)
+    elif int(summary.get("successful_tests") or 0) > 0:
+        verification_line = f"{int(summary.get('successful_tests') or 0)} successful verification command(s)"
+    else:
+        verification_line = "verification receipt present"
+    marker = _required_final_answer_marker(session_state)
+    marker_prefix = f"{marker}\n" if marker else ""
+    final_message = (
+        f"{marker_prefix}"
+        "Implementation receipts and verification receipts are present, so I am closing the task without running more tools.\n\n"
+        f"Files changed: {file_line}\n"
+        f"Verification: {verification_line}\n\n"
+        "The model attempted to continue with progress or read-only work after the receipts were already satisfied; "
+        "BreadBoard forced closure to avoid an unproductive loop."
+    )
+    return final_message
+
+
+def _build_read_only_observation_final_message(session_state: SessionState) -> str:
+    terms = _requested_final_answer_terms(session_state)
+    marker_prefix = f"{terms[0]}\n" if terms else ""
+    latest_prompt = re.sub(r"\s+", " ", latest_real_user_prompt(session_state)).strip()
+    prompt_clause = f"\n\nRequest: {latest_prompt[:500]}" if latest_prompt else ""
+    return (
+        f"{marker_prefix}"
+        "The requested workspace observation has already been performed, so I am closing this read-only turn without running more tools.\n\n"
+        "Result: the workspace/tool output was observed successfully; no file changes were requested or made."
+        f"{prompt_clause}\n\n"
+        "BreadBoard forced closure to avoid a repetitive read-only inspection loop."
+    )
+
+
+def _force_read_only_observation_final_answer(
+    session_state: SessionState,
+    *,
+    reason: str,
+) -> bool:
+    final_message = _build_read_only_observation_final_message(session_state)
+    session_state.add_message({"role": "assistant", "content": final_message}, to_provider=False)
+    try:
+        summary = dict(getattr(session_state, "tool_usage_summary", {}) or {})
+        event_payload = {
+            "reason": reason,
+            "tool_usage": summary,
+            "terms": _requested_final_answer_terms(session_state),
+        }
+        session_state.record_guardrail_event("read_only_observation_forced_closure", event_payload)
+        session_state.add_transcript_entry({"read_only_observation_forced_closure": event_payload})
+    except Exception:
+        pass
+    session_state.completion_summary = {
+        "completed": True,
+        "method": "read_only_observation_forced_closure",
+        "reason": reason,
+        "confidence": 0.7,
+        "source": "workloop_guard",
+        "final_message": final_message,
+    }
+    return True
+
+
+def _maybe_force_read_only_observation_closure(
+    session_state: SessionState,
+    parsed_calls: List[Any],
+) -> bool:
+    if not parsed_calls:
+        return False
+    if not _latest_prompt_requests_read_only_answer_after_observation(session_state):
+        return False
+    if not all(_parsed_call_is_read_only_inspection(call) for call in parsed_calls):
+        return False
+    observed_calls = _observed_tool_calls_since_read_only_prompt(session_state)
+    if observed_calls < 2:
+        return False
+    return _force_read_only_observation_final_answer(
+        session_state,
+        reason="post_observation_repeated_read_only_tool_attempt",
+    )
+
+
+def _ensure_tool_completion_final_message(
+    conductor: ConductorContext,
+    session_state: SessionState,
+    *,
+    reason: str,
+) -> Optional[str]:
+    if not _implementation_receipts_satisfied(conductor, session_state):
+        return None
+    for entry in reversed(getattr(session_state, "messages", []) or []):
+        if not isinstance(entry, dict) or entry.get("role") != "assistant":
+            continue
+        content = str(entry.get("content") or "").strip()
+        if not content:
+            continue
+        if "Verification:" in content or "Files changed:" in content:
+            return content
+        break
+    final_message = _build_post_receipt_final_message(session_state)
+    session_state.add_message({"role": "assistant", "content": final_message}, to_provider=False)
+    try:
+        session_state.record_guardrail_event(
+            "implementation_mark_task_complete_final_message",
+            {
+                "reason": reason,
+                "tool_usage": dict(getattr(session_state, "tool_usage_summary", {}) or {}),
+                "targets": _post_receipt_final_targets(session_state),
+            },
+        )
+    except Exception:
+        pass
+    return final_message
+
+
+def _maybe_force_post_write_auto_verification_closure(
+    conductor: ConductorContext,
+    session_state: SessionState,
+    *,
+    reason: str,
+) -> bool:
+    """Close immediately when a write receipt enables deterministic verification.
+
+    This is intentionally separate from completion rejection: if the model has
+    already performed the requested write, and BreadBoard can run the exact
+    requested smoke/build receipt, continuing the model loop only creates churn.
+    """
+    if _implementation_receipts_satisfied(conductor, session_state):
+        return _force_post_receipt_final_answer(session_state, reason=reason)
+    if not _maybe_auto_verify_make_after_write_receipts(conductor, session_state):
+        return False
+    return _force_post_receipt_final_answer(session_state, reason=reason)
+
+
+def _latest_requested_exact_shell_command(session_state: SessionState) -> str:
+    prompts: List[str] = []
+    try:
+        latest_prompt = _strip_internal_prompt_blocks(latest_real_user_prompt(session_state))
+        if latest_prompt:
+            prompts.append(latest_prompt)
+    except Exception:
+        pass
+    try:
+        for message in reversed(getattr(session_state, "messages", []) or []):
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            text = _strip_internal_prompt_blocks(str(message.get("content") or ""))
+            if text and not text.startswith("Tool execution results:"):
+                prompts.append(text)
+                break
+    except Exception:
+        pass
+    for prompt in prompts:
+        if _prompt_requires_implementation_write_text(prompt):
+            continue
+        match = re.search(r"\b(?:shell tool to run|run)\s+`([^`]+)`", prompt, flags=re.IGNORECASE)
+        if not match:
+            continue
+        command = " ".join(str(match.group(1) or "").split())
+        if command:
+            return command
+    return ""
+
+
+def _successful_exact_shell_command_observation(session_state: SessionState, command: str) -> Dict[str, Any]:
+    if not command:
+        return {}
+    normalized_command = " ".join(command.split())
+    try:
+        for turn_payload in (getattr(session_state, "turn_tool_usage", {}) or {}).values():
+            for tool in (turn_payload or {}).get("tools", []) or []:
+                meta = (tool or {}).get("meta") or {}
+                observed = " ".join(str(meta.get("command") or "").split())
+                if observed != normalized_command:
+                    continue
+                if not bool((tool or {}).get("success")) and int(meta.get("exit_code") or 1) != 0:
+                    continue
+                result = (tool or {}).get("result") or {}
+                return {
+                    "command": command,
+                    "stdout": str(result.get("stdout") or "")[:1000],
+                    "stderr": str(result.get("stderr") or "")[:1000],
+                    "exit": result.get("exit", meta.get("exit_code")),
+                }
+    except Exception:
+        return {}
+    return {}
+
+
+def _maybe_force_requested_shell_command_closure(
+    session_state: SessionState,
+    *,
+    reason: str,
+) -> bool:
+    command = _latest_requested_exact_shell_command(session_state)
+    observation = _successful_exact_shell_command_observation(session_state, command)
+    if not observation:
+        return False
+    stdout = str(observation.get("stdout") or "").strip()
+    stderr = str(observation.get("stderr") or "").strip()
+    output_line = stdout or stderr or "(no output)"
+    final_message = (
+        "Requested shell command completed, so I am closing the task without running more tools.\n\n"
+        f"Command: `{command}`\n"
+        f"Exit: {observation.get('exit')}\n"
+        f"Output: {output_line}"
+    )
+    session_state.add_message({"role": "assistant", "content": final_message}, to_provider=False)
+    try:
+        event_payload = {
+            "reason": reason,
+            "command": command,
+            "observation": observation,
+        }
+        session_state.record_guardrail_event("requested_shell_command_forced_closure", event_payload)
+        session_state.add_transcript_entry({"requested_shell_command_forced_closure": event_payload})
+    except Exception:
+        pass
+    session_state.completion_summary = {
+        "completed": True,
+        "method": "requested_shell_command_forced_closure",
+        "reason": reason,
+        "confidence": 0.8,
+        "source": "workloop_guard",
+        "final_message": final_message,
+    }
+    return True
+
+
+def _force_failed_verification_final_answer(
+    session_state: SessionState,
+    *,
+    reason: str,
+    min_failed_tests: int = 3,
+) -> bool:
+    if not _latest_prompt_requires_implementation_write(session_state):
+        return False
+    if not _latest_prompt_requests_verification(session_state):
+        return False
+    summary = dict(getattr(session_state, "tool_usage_summary", {}) or {})
+    if int(summary.get("successful_user_facing_writes") or 0) <= 0:
+        return False
+    test_commands = int(summary.get("test_commands") or 0)
+    successful_tests = int(summary.get("successful_tests") or 0)
+    if test_commands < min_failed_tests:
+        return False
+    if successful_tests > 0 and _requested_verification_commands_satisfied(session_state):
+        return False
+
+    targets = [
+        str(target)
+        for target in summary.get("successful_user_facing_write_targets", []) or []
+        if str(target).strip()
+    ]
+    if not targets:
+        targets = [
+            str(target)
+            for target in summary.get("successful_requested_write_targets", []) or []
+            if str(target).strip()
+        ]
+    failed_commands: List[str] = []
+    try:
+        for turn_payload in (getattr(session_state, "turn_tool_usage", {}) or {}).values():
+            for tool in (turn_payload or {}).get("tools", []) or []:
+                meta = (tool or {}).get("meta") or {}
+                if not meta.get("is_test_command"):
+                    continue
+                if meta.get("exit_code") == 0 and bool((tool or {}).get("success")):
+                    continue
+                command = str(meta.get("command") or "").strip()
+                if command and command not in failed_commands:
+                    failed_commands.append(command)
+    except Exception:
+        failed_commands = []
+    commands_line = ", ".join(f"`{command}`" for command in failed_commands[:4]) if failed_commands else "requested build/smoke verification"
+    file_line = ", ".join(f"`{target}`" for target in targets) if targets else "requested project files"
+    final_message = (
+        "I created or modified the requested project files, but verification is still failing after repeated attempts.\n\n"
+        f"Files changed: {file_line}\n"
+        f"Failed verification attempts: {test_commands}\n"
+        f"Commands attempted: {commands_line}\n\n"
+        "BreadBoard is stopping this turn with an explicit failed-verification summary instead of exhausting more steps."
+    )
+    session_state.add_message({"role": "assistant", "content": final_message}, to_provider=False)
+    try:
+        event_payload = {
+            "reason": reason,
+            "tool_usage": summary,
+            "targets": targets,
+            "failed_commands": failed_commands,
+        }
+        session_state.record_guardrail_event("implementation_failed_verification_forced_closure", event_payload)
+        session_state.add_transcript_entry({"implementation_failed_verification_forced_closure": event_payload})
+    except Exception:
+        pass
+    session_state.completion_summary = {
+        "completed": False,
+        "method": "failed_verification_forced_closure",
+        "reason": reason,
+        "confidence": 0.75,
+        "source": "workloop_guard",
+        "final_message": final_message,
+        "test_commands": test_commands,
+        "successful_tests": successful_tests,
+    }
+    return True
+
+
+def _failed_requested_write_attempts(session_state: SessionState) -> List[Dict[str, Any]]:
+    attempts: List[Dict[str, Any]] = []
+    try:
+        for turn_payload in (getattr(session_state, "turn_tool_usage", {}) or {}).values():
+            for tool in (turn_payload or {}).get("tools", []) or []:
+                meta = (tool or {}).get("meta") or {}
+                if not meta.get("is_write") or not meta.get("is_requested_file_write"):
+                    continue
+                if bool((tool or {}).get("success")):
+                    continue
+                attempts.append({
+                    "name": str((tool or {}).get("name") or ""),
+                    "write_targets": list(meta.get("write_targets") or []),
+                    "requested_write_matches": list(meta.get("requested_write_matches") or []),
+                    "call_id": meta.get("call_id"),
+                })
+    except Exception:
+        return attempts
+    return attempts
+
+
+def _force_failed_write_final_answer(
+    conductor: ConductorContext,
+    session_state: SessionState,
+    *,
+    reason: str,
+    min_failed_writes: int = 3,
+) -> bool:
+    if not _latest_prompt_requires_implementation_write(session_state):
+        return False
+    attempts = _failed_requested_write_attempts(session_state)
+    if len(attempts) < min_failed_writes:
+        return False
+    summary = dict(getattr(session_state, "tool_usage_summary", {}) or {})
+    missing_write_receipt = _implementation_write_receipt_missing(conductor, session_state)
+    successful_requested_writes = int(summary.get("successful_requested_file_writes") or 0)
+    existing_target_edit_request = bool(
+        re.search(r"\b(fix|edit|modify|update|repair)\b", _latest_implementation_prompt(session_state), flags=re.IGNORECASE)
+    )
+    if not missing_write_receipt and successful_requested_writes > 0:
+        return False
+    if not missing_write_receipt and not existing_target_edit_request:
+        return False
+    missing_targets = _missing_requested_write_targets(session_state)
+    requested_targets = _requested_write_targets(session_state)
+    target_line = ", ".join(missing_targets or requested_targets) if (missing_targets or requested_targets) else "requested files"
+    attempted_targets = sorted(
+        {
+            str(target)
+            for attempt in attempts
+            for target in (attempt.get("write_targets") or [])
+            if str(target).strip()
+        }
+    )
+    attempted_line = ", ".join(attempted_targets) if attempted_targets else target_line
+    final_message = (
+        "I could not complete the requested implementation because repeated write attempts failed.\n\n"
+        f"Missing requested files: {target_line}\n"
+        f"Failed write attempts: {len(attempts)}\n"
+        f"Attempted write targets: {attempted_line}\n\n"
+        "BreadBoard is stopping this turn with an explicit failed-write summary instead of exhausting more steps."
+    )
+    session_state.add_message({"role": "assistant", "content": final_message}, to_provider=False)
+    try:
+        event_payload = {
+            "reason": reason,
+            "tool_usage": summary,
+            "missing_requested_write_targets": missing_targets,
+            "failed_write_attempts": attempts[-8:],
+        }
+        session_state.record_guardrail_event("implementation_failed_write_forced_closure", event_payload)
+        session_state.add_transcript_entry({"implementation_failed_write_forced_closure": event_payload})
+    except Exception:
+        pass
+    session_state.completion_summary = {
+        "completed": False,
+        "method": "failed_write_forced_closure",
+        "reason": reason,
+        "confidence": 0.75,
+        "source": "workloop_guard",
+        "final_message": final_message,
+        "failed_write_attempts": len(attempts),
+    }
+    return True
+
+
+def _reject_completion_without_implementation_write(
+    conductor: ConductorContext,
+    session_state: SessionState,
+    markdown_logger: MarkdownLogger,
+    stream_responses: bool,
+) -> bool:
+    missing_write_receipt = _implementation_write_receipt_missing(conductor, session_state)
+    missing_verification_receipt = _implementation_verification_receipt_missing(conductor, session_state)
+    if missing_verification_receipt and not missing_write_receipt:
+        if _maybe_auto_verify_make_after_write_receipts(conductor, session_state):
+            return _force_post_receipt_final_answer(
+                session_state,
+                reason="auto_verified_make_after_write_receipts",
+            )
+        missing_verification_receipt = _implementation_verification_receipt_missing(conductor, session_state)
+    if not missing_write_receipt and not missing_verification_receipt:
+        return False
+    blocked_count = int(session_state.get_provider_metadata("implementation_missing_write_blocks") or 0) + 1
+    session_state.set_provider_metadata("implementation_missing_write_blocks", blocked_count)
+    missing_targets = _missing_requested_write_targets(session_state)
+    target_clause = (
+        " Missing requested files: " + ", ".join(missing_targets) + "."
+        if missing_targets
+        else ""
+    )
+    verification_clause = (
+        " Run the requested build/smoke verification now."
+        if missing_verification_receipt
+        else ""
+    )
+    reminder = (
+        "<VALIDATION_ERROR>\n"
+        "This implementation task is not complete: required implementation receipts are missing. "
+        "Create or modify the requested project files, then run the requested build/smoke verification before giving a final answer."
+        f"{target_clause}{verification_clause}{_implementation_task_anchor(session_state)}\n"
+        "</VALIDATION_ERROR>"
+    )
+    session_state.add_message({"role": "user", "content": reminder}, to_provider=True)
+    try:
+        session_state.record_guardrail_event(
+            "implementation_completion_without_write",
+            {
+                "count": blocked_count,
+                "tool_usage": dict(getattr(session_state, "tool_usage_summary", {}) or {}),
+                "missing_requested_write_targets": missing_targets,
+                "missing_verification_receipt": missing_verification_receipt,
+            },
+        )
+        session_state.add_transcript_entry(
+            {
+                "implementation_completion_without_write_block": {
+                    "count": blocked_count,
+                    "tool_usage": dict(getattr(session_state, "tool_usage_summary", {}) or {}),
+                    "missing_requested_write_targets": missing_targets,
+                    "missing_verification_receipt": missing_verification_receipt,
+                }
+            }
+        )
+    except Exception:
+        pass
+    try:
+        markdown_logger.log_user_message(reminder)
+    except Exception:
+        pass
+    if stream_responses:
+        try:
+            print("[guard] rejecting implementation completion without write receipt")
+        except Exception:
+            pass
+    if blocked_count >= 3:
+        session_state.completion_summary = {
+            "completed": False,
+            "reason": "implementation_missing_write_receipt_loop",
+            "method": "workloop_guard",
+        }
+        session_state.set_provider_metadata("completion_guard_abort", True)
+        return True
+    return False
+
+
+def _maybe_block_read_only_implementation_loop(
+    conductor: ConductorContext,
+    session_state: SessionState,
+    markdown_logger: MarkdownLogger,
+    parsed_calls: List[Any],
+    stream_responses: bool,
+) -> bool:
+    guard_cfg = _implementation_write_guard_config(conductor)
+    if not bool(guard_cfg.get("enabled", False)):
+        return False
+    summary = getattr(session_state, "tool_usage_summary", {}) or {}
+    receipts_satisfied = _implementation_receipts_satisfied(conductor, session_state)
+    if receipts_satisfied:
+        if not parsed_calls:
+            return False
+        return _force_post_receipt_final_answer(
+            session_state,
+            reason="post_receipt_extra_tool_attempt",
+        )
+    missing_write_receipt = _implementation_write_receipt_missing(conductor, session_state)
+    missing_verification_receipt = _implementation_verification_receipt_missing(conductor, session_state)
+    if not missing_write_receipt and not missing_verification_receipt:
+        return False
+    if not parsed_calls or not all(_parsed_call_is_read_only_inspection(call) for call in parsed_calls):
+        return False
+    read_only_limit = int(guard_cfg.get("max_read_only_calls_before_write") or 4)
+    run_shell_calls = int(summary.get("run_shell_calls") or 0)
+    total_calls = int(summary.get("total_calls") or 0)
+    if max(run_shell_calls, total_calls) < read_only_limit:
+        return False
+    read_only_loop_blocks = int(session_state.get_provider_metadata("implementation_read_only_loop_blocks") or 0) + 1
+    session_state.set_provider_metadata("implementation_read_only_loop_blocks", read_only_loop_blocks)
+    failed_write_attempts = _failed_requested_write_attempts(session_state)
+    if read_only_loop_blocks >= 3:
+        if failed_write_attempts:
+            return _force_failed_write_final_answer(
+                conductor,
+                session_state,
+                reason="read_only_loop_after_failed_requested_write",
+                min_failed_writes=1,
+            )
+        return _force_read_only_observation_final_answer(
+            session_state,
+            reason="repeated_read_only_loop_safety_net",
+        )
+    blocked_tools = [str(getattr(call, "function", "") or "") for call in parsed_calls]
+    missing_targets = _missing_requested_write_targets(session_state)
+    target_clause = (
+        " Your next write must target: " + ", ".join(missing_targets) + "."
+        if missing_targets
+        else ""
+    )
+    verification_clause = (
+        " Your next tool call must run the requested build/smoke verification, such as `make` and `./smoke_test.sh`."
+        if missing_verification_receipt
+        else ""
+    )
+    failed_write_clause = (
+        " A previous requested write attempt failed; use the patch/tool error and already-observed file contents to issue a corrected write, not more read-only inspection."
+        if failed_write_attempts
+        else ""
+    )
+    reminder = (
+        "<VALIDATION_ERROR>\n"
+        "This is an implementation task. You have already inspected the workspace enough and required implementation receipts are still missing. "
+        "Your next tool call must create or modify the requested project files with apply_patch/write tooling, unless there is a concrete blocker. "
+        f"Do not run another read-only inspection command.{target_clause}{verification_clause}{failed_write_clause}{_implementation_task_anchor(session_state)}\n"
+        "</VALIDATION_ERROR>"
+    )
+    session_state.add_message({"role": "user", "content": reminder}, to_provider=True)
+    try:
+        session_state.record_guardrail_event(
+            "implementation_read_only_loop",
+            {
+                "blocked_tools": blocked_tools,
+                "total_calls": total_calls,
+                "run_shell_calls": run_shell_calls,
+                "successful_writes": int(summary.get("successful_writes") or 0),
+                "missing_requested_write_targets": missing_targets,
+                "missing_verification_receipt": missing_verification_receipt,
+            },
+        )
+        session_state.add_transcript_entry(
+            {
+                "implementation_read_only_loop_block": {
+                    "blocked_tools": blocked_tools,
+                    "total_calls": total_calls,
+                    "run_shell_calls": run_shell_calls,
+                    "limit": read_only_limit,
+                    "missing_requested_write_targets": missing_targets,
+                    "missing_verification_receipt": missing_verification_receipt,
+                }
+            }
+        )
+    except Exception:
+        pass
+    try:
+        markdown_logger.log_user_message(reminder)
+    except Exception:
+        pass
+    if stream_responses:
+        try:
+            print("[guard] blocking read-only inspection loop for implementation task")
+        except Exception:
+            pass
+    return True
 
 
 class ReplayToolOutputMismatchError(RuntimeError):
@@ -323,6 +1947,11 @@ def summarize_execution_results(
         elif tool_name_lower == "todo":
             tool_name = "TodoWrite"
         tool_result_dict = tool_result if isinstance(tool_result, dict) else {}
+        if (
+            isinstance(tool_result_dict.get("out"), dict)
+            and not any(key in tool_result_dict for key in ("ok", "error", "exit", "stdout", "stderr", "data", "action"))
+        ):
+            tool_result_dict = tool_result_dict["out"]
         conductor._record_diff_metrics(
             tool_parsed,
             tool_result_dict,
@@ -383,9 +2012,66 @@ def summarize_execution_results(
                 pass
         if tool_name in ("apply_unified_patch", "patch", "apply_search_replace", "create_file_from_block", "write", "write_file"):
             metadata["is_write"] = True
+            try:
+                tool_args = getattr(tool_parsed, "arguments", {}) or {}
+                write_targets = _tool_call_write_targets(tool_name, tool_args)
+                result_write_targets = _successful_patch_result_paths(tool_result_dict)
+                if result_write_targets:
+                    write_targets = list(dict.fromkeys([*write_targets, *result_write_targets]))
+                requested_targets = _requested_write_targets(session_state)
+                placeholder_write = _write_payload_looks_placeholder(tool_args)
+                metadata["write_targets"] = write_targets
+                metadata["requested_write_targets"] = requested_targets
+                metadata["requested_write_matches"] = (
+                    [] if placeholder_write else _requested_write_matches(write_targets, requested_targets)
+                )
+                metadata["is_placeholder_write"] = placeholder_write
+                metadata["is_user_facing_write"] = any(
+                    _path_is_user_facing_write_target(target) for target in write_targets
+                )
+                metadata["is_requested_file_write"] = bool(metadata["requested_write_matches"])
+                if placeholder_write:
+                    try:
+                        blocked_count = int(session_state.get_provider_metadata("implementation_placeholder_write_blocks") or 0) + 1
+                        session_state.set_provider_metadata("implementation_placeholder_write_blocks", blocked_count)
+                        session_state.record_guardrail_event(
+                            "placeholder_requested_write",
+                            {
+                                "tool": tool_name,
+                                "write_targets": write_targets,
+                                "requested_write_targets": requested_targets,
+                                "count": blocked_count,
+                            },
+                        )
+                        if blocked_count <= 3:
+                            session_state.add_message(
+                                {
+                                    "role": "user",
+                                    "content": (
+                                        "<VALIDATION_ERROR>\n"
+                                        "The last write looks like a placeholder/stub and does not satisfy the requested implementation. "
+                                        "Replace it with real working code and real verification artifacts."
+                                        f"{_implementation_task_anchor(session_state)}\n"
+                                        "</VALIDATION_ERROR>"
+                                    ),
+                                },
+                                to_provider=True,
+                            )
+                    except Exception:
+                        pass
+            except Exception:
+                metadata["is_user_facing_write"] = False
+                metadata["is_requested_file_write"] = False
         call_id_value = getattr(tool_parsed, "call_id", None)
         if isinstance(call_id_value, str) and call_id_value.strip():
             metadata.setdefault("call_id", call_id_value.strip())
+        if tool_name in {"task", "background_task", "call_omo_agent"} and isinstance(tool_result_dict, dict):
+            result_metadata = tool_result_dict.get("metadata") if isinstance(tool_result_dict.get("metadata"), dict) else {}
+            for key in ("agentId", "agent_id", "task_id", "taskId"):
+                task_id_value = str((result_metadata or {}).get(key) or tool_result_dict.get(key) or "").strip()
+                if task_id_value:
+                    metadata.setdefault("async_task_id", task_id_value)
+                    break
         if tool_name == "run_shell":
             metadata["is_run_shell"] = True
             metadata["command"] = command
@@ -394,6 +2080,16 @@ def summarize_execution_results(
                 metadata["exit_code"] = exit_code_val
             if command and conductor._is_test_command(command):
                 metadata["is_test_command"] = True
+            shell_write_targets = _shell_command_write_targets(command)
+            if shell_write_targets:
+                requested_targets = _requested_write_targets(session_state)
+                requested_matches = _requested_write_matches(shell_write_targets, requested_targets)
+                metadata["is_write"] = True
+                metadata["write_targets"] = shell_write_targets
+                metadata["requested_write_targets"] = requested_targets
+                metadata["requested_write_matches"] = requested_matches
+                metadata["is_user_facing_write"] = True
+                metadata["is_requested_file_write"] = bool(requested_matches)
         if isinstance(turn_index_int, int):
             try:
                 session_state.record_tool_event(
@@ -401,16 +2097,20 @@ def summarize_execution_results(
                     tool_name or "",
                     success=success_flag,
                     metadata=metadata,
+                    result=tool_result_dict,
                 )
             except Exception:
                 pass
         model_render = build_tool_model_render_record(tool_name, tool_result_dict)
-        recent_tools_summary.append({
+        recent_tool_entry = {
             "name": tool_name,
             "read_only": conductor._is_read_only_tool(tool_name),
             "completion_action": isinstance(tool_result, dict) and tool_result.get("action") == "complete",
             "model_render": model_render,
-        })
+        }
+        if metadata:
+            recent_tool_entry["meta"] = dict(metadata)
+        recent_tools_summary.append(recent_tool_entry)
     if turn_index_int is not None:
         conductor._record_lsp_reward_metrics(session_state, turn_index_int)
         conductor._record_test_reward_metric(session_state, turn_index_int, test_success)
@@ -515,6 +2215,53 @@ def execute_agent_calls(
     allow_multi_bash = bool(session_state.get_provider_metadata("replay_mode"))
     previous_value = getattr(conductor.agent_executor, "allow_multiple_bash", False)
     conductor.agent_executor.allow_multiple_bash = allow_multi_bash
+    def _blocked_call_result(call: Any, payload: Dict[str, Any]) -> Tuple[List[Any], int, Dict[str, Any], Dict[str, Any]]:
+        result = dict(payload)
+        result.setdefault("validation_failed", True)
+        result.setdefault("exit", 1)
+        return [(call, result)], 0, result, {"total_calls": len(parsed_calls), "executed_calls": 0}
+
+    def _smoke_test_requested() -> bool:
+        if "smoke_test.sh" in _requested_write_targets(session_state):
+            return True
+        try:
+            prompt = _latest_implementation_prompt(session_state).lower()
+        except Exception:
+            prompt = ""
+        if "smoke_test.sh" in prompt:
+            return True
+        try:
+            for message in getattr(session_state, "provider_messages", []) or []:
+                if str((message or {}).get("role") or "") != "user":
+                    continue
+                content = str((message or {}).get("content") or "").lower()
+                if "smoke_test.sh" in content:
+                    return True
+        except Exception:
+            pass
+        try:
+            for message in getattr(session_state, "transcript", []) or []:
+                if str((message or {}).get("role") or "") != "user":
+                    continue
+                content = str((message or {}).get("content") or "").lower()
+                if "smoke_test.sh" in content:
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _command_runs_direct_smtp(command_text: str) -> bool:
+        return bool(re.search(r"(^|[;&|]\s*|\|\s*)\./smtp_server(?:\s|$)", command_text))
+
+    def _command_runs_unbounded_smoke(command_text: str) -> bool:
+        return bool(
+            re.search(
+                r"(^|[;&|]\s*)(?:(?:bash|sh)\s+)?\.?/??smoke_test\.sh\b",
+                command_text,
+            )
+            and not re.search(r"(^|[;&|]\s*)timeout\s+\d+", command_text)
+        )
+
     try:
         try:
             conductor.permission_broker.ensure_allowed(session_state, parsed_calls)
@@ -531,9 +2278,92 @@ def execute_agent_calls(
             "create_file_from_block",
             "apply_unified_patch",
             "apply_unified_diff",
+            "apply_patch",
             "apply_search_replace",
             "patch",
         }
+        for call in parsed_calls:
+            tool_name = str(getattr(call, "function", "") or "").strip()
+            if not tool_name:
+                continue
+            try:
+                tool_name = conductor.agent_executor.canonical_tool_name(tool_name) or tool_name
+            except Exception:
+                pass
+            if tool_name.lower() not in {"run_shell", "shell_command", "bash"}:
+                continue
+            tool_args = getattr(call, "arguments", {}) or {}
+            command_text = str(tool_args.get("command") or tool_args.get("input") or "")
+            if _command_tunnels_apply_patch(command_text):
+                msg = (
+                    "shell command rejected: use the native apply_patch tool for patches; "
+                    "do not invoke apply_patch through shell_command"
+                )
+                return _blocked_call_result(call, {"error": msg, "shell_tunneled_apply_patch": True})
+            if _command_runs_direct_smtp(command_text) and _smoke_test_requested():
+                msg = "shell command rejected: run ./smtp_server only through the requested smoke_test.sh script"
+                return _blocked_call_result(call, {"error": msg, "forbidden_direct_command": True})
+            if _smoke_test_requested() and _command_runs_unbounded_smoke(command_text):
+                msg = (
+                    "shell command rejected: run smoke_test.sh through a bounded timeout, e.g. "
+                    "`timeout 20s bash smoke_test.sh`"
+                )
+                return _blocked_call_result(call, {"error": msg, "unbounded_smoke_test": True})
+            forbidden_direct_commands = _latest_prompt_forbidden_direct_commands(session_state)
+            for forbidden in forbidden_direct_commands:
+                if re.search(rf"(^|[;&|]\s*|\|\s*){re.escape(forbidden)}(?:\s|$)", command_text):
+                    msg = (
+                        "shell command rejected: the current request explicitly says not to run "
+                        f"{forbidden} directly"
+                    )
+                    return _blocked_call_result(call, {"error": msg, "forbidden_direct_command": True})
+
+        requested_write_targets = _requested_write_targets(session_state)
+        if requested_write_targets:
+            for call in parsed_calls:
+                tool_name = str(getattr(call, "function", "") or "").strip()
+                if not tool_name:
+                    continue
+                try:
+                    tool_name = conductor.agent_executor.canonical_tool_name(tool_name) or tool_name
+                except Exception:
+                    pass
+                tool_args = getattr(call, "arguments", {}) or {}
+                write_targets: List[str] = []
+                if tool_name.lower() in write_tools:
+                    write_targets = _tool_call_write_targets(tool_name, tool_args)
+                    delete_targets = _tool_call_delete_targets(tool_name, tool_args)
+                elif tool_name.lower() in {"run_shell", "shell_command", "bash"}:
+                    command_text = str(tool_args.get("command") or tool_args.get("input") or "")
+                    write_targets = _shell_command_write_targets(command_text)
+                    delete_targets = _shell_command_delete_targets(command_text)
+                else:
+                    delete_targets = []
+                requested_delete_matches = _requested_write_matches(delete_targets, requested_write_targets)
+                if requested_delete_matches and not _latest_prompt_requests_file_deletion(session_state):
+                    msg = (
+                        "write rejected: refusing to delete requested implementation target(s) "
+                        f"{', '.join(requested_delete_matches)} because the current request did not ask for deletion"
+                    )
+                    return _blocked_call_result(call, {"error": msg, "destructive_requested_target_delete": True})
+                user_facing_targets = [
+                    target for target in write_targets
+                    if _path_is_user_facing_write_target(target)
+                ]
+                if not user_facing_targets:
+                    continue
+                unmatched = [
+                    target for target in user_facing_targets
+                    if not _requested_write_matches([target], requested_write_targets)
+                ]
+                if unmatched:
+                    msg = (
+                        "write rejected: this implementation request names specific write target(s) "
+                        f"{', '.join(requested_write_targets)}; attempted non-requested target(s): "
+                        f"{', '.join(unmatched)}"
+                    )
+                    return _blocked_call_result(call, {"error": msg, "unrequested_write_target": True})
+
         def _checkpoint_snapshot() -> Optional[Dict[str, Any]]:
             try:
                 model = session_state.get_provider_metadata("resolved_model") or session_state.get_provider_metadata("model")
@@ -721,6 +2551,14 @@ def process_model_output(
         session_state.set_provider_metadata("recent_tool_activity", None)
 
         if completion_analysis["completed"]:
+            if _implementation_receipt_missing(conductor, session_state):
+                abort = _reject_completion_without_implementation_write(
+                    conductor,
+                    session_state,
+                    markdown_logger,
+                    stream_responses,
+                )
+                return bool(abort)
             signal_task_id, signal_parent_task_id, signal_mission_task_id = _coordination_task_context(session_state)
             rejection_reasons: list[str] = []
             threshold_met = completion_detector.meets_threshold(completion_analysis)
@@ -1112,7 +2950,7 @@ def handle_text_tool_calls(
     error_handler: Any,
     stream_responses: bool,
 ) -> bool:
-    session_state.set_provider_metadata("recent_tool_activity", None)
+    prior_tool_activity = session_state.get_provider_metadata("recent_tool_activity")
     parsed = caller.parse_all(msg.content, tool_defs)
     synthesized_blocks: List[str] = []
     if not parsed:
@@ -1142,9 +2980,119 @@ def handle_text_tool_calls(
                     )
                 )
     current_mode = session_state.get_provider_metadata("current_mode")
+    require_workspace_tool_usage = session_requires_workspace_tool_usage(session_state)
     if not parsed:
-        session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
-        session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=True)
+        if require_workspace_tool_usage and not prior_tool_activity:
+            if assistant_is_progress_update(msg.content or ""):
+                session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
+                session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=True)
+                try:
+                    session_state.add_transcript_entry(
+                        {
+                            "assistant_progress_update": {
+                                "source": "tool_required_guard",
+                                "text": msg.content,
+                            }
+                        }
+                    )
+                except Exception:
+                    pass
+                return False
+            warning = (
+                "<VALIDATION_ERROR>\n"
+                "This request requires real workspace interaction. Use read/list/diff/bash tools, then answer from the observed result.\n"
+                "</VALIDATION_ERROR>"
+            )
+            session_state.add_message({"role": "user", "content": warning}, to_provider=True)
+            try:
+                markdown_logger.log_user_message(warning)
+            except Exception:
+                pass
+            if stream_responses:
+                try:
+                    print("[guard] rejecting assistant-only reply for tool-required request")
+                except Exception:
+                    pass
+            return False
+        if prior_tool_activity and assistant_is_progress_update(msg.content or ""):
+            if _latest_prompt_requests_tool_stop_after_observation(session_state):
+                session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
+                reminder = (
+                    "<VALIDATION_ERROR>\n"
+                    "The required workspace tool has already run for this request. Do not call more tools. "
+                    f"Answer now.{_required_final_answer_reminder(session_state)}\n"
+                    "</VALIDATION_ERROR>"
+                )
+                session_state.add_message({"role": "user", "content": reminder}, to_provider=True)
+                try:
+                    markdown_logger.log_user_message(reminder)
+                except Exception:
+                    pass
+                if stream_responses:
+                    try:
+                        print("[guard] redirecting progress update after required tool use")
+                    except Exception:
+                        pass
+                return False
+            if _latest_prompt_requests_read_only_answer_after_observation(session_state):
+                return _force_read_only_observation_final_answer(
+                    session_state,
+                    reason="post_observation_progress_update_attempt",
+                )
+        if prior_tool_activity and _latest_prompt_requests_tool_stop_after_observation(session_state):
+            async_task_id = _async_result_task_id_from_activity(prior_tool_activity)
+            if async_task_id:
+                session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
+                return _inject_async_result_retrieval(
+                    conductor,
+                    session_state,
+                    markdown_logger,
+                    prior_tool_activity,
+                    reason="post_required_final_before_async_result",
+                    stream_responses=stream_responses,
+                )
+            required_marker = _required_final_answer_marker(session_state)
+            if required_marker and required_marker not in (msg.content or ""):
+                blocked_count = int(session_state.get_provider_metadata("post_required_tool_bad_final_blocks") or 0) + 1
+                session_state.set_provider_metadata("post_required_tool_bad_final_blocks", blocked_count)
+                session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
+                try:
+                    session_state.add_transcript_entry({
+                        "post_required_tool_bad_final_block": {
+                            "required_marker": required_marker,
+                            "count": blocked_count,
+                            "assistant_excerpt": (msg.content or "")[:500],
+                        }
+                    })
+                except Exception:
+                    pass
+                reminder = (
+                    "<VALIDATION_ERROR>\n"
+                    "The required workspace tool has already run for this request, but your answer did not satisfy "
+                    f"the required final-answer contract. Do not call more tools. Answer now with first line exactly "
+                    f"`{required_marker}` and summarize only the observed tool result.\n"
+                    "</VALIDATION_ERROR>"
+                )
+                session_state.add_message({"role": "user", "content": reminder}, to_provider=True)
+                try:
+                    markdown_logger.log_user_message(reminder)
+                except Exception:
+                    pass
+                if stream_responses:
+                    try:
+                        print("[guard] rejecting post-tool answer missing required marker")
+                    except Exception:
+                        pass
+                if blocked_count >= 3:
+                    session_state.completion_summary = {
+                        "completed": False,
+                        "reason": "post_required_tool_missing_marker_loop",
+                        "method": "turn_contract_guard",
+                        "required_marker": required_marker,
+                    }
+                    session_state.set_provider_metadata("completion_guard_abort", True)
+                    return True
+                return False
         completion_analysis = None
         try:
             completion_analysis = completion_detector.detect_completion(
@@ -1152,7 +3100,7 @@ def handle_text_tool_calls(
                 choice_finish_reason=choice_finish_reason,
                 tool_results=[],
                 agent_config=conductor.config,
-                recent_tool_activity=session_state.get_provider_metadata("recent_tool_activity"),
+                recent_tool_activity=prior_tool_activity,
                 assistant_history=session_state.get_provider_metadata("assistant_text_history"),
                 mark_tool_available=session_state.get_provider_metadata("mark_task_complete_available"),
             )
@@ -1163,6 +3111,40 @@ def handle_text_tool_calls(
                 session_state.add_transcript_entry({"completion_analysis": completion_analysis})
             except Exception:
                 pass
+            if completion_analysis.get("completed") and _implementation_receipt_missing(conductor, session_state):
+                return _reject_completion_without_implementation_write(
+                    conductor,
+                    session_state,
+                    markdown_logger,
+                    stream_responses,
+                )
+            if completion_analysis.get("method") == "progress_update":
+                if _implementation_receipts_satisfied(conductor, session_state):
+                    return _force_post_receipt_final_answer(
+                        session_state,
+                        reason="post_receipt_progress_update_attempt",
+                    )
+                if prior_tool_activity and _latest_prompt_requests_tool_stop_after_observation(session_state):
+                    reminder = (
+                        "<VALIDATION_ERROR>\n"
+                        "You have already used the required workspace tool for this user request. Do not inspect more files. "
+                        f"Answer the current user request now.{_required_final_answer_reminder(session_state)}\n"
+                        "</VALIDATION_ERROR>"
+                    )
+                    session_state.add_message({"role": "user", "content": reminder}, to_provider=True)
+                    try:
+                        markdown_logger.log_user_message(reminder)
+                    except Exception:
+                        pass
+                    if stream_responses:
+                        try:
+                            print("[guard] redirecting progress update after required tool use")
+                        except Exception:
+                            pass
+                    return False
+        session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
+        session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=True)
+        if isinstance(completion_analysis, dict):
             if completion_analysis.get("completed"):
                 signal_task_id, signal_parent_task_id, signal_mission_task_id = _coordination_task_context(session_state)
                 rejection_reasons: list[str] = []
@@ -1204,7 +3186,9 @@ def handle_text_tool_calls(
                         session_state.completion_summary.setdefault("reason", completion_analysis.get("reason"))
                         session_state.completion_summary.setdefault("method", completion_analysis.get("method"))
                         session_state.completion_summary.setdefault("signal", recorded_signal)
+                    session_state.set_provider_metadata("recent_tool_activity", None)
                     return True
+        session_state.set_provider_metadata("recent_tool_activity", None)
         if current_mode == "plan":
             manager = session_state.get_todo_manager()
             snapshot = manager.snapshot() if manager else None
@@ -1222,6 +3206,19 @@ def handle_text_tool_calls(
                 msg.content = ""
         return False
     parsed = conductor._expand_multi_file_patches(parsed, session_state, markdown_logger)
+    if _maybe_block_read_only_implementation_loop(
+        conductor,
+        session_state,
+        markdown_logger,
+        parsed,
+        stream_responses,
+    ):
+        msg.content = ""
+        completion_summary = getattr(session_state, "completion_summary", None) or {}
+        return bool(completion_summary.get("completed"))
+    if _maybe_force_read_only_observation_closure(session_state, parsed):
+        msg.content = ""
+        return True
     session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=False)
     session_state.add_message({"role": "assistant", "content": msg.content}, to_provider=True)
     session_state.add_transcript_entry({"assistant": msg.content})
@@ -1276,6 +3273,25 @@ def handle_text_tool_calls(
             "turn": session_state.get_provider_metadata("current_turn_index"),
         },
     )
+    if _maybe_force_requested_shell_command_closure(
+        session_state,
+        reason="requested_shell_command_observed_before_continuation",
+    ):
+        finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
+        return True
+    if _force_failed_verification_final_answer(
+        session_state,
+        reason="failed_verification_after_retries",
+    ):
+        finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
+        return True
+    if _force_failed_write_final_answer(
+        conductor,
+        session_state,
+        reason="failed_requested_write_after_retries",
+    ):
+        finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
+        return True
 
     try:
         if conductor.logger_v2.run_dir and executed_results:
@@ -1293,33 +3309,55 @@ def handle_text_tool_calls(
                 conductor.provider_logger.save_tool_results(persist_turn, persistable)
     except Exception:
         pass
+        if _force_failed_verification_final_answer(
+            session_state,
+            reason="failed_verification_after_retries",
+        ):
+            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
+            return True
 
-    if execution_error:
-        if execution_error.get("validation_failed"):
-            session_state.increment_guardrail_counter("validation_errors")
-            error_msg = error_handler.handle_validation_error(execution_error)
-        elif execution_error.get("constraint_violation"):
-            error_msg = error_handler.handle_constraint_violation(execution_error["error"])
-        else:
-            error_msg = f"<EXECUTION_ERROR>\n{execution_error['error']}\n</EXECUTION_ERROR>"
+        if execution_error:
+            try:
+                use_responses_api = (
+                    str(session_state.get_provider_metadata("api_variant") or "").lower() == "responses"
+                )
+            except Exception:
+                use_responses_api = False
+            if use_responses_api and executed_results:
+                for parsed_result_call, parsed_result_out in executed_results:
+                    call_id = getattr(parsed_result_call, "call_id", None)
+                    tool_result_entry = conductor.message_formatter.create_tool_result_entry(
+                        getattr(parsed_result_call, "function", ""),
+                        parsed_result_out,
+                        syntax_type="openai",
+                        call_id=call_id,
+                    )
+                    session_state.add_message(tool_result_entry, to_provider=True)
+            if execution_error.get("validation_failed"):
+                session_state.increment_guardrail_counter("validation_errors")
+                error_msg = error_handler.handle_validation_error(execution_error)
+            elif execution_error.get("constraint_violation"):
+                error_msg = error_handler.handle_constraint_violation(execution_error["error"])
+            else:
+                error_msg = f"<EXECUTION_ERROR>\n{execution_error['error']}\n</EXECUTION_ERROR>"
 
-        session_state.add_message({"role": "user", "content": error_msg}, to_provider=True)
-        markdown_logger.log_user_message(error_msg)
+            session_state.add_message({"role": "user", "content": error_msg}, to_provider=True)
+            markdown_logger.log_user_message(error_msg)
 
-        if stream_responses:
-            print(f"[error] {execution_error.get('error', 'Unknown error')}")
-        try:
-            if turn_index_int is not None:
-                if execution_error.get("validation_failed"):
-                    session_state.add_reward_metric(turn_index_int, "SVS", 0.0)
-                session_state.add_reward_metric(turn_index_int, "CPS", 0.0)
-                conductor._record_lsp_reward_metrics(session_state, turn_index_int)
-                if test_success is not None:
-                    conductor._record_test_reward_metric(session_state, turn_index_int, 0.0)
-        except Exception:
-            pass
-        finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-        return False
+            if stream_responses:
+                print(f"[error] {execution_error.get('error', 'Unknown error')}")
+            try:
+                if turn_index_int is not None:
+                    if execution_error.get("validation_failed"):
+                        session_state.add_reward_metric(turn_index_int, "SVS", 0.0)
+                    session_state.add_reward_metric(turn_index_int, "CPS", 0.0)
+                    conductor._record_lsp_reward_metrics(session_state, turn_index_int)
+                    if test_success is not None:
+                        conductor._record_test_reward_metric(session_state, turn_index_int, 0.0)
+            except Exception:
+                pass
+            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
+            return False
     try:
         if turn_index_int is not None:
             session_state.add_reward_metric(turn_index_int, "SVS", 1.0)
@@ -1339,6 +3377,16 @@ def handle_text_tool_calls(
         tool_name = getattr(tool_parsed, "function", "") if tool_parsed else ""
         action = tool_result.get("action") if isinstance(tool_result, dict) else None
         if action == "complete" or tool_name == "mark_task_complete":
+            if _implementation_receipt_missing(conductor, session_state):
+                abort = _reject_completion_without_implementation_write(
+                    conductor,
+                    session_state,
+                    markdown_logger,
+                    stream_responses,
+                )
+                if abort:
+                    return True
+                continue
             signal_task_id, signal_parent_task_id, signal_mission_task_id = _coordination_task_context(session_state)
             rejection_reasons: list[str] = []
             guard_ok, guard_reason = conductor._completion_guard_check(session_state)
@@ -1377,6 +3425,11 @@ def handle_text_tool_calls(
             if not is_accepted_signal(recorded_signal):
                 continue
 
+            final_message = _ensure_tool_completion_final_message(
+                conductor,
+                session_state,
+                reason="mark_task_complete_after_receipts",
+            )
             chunks = conductor.message_formatter.format_execution_results(executed_results, failed_at_index, len(parsed))
             provider_tool_msg = "\n\n".join(chunks)
             session_state.add_message({"role": "user", "content": provider_tool_msg}, to_provider=True)
@@ -1393,11 +3446,15 @@ def handle_text_tool_calls(
                     "source": "tool_call",
                     "signal": recorded_signal,
                 }
+                if final_message:
+                    session_state.completion_summary["final_message"] = final_message
             else:
                 session_state.completion_summary.setdefault("completed", True)
                 session_state.completion_summary.setdefault("reason", "mark_task_complete")
                 session_state.completion_summary.setdefault("method", "tool_mark_task_complete")
                 session_state.completion_summary.setdefault("signal", recorded_signal)
+                if final_message:
+                    session_state.completion_summary.setdefault("final_message", final_message)
 
             if stream_responses:
                 print(f"[stop] reason=tool_based confidence=1.0 - mark_task_complete() called")
@@ -1487,16 +3544,7 @@ def handle_native_tool_calls(
             "content": msg.content,
             "tool_calls": enhanced_tool_calls,
         }
-        session_state.add_message(assistant_entry, to_provider=False)
-        session_state.add_message({"role": "assistant", "content": msg.content, "tool_calls": tool_calls_payload}, to_provider=True)
-
-        session_state.add_transcript_entry({
-            "assistant_with_tool_calls": {
-                "content": msg.content,
-                "tool_calls_count": len(msg.tool_calls),
-                "tool_calls": [tc["function"]["name"] for tc in tool_calls_payload]
-            }
-        })
+        provider_assistant_tool_message = {"role": "assistant", "content": msg.content, "tool_calls": tool_calls_payload}
 
         parsed_calls: List[Any] = []
         for tc in msg.tool_calls:
@@ -1534,6 +3582,81 @@ def handle_native_tool_calls(
         parsed_calls = apply_turn_guards(conductor, turn_ctx, session_state)
         handle_blocked_calls(conductor, turn_ctx, session_state, markdown_logger)
         parsed_calls = conductor._expand_multi_file_patches(parsed_calls, session_state, markdown_logger)
+        if _maybe_block_read_only_implementation_loop(
+            conductor,
+            session_state,
+            markdown_logger,
+            parsed_calls,
+            stream_responses,
+        ):
+            completion_summary = getattr(session_state, "completion_summary", None) or {}
+            return bool(completion_summary.get("completed"))
+        prior_tool_activity = session_state.get_provider_metadata("recent_tool_activity")
+        if (
+            parsed_calls
+            and prior_tool_activity
+            and _latest_prompt_requests_tool_stop_after_observation(session_state)
+            and not _is_allowed_async_result_followup(parsed_calls, prior_tool_activity)
+        ):
+            async_task_id = _async_result_task_id_from_activity(prior_tool_activity)
+            if async_task_id:
+                return _inject_async_result_retrieval(
+                    conductor,
+                    session_state,
+                    markdown_logger,
+                    prior_tool_activity,
+                    reason="post_required_extra_call_before_async_result",
+                    stream_responses=stream_responses,
+                )
+            blocked_count = int(session_state.get_provider_metadata("post_required_tool_extra_call_blocks") or 0) + 1
+            session_state.set_provider_metadata("post_required_tool_extra_call_blocks", blocked_count)
+            blocked_tools = [str(getattr(call, "function", "") or "") for call in parsed_calls]
+            try:
+                session_state.add_transcript_entry({
+                    "post_required_tool_extra_call_block": {
+                        "blocked_tools": blocked_tools,
+                        "count": blocked_count,
+                    }
+                })
+            except Exception:
+                pass
+            reminder = (
+                "<VALIDATION_ERROR>\n"
+                "The required workspace tool has already run for this request. Do not call additional tools. "
+                f"Answer from the observed tool result now.{_required_final_answer_reminder(session_state)}\n"
+                "</VALIDATION_ERROR>"
+            )
+            session_state.add_message({"role": "user", "content": reminder}, to_provider=True)
+            try:
+                markdown_logger.log_user_message(reminder)
+            except Exception:
+                pass
+            if stream_responses:
+                try:
+                    print("[guard] blocking extra tool call after required tool use")
+                except Exception:
+                    pass
+            if blocked_count >= 3:
+                session_state.completion_summary = {
+                    "completed": False,
+                    "reason": "post_required_tool_extra_call_loop",
+                    "method": "turn_contract_guard",
+                    "blocked_tools": blocked_tools,
+                }
+                session_state.set_provider_metadata("completion_guard_abort", True)
+                return True
+            return False
+        if parsed_calls and _maybe_force_read_only_observation_closure(session_state, parsed_calls):
+            return True
+        session_state.add_message(assistant_entry, to_provider=False)
+        session_state.add_transcript_entry({
+            "assistant_with_tool_calls": {
+                "content": msg.content,
+                "tool_calls_count": len(msg.tool_calls),
+                "tool_calls": [tc["function"]["name"] for tc in tool_calls_payload]
+            }
+        })
+        session_state.add_message(provider_assistant_tool_message, to_provider=True)
         executed_results: List[tuple] = []
         failed_at_index = -1
         execution_error: Optional[Dict[str, Any]] = None
@@ -1626,7 +3749,53 @@ def handle_native_tool_calls(
         except Exception:
             pass
 
+        if _maybe_force_post_write_auto_verification_closure(
+            conductor,
+            session_state,
+            reason="post_write_auto_verified_before_continuation",
+        ):
+            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
+            return True
+
+        if _maybe_force_requested_shell_command_closure(
+            session_state,
+            reason="requested_shell_command_observed_before_continuation",
+        ):
+            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
+            return True
+
+        if _force_failed_verification_final_answer(
+            session_state,
+            reason="failed_verification_after_retries",
+        ):
+            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
+            return True
+
+        if _force_failed_write_final_answer(
+            conductor,
+            session_state,
+            reason="failed_requested_write_after_retries",
+        ):
+            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
+            return True
+
         if execution_error:
+            try:
+                use_responses_api = (
+                    str(session_state.get_provider_metadata("api_variant") or "").lower() == "responses"
+                )
+            except Exception:
+                use_responses_api = False
+            if use_responses_api and executed_results:
+                for parsed_result_call, parsed_result_out in executed_results:
+                    call_id = getattr(parsed_result_call, "call_id", None)
+                    tool_result_entry = conductor.message_formatter.create_tool_result_entry(
+                        getattr(parsed_result_call, "function", ""),
+                        parsed_result_out,
+                        syntax_type="openai",
+                        call_id=call_id,
+                    )
+                    session_state.add_message(tool_result_entry, to_provider=True)
             if execution_error.get("validation_failed"):
                 session_state.increment_guardrail_counter("validation_errors")
                 error_msg = error_handler.handle_validation_error(execution_error)

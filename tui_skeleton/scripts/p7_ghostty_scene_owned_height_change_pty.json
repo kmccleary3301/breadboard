@@ -1,0 +1,10 @@
+[
+  { "action": "wait", "ms": 12000 },
+  { "action": "snapshot", "label": "startup" },
+  { "action": "wait", "ms": 7000 },
+  { "action": "snapshot", "label": "streaming-mid" },
+  { "action": "resize", "cols": 132, "rows": 24, "delayMs": 2200 },
+  { "action": "snapshot", "label": "after-height-shrink" },
+  { "action": "wait", "ms": 9000 },
+  { "action": "snapshot", "label": "settled-after-height-shrink" }
+]

@@ -3,8 +3,14 @@
     "type": "startup_preflight",
     "timeout": 20,
     "interval": 0.3,
-    "ready_tokens": ["shortcuts"],
-    "kick_keys": ["Escape"],
+    "ready_tokens": [
+      "[ready]",
+      "enter send",
+      "Type your request"
+    ],
+    "kick_keys": [
+      "Escape"
+    ],
     "kick_every_polls": 1
   },
   {
@@ -16,12 +22,16 @@
   },
   {
     "type": "wait_until",
-    "contains": ["[task tree] thinking"],
+    "contains": [
+      "[task tree] thinking"
+    ],
     "timeout": 30
   },
   {
     "type": "wait_until",
-    "contains": ["Update completed and validated."],
+    "contains": [
+      "Update completed and validated."
+    ],
     "timeout": 45
   },
   {

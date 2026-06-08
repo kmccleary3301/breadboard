@@ -45,11 +45,11 @@ const main = async () => {
 
   const failures: string[] = []
   for (const section of sections) {
-    const promptRules = countMatches(section.body, /Try "refactor <filepath>"/g)
+    const footerShortcuts = countMatches(section.body, /\? shortcuts/g)
     const loadingBanners = countMatches(section.body, /Loading model catalog/g)
     const selectModelRows = countMatches(section.body, /Select model/g)
-    if (promptRules > 2) {
-      failures.push(`[${section.label}] excessive prompt-rule duplication (${promptRules})`)
+    if (footerShortcuts > 2) {
+      failures.push(`[${section.label}] excessive footer-shortcuts duplication (${footerShortcuts})`)
     }
     if (loadingBanners > 2) {
       failures.push(`[${section.label}] excessive loading-banner duplication (${loadingBanners})`)

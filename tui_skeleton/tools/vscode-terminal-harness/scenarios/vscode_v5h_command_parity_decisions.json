@@ -1,0 +1,189 @@
+{
+  "id": "vscode_v5h_command_parity_decisions",
+  "terminal": {
+    "initialCols": 128,
+    "initialRows": 40
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_V5H_COMMAND_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_V5H_COMMAND_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "/help\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "/resume",
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "screenshot",
+      "label": "01-visible-command-surface-help"
+    },
+    {
+      "kind": "write",
+      "text": "/shortcuts\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Shortcuts",
+      "scope": "viewport",
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "screenshot",
+      "label": "02-visible-command-surface-shortcuts"
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "sleep",
+      "ms": 500
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "waitForNoText",
+      "text": "Shortcuts",
+      "scope": "viewport",
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "write",
+      "text": "/permissions\r"
+    },
+    {
+      "kind": "waitForRegex",
+      "pattern": "Permission command surface is deferred|permission policy editing is productized",
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "write",
+      "text": "/agents\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Multiagent controls are deferred",
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "write",
+      "text": "/goal ship a durable objective\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "durable goal persistence",
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "write",
+      "text": "/diff\r"
+    },
+    {
+      "kind": "waitForRegex",
+      "pattern": "Diff viewer commands are deferred|diff viewer and approval workflow",
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "write",
+      "text": "/fork\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "session graph",
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "screenshot",
+      "label": "03-explicit-deferred-invocations"
+    },
+    {
+      "kind": "exportBreadBoardState",
+      "label": "v5h-command-parity-state"
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "BB_V5H_COMMAND_PRE_ALPHA"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Permission command surface"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Multiagent controls"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "durable goal persistence"
+        },
+        {
+          "kind": "regex",
+          "scope": "raw",
+          "pattern": "Diff viewer commands are deferred|diff viewer and approval workflow"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "session graph"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        }
+      ]
+    },
+    {
+      "kind": "terminate"
+    }
+  ]
+}

@@ -1,0 +1,234 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_seed_mixed_tool_modal_host_history_red",
+  "title": "V6 seed expected-red: mixed tool/modal long-session host-history preservation",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed",
+      "modal"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "files": [
+        {
+          "path": "src/demo.txt",
+          "content": "alpha\nbeta\n"
+        }
+      ],
+      "gitInit": true
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "mixed-pre",
+        "text": "BB_V5_MIXED_PRE_HISTORY_SENTINEL"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 120,
+      "rows": 34
+    },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "fixtures": {
+    "seedTurns": {
+      "count": 20,
+      "throughProductionIngestion": true,
+      "contentMix": [
+        "tool",
+        "markdown",
+        "plain"
+      ]
+    }
+  },
+  "timeline": [
+    {
+      "kind": "submit",
+      "text": "Show a compact tool-heavy status summary."
+    },
+    {
+      "kind": "tool",
+      "event": {
+        "kind": "start",
+        "toolId": "tool-final",
+        "name": "shell_command",
+        "args": {
+          "command": "printf ok"
+        }
+      }
+    },
+    {
+      "kind": "tool",
+      "event": {
+        "kind": "stdout",
+        "toolId": "tool-final",
+        "text": "ok\n"
+      }
+    },
+    {
+      "kind": "tool",
+      "event": {
+        "kind": "result",
+        "toolId": "tool-final",
+        "status": "ok",
+        "summary": "tool completed",
+        "output": "ok"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "Tool transcript and modal focus remain stable."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "Tool transcript and modal focus remain stable"
+      },
+      "timeoutMs": 45000
+    },
+    {
+      "kind": "open",
+      "surface": "model-picker"
+    },
+    {
+      "kind": "wait",
+      "ms": 300
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "resize",
+      "cols": 92,
+      "rows": 30,
+      "settleMs": 250
+    },
+    {
+      "kind": "checkpoint",
+      "id": "mixed-20-final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-DUPLICATE-PROMPT",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-NO-DUP-STATUS",
+      "severity": "blocker"
+    }
+  ],
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  },
+  "family": "scrollback",
+  "campaign": "p14-v6-red-mining",
+  "knownFailureClass": "historical.rendering.scrollback.host_history_lost.resolved",
+  "expectedOutcome": {
+    "verdict": "pass",
+    "reason": "Historical V5 expected-red seed is now resolved on current V6 renderer; retained as regression scenario but no longer expected to fail."
+  },
+  "actionRequirements": {
+    "launchObserved": "required",
+    "sentinelObservedBeforeLaunch": "required",
+    "inputSubmitted": "required",
+    "assistantInjected": "required",
+    "resizeRequested": "required",
+    "resizeObserved": "required",
+    "modalOpened": "required",
+    "focusReturned": "required",
+    "artifactCaptureComplete": "required"
+  },
+  "terminalMatrix": {
+    "pty": {
+      "expectedOutcome": "fail",
+      "requiredEvidence": [
+        "manifest",
+        "raw",
+        "grid",
+        "state",
+        "invariant-report"
+      ]
+    }
+  },
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 5000000,
+    "maxFrames": 1000,
+    "maxStateDumps": 2000
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "at-least-once"
+  }
+}

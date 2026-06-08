@@ -52,7 +52,56 @@ def test_session_state_emits_unique_assistant_events_per_turn() -> None:
     assistant_events = collector.of_type("assistant_message")
     assert len(assistant_events) == 1
     assert assistant_events[0][1]["message"]["content"] == "draft patch"
+    assert assistant_events[0][1]["_bb_event_contract"]["visibility"] == "transcript"
+    assert assistant_events[0][1]["_bb_event_contract"]["family"] == "message.assistant"
     assert assistant_events[0][2] == 1
+    assistant_messages = [message for message in state.messages if message.get("role") == "assistant"]
+    assistant_provider_messages = [
+        message for message in state.provider_messages if message.get("role") == "assistant"
+    ]
+    assert len(assistant_messages) == 1
+    assert len(assistant_provider_messages) == 1
+
+
+def test_session_state_sanitizes_user_event_and_ctree_payloads() -> None:
+    collector = EventCollector()
+    state = SessionState("ws", "image", {}, event_emitter=collector)
+
+    polluted = "Hello there\n\nindustry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md"
+    state.add_message({"role": "user", "content": polluted}, to_provider=True)
+
+    user_events = collector.of_type("user_message")
+    assert len(user_events) == 1
+    assert user_events[0][1]["message"]["content"] == "Hello there"
+
+    ctree_events = collector.of_type("ctree_node")
+    assert ctree_events
+    node = (ctree_events[-1][1].get("node") or {}).get("payload") or {}
+    assert node.get("role") == "user"
+    assert node.get("content") == "Hello there"
+
+    assert state.messages[0]["content"] == polluted
+
+
+def test_session_state_hides_internal_validation_user_messages_from_transcript_events() -> None:
+    collector = EventCollector()
+    state = SessionState("ws", "image", {}, event_emitter=collector)
+
+    state.add_message({"role": "user", "content": "real request"}, to_provider=True)
+    state.begin_turn(1)
+    state.add_message({"role": "user", "content": "<VALIDATION_ERROR>\nretry\n</VALIDATION_ERROR>"}, to_provider=True)
+    state.add_message(
+        {
+            "role": "user",
+            "content": "real request\n\n<WORKSPACE_TOOL_REQUIRED>\nUse tools.\n</WORKSPACE_TOOL_REQUIRED>",
+        },
+        to_provider=True,
+    )
+
+    user_events = collector.of_type("user_message")
+    assert len(user_events) == 1
+    assert user_events[0][1]["message"]["content"] == "real request"
+    assert len(state.provider_messages) == 3
 
 
 def test_session_state_tool_events_cover_calls_and_results() -> None:
@@ -70,7 +119,13 @@ def test_session_state_tool_events_cover_calls_and_results() -> None:
         },
         to_provider=False,
     )
-    state.record_tool_event(2, "run_shell", success=True, metadata={"is_run_shell": True})
+    state.record_tool_event(
+        2,
+        "run_shell",
+        success=True,
+        metadata={"is_run_shell": True},
+        result={"stdout": "/tmp\n", "exit": 0},
+    )
     state.add_message({"role": "tool", "content": "ok"}, to_provider=False)
 
     tool_call_events = collector.of_type("tool_call")
@@ -81,6 +136,37 @@ def test_session_state_tool_events_cover_calls_and_results() -> None:
     assert len(tool_result_events) == 2  # one from record_tool_event, one from tool role message
     names = {evt[1].get("tool") or evt[1].get("message", {}).get("role") for evt in tool_result_events}
     assert "run_shell" in names
+    engine_tool_result = next(evt for evt in tool_result_events if evt[1].get("tool") == "run_shell")
+    assert engine_tool_result[1]["result"]["stdout"] == "/tmp\n"
+    assert engine_tool_result[1]["result"]["exit"] == 0
+
+
+def test_session_state_tracks_successful_user_facing_write_targets() -> None:
+    state = SessionState("ws", "image", {})
+
+    state.record_tool_event(
+        1,
+        "apply_unified_patch",
+        success=True,
+        metadata={
+            "is_write": True,
+            "is_user_facing_write": True,
+            "write_targets": ["dummy_smtp.c", "README.md", "Makefile"],
+            "requested_write_targets": ["Makefile"],
+            "requested_write_matches": ["Makefile"],
+            "is_requested_file_write": True,
+        },
+        result={"ok": True},
+    )
+
+    assert state.tool_usage_summary["successful_writes"] == 1
+    assert state.tool_usage_summary["successful_user_facing_writes"] == 1
+    assert state.tool_usage_summary["successful_requested_write_targets"] == ["Makefile"]
+    assert state.tool_usage_summary["successful_user_facing_write_targets"] == [
+        "dummy_smtp.c",
+        "README.md",
+        "Makefile",
+    ]
 
 
 def test_session_state_emits_ctree_node_events() -> None:
@@ -112,7 +198,7 @@ def test_session_state_builds_kernel_event_record_and_normalizes_transcript() ->
     assert record["classification"] == "canonical"
     assert record["family"] == "message.assistant"
     assert record["actor"] == "engine"
-    assert record["visibility"] == "model"
+    assert record["visibility"] == "transcript"
 
     entry = {"assistant": "hello"}
     state.add_transcript_entry(entry)
@@ -331,10 +417,24 @@ def test_session_runner_translates_runtime_events() -> None:
         turn=3,
     )
     assert translated is not None
-    evt_type, payload, turn = translated
+    evt_type, payload, turn, contract = translated
     assert evt_type is EventType.ASSISTANT_MESSAGE
     assert payload["text"] == "hi"
     assert turn == 3
+    assert contract["visibility"] == "transcript"
+    assert contract["family"] == "message.assistant"
+
+    translated_none = runner._translate_runtime_event(
+        "assistant_message",
+        {"message": {"role": "assistant", "content": None}},
+        turn=3,
+    )
+    assert translated_none is not None
+    evt_type, payload, turn, contract = translated_none
+    assert evt_type is EventType.ASSISTANT_MESSAGE
+    assert payload["text"] == ""
+    assert turn == 3
+    assert contract["visibility"] == "transcript"
 
     delta_translated = runner._translate_runtime_event(
         "assistant_delta",
@@ -342,11 +442,12 @@ def test_session_runner_translates_runtime_events() -> None:
         turn=3,
     )
     assert delta_translated is not None
-    evt_type, payload, turn = delta_translated
+    evt_type, payload, turn, contract = delta_translated
     assert evt_type is EventType.ASSISTANT_DELTA
     assert payload["text"] == "chunk"
     assert payload["message_id"] == "m1"
     assert turn == 3
+    assert contract["visibility"] == "transcript"
 
     assert runner._translate_runtime_event("unknown", {}, turn=None) is None
 
@@ -356,13 +457,32 @@ def test_session_runner_translates_runtime_events() -> None:
         turn=3,
     )
     assert todo_translated is not None
-    evt_type, payload, turn = todo_translated
+    evt_type, payload, turn, contract = todo_translated
     assert evt_type is EventType.TOOL_RESULT
     assert isinstance(payload.get("todo"), dict)
     assert payload["todo"]["revision"] == 1
     assert turn == 3
+    assert contract["visibility"] == "tool"
     assert isinstance(record.metadata, dict)
     assert isinstance(record.metadata.get("todo_last_update"), dict)
+
+
+def test_session_event_envelope_carries_visibility_contract() -> None:
+    event = SessionEvent(
+        type=EventType.ASSISTANT_MESSAGE,
+        session_id="sess-1",
+        payload={"text": "hi"},
+        classification="kernel",
+        family="message.assistant",
+        actor="engine",
+        visibility="transcript",
+    )
+
+    envelope = event.asdict()
+    assert envelope["classification"] == "kernel"
+    assert envelope["family"] == "message.assistant"
+    assert envelope["actor"] == {"kind": "engine"}
+    assert envelope["visibility"] == "transcript"
 
 
 @pytest.mark.asyncio
@@ -460,6 +580,56 @@ async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_pat
     assert called["count"] == 1
     assert runner._agent is not None
     assert seen_finished
+
+
+@pytest.mark.asyncio
+async def test_session_runner_emits_completion_final_message_when_agent_has_no_assistant_event(tmp_path, monkeypatch) -> None:
+    registry = SessionRegistry()
+    record = SessionRecord(session_id="sess-final-message", status=SessionStatus.STARTING)
+    request = SessionCreateRequest(config_path="cfg.yaml", task="hello", stream=False)
+    monkeypatch.delenv("BREADBOARD_ENABLE_REMOTE_STREAM", raising=False)
+
+    final_message = "Files changed: calc.c\nVerification: make clean all && bash smoke_test.sh"
+
+    class FakeAgent:
+        def __init__(self) -> None:
+            self._local_mode = True
+            self.workspace_dir = str(tmp_path / "ws")
+            self.config = {"providers": {}}
+
+        def initialize(self) -> None:
+            Path(self.workspace_dir).mkdir(parents=True, exist_ok=True)
+
+        def run_task(self, task_text: str, **kwargs) -> Dict[str, Any]:
+            return {
+                "completion_summary": {"completed": True, "reason": "mark_task_complete", "final_message": final_message},
+                "reward_metrics_payload": {},
+                "messages": [],
+                "logging_dir": None,
+            }
+
+    runner = SessionRunner(
+        session=record,
+        registry=registry,
+        request=request,
+        agent_factory=lambda config_path, workspace_dir, overrides: FakeAgent(),
+    )
+    await runner.start()
+
+    seen_assistant = None
+    for _ in range(20):
+        evt = await asyncio.wait_for(record.event_queue.get(), timeout=2.0)
+        if evt is None:
+            break
+        if evt.type is EventType.ASSISTANT_MESSAGE:
+            seen_assistant = evt
+        if evt.type is EventType.RUN_FINISHED:
+            break
+
+    await runner.stop()
+    assert seen_assistant is not None
+    assert seen_assistant.visibility == "transcript"
+    assert seen_assistant.payload["text"] == final_message
 
 
 def test_session_runner_queue_pump_processes_events() -> None:

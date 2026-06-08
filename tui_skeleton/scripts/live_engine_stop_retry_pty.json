@@ -1,15 +1,78 @@
 [
-  { "action": "log", "message": "Live engine stop/retry start" },
-  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 20000 },
-  { "action": "type", "text": "Generate a bubble sort" },
-  { "action": "press", "key": "enter" },
-  { "action": "wait", "ms": 500 },
-  { "action": "press", "key": "escape" },
-  { "action": "waitFor", "text": "Interrupt requested", "timeoutMs": 15000 },
-  { "action": "snapshot", "label": "after-stop" },
-  { "action": "type", "text": "/retry" },
-  { "action": "press", "key": "enter" },
-  { "action": "waitFor", "text": "Resubmitting prompt", "timeoutMs": 15000 },
-  { "action": "snapshot", "label": "after-retry" },
-  { "action": "log", "message": "Live engine stop/retry end" }
+  {
+    "action": "log",
+    "message": "Live engine stop/retry start"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 20000
+  },
+  {
+    "action": "type",
+    "text": "Begin your final answer with STOP_RETRY_DONE, then generate a small Python bubble sort function with a short explanation."
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "wait",
+    "ms": 150
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "waitFor",
+    "text": "Interrupt requested",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "snapshot",
+    "label": "after-stop"
+  },
+  {
+    "action": "waitForState",
+    "timeoutMs": 60000,
+    "pendingResponse": false
+  },
+  {
+    "action": "type",
+    "text": "/retry"
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "waitFor",
+    "text": "Resubmitting prompt",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "waitForState",
+    "timeoutMs": 120000,
+    "fresh": true,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 3,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "STOP_RETRY_DONE"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 10000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "after-retry-settled",
+    "mode": "history",
+    "maxLines": 260
+  },
+  {
+    "action": "log",
+    "message": "Live engine stop/retry end"
+  }
 ]

@@ -7,11 +7,70 @@ import { longestCommonPrefix } from "../../utils/text.js"
 
 type EditorKeyHandlerContext = Record<string, any>
 
+type SlashSuggestionLike = {
+  readonly command?: string
+  readonly availability?: string
+}
+
+export type SlashEnterDecision =
+  | { readonly kind: "none" }
+  | { readonly kind: "allow-submit-exact" }
+  | { readonly kind: "disabled-suggestion" }
+  | { readonly kind: "submit-suggestion"; readonly command: string }
+  | { readonly kind: "apply-suggestion"; readonly index: number }
+
+export type EmptyInputRemovalDecision =
+  | { readonly kind: "none" }
+  | { readonly kind: "attachment" }
+  | { readonly kind: "file-mention" }
+
+export const resolveSlashEnterDecision = (args: {
+  readonly input: string
+  readonly suggestions: readonly SlashSuggestionLike[]
+  readonly suggestIndex: number
+  readonly hasSubmitSuggestedSlashCommand: boolean
+}): SlashEnterDecision => {
+  const { input, suggestions, suggestIndex, hasSubmitSuggestedSlashCommand } = args
+  if (suggestions.length === 0) return { kind: "none" }
+  const trimmed = input.trim()
+  if (trimmed.startsWith("/")) {
+    const body = trimmed.slice(1).trim()
+    const [commandName] = body.split(/\s+/)
+    const isExactCommand = Boolean(commandName) && SLASH_COMMANDS.some((cmd) => cmd.name === commandName)
+    if (isExactCommand) {
+      return { kind: "allow-submit-exact" }
+    }
+    const choice = suggestions[Math.max(0, Math.min(suggestIndex, suggestions.length - 1))]
+    if (choice?.availability && choice.availability !== "available") {
+      return { kind: "disabled-suggestion" }
+    }
+    if (choice?.command?.startsWith("/") && hasSubmitSuggestedSlashCommand) {
+      return { kind: "submit-suggestion", command: choice.command }
+    }
+  }
+  return { kind: "apply-suggestion", index: Math.max(0, Math.min(suggestIndex, suggestions.length - 1)) }
+}
+
+export const resolveEmptyInputRemovalDecision = (args: {
+  readonly attachmentCount: number
+  readonly fileMentionCount: number
+  readonly inputLength: number
+  readonly cursor: number
+  readonly overlayActive: boolean
+  readonly isBackspace: boolean
+}): EmptyInputRemovalDecision => {
+  if (!args.isBackspace || args.inputLength !== 0 || args.cursor !== 0 || args.overlayActive) return { kind: "none" }
+  if (args.attachmentCount > 0) return { kind: "attachment" }
+  if (args.fileMentionCount > 0) return { kind: "file-mention" }
+  return { kind: "none" }
+}
+
 export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
   const {
     activeAtMention,
     applySuggestion,
-    attachments,
+    attachments = [],
+    fileMentions = [],
     closeFilePicker,
     cursor,
     ensureFileIndexScan,
@@ -45,7 +104,9 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
     queueFileMention,
     rawFilePickerNeedle,
     recallHistory,
+    searchHistory,
     removeLastAttachment,
+    removeLastFileMention,
     setEscPrimedAt,
     setFilePicker,
     setFilePickerDismissed,
@@ -63,6 +124,9 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
       const isTabKey = key.tab || (typeof char === "string" && (char.includes("\t") || char.includes("\u001b[Z")))
       const isReturnKey = key.return || char === "\r" || char === "\n"
       const lowerChar = char?.toLowerCase()
+      const keyName = typeof (key as any).name === "string" ? String((key as any).name).toLowerCase() : ""
+      const isCtrlR = (key.ctrl && (lowerChar === "r" || keyName === "r")) || char === "\u0012"
+      const isCtrlS = (key.ctrl && (lowerChar === "s" || keyName === "s")) || char === "\u0013"
       const isQuestionMark = lowerChar === "?" || (char === "/" && key.shift)
       if (!key.ctrl && !key.meta && isQuestionMark && inputValueRef.current.trim() === "") {
         shortcutsOpenedAtRef.current = Date.now()
@@ -70,22 +134,39 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
         handleLineEdit("", 0)
         return true
       }
-      if (key.ctrl && lowerChar === "s") {
+      if (isCtrlS) {
         const stashValue = inputValueRef.current
+        if (stashValue.trim().length > 0 && typeof searchHistory === "function" && searchHistory(1)) {
+          return true
+        }
         if (stashValue.trim().length > 0) {
           pushHistoryEntry(stashValue)
           handleLineEdit("", 0)
         }
         return true
       }
-      if (
-        attachments.length > 0 &&
-        key.backspace &&
-        inputValueRef.current.length === 0 &&
-        cursor === 0 &&
-        !overlayActive
-      ) {
+      if (isCtrlR) {
+        if (typeof searchHistory === "function") {
+          searchHistory(-1)
+        }
+        return true
+      }
+      const emptyInputRemoval = resolveEmptyInputRemovalDecision({
+        attachmentCount: attachments.length,
+        fileMentionCount: fileMentions.length,
+        inputLength: inputValueRef.current.length,
+        cursor,
+        overlayActive: Boolean(overlayActive),
+        isBackspace: Boolean(key.backspace),
+      })
+      if (emptyInputRemoval.kind === "attachment") {
         removeLastAttachment()
+        return true
+      }
+      if (emptyInputRemoval.kind === "file-mention") {
+        if (typeof removeLastFileMention === "function") {
+          removeLastFileMention()
+        }
         return true
       }
       if (modelMenu.status !== "hidden") {
@@ -215,13 +296,16 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
             handleLineEdit(nextValue, tokenContentStart + nextQuery.length)
             filePickerIndexRef.current = 0
             setFilePicker((prev: any) => (prev.status === "hidden" ? prev : { ...prev, index: 0 }))
+            if (commonPrefix.endsWith("/")) {
+              const nextCwd = commonPrefix.replace(/\/+$/, "") || "."
+              void loadFilePickerDirectory(nextCwd)
+            }
             return true
           }
 
           if (current.item.type === "directory") {
             insertDirectoryMention(current.item.path, activeAtMention)
-            setFilePickerDismissed({ tokenStart: activeAtMention.start, textVersion: inputTextVersion + 1 })
-            closeFilePicker()
+            void loadFilePickerDirectory(current.item.path.replace(/\/+$/, "") || ".")
             return true
           }
 
@@ -247,24 +331,21 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
           return true
         }
         if (isReturnKey && !key.shift) {
-          const trimmed = inputValueRef.current.trim()
-          const isSlash = trimmed.startsWith("/")
-          if (isSlash) {
-            const choice = suggestions[Math.max(0, Math.min(suggestIndex, suggestions.length - 1))]
-            if (choice?.command?.startsWith("/") && typeof submitSuggestedSlashCommand === "function") {
-              setSuggestIndex(0)
-              setSuppressSuggestions(true)
-              void submitSuggestedSlashCommand(choice.command)
-              return true
-            }
-            const body = trimmed.slice(1).trim()
-            const [commandName] = body.split(/\s+/)
-            const isExactCommand = Boolean(commandName) && SLASH_COMMANDS.some((cmd) => cmd.name === commandName)
-            if (isExactCommand) {
-              return false
-            }
+          const decision = resolveSlashEnterDecision({
+            input: inputValueRef.current,
+            suggestions,
+            suggestIndex,
+            hasSubmitSuggestedSlashCommand: typeof submitSuggestedSlashCommand === "function",
+          })
+          if (decision.kind === "allow-submit-exact") return false
+          if (decision.kind === "disabled-suggestion") return true
+          if (decision.kind === "submit-suggestion") {
+            setSuggestIndex(0)
+            setSuppressSuggestions(true)
+            void submitSuggestedSlashCommand(decision.command)
+            return true
           }
-          const choice = suggestions[Math.max(0, Math.min(suggestIndex, suggestions.length - 1))]
+          const choice = suggestions[decision.kind === "apply-suggestion" ? decision.index : Math.max(0, Math.min(suggestIndex, suggestions.length - 1))]
           applySuggestion(choice)
           return true
         }
@@ -290,6 +371,7 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
         return true
       }
       if (key.ctrl && lowerChar === "p" && keymap !== "claude") {
+        if (inputValueRef.current.trim().length === 0) return false
         recallHistory(-1)
         return true
       }
@@ -332,6 +414,7 @@ export const useEditorKeys = (context: EditorKeyHandlerContext): KeyHandler => {
       queueFileMention,
       rawFilePickerNeedle,
       recallHistory,
+      searchHistory,
       removeLastAttachment,
       setSuggestIndex,
       setSuppressSuggestions,

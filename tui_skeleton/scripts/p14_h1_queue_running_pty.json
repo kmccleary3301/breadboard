@@ -1,0 +1,12 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "first queue probe", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitForState", "timeoutMs": 15000, "pendingResponse": true },
+  { "action": "type", "text": "second queued prompt", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Queued prompt", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "queued-preview", "mode": "frame", "maxLines": 100 },
+  { "action": "waitForState", "timeoutMs": 25000, "conversationCountAtLeast": 3, "lastConversationSpeaker": "user", "lastConversationPreviewIncludes": "second queued prompt" },
+  { "action": "snapshot", "label": "queued-dispatched", "mode": "history", "maxLines": 120 }
+]

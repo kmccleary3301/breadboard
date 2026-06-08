@@ -35,6 +35,7 @@ const CANONICAL_PHASE_LABELS: Record<string, PhaseLineState> = {
   interrupted: { id: "interrupted", label: "interrupted", tone: "error" },
   permission: { id: "permission", label: "permission", tone: "warning" },
   reconnecting: { id: "reconnecting", label: "reconnecting", tone: "warning" },
+  recovery: { id: "recovery", label: "recovery needed", tone: "error" },
   tool: { id: "tool", label: "tool", tone: "warning" },
   done: { id: "done", label: "done", tone: "success" },
   responding: { id: "responding", label: "responding", tone: "info" },
@@ -54,6 +55,7 @@ const normalizePhaseLabel = (raw: string): string =>
 const canonicalFromStatus = (status: string): PhaseLineState => {
   const normalized = normalizePhaseLabel(status)
   if (!normalized || normalized === "ready" || normalized === "idle") return CANONICAL_PHASE_LABELS.ready
+  if (normalized.includes("recovery needed")) return CANONICAL_PHASE_LABELS.recovery
   if (normalized.includes("reconnect")) return CANONICAL_PHASE_LABELS.reconnecting
   if (normalized.includes("error") || normalized.includes("fail")) return CANONICAL_PHASE_LABELS.error
   if (normalized.includes("interrupt")) return CANONICAL_PHASE_LABELS.interrupted

@@ -29,9 +29,7 @@ type NormalizedInputBinding = {
   readonly meta: boolean
 }
 
-const SHARED_BINDINGS: ActionBindingTable = {
-  toggle_transcript_viewer: [{ ctrl: true, shift: true, key: "t" }],
-  toggle_todos_panel: [{ ctrl: true, key: "t" }],
+const SHARED_ACTIONS = {
   toggle_tasks_panel: [{ ctrl: true, key: "b" }],
   toggle_ctree_panel: [{ ctrl: true, key: "y" }],
   toggle_skills_panel: [{ ctrl: true, key: "g" }],
@@ -39,14 +37,30 @@ const SHARED_BINDINGS: ActionBindingTable = {
   clear_screen: [{ ctrl: true, key: "l" }],
   quit_hard: [{ ctrl: true, key: "d" }],
   inspect_panel: [{ ctrl: true, key: "i" }],
+} as const satisfies Omit<ActionBindingTable, "toggle_transcript_viewer" | "toggle_todos_panel">
+
+const CLAUDE_BINDINGS: ActionBindingTable = {
+  toggle_transcript_viewer: [{ ctrl: true, key: "o" }],
+  toggle_todos_panel: [{ ctrl: true, key: "t" }],
+  ...SHARED_ACTIONS,
 }
 
-// Today profiles intentionally share physical keybindings.
-// Keeping explicit profile tables allows future profile-specific remaps without touching handlers.
+const CODEX_BINDINGS: ActionBindingTable = {
+  toggle_transcript_viewer: [{ ctrl: true, key: "t" }],
+  toggle_todos_panel: [],
+  ...SHARED_ACTIONS,
+}
+
+const BREADBOARD_BINDINGS: ActionBindingTable = {
+  toggle_transcript_viewer: [{ ctrl: true, key: "t" }],
+  toggle_todos_panel: [],
+  ...SHARED_ACTIONS,
+}
+
 export const ACTION_KEYMAP: Record<KeyProfile, ActionBindingTable> = {
-  claude: SHARED_BINDINGS,
-  codex: SHARED_BINDINGS,
-  breadboard: SHARED_BINDINGS,
+  claude: CLAUDE_BINDINGS,
+  codex: CODEX_BINDINGS,
+  breadboard: BREADBOARD_BINDINGS,
 }
 
 const LETTER_RE = /^[a-z]$/i

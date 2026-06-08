@@ -1,0 +1,6 @@
+[
+  { "delayMs": 100, "event": { "id": "v7-retry-assistant-start", "type": "assistant.message.start", "payload": { "message_id": "v7-retry-message", "channel": "text", "format": "markdown" } } },
+  { "delayMs": 100, "event": { "id": "v7-retry-assistant-delta", "type": "assistant.message.delta", "payload": { "message_id": "v7-retry-message", "channel": "text", "delta": "V7_RETRY_RECOVERED_RESPONSE" } } },
+  { "delayMs": 50, "event": { "id": "v7-retry-assistant-end", "type": "assistant.message.end", "payload": { "message_id": "v7-retry-message", "stop_reason": "complete" } } },
+  { "delayMs": 50, "event": { "id": "v7-retry-completion", "type": "completion", "payload": { "summary": { "completed": true, "reason": "v7_retry_after_unknown" } } } }
+]

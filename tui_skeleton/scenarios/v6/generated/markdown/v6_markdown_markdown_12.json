@@ -1,0 +1,158 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_markdown_markdown_12",
+  "title": "Generated markdown scenario markdown_12",
+  "family": "markdown",
+  "campaign": "p14-v6-scenario-family-explosion",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# v6_markdown_markdown_12\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "pre",
+        "text": "BB_V6_MARKDOWN_MARKDOWN_12_PRE"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 110,
+      "rows": 34
+    },
+    "resizePolicy": "none",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "submit",
+      "text": "V6 markdown prompt 12"
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "markdown-fixture",
+        "streamId": "s1",
+        "fixture": "mixed-mdx",
+        "chunking": {
+          "mode": "syntax"
+        }
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "V6 markdown response 12 completed."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "V6 markdown response 12 completed."
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "MD-FINAL-TEXT-COMPLETE",
+      "severity": "blocker"
+    }
+  ],
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 7000000,
+    "maxFrames": 1500,
+    "maxStateDumps": 2500
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "not-required"
+  },
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  }
+}

@@ -7,6 +7,8 @@ type ModalStackContext = {
   claudeChrome: boolean
   isBreadboardProfile: boolean
   columnWidth: number
+  rowCount: number
+  scrollbackMode: boolean
   contentWidth: number
   sessionId: string
   status: string
@@ -38,12 +40,44 @@ type ModalStackContext = {
   skillsDirty: boolean
   rewindMenu: unknown
   todosOpen: boolean
+  recentSessionsOpen: boolean
+  recentSessionsStatus: "idle" | "loading" | "ready" | "error"
+  recentSessionsError: string | null
+  recentSessionsRows: unknown[]
+  recentSessionsVisible: unknown[]
+  recentSessionsIndex: number
+  recentSessionsScroll: number
+  recentSessionsMaxScroll: number
+  recentSessionsViewportRows: number
+  recentSessionsAttachingId: string | null
+  refreshRecentSessions: () => Promise<unknown>
+  attachRecentSession: (sessionId: string) => Promise<boolean>
   todoScroll: number
   todos: unknown[]
   usageOpen: boolean
   inspectMenu: unknown
   inspectRawOpen: boolean
   inspectRawScroll: number
+  resultDetailOpen: boolean
+  resultDetailScroll: number
+  resultDetailMaxScroll: number
+  resultDetailViewportRows: number
+  resultDetailVisible: string[]
+  resultDetailSelectedTitle: string | null
+  resultDetailArtifactPath: string | null
+  artifactPreviewOpen: boolean
+  artifactPreviewScroll: number
+  artifactPreviewMaxScroll: number
+  artifactPreviewViewportRows: number
+  artifactPreviewVisible: string[]
+  artifactPreviewPath: string | null
+  artifactPreviewNotice: string | null
+  collapsedDetailOpen: boolean
+  collapsedDetailScroll: number
+  collapsedDetailMaxScroll: number
+  collapsedDetailViewportRows: number
+  collapsedDetailVisible: string[]
+  collapsedDetailSelectedId: string | null
   tasks: unknown[]
   tasksOpen: boolean
   taskFocusViewOpen: boolean
@@ -53,10 +87,12 @@ type ModalStackContext = {
   taskFocusMode: "lane" | "swap"
   taskFocusLaneId: string | null
   taskFocusLaneLabel: string | null
+  taskActionsEnabled: boolean
   taskScroll: number
   taskSearchQuery: string
   taskStatusFilter: string
   taskLaneFilter: string
+  taskLaneFilterLabel: string
   taskGroupMode: string
   taskCollapsedGroupKeys: Set<string>
   permissionRequest: unknown
@@ -97,6 +133,8 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     claudeChrome,
     isBreadboardProfile,
     columnWidth,
+    rowCount,
+    scrollbackMode,
     contentWidth,
     sessionId,
     status,
@@ -128,12 +166,44 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     skillsDirty,
     rewindMenu,
     todosOpen,
+    recentSessionsOpen,
+    recentSessionsStatus,
+    recentSessionsError,
+    recentSessionsRows,
+    recentSessionsVisible,
+    recentSessionsIndex,
+    recentSessionsScroll,
+    recentSessionsMaxScroll,
+    recentSessionsViewportRows,
+    recentSessionsAttachingId,
+    refreshRecentSessions,
+    attachRecentSession,
     todoScroll,
     todos,
     usageOpen,
     inspectMenu,
     inspectRawOpen,
     inspectRawScroll,
+    resultDetailOpen,
+    resultDetailScroll,
+    resultDetailMaxScroll,
+    resultDetailViewportRows,
+    resultDetailVisible,
+    resultDetailSelectedTitle,
+    resultDetailArtifactPath,
+    artifactPreviewOpen,
+    artifactPreviewScroll,
+    artifactPreviewMaxScroll,
+    artifactPreviewViewportRows,
+    artifactPreviewVisible,
+    artifactPreviewPath,
+    artifactPreviewNotice,
+    collapsedDetailOpen,
+    collapsedDetailScroll,
+    collapsedDetailMaxScroll,
+    collapsedDetailViewportRows,
+    collapsedDetailVisible,
+    collapsedDetailSelectedId,
     tasks,
     tasksOpen,
     taskFocusViewOpen,
@@ -143,10 +213,12 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     taskFocusMode,
     taskFocusLaneId,
     taskFocusLaneLabel,
+    taskActionsEnabled,
     taskScroll,
     taskSearchQuery,
     taskStatusFilter,
     taskLaneFilter,
+    taskLaneFilterLabel,
     taskGroupMode,
     taskCollapsedGroupKeys,
     permissionRequest,
@@ -201,6 +273,7 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     selectedTaskRow,
     selectedTask,
     taskNotice,
+    taskActionNotice,
     taskTailLines,
     taskTailPath,
     ctreeRows,
@@ -227,6 +300,8 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     claudeChrome,
     isBreadboardProfile,
     columnWidth,
+    rowCount,
+    scrollbackMode,
     PANEL_WIDTH,
     shortcutLines,
     paletteState,
@@ -258,6 +333,18 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     isSkillSelected,
     skillsDirty,
     rewindMenu,
+    recentSessionsOpen,
+    recentSessionsStatus,
+    recentSessionsError,
+    recentSessionsRows,
+    recentSessionsVisible,
+    recentSessionsIndex,
+    recentSessionsScroll,
+    recentSessionsMaxScroll,
+    recentSessionsViewportRows,
+    recentSessionsAttachingId,
+    refreshRecentSessions,
+    attachRecentSession,
     rewindCheckpoints,
     rewindVisible,
     rewindOffset,
@@ -274,6 +361,26 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     inspectMenu,
     inspectRawOpen,
     inspectRawScroll,
+    resultDetailOpen,
+    resultDetailScroll,
+    resultDetailMaxScroll,
+    resultDetailViewportRows,
+    resultDetailVisible,
+    resultDetailSelectedTitle,
+    resultDetailArtifactPath,
+    artifactPreviewOpen,
+    artifactPreviewScroll,
+    artifactPreviewMaxScroll,
+    artifactPreviewViewportRows,
+    artifactPreviewVisible,
+    artifactPreviewPath,
+    artifactPreviewNotice,
+    collapsedDetailOpen,
+    collapsedDetailScroll,
+    collapsedDetailMaxScroll,
+    collapsedDetailViewportRows,
+    collapsedDetailVisible,
+    collapsedDetailSelectedId,
     inspectRawMaxScroll,
     inspectRawViewportRows,
     inspectRawLines,
@@ -309,6 +416,7 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     taskFocusMode,
     taskFocusLaneId,
     taskFocusLaneLabel,
+    taskActionsEnabled,
     taskScroll,
     taskMaxScroll,
     taskRows,
@@ -317,6 +425,7 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     taskSearchQuery,
     taskStatusFilter,
     taskLaneFilter,
+    taskLaneFilterLabel,
     taskGroupMode,
     taskCollapsedGroupKeys,
     selectedTaskIndex,
@@ -324,6 +433,7 @@ export const useReplViewModalStack = (context: ModalStackContext) => {
     selectedTask,
     taskGroups,
     taskNotice,
+    taskActionNotice,
     taskTailLines,
     taskTailPath,
     formatCtreeSummary,

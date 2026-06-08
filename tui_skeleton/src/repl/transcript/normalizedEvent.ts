@@ -3,6 +3,8 @@ export type NormalizedEvent = {
   eventId?: string
   type: string
   timestamp?: number
+  visibility?: string | null
+  family?: string | null
   actor?: { kind: "user" | "assistant" | "tool" | "system"; agentId?: string }
   messageId?: string
   toolCallId?: string

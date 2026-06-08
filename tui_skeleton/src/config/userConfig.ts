@@ -9,6 +9,7 @@ export interface UserConfigFile {
   readonly authTokenRef?: string
   readonly engineVersion?: string
   readonly enginePath?: string
+  readonly engineMode?: string
 }
 
 const resolveConfigPath = (): string => {
@@ -36,7 +37,8 @@ export const loadUserConfigSync = (): UserConfigFile => {
     const authTokenRef = typeof parsed.authTokenRef === "string" ? parsed.authTokenRef : undefined
     const engineVersion = typeof parsed.engineVersion === "string" ? parsed.engineVersion : undefined
     const enginePath = typeof parsed.enginePath === "string" ? parsed.enginePath : undefined
-    return { baseUrl, authToken, authTokenRef, engineVersion, enginePath }
+    const engineMode = typeof parsed.engineMode === "string" ? parsed.engineMode : undefined
+    return { baseUrl, authToken, authTokenRef, engineVersion, enginePath, engineMode }
   } catch {
     return {}
   }
@@ -51,6 +53,7 @@ export const writeUserConfig = async (next: UserConfigFile): Promise<void> => {
     ...(next.authTokenRef ? { authTokenRef: next.authTokenRef } : {}),
     ...(next.engineVersion ? { engineVersion: next.engineVersion } : {}),
     ...(next.enginePath ? { enginePath: next.enginePath } : {}),
+    ...(next.engineMode ? { engineMode: next.engineMode } : {}),
   }
   await fsp.writeFile(configPath, JSON.stringify(payload, null, 2), "utf8")
 }

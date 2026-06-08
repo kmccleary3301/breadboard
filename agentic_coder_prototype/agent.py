@@ -14,7 +14,7 @@ import threading
 import tempfile
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from pathlib import Path
-from .utils.safe_delete import assert_disposable_workspace_path
+from .utils.safe_delete import is_disposable_workspace_path, validate_workspace_path
 
 _ray = None
 _ray_attempted = False
@@ -42,12 +42,94 @@ from .compilation.system_prompt_compiler import get_compiler
 
 logger = logging.getLogger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+_PROVIDER_ENV_KEYS = (
+    "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+    "BREADBOARD_OPENAI_AUTH_HEADERS_JSON",
+    "BREADBOARD_OPENAI_AUTH_BASE_URL",
+)
+
+
+def _find_local_openai_bootstrap_token(value: Any, seen: Optional[set[int]] = None) -> Optional[str]:
+    if seen is None:
+        seen = set()
+    if value is None:
+        return None
+    marker = id(value)
+    if marker in seen:
+        return None
+    seen.add(marker)
+    if isinstance(value, dict):
+        for key in ("OPENAI_API_KEY", "codex_access_token", "access_token", "id_token", "token", "auth_token"):
+            candidate = value.get(key)
+            if isinstance(candidate, str) and candidate.strip():
+                return candidate.strip()
+        for nested in value.values():
+            found = _find_local_openai_bootstrap_token(nested, seen)
+            if found:
+                return found
+    elif isinstance(value, list):
+        for nested in value:
+            found = _find_local_openai_bootstrap_token(nested, seen)
+            if found:
+                return found
+    return None
+
+
+def _bootstrap_openai_env_from_local_codex_auth() -> None:
+    if os.environ.get("OPENAI_API_KEY"):
+        return
+    auth_path = Path.home() / ".codex" / "auth.json"
+    try:
+        if not auth_path.exists():
+            return
+        payload = json.loads(auth_path.read_text(encoding="utf-8"))
+        token = _find_local_openai_bootstrap_token(payload)
+        if token:
+            os.environ["OPENAI_API_KEY"] = token
+    except Exception:
+        return
+
+
+def _bootstrap_openai_env_from_runtime_config(config: Optional[Dict[str, Any]]) -> None:
+    if not isinstance(config, dict):
+        return
+    runtime_auth = config.get("provider_auth_runtime")
+    if not isinstance(runtime_auth, dict):
+        return
+    openai_auth = runtime_auth.get("openai")
+    if not isinstance(openai_auth, dict):
+        return
+    api_key = str(openai_auth.get("api_key") or "").strip()
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+    headers = openai_auth.get("headers")
+    if isinstance(headers, dict) and headers:
+        try:
+            os.environ["BREADBOARD_OPENAI_AUTH_HEADERS_JSON"] = json.dumps(
+                {str(k): str(v) for k, v in headers.items() if k and v is not None}
+            )
+        except Exception:
+            pass
+    base_url = str(openai_auth.get("base_url") or "").strip()
+    if base_url:
+        os.environ["BREADBOARD_OPENAI_AUTH_BASE_URL"] = base_url
 
 
 class AgenticCoder:
     """Simplified agentic coder interface."""
     
-    def __init__(self, config_path: str, workspace_dir: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        config_path: str,
+        workspace_dir: Optional[str] = None,
+        overrides: Optional[Dict[str, Any]] = None,
+        *,
+        force_local_mode: bool = False,
+    ):
         """Initialize the agentic coder with a config file."""
         self.config_path = config_path
         # Load config first so we can honor V2 workspace.root
@@ -72,7 +154,7 @@ class AgenticCoder:
         except Exception:
             pass
         self.agent = None
-        self._local_mode = os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
+        self._local_mode = force_local_mode or os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
         
     def _load_config(self) -> Dict[str, Any]:
         """Load and validate configuration (v2-aware)."""
@@ -213,9 +295,11 @@ class AgenticCoder:
     def _resolve_workspace_path(self) -> Path:
         """Resolve and validate workspace path before any destructive operations.
 
-        Safety rails:
-        - only allow disposable workspaces under repo_root/tmp/...,
-        - refuse `/`, repo root, repo ancestors, `$HOME`, tmp roots, and paths containing `.git`.
+        Acceptance rails:
+        - refuse `/`, `$HOME`, and tmp roots.
+        - allow preserved repo roots and git-backed project workspaces.
+
+        Disposal rails are handled separately; only repo-root/tmp descendants are disposable.
         """
         workspace_path = Path(self.workspace_dir).expanduser()
         if not workspace_path.is_absolute():
@@ -223,10 +307,12 @@ class AgenticCoder:
                 workspace_path = _REPO_ROOT / workspace_path
             else:
                 workspace_path = _REPO_ROOT / "tmp" / workspace_path
-        return assert_disposable_workspace_path(workspace_path, repo_root=_REPO_ROOT)
+        return validate_workspace_path(workspace_path, repo_root=_REPO_ROOT)
 
     def initialize(self) -> None:
         """Initialize the agent with the loaded configuration."""
+        _bootstrap_openai_env_from_local_codex_auth()
+        _bootstrap_openai_env_from_runtime_config(self.config if isinstance(self.config, dict) else None)
         workspace_path = self._resolve_workspace_path()
         self.workspace_dir = str(workspace_path)
         try:
@@ -238,7 +324,11 @@ class AgenticCoder:
         except Exception:
             pass
         preserve_seeded = os.environ.get("PRESERVE_SEEDED_WORKSPACE") in {"1", "true", "True"}
-        if workspace_path.exists() and not preserve_seeded:
+        disposable_workspace = is_disposable_workspace_path(workspace_path, repo_root=_REPO_ROOT)
+        if not disposable_workspace:
+            os.environ.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
+            preserve_seeded = True
+        if workspace_path.exists() and disposable_workspace and not preserve_seeded:
             # Ensure each run starts from a clean clone workspace
             shutil.rmtree(workspace_path)
         workspace_path.mkdir(parents=True, exist_ok=True)
@@ -270,7 +360,14 @@ class AgenticCoder:
                 local_mode=True,
             )
         else:
-            self.agent = OpenAIConductor.remote(
+            runtime_env = {
+                "env_vars": {
+                    key: value
+                    for key in _PROVIDER_ENV_KEYS
+                    if (value := os.environ.get(key))
+                }
+            }
+            self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
                 workspace=self.workspace_dir,
                 config=self.config,
             )
@@ -480,6 +577,17 @@ class AgenticCoder:
             pass
 
 
-def create_agent(config_path: str, workspace_dir: Optional[str] = None, overrides: Optional[Dict[str, Any]] = None) -> AgenticCoder:
+def create_agent(
+    config_path: str,
+    workspace_dir: Optional[str] = None,
+    overrides: Optional[Dict[str, Any]] = None,
+    *,
+    force_local_mode: bool = False,
+) -> AgenticCoder:
     """Convenient factory function to create an agentic coder."""
-    return AgenticCoder(config_path, workspace_dir, overrides=overrides)
+    return AgenticCoder(
+        config_path,
+        workspace_dir,
+        overrides=overrides,
+        force_local_mode=force_local_mode,
+    )

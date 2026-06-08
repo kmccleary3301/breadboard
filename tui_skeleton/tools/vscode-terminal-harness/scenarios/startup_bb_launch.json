@@ -1,0 +1,176 @@
+{
+  "id": "vscode_startup_bb_launch",
+  "terminal": {
+    "initialCols": 110,
+    "initialRows": 34
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_BETA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_BETA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BreadBoard",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "snapshot",
+      "label": "breadboard-startup"
+    },
+    {
+      "kind": "resize",
+      "cols": 92,
+      "rows": 28
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "[ready]"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "harness-resize-probe"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "Type your request",
+          "count": 1
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "[ready]",
+          "count": 1
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "BreadBoard v0.2.0",
+          "count": 1
+        },
+        {
+          "kind": "notContains",
+          "scope": "viewport",
+          "text": "Log · file://"
+        },
+        {
+          "kind": "notContains",
+          "scope": "viewport",
+          "text": "Log link available"
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "label": "after-resize"
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "BB_VSCODE_PRE_ALPHA"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "BB_VSCODE_PRE_BETA"
+    },
+    {
+      "kind": "contains",
+      "scope": "buffer",
+      "text": "BreadBoard"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "[ready]"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "You are Codex"
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "harness-resize-probe"
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "Type your request",
+      "count": 1
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "[ready]",
+      "count": 1
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "BreadBoard v0.2.0",
+      "count": 1
+    },
+    {
+      "kind": "notContains",
+      "scope": "viewport",
+      "text": "Log · file://"
+    },
+    {
+      "kind": "notContains",
+      "scope": "viewport",
+      "text": "Log link available"
+    }
+  ]
+}

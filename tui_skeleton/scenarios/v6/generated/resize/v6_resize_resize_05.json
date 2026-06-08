@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_resize_resize_05",
+  "title": "Generated resize scenario resize_05",
+  "family": "resize",
+  "campaign": "p14-v6-scenario-family-explosion",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# v6_resize_resize_05\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "pre",
+        "text": "BB_V6_RESIZE_RESIZE_05_PRE"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 120,
+      "rows": 36
+    },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "submit",
+      "text": "V6 resize prompt 5"
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "V6 resize response 5 stayed stable after shrink and grow."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "V6 resize response 5 stayed stable after shrink and grow."
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "resize",
+      "cols": 102,
+      "rows": 33,
+      "settleMs": 200
+    },
+    {
+      "kind": "resize",
+      "cols": 120,
+      "rows": 36,
+      "settleMs": 200
+    },
+    {
+      "kind": "checkpoint",
+      "id": "final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    }
+  ],
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 7000000,
+    "maxFrames": 1500,
+    "maxStateDumps": 2500
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "not-required"
+  },
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  }
+}

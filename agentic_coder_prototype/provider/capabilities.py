@@ -16,6 +16,13 @@ class ProviderCapabilities:
 
 
 CAPABILITY_MATRIX: Dict[str, ProviderCapabilities] = {
+    "codex": ProviderCapabilities(
+        tool_calls="parallel",
+        streaming="event_deltas",
+        json_mode="best_effort",
+        reasoning="summary",
+        caching="implicit",
+    ),
     "openai": ProviderCapabilities(
         tool_calls="parallel",
         streaming="text_deltas",
@@ -45,4 +52,3 @@ CAPABILITY_MATRIX: Dict[str, ProviderCapabilities] = {
         caching="none",
     ),
 }
-

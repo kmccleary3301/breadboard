@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_modal_modal_09",
+  "title": "Generated modal scenario modal_09",
+  "family": "modal",
+  "campaign": "p14-v6-scenario-family-explosion",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# v6_modal_modal_09\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "pre",
+        "text": "BB_V6_MODAL_MODAL_09_PRE"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 82,
+      "rows": 32
+    },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "open",
+      "surface": "slash"
+    },
+    {
+      "kind": "wait",
+      "ms": 250
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "submit",
+      "text": "V6 modal prompt 9"
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "V6 modal response 9 completed after focus recovery."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "wait",
+      "ms": 500
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "V6 modal response 9 completed after focus recovery."
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "resize",
+      "cols": 64,
+      "rows": 29,
+      "settleMs": 200
+    },
+    {
+      "kind": "resize",
+      "cols": 82,
+      "rows": 32,
+      "settleMs": 200
+    },
+    {
+      "kind": "checkpoint",
+      "id": "final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "MODAL-OPEN-CONFIRMED",
+      "severity": "blocker"
+    },
+    {
+      "id": "MODAL-FOCUS-RETURNS-TO-COMPOSER",
+      "severity": "blocker"
+    }
+  ],
+  "actionRequirements": {
+    "modalOpened": "required",
+    "focusReturned": "required"
+  },
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 7000000,
+    "maxFrames": 1500,
+    "maxStateDumps": 2500
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "not-required"
+  },
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  }
+}

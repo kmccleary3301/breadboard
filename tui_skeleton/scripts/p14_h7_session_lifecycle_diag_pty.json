@@ -1,0 +1,14 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 20000 },
+  { "action": "snapshot", "label": "startup", "mode": "frame", "maxLines": 80 },
+  { "action": "type", "text": "/clear", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 1000 },
+  { "action": "snapshot", "label": "after-clear", "mode": "frame", "maxLines": 100 },
+  { "action": "type", "text": "/new", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 8000 },
+  { "action": "snapshot", "label": "after-new-8s", "mode": "frame", "maxLines": 120 },
+  { "action": "wait", "ms": 12000 },
+  { "action": "snapshot", "label": "after-new-20s", "mode": "frame", "maxLines": 120 }
+]

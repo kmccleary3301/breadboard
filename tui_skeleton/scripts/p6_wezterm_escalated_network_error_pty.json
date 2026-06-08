@@ -1,0 +1,12 @@
+[
+  { "action": "waitForState", "timeoutMs": 15000, "pendingResponse": false },
+  { "action": "snapshot", "label": "startup" },
+  { "action": "type", "text": "Trigger network error mock." },
+  { "action": "press", "key": "enter" },
+  { "action": "waitForState", "timeoutMs": 8000, "fresh": true, "pendingResponse": true, "conversationCountAtLeast": 2, "lastConversationSpeaker": "assistant" },
+  { "action": "snapshot", "label": "network-streaming" },
+  { "action": "waitForState", "timeoutMs": 12000, "pendingResponse": true, "statusIncludes": "Reconnecting", "conversationCountAtLeast": 2, "lastConversationSpeaker": "assistant" },
+  { "action": "snapshot", "label": "network-reconnecting" },
+  { "action": "waitForState", "timeoutMs": 12000, "pendingResponse": false, "statusIncludes": "Disconnected", "conversationCountAtLeast": 2, "lastConversationSpeaker": "assistant" },
+  { "action": "snapshot", "label": "network-disconnected" }
+]

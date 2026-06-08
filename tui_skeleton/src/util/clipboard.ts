@@ -9,6 +9,7 @@ const execFileAsync = promisify(execFile)
 const COMMAND_TIMEOUT_MS = 2_500
 const MAX_BUFFER = 10 * 1024 * 1024
 const FAKE_ENV = "BREADBOARD_FAKE_CLIPBOARD"
+const FAKE_WRITE_PATH_ENV = "BREADBOARD_FAKE_CLIPBOARD_WRITE_PATH"
 
 export interface ClipboardImage {
   readonly kind: "image"
@@ -174,4 +175,23 @@ export const readClipboardContent = async (): Promise<ClipboardContent | undefin
     return { kind: "text", text }
   }
   return undefined
+}
+
+export const writeClipboardText = async (text: string): Promise<{ ok: boolean; method: string; error?: string }> => {
+  const fakeWritePath = process.env[FAKE_WRITE_PATH_ENV]
+  if (fakeWritePath) {
+    try {
+      await fs.mkdir(path.dirname(fakeWritePath), { recursive: true })
+      await fs.writeFile(fakeWritePath, text, "utf8")
+      return { ok: true, method: "fake-file" }
+    } catch (error) {
+      return { ok: false, method: "fake-file", error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+  try {
+    await clipboardy.write(text)
+    return { ok: true, method: "clipboardy" }
+  } catch (error) {
+    return { ok: false, method: "clipboardy", error: error instanceof Error ? error.message : String(error) }
+  }
 }

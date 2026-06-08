@@ -1,0 +1,50 @@
+{
+  "id": "vscode_v6_live_multiturn_stability",
+  "terminal": { "initialCols": 132, "initialRows": 40 },
+  "v6": {
+    "expectedFinalMode": "repl",
+    "maxProviderWarningCount": 0,
+    "minScreenshotCount": 7,
+    "requiresStableViewport": true,
+    "forbiddenVisibleText": [
+      "Provider openrouter",
+      "response.keep_alive",
+      "response.created",
+      "Streaming fallback active"
+    ]
+  },
+  "steps": [
+    { "kind": "write", "text": "mkdir -p docs src && printf '# V6 live stability workspace\\n' > README.md && printf 'alpha\\nbeta\\ngamma\\n' > docs/list.txt\r" },
+    { "kind": "sleep", "ms": 500 },
+    { "kind": "write", "text": "bb\r" },
+    { "kind": "waitForText", "text": "Type your request", "timeoutMs": 25000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 800, "timeoutMs": 10000 },
+    { "kind": "screenshot", "label": "00-startup" },
+    { "kind": "write", "text": "V6 live turn one. Do not use tools. Reply with exactly this token on its own line and nothing else: V6_TURN_ONE_OK.\r" },
+    { "kind": "sleep", "ms": 2500 },
+    { "kind": "screenshot", "label": "01-turn-one-active" },
+    { "kind": "waitForState", "pendingResponse": false, "conversationCountAtLeast": 2, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "V6_TURN_ONE_OK", "timeoutMs": 120000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 1200, "timeoutMs": 20000 },
+    { "kind": "screenshot", "label": "02-turn-one-final" },
+    { "kind": "resize", "cols": 76, "rows": 24, "settleMs": 1000 },
+    { "kind": "screenshot", "label": "03-turn-one-narrow" },
+    { "kind": "resize", "cols": 140, "rows": 42, "settleMs": 1000 },
+    { "kind": "write", "text": "V6 live turn two. Do not use tools. Produce a markdown table with columns Item and Status, exactly three rows, then include token V6_TURN_TWO_OK.\r" },
+    { "kind": "sleep", "ms": 2500 },
+    { "kind": "screenshot", "label": "04-turn-two-active" },
+    { "kind": "waitForState", "pendingResponse": false, "conversationCountAtLeast": 4, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final", "lastConversationPreviewIncludes": "V6_TURN_TWO_OK", "timeoutMs": 120000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 1200, "timeoutMs": 20000 },
+    { "kind": "screenshot", "label": "05-turn-two-final" },
+    { "kind": "resize", "cols": 70, "rows": 22, "settleMs": 1000 },
+    { "kind": "screenshot", "label": "06-turn-two-very-narrow" },
+    { "kind": "resize", "cols": 132, "rows": 40, "settleMs": 1000 },
+    { "kind": "write", "text": "/transcript\r" },
+    { "kind": "waitForText", "text": "breadboard transcript viewer", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 800, "timeoutMs": 10000 },
+    { "kind": "screenshot", "label": "07-transcript-after-two-turns" },
+    { "kind": "key", "key": "escape" },
+    { "kind": "waitForText", "text": "Type your request", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "exportBreadBoardState", "label": "v6-live-multiturn-state" },
+    { "kind": "terminate" }
+  ]
+}

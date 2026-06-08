@@ -21,15 +21,18 @@ const main = async () => {
 
   const requiredPresence: Array<{ label: string; pattern: RegExp }> = [
     { label: "landing header", pattern: /BreadBoard v(?:0\.2\.0|0\.0\.0a)/g },
-    { label: "landing tips", pattern: /Tips for getting started/g },
-    { label: "landing activity", pattern: /Recent activity/g },
-    { label: "landing config row", pattern: /Config:/g },
+    { label: "landing config row", pattern: /Using Config `[^`]+`/g },
+    { label: "landing model row", pattern: /gpt-[^\s]+ · Codex/g },
+    { label: "landing workspace row", pattern: /\/shared_folders\/querylake_server\/ray_testing\/ray_SCE/g },
   ]
 
   for (const check of requiredPresence) {
     const count = countMatches(body, check.pattern)
     if (count < 1) {
       failures.push(`expected at least 1 ${check.label} block in history, found ${count}`)
+    }
+    if (count > 1) {
+      failures.push(`expected <=1 ${check.label} block in history under resize churn, found ${count}`)
     }
   }
 
@@ -38,9 +41,9 @@ const main = async () => {
     failures.push(`expected <=60 footer echoes in history under resize churn, found ${footerCount}`)
   }
 
-  const promptCount = countMatches(body, /Try "refactor <filepath>"/g)
-  if (promptCount > 45) {
-    failures.push(`expected <=45 prompt echoes in history under resize churn, found ${promptCount}`)
+  const footerShortcutCount = countMatches(body, /\? shortcuts/g)
+  if (footerShortcutCount > 45) {
+    failures.push(`expected <=45 footer shortcut echoes in history under resize churn, found ${footerShortcutCount}`)
   }
 
   if (failures.length > 0) {

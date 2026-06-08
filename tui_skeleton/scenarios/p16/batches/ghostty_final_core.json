@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "p16_ghostty_final_core",
+  "campaign": "p16-terminal-host-universality",
+  "scenarios": [
+    { "path": "scenarios/v6/smoke/v6_structural_scrollback_smoke.json", "lane": "ghostty" },
+    { "path": "scenarios/v6/generated/scrollback/v6_scrollback_scrollback_01.json", "lane": "ghostty" },
+    { "path": "scenarios/v6/generated/tool/v6_tool_tool_01.json", "lane": "ghostty" },
+    { "path": "scenarios/v6/generated/modal/v6_modal_modal_01.json", "lane": "ghostty" },
+    { "path": "scenarios/v6/generated/resize/v6_resize_resize_01.json", "lane": "ghostty" },
+    { "path": "scenarios/v6/generated/lifecycle/v6_lifecycle_lifecycle_01.json", "lane": "ghostty" }
+  ]
+}

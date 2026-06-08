@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "p16_performance_long_session",
+  "campaign": "p16-long-live-autonomy-performance-accessibility-config",
+  "scenarios": [
+    "scenarios/deep/perf_100_turn_windowing.json",
+    "scenarios/deep/long_50_turn_resize_churn.json",
+    "scenarios/deep/mixed_20_markdown_resize.json",
+    "scenarios/deep/mixed_20_turn_tool_modal.json",
+    "scenarios/tool/tool_diff_approval_resize.json"
+  ]
+}

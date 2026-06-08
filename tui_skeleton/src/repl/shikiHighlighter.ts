@@ -48,6 +48,7 @@ let lastError: string | null = null
 let currentTheme = DEFAULT_SHIKI_THEME
 const listeners = new Set<() => void>()
 const languageLoads = new Map<string, Promise<void>>()
+const unsupportedLanguages = new Set<string>()
 
 const notify = () => {
   for (const listener of listeners) {
@@ -77,6 +78,7 @@ export const configureShikiTheme = (theme: string | undefined | null): void => {
   highlighter = null
   loadPromise = null
   languageLoads.clear()
+  unsupportedLanguages.clear()
   lastError = null
   status = "idle"
   ensureShikiLoaded()
@@ -122,16 +124,24 @@ const normalizeLang = (lang?: string): string | null => {
 const requestLanguage = (lang: ShikiLoadLanguage): void => {
   if (!highlighter) return
   if (typeof lang !== "string") return
-  if (highlighter.getLanguage(lang)) return
+  if (unsupportedLanguages.has(lang)) return
+  try {
+    if (highlighter.getLanguage(lang)) return
+  } catch {
+    unsupportedLanguages.add(lang)
+    return
+  }
   if (languageLoads.has(lang)) return
   const promise = highlighter
     .loadLanguage(lang)
     .then(() => {
       languageLoads.delete(lang)
+      unsupportedLanguages.delete(lang)
       notify()
     })
     .catch(() => {
       languageLoads.delete(lang)
+      unsupportedLanguages.add(lang)
       notify()
     })
   languageLoads.set(lang, promise)
@@ -152,6 +162,7 @@ const tokensToAnsiLines = (tokenLines: ShikiToken[][]): string[] =>
 export const maybeHighlightCode = (code: string, lang?: string): string[] | null => {
   const normalized = normalizeLang(lang)
   if (!normalized) return null
+  if (unsupportedLanguages.has(normalized)) return null
   if (code.length > MAX_SHIKI_CHARS) return null
   const lines = code.split(/\r?\n/)
   if (lines.length > MAX_SHIKI_LINES) return null
@@ -163,13 +174,25 @@ export const maybeHighlightCode = (code: string, lang?: string): string[] | null
 
   if (!highlighter) return null
 
-  const resolved = highlighter.resolveLangAlias(normalized)
-  const langId = resolved ?? normalized
-  if (!highlighter.getLanguage(langId)) {
-    requestLanguage(langId as ShikiLoadLanguage)
+  try {
+    const resolved = highlighter.resolveLangAlias(normalized)
+    const langId = resolved ?? normalized
+    let loaded = false
+    try {
+      loaded = Boolean(highlighter.getLanguage(langId))
+    } catch {
+      unsupportedLanguages.add(langId)
+      return null
+    }
+    if (!loaded) {
+      requestLanguage(langId as ShikiLoadLanguage)
+      return null
+    }
+
+    const result = highlighter.codeToTokens(code, { lang: langId as ShikiLang, theme: currentTheme })
+    return tokensToAnsiLines(result.tokens as ShikiToken[][])
+  } catch {
+    unsupportedLanguages.add(normalized)
     return null
   }
-
-  const result = highlighter.codeToTokens(code, { lang: langId as ShikiLang, theme: currentTheme })
-  return tokensToAnsiLines(result.tokens as ShikiToken[][])
 }
