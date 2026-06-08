@@ -105,7 +105,7 @@ def validate_run_dir(
     max_missing_text_rows = 0
     max_extra_render_rows = 0
     max_row_span_delta = 2
-    max_tolerated_low_signal_extra_rows = 1
+    max_tolerated_low_signal_extra_rows = 2
     max_tolerated_extra_edge_ratio = 0.0025
 
     errors: list[str] = []

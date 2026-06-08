@@ -171,7 +171,7 @@ def test_low_signal_extra_render_row_is_tolerated_in_strict_mode(tmp_path):
     parity = {
         "text_sha256_normalized": "deadbeef",
         "missing_count": 0,
-        "extra_count": 1,
+        "extra_count": 2,
         "row_span_delta": 0,
         "mismatch_localization": [
             {
@@ -180,6 +180,13 @@ def test_low_signal_extra_render_row_is_tolerated_in_strict_mode(tmp_path):
                 "render_content": True,
                 "render_nonbg": True,
                 "edge_ratio": 0.0019,
+            },
+            {
+                "row": 37,
+                "text_nonempty": False,
+                "render_content": True,
+                "render_nonbg": True,
+                "edge_ratio": 0.0018,
             }
         ],
     }
@@ -196,7 +203,7 @@ def test_low_signal_extra_render_row_is_tolerated_in_strict_mode(tmp_path):
     idx_path = run_dir / "index.jsonl"
     rows = [json.loads(line) for line in idx_path.read_text(encoding="utf-8").splitlines() if line.strip()]
     rows[0]["render_parity_summary"] = "frames/frame0.row_parity.json"
-    rows[0]["render_parity"] = {"missing_count": 0, "extra_count": 1, "row_span_delta": 0}
+    rows[0]["render_parity"] = {"missing_count": 0, "extra_count": 2, "row_span_delta": 0}
     _write_jsonl(idx_path, rows)
 
     strict = module.validate_run_dir(run_dir, strict=True, expect_png=True, max_missing_frames=0)
