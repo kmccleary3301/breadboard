@@ -1,0 +1,31 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "mock markdown wrapper render" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "assistant.message.start", "payload": { "message_id": "markdown-wrapper", "channel": "text", "format": "markdown" }, "turn": 1 } },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": {
+        "message_id": "markdown-wrapper",
+        "delta": "```markdown\n# Sample Markdown\n\n## Section Heading\n- **Bullet** item one\n- *Italic* item two\n> A blockquote for emphasis.\n\n```python\ndef greet(name):\n    return f\"Hello, {name}!\"\n```\n```\n"
+      },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 120,
+    "event": {
+      "type": "assistant_message",
+      "payload": {
+        "text": "```markdown\n# Sample Markdown\n\n## Section Heading\n- **Bullet** item one\n- *Italic* item two\n> A blockquote for emphasis.\n\n```python\ndef greet(name):\n    return f\"Hello, {name}!\"\n```\n```\n",
+        "message": {
+          "role": "assistant",
+          "content": "```markdown\n# Sample Markdown\n\n## Section Heading\n- **Bullet** item one\n- *Italic* item two\n> A blockquote for emphasis.\n\n```python\ndef greet(name):\n    return f\"Hello, {name}!\"\n```\n```\n"
+        }
+      },
+      "turn": 1
+    }
+  },
+  { "delayMs": 120, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock-markdown-wrapper" } }, "turn": 1 } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 6 }, "turn": 1 } }
+]
