@@ -59,12 +59,16 @@
     "semantic_timeout": 8,
     "semantic_fail_fast": true,
     "must_contain": [
-      "shortcuts"
+      "Alt buffer replay ready."
     ],
     "must_not_contain": [
       "[error] replay fixture not found",
       "Cannot read properties of undefined (reading 'length')",
       "UnhandledPromiseRejection"
+    ],
+    "must_contain_any": [
+      "enter send",
+      "[ready]"
     ]
   }
 ]
