@@ -3,8 +3,14 @@
     "type": "startup_preflight",
     "timeout": 20,
     "interval": 0.3,
-    "ready_tokens": ["shortcuts"],
-    "kick_keys": ["Escape"],
+    "ready_tokens": [
+      "[ready]",
+      "enter send",
+      "Type your request"
+    ],
+    "kick_keys": [
+      "Escape"
+    ],
     "kick_every_polls": 1
   },
   {

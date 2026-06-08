@@ -70,8 +70,7 @@ const requirePromptPresentOnce = (body: string, prompt: string, label: string, a
   }
 }
 
-const run = async () => {
-  const { caseDir } = parseArgs()
+export const evaluateMaintenanceWrapperMultiturnOrdering = async (caseDir: string): Promise<LayoutAnomaly[]> => {
   const raw = await fs.readFile(path.join(caseDir, "pty_snapshots.txt"), "utf8")
   const snapshots = parseSnapshots(raw)
   const anomalies: LayoutAnomaly[] = []
@@ -96,10 +95,18 @@ const run = async () => {
     }
   }
 
+  return anomalies
+}
+
+const run = async () => {
+  const { caseDir } = parseArgs()
+  const anomalies = await evaluateMaintenanceWrapperMultiturnOrdering(caseDir)
   process.stdout.write(`${JSON.stringify(anomalies, null, 2)}\n`)
 }
 
-void run().catch((error) => {
-  console.error((error as Error).message)
-  process.exit(1)
-})
+if (import.meta.url === new URL(process.argv[1] ?? "", "file:").href) {
+  void run().catch((error) => {
+    console.error((error as Error).message)
+    process.exit(1)
+  })
+}

@@ -5,8 +5,6 @@ import { Effect, Layer, Context } from "effect"
 import { loadUserConfigSync } from "./userConfig.js"
 import { loadRepoDotenv } from "./runtimePaths.js"
 
-loadRepoDotenv()
-
 export interface AppConfig {
   readonly baseUrl: string
   readonly authToken: string | undefined
@@ -36,6 +34,7 @@ const resolveCachePath = (): string => {
 }
 
 const computeConfig = (): AppConfig => {
+  loadRepoDotenv()
   const userConfig = loadUserConfigSync()
   const baseUrl = process.env.BREADBOARD_API_URL?.trim() || userConfig.baseUrl || DEFAULT_BASE_URL
   const authToken = process.env.BREADBOARD_API_TOKEN?.trim() || userConfig.authToken

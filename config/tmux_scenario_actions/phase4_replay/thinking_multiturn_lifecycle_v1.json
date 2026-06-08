@@ -3,8 +3,14 @@
     "type": "startup_preflight",
     "timeout": 20,
     "interval": 0.3,
-    "ready_tokens": ["shortcuts"],
-    "kick_keys": ["Escape"],
+    "ready_tokens": [
+      "[ready]",
+      "enter send",
+      "Type your request"
+    ],
+    "kick_keys": [
+      "Escape"
+    ],
     "kick_every_polls": 1
   },
   {
@@ -16,17 +22,23 @@
   },
   {
     "type": "wait_until",
-    "contains": ["[task tree] thinking"],
+    "contains": [
+      "[task tree] thinking"
+    ],
     "timeout": 30
   },
   {
     "type": "wait_until",
-    "contains": ["Turn one complete."],
+    "contains": [
+      "Turn one complete."
+    ],
     "timeout": 45
   },
   {
     "type": "wait_until",
-    "contains": ["Turn two complete and stable."],
+    "contains": [
+      "Turn two complete and stable."
+    ],
     "timeout": 60
   },
   {
