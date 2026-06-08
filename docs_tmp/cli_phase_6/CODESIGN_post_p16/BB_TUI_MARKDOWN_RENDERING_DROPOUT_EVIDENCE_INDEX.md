@@ -3,6 +3,8 @@
 Date: 2026-06-08
 Branch: `codex/markdown-dropout-goal-20260608`
 Implementation commit: `3982004` (`Harden markdown dropout QC gates`)
+Evidence commit: `e5c427c` (`Document markdown dropout validation evidence`)
+Remote branch: `github/codex/markdown-dropout-goal-20260608`
 Baseline: `github/main` after PR #25 (`e14f3a5`)
 
 ## Defect Classes Covered
@@ -84,4 +86,4 @@ The gate intentionally allows `code · python` labels for real nested code block
 - Phase E: PTY frame/history snapshots prove terminal-visible behavior for the relevant lanes.
 - Phase F: model/session payload gate proves `openai/gpt-5.4-mini` at visible and wire levels.
 - Phase G: clean projection-layer fix implemented and validated.
-- Phase H: this evidence index records commands, artifacts, results, residual risks, and commit hash.
+- Phase H: this evidence index records commands, artifacts, results, residual risks, implementation commit hash, and evidence commit hash.
