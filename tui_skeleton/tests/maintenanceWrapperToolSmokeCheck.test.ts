@@ -12,7 +12,7 @@ const runCheck = async (snapshots: string, replState: string): Promise<unknown[]
   await fs.writeFile(path.join(caseDir, "repl_state.ndjson"), replState, "utf8")
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
-      const child = spawn("pnpm", ["exec", "tsx", "tools/assertions/maintenanceWrapperToolSmokeCheck.ts", "--case-dir", caseDir], {
+      const child = spawn(process.execPath, ["--import", "tsx", "tools/assertions/maintenanceWrapperToolSmokeCheck.ts", "--case-dir", caseDir], {
         cwd: ROOT_DIR,
         stdio: ["ignore", "pipe", "pipe"],
       })

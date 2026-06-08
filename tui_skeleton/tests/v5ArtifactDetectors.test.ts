@@ -7,14 +7,6 @@ import os from 'node:os'
 const require = createRequire(import.meta.url)
 const { analyzeArtifactRun } = require('../tools/vscode-terminal-harness/src/v5ArtifactDetectors.cjs')
 
-const deepQcRoot = path.resolve(
-  __dirname,
-  '../../docs_tmp/cli_phase_6/CODESIGN_p14/implementation_validation_v4/deep_manual_qc_20260519/artifacts',
-)
-
-const run = (name: string) => path.join(deepQcRoot, name)
-const kinds = (name: string) => new Set(analyzeArtifactRun(run(name)).findings.map((finding: { kind: string }) => finding.kind))
-
 const makeSyntheticRun = (files: Record<string, string>, scenario: Record<string, unknown> = {}) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bb-v5-detector-'))
   const artifactDir = path.join(dir, 'artifacts')
@@ -24,6 +16,8 @@ const makeSyntheticRun = (files: Record<string, string>, scenario: Record<string
   fs.writeFileSync(path.join(artifactDir, 'pty_raw.ansi'), files['pty_raw.ansi'] ?? '')
   fs.writeFileSync(path.join(artifactDir, 'scrollback_final.txt'), files['scrollback_final.txt'] ?? '')
   fs.writeFileSync(path.join(artifactDir, 'viewport_final.txt'), files['viewport_final.txt'] ?? '')
+  fs.writeFileSync(path.join(artifactDir, 'input_log.ndjson'), files['input_log.ndjson'] ?? '')
+  fs.writeFileSync(path.join(artifactDir, 'verdict.json'), files['verdict.json'] ?? '{}')
   fs.writeFileSync(path.join(artifactDir, 'breadboard_artifacts', 'repl_state.ndjson'), files['repl_state.ndjson'] ?? '')
   for (const [name, content] of Object.entries(files)) {
     if (name.startsWith('screenshots/')) {
@@ -33,13 +27,25 @@ const makeSyntheticRun = (files: Record<string, string>, scenario: Record<string
   return dir
 }
 
+const syntheticKinds = (files: Record<string, string>, scenario: Record<string, unknown> = {}) => {
+  const dir = makeSyntheticRun(files, scenario)
+  return new Set(analyzeArtifactRun(dir).findings.map((finding: { kind: string }) => finding.kind))
+}
+
 describe('P14 V5 artifact defect detectors', () => {
   test('detects stale default session/context continuation responses', () => {
-    expect(kinds('vscode_harness_smoke_20260519-153510-3112588-17889')).toContain('stale-context-continuation-response')
+    expect(syntheticKinds({ 'viewport_final.txt': "I'm ready to continue with the previous task." })).toContain(
+      'stale-context-continuation-response',
+    )
   })
 
   test('detects overlay screenshot blind spots, paste marker leakage, resume spam, and queue redraw spam', () => {
-    const findingKinds = kinds('vscode_harness_smoke_20260519-153241-3109497-8609')
+    const findingKinds = syntheticKinds({
+      'pty_raw.ansi': `${'Queued prompt\n'.repeat(101)}`,
+      'viewport_final.txt': '[200~ pasted text [201~\nPermission command surface is deferred\n',
+      'screenshots/01-models-open.txt': '',
+      'screenshots/02-resume-open.txt': `${'session — running\n'.repeat(10)}`,
+    })
     expect(findingKinds).toContain('blank-overlay-screenshot')
     expect(findingKinds).toContain('visible-bracketed-paste-marker')
     expect(findingKinds).toContain('resume-stale-running-spam')
@@ -48,11 +54,26 @@ describe('P14 V5 artifact defect detectors', () => {
   })
 
   test('detects modal/input target ambiguity from a failed post-overlay sentinel prompt', () => {
-    expect(kinds('vscode_harness_smoke_20260519-152922-3105979-12381')).toContain('modal-input-target-ambiguous')
+    expect(
+      syntheticKinds(
+        {
+          'verdict.json': JSON.stringify({ ok: false, missing: 'BB_DEEP_MARKDOWN_OK' }),
+        },
+        {
+          steps: [{ text: '/usage' }, { text: 'Reply with BB_DEEP_MARKDOWN_OK' }],
+        },
+      ),
+    ).toContain('modal-input-target-ambiguous')
   })
 
   test('detects readable transcript pollution, duplicate headers, and clear ambiguity', () => {
-    const findingKinds = kinds('vscode_harness_smoke_20260519-154232-3121407-15939')
+    const findingKinds = syntheticKinds({
+      'pty_raw.ansi': '/clear',
+      'scrollback_final.txt': 'Transcript saved\n/tmp/breadboard-transcript.txt\n',
+      'viewport_final.txt': 'Status [raw] {"event":"debug"}\n',
+      'screenshots/01-duplicate-header.txt': 'BreadBoard v0.2.0\nBreadBoard v0.2.0\n',
+      'screenshots/02-after-clear.txt': 'BreadBoard v0.2.0\ncheckpoint_list\n❯ Type your request…\n',
+    })
     expect(findingKinds).toContain('duplicate-landing-header')
     expect(findingKinds).toContain('raw-diagnostic-readable-leak')
     expect(findingKinds).toContain('transcript-saved-path-leak')
@@ -60,7 +81,44 @@ describe('P14 V5 artifact defect detectors', () => {
   })
 
   test('detects stop/retry, assistant/tool role, and tool-loop status contradictions in green-verdict artifacts', () => {
-    const findingKinds = kinds('vscode_harness_smoke_20260519-153820-3116936-14905')
+    const findingKinds = syntheticKinds({
+      'viewport_final.txt': [
+        '☐ pending',
+        'Resubmitting prompt #1',
+        'Write a slow response that counts',
+        'Write a slow response that counts',
+        'BBDEEPMARKDOWNOK',
+        '● Tool',
+        'max_steps_exhausted',
+        'Done.',
+      ].join('\n'),
+      'repl_state.ndjson': `${JSON.stringify({
+        state: {
+          transcriptCells: [
+            {
+              id: 'msg:prompt',
+              role: 'user-request',
+              textPreview: 'Reply with the single word formed by joining BB, DEEP, MARKDOWN, and OK.',
+            },
+            {
+              id: 'tool:routed',
+              role: 'tool-result',
+              textPreview: 'BBDEEPMARKDOWNOK',
+            },
+            {
+              id: 'msg:done',
+              role: 'assistant-message',
+              textPreview: 'Done.',
+            },
+            {
+              id: 'sys:max',
+              role: 'system',
+              textPreview: 'max_steps_exhausted',
+            },
+          ],
+        },
+      })}\n`,
+    })
     expect(findingKinds).toContain('stale-pending-row')
     expect(findingKinds).toContain('retry-duplicate-transcript-state')
     expect(findingKinds).toContain('assistant-response-rendered-as-tool')

@@ -11,7 +11,7 @@ const runCheck = async (snapshots: string): Promise<unknown[]> => {
   await fs.writeFile(path.join(caseDir, "pty_snapshots.txt"), snapshots, "utf8")
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
-      const child = spawn("pnpm", ["exec", "tsx", "tools/assertions/maintenanceWrapperMultiturnOrderingCheck.ts", "--case-dir", caseDir], {
+      const child = spawn(process.execPath, ["--import", "tsx", "tools/assertions/maintenanceWrapperMultiturnOrderingCheck.ts", "--case-dir", caseDir], {
         cwd: ROOT_DIR,
         stdio: ["ignore", "pipe", "pipe"],
       })
