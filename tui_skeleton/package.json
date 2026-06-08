@@ -162,6 +162,7 @@
     "@effect/printer": "^0.45.0",
     "@effect/printer-ansi": "^0.45.0",
     "@stream-mdx/core": "^0.5.0",
+    "@stream-mdx/tui": "^0.5.0",
     "@stream-mdx/worker": "^0.5.0",
     "@types/node": "^24.2.1",
     "chalk": "^5.3.0",

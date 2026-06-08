@@ -1,6 +1,7 @@
 import type { Worker } from "node:worker_threads"
 import type { Block, WorkerIn, WorkerOut, Patch } from "@stream-mdx/core/types"
-import { applyPatchBatch, createInitialSnapshot, type DocumentSnapshot } from "@stream-mdx/core"
+import { createSnapshotStore, type StreamMdxSnapshotStore } from "@stream-mdx/tui"
+import type { DocumentSnapshot } from "@stream-mdx/core"
 import { createMarkdownWorkerThread, type MarkdownThreadOptions } from "./workerThread.js"
 
 type Listener = (blocks: ReadonlyArray<Block>, meta?: { finalized?: boolean; error?: string | null }) => void
@@ -155,7 +156,7 @@ export class MarkdownStreamer {
   private readonly docPlugins?: MarkdownStreamerOptions["docPlugins"]
   private readonly workerOptions?: MarkdownThreadOptions
   private worker: Worker | null = null
-  private snapshot: DocumentSnapshot = createInitialSnapshot()
+  private store: StreamMdxSnapshotStore = createSnapshotStore()
   private pendingChunks: string[] = []
   private pendingFinalize = false
   private ready = false
@@ -181,7 +182,7 @@ export class MarkdownStreamer {
 
   initialize(initialContent = ""): void {
     if (this.disposed) return
-    this.snapshot = createInitialSnapshot()
+    this.store = createSnapshotStore()
     this.ready = false
     this.pendingFinalize = false
     this.finalized = false
@@ -284,7 +285,7 @@ export class MarkdownStreamer {
     switch (message.type) {
       case "INITIALIZED": {
         this.ready = true
-        this.snapshot = createInitialSnapshot(message.blocks)
+        this.store.setSnapshot(message.blocks)
         if (this.pendingChunks.length > 0) {
           for (const chunk of this.pendingChunks.splice(0)) {
             this.worker?.postMessage({ type: "APPEND", text: chunk } satisfies WorkerIn)
@@ -298,12 +299,12 @@ export class MarkdownStreamer {
         break
       }
       case "PATCH": {
-        applyPatchBatch(this.snapshot, message.patches as Patch[])
+        this.store.applyPatches(message.patches as Patch[])
         this.emit(false)
         break
       }
       case "RESET": {
-        this.snapshot = createInitialSnapshot()
+        this.store = createSnapshotStore()
         this.ready = false
         this.emit(false)
         break
@@ -323,7 +324,8 @@ export class MarkdownStreamer {
     if (this.inlineMode || !this.worker) {
       return buildInlineBlocks(this.inlineBuffer, this.finalized || this.errored != null)
     }
-    return attachCodeLineMeta(this.snapshot, this.snapshot.blocks)
+    const snapshot = this.store.getSnapshot() as DocumentSnapshot
+    return attachCodeLineMeta(snapshot, this.store.getBlocks())
   }
 
   private emit(finalized: boolean): void {
