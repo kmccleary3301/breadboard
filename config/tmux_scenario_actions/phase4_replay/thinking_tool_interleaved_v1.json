@@ -20,6 +20,10 @@
     "timeout": 30
   },
   {
+    "type": "sleep",
+    "seconds": 0.9
+  },
+  {
     "type": "wait_until",
     "contains": ["Write(src/main.ts)"],
     "timeout": 45
