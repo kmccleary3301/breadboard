@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events"
 import { promises as fs } from "node:fs"
 import path from "node:path"
+import YAML from "yaml"
 import type { Block } from "@stream-mdx/core/types"
 import type { MarkdownStreamer } from "../../markdown/streamer.js"
 import type {
@@ -120,6 +121,29 @@ export interface ReplControllerOptions {
   readonly todoAutoFollowHysteresisMs?: number
   readonly todoAutoFollowManualOverrideMs?: number
   readonly clock?: UIClock
+}
+
+const resolveConfigDefaultModel = async (configPath?: string | null): Promise<string | null> => {
+  if (!configPath) return null
+  try {
+    const raw = await fs.readFile(configPath, "utf8")
+    const parsed = YAML.parse(raw) as unknown
+    if (!parsed || typeof parsed !== "object") return null
+    const providers = (parsed as { providers?: unknown }).providers
+    if (!providers || typeof providers !== "object") return null
+    const value = (providers as { default_model?: unknown }).default_model
+    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null
+  } catch {
+    return null
+  }
+}
+
+const resolveEffectiveRequestedModel = async (
+  config: { model?: string | null; configPath?: string | null },
+): Promise<string> => {
+  const cliModel = config.model?.trim()
+  if (cliModel) return cliModel
+  return (await resolveConfigDefaultModel(config.configPath)) ?? DEFAULT_MODEL_ID
 }
 
 export interface CompletionView {
@@ -588,8 +612,8 @@ export class ReplSessionController extends EventEmitter {
     this.todoScopeLastUpdateKey = null
     this.todoScopeLastUpdateAt = null
     this.activity = createActivitySnapshot("session")
-    const requestedModel = this.config.model?.trim()
-    const modelLabel = requestedModel ?? this.stats.model
+    const requestedModel = await resolveEffectiveRequestedModel(this.config)
+    const modelLabel = requestedModel || this.stats.model
     this.stats.model = modelLabel
     this.resolveProviderCapabilitiesSnapshot(modelLabel)
     const remotePreference = this.config.remotePreference ?? appConfig.remoteStreamDefault
@@ -616,10 +640,8 @@ export class ReplSessionController extends EventEmitter {
         overrides["permissions.webfetch.default"] ??= "ask"
       }
     }
-    if (requestedModel) {
-      metadata.model = requestedModel
-      overrides["providers.default_model"] = requestedModel
-    }
+    metadata.model = requestedModel
+    overrides["providers.default_model"] = requestedModel
     if (remotePreference) {
       metadata.enable_remote_stream = true
     }
@@ -636,7 +658,7 @@ export class ReplSessionController extends EventEmitter {
     this.sessionId = session.session_id
     try {
       const summary = await this.api().getSession(this.sessionId)
-      if (summary?.model && typeof summary.model === "string") {
+      if (!requestedModel && summary?.model && typeof summary.model === "string") {
         this.stats.model = summary.model
         this.resolveProviderCapabilitiesSnapshot(summary.model)
       }
@@ -692,7 +714,7 @@ export class ReplSessionController extends EventEmitter {
     const preserveLocalTranscript = options.preserveLocalTranscript === true
     if (!preserveLocalTranscript && (this.conversation.length > 0 || this.toolEvents.length > 0)) return false
     const appConfig = this.providers.args.config
-    const requestedModel = this.config.model?.trim()
+    const requestedModel = await resolveEffectiveRequestedModel(this.config)
     const remotePreference = this.config.remotePreference ?? appConfig.remoteStreamDefault
     const permissionValue = this.config.permissionMode?.trim()
     const permissionMode = permissionValue ? permissionValue.toLowerCase() : ""
@@ -718,10 +740,8 @@ export class ReplSessionController extends EventEmitter {
         overrides["permissions.webfetch.default"] ??= "ask"
       }
     }
-    if (requestedModel) {
-      metadata.model = requestedModel
-      overrides["providers.default_model"] = requestedModel
-    }
+    metadata.model = requestedModel
+    overrides["providers.default_model"] = requestedModel
     if (remotePreference) {
       metadata.enable_remote_stream = true
     }
