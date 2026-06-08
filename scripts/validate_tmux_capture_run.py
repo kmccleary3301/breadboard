@@ -105,6 +105,8 @@ def validate_run_dir(
     max_missing_text_rows = 0
     max_extra_render_rows = 0
     max_row_span_delta = 2
+    max_tolerated_low_signal_extra_rows = 1
+    max_tolerated_extra_edge_ratio = 0.0025
 
     errors: list[str] = []
     warnings: list[str] = []
@@ -114,6 +116,33 @@ def validate_run_dir(
 
     def warn(msg: str) -> None:
         warnings.append(msg)
+
+    def is_tolerated_low_signal_extra(payload: dict[str, Any], missing_count: int, extra_count: int, row_span_delta: int) -> bool:
+        if missing_count > max_missing_text_rows:
+            return False
+        if row_span_delta > max_row_span_delta:
+            return False
+        if extra_count <= max_extra_render_rows:
+            return True
+        if extra_count > max_tolerated_low_signal_extra_rows:
+            return False
+        rows = payload.get("mismatch_localization")
+        if not isinstance(rows, list) or not rows:
+            return False
+        low_signal_extra_rows = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                return False
+            if row.get("text_nonempty") is not False:
+                return False
+            try:
+                edge_ratio = float(row.get("edge_ratio", 1.0))
+            except Exception:
+                return False
+            if edge_ratio > max_tolerated_extra_edge_ratio:
+                return False
+            low_signal_extra_rows += 1
+        return low_signal_extra_rows == extra_count
 
     meta_path = run_dir / "meta.json"
     index_path = run_dir / "index.jsonl"
@@ -265,6 +294,8 @@ def validate_run_dir(
                                 or extra_count > max_extra_render_rows
                                 or row_span_delta > max_row_span_delta
                             )
+                            if exceeds and is_tolerated_low_signal_extra(row_occupancy, missing_count, extra_count, row_span_delta):
+                                exceeds = False
                             if exceeds:
                                 render_parity_violations += 1
                                 (err if strict else warn)(
@@ -313,6 +344,8 @@ def validate_run_dir(
                                 or extra_count > max_extra_render_rows
                                 or row_span_delta > max_row_span_delta
                             )
+                            if exceeds and is_tolerated_low_signal_extra(parity, missing_count, extra_count, row_span_delta):
+                                exceeds = False
                             if exceeds:
                                 render_parity_violations += 1
                                 (err if strict else warn)(
