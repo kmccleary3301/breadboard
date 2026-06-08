@@ -6,7 +6,7 @@ cd "$ROOT_DIR"
 
 PATTERN='QueryLakeBackend|/shared_folders/querylake_server/QueryLakeBackend|github.com/.*/QueryLakeBackend'
 
-MATCHES="$(git grep -n -I -E "$PATTERN" -- . || true)"
+MATCHES="$(git grep -n -I -E "$PATTERN" -- . ":(exclude)scripts/ci_guard_legacy_querylakebackend_refs.sh" || true)"
 if [[ -n "${MATCHES// }" ]]; then
   echo "ERROR: Legacy QueryLakeBackend reference(s) detected."
   echo "Please migrate to canonical QueryLake naming."
@@ -16,4 +16,3 @@ if [[ -n "${MATCHES// }" ]]; then
 fi
 
 echo "Legacy path/name guard passed."
-
