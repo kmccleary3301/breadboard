@@ -1228,9 +1228,9 @@ const keepPendingDuringReconnect = () =>
     const attemptOwnedEngineRestart = async (eventType: string, message: string): Promise<boolean> => {
       if (this.lifecycleSnapshot?.mode !== "local-owned") return false
       this.lifecycleRestartCount = (this.lifecycleRestartCount ?? 0) + 1
-      this.pushHint(`Engine interrupted: ${message}. Restarting owned engine (attempt ${this.lifecycleRestartCount}).`)
+      this.pushHint(`Engine interrupted: ${message}. Restarting owned engine (attempt ${this.lifecycleRestartCount}${retrySuffix}).`)
       maybeLifecycleToast(this, "Restarting engine", eventType)
-      this.setActivityStatus?.("Restarting engine", {
+      this.setActivityStatus?.(`BreadBoard engine interrupted. Restarting (${this.lifecycleRestartCount}${retrySuffix})`, {
         to: "reconnecting",
         eventType,
         source: "runtime",

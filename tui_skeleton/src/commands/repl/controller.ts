@@ -74,7 +74,7 @@ import {
   waitFor,
   waitForCompletion,
 } from "./controllerUserMethods.js"
-import { DEFAULT_RICH_MARKDOWN, normalizeModeValue, normalizePermissionMode, numberOrUndefined } from "./controllerUtils.js"
+import { DEFAULT_RICH_MARKDOWN, MAX_RETRIES, normalizeModeValue, normalizePermissionMode, numberOrUndefined } from "./controllerUtils.js"
 import * as stateMethods from "./controllerStateMethods.js"
 import * as renderState from "./controllerStateRender.js"
 import * as eventMethods from "./controllerEventMethods.js"
@@ -938,8 +938,11 @@ export class ReplSessionController extends EventEmitter {
       if (recoverableOwnedInputFailure) {
         const message = error instanceof Error ? error.message : String(error)
         this.lifecycleRestartCount = (this.lifecycleRestartCount ?? 0) + 1
-        this.pushHint(`Input transport interrupted before acceptance: ${message}. Restarting owned engine.`)
-        this.setActivityStatus("Restarting engine", {
+        const attemptSuffix = Number.isFinite(MAX_RETRIES) ? `/${MAX_RETRIES}` : ""
+        this.pushHint(
+          `Input transport interrupted before acceptance: ${message}. Restarting owned engine (attempt ${this.lifecycleRestartCount}${attemptSuffix}).`,
+        )
+        this.setActivityStatus(`BreadBoard engine interrupted. Restarting (${this.lifecycleRestartCount}${attemptSuffix})`, {
           to: "reconnecting",
           eventType: "input.error.engine.restart",
           source: "system",

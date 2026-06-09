@@ -37,10 +37,19 @@ const userCellCount = transcriptCells.filter((cell: any) => {
   return cell?.speaker === "user" && text.includes(prompt)
 }).length
 const looksReady = /ready/i.test(status)
-const explicitRecovery = /recover|restart|reconnect|disconnect|engine|session missing/i.test(status)
+const completedRecovery = state?.pendingResponse === false && state?.disconnected === false && /finish|complete/i.test(status)
+const explicitRecovery =
+  /recover|restart|reconnect|disconnect|engine|session missing/i.test(status) ||
+  hints.some((hint: string) => /recover|restart|reconnect|engine|session/i.test(hint))
 const pidChanged = Number.isFinite(killedPid) && typeof lifecycle?.pid === "number" && lifecycle.pid !== killedPid
 const bodyPolluted = /Disconnected:|Lost connection to the engine/.test(snapshots)
-const readyDuringRecovery = /\[ready\]/i.test(snapshots) && /Engine interrupted|Failed to send input|session is no longer available/i.test(snapshots)
+const readyWhileUnresolved =
+  state?.pendingResponse === true &&
+  /\[ready\]/i.test(snapshots) &&
+  /Engine interrupted|Failed to send input|session is no longer available/i.test(snapshots)
+const restartAttemptVisible =
+  /BreadBoard engine interrupted\. Restarting \(\d+(?:\/\d+)?\)|Restarting owned engine \(attempt \d+(?:\/\d+)?\)/i.test(snapshots) ||
+  hints.some((hint: string) => /Restarting owned engine \(attempt \d+(?:\/\d+)?\)/i.test(hint))
 const escapedPrompt = prompt.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 const duplicatePromptInSnapshot = prompt
   ? snapshots
@@ -66,11 +75,13 @@ const report = [
   `userPromptCount: ${userPromptCount}`,
   `userCellCount: ${userCellCount}`,
   `looksReady: ${looksReady}`,
+  `completedRecovery: ${completedRecovery}`,
   `explicitRecovery: ${explicitRecovery}`,
   `bodyPolluted: ${bodyPolluted}`,
-  `readyDuringRecovery: ${readyDuringRecovery}`,
+  `readyWhileUnresolved: ${readyWhileUnresolved}`,
   `duplicatePromptInSnapshot: ${duplicatePromptInSnapshot}`,
   `unknownOutcomeHint: ${unknownOutcomeHint}`,
+  `restartAttemptVisible: ${restartAttemptVisible}`,
   "",
 ].join("\n")
 writeFileSync(path.join(artifactDir, "gate_report.md"), report, "utf8")
@@ -81,12 +92,13 @@ if (records.length === 0) failures.push("no state dump records captured")
 if (userPromptCount !== 1) failures.push(`expected exactly one user prompt in conversation, saw ${userPromptCount}`)
 if (userCellCount !== 1) failures.push(`expected exactly one user prompt transcript cell, saw ${userCellCount}`)
 if (bodyPolluted) failures.push("disconnect body pollution appeared in snapshots")
-if (readyDuringRecovery) failures.push("snapshot shows [ready] while engine/input recovery is unresolved")
+if (readyWhileUnresolved) failures.push("snapshot shows [ready] while engine/input recovery is unresolved")
 if (duplicatePromptInSnapshot) failures.push("prompt appears duplicated in visible snapshots")
-if (!unknownOutcomeHint) failures.push("missing accepted-prompt unknown-outcome recovery hint")
-if (looksReady && !explicitRecovery) failures.push("final status looks ready without explicit recovery semantics")
+if (!completedRecovery && !unknownOutcomeHint) failures.push("missing accepted-prompt unknown-outcome recovery hint")
+if (!completedRecovery && looksReady && !explicitRecovery) failures.push("final status looks ready without explicit recovery semantics")
 if (!explicitRecovery) failures.push("final status does not expose restart/reconnect/disconnect/recovery semantics")
 if (!pidChanged) failures.push("final lifecycle pid did not change from killed pid")
+if (!restartAttemptVisible) failures.push("engine restart attempt count was not visible in status or hints")
 
 if (failures.length > 0) {
   writeFileSync(path.join(artifactDir, "gate_failures.txt"), failures.join("\n") + "\n", "utf8")
