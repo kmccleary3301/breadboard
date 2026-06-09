@@ -313,6 +313,7 @@ const settleFromAssistantCompletionSentinel = (controller: any, eventType: strin
     },
   }
   controller.pendingResponse = false
+  controller.pendingResponseEventCountAtSubmit = null
   controller.pendingStartedAt = null
   settlePendingToolLogEntries(controller, "success")
   controller.thinkingInlineEntryId = null
@@ -367,6 +368,7 @@ const surfaceTerminalError = (
   )
   controller.activePromptOutcomeUnresolved = false
   controller.pendingResponse = false
+  controller.pendingResponseEventCountAtSubmit = null
   controller.pendingStartedAt = null
   settlePendingToolLogEntries(controller, "error")
   controller.thinkingInlineEntryId = null
@@ -1384,6 +1386,37 @@ const keepPendingDuringReconnect = () =>
         continue
       }
       if (error instanceof ApiError && error.status === 404 && this.lifecycleSnapshot?.mode === "local-owned") {
+        const submitEventCount = Number(this.pendingResponseEventCountAtSubmit ?? NaN)
+        const noEventsAfterSubmit =
+          this.pendingResponse &&
+          this.activePromptOutcomeUnresolved === true &&
+          Number.isFinite(submitEventCount) &&
+          this.stats.eventCount <= submitEventCount
+        if (noEventsAfterSubmit) {
+          const payload = Array.isArray(this.submissionHistory) ? this.submissionHistory[this.submissionHistory.length - 1] : null
+          if (payload?.content) {
+            const restarted = await attemptOwnedEngineRestart("stream.session.missing.no_events", error.message)
+            if (restarted) {
+              this.pendingResponse = false
+              const recovered = await this.recoverIdleSessionAfterEngineRestart?.({ preserveLocalTranscript: true })
+              if (recovered) {
+                this.setActivityStatus?.("Resending after engine recovery", {
+                  to: "run",
+                  eventType: "stream.session.missing.recovered",
+                  source: "runtime",
+                })
+                this.emitChange?.()
+                try {
+                  await this.dispatchSubmission?.(payload, "Working…", { attemptedOwnedRecovery: true })
+                  await sleep(250)
+                  continue
+                } catch {
+                  // Fall through to the normal recovery-needed surface.
+                }
+              }
+            }
+          }
+        }
         const canRecoverCompletedLocalTranscript =
           !this.pendingResponse && (this.completionSeen === true || this.lastCompletion != null)
         if (!this.pendingResponse && (this.conversation?.length === 0 && this.toolEvents?.length === 0 || canRecoverCompletedLocalTranscript)) {
@@ -2382,6 +2415,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
         summary: (event.payload && (event.payload.summary as Record<string, unknown> | undefined)) ?? null,
       }
       this.pendingResponse = false
+      this.pendingResponseEventCountAtSubmit = null
       settlePendingToolLogEntries(this, view.completed ? "success" : "error")
       this.thinkingInlineEntryId = null
       closeThinkingPreview(this, clockNow(this))

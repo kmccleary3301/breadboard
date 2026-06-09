@@ -81,17 +81,18 @@ describe("resolveEngineLifecycleMode", () => {
     })
   })
 
-  it("treats explicit local base URLs as external unless ownership is explicit", () => {
+  it("treats explicit local base URLs as owned by default", () => {
     expect(
       resolveEngineLifecycleMode({
         baseUrl: "http://127.0.0.1:9500",
         explicitBaseUrlConfigured: true,
       }),
     ).toMatchObject({
-      mode: "external",
+      mode: "local-owned",
       modeSource: "explicit-base-url",
-      owned: false,
-      allowSpawn: false,
+      owned: true,
+      allowSpawn: true,
+      restartPolicy: "bounded",
     })
   })
 

@@ -289,10 +289,10 @@ export const resolveEngineLifecycleMode = ({
   if (explicitBaseUrlConfigured) {
     if (local) {
       return resolved(
-        "external",
+        "local-owned",
         "explicit-base-url",
         local,
-        "Explicit local base URL is treated as an externally supplied engine unless ownership is explicit.",
+        "Explicit local base URL is treated as an owned engine unless external ownership is explicitly requested.",
       )
     }
     return resolved(

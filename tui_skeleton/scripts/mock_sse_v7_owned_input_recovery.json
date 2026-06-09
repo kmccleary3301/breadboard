@@ -1,0 +1,6 @@
+[
+  { "delayMs": 80, "event": { "id": "owned-input-recovery-start", "type": "assistant.message.start", "payload": { "message_id": "owned-input-recovery", "channel": "text", "format": "markdown" } } },
+  { "delayMs": 80, "event": { "id": "owned-input-recovery-delta", "type": "assistant.message.delta", "payload": { "message_id": "owned-input-recovery", "delta": "OWNED_INPUT_RECOVERED_RESPONSE" } } },
+  { "delayMs": 40, "event": { "id": "owned-input-recovery-end", "type": "assistant.message.end", "payload": { "message_id": "owned-input-recovery", "stop_reason": "complete" } } },
+  { "delayMs": 40, "event": { "id": "owned-input-recovery-completion", "type": "completion", "payload": { "summary": { "completed": true, "reason": "owned_input_recovery" } } } }
+]

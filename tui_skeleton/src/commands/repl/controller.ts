@@ -79,7 +79,7 @@ import * as stateMethods from "./controllerStateMethods.js"
 import * as renderState from "./controllerStateRender.js"
 import * as eventMethods from "./controllerEventMethods.js"
 import * as ctreeMethods from "./controllerEventCtree.js"
-import { getActiveEngineLifecycleSnapshot, type ActiveEngineLifecycleSnapshot } from "../../engine/engineSupervisor.js"
+import { getActiveEngineLifecycleSnapshot, restartOwnedEngine, type ActiveEngineLifecycleSnapshot } from "../../engine/engineSupervisor.js"
 import {
   bumpTelemetry,
   createActivitySnapshot,
@@ -270,6 +270,7 @@ export class ReplSessionController extends EventEmitter {
   private statusUpdatedAt = 0
   private pendingResponse = false
   private activePromptOutcomeUnresolved = false
+  private pendingResponseEventCountAtSubmit: number | null = null
   private mainFollowTail = true
   private pendingStartedAt: number | null = null
   private modelMenu: ModelMenuState = { status: "hidden" }
@@ -901,7 +902,11 @@ export class ReplSessionController extends EventEmitter {
     return attachmentIds && attachmentIds.length > 0 ? { content, attachments: attachmentIds } : { content }
   }
 
-  private async dispatchSubmission(payload: SubmissionPayload, statusLabel: string): Promise<void> {
+  private async dispatchSubmission(
+    payload: SubmissionPayload,
+    statusLabel: string,
+    options: { attemptedOwnedRecovery?: boolean } = {},
+  ): Promise<void> {
     this.completionReached = false
     this.completionSeen = false
     this.lastCompletion = null
@@ -914,6 +919,7 @@ export class ReplSessionController extends EventEmitter {
     }
     this.removeLiveSlot("guardrail")
     this.pendingResponse = true
+    this.pendingResponseEventCountAtSubmit = this.stats.eventCount
     this.mainFollowTail = true
     this.stats.lastTurn = Math.max(this.stats.lastTurn ?? 0, nextTurn)
     this.setActivityStatus(statusLabel, { to: "run", eventType: "input.submit", source: "user" })
@@ -924,12 +930,49 @@ export class ReplSessionController extends EventEmitter {
     try {
       await this.api().postInput(this.sessionId, payload)
     } catch (error) {
+      const lifecycle = getActiveEngineLifecycleSnapshot() ?? this.lifecycleSnapshot
+      const recoverableOwnedInputFailure =
+        lifecycle?.mode === "local-owned" &&
+        options.attemptedOwnedRecovery !== true &&
+        (!(error instanceof ApiError) || error.status === 404 || error.status === 409)
+      if (recoverableOwnedInputFailure) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.lifecycleRestartCount = (this.lifecycleRestartCount ?? 0) + 1
+        this.pushHint(`Input transport interrupted before acceptance: ${message}. Restarting owned engine.`)
+        this.setActivityStatus("Restarting engine", {
+          to: "reconnecting",
+          eventType: "input.error.engine.restart",
+          source: "system",
+        })
+        this.emitChange()
+        try {
+          await restartOwnedEngine()
+          this.lifecycleSnapshot = getActiveEngineLifecycleSnapshot() ?? this.lifecycleSnapshot
+          this.pendingResponse = false
+          const recovered = await this.recoverIdleSessionAfterEngineRestart({ preserveLocalTranscript: true })
+          if (recovered) {
+            this.pendingResponse = true
+            this.setActivityStatus("Resending after engine recovery", {
+              to: "run",
+              eventType: "input.error.engine.recovered",
+              source: "system",
+            })
+            this.emitChange()
+            await this.dispatchSubmission(payload, "Working…", { attemptedOwnedRecovery: true })
+            return
+          }
+        } catch (restartError) {
+          const detail = restartError instanceof Error ? restartError.message : String(restartError)
+          this.pushHint(`Owned engine restart failed before input resend: ${detail}`)
+        }
+      }
       if (error instanceof ApiError && error.status === 404) {
-        this.pushHint("Backend does not yet support sending interactive input (404).")
+        this.pushHint("Interactive input session is no longer available (404).")
       } else {
         this.pushHint(`Failed to send input: ${(error as Error).message}`)
       }
       this.pendingResponse = false
+      this.pendingResponseEventCountAtSubmit = null
       if (this.lifecycleSnapshot?.mode === "local-owned") {
         this.setActivityStatus("Recovery needed (input not sent)", {
           to: "reconnecting",
