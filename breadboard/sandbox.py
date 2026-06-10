@@ -305,6 +305,9 @@ class DevSandboxV2:
                 cmd,
                 cwd=self.workspace,
                 shell=bool(shell),
+                # Coding models assume bash semantics (set -o pipefail, [[ ]],
+                # heredocs); /bin/sh is dash on Debian/Ubuntu and rejects them.
+                executable="/bin/bash" if shell else None,
                 env={**os.environ, **(env or {})},
                 stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
