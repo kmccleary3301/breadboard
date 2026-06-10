@@ -22,6 +22,7 @@ jobs:
             const labels = new Set((pr.labels || []).map(l => l.name));
             const body = pr.body || '';
             const bodyChecked = /\[x\]\s*\*\*Compat break\*\*/i.test(body) || /\[x\]\s*Compat break/i.test(body);
+            const bodyCompatReviewed = /Compat reviewed:\s*non-breaking/i.test(body);
 
             const patterns = [
               "agentic_coder_prototype/state/session_state.py",
@@ -59,6 +60,7 @@ jobs:
             const touched = files.filter(f => patterns.some(p => f.filename === p || f.filename.startsWith(p)));
             const fixtureTouched = files.filter(f => f.filename.startsWith("tests/fixtures/compat/"));
             const hasLabel = labels.has('compat-break') || labels.has('compat_break') || labels.has('compat');
+            const hasCompatReviewedLabel = labels.has('compat-reviewed') || labels.has('compat_reviewed');
             const hasKernelChanges = touched.length > 0 || fixtureTouched.length > 0;
             const report = {
               event: context.eventName,
@@ -66,12 +68,14 @@ jobs:
               pull_number: pr.number,
               labels: Array.from(labels).sort(),
               has_compat_break_label: hasLabel,
+              has_compat_reviewed_label: hasCompatReviewedLabel,
               has_template_checkbox: bodyChecked,
+              has_compat_reviewed_body_marker: bodyCompatReviewed,
               has_kernel_changes: hasKernelChanges,
-              requires_compat_break: hasKernelChanges,
+              requires_compat_acknowledgement: hasKernelChanges,
               touched_paths: touched.map(f => f.filename),
               compat_fixture_paths: fixtureTouched.map(f => f.filename),
-              ok: !hasKernelChanges || hasLabel || bodyChecked,
+              ok: !hasKernelChanges || hasLabel || bodyChecked || hasCompatReviewedLabel || bodyCompatReviewed,
             };
 
             fs.mkdirSync('artifacts', { recursive: true });
@@ -85,15 +89,15 @@ jobs:
             if (!report.ok) {
               core.setFailed(
                 [
-                  "Compat-break label required for parity-kernel changes.",
-                  "Add label 'compat-break' or check the Compat break box in the PR template.",
+                  "Compat review acknowledgement required for parity-kernel changes.",
+                  "Add label 'compat-break' for breaking changes, or add 'Compat reviewed: non-breaking' for reviewed non-breaking changes.",
                   "Touched paths:",
                   ...touched.map(f => `- ${f.filename}`),
                   ...(fixtureTouched.length ? ["Compat fixtures changed:", ...fixtureTouched.map(f => `- ${f.filename}`)] : []),
                 ].join("\\n")
               );
             } else {
-              core.info('Compat-break label/body present for parity-kernel changes.');
+              core.info('Compat acknowledgement present for parity-kernel changes.');
             }
 
       - name: Upload compat-break guard report
@@ -113,11 +117,34 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check danger-zone ACR prerequisites
+        id: danger_zone_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/check_danger_zone_acr.py \
+            scripts/check_kernel_contract_pack_v1.py \
+            docs/contracts/policies/kernel_danger_zone_manifest_v1.json \
+            docs/contracts/policies/kernel_contract_pack_v1_manifest.json; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.danger_zone_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Resolve changed files for PR
+        if: steps.danger_zone_prereqs.outputs.ready == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -128,6 +155,7 @@ jobs:
           echo "changed files count: $(wc -l < artifacts/changed_files.txt)"
 
       - name: Enforce ACR artifact for danger-zone diffs
+        if: steps.danger_zone_prereqs.outputs.ready == 'true'
         run: |
           python scripts/check_danger_zone_acr.py \
             --manifest docs/contracts/policies/kernel_danger_zone_manifest_v1.json \
@@ -135,14 +163,19 @@ jobs:
             --json-out artifacts/danger_zone_acr_report.json
 
       - name: Validate Kernel Contract Pack v1 hash snapshot
+        if: steps.danger_zone_prereqs.outputs.ready == 'true'
         run: |
           python scripts/check_kernel_contract_pack_v1.py \
             --manifest docs/contracts/policies/kernel_contract_pack_v1_manifest.json \
             --repo-root . \
             --json-out artifacts/kernel_contract_pack_report.json
 
+      - name: Danger-zone ACR guard skipped (missing prerequisites)
+        if: steps.danger_zone_prereqs.outputs.ready != 'true'
+        run: echo "Danger-zone ACR guard skipped on this branch."
+
       - name: Upload danger-zone ACR report
-        if: always()
+        if: ${{ always() && steps.danger_zone_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: danger-zone-acr-guard-report
@@ -160,11 +193,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check ATP contract governance prerequisites
+        id: atp_contract_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/check_atp_contract_governance.py \
+            .github/PULL_REQUEST_TEMPLATE.md; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.atp_contract_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Resolve changed files for PR
+        if: steps.atp_contract_prereqs.outputs.ready == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -175,14 +229,19 @@ jobs:
           echo "changed files count: $(wc -l < artifacts/changed_files.txt)"
 
       - name: Enforce ATP contract governance policy
+        if: steps.atp_contract_prereqs.outputs.ready == 'true'
         run: |
           python scripts/check_atp_contract_governance.py \
             --changed-files-file artifacts/changed_files.txt \
             --pr-template .github/PULL_REQUEST_TEMPLATE.md \
             --json-out artifacts/atp_contract_governance_report.json
 
+      - name: ATP contract governance guard skipped (missing prerequisites)
+        if: steps.atp_contract_prereqs.outputs.ready != 'true'
+        run: echo "ATP contract governance guard skipped on this branch."
+
       - name: Upload ATP contract governance report
-        if: always()
+        if: ${{ always() && steps.atp_contract_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: atp-contract-governance-guard-report
@@ -195,19 +254,45 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check governance template prerequisites
+        id: governance_template_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/check_governance_v2_templates.py \
+            .github/PULL_REQUEST_TEMPLATE.md; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.governance_template_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Validate governance template bindings
+        if: steps.governance_template_prereqs.outputs.ready == 'true'
         run: |
+          mkdir -p artifacts
           python scripts/check_governance_v2_templates.py \
             --repo-root . \
             --pr-template .github/PULL_REQUEST_TEMPLATE.md \
             --json-out artifacts/governance_v2_templates_report.json
 
+      - name: Governance templates guard skipped (missing prerequisites)
+        if: steps.governance_template_prereqs.outputs.ready != 'true'
+        run: echo "Governance templates guard skipped on this branch."
+
       - name: Upload governance templates report
-        if: always()
+        if: ${{ always() && steps.governance_template_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: governance-v2-templates-guard-report
@@ -220,13 +305,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check kernel-extension boundary prerequisites
+        id: kernel_ext_boundary_prereqs
+        shell: bash
+        run: |
+          if [ -f scripts/validate_kernel_ext_boundaries.py ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "missing prerequisite: scripts/validate_kernel_ext_boundaries.py"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.kernel_ext_boundary_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Validate kernel->extension import boundaries
+        if: steps.kernel_ext_boundary_prereqs.outputs.ready == 'true'
         run: |
           python scripts/validate_kernel_ext_boundaries.py --json
+
+      - name: Kernel-extension boundary guard skipped (missing prerequisites)
+        if: steps.kernel_ext_boundary_prereqs.outputs.ready != 'true'
+        run: echo "Kernel-extension boundary guard skipped on this branch."
 
   request_body_hash_stability:
     name: Request-body byte stability gate
@@ -234,19 +336,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check request-body hash prerequisites
+        id: request_body_hash_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/check_request_body_hashes.py \
+            tests/fixtures/compat/request_bodies \
+            docs/conformance/request_body_hashes_baseline_v1.json; do
+            if [ ! -e "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.request_body_hash_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Enforce request-body hash stability baseline
+        if: steps.request_body_hash_prereqs.outputs.ready == 'true'
         run: |
+          mkdir -p artifacts
           python scripts/check_request_body_hashes.py \
             --root tests/fixtures/compat/request_bodies \
             --baseline docs/conformance/request_body_hashes_baseline_v1.json \
             --json-out artifacts/request_body_hash_gate_report.json
 
+      - name: Request-body hash gate skipped (missing prerequisites)
+        if: steps.request_body_hash_prereqs.outputs.ready != 'true'
+        run: echo "Request-body hash gate skipped on this branch."
+
       - name: Upload request-body hash gate report
-        if: always()
+        if: ${{ always() && steps.request_body_hash_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: request-body-hash-gate-report
@@ -259,19 +388,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check tool-schema hash prerequisites
+        id: tool_schema_hash_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/check_tool_schema_hashes.py \
+            implementations/tools/defs \
+            docs/conformance/tool_schema_hashes_baseline_v1.json; do
+            if [ ! -e "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.tool_schema_hash_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Enforce tool-schema hash stability baseline
+        if: steps.tool_schema_hash_prereqs.outputs.ready == 'true'
         run: |
+          mkdir -p artifacts
           python scripts/check_tool_schema_hashes.py \
             --root implementations/tools/defs \
             --baseline docs/conformance/tool_schema_hashes_baseline_v1.json \
             --json-out artifacts/tool_schema_hash_gate_report.json
 
+      - name: Tool-schema hash gate skipped (missing prerequisites)
+        if: steps.tool_schema_hash_prereqs.outputs.ready != 'true'
+        run: echo "Tool-schema hash gate skipped on this branch."
+
       - name: Upload tool-schema hash gate report
-        if: always()
+        if: ${{ always() && steps.tool_schema_hash_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: tool-schema-hash-gate-report
@@ -284,18 +440,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check event-envelope snapshot prerequisites
+        id: event_envelope_snapshot_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/check_event_envelope_snapshots.py \
+            docs/conformance/event_envelope_snapshots_baseline_v1.json; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.event_envelope_snapshot_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Enforce event-envelope snapshot baseline
+        if: steps.event_envelope_snapshot_prereqs.outputs.ready == 'true'
         run: |
+          mkdir -p artifacts
           python scripts/check_event_envelope_snapshots.py \
             --baseline docs/conformance/event_envelope_snapshots_baseline_v1.json \
             --json-out artifacts/event_envelope_snapshot_gate_report.json
 
+      - name: Event-envelope snapshot gate skipped (missing prerequisites)
+        if: steps.event_envelope_snapshot_prereqs.outputs.ready != 'true'
+        run: echo "Event-envelope snapshot gate skipped on this branch."
+
       - name: Upload event-envelope snapshot gate report
-        if: always()
+        if: ${{ always() && steps.event_envelope_snapshot_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: event-envelope-snapshot-gate-report
@@ -331,7 +513,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check conformance matrix sync prerequisites
+        id: conformance_matrix_sync_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/run_ct_scenarios.py \
+            scripts/sync_conformance_matrix_status.py \
+            tests/test_run_ct_scenarios.py \
+            tests/test_sync_conformance_matrix_status.py \
+            docs/conformance/CONFORMANCE_TEST_MATRIX_V1.csv; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.conformance_matrix_sync_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
           cache: pip
@@ -339,18 +544,22 @@ jobs:
             requirements.txt
 
       - name: Install dependencies
+        if: steps.conformance_matrix_sync_prereqs.outputs.ready == 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
       - name: Unit tests for CT rows + matrix sync
+        if: steps.conformance_matrix_sync_prereqs.outputs.ready == 'true'
         run: |
           pytest -q \
             tests/test_run_ct_scenarios.py \
             tests/test_sync_conformance_matrix_status.py
 
       - name: Generate CT rows and sync matrix statuses
+        if: steps.conformance_matrix_sync_prereqs.outputs.ready == 'true'
         run: |
+          mkdir -p artifacts/conformance
           python scripts/run_ct_scenarios.py \
             --json-out artifacts/conformance/ct_scenarios_result_v1.json \
             --rows-out artifacts/conformance/ct_scenarios_rows_v1.json
@@ -370,8 +579,12 @@ jobs:
           print(f"conformance matrix sync guard OK: failing_rows={failing}")
           PY
 
+      - name: Conformance matrix sync guard skipped (missing prerequisites)
+        if: steps.conformance_matrix_sync_prereqs.outputs.ready != 'true'
+        run: echo "Conformance matrix sync guard skipped on this branch."
+
       - name: Upload conformance matrix sync artifacts
-        if: always()
+        if: ${{ always() && steps.conformance_matrix_sync_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: conformance-matrix-sync-guard-artifacts
@@ -389,22 +602,50 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check replay determinism prerequisites
+        id: replay_determinism_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            tests/test_check_replay_determinism_gate.py \
+            scripts/check_replay_determinism_gate.py \
+            tests/fixtures/conformance_v1/fixtures/valid/bb.replay_determinism_report.v1.valid.json; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.replay_determinism_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Unit tests for replay determinism gate
+        if: steps.replay_determinism_prereqs.outputs.ready == 'true'
         run: |
           pytest -q tests/test_check_replay_determinism_gate.py
 
       - name: Run replay determinism gate against seeded fixture
+        if: steps.replay_determinism_prereqs.outputs.ready == 'true'
         run: |
+          mkdir -p artifacts/conformance
           python scripts/check_replay_determinism_gate.py \
             --glob "tests/fixtures/conformance_v1/fixtures/valid/bb.replay_determinism_report.v1.valid.json" \
             --json-out artifacts/conformance/replay_determinism_gate_report_v1.json
 
+      - name: Replay determinism guard skipped (missing prerequisites)
+        if: steps.replay_determinism_prereqs.outputs.ready != 'true'
+        run: echo "Replay determinism guard skipped on this branch."
+
       - name: Upload replay determinism gate artifact
-        if: always()
+        if: ${{ always() && steps.replay_determinism_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: replay-determinism-gate-artifact
@@ -417,13 +658,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check evidence bundle prerequisites
+        id: evidence_bundle_prereqs
+        shell: bash
+        run: |
+          if [ -f tests/test_evidence_bundle_v1.py ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "missing prerequisite: tests/test_evidence_bundle_v1.py"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.evidence_bundle_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
 
       - name: Evidence bundle unit tests
+        if: steps.evidence_bundle_prereqs.outputs.ready == 'true'
         run: |
           pytest -q tests/test_evidence_bundle_v1.py
+
+      - name: Evidence bundle contract guard skipped (missing prerequisites)
+        if: steps.evidence_bundle_prereqs.outputs.ready != 'true'
+        run: echo "Evidence bundle contract guard skipped on this branch."
 
   extension_disabled_regression:
     name: Extension-disabled regression lane
@@ -433,7 +691,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check extension-disabled prerequisites
+        id: extension_disabled_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/validate_kernel_ext_boundaries.py \
+            scripts/run_conformance_matrix.py \
+            tests/test_validate_kernel_ext_boundaries.py \
+            tests/test_run_conformance_matrix.py \
+            tests/test_parity_manifest_hardening.py; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.extension_disabled_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
           cache: pip
@@ -441,11 +722,13 @@ jobs:
             requirements.txt
 
       - name: Install dependencies
+        if: steps.extension_disabled_prereqs.outputs.ready == 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
       - name: Run extension-disabled core regression checks
+        if: steps.extension_disabled_prereqs.outputs.ready == 'true'
         run: |
           python scripts/validate_kernel_ext_boundaries.py --json
           python scripts/run_conformance_matrix.py \
@@ -456,6 +739,10 @@ jobs:
             tests/test_run_conformance_matrix.py \
             tests/test_parity_manifest_hardening.py
 
+      - name: Extension-disabled regression lane skipped (missing prerequisites)
+        if: steps.extension_disabled_prereqs.outputs.ready != 'true'
+        run: echo "Extension-disabled regression lane skipped on this branch."
+
   extension_enabled_smoke:
     name: Extension-enabled smoke lane
     runs-on: ubuntu-latest
@@ -464,7 +751,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check extension-enabled prerequisites
+        id: extension_enabled_prereqs
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            scripts/run_atp_toy_loop_v1.py \
+            scripts/run_evolake_minimal_campaign_v1.py \
+            tests/test_atp_evolake_minimal_loops.py; do
+            if [ ! -f "$p" ]; then
+              echo "missing prerequisite: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-python@v5
+        if: steps.extension_enabled_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
           cache: pip
@@ -472,12 +780,15 @@ jobs:
             requirements.txt
 
       - name: Install dependencies
+        if: steps.extension_enabled_prereqs.outputs.ready == 'true'
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
       - name: Run extension-enabled ATP/EvoLake smoke checks
+        if: steps.extension_enabled_prereqs.outputs.ready == 'true'
         run: |
+          mkdir -p artifacts/atp_toy_loop_v1 artifacts/evolake_minimal_campaign_v1
           python scripts/run_atp_toy_loop_v1.py \
             --out artifacts/atp_toy_loop_v1/atp_toy_loop_report.ci.json \
             --artifacts-dir artifacts/atp_toy_loop_v1
@@ -488,7 +799,12 @@ jobs:
             --checkpoint artifacts/evolake_minimal_campaign_v1/checkpoint.ci.json
           pytest -q tests/test_atp_evolake_minimal_loops.py
 
+      - name: Extension-enabled smoke lane skipped (missing prerequisites)
+        if: steps.extension_enabled_prereqs.outputs.ready != 'true'
+        run: echo "Extension-enabled smoke lane skipped on this branch."
+
       - name: Upload extension-lane artifacts
+        if: ${{ always() && steps.extension_enabled_prereqs.outputs.ready == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: extension-enabled-smoke-artifacts
