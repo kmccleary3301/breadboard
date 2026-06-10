@@ -158,7 +158,8 @@
     "p16:phase-i:accessibility-keyboard": "pnpm scenario:batch scenarios/p16/batches/accessibility_keyboard.json",
     "p16:phase-i:config-conformance": "pnpm scenario:batch scenarios/p16/batches/config_conformance_final.json",
     "p16:phase-i:all": "bash scripts/p16_phase_i_all.sh",
-    "qc:v7:owned-engine-idle-recovery": "bash scripts/qc_v7_owned_engine_idle_recovery_pty.sh"
+    "qc:v7:owned-engine-idle-recovery": "bash scripts/qc_v7_owned_engine_idle_recovery_pty.sh",
+    "qc:provider-auth-resize-dedupe": "bash scripts/qc_provider_auth_resize_dedupe_pty.sh"
   },
   "dependencies": {
     "@effect/cli": "^0.69.0",

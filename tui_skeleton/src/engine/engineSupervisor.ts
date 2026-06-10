@@ -51,6 +51,7 @@ const HEALTH_TIMEOUT_MS = envInt("BREADBOARD_ENGINE_HEALTH_TIMEOUT_MS", 2_500)
 let activeChild: ChildProcess | null = null
 let activeBaseUrl: string | null = null
 let activeLifecycleMode: ResolvedEngineLifecycleMode | null = null
+const cleanupByChild = new WeakMap<ChildProcess, () => void>()
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -352,23 +353,40 @@ const resolveEngineCommand = async (): Promise<{ command: string; args: string[]
 const registerCleanup = (child: ChildProcess, options: { keepAlive?: boolean } = {}) => {
   const shutdownSignal = process.platform === "win32" ? "SIGTERM" : "SIGINT"
   const keepAlive = options.keepAlive === true
+  if (keepAlive) return () => undefined
   const cleanup = () => {
-    if (keepAlive) {
-      return
-    }
     if (!child.killed) {
       child.kill(shutdownSignal)
     }
   }
-  process.once("exit", cleanup)
-  process.once("SIGINT", () => {
+  const onExit = () => cleanup()
+  const onSigint = () => {
     cleanup()
     process.exit(130)
-  })
-  process.once("SIGTERM", () => {
+  }
+  const onSigterm = () => {
     cleanup()
     process.exit(143)
-  })
+  }
+  process.once("exit", onExit)
+  process.once("SIGINT", onSigint)
+  process.once("SIGTERM", onSigterm)
+  const unregister = () => {
+    process.off("exit", onExit)
+    process.off("SIGINT", onSigint)
+    process.off("SIGTERM", onSigterm)
+  }
+  cleanupByChild.set(child, unregister)
+  child.once("exit", unregister)
+  return unregister
+}
+
+const unregisterChildCleanup = (child: ChildProcess | null | undefined): void => {
+  if (!child) return
+  const unregister = cleanupByChild.get(child)
+  if (!unregister) return
+  cleanupByChild.delete(child)
+  unregister()
 }
 
 const shouldKeepAlive = (isolated = false) => {
@@ -449,6 +467,7 @@ export const restartOwnedEngine = async (
   const child = activeChild
   const pid = child?.pid ?? lock?.pid
 
+  unregisterChildCleanup(child)
   activeChild = null
   activeBaseUrl = null
   await clearLock()
@@ -628,6 +647,7 @@ export const ensureEngine = async ({
     if (healthy) {
       return { baseUrl: cachedBaseUrl, started: Boolean(cachedPid), pid: cachedPid }
     }
+    unregisterChildCleanup(activeChild)
     activeChild = null
     activeBaseUrl = null
     if (cachedPid != null && !processAlive) {
@@ -752,6 +772,7 @@ export const ensureEngine = async ({
 
   registerCleanup(child, { keepAlive: keepAliveManagedChild })
   child.once("exit", () => {
+    unregisterChildCleanup(child)
     activeChild = null
     activeBaseUrl = null
     activeLifecycleMode = null

@@ -314,6 +314,7 @@ const settleFromAssistantCompletionSentinel = (controller: any, eventType: strin
   }
   controller.pendingResponse = false
   controller.pendingResponseEventCountAtSubmit = null
+  controller.ownedEngineRecoveryAttempts = 0
   controller.pendingStartedAt = null
   settlePendingToolLogEntries(controller, "success")
   controller.thinkingInlineEntryId = null
@@ -347,28 +348,31 @@ const surfaceTerminalError = (
   options?: { includeConversation?: boolean },
 ): void => {
   controller.finalizeStreamingEntry()
-  controller.pushHint(`[error] ${message}`)
-  if (options?.includeConversation) {
-    controller.addConversation("system", `[error] ${message}`)
+  const displayMessage = compactDiagnosticMessage(message)
+  if (markTerminalErrorUnseen(controller, message)) {
+    if (options?.includeConversation) {
+      controller.addConversation("system", `[error] ${displayMessage}`)
+    }
+    controller.setGuardrailNotice?.(`Error: ${displayMessage}`, detail && detail.length > 0 ? detail.join("\n") : undefined)
+    controller.addTool(
+      "error",
+      `[error] ${displayMessage}`,
+      "error",
+      detail && detail.length > 0
+        ? {
+            display: {
+              title: "Runtime error",
+              summary: displayMessage,
+              detail,
+            },
+          }
+        : undefined,
+    )
   }
-  controller.setGuardrailNotice?.(`Error: ${message}`, detail && detail.length > 0 ? detail.join("\n") : undefined)
-  controller.addTool(
-    "error",
-    `[error] ${message}`,
-    "error",
-    detail && detail.length > 0
-      ? {
-          display: {
-            title: "Runtime error",
-            summary: message,
-            detail,
-          },
-        }
-      : undefined,
-  )
   controller.activePromptOutcomeUnresolved = false
   controller.pendingResponse = false
   controller.pendingResponseEventCountAtSubmit = null
+  controller.ownedEngineRecoveryAttempts = 0
   controller.pendingStartedAt = null
   settlePendingToolLogEntries(controller, "error")
   controller.thinkingInlineEntryId = null
@@ -408,9 +412,13 @@ const extractCtreeTranscriptNotice = (payload: Record<string, unknown>): CtreeTr
     const attempt = parseNumberish(providerRetry.attempt)
     const reason = formatErrorPayload(providerRetry)
     const attemptLabel = attempt != null ? ` (attempt ${attempt})` : ""
+    const compactReason = compactDiagnosticMessage(reason)
+    const authScopeReason = compactReason.match(/^OpenAI auth failed: missing scope ([^.]+(?:\.[^.]+)*)\.$/i)
     return {
       severity: "warning",
-      message: `Retrying provider route ${route}${attemptLabel}: ${reason}`,
+      message: authScopeReason
+        ? `Provider retry blocked: missing OpenAI scope ${authScopeReason[1]}.`
+        : `Retrying provider route ${route}${attemptLabel}: ${compactReason}`,
     }
   }
 
@@ -442,7 +450,52 @@ const extractCtreeTranscriptNotice = (payload: Record<string, unknown>): CtreeTr
 }
 
 const noticeKey = (notice: CtreeTranscriptNotice): string =>
-  `${notice.severity}:${notice.message}`.replace(/\s+/g, " ").trim()
+  `${notice.severity}:${semanticDiagnosticKey(notice.message)}`.replace(/\s+/g, " ").trim()
+
+const semanticDiagnosticKey = (message: string): string => {
+  const normalized = message.replace(/\s+/g, " ").trim()
+  const lower = normalized.toLowerCase()
+  const scopeMatch = lower.match(/missing scopes?:?\s+([a-z0-9_.:-]+)/i)
+  const scope = scopeMatch?.[1]?.replace(/[.:-]+$/, "")
+  if (lower.includes("retrying provider route") && scope) {
+    return `provider-retry-auth-scope:${scope}`
+  }
+  if ((lower.includes("error code: 401") || lower.includes("insufficient permissions")) && scope) {
+    return `provider-auth-scope:${scope}`
+  }
+  if (lower.includes("error code: 401") || lower.includes("insufficient permissions")) {
+    return "provider-auth"
+  }
+  return normalized
+}
+
+const terminalErrorKey = (message: string): string => `error:${semanticDiagnosticKey(message)}`
+
+const compactDiagnosticMessage = (message: string): string => {
+  const normalized = message.replace(/\s+/g, " ").trim()
+  const lower = normalized.toLowerCase()
+  const scopeMatch = lower.match(/missing scopes?:?\s+([a-z0-9_.:-]+)/i)
+  const scope = scopeMatch?.[1]?.replace(/[.:-]+$/, "")
+  if ((lower.includes("error code: 401") || lower.includes("insufficient permissions")) && scope) {
+    return `OpenAI auth failed: missing scope ${scope}.`
+  }
+  return normalized
+}
+
+const markTerminalErrorUnseen = (controller: any, message: string): boolean => {
+  const key = terminalErrorKey(message)
+  const seen = controller.__breadboardSeenTerminalErrorKeys instanceof Set
+    ? controller.__breadboardSeenTerminalErrorKeys
+    : new Set<string>()
+  controller.__breadboardSeenTerminalErrorKeys = seen
+  if (seen.has(key)) return false
+  seen.add(key)
+  if (seen.size > 100) {
+    const first = seen.values().next().value
+    if (first) seen.delete(first)
+  }
+  return true
+}
 
 const isStreamingFallbackTranscriptNotice = (notice: CtreeTranscriptNotice): boolean =>
   notice.severity === "warning" &&
@@ -1227,10 +1280,22 @@ const keepPendingDuringReconnect = () =>
       Boolean(this.pendingResponse && !this.completionSeen && !this.abortRequested)
     const attemptOwnedEngineRestart = async (eventType: string, message: string): Promise<boolean> => {
       if (this.lifecycleSnapshot?.mode !== "local-owned") return false
+      this.ownedEngineRecoveryAttempts = Math.max(0, this.ownedEngineRecoveryAttempts ?? 0) + 1
+      if (Number.isFinite(MAX_RETRIES) && this.ownedEngineRecoveryAttempts > MAX_RETRIES) {
+        this.pushHint(`Engine interrupted: ${message}. Engine recovery attempts exhausted after ${MAX_RETRIES} attempts.`)
+        this.setActivityStatus?.("Recovery needed (engine restart attempts exhausted)", {
+          to: "halted",
+          eventType: `${eventType}.exhausted`,
+          source: "runtime",
+        })
+        this.disconnected = true
+        this.emitChange?.()
+        return false
+      }
       this.lifecycleRestartCount = (this.lifecycleRestartCount ?? 0) + 1
-      this.pushHint(`Engine interrupted: ${message}. Restarting owned engine (attempt ${this.lifecycleRestartCount}${retrySuffix}).`)
+      this.pushHint(`Engine interrupted: ${message}. Restarting owned engine (attempt ${this.ownedEngineRecoveryAttempts}${retrySuffix}).`)
       maybeLifecycleToast(this, "Restarting engine", eventType)
-      this.setActivityStatus?.(`BreadBoard engine interrupted. Restarting (${this.lifecycleRestartCount}${retrySuffix})`, {
+      this.setActivityStatus?.(`BreadBoard engine interrupted. Restarting (${this.ownedEngineRecoveryAttempts}${retrySuffix})`, {
         to: "reconnecting",
         eventType,
         source: "runtime",
@@ -2131,7 +2196,6 @@ export function applyEvent(this: any, event: SessionEvent): void {
         }
         const message = userFacingTranscriptNotice(transcriptNotice)
         this.finalizeStreamingEntry()
-        this.pushHint(`[warning] ${message}`)
         this.addTool("status", `[warning] ${message}`, "error")
       } else if (transcriptNotice?.severity === "error") {
         surfaceTerminalError(this, transcriptNotice.message, event.type, transcriptNotice.detail, { includeConversation: true })
@@ -2416,6 +2480,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       }
       this.pendingResponse = false
       this.pendingResponseEventCountAtSubmit = null
+      this.ownedEngineRecoveryAttempts = 0
       settlePendingToolLogEntries(this, view.completed ? "success" : "error")
       this.thinkingInlineEntryId = null
       closeThinkingPreview(this, clockNow(this))
@@ -2427,33 +2492,36 @@ export function applyEvent(this: any, event: SessionEvent): void {
       if (this.thinkingArtifact) {
         this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, clockNow(this))
       }
-      const completionErrorText = view.errorNotice ? `[error] ${view.errorNotice.message}` : null
+      const completionErrorDisplayMessage = view.errorNotice ? compactDiagnosticMessage(view.errorNotice.message) : null
+      const completionErrorText = completionErrorDisplayMessage ? `[error] ${completionErrorDisplayMessage}` : null
+      const shouldSurfaceCompletionError = view.errorNotice
+        ? markTerminalErrorUnseen(this, view.errorNotice.message)
+        : false
       if (view.conversationLine && !hasEquivalentFinalAssistantEntry(this, view.conversationLine)) {
         const lastEntry = this.conversation.length > 0 ? this.conversation[this.conversation.length - 1] : undefined
         if (!(lastEntry && lastEntry.speaker === "system" && lastEntry.text === view.conversationLine)) {
           this.addConversation("system", view.conversationLine)
         }
       }
-      if (completionErrorText) {
+      if (completionErrorText && shouldSurfaceCompletionError) {
         const lastEntry = this.conversation.length > 0 ? this.conversation[this.conversation.length - 1] : undefined
         if (!(lastEntry && lastEntry.speaker === "system" && lastEntry.text === completionErrorText)) {
           this.addConversation("system", completionErrorText)
         }
       }
       if (cookedHint && !isLifecycleNoiseHint(cookedHint)) this.pushHint(cookedHint)
-      if (completionErrorText) {
-        this.pushHint(completionErrorText)
+      if (completionErrorText && shouldSurfaceCompletionError) {
         this.addTool(
           "error",
           completionErrorText,
           "error",
           view.errorNotice?.detail && view.errorNotice.detail.length > 0
             ? {
-                display: {
-                  title: "Runtime error",
-                  summary: view.errorNotice.message,
-                  detail: view.errorNotice.detail,
-                },
+                  display: {
+                    title: "Runtime error",
+                    summary: completionErrorDisplayMessage ?? view.errorNotice.message,
+                    detail: view.errorNotice.detail,
+                  },
               }
             : undefined,
         )
@@ -2461,10 +2529,10 @@ export function applyEvent(this: any, event: SessionEvent): void {
       if (view.warningSlot) {
         this.upsertLiveSlot("guardrail", view.warningSlot.text, view.warningSlot.color, "error")
         this.setGuardrailNotice(view.warningSlot.text, cookedHint ?? view.conversationLine)
-      } else if (completionErrorText) {
+      } else if (completionErrorText && shouldSurfaceCompletionError) {
         this.upsertLiveSlot("guardrail", completionErrorText, SEMANTIC_COLORS.warning, "error")
         this.setGuardrailNotice(
-          `Error: ${view.errorNotice?.message ?? "Request failed"}`,
+          `Error: ${completionErrorDisplayMessage ?? view.errorNotice?.message ?? "Request failed"}`,
           view.errorNotice?.detail && view.errorNotice.detail.length > 0
             ? view.errorNotice.detail.join("\n")
             : cookedHint ?? view.conversationLine,

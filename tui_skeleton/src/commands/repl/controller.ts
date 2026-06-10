@@ -271,6 +271,7 @@ export class ReplSessionController extends EventEmitter {
   private pendingResponse = false
   private activePromptOutcomeUnresolved = false
   private pendingResponseEventCountAtSubmit: number | null = null
+  private ownedEngineRecoveryAttempts = 0
   private mainFollowTail = true
   private pendingStartedAt: number | null = null
   private modelMenu: ModelMenuState = { status: "hidden" }
@@ -919,6 +920,9 @@ export class ReplSessionController extends EventEmitter {
     }
     this.removeLiveSlot("guardrail")
     this.pendingResponse = true
+    if (options.attemptedOwnedRecovery !== true) {
+      this.ownedEngineRecoveryAttempts = 0
+    }
     this.pendingResponseEventCountAtSubmit = this.stats.eventCount
     this.mainFollowTail = true
     this.stats.lastTurn = Math.max(this.stats.lastTurn ?? 0, nextTurn)
@@ -938,11 +942,24 @@ export class ReplSessionController extends EventEmitter {
       if (recoverableOwnedInputFailure) {
         const message = error instanceof Error ? error.message : String(error)
         this.lifecycleRestartCount = (this.lifecycleRestartCount ?? 0) + 1
+        this.ownedEngineRecoveryAttempts = Math.max(0, this.ownedEngineRecoveryAttempts ?? 0) + 1
         const attemptSuffix = Number.isFinite(MAX_RETRIES) ? `/${MAX_RETRIES}` : ""
+        if (Number.isFinite(MAX_RETRIES) && this.ownedEngineRecoveryAttempts > MAX_RETRIES) {
+          this.pushHint(`Input transport interrupted before acceptance: ${message}. Engine recovery attempts exhausted.`)
+          this.setActivityStatus("Recovery needed (engine restart attempts exhausted)", {
+            to: "halted",
+            eventType: "input.error.engine.exhausted",
+            source: "system",
+          })
+          this.pendingResponse = false
+          this.pendingResponseEventCountAtSubmit = null
+          this.emitChange()
+          throw error
+        }
         this.pushHint(
-          `Input transport interrupted before acceptance: ${message}. Restarting owned engine (attempt ${this.lifecycleRestartCount}${attemptSuffix}).`,
+          `Input transport interrupted before acceptance: ${message}. Restarting owned engine (attempt ${this.ownedEngineRecoveryAttempts}${attemptSuffix}).`,
         )
-        this.setActivityStatus(`BreadBoard engine interrupted. Restarting (${this.lifecycleRestartCount}${attemptSuffix})`, {
+        this.setActivityStatus(`BreadBoard engine interrupted. Restarting (${this.ownedEngineRecoveryAttempts}${attemptSuffix})`, {
           to: "reconnecting",
           eventType: "input.error.engine.restart",
           source: "system",
