@@ -33,6 +33,13 @@ class CompletionDetector:
         self.enable_provider_signals = bool(
             completion_cfg.get("enable_provider_signals", completion_cfg.get("provider_signals", True))
         )
+        # Opt-in: treat a bare finish_reason=stop on a turn with no tool
+        # results and no recent tool activity as a planning preamble rather
+        # than completion. Default off to preserve existing chat-profile
+        # behavior; tool-driven profiles should enable it.
+        self.require_tool_activity_for_finish_reason = bool(
+            completion_cfg.get("require_tool_activity_for_finish_reason", False)
+        )
         configured_sentinels = completion_cfg.get("text_sentinels") or []
         self.text_sentinels = [str(item) for item in configured_sentinels if str(item).strip()]
         if self.completion_sentinel not in self.text_sentinels:
@@ -82,7 +89,11 @@ class CompletionDetector:
                     )
 
         if self.enable_text_sentinels:
-            if "task complete" in normalized:
+            # Markers must appear as a standalone declaration line, not embedded
+            # in larger content: agents routinely cat tool scripts or echo their
+            # task instructions ("... then say: task complete"), and a bare
+            # substring match ends the session on turn 1.
+            if self._marker_on_standalone_line(normalized, "task complete"):
                 return self._completion_result(
                     completed=True,
                     method="assistant_content",
@@ -91,8 +102,8 @@ class CompletionDetector:
                     signal_source_kind="text_sentinel",
                 )
             for sentinel in self.text_sentinels:
-                cleaned = str(sentinel or "").strip()
-                if cleaned and cleaned.lower() in normalized:
+                cleaned = str(sentinel or "").strip().lower()
+                if cleaned and self._marker_on_standalone_line(normalized, cleaned):
                     return self._completion_result(
                         completed=True,
                         method="assistant_content",
@@ -138,6 +149,15 @@ class CompletionDetector:
                         confidence=0.8,
                         signal_source_kind="assistant_content",
                     )
+            if self.require_tool_activity_for_finish_reason and not (
+                tool_results or recent_tool_activity
+            ):
+                return self._completion_result(
+                    completed=False,
+                    method="none",
+                    reason="finish_reason_stop_without_tool_activity",
+                    confidence=0.0,
+                )
             return self._completion_result(
                 completed=True,
                 method="finish_reason",
@@ -152,6 +172,22 @@ class CompletionDetector:
             reason="no_completion_signal",
             confidence=0.0,
         )
+
+    @staticmethod
+    def _marker_on_standalone_line(text_lower: str, marker_lower: str) -> bool:
+        """True if some line is the marker itself (modest trailing decoration ok)."""
+        for raw_line in text_lower.splitlines():
+            line = raw_line.strip().lstrip("-*>#`").strip()
+            line = line.strip(" .!:*_`\"'")
+            if not line:
+                continue
+            if line == marker_lower:
+                return True
+            if line.startswith(marker_lower):
+                rest = line[len(marker_lower):]
+                if rest[:1] in " .!,;:—–-" and len(rest) <= 40:
+                    return True
+        return False
 
     def meets_threshold(self, analysis: Dict[str, Any]) -> bool:
         try:
