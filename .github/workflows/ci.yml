@@ -1607,13 +1607,42 @@ jobs:
         working-directory: vscode_sidebar
         run: npm run test
 
+      - name: Check sidebar IDE E2E prerequisites
+        id: vscode_sidebar_ide_e2e_prereqs
+        working-directory: vscode_sidebar
+        shell: bash
+        run: |
+          missing=0
+          node - <<'JS' || missing=1
+          const pkg = require('./package.json');
+          if (!pkg.scripts || !pkg.scripts['ide-e2e:pr']) {
+            console.log('missing prerequisite: package script ide-e2e:pr');
+            process.exit(1);
+          }
+          JS
+          if [ ! -f scripts/assert_ide_e2e_summary.mjs ]; then
+            echo "missing prerequisite: scripts/assert_ide_e2e_summary.mjs"
+            missing=1
+          fi
+          if [ "$missing" -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Sidebar IDE E2E (PR suite)
+        if: steps.vscode_sidebar_ide_e2e_prereqs.outputs.ready == 'true'
         working-directory: vscode_sidebar
         run: npm run ide-e2e:pr
 
       - name: Assert PR suite summary is clean
+        if: steps.vscode_sidebar_ide_e2e_prereqs.outputs.ready == 'true'
         working-directory: vscode_sidebar
         run: node scripts/assert_ide_e2e_summary.mjs --suite pr --editor vscode
+
+      - name: Sidebar IDE E2E skipped (missing prerequisites)
+        if: steps.vscode_sidebar_ide_e2e_prereqs.outputs.ready != 'true'
+        run: echo "Sidebar IDE E2E skipped on this branch."
 
       - name: Upload sidebar ide-e2e artifacts
         if: always()
