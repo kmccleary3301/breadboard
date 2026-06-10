@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import datetime
 import json
+import os
 import random
 import re
 from dataclasses import dataclass, field
@@ -936,6 +937,14 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             kwargs["base_url"] = base_url
         if default_headers:
             kwargs["default_headers"] = default_headers
+        # Long non-streamed reasoning turns can exceed the SDK's default read
+        # timeout; a timed-out request currently kills the whole session.
+        timeout_env = os.environ.get("BB_OPENAI_TIMEOUT_S")
+        if timeout_env:
+            try:
+                kwargs["timeout"] = float(timeout_env)
+            except ValueError:
+                pass
         return OpenAI(**kwargs)
 
     def _stream_chat_completion(
