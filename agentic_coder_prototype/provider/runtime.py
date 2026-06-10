@@ -1508,6 +1508,12 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         if "store" in provider_cfg:
             payload["store"] = bool(provider_cfg.get("store"))
 
+        # Pass provider-tools reasoning config (e.g. {"effort": "high"})
+        # through to the Responses API verbatim.
+        reasoning_cfg = provider_cfg.get("reasoning")
+        if isinstance(reasoning_cfg, dict) and reasoning_cfg:
+            payload["reasoning"] = dict(reasoning_cfg)
+
         tool_choice_cfg = provider_cfg.get("tool_choice")
         if tool_choice_cfg is not None and responses_tools:
             resolved_choice: Any = tool_choice_cfg
