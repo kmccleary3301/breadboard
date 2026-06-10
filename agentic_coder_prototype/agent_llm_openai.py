@@ -4632,7 +4632,15 @@ class OpenAIConductor:
             except Exception:
                 return text
 
-        result = self._ray_get(self.sandbox.run.remote(command, timeout=timeout or 30, stream=True))
+        if not timeout:
+            # A hard 30s default silently kills long-running legitimate tools
+            # (builds, test suites, remote evals); profiles can raise it via
+            # tools.run_shell_timeout_s without models having to pass timeouts.
+            try:
+                timeout = int((self.config.get("tools") or {}).get("run_shell_timeout_s") or 30)
+            except Exception:
+                timeout = 30
+        result = self._ray_get(self.sandbox.run.remote(command, timeout=timeout, stream=True))
 
         # Newer sandbox implementations return a dict payload directly.
         if isinstance(result, dict):
@@ -4924,6 +4932,11 @@ class OpenAIConductor:
         if name in {"run_shell", "Bash"}:
             command = args.get("command") or args.get("input")
             timeout = args.get("timeout")
+            if not timeout:
+                try:
+                    timeout = int((self.config.get("tools") or {}).get("run_shell_timeout_s") or 30)
+                except Exception:
+                    timeout = 30
             return self._ray_get(self.sandbox.run_shell.remote(command, timeout=timeout))
         return {"error": f"unknown tool {name}"}
 
