@@ -21,6 +21,9 @@ class BashBlockDialect(BaseToolDialect):
     type_id: str = "python"
 
     _BLOCK_RE = re.compile(r"<BASH>\s*(?P<cmd>[\s\S]*?)\s*</BASH>", re.M)
+    # Models overwhelmingly emit markdown shell fences; accept them under the
+    # same run_shell gate.
+    _FENCE_RE = re.compile(r"```(?:bash|sh|shell)[ \t]*\n(?P<cmd>[\s\S]*?)```", re.M)
 
     def prompt_for_tools(self, tools: List[ToolDefinition]) -> str:
         has_shell = any(t.name == "run_shell" for t in tools)
@@ -45,9 +48,10 @@ class BashBlockDialect(BaseToolDialect):
         if not tool_name:
             return []
         calls: list[ToolCallParsed] = []
-        for m in self._BLOCK_RE.finditer(text):
-            cmd = m.group("cmd").strip()
-            if cmd:
-                calls.append(ToolCallParsed(function=tool_name, arguments={"command": cmd}))
+        for regex in (self._BLOCK_RE, self._FENCE_RE):
+            for m in regex.finditer(text):
+                cmd = m.group("cmd").strip()
+                if cmd:
+                    calls.append(ToolCallParsed(function=tool_name, arguments={"command": cmd}))
         return calls
 
