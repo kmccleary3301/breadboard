@@ -413,7 +413,14 @@ class AgenticCoder:
             self.initialize()
 
         model = self._select_model()
-        steps = int(max_iterations or self.config.get('max_iterations', 12))
+        loop_cfg = self.config.get('loop') or {}
+        steps = int(
+            max_iterations
+            or self.config.get('max_iterations')
+            or loop_cfg.get('max_iterations')
+            or loop_cfg.get('max_steps')
+            or 12
+        )
         tool_prompt_mode = self._resolve_tool_prompt_mode() or "system_once"
         # If task is a file path, read it as the user prompt content; else use as-is
         user_prompt = task
