@@ -1,0 +1,473 @@
+{
+  "schemaVersion": 1,
+  "id": "markdown_stream_final_resize_v1",
+  "title": "Markdown Stream Final Resize Playground V1",
+  "description": "Production-path playground profile dedicated to streamed markdown rendering. It resizes while a long markdown fixture is still arriving, then churns widths after completion to prove frozen markdown stays complete, singular, and visible without replaying partial render artifacts.",
+  "tags": [
+    "resize-spine",
+    "markdown",
+    "streaming",
+    "playground",
+    "scrollback",
+    "durable-transcript"
+  ],
+  "family": "resize-spine-playground",
+  "campaign": "post-p16-resize-resilience-spine",
+  "claimScope": "pty",
+  "expectedOutcome": {
+    "verdict": "pass"
+  },
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "markdown-renderer",
+      "transcript-store",
+      "composer",
+      "footer",
+      "scrollback-feed",
+      "live-slot-store",
+      "direct-cell-mutation"
+    ]
+  },
+  "environment": {
+    "env": {
+      "BREADBOARD_TUI_STRICT_TRANSCRIPT_SAFETY": "1"
+    },
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# Markdown stream final resize playground\n\nSynthetic workspace for resize resilience QC.\n"
+        },
+        {
+          "path": "notes/markdown.md",
+          "content": "## fixture\n- alpha\n- beta\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "markdown-stream-pre",
+        "kind": "long-wrap",
+        "text": "BB_RS_P16_MD_PRE_HISTORY_BEGIN alpha beta gamma delta epsilon zeta eta theta BB_RS_P16_MD_PRE_HISTORY_END"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 140000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 126,
+      "rows": 36
+    },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true,
+    "captureScreenshots": true
+  },
+  "expectedVisibleText": [
+    "Long list",
+    "item 12",
+    "MARKDOWN_STREAM_FINAL_SENTINEL",
+    "enter send"
+  ],
+  "expectedFinalVisibleText": [
+    "Long list",
+    "item 12",
+    "MARKDOWN_STREAM_FINAL_SENTINEL",
+    "enter send"
+  ],
+  "expectedFinalUniqueText": [
+    "Long list",
+    "item 12",
+    "MARKDOWN_STREAM_FINAL_SENTINEL"
+  ],
+  "expectedSnapshotVisibleText": {
+    "markdown-final-wide": [
+      "Long list",
+      "item 12",
+      "MARKDOWN_STREAM_FINAL_SENTINEL",
+      "enter send"
+    ],
+    "markdown-post-final-compact": [
+      "Long list",
+      "item 12",
+      "MARKDOWN_STREAM_FINAL_SENTINEL",
+      "enter send"
+    ],
+    "markdown-post-final-wide": [
+      "Long list",
+      "item 12",
+      "MARKDOWN_STREAM_FINAL_SENTINEL",
+      "enter send"
+    ]
+  },
+  "expectedSnapshotUniqueText": {
+    "markdown-final-wide": [
+      "Long list",
+      "item 12",
+      "MARKDOWN_STREAM_FINAL_SENTINEL"
+    ],
+    "markdown-post-final-compact": [
+      "Long list",
+      "item 12",
+      "MARKDOWN_STREAM_FINAL_SENTINEL"
+    ],
+    "markdown-post-final-wide": [
+      "Long list",
+      "item 12",
+      "MARKDOWN_STREAM_FINAL_SENTINEL"
+    ]
+  },
+  "timeline": [
+    {
+      "kind": "submit",
+      "text": "Stream a long markdown list and keep it stable across aggressive width changes."
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "markdown-stream-1",
+        "messageId": "markdown-msg-1",
+        "turn": 1
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "markdown-fixture",
+        "streamId": "markdown-stream-1",
+        "fixture": "long-list",
+        "chunking": {
+          "mode": "char",
+          "seed": 17
+        },
+        "turn": 1
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "item 3"
+      },
+      "timeoutMs": 45000
+    },
+    {
+      "kind": "resize",
+      "cols": 88,
+      "rows": 24,
+      "settleMs": 160
+    },
+    {
+      "kind": "checkpoint",
+      "id": "markdown-mid-stream-compact",
+      "capture": {
+        "stateDump": true,
+        "grid": true,
+        "scrollback": true,
+        "markdownPaint": true
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "item 8"
+      },
+      "timeoutMs": 45000
+    },
+    {
+      "kind": "resize",
+      "cols": 68,
+      "rows": 18,
+      "settleMs": 180
+    },
+    {
+      "kind": "checkpoint",
+      "id": "markdown-narrow-after-item-8",
+      "capture": {
+        "stateDump": true,
+        "grid": true,
+        "scrollback": true,
+        "markdownPaint": true
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "markdown-stream-1",
+        "text": "\nMARKDOWN_STREAM_FINAL_SENTINEL\n",
+        "turn": 1
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "markdown-stream-1",
+        "finishReason": "stop",
+        "turn": 1
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "MARKDOWN_STREAM_FINAL_SENTINEL"
+      },
+      "timeoutMs": 45000
+    },
+    {
+      "kind": "resize",
+      "cols": 132,
+      "rows": 38,
+      "settleMs": 220
+    },
+    {
+      "kind": "wait",
+      "ms": 400
+    },
+    {
+      "kind": "checkpoint",
+      "id": "markdown-final-wide",
+      "capture": {
+        "stateDump": true,
+        "grid": true,
+        "scrollback": true,
+        "markdownPaint": true
+      }
+    },
+    {
+      "kind": "resize",
+      "cols": 76,
+      "rows": 22,
+      "settleMs": 220
+    },
+    {
+      "kind": "wait",
+      "ms": 350
+    },
+    {
+      "kind": "checkpoint",
+      "id": "markdown-post-final-compact",
+      "capture": {
+        "stateDump": true,
+        "grid": true,
+        "scrollback": true,
+        "markdownPaint": true
+      }
+    },
+    {
+      "kind": "resize",
+      "cols": 126,
+      "rows": 36,
+      "settleMs": 220
+    },
+    {
+      "kind": "wait",
+      "ms": 350
+    },
+    {
+      "kind": "checkpoint",
+      "id": "markdown-post-final-wide",
+      "capture": {
+        "stateDump": true,
+        "grid": true,
+        "scrollback": true,
+        "markdownPaint": true
+      }
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-SYSTEM-PROMPT-LEAK",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-MAX-LISTENERS-WARNING",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RETRY-BUDGET-OVERFLOW",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-DUPLICATE-PROMPT",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-TRANSCRIPT-ORDER",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-FOOTER-TRUTHFUL",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DESTRUCTIVE-CLEAR",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DUPLICATE-ASSISTANT-TAIL",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-COMPOSER-PROMPT-REPLAY",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "MD-FINAL-TEXT-COMPLETE",
+      "severity": "blocker"
+    },
+    {
+      "id": "MD-NO-STREAMING-PARTIAL-REPLAY",
+      "severity": "blocker"
+    },
+    {
+      "id": "VISIBLE-TEXT-SENTINELS-PRESENT",
+      "severity": "blocker"
+    },
+    {
+      "id": "FINAL-VISIBLE-TEXT-SENTINELS-PRESENT",
+      "severity": "blocker"
+    },
+    {
+      "id": "FINAL-VISIBLE-TEXT-SENTINELS-UNIQUE",
+      "severity": "blocker"
+    },
+    {
+      "id": "SNAPSHOT-VISIBLE-TEXT-SENTINELS-PRESENT",
+      "severity": "blocker"
+    },
+    {
+      "id": "SNAPSHOT-VISIBLE-TEXT-SENTINELS-UNIQUE",
+      "severity": "blocker"
+    },
+    {
+      "id": "LIVE-NO-STALE-STREAMING-WHEN-IDLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "LIVE-NO-PENDING-SLOTS-WHEN-IDLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "LIVE-TRANSCRIPT-CELL-IDS-UNIQUE",
+      "severity": "blocker"
+    },
+    {
+      "id": "LIVE-DURABLE-DEDUPE-KEYS-UNIQUE",
+      "severity": "blocker"
+    },
+    {
+      "id": "DURABLE-PROMPT-IDS-UNIQUE",
+      "severity": "blocker"
+    },
+    {
+      "id": "DURABLE-ASSISTANT-FINAL-IDS-UNIQUE",
+      "severity": "blocker"
+    },
+    {
+      "id": "DURABLE-TOOL-IDS-UNIQUE",
+      "severity": "blocker"
+    },
+    {
+      "id": "DURABLE-RECOVERY-EPISODES-UNIQUE",
+      "severity": "blocker"
+    },
+    {
+      "id": "LIVE-HANDOFF-CLEAN-WHEN-IDLE",
+      "severity": "blocker"
+    }
+  ],
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report",
+      "scrollback",
+      "viewport",
+      "frames"
+    ]
+  },
+  "actionRequirements": {
+    "inputSubmitted": "required",
+    "assistantStreamStarted": "required",
+    "assistantStreamCompleted": "required",
+    "assistantInjected": "required",
+    "resizeRequested": "required",
+    "resizeObserved": "required",
+    "waitTargetsObserved": "required",
+    "stateDumpObservedAfterSubmit": "required",
+    "stateDumpObservedAfterResize": "required",
+    "artifactCaptureComplete": "required"
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "not-required"
+  },
+  "hotRegionExpectation": {
+    "maxRows": 12,
+    "freezeAfterCheckpoint": "markdown-final-wide"
+  },
+  "mutationProfile": {
+    "seed": 17,
+    "dimensions": [
+      "streamed-markdown",
+      "char-chunking",
+      "mid-stream-resize",
+      "post-completion-resize",
+      "final-sentinel-cardinality",
+      "strict-transcript-safety"
+    ]
+  }
+}
