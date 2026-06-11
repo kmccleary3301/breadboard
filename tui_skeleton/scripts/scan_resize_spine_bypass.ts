@@ -16,7 +16,7 @@ const root = process.cwd()
 const outputPath =
   process.argv.find((arg) => arg.startsWith("--out="))?.slice("--out=".length) ??
   path.join(root, "scripts", "_tmp_resize_spine_bypass_scan.md")
-const allowlistBudgetRaw = process.env.BREADBOARD_RESIZE_SPINE_MAX_ALLOWLISTED ?? "114"
+const allowlistBudgetRaw = process.env.BREADBOARD_RESIZE_SPINE_MAX_ALLOWLISTED ?? "112"
 const allowlistBudget = Number(allowlistBudgetRaw)
 
 const scanRoots = [

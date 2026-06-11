@@ -29,6 +29,10 @@ import type {
   ToolDisplayPayload,
 } from "../../../types.js"
 import type { RecentSessionRow, ReplViewProps } from "../replViewTypes.js"
+import {
+  buildBottomAnchoredClearSequence,
+  buildLineRangeAboveActiveBandClearSequence,
+} from "../terminalSequences.js"
 import type { SlashCommandInfo, SlashSuggestion } from "../../../slashCommands.js"
 import { ASCII_HEADER } from "../../../viewUtils.js"
 import { STATUS_VERBS } from "../../../designSystem.js"
@@ -266,15 +270,6 @@ export const useReplViewController = ({
   const FOOTER_V2_ENABLED = useMemo(() => parseBoolEnv(process.env.BREADBOARD_TUI_FOOTER_V2, true), [])
   const { stdout } = useStdout()
   const terminalSize = useTerminalSize(stdout)
-  const buildLineAboveActiveBandClearSequence = (rowsAboveCursor: number): string => {
-    const moveUpRows = Math.max(1, Math.floor(rowsAboveCursor))
-    return `\u001b7\r\u001b[${moveUpRows}A\u001b[2K\u001b8`
-  }
-  const buildLineRangeAboveActiveBandClearSequence = (rowsAboveCursor: number, lineCount: number): string => {
-    const startRows = Math.max(1, Math.floor(rowsAboveCursor))
-    const count = Math.max(1, Math.floor(lineCount))
-    return Array.from({ length: count }, (_, index) => buildLineAboveActiveBandClearSequence(startRows + index)).join("")
-  }
   const reclaimOverlayRegion = useCallback((mode: "bounded" | "close" = "bounded") => {
     if (!SCROLLBACK_MODE) return
     if (!stdout?.isTTY) return
@@ -297,7 +292,7 @@ export const useReplViewController = ({
     try {
       const rows = Math.max(1, resolveActualStdoutRows(stdout?.rows))
       const reclaimRows = Math.min(rows, 24)
-      stdout.write(`\r\u001b[999B\r\u001b[${reclaimRows}A\r\u001b[J`)
+      stdout.write(buildBottomAnchoredClearSequence(reclaimRows))
     } catch {
       // Ignore reclaim failures; Ink will still render the modal state.
     }
