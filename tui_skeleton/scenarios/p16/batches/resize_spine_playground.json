@@ -3,6 +3,10 @@
   "id": "p16_resize_spine_playground",
   "campaign": "post-p16-resize-resilience-spine",
   "scenarios": [
-    "scenarios/p16/playground/diagnostic_mixed_resize_churn_v1.json"
+    "scenarios/p16/playground/diagnostic_mixed_resize_churn_v1.json",
+    {
+      "path": "scenarios/p16/playground/known_bad_raw_provider_diagnostic_visible.json",
+      "expectedRed": true
+    }
   ]
 }

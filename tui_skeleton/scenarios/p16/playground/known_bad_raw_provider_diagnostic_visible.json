@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "id": "known_bad_raw_provider_diagnostic_visible",
+  "title": "Known Bad Raw Provider Diagnostic Visible Calibration",
+  "description": "Expected-red calibration proving GLOBAL-NO-RAW-PROVIDER-DIAGNOSTIC fails when raw provider payload text is rendered into default visible output.",
+  "tags": ["resize-spine", "diagnostics", "expected-red", "playground"],
+  "family": "resize-spine-playground",
+  "campaign": "post-p16-resize-resilience-spine",
+  "claimScope": "pty",
+  "expectedOutcome": {
+    "verdict": "fail",
+    "failureClass": "invariant.GLOBAL-NO-RAW-PROVIDER-DIAGNOSTIC",
+    "reason": "Raw provider payload is intentionally rendered as visible assistant text."
+  },
+  "knownFailureClass": "raw-provider-diagnostic-visible",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "time", "workspace"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "scrollback-feed", "direct-cell-mutation"]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        { "path": "README.md", "content": "# Expected red raw provider diagnostic fixture\n" }
+      ]
+    },
+    "prelaunchShellHistory": [
+      { "id": "raw-provider-pre", "text": "BB_RAW_PROVIDER_EXPECTED_RED_PRE_HISTORY" }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": { "composerReady": true, "timeoutMs": 20000 },
+    "timeoutMs": 120000
+  },
+  "terminal": {
+    "lanes": ["pty"],
+    "initial": { "cols": 110, "rows": 32 },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true,
+    "captureScreenshots": true
+  },
+  "timeline": [
+    { "kind": "submit", "text": "Render the known-bad raw diagnostic calibration." },
+    { "kind": "assistant", "event": { "kind": "start", "streamId": "raw-provider-bad" } },
+    { "kind": "assistant", "event": { "kind": "delta", "streamId": "raw-provider-bad", "text": "Error code: 429 - {'error': {'message': \"You exceeded your current quota.\", 'type': 'insufficient_quota'}}" } },
+    { "kind": "assistant", "event": { "kind": "complete", "streamId": "raw-provider-bad" } },
+    { "kind": "waitFor", "target": { "text": "insufficient_quota" }, "timeoutMs": 45000 },
+    { "kind": "resize", "cols": 78, "rows": 24, "settleMs": 250 },
+    { "kind": "checkpoint", "id": "raw-provider-visible", "capture": { "stateDump": true, "grid": true, "scrollback": true } }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-PROVIDER-DIAGNOSTIC", "severity": "blocker" },
+    { "id": "GLOBAL-NO-DUPLICATE-PROMPT", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report"] },
+  "actionRequirements": {
+    "inputSubmitted": "required",
+    "assistantStreamStarted": "required",
+    "assistantStreamCompleted": "required",
+    "resizeRequested": "required",
+    "resizeObserved": "required",
+    "waitTargetsObserved": "required"
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "not-required"
+  },
+  "mutationProfile": {
+    "seed": 2,
+    "dimensions": ["expected-red", "raw-provider-diagnostic", "visible-assistant-text", "resize"]
+  }
+}
