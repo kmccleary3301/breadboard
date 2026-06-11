@@ -61,6 +61,34 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("fails MaxListenersExceededWarning leakage", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "pty_raw.ansi"), "(node:123) MaxListenersExceededWarning: Possible EventEmitter memory leak detected\n", "utf8")
+      const report = await evaluateInvariants(dir, "bad_max_listeners", "pty", [{ id: "GLOBAL-NO-MAX-LISTENERS-WARNING", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails retry attempt labels that exceed their budget", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "viewport_final.txt"), "Engine interrupted: terminated. Restarting owned engine (attempt 6/5).\n", "utf8")
+      const report = await evaluateInvariants(dir, "bad_retry_budget", "pty", [{ id: "GLOBAL-NO-RETRY-BUDGET-OVERFLOW", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({ overflow: [{ value: 6, budget: 5 }] })
+    })
+  })
+
+  it("passes retry attempt labels within their budget", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "viewport_final.txt"), "Stream interruption: terminated. Retrying in 4000ms (attempt 4/5).\n", "utf8")
+      const report = await evaluateInvariants(dir, "good_retry_budget", "pty", [{ id: "GLOBAL-NO-RETRY-BUDGET-OVERFLOW", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+    })
+  })
+
   it("fails duplicated landing pane markers", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(path.join(dir, "scrollback_final.txt"), "BreadBoard v0.2.0\nUsing Config `Codex`\nBreadBoard v0.2.0\nUsing Config `Codex`\n", "utf8")

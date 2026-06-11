@@ -79,6 +79,11 @@ const textBlob = (artifacts: ScenarioArtifacts): string =>
     .filter((value): value is string => typeof value === "string")
     .join("\n")
 
+const diagnosticTextBlob = (artifacts: ScenarioArtifacts): string =>
+  [artifacts.plainText, artifacts.rawText, artifacts.viewportText, artifacts.scrollbackText, artifacts.stateDumpText, artifacts.terminalGridText]
+    .filter((value): value is string => typeof value === "string")
+    .join("\n")
+
 const countOccurrences = (text: string, needle: string): number => {
   if (!needle) return 0
   let count = 0
@@ -341,6 +346,24 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     const patterns = [/You are Codex, based on GPT-5/i, /## Editing constraints/i, /## Plan tool/i, /system prompt/i]
     const matched = patterns.find((pattern) => pattern.test(text))?.source
     return matched ? fail(request, "system/developer prompt leakage detected", { pattern: matched }) : pass(request, "no system prompt leakage detected")
+  },
+  "GLOBAL-NO-MAX-LISTENERS-WARNING": (request, artifacts) => {
+    const text = diagnosticTextBlob(artifacts)
+    return /MaxListenersExceededWarning/i.test(text)
+      ? fail(request, "MaxListenersExceededWarning surfaced in scenario artifacts")
+      : pass(request, "no MaxListenersExceededWarning detected")
+  },
+  "GLOBAL-NO-RETRY-BUDGET-OVERFLOW": (request, artifacts) => {
+    const text = diagnosticTextBlob(artifacts)
+    const attempts = [...text.matchAll(/\battempt\s+(\d+)\s*\/\s*(\d+)\b/gi)].map((match) => ({
+      value: Number(match[1]),
+      budget: Number(match[2]),
+      text: match[0],
+    }))
+    const overflow = attempts.filter((attempt) => Number.isFinite(attempt.value) && Number.isFinite(attempt.budget) && attempt.value > attempt.budget)
+    return overflow.length === 0
+      ? pass(request, "retry attempt labels stay within budget", { attempts })
+      : fail(request, "retry attempt label exceeds retry budget", { overflow })
   },
   "GLOBAL-NO-DUPLICATE-PROMPT": (request, artifacts) => {
     const text = finalVisibleText(artifacts)

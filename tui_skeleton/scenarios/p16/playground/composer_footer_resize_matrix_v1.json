@@ -104,6 +104,8 @@
     { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
     { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
     { "id": "GLOBAL-NO-SYSTEM-PROMPT-LEAK", "severity": "blocker" },
+    { "id": "GLOBAL-NO-MAX-LISTENERS-WARNING", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RETRY-BUDGET-OVERFLOW", "severity": "blocker" },
     { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
     { "id": "GLOBAL-FOOTER-TRUTHFUL", "severity": "blocker" },
     { "id": "VISIBLE-TEXT-SENTINELS-PRESENT", "severity": "blocker" },

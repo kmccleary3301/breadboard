@@ -57,6 +57,8 @@
     { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
     { "id": "GLOBAL-NO-RAW-PROVIDER-DIAGNOSTIC", "severity": "blocker" },
     { "id": "GLOBAL-NO-DUPLICATE-PROMPT", "severity": "blocker" },
+    { "id": "GLOBAL-NO-MAX-LISTENERS-WARNING", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RETRY-BUDGET-OVERFLOW", "severity": "blocker" },
     { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
     { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" }
   ],
