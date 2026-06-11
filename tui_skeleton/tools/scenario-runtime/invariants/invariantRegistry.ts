@@ -113,6 +113,46 @@ const latestState = (artifacts: ScenarioArtifacts): any | null => {
   return latest?.state ?? latest ?? null
 }
 
+const latestStateRecord = (artifacts: ScenarioArtifacts): any | null => {
+  const records = parseNdjson(artifacts.stateDumpText)
+  return records.at(-1) ?? null
+}
+
+const latestTranscriptCells = (artifacts: ScenarioArtifacts): any[] => {
+  const record = latestStateRecord(artifacts)
+  const cells = record?.transcriptCells ?? record?.state?.transcriptCells
+  if (Array.isArray(cells)) return cells
+  const records = parseNdjson(artifacts.transcriptCellsText)
+  if (records.length === 1 && Array.isArray(records[0]?.transcriptCells)) return records[0].transcriptCells
+  if (records.length === 1 && Array.isArray(records[0]?.cells)) return records[0].cells
+  return records
+}
+
+const latestConversationEntries = (artifacts: ScenarioArtifacts): any[] => {
+  const state = latestState(artifacts)
+  return Array.isArray(state?.conversation) ? state.conversation : []
+}
+
+const latestLiveSlots = (artifacts: ScenarioArtifacts): any[] => {
+  const state = latestState(artifacts)
+  return Array.isArray(state?.liveSlots) ? state.liveSlots : []
+}
+
+const latestPendingResponse = (artifacts: ScenarioArtifacts): boolean => latestState(artifacts)?.pendingResponse === true
+
+const activeLiveSlotStatuses = new Set(["active", "pending", "running", "streaming", "recovering", "reconnecting"])
+
+const isActiveLiveSlot = (slot: any): boolean => {
+  const status = String(slot?.status ?? "").trim().toLowerCase()
+  if (status && activeLiveSlotStatuses.has(status)) return true
+  const text = String(slot?.text ?? slot?.label ?? "").trim()
+  return /\b(?:running|streaming|thinking|recovering|reconnecting|pending|attempting|retrying)\b/i.test(text)
+}
+
+const cellIdentity = (cell: any): string => String(cell?.id ?? "").trim()
+
+const cellDedupeKey = (cell: any): string => String(cell?.dedupeKey ?? "").trim()
+
 const getAcceptedPrompts = (artifacts: ScenarioArtifacts): string[] => {
   const manifestPrompt = artifacts.manifest?.expectedPrompt
   if (typeof manifestPrompt === "string" && manifestPrompt.trim()) return [manifestPrompt.trim()]
@@ -238,7 +278,16 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     const text = textBlob(artifacts)
     if (!prompt || !expected) return skip(request, "prompt/assistant order expectation missing")
     const promptIdx = text.indexOf(prompt)
-    const assistantIdx = text.indexOf(expected)
+    const exactAssistantIdx = text.indexOf(expected)
+    const semanticAssistantIndexes = expectedAssistantTerms(artifacts)
+      .map((term) => text.indexOf(term))
+      .filter((index) => index >= 0)
+    const assistantIdx =
+      exactAssistantIdx >= 0
+        ? exactAssistantIdx
+        : semanticAssistantIndexes.length > 0
+          ? Math.min(...semanticAssistantIndexes)
+          : -1
     return promptIdx >= 0 && assistantIdx >= 0 && promptIdx < assistantIdx
       ? pass(request, "prompt appears before assistant text")
       : fail(request, "prompt/assistant order not proven", { promptIdx, assistantIdx })
@@ -262,6 +311,64 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     const text = textBlob(artifacts)
     const hasFooter = /enter send|resume \/sessions|ctrl\+|shortcuts|mdl /.test(text)
     return hasFooter ? pass(request, "footer/status affordance visible") : fail(request, "footer/status affordance missing")
+  },
+  "LIVE-NO-STALE-STREAMING-WHEN-IDLE": (request, artifacts) => {
+    if (latestPendingResponse(artifacts)) return pass(request, "pending response still active; streaming rows are allowed")
+    const conversationStreaming = latestConversationEntries(artifacts).filter((entry) => entry?.phase === "streaming")
+    const cellStreaming = latestTranscriptCells(artifacts).filter((cell) => cell?.streaming === true || cell?.phase === "streaming" || cell?.lifecycle === "live")
+    const stale = [...conversationStreaming, ...cellStreaming]
+    return stale.length === 0
+      ? pass(request, "no stale streaming conversation or transcript cells after idle")
+      : fail(request, "stale streaming rows remain after idle", { staleCount: stale.length, stale: stale.slice(0, 6) })
+  },
+  "LIVE-NO-PENDING-SLOTS-WHEN-IDLE": (request, artifacts) => {
+    if (latestPendingResponse(artifacts)) return pass(request, "pending response still active; live slots are allowed")
+    const slots = latestLiveSlots(artifacts)
+    const active = slots.filter(isActiveLiveSlot)
+    return active.length === 0
+      ? pass(request, "no active live slots remain after idle", { liveSlotCount: slots.length })
+      : fail(request, "active live slots remain after idle", { activeCount: active.length, active: active.slice(0, 6) })
+  },
+  "LIVE-TRANSCRIPT-CELL-IDS-UNIQUE": (request, artifacts) => {
+    const cells = latestTranscriptCells(artifacts)
+    if (cells.length === 0) return skip(request, "no transcript cells available")
+    const seen = new Set<string>()
+    const duplicates: string[] = []
+    for (const cell of cells) {
+      const id = cellIdentity(cell)
+      if (!id) continue
+      if (seen.has(id)) duplicates.push(id)
+      else seen.add(id)
+    }
+    return duplicates.length === 0
+      ? pass(request, "transcript cell IDs are unique", { cellCount: cells.length, identifiedCells: seen.size })
+      : fail(request, "duplicate transcript cell IDs detected", { duplicates: Array.from(new Set(duplicates)) })
+  },
+  "LIVE-DURABLE-DEDUPE-KEYS-UNIQUE": (request, artifacts) => {
+    const cells = latestTranscriptCells(artifacts).filter((cell) => cell?.streaming !== true && cell?.phase !== "streaming" && cell?.lifecycle !== "live")
+    if (cells.length === 0) return skip(request, "no durable transcript cells available")
+    const seen = new Set<string>()
+    const duplicates: string[] = []
+    for (const cell of cells) {
+      const key = cellDedupeKey(cell)
+      if (!key) continue
+      if (seen.has(key)) duplicates.push(key)
+      else seen.add(key)
+    }
+    return duplicates.length === 0
+      ? pass(request, "durable transcript dedupe keys are unique", { durableCells: cells.length, keyedCells: seen.size })
+      : fail(request, "duplicate durable transcript dedupe keys detected", { duplicates: Array.from(new Set(duplicates)).slice(0, 12) })
+  },
+  "LIVE-HANDOFF-CLEAN-WHEN-IDLE": (request, artifacts) => {
+    if (latestPendingResponse(artifacts)) return pass(request, "pending response still active; handoff is not expected yet")
+    const staleStreaming = invariantFns["LIVE-NO-STALE-STREAMING-WHEN-IDLE"](request, artifacts)
+    if (staleStreaming.status === "fail") return staleStreaming
+    const staleSlots = invariantFns["LIVE-NO-PENDING-SLOTS-WHEN-IDLE"](request, artifacts)
+    if (staleSlots.status === "fail") return staleSlots
+    return pass(request, "live regions have cleanly handed off or cleared after idle", {
+      liveSlotCount: latestLiveSlots(artifacts).length,
+      transcriptCellCount: latestTranscriptCells(artifacts).length,
+    })
   },
   "RESIZE-ACTION-OBSERVED": (request, artifacts) => {
     const confirmations = artifacts.actionConfirmations ?? {}

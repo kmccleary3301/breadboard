@@ -90,6 +90,16 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("accepts rendered markdown terms for transcript order", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedPrompt: "Show markdown.", expectedAssistantText: "## Rendered Heading\n- durable item" }), "utf8")
+      await writeFile(path.join(dir, "scrollback_final.txt"), "❯ Show markdown.\n\nRendered Heading\n\n- durable item\n", "utf8")
+      const report = await evaluateInvariants(dir, "rendered_markdown_order", "pty", [{ id: "GLOBAL-TRANSCRIPT-ORDER", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+    })
+  })
+
   it("fails destructive clear-scrollback sequences", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(path.join(dir, "pty_raw.ansi"), "before\x1b[2J\x1b[3J\x1b[Hafter", "utf8")
@@ -201,6 +211,71 @@ describe("scenario runtime invariants", () => {
     await withArtifactDir(async (dir) => {
       await writeFile(path.join(dir, "scrollback_final.txt"), "User prompt\nDisconnected: Lost connection to the engine.\nAssistant answer\n", "utf8")
       const report = await evaluateInvariants(dir, "bad_lifecycle_pollution", "pty", [{ id: "LIFE-RECOVERY-NO-BODY-POLLUTION", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails stale streaming rows after idle", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: {
+            pendingResponse: false,
+            conversation: [{ id: "conv-live", speaker: "assistant", phase: "streaming", text: "still streaming" }],
+            liveSlots: [],
+          },
+          transcriptCells: [{ id: "msg:conv-live", lifecycle: "live", streaming: true, phase: "streaming" }],
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_stale_streaming_idle", "pty", [{ id: "LIVE-NO-STALE-STREAMING-WHEN-IDLE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails active live slots after idle", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({ state: { pendingResponse: false, conversation: [], liveSlots: [{ id: "tool-1", status: "running", text: "tool running" }] } })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_pending_slot_idle", "pty", [{ id: "LIVE-NO-PENDING-SLOTS-WHEN-IDLE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails duplicate transcript cell IDs", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({ state: { pendingResponse: false, conversation: [], liveSlots: [] }, transcriptCells: [{ id: "msg:1" }, { id: "msg:1" }] })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_duplicate_cell_ids", "pty", [{ id: "LIVE-TRANSCRIPT-CELL-IDS-UNIQUE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails duplicate durable dedupe keys", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: { pendingResponse: false, conversation: [], liveSlots: [] },
+          transcriptCells: [
+            { id: "sys:1", lifecycle: "committed", streaming: false, dedupeKey: "diag:provider-auth" },
+            { id: "sys:2", lifecycle: "committed", streaming: false, dedupeKey: "diag:provider-auth" },
+          ],
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_duplicate_dedupe_keys", "pty", [{ id: "LIVE-DURABLE-DEDUPE-KEYS-UNIQUE", severity: "blocker" }])
       expect(report.ok).toBe(false)
       expect(report.results[0]?.status).toBe("fail")
     })
