@@ -160,6 +160,11 @@ const liveSlotsFromRecord = (record: any): any[] => {
   return Array.isArray(state?.liveSlots) ? state.liveSlots : []
 }
 
+const surfacePoliciesFromRecord = (record: any): any[] => {
+  const surfaces = record?.surfacePolicies ?? record?.state?.surfacePolicies
+  return Array.isArray(surfaces) ? surfaces : []
+}
+
 const latestPendingResponse = (artifacts: ScenarioArtifacts): boolean => latestState(artifacts)?.pendingResponse === true
 
 const activeLiveSlotStatuses = new Set(["active", "pending", "running", "streaming", "recovering", "reconnecting"])
@@ -188,6 +193,26 @@ const renderPolicyAllowedValues = {
   detailPolicy: new Set(["inline-only", "raw-copy", "inspector", "export", "inspector-or-export"]),
   priority: new Set(["low", "normal", "high", "critical"]),
 } as const
+
+const renderPolicyComponentKinds = new Set([
+  "landing",
+  "user-request",
+  "assistant-message",
+  "tool-call",
+  "tool-result",
+  "tool-error",
+  "tool-summary",
+  "diff",
+  "approval",
+  "interrupted",
+  "status",
+  "command-result",
+  "system",
+  "live-slot",
+  "composer",
+  "footer",
+  "overlay",
+])
 
 const renderPolicyFields = Object.keys(renderPolicyAllowedValues) as Array<keyof typeof renderPolicyAllowedValues>
 
@@ -663,6 +688,28 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     return missing.length === 0
       ? pass(request, "all observed live slots have render policy metadata", { liveSlotSamples: slots.length })
       : fail(request, "live slots missing render policy metadata", { missing: missing.slice(0, 12), missingCount: missing.length })
+  },
+  "GLOBAL-SURFACES-HAVE-RENDER-POLICY": (request, artifacts) => {
+    const surfaces = stateDumpRecords(artifacts).flatMap((record, recordIndex) =>
+      surfacePoliciesFromRecord(record).map((surface, surfaceIndex) => ({ recordIndex, surfaceIndex, surface })),
+    )
+    if (surfaces.length === 0) return skip(request, "no surface policy records observed in state dumps")
+    const missing = surfaces.flatMap(({ recordIndex, surfaceIndex, surface }) => {
+      const id = String(surface?.id ?? `record:${recordIndex}:surface:${surfaceIndex}`)
+      const componentKind = String(surface?.componentKind ?? surface?.renderPolicy?.componentKind ?? "").trim()
+      const componentMissing = renderPolicyComponentKinds.has(componentKind)
+        ? []
+        : [{ recordIndex, surfaceIndex, id, field: "componentKind", value: componentKind }]
+      const policyMissing = renderPolicyFields.flatMap((field) => {
+        const value = renderPolicyValue(surface, field)
+        const valid = renderPolicyAllowedValues[field].has(value)
+        return valid ? [] : [{ recordIndex, surfaceIndex, id, field, value }]
+      })
+      return [...componentMissing, ...policyMissing]
+    })
+    return missing.length === 0
+      ? pass(request, "all observed UI surfaces have render policy metadata", { surfaceSamples: surfaces.length })
+      : fail(request, "UI surfaces missing render policy metadata", { missing: missing.slice(0, 12), missingCount: missing.length })
   },
   "DURABLE-PROMPT-IDS-UNIQUE": (request, artifacts) => {
     const conversation = latestConversationEntries(artifacts).filter((entry) => {

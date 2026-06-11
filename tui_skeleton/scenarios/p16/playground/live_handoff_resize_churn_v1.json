@@ -82,6 +82,7 @@
     { "id": "LIVE-TRANSCRIPT-CELL-IDS-UNIQUE", "severity": "blocker" },
     { "id": "GLOBAL-TRANSCRIPT-CELLS-HAVE-RENDER-POLICY", "severity": "blocker" },
     { "id": "GLOBAL-LIVE-SLOTS-HAVE-RENDER-POLICY", "severity": "blocker" },
+    { "id": "GLOBAL-SURFACES-HAVE-RENDER-POLICY", "severity": "blocker" },
     { "id": "LIVE-DURABLE-DEDUPE-KEYS-UNIQUE", "severity": "blocker" },
     { "id": "DURABLE-PROMPT-IDS-UNIQUE", "severity": "blocker" },
     { "id": "DURABLE-ASSISTANT-FINAL-IDS-UNIQUE", "severity": "blocker" },

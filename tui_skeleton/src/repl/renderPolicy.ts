@@ -51,7 +51,7 @@ export type RenderTruncationPolicy =
 
 export type RenderDetailPolicy = "inline-only" | "raw-copy" | "inspector" | "export" | "inspector-or-export"
 
-export type RenderComponentKind = TranscriptCellRole | "live-slot"
+export type RenderComponentKind = TranscriptCellRole | "live-slot" | "composer" | "footer" | "overlay"
 
 export interface RenderableNodePolicy {
   readonly componentKind: RenderComponentKind
@@ -81,6 +81,8 @@ export interface LiveSlotPolicyInput {
   readonly status: LiveSlotStatus
   readonly summary?: string
 }
+
+export type SurfacePolicyKind = "composer" | "footer" | "overlay"
 
 const durable = (role: TranscriptCellRole, overrides: Partial<RenderableNodePolicy> = {}): RenderableNodePolicy => ({
   componentKind: role,
@@ -278,5 +280,46 @@ export const resolveLiveSlotRenderPolicy = (input: LiveSlotPolicyInput): Rendera
     truncationPolicy: diagnostic ? "collapse-detail" : "truncate-end",
     detailPolicy: diagnostic || toolPreview ? "inspector-or-export" : "inline-only",
     priority: diagnostic ? "high" : "normal",
+  }
+}
+
+export const resolveSurfaceRenderPolicy = (kind: SurfacePolicyKind): RenderableNodePolicy => {
+  switch (kind) {
+    case "composer":
+      return {
+        componentKind: "composer",
+        ownershipClass: "composer",
+        stabilityState: "pending",
+        contentSafetyClass: "safe-text",
+        widthPolicy: "truncate",
+        heightPolicy: "viewport-reserved",
+        truncationPolicy: "truncate-end",
+        detailPolicy: "inline-only",
+        priority: "critical",
+      }
+    case "footer":
+      return {
+        componentKind: "footer",
+        ownershipClass: "footer",
+        stabilityState: "ephemeral",
+        contentSafetyClass: "safe-text",
+        widthPolicy: "truncate",
+        heightPolicy: "viewport-reserved",
+        truncationPolicy: "truncate-end",
+        detailPolicy: "inline-only",
+        priority: "high",
+      }
+    case "overlay":
+      return {
+        componentKind: "overlay",
+        ownershipClass: "overlay",
+        stabilityState: "pending",
+        contentSafetyClass: "safe-text",
+        widthPolicy: "truncate",
+        heightPolicy: "overlay-bounded",
+        truncationPolicy: "truncate-end",
+        detailPolicy: "inspector",
+        priority: "critical",
+      }
   }
 }

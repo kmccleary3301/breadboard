@@ -535,6 +535,59 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("fails UI surfaces without render policy metadata", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          surfacePolicies: [{ id: "composer:input", visible: true, status: "active" }],
+          state: { pendingResponse: false, conversation: [], liveSlots: [] },
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_surface_missing_render_policy", "pty", [{ id: "GLOBAL-SURFACES-HAVE-RENDER-POLICY", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({
+        missing: expect.arrayContaining([expect.objectContaining({ field: "componentKind" })]),
+      })
+    })
+  })
+
+  it("passes UI surfaces with render policy metadata", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          surfacePolicies: [
+            {
+              id: "composer:input",
+              visible: true,
+              status: "active",
+              renderPolicy: {
+                componentKind: "composer",
+                ownershipClass: "composer",
+                stabilityState: "pending",
+                contentSafetyClass: "safe-text",
+                widthPolicy: "truncate",
+                heightPolicy: "viewport-reserved",
+                truncationPolicy: "truncate-end",
+                detailPolicy: "inline-only",
+                priority: "critical",
+              },
+            },
+          ],
+          state: { pendingResponse: false, conversation: [], liveSlots: [] },
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "good_surface_render_policy", "pty", [{ id: "GLOBAL-SURFACES-HAVE-RENDER-POLICY", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+      expect(report.results[0]?.evidence).toMatchObject({ surfaceSamples: 1 })
+    })
+  })
+
   it("fails duplicate transcript cell IDs", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(

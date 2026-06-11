@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { resolveLiveSlotRenderPolicy } from "../renderPolicy.js"
+import { resolveLiveSlotRenderPolicy, resolveSurfaceRenderPolicy } from "../renderPolicy.js"
 
 describe("render policy registry", () => {
   it("classifies provider retry live slots as recovery diagnostics", () => {
@@ -69,6 +69,38 @@ describe("render policy registry", () => {
       heightPolicy: "viewport-reserved",
       detailPolicy: "inline-only",
       priority: "low",
+    })
+  })
+
+  it("classifies composer, footer, and overlay surfaces by ownership", () => {
+    expect(resolveSurfaceRenderPolicy("composer")).toMatchObject({
+      componentKind: "composer",
+      ownershipClass: "composer",
+      stabilityState: "pending",
+      contentSafetyClass: "safe-text",
+      heightPolicy: "viewport-reserved",
+      detailPolicy: "inline-only",
+      priority: "critical",
+    })
+
+    expect(resolveSurfaceRenderPolicy("footer")).toMatchObject({
+      componentKind: "footer",
+      ownershipClass: "footer",
+      stabilityState: "ephemeral",
+      contentSafetyClass: "safe-text",
+      heightPolicy: "viewport-reserved",
+      detailPolicy: "inline-only",
+      priority: "high",
+    })
+
+    expect(resolveSurfaceRenderPolicy("overlay")).toMatchObject({
+      componentKind: "overlay",
+      ownershipClass: "overlay",
+      stabilityState: "pending",
+      contentSafetyClass: "safe-text",
+      heightPolicy: "overlay-bounded",
+      detailPolicy: "inspector",
+      priority: "critical",
     })
   })
 })

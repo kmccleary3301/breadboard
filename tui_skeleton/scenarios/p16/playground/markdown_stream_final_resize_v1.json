@@ -406,6 +406,7 @@
       "severity": "blocker"
     },
     { "id": "GLOBAL-LIVE-SLOTS-HAVE-RENDER-POLICY", "severity": "blocker" },
+    { "id": "GLOBAL-SURFACES-HAVE-RENDER-POLICY", "severity": "blocker" },
     {
       "id": "LIVE-DURABLE-DEDUPE-KEYS-UNIQUE",
       "severity": "blocker"

@@ -22,6 +22,7 @@ import { DEFAULT_REPL_CONFIG_PATH, resolveReplLaunchContext } from "./launchCont
 import { runOpenTui } from "./frontendLaunch.js"
 import { buildTranscript } from "../../repl/transcriptBuilder.js"
 import { dumpTranscriptCellRecords } from "../../repl/transcriptModel.js"
+import { resolveSurfaceRenderPolicy, type SurfacePolicyKind } from "../../repl/renderPolicy.js"
 
 // Product-facing entry points default to the Codex E4 lane. Users and harnesses
 // may still override this via BREADBOARD_DEFAULT_CONFIG or --config.
@@ -69,6 +70,7 @@ const summarizeStateForDump = (state: ReplState) => {
           current: state.modelMenu.items.find((item) => item.isCurrent)?.value ?? null,
         }
       : state.modelMenu
+  const surfacePolicies = buildSurfacePoliciesForDump(state)
   return {
     sessionId: state.sessionId,
     lifecycle: state.lifecycle ?? null,
@@ -87,7 +89,9 @@ const summarizeStateForDump = (state: ReplState) => {
       liveSlots: state.liveSlots.length,
       hints: state.hints.length,
       transcriptCells: transcriptCells.length,
+      surfacePolicies: surfacePolicies.length,
     },
+    surfacePolicies,
     transcriptCells,
     lastConversation: lastConversation
       ? {
@@ -106,6 +110,48 @@ const summarizeStateForDump = (state: ReplState) => {
         }
       : null,
   }
+}
+
+const surfacePolicyRecord = (
+  id: string,
+  kind: SurfacePolicyKind,
+  visible: boolean,
+  status: string,
+) => {
+  const renderPolicy = resolveSurfaceRenderPolicy(kind)
+  return {
+    id,
+    visible,
+    status,
+    renderPolicy,
+    ownershipClass: renderPolicy.ownershipClass,
+    stabilityState: renderPolicy.stabilityState,
+    contentSafetyClass: renderPolicy.contentSafetyClass,
+    widthPolicy: renderPolicy.widthPolicy,
+    heightPolicy: renderPolicy.heightPolicy,
+    truncationPolicy: renderPolicy.truncationPolicy,
+    detailPolicy: renderPolicy.detailPolicy,
+    priority: renderPolicy.priority,
+  }
+}
+
+const menuVisible = (state: { readonly status?: string } | null | undefined): boolean =>
+  Boolean(state && state.status && state.status !== "hidden")
+
+const buildSurfacePoliciesForDump = (state: ReplState) => {
+  const surfaces = [
+    surfacePolicyRecord("composer:input", "composer", true, "active"),
+    surfacePolicyRecord("footer:status", "footer", true, state.disconnected ? "disconnected" : state.pendingResponse ? "pending" : "ready"),
+    surfacePolicyRecord("overlay:modal-stack", "overlay", false, "hidden"),
+  ]
+
+  if (menuVisible(state.modelMenu)) surfaces.push(surfacePolicyRecord("overlay:model-menu", "overlay", true, state.modelMenu.status))
+  if (menuVisible(state.skillsMenu)) surfaces.push(surfacePolicyRecord("overlay:skills-menu", "overlay", true, state.skillsMenu.status))
+  if (menuVisible(state.inspectMenu)) surfaces.push(surfacePolicyRecord("overlay:inspect-menu", "overlay", true, state.inspectMenu.status))
+  if (menuVisible(state.rewindMenu)) surfaces.push(surfacePolicyRecord("overlay:rewind-menu", "overlay", true, state.rewindMenu.status))
+  if (state.permissionRequest) surfaces.push(surfacePolicyRecord("overlay:permission-request", "overlay", true, "ready"))
+
+  return surfaces
 }
 
 const startStateDump = async (
@@ -143,6 +189,11 @@ const startStateDump = async (
       state.lifecycle?.mode ?? "",
       state.lifecycle?.pid ?? "",
       state.lifecycleRestartCount ?? 0,
+      state.modelMenu.status,
+      state.skillsMenu.status,
+      state.inspectMenu.status,
+      state.rewindMenu.status,
+      state.permissionRequest?.requestId ?? "",
     ].join("|")
     const criticalChanged = criticalSignature !== lastCriticalSignature
     if (reason !== "final" && !criticalChanged && minIntervalMs > 0 && now - lastWrite < minIntervalMs) {
@@ -152,7 +203,13 @@ const startStateDump = async (
     lastCriticalSignature = criticalSignature
     const payload =
       mode === "full"
-        ? { timestamp: now, reason, state, transcriptCells: summarizeStateForDump(state).transcriptCells }
+        ? {
+            timestamp: now,
+            reason,
+            state,
+            transcriptCells: summarizeStateForDump(state).transcriptCells,
+            surfacePolicies: summarizeStateForDump(state).surfacePolicies,
+          }
         : { timestamp: now, reason, state: summarizeStateForDump(state) }
     try {
       stream.write(`${JSON.stringify(payload)}\n`)
