@@ -1158,6 +1158,9 @@ const buildToolDisplayLines = (
   const isWrite = titleLower.startsWith("write(")
   const isPatch = titleLower.startsWith("patch(")
   let contentLines = detailLines.length > 0 ? detailLines.slice() : summaryLines.slice()
+  if (!isPatch && diffBlocks.length > 0 && summaryLines.length > 0 && detailLines.length > 0) {
+    contentLines = [...summaryLines, ...detailLines]
+  }
   if (isPatch && diffBlocks.length > 0 && renderProfile !== "claude") {
     summaryLines = []
     contentLines = detailLines.length > 0 ? detailLines.slice() : []

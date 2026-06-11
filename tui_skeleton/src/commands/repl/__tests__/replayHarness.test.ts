@@ -272,6 +272,72 @@ describe("render_events_jsonl replay fixtures", () => {
     expect(normalized).toContain("stderr:")
   })
 
+  it("preserves tool.diff blocks through final tool result reconciliation", () => {
+    const controller = new ReplSessionController({
+      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      workspace: null,
+      model: null,
+      remotePreference: null,
+      permissionMode: null,
+    })
+    ;(controller as any).applyEvent({
+      id: "td1",
+      seq: 1,
+      type: "tool_call",
+      payload: { call_id: "call-diff", tool_name: "shell_command", display: { title: "Tool" } },
+    })
+    ;(controller as any).applyEvent({
+      id: "td2",
+      seq: 2,
+      type: "tool.exec.stdout.delta",
+      payload: { call_id: "call-diff", exec_id: "exec-diff", delta: "compile ok\n" },
+    })
+    ;(controller as any).applyEvent({
+      id: "td3",
+      seq: 3,
+      type: "tool.diff",
+      payload: {
+        call_id: "call-diff",
+        patch: "*** Begin Patch\n*** Update File: src/example.c\n@@\n-int answer(void) { return 1; }\n+int answer(void) { return 42; } // TOOL_DIFF_PATCH_SENTINEL\n*** End Patch\n",
+      },
+    })
+
+    let state = controller.getState()
+    expect(state.toolEvents).toHaveLength(1)
+    expect(state.toolEvents[0]?.display?.diff_blocks?.[0]?.unified).toContain("TOOL_DIFF_PATCH_SENTINEL")
+
+    ;(controller as any).applyEvent({
+      id: "td4",
+      seq: 4,
+      type: "tool.exec.end",
+      payload: { call_id: "call-diff", exec_id: "exec-diff", exit_code: 0 },
+    })
+    ;(controller as any).applyEvent({
+      id: "td5",
+      seq: 5,
+      type: "tool_result",
+      payload: { call_id: "call-diff", tool_name: "shell_command", summary: "TOOL_DIFF_RESULT_OK" },
+    })
+
+    state = controller.getState()
+    expect(state.toolEvents).toHaveLength(1)
+    expect(state.toolEvents[0]?.display?.summary).toBe("TOOL_DIFF_RESULT_OK")
+    expect(state.toolEvents[0]?.display?.detail).toEqual(["compile ok"])
+    expect(state.toolEvents[0]?.display?.diff_blocks?.[0]?.unified).toContain("TOOL_DIFF_PATCH_SENTINEL")
+
+    const snapshot = renderStateToText(state, {
+      includeHeader: false,
+      includeStatus: false,
+      includeHints: false,
+      includeModelMenu: false,
+      colors: false,
+      asciiOnly: true,
+    })
+    const normalized = normalizeEol(snapshot)
+    expect(normalized).toContain("TOOL_DIFF_RESULT_OK")
+    expect(normalized).toContain("TOOL_DIFF_PATCH_SENTINEL")
+  })
+
   it("projects native run_shell results into the durable tool-row contract", () => {
     const controller = new ReplSessionController({
       configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),

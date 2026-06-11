@@ -8,6 +8,7 @@
     "scenarios/p16/playground/overlay_resize_nonmutation_v1.json",
     "scenarios/p16/playground/composer_footer_resize_matrix_v1.json",
     "scenarios/p16/playground/markdown_stream_final_resize_v1.json",
+    "scenarios/p16/playground/tool_stdout_diff_resize_v1.json",
     {
       "path": "scenarios/p16/playground/known_bad_raw_provider_diagnostic_visible.json",
       "expectedRed": true

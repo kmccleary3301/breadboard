@@ -1,0 +1,182 @@
+{
+  "schemaVersion": 1,
+  "id": "tool_stdout_diff_resize_v1",
+  "title": "Tool Stdout Stderr Diff Resize Playground V1",
+  "description": "Production-path playground profile that drives shell tool start, stdout, stderr, patch diff, result handoff, assistant finalization, and aggressive width resize through the real controller and scrollback spine.",
+  "tags": ["resize-spine", "tool-output", "stderr", "diff", "playground", "scrollback"],
+  "family": "resize-spine-playground",
+  "campaign": "post-p16-resize-resilience-spine",
+  "claimScope": "pty",
+  "expectedOutcome": { "verdict": "pass" },
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "tool", "time", "workspace"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "footer", "scrollback-feed", "live-slot-store", "direct-cell-mutation"]
+  },
+  "environment": {
+    "env": {
+      "BREADBOARD_TUI_STRICT_TRANSCRIPT_SAFETY": "1"
+    },
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        { "path": "README.md", "content": "# Tool diff resize playground\n\nThis workspace is synthetic and must not affect the project checkout.\n" },
+        { "path": "src/noisy_tool.c", "content": "int answer(void) { return 1; }\n" }
+      ]
+    },
+    "prelaunchShellHistory": [
+      { "id": "tool-diff-pre", "kind": "long-wrap", "text": "BB_RESIZE_SPINE_TOOL_DIFF_PRE_HISTORY_BEGIN alpha beta gamma delta epsilon zeta eta theta BB_RESIZE_SPINE_TOOL_DIFF_PRE_HISTORY_END" }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": { "composerReady": true, "timeoutMs": 20000 },
+    "timeoutMs": 120000
+  },
+  "terminal": {
+    "lanes": ["pty"],
+    "initial": { "cols": 132, "rows": 38 },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true,
+    "captureScreenshots": true
+  },
+  "expectedVisibleText": [
+    "TOOL_DIFF_STDOUT_ALPHA",
+    "TOOL_DIFF_STDERR_GAMMA",
+    "TOOL_DIFF_RESULT_OK",
+    "Tool diff resize complete",
+    "enter send"
+  ],
+  "expectedFinalVisibleText": [
+    "TOOL_DIFF_RESULT_OK",
+    "Tool diff resize complete",
+    "enter send"
+  ],
+  "expectedFinalUniqueText": [
+    "Tool diff resize complete"
+  ],
+  "expectedSnapshotVisibleText": {
+    "stdout-wide-active": [
+      "TOOL_DIFF_STDOUT_ALPHA",
+      "TOOL_DIFF_STDOUT_BETA",
+      "esc interrupt"
+    ],
+    "stderr-narrow-active": [
+      "TOOL_DIFF_STDERR_GAMMA",
+      "enter send"
+    ],
+    "diff-compact-active": [
+      "TOOL_DIFF_PATCH_SENTINEL",
+      "answer",
+      "enter send"
+    ],
+    "tool-result-wide-idle": [
+      "TOOL_DIFF_RESULT_OK",
+      "Tool diff resize complete",
+      "enter send"
+    ]
+  },
+  "expectedSnapshotUniqueText": {
+    "stdout-wide-active": [
+      "TOOL_DIFF_STDOUT_ALPHA"
+    ],
+    "stderr-narrow-active": [
+      "TOOL_DIFF_STDERR_GAMMA"
+    ],
+    "diff-compact-active": [
+      "TOOL_DIFF_PATCH_SENTINEL"
+    ],
+    "tool-result-wide-idle": [
+      "Tool diff resize complete"
+    ]
+  },
+  "timeline": [
+    { "kind": "submit", "text": "Run noisy stdout and stderr, show a patch diff, then summarize after resize." },
+    { "kind": "tool", "event": { "kind": "start", "toolId": "tool-diff-noisy", "name": "shell_command", "args": { "cmd": "printf tool diff resize" }, "turn": 1 } },
+    { "kind": "tool", "event": { "kind": "stdout", "toolId": "tool-diff-noisy", "text": "TOOL_DIFF_STDOUT_ALPHA line 01\nTOOL_DIFF_STDOUT_BETA line 02\nTOOL_DIFF_STDOUT_DELTA line 03\nTOOL_DIFF_STDOUT_EPSILON line 04\nTOOL_DIFF_STDOUT_ZETA line 05\nTOOL_DIFF_STDOUT_ETA line 06\nTOOL_DIFF_STDOUT_THETA line 07\nTOOL_DIFF_STDOUT_IOTA line 08\n", "stream": true, "turn": 1 } },
+    { "kind": "waitFor", "target": { "text": "TOOL_DIFF_STDOUT_ALPHA" }, "timeoutMs": 45000 },
+    { "kind": "checkpoint", "id": "stdout-wide-active", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "resize", "cols": 86, "rows": 24, "settleMs": 180 },
+    { "kind": "tool", "event": { "kind": "stderr", "toolId": "tool-diff-noisy", "text": "stderr: TOOL_DIFF_STDERR_GAMMA warning from synthetic compiler\nstderr: TOOL_DIFF_STDERR_DELTA note with bounded wrapping\n", "stream": true, "turn": 1 } },
+    { "kind": "waitFor", "target": { "text": "TOOL_DIFF_STDERR_GAMMA" }, "timeoutMs": 45000 },
+    { "kind": "checkpoint", "id": "stderr-narrow-active", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "resize", "cols": 72, "rows": 20, "settleMs": 180 },
+    { "kind": "tool", "event": { "kind": "diff", "toolId": "tool-diff-noisy", "patch": "*** Begin Patch\n*** Update File: src/noisy_tool.c\n@@\n-int answer(void) { return 1; }\n+int answer(void) { return 42; } // TOOL_DIFF_PATCH_SENTINEL\n*** End Patch\n", "turn": 1 } },
+    { "kind": "waitFor", "target": { "text": "TOOL_DIFF_PATCH_SENTINEL" }, "timeoutMs": 45000 },
+    { "kind": "checkpoint", "id": "diff-compact-active", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "tool", "event": { "kind": "result", "toolId": "tool-diff-noisy", "status": "ok", "summary": "TOOL_DIFF_RESULT_OK", "output": "Tool output, stderr, and diff preview completed.", "turn": 1 } },
+    { "kind": "assistant", "event": { "kind": "start", "streamId": "tool-diff-assistant", "messageId": "tool-diff-msg-1", "turn": 1 } },
+    { "kind": "assistant", "event": { "kind": "delta", "streamId": "tool-diff-assistant", "text": "Tool diff resize complete. Stdout, stderr, diff summary, and final result remained readable and singular.", "turn": 1 } },
+    { "kind": "assistant", "event": { "kind": "complete", "streamId": "tool-diff-assistant", "finishReason": "stop", "turn": 1 } },
+    { "kind": "resize", "cols": 128, "rows": 36, "settleMs": 250 },
+    { "kind": "wait", "ms": 500 },
+    { "kind": "checkpoint", "id": "tool-result-wide-idle", "capture": { "stateDump": true, "grid": true, "scrollback": true } }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-NO-SYSTEM-PROMPT-LEAK", "severity": "blocker" },
+    { "id": "GLOBAL-NO-MAX-LISTENERS-WARNING", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RETRY-BUDGET-OVERFLOW", "severity": "blocker" },
+    { "id": "GLOBAL-NO-DUPLICATE-PROMPT", "severity": "blocker" },
+    { "id": "GLOBAL-TRANSCRIPT-ORDER", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "GLOBAL-FOOTER-TRUTHFUL", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" },
+    { "id": "VISIBLE-TEXT-SENTINELS-PRESENT", "severity": "blocker" },
+    { "id": "FINAL-VISIBLE-TEXT-SENTINELS-PRESENT", "severity": "blocker" },
+    { "id": "FINAL-VISIBLE-TEXT-SENTINELS-UNIQUE", "severity": "blocker" },
+    { "id": "SNAPSHOT-VISIBLE-TEXT-SENTINELS-PRESENT", "severity": "blocker" },
+    { "id": "SNAPSHOT-VISIBLE-TEXT-SENTINELS-UNIQUE", "severity": "blocker" },
+    { "id": "TOOL-START-VISIBLE", "severity": "blocker" },
+    { "id": "TOOL-STDOUT-BOUNDED", "severity": "blocker" },
+    { "id": "TOOL-STDERR-VISIBLE", "severity": "blocker" },
+    { "id": "TOOL-RESULT-SINGULAR", "severity": "blocker" },
+    { "id": "TOOL-COLLAPSE-ACCESSIBLE", "severity": "blocker" },
+    { "id": "DIFF-SUMMARY-READABLE", "severity": "blocker" },
+    { "id": "LIVE-NO-STALE-STREAMING-WHEN-IDLE", "severity": "blocker" },
+    { "id": "LIVE-NO-PENDING-SLOTS-WHEN-IDLE", "severity": "blocker" },
+    { "id": "LIVE-TRANSCRIPT-CELL-IDS-UNIQUE", "severity": "blocker" },
+    { "id": "GLOBAL-TRANSCRIPT-CELLS-HAVE-RENDER-POLICY", "severity": "blocker" },
+    { "id": "GLOBAL-LIVE-SLOTS-HAVE-RENDER-POLICY", "severity": "blocker" },
+    { "id": "GLOBAL-SURFACES-HAVE-RENDER-POLICY", "severity": "blocker" },
+    { "id": "LIVE-DURABLE-DEDUPE-KEYS-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-PROMPT-IDS-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-ASSISTANT-FINAL-IDS-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-TOOL-IDS-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-RECOVERY-EPISODES-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-FINALIZED-CELLS-STABLE-AFTER-IDLE", "severity": "blocker" },
+    { "id": "LIVE-HANDOFF-CLEAN-WHEN-IDLE", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report", "scrollback", "viewport"] },
+  "actionRequirements": {
+    "inputSubmitted": "required",
+    "assistantStreamStarted": "required",
+    "assistantStreamCompleted": "required",
+    "assistantInjected": "required",
+    "toolStarted": "required",
+    "toolCompleted": "required",
+    "resizeRequested": "required",
+    "resizeObserved": "required",
+    "waitTargetsObserved": "required",
+    "stateDumpObservedAfterSubmit": "required",
+    "stateDumpObservedAfterResize": "required",
+    "artifactCaptureComplete": "required"
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "at-least-once"
+  },
+  "hotRegionExpectation": {
+    "maxRows": 8,
+    "freezeAfterCheckpoint": "tool-result-wide-idle"
+  },
+  "mutationProfile": {
+    "seed": 13,
+    "dimensions": ["tool-stdout", "tool-stderr", "tool-diff", "live-to-durable-handoff", "wide-to-narrow-resize", "strict-transcript-safety"]
+  }
+}

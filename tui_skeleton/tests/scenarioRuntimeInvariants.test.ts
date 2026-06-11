@@ -240,6 +240,39 @@ describe("scenario runtime invariants", () => {
       expect(report.results[0]?.message).toContain("tool block cardinality")
     })
   })
+
+  it("counts visible diff rows as completed tool blocks", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({ state: { toolEvents: [{ kind: "call", status: "success", display: { title: "Diff(src/example.c)" } }] } })}\n`,
+        "utf8",
+      )
+      await writeFile(path.join(dir, "action_confirmations.json"), JSON.stringify({ toolCompleted: true }), "utf8")
+      await writeFile(path.join(dir, "scrollback_final.txt"), "● Diff(src/example.c)\n  │ TOOL_DIFF_RESULT_OK\n", "utf8")
+      const report = await evaluateInvariants(dir, "good_diff_tool_cardinality", "pty", [{ id: "TOOL-RESULT-SINGULAR", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+      expect(report.results[0]?.evidence).toMatchObject({ toolBlocks: 1, expectedToolBlocks: 1 })
+    })
+  })
+
+  it("fails completed tool state with no visible tool block", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({ state: { toolEvents: [{ kind: "result", status: "success" }] } })}\n`,
+        "utf8",
+      )
+      await writeFile(path.join(dir, "action_confirmations.json"), JSON.stringify({ toolCompleted: true }), "utf8")
+      await writeFile(path.join(dir, "scrollback_final.txt"), "assistant only\n", "utf8")
+      const report = await evaluateInvariants(dir, "bad_missing_tool_block", "pty", [{ id: "TOOL-RESULT-SINGULAR", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.message).toContain("no visible tool/diff block")
+    })
+  })
+
   it("fails streaming markdown partial replay", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedAssistantText: "## Streaming Markdown\n\n| key | value |\n| --- | --- |\n| status | ok |" }), "utf8")
@@ -411,6 +444,48 @@ describe("scenario runtime invariants", () => {
     await withArtifactDir(async (dir) => {
       await writeFile(path.join(dir, "viewport_final.txt"), "• [ready] last 1s · enter send\n• [ready] last 1s · enter send\nresume /sessions · ctrl+o transcript\nresume /sessions · ctrl+o transcript\n", "utf8")
       const report = await evaluateInvariants(dir, "bad_footer_duplicate", "pty", [{ id: "FOOTER-NO-DUPLICATE-STATUS", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("does not count tool rail characters as stdout duplication", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "terminal_grid.ndjson"),
+        JSON.stringify({
+          snapshots: [
+            {
+              label: "tool",
+              cleaned: Array.from({ length: 130 }, (_, index) =>
+                index % 12 === 0 ? "│ stdout:" : `│ TOOL_STDOUT_SENTINEL_${index}`,
+              ).join("\n"),
+            },
+          ],
+        }),
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "good_stdout_rails", "pty", [{ id: "TOOL-STDOUT-BOUNDED", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+    })
+  })
+
+  it("fails runaway duplicated stdout sentinels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "terminal_grid.ndjson"),
+        JSON.stringify({
+          snapshots: [
+            {
+              label: "tool",
+              cleaned: Array.from({ length: 25 }, () => "TOOL_STDOUT_DUPLICATE").join("\n"),
+            },
+          ],
+        }),
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_stdout_duplicate", "pty", [{ id: "TOOL-STDOUT-BOUNDED", severity: "blocker" }])
       expect(report.ok).toBe(false)
       expect(report.results[0]?.status).toBe("fail")
     })

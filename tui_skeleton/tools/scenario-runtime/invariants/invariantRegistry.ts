@@ -925,7 +925,10 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     const state = latestState(artifacts)
     const toolEvents = Array.isArray(state?.toolEvents) ? state.toolEvents : []
     const expectedToolBlocks = Math.max(1, toolEvents.filter((entry: any) => entry?.kind === "result" || entry?.status === "success").length)
-    const toolBlocks = regexCount(text, /^\s*● Tool\b/gm)
+    const toolBlocks = regexCount(text, /^\s*●\s+(?:Tool\b|Diff\b|Patch\b|Bash\b|Write\b|Read\b|Edit\b|shell_command\b|run_shell\b|[A-Za-z_][\w.-]*\()/gm)
+    if (expectedToolBlocks > 0 && toolBlocks === 0) {
+      return fail(request, "completed tool state has no visible tool/diff block", { toolBlocks, expectedToolBlocks })
+    }
     return toolBlocks <= expectedToolBlocks
       ? pass(request, "tool block cardinality within expected completed-tool count", { toolBlocks, expectedToolBlocks })
       : fail(request, "tool block cardinality suggests scrollback replay", { toolBlocks, expectedToolBlocks })
@@ -1033,9 +1036,27 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     return confirmations.toolStarted ? pass(request, "tool start confirmed visible or injected") : fail(request, "tool start not confirmed visible")
   },
   "TOOL-STDOUT-BOUNDED": (request, artifacts) => {
-    const text = textBlob(artifacts)
-    const stdoutLines = regexCount(text, /stdout \d+ line|stdout|│/gi)
-    return stdoutLines <= 120 ? pass(request, "stdout marker count within broad bound", { stdoutLines }) : fail(request, "stdout marker count too high", { stdoutLines })
+    const snapshots = snapshotVisibleText(artifacts)
+    const text = [
+      artifacts.plainText,
+      artifacts.viewportText,
+      artifacts.scrollbackText,
+      snapshots ? Object.values(snapshots).join("\n") : "",
+    ]
+      .filter((value): value is string => typeof value === "string")
+      .join("\n")
+    const stdoutMarkers = regexCount(text, /\bstdout(?:\s+\d+\s+lines?|:)\b/gi)
+    const sentinelCountMap = new Map<string, number>()
+    for (const item of text.match(/\b[A-Z0-9_]*STDOUT[A-Z0-9_]*\b/g) ?? []) {
+      if (item.length <= "STDOUT".length) continue
+      sentinelCountMap.set(item, (sentinelCountMap.get(item) ?? 0) + 1)
+    }
+    const sentinelCounts = Array.from(sentinelCountMap, ([item, count]) => ({ item, count }))
+    const excessiveSentinels = sentinelCounts.filter((entry) => entry.count > 20)
+    const excessive = stdoutMarkers > 80 || excessiveSentinels.length > 0
+    return !excessive
+      ? pass(request, "stdout markers and sentinels stay within duplication bounds", { stdoutMarkers, sentinelCounts })
+      : fail(request, "stdout markers or sentinels duplicated beyond bound", { stdoutMarkers, excessiveSentinels })
   },
   "TOOL-STDERR-VISIBLE": (request, artifacts) => {
     const text = textBlob(artifacts)

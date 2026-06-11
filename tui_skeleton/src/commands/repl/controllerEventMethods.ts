@@ -123,6 +123,46 @@ const notePendingStart = (controller: { pendingStartedAt: number | null }): void
   }
 }
 
+const mergeToolDisplayRecords = (
+  existing: Record<string, unknown> | null | undefined,
+  incoming: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null => {
+  if (!existing && !incoming) return null
+  const merged: Record<string, unknown> = {
+    ...(existing ?? {}),
+    ...(incoming ?? {}),
+  }
+  for (const key of ["detail", "detail_truncated", "detail_artifact", "diff_blocks"] as const) {
+    if (incoming?.[key] === undefined && existing?.[key] !== undefined) {
+      merged[key] = existing[key]
+    }
+  }
+  return Object.keys(merged).length > 0 ? merged : null
+}
+
+const findToolEntryById = (controller: any, entryId: string | null): any | null => {
+  if (!entryId || !Array.isArray(controller.toolEvents)) return null
+  return controller.toolEvents.find((entry: any) => entry?.id === entryId) ?? null
+}
+
+const appendDiffBlockToDisplay = (
+  display: Record<string, unknown> | null | undefined,
+  patch: string,
+  filePath: string | null,
+): Record<string, unknown> => {
+  const base = display ? { ...display } : {}
+  const diffBlocks = Array.isArray(base.diff_blocks) ? [...base.diff_blocks] : []
+  diffBlocks.push({
+    kind: "diff",
+    ...(filePath ? { filePath } : {}),
+    unified: patch.replace(/(?:\r?\n)+$/, ""),
+  })
+  base.diff_blocks = diffBlocks
+  if (!base.title) base.title = filePath ? `Diff(${filePath})` : "Diff"
+  if (!base.summary) base.summary = "Patch diff preview"
+  return base
+}
+
 const takePendingDurationMs = (controller: { pendingStartedAt: number | null }): number | null => {
   const startedAt = controller.pendingStartedAt
   controller.pendingStartedAt = null
@@ -1207,8 +1247,11 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
   const resultWasError = this.isToolResultError(payload)
   const callId = callIdOverride ?? this.resolveToolCallId(payload)
   const callEntryId = callId ? this.toolLogEntryByCallId.get(callId) : null
+  const callEntry = findToolEntryById(this, callEntryId)
+  const existingDisplay = isRecord(callEntry?.display) ? callEntry.display : null
   const execOutput = callId ? this.toolExecOutputByCallId.get(callId) ?? null : null
-  const display = this.mergeToolExecOutputIntoDisplay(this.resolveToolDisplayPayload(payload), execOutput)
+  const displayBase = mergeToolDisplayRecords(existingDisplay, this.resolveToolDisplayPayload(payload))
+  const display = this.mergeToolExecOutputIntoDisplay(displayBase, execOutput)
   const toolText = this.formatToolDisplayText(display ? { ...payload, display } : payload)
   const cleanedToolText = stripAnsi(toolText).trim()
   const shouldLog = Boolean(cleanedToolText && cleanedToolText !== "Tool")
@@ -2407,6 +2450,41 @@ export function applyEvent(this: any, event: SessionEvent): void {
       }
       if (execId) this.toolExecMetaById.delete(execId)
       if (callId) this.toolExecMetaById.delete(callId)
+      break
+    }
+    case "tool.diff": {
+      const payload = isRecord(event.payload) ? event.payload : {}
+      const callId = this.resolveToolCallId(payload)
+      const patch =
+        extractRawString(payload, ["patch", "diff", "unified", "unified_diff"]) ??
+        extractRawString(payload, ["text"]) ??
+        ""
+      if (!patch.trim()) break
+      const callEntryId = callId ? this.toolLogEntryByCallId.get(callId) ?? null : null
+      const callEntry = findToolEntryById(this, callEntryId)
+      const existingDisplay = isRecord(callEntry?.display) ? callEntry.display : null
+      const execOutput = callId ? this.toolExecOutputByCallId.get(callId) ?? null : null
+      const displayWithOutput = this.mergeToolExecOutputIntoDisplay(
+        existingDisplay ? { ...existingDisplay } : null,
+        execOutput,
+      )
+      const filePath =
+        extractString(payload, ["file_path", "filePath", "path"]) ??
+        patch.match(/^\*\*\* Update File:\s*(.+)$/m)?.[1]?.trim() ??
+        null
+      const display = appendDiffBlockToDisplay(displayWithOutput ?? existingDisplay, patch, filePath)
+      const toolText = this.formatToolDisplayText({ ...payload, tool_name: display.title ?? "Patch", display })
+      if (callEntryId) {
+        this.updateToolEntry(callEntryId, { text: toolText, status: "pending", display })
+      } else {
+        const entry = this.addTool("call", toolText, "pending", { callId, display })
+        if (callId) this.toolLogEntryByCallId.set(callId, entry.id)
+      }
+      this.bumpRuntimeTelemetry?.("optimisticDiffRows")
+      const slotId = callId ? this.toolSlotsByCallId.get(callId) ?? null : null
+      if (slotId) {
+        this.upsertLiveSlot(slotId, `Patch diff preview: ${filePath ?? "pending changes"}`, BRAND_COLORS.duneOrange, "pending")
+      }
       break
     }
     case "tool_call": {

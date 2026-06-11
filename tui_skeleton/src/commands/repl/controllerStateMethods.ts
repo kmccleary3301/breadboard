@@ -1273,6 +1273,10 @@ const summarizeShellDisplayDetail = (detailLines: string[]): string | null => {
 
 export function resolveToolDisplayPayload(this: any, payload: Record<string, unknown>): Record<string, unknown> | null {
   const base = isRecord(payload.display) ? { ...payload.display } : {}
+  const summary = extractString(payload, ["summary"])
+  if (summary && !base.summary) {
+    base.summary = summary
+  }
   const { name, args } = normalizeToolArgs(payload)
   const normalizedName = (name ?? "").toLowerCase()
   const pathValue = typeof args?.path === "string" ? args.path.trim() : null
