@@ -930,7 +930,7 @@ const formatStatusEntry = (
     if (line.includes("\u001b")) return line
     if (isToolHeader(line)) return applyColor(line, "#ffffff", useColors, colorMode)
     if (entry.status === "error") return applyColor(line, SEMANTIC_COLORS.error, useColors, colorMode)
-    if (entry.status === "pending") return applyColor(line, SEMANTIC_COLORS.warning, useColors, colorMode)
+    if (entry.status === "pending" || entry.status === "warning") return applyColor(line, SEMANTIC_COLORS.warning, useColors, colorMode)
     if (entry.status === "success") return applyDim(line, useColors, colorMode)
     return applyDim(line, useColors, colorMode)
   }

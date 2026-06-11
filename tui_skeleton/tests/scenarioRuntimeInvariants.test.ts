@@ -118,6 +118,40 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("fails provider diagnostic state budget when retry warnings are durable", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: {
+            toolEvents: [
+              { text: "[warning] Retrying provider route gpt-5.4-mini (attempt 1): Provider quota exceeded. Check billing/quota or switch routes." },
+              { text: "[error] Provider quota exceeded. Check billing/quota or switch routes." },
+            ],
+            conversation: [{ text: "[error] Provider quota exceeded. Check billing/quota or switch routes." }],
+          },
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_provider_diagnostic_state_budget", "pty", [{ id: "DIAG-PROVIDER-DIAGNOSTIC-DEDUPED", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails duplicated provider diagnostics in final visible output", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "viewport_final.txt"),
+        "Provider quota exceeded. Check billing/quota or switch routes.\nProvider quota exceeded. Check billing/quota or switch routes.\n",
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_provider_diagnostic_visible_budget", "pty", [{ id: "DIAG-FINAL-VISIBLE-PROVIDER-DIAGNOSTIC-BUDGET", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
   it("accepts rendered markdown terms for transcript order", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedPrompt: "Show markdown.", expectedAssistantText: "## Rendered Heading\n- durable item" }), "utf8")

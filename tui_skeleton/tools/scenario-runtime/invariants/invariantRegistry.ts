@@ -239,6 +239,12 @@ const finalVisibleText = (artifacts: ScenarioArtifacts): string =>
   [artifacts.viewportText, artifacts.scrollbackText, artifacts.terminalGridText, artifacts.plainText]
     .find((value) => typeof value === "string" && value.trim().length > 0) ?? ""
 
+const providerDiagnosticBudgetSpecs = [
+  { label: "quota", phrase: /Provider quota exceeded/g, maxTool: 1, maxConversation: 1, maxFinalVisible: 1 },
+  { label: "context", phrase: /Provider context limit exceeded/g, maxTool: 1, maxConversation: 1, maxFinalVisible: 1 },
+  { label: "rate", phrase: /Provider rate limit hit/g, maxTool: 1, maxConversation: 1, maxFinalVisible: 1 },
+] as const
+
 const manifestStringArray = (artifacts: ScenarioArtifacts, key: string): string[] => {
   const value = artifacts.manifest?.[key]
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : []
@@ -377,12 +383,7 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     const conversationText = Array.isArray(state?.conversation)
       ? state.conversation.map((entry: any) => String(entry?.text ?? "")).join("\n")
       : ""
-    const expected = [
-      { label: "quota", phrase: /Provider quota exceeded/g, maxTool: 2, maxConversation: 1 },
-      { label: "context", phrase: /Provider context limit exceeded/g, maxTool: 2, maxConversation: 1 },
-      { label: "rate", phrase: /Provider rate limit hit/g, maxTool: 2, maxConversation: 1 },
-    ]
-    const counts = expected.map((item) => ({
+    const counts = providerDiagnosticBudgetSpecs.map((item) => ({
       label: item.label,
       tool: regexCount(toolText, item.phrase),
       conversation: regexCount(conversationText, item.phrase),
@@ -393,6 +394,18 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     return bad.length === 0
       ? pass(request, "provider diagnostics are within dedupe cardinality", { counts })
       : fail(request, "provider diagnostic row cardinality exceeded", { bad, counts })
+  },
+  "DIAG-FINAL-VISIBLE-PROVIDER-DIAGNOSTIC-BUDGET": (request, artifacts) => {
+    const text = finalVisibleText(artifacts)
+    const counts = providerDiagnosticBudgetSpecs.map((item) => ({
+      label: item.label,
+      finalVisible: regexCount(text, item.phrase),
+      maxFinalVisible: item.maxFinalVisible,
+    }))
+    const bad = counts.filter((item) => item.finalVisible > item.maxFinalVisible)
+    return bad.length === 0
+      ? pass(request, "final visible provider diagnostics are within cardinality budget", { counts })
+      : fail(request, "final visible provider diagnostics exceeded cardinality budget", { bad, counts })
   },
   "GLOBAL-NO-SYSTEM-PROMPT-LEAK": (request, artifacts) => {
     const text = textBlob(artifacts)

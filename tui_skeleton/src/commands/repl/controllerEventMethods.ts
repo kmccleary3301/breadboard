@@ -375,6 +375,7 @@ const surfaceTerminalError = (
   controller.pendingResponseEventCountAtSubmit = null
   controller.ownedEngineRecoveryAttempts = 0
   controller.pendingStartedAt = null
+  controller.removeLiveSlot?.("provider-retry")
   settlePendingToolLogEntries(controller, "error")
   controller.thinkingInlineEntryId = null
   closeThinkingPreview(controller, clockNow(controller))
@@ -535,6 +536,10 @@ const markTerminalErrorUnseen = (controller: any, message: string): boolean => {
 const isStreamingFallbackTranscriptNotice = (notice: CtreeTranscriptNotice): boolean =>
   notice.severity === "warning" &&
   /rejected streaming|streaming_disabled|response\.keep_alive|response\.created|Falling back to non-streaming|You exceeded your current quota/i.test(notice.message)
+
+const isProviderRetryTranscriptNotice = (notice: CtreeTranscriptNotice): boolean =>
+  notice.severity === "warning" &&
+  /^(?:Retrying provider route|Provider retry blocked:)/i.test(notice.message)
 
 const shouldSurfaceTranscriptNotice = (controller: any, notice: CtreeTranscriptNotice): boolean => {
   const key = noticeKey(notice)
@@ -2224,6 +2229,11 @@ export function applyEvent(this: any, event: SessionEvent): void {
           break
         }
         const message = userFacingTranscriptNotice(transcriptNotice)
+        if (isProviderRetryTranscriptNotice(transcriptNotice)) {
+          this.upsertLiveSlot("provider-retry", `[warning] ${message}`, SEMANTIC_COLORS.warning, "warning", 2500)
+          this.scheduleCtreeRefresh()
+          break
+        }
         this.finalizeStreamingEntry()
         this.addTool("status", `[warning] ${message}`, "error")
       } else if (transcriptNotice?.severity === "error") {
@@ -2570,6 +2580,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
         this.removeLiveSlot("guardrail")
         this.clearGuardrailNotice()
       }
+      this.removeLiveSlot("provider-retry")
       this.toolSlotsByCallId.forEach((slotId: string) => this.removeLiveSlot(slotId))
       this.toolSlotsByCallId.clear()
       this.toolSlotFallback.splice(0).forEach((slotId: string) => this.removeLiveSlot(slotId))

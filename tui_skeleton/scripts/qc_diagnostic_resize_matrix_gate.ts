@@ -41,6 +41,7 @@ const contextToolCount = count(toolText, /Provider context limit exceeded/g)
 const contextConversationCount = count(conversationText, /Provider context limit exceeded/g)
 const rateToolCount = count(toolText, /Provider rate limit hit/g)
 const rateConversationCount = count(conversationText, /Provider rate limit hit/g)
+const retryToolCount = count(toolText, /Retrying provider route|Provider retry blocked/g)
 const rawStateLeak = rawLeakPattern.test(allStateText)
 const rawSnapshotLeak = rawLeakPattern.test(snapshots)
 const resizeSnapshots = count(snapshots, /^# diagnostic-/gm)
@@ -67,6 +68,7 @@ const report = [
   `contextConversationCount: ${contextConversationCount}`,
   `rateToolCount: ${rateToolCount}`,
   `rateConversationCount: ${rateConversationCount}`,
+  `retryToolCount: ${retryToolCount}`,
   `rawStateLeak: ${rawStateLeak}`,
   `rawSnapshotLeak: ${rawSnapshotLeak}`,
   `duplicateSnapshotSections: ${duplicateSnapshotSections}`,
@@ -82,12 +84,13 @@ const failures: string[] = []
 if (harnessStatus !== 0) failures.push(`harness exited ${harnessStatus}`)
 if (records.length === 0) failures.push("no state records captured")
 if (resizeSnapshots < 4) failures.push(`expected at least four diagnostic resize snapshots, saw ${resizeSnapshots}`)
-if (quotaToolCount !== 2) failures.push(`expected one quota retry and one quota error tool row, saw ${quotaToolCount}`)
+if (quotaToolCount !== 1) failures.push(`expected one quota error tool row, saw ${quotaToolCount}`)
 if (quotaConversationCount !== 1) failures.push(`expected one quota system transcript row, saw ${quotaConversationCount}`)
-if (contextToolCount !== 2) failures.push(`expected one context retry and one context error tool row, saw ${contextToolCount}`)
+if (contextToolCount !== 1) failures.push(`expected one context error tool row, saw ${contextToolCount}`)
 if (contextConversationCount !== 1) failures.push(`expected one context system transcript row, saw ${contextConversationCount}`)
-if (rateToolCount !== 2) failures.push(`expected one rate retry and one rate error tool row, saw ${rateToolCount}`)
+if (rateToolCount !== 1) failures.push(`expected one rate error tool row, saw ${rateToolCount}`)
 if (rateConversationCount !== 1) failures.push(`expected one rate system transcript row, saw ${rateConversationCount}`)
+if (retryToolCount !== 0) failures.push(`expected no durable provider retry tool rows, saw ${retryToolCount}`)
 if (rawStateLeak) failures.push("raw provider payload leaked into final reducer state")
 if (rawSnapshotLeak) failures.push("raw provider payload leaked into terminal snapshots")
 if (duplicateSnapshotSections) failures.push("diagnostic error row duplicated inside a visible snapshot section")

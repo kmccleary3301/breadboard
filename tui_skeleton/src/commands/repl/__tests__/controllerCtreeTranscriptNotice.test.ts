@@ -118,7 +118,11 @@ describe("ReplSessionController ctree transcript notices", () => {
     controller.applyEvent(event(4, "ctree_node", payload("gpt-5.4-mini", 3)))
 
     const state = controller.getState()
-    const warnings = state.toolEvents.filter((entry: any) =>
+    const durableWarnings = state.toolEvents.filter((entry: any) =>
+      String(entry.text).includes("Provider retry blocked") &&
+      String(entry.text).includes("api.responses.write"),
+    )
+    const liveWarnings = state.liveSlots.filter((entry: any) =>
       String(entry.text).includes("Provider retry blocked") &&
       String(entry.text).includes("api.responses.write"),
     )
@@ -126,7 +130,8 @@ describe("ReplSessionController ctree transcript notices", () => {
       hint.includes("Provider retry blocked") &&
       hint.includes("api.responses.write"),
     )
-    expect(warnings).toHaveLength(1)
+    expect(durableWarnings).toHaveLength(0)
+    expect(liveWarnings).toHaveLength(1)
     expect(warningHints).toHaveLength(0)
   })
 
@@ -306,6 +311,39 @@ describe("ReplSessionController ctree transcript notices", () => {
     expect(state.guardrailNotice?.summary).toContain("Error: Provider quota exceeded")
   })
 
+  it("routes provider retry notices to live status instead of durable transcript rows", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/misc/test_simple_native.yaml",
+      workspace: ".",
+    }) as unknown as {
+      applyEvent: (evt: any) => void
+      getState: () => any
+    }
+
+    controller.applyEvent(event(1, "run.start"))
+    controller.applyEvent(event(2, "ctree_node", {
+      node: {
+        id: "retry-live",
+        payload: {
+          transcript: {
+            provider_retry: {
+              route: "gpt-5.4-mini",
+              attempt: 1,
+              reason: "Error code: 429 - insufficient_quota",
+            },
+          },
+        },
+      },
+      snapshot: ctreeSnapshot,
+    }))
+
+    const state = controller.getState()
+    const durableText = `${state.toolEvents.map((entry: any) => String(entry.text)).join("\n")}\n${state.conversation.map((entry: any) => String(entry.text)).join("\n")}`
+    const liveText = state.liveSlots.map((slot: any) => String(slot.text)).join("\n")
+    expect(durableText).not.toContain("Retrying provider route")
+    expect(liveText).toContain("Retrying provider route gpt-5.4-mini (attempt 1): Provider quota exceeded")
+  })
+
   it("compacts and dedupes quota, context, and rate diagnostics without raw provider payload leaks", () => {
     const controller = new ReplSessionController({
       configPath: "agent_configs/misc/test_simple_native.yaml",
@@ -364,12 +402,13 @@ describe("ReplSessionController ctree transcript notices", () => {
     const state = controller.getState()
     const toolText = state.toolEvents.map((entry: any) => String(entry.text)).join("\n")
     const conversationText = state.conversation.map((entry: any) => String(entry.text)).join("\n")
-    expect((toolText.match(/Provider quota exceeded/g) ?? []).length).toBe(2)
+    expect((toolText.match(/Provider quota exceeded/g) ?? []).length).toBe(1)
     expect((conversationText.match(/Provider quota exceeded/g) ?? []).length).toBe(1)
-    expect((toolText.match(/Provider context limit exceeded/g) ?? []).length).toBe(2)
+    expect((toolText.match(/Provider context limit exceeded/g) ?? []).length).toBe(1)
     expect((conversationText.match(/Provider context limit exceeded/g) ?? []).length).toBe(1)
-    expect((toolText.match(/Provider rate limit hit/g) ?? []).length).toBe(2)
+    expect((toolText.match(/Provider rate limit hit/g) ?? []).length).toBe(1)
     expect((conversationText.match(/Provider rate limit hit/g) ?? []).length).toBe(1)
     expect(`${toolText}\n${conversationText}`).not.toMatch(/\{'error':|'type': 'insufficient_quota'|'type': 'rate_limit_error'|context_length_exceeded|Error code:/)
+    expect(`${toolText}\n${conversationText}`).not.toContain("Retrying provider route")
   })
 })

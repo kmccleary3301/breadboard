@@ -65,6 +65,7 @@
     { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
     { "id": "GLOBAL-NO-RAW-PROVIDER-DIAGNOSTIC", "severity": "blocker" },
     { "id": "DIAG-PROVIDER-DIAGNOSTIC-DEDUPED", "severity": "blocker" },
+    { "id": "DIAG-FINAL-VISIBLE-PROVIDER-DIAGNOSTIC-BUDGET", "severity": "blocker" },
     { "id": "GLOBAL-NO-SYSTEM-PROMPT-LEAK", "severity": "blocker" },
     { "id": "GLOBAL-NO-MAX-LISTENERS-WARNING", "severity": "blocker" },
     { "id": "GLOBAL-NO-RETRY-BUDGET-OVERFLOW", "severity": "blocker" },

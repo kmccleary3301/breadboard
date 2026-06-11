@@ -13,7 +13,7 @@ export interface ConversationEntry {
   readonly markdownError?: string | null
 }
 
-export type LiveSlotStatus = "pending" | "success" | "error"
+export type LiveSlotStatus = "pending" | "warning" | "success" | "error"
 
 export interface LiveSlotEntry {
   readonly id: string
