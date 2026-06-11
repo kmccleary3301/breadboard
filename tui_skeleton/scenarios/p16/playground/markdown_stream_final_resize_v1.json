@@ -402,6 +402,10 @@
       "severity": "blocker"
     },
     {
+      "id": "GLOBAL-TRANSCRIPT-CELLS-HAVE-RENDER-POLICY",
+      "severity": "blocker"
+    },
+    {
       "id": "LIVE-DURABLE-DEDUPE-KEYS-UNIQUE",
       "severity": "blocker"
     },

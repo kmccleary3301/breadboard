@@ -39,6 +39,12 @@ describe("transcriptModel cell contract", () => {
 
     expect(resolveTranscriptCellRole(item)).toBe("assistant-message")
     expect(resolveTranscriptLifecycle(item)).toBe("live")
+    expect(dumpTranscriptCellRecords([item])[0]).toMatchObject({
+      role: "assistant-message",
+      ownershipClass: "live-region",
+      stabilityState: "streaming",
+      contentSafetyClass: "rendered-markdown",
+    })
   })
 
   it("classifies completed tool items as tool-result cells", () => {
@@ -183,6 +189,13 @@ describe("transcriptModel cell contract", () => {
     expect(resolveTranscriptLifecycle(item)).toBe("frozen")
     expect(resolveTranscriptRenderModes(item)).toEqual(["rich", "viewer"])
     expect(resolveTranscriptDedupeKey(item)).toBe("landing:session-1")
+    expect(dumpTranscriptCellRecords([item])[0]).toMatchObject({
+      role: "landing",
+      ownershipClass: "durable-transcript",
+      stabilityState: "frozen",
+      widthPolicy: "preserve",
+      detailPolicy: "inline-only",
+    })
   })
 
   it("classifies local command output as command-result cells without status dedupe", () => {
@@ -225,7 +238,7 @@ describe("transcriptModel cell contract", () => {
     ]
 
     expect(dumpTranscriptCellRecords(items)).toEqual([
-      {
+      expect.objectContaining({
         id: "msg:user-1",
         kind: "message",
         role: "user-request",
@@ -237,8 +250,15 @@ describe("transcriptModel cell contract", () => {
         dedupeKey: null,
         textPreview: "Please inspect README.md and summarize it.",
         speaker: "user",
-      },
-      {
+        ownershipClass: "durable-transcript",
+        stabilityState: "finalized",
+        contentSafetyClass: "safe-text",
+        widthPolicy: "rewrap",
+        heightPolicy: "bounded",
+        truncationPolicy: "bounded-wrap",
+        detailPolicy: "raw-copy",
+      }),
+      expect.objectContaining({
         id: "sys:usage-1",
         kind: "system",
         role: "status",
@@ -250,7 +270,14 @@ describe("transcriptModel cell contract", () => {
         dedupeKey: "usage:tok 100 · in 80 · out 20",
         textPreview: "tok 100 · in 80 · out 20",
         status: "success",
-      },
+        ownershipClass: "footer",
+        stabilityState: "ephemeral",
+        contentSafetyClass: "safe-text",
+        widthPolicy: "truncate",
+        heightPolicy: "bounded",
+        truncationPolicy: "truncate-end",
+        detailPolicy: "inline-only",
+      }),
     ])
   })
 })

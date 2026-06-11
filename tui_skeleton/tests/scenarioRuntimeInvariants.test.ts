@@ -152,6 +152,50 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("fails transcript cells without render policy metadata", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          transcriptCells: [{ id: "msg:missing-policy", role: "assistant-message", lifecycle: "committed" }],
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_transcript_policy", "pty", [{ id: "GLOBAL-TRANSCRIPT-CELLS-HAVE-RENDER-POLICY", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("passes transcript cells with render policy metadata", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          transcriptCells: [
+            {
+              id: "msg:policy",
+              role: "assistant-message",
+              lifecycle: "committed",
+              ownershipClass: "durable-transcript",
+              stabilityState: "frozen",
+              contentSafetyClass: "rendered-markdown",
+              widthPolicy: "rewrap",
+              heightPolicy: "bounded",
+              truncationPolicy: "collapse-detail",
+              detailPolicy: "raw-copy",
+              priority: "high",
+            },
+          ],
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "good_transcript_policy", "pty", [{ id: "GLOBAL-TRANSCRIPT-CELLS-HAVE-RENDER-POLICY", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+    })
+  })
+
   it("accepts rendered markdown terms for transcript order", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedPrompt: "Show markdown.", expectedAssistantText: "## Rendered Heading\n- durable item" }), "utf8")

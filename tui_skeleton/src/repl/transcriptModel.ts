@@ -1,4 +1,5 @@
 import type { Block } from "@stream-mdx/core/types"
+import { resolveTranscriptRenderPolicy, type RenderableNodePolicy } from "./renderPolicy.js"
 import type { LiveSlotStatus, ToolDisplayPayload, ToolLogKind } from "./types.js"
 
 export type TranscriptId = string
@@ -83,6 +84,15 @@ export interface TranscriptCellRecord {
   readonly textPreview: string
   readonly speaker?: TranscriptMessageItem["speaker"]
   readonly status?: LiveSlotStatus
+  readonly renderPolicy: RenderableNodePolicy
+  readonly ownershipClass: RenderableNodePolicy["ownershipClass"]
+  readonly stabilityState: RenderableNodePolicy["stabilityState"]
+  readonly contentSafetyClass: RenderableNodePolicy["contentSafetyClass"]
+  readonly widthPolicy: RenderableNodePolicy["widthPolicy"]
+  readonly heightPolicy: RenderableNodePolicy["heightPolicy"]
+  readonly truncationPolicy: RenderableNodePolicy["truncationPolicy"]
+  readonly detailPolicy: RenderableNodePolicy["detailPolicy"]
+  readonly priority: RenderableNodePolicy["priority"]
 }
 
 const DEFAULT_RENDER_MODES: ReadonlyArray<TranscriptRenderMode> = ["rich", "raw", "viewer"]
@@ -141,17 +151,40 @@ export const resolveTranscriptDedupeKey = (item: TranscriptItem): string | null 
 }
 
 export const toTranscriptCellRecord = (item: TranscriptItem): TranscriptCellRecord => {
+  const role = resolveTranscriptCellRole(item)
+  const lifecycle = resolveTranscriptLifecycle(item)
+  const textPreview = previewText(item.text)
+  const status = item.kind === "tool" || item.kind === "system" ? item.status : undefined
+  const speaker = item.kind === "message" ? item.speaker : undefined
+  const renderPolicy = resolveTranscriptRenderPolicy({
+    role,
+    lifecycle,
+    kind: item.kind,
+    source: item.source,
+    status,
+    speaker,
+    textPreview,
+  })
   const base = {
     id: item.id,
     kind: item.kind,
-    role: resolveTranscriptCellRole(item),
-    lifecycle: resolveTranscriptLifecycle(item),
+    role,
+    lifecycle,
     source: item.source,
     createdAt: item.createdAt,
     streaming: item.streaming === true,
     renderModes: resolveTranscriptRenderModes(item),
     dedupeKey: resolveTranscriptDedupeKey(item),
-    textPreview: previewText(item.text),
+    textPreview,
+    renderPolicy,
+    ownershipClass: renderPolicy.ownershipClass,
+    stabilityState: renderPolicy.stabilityState,
+    contentSafetyClass: renderPolicy.contentSafetyClass,
+    widthPolicy: renderPolicy.widthPolicy,
+    heightPolicy: renderPolicy.heightPolicy,
+    truncationPolicy: renderPolicy.truncationPolicy,
+    detailPolicy: renderPolicy.detailPolicy,
+    priority: renderPolicy.priority,
   }
   if (item.kind === "message") {
     return {

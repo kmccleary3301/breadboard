@@ -173,6 +173,22 @@ const cellDedupeKey = (cell: any): string => String(cell?.dedupeKey ?? "").trim(
 const isDurableCell = (cell: any): boolean =>
   cell?.streaming !== true && cell?.phase !== "streaming" && cell?.lifecycle !== "live"
 
+const renderPolicyAllowedValues = {
+  ownershipClass: new Set(["durable-transcript", "live-region", "overlay", "footer", "composer", "inspector", "export-only", "host-boundary", "unsafe-boundary"]),
+  stabilityState: new Set(["streaming", "pending", "finalized", "frozen", "collapsed", "inspect-only", "recovery", "terminal-error", "ephemeral"]),
+  contentSafetyClass: new Set(["safe-text", "rendered-markdown", "bounded-code", "bounded-table", "tool-output-preview", "diff-summary", "diagnostic-summary", "raw-provider-detail", "stack-trace", "large-stdout", "binary-reference", "debug-payload"]),
+  widthPolicy: new Set(["rewrap", "truncate", "preserve", "detail-only", "collapse"]),
+  heightPolicy: new Set(["bounded", "viewport-reserved", "overlay-bounded", "export-only"]),
+  truncationPolicy: new Set(["none", "bounded-wrap", "truncate-end", "truncate-middle", "head-tail", "collapse-detail"]),
+  detailPolicy: new Set(["inline-only", "raw-copy", "inspector", "export", "inspector-or-export"]),
+  priority: new Set(["low", "normal", "high", "critical"]),
+} as const
+
+const renderPolicyFields = Object.keys(renderPolicyAllowedValues) as Array<keyof typeof renderPolicyAllowedValues>
+
+const renderPolicyValue = (cell: any, field: keyof typeof renderPolicyAllowedValues): string =>
+  String(cell?.[field] ?? cell?.renderPolicy?.[field] ?? "").trim()
+
 const durableCellSignature = (cells: any[]): string =>
   JSON.stringify(
     cells.filter(isDurableCell).map((cell) => ({
@@ -607,6 +623,21 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     return duplicates.length === 0
       ? pass(request, "durable transcript dedupe keys are unique", { durableCells: cells.length, keyedCells: seen.size })
       : fail(request, "duplicate durable transcript dedupe keys detected", { duplicates: Array.from(new Set(duplicates)).slice(0, 12) })
+  },
+  "GLOBAL-TRANSCRIPT-CELLS-HAVE-RENDER-POLICY": (request, artifacts) => {
+    const cells = latestTranscriptCells(artifacts)
+    if (cells.length === 0) return skip(request, "no transcript cells available")
+    const missing = cells.flatMap((cell, index) => {
+      const id = String(cell?.id ?? `index:${index}`)
+      return renderPolicyFields.flatMap((field) => {
+        const value = renderPolicyValue(cell, field)
+        const valid = renderPolicyAllowedValues[field].has(value)
+        return valid ? [] : [{ index, id, field, value }]
+      })
+    })
+    return missing.length === 0
+      ? pass(request, "all transcript cells have render policy metadata", { transcriptCellCount: cells.length })
+      : fail(request, "transcript cells missing render policy metadata", { missing: missing.slice(0, 12), missingCount: missing.length })
   },
   "DURABLE-PROMPT-IDS-UNIQUE": (request, artifacts) => {
     const conversation = latestConversationEntries(artifacts).filter((entry) => {

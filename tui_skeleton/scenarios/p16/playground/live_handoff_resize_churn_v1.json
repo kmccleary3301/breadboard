@@ -80,6 +80,7 @@
     { "id": "LIVE-NO-STALE-STREAMING-WHEN-IDLE", "severity": "blocker" },
     { "id": "LIVE-NO-PENDING-SLOTS-WHEN-IDLE", "severity": "blocker" },
     { "id": "LIVE-TRANSCRIPT-CELL-IDS-UNIQUE", "severity": "blocker" },
+    { "id": "GLOBAL-TRANSCRIPT-CELLS-HAVE-RENDER-POLICY", "severity": "blocker" },
     { "id": "LIVE-DURABLE-DEDUPE-KEYS-UNIQUE", "severity": "blocker" },
     { "id": "DURABLE-PROMPT-IDS-UNIQUE", "severity": "blocker" },
     { "id": "DURABLE-ASSISTANT-FINAL-IDS-UNIQUE", "severity": "blocker" },
