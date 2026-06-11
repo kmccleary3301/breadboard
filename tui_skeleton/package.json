@@ -161,7 +161,8 @@
     "qc:v7:owned-engine-idle-recovery": "bash scripts/qc_v7_owned_engine_idle_recovery_pty.sh",
     "qc:provider-auth-resize-dedupe": "bash scripts/qc_provider_auth_resize_dedupe_pty.sh",
     "qc:diagnostic-resize-matrix": "bash scripts/qc_diagnostic_resize_matrix_pty.sh",
-    "qc:resize-spine:no-bypass": "node --import tsx scripts/scan_resize_spine_bypass.ts"
+    "qc:resize-spine:no-bypass": "node --import tsx scripts/scan_resize_spine_bypass.ts",
+    "qc:resize-spine:playground": "pnpm scenario:run -- --scenario scenarios/p16/playground/diagnostic_mixed_resize_churn_v1.json --lane pty --artifact-root scripts/_tmp_resize_spine_playground"
   },
   "dependencies": {
     "@effect/cli": "^0.69.0",

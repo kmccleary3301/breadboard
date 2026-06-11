@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "id": "diagnostic_mixed_resize_churn_v1",
+  "title": "Diagnostic Mixed Resize Churn Playground V1",
+  "description": "Synthetic playground profile that stages quota, context-limit, and rate-limit provider diagnostics through the production controller/renderer while resizing across wide, compact, and narrow terminal widths.",
+  "tags": ["resize-spine", "diagnostics", "playground", "scrollback"],
+  "family": "resize-spine-playground",
+  "campaign": "post-p16-resize-resilience-spine",
+  "claimScope": "pty",
+  "expectedOutcome": { "verdict": "pass" },
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "fault", "time", "workspace"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "footer", "diagnostic-compaction", "scrollback-feed", "direct-cell-mutation"]
+  },
+  "environment": {
+    "env": {
+      "BREADBOARD_TUI_STRICT_TRANSCRIPT_SAFETY": "1"
+    },
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        { "path": "README.md", "content": "# Resize spine playground\n\nThis workspace is synthetic and must not affect the project checkout.\n" },
+        { "path": "src/smtp_fixture.c", "content": "int main(void) { return 0; }\n" }
+      ]
+    },
+    "prelaunchShellHistory": [
+      { "id": "diagnostic-playground-pre", "kind": "long-wrap", "text": "BB_RESIZE_SPINE_DIAGNOSTIC_PLAYGROUND_PRE_HISTORY_BEGIN alpha beta gamma delta epsilon zeta eta theta BB_RESIZE_SPINE_DIAGNOSTIC_PLAYGROUND_PRE_HISTORY_END" }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": { "composerReady": true, "timeoutMs": 20000 },
+    "timeoutMs": 120000
+  },
+  "terminal": {
+    "lanes": ["pty"],
+    "initial": { "cols": 122, "rows": 36 },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true,
+    "captureScreenshots": true
+  },
+  "fixtures": {
+    "mockSseScript": "scripts/mock_sse_diagnostic_resize_matrix.json"
+  },
+  "timeline": [
+    { "kind": "submit", "text": "Run the diagnostic resize playground and preserve scrollback." },
+    { "kind": "waitFor", "target": { "text": "Provider quota exceeded" }, "timeoutMs": 45000 },
+    { "kind": "checkpoint", "id": "quota-visible-wide", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "resize", "cols": 92, "rows": 26, "settleMs": 300 },
+    { "kind": "checkpoint", "id": "quota-visible-compact", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "waitFor", "target": { "text": "Provider context limit exceeded" }, "timeoutMs": 45000 },
+    { "kind": "resize", "cols": 138, "rows": 36, "settleMs": 300 },
+    { "kind": "checkpoint", "id": "context-visible-wide", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "waitFor", "target": { "text": "Provider rate limit hit" }, "timeoutMs": 45000 },
+    { "kind": "resize", "cols": 78, "rows": 24, "settleMs": 300 },
+    { "kind": "wait", "ms": 500 },
+    { "kind": "checkpoint", "id": "rate-visible-final-narrow", "capture": { "stateDump": true, "grid": true, "scrollback": true } }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-PROVIDER-DIAGNOSTIC", "severity": "blocker" },
+    { "id": "DIAG-PROVIDER-DIAGNOSTIC-DEDUPED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-SYSTEM-PROMPT-LEAK", "severity": "blocker" },
+    { "id": "GLOBAL-NO-DUPLICATE-PROMPT", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "GLOBAL-FOOTER-TRUTHFUL", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" },
+    { "id": "RESIZE-NO-DUP-STATUS", "severity": "blocker" },
+    { "id": "RESIZE-NO-STALE-BORDER", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report"] },
+  "actionRequirements": {
+    "inputSubmitted": "required",
+    "resizeRequested": "required",
+    "resizeObserved": "required",
+    "waitTargetsObserved": "required",
+    "stateDumpObservedAfterSubmit": "required",
+    "stateDumpObservedAfterResize": "required",
+    "artifactCaptureComplete": "required"
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "not-required",
+    "toolCardinality": "not-required"
+  },
+  "mutationProfile": {
+    "seed": 1,
+    "dimensions": ["provider-diagnostics", "quota", "context-limit", "rate-limit", "wide-to-narrow-resize", "strict-transcript-safety"]
+  }
+}

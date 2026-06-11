@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "id": "p16_resize_spine_playground",
+  "campaign": "post-p16-resize-resilience-spine",
+  "scenarios": [
+    "scenarios/p16/playground/diagnostic_mixed_resize_churn_v1.json"
+  ]
+}

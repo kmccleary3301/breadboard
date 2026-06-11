@@ -179,6 +179,45 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     const leaked = /\x1b\[[0-9;?]*[A-Za-z]/.test(text) || /\[200~|\[201~/.test(text)
     return leaked ? fail(request, "raw ANSI/bracketed paste marker visible in plain text") : pass(request, "no raw ANSI leak detected")
   },
+  "GLOBAL-NO-RAW-PROVIDER-DIAGNOSTIC": (request, artifacts) => {
+    const text = textBlob(artifacts)
+    const patterns = [
+      /\{'error':/i,
+      /"error"\s*:\s*\{/i,
+      /'type':\s*'(?:invalid_request_error|insufficient_quota|rate_limit_error|authentication_error)'/i,
+      /context_length_exceeded/i,
+      /Error code:\s*(?:400|401|429|5\d\d)\s*-/i,
+    ]
+    const matched = patterns.find((pattern) => pattern.test(text))?.source
+    return matched
+      ? fail(request, "raw provider diagnostic payload visible in default artifacts", { pattern: matched })
+      : pass(request, "no raw provider diagnostic payload visible")
+  },
+  "DIAG-PROVIDER-DIAGNOSTIC-DEDUPED": (request, artifacts) => {
+    const state = latestState(artifacts)
+    const toolText = Array.isArray(state?.toolEvents)
+      ? state.toolEvents.map((entry: any) => String(entry?.text ?? "")).join("\n")
+      : ""
+    const conversationText = Array.isArray(state?.conversation)
+      ? state.conversation.map((entry: any) => String(entry?.text ?? "")).join("\n")
+      : ""
+    const expected = [
+      { label: "quota", phrase: /Provider quota exceeded/g, maxTool: 2, maxConversation: 1 },
+      { label: "context", phrase: /Provider context limit exceeded/g, maxTool: 2, maxConversation: 1 },
+      { label: "rate", phrase: /Provider rate limit hit/g, maxTool: 2, maxConversation: 1 },
+    ]
+    const counts = expected.map((item) => ({
+      label: item.label,
+      tool: regexCount(toolText, item.phrase),
+      conversation: regexCount(conversationText, item.phrase),
+      maxTool: item.maxTool,
+      maxConversation: item.maxConversation,
+    }))
+    const bad = counts.filter((item) => item.tool > item.maxTool || item.conversation > item.maxConversation)
+    return bad.length === 0
+      ? pass(request, "provider diagnostics are within dedupe cardinality", { counts })
+      : fail(request, "provider diagnostic row cardinality exceeded", { bad, counts })
+  },
   "GLOBAL-NO-SYSTEM-PROMPT-LEAK": (request, artifacts) => {
     const text = textBlob(artifacts)
     const patterns = [/You are Codex, based on GPT-5/i, /## Editing constraints/i, /## Plan tool/i, /system prompt/i]
