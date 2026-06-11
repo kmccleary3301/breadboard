@@ -162,7 +162,8 @@
     "qc:provider-auth-resize-dedupe": "bash scripts/qc_provider_auth_resize_dedupe_pty.sh",
     "qc:diagnostic-resize-matrix": "bash scripts/qc_diagnostic_resize_matrix_pty.sh",
     "qc:resize-spine:no-bypass": "node --import tsx scripts/scan_resize_spine_bypass.ts",
-    "qc:resize-spine:playground": "pnpm scenario:batch scenarios/p16/batches/resize_spine_playground.json --continue-on-red"
+    "qc:resize-spine:playground": "pnpm scenario:batch scenarios/p16/batches/resize_spine_playground.json --continue-on-red",
+    "qc:resize-spine:diagnostics": "pnpm run -s qc:resize-spine:no-bypass && pnpm run -s qc:diagnostic-resize-matrix && pnpm run -s qc:resize-spine:playground"
   },
   "dependencies": {
     "@effect/cli": "^0.69.0",
