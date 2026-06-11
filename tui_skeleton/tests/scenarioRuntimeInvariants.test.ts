@@ -189,6 +189,127 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("fails missing declared visible text sentinels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedVisibleText: ["VISIBLE_SENTINEL_A", "VISIBLE_SENTINEL_B"] }), "utf8")
+      await writeFile(path.join(dir, "viewport_final.txt"), "VISIBLE_SENTINEL_A\n", "utf8")
+      const report = await evaluateInvariants(dir, "bad_missing_visible_sentinel", "pty", [{ id: "VISIBLE-TEXT-SENTINELS-PRESENT", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails missing declared final visible text sentinels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedFinalVisibleText: ["FINAL_SENTINEL_A"] }), "utf8")
+      await writeFile(path.join(dir, "viewport_final.txt"), "not final\n", "utf8")
+      const report = await evaluateInvariants(dir, "bad_missing_final_sentinel", "pty", [{ id: "FINAL-VISIBLE-TEXT-SENTINELS-PRESENT", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("uses final viewport before stale scrollback for final visible text", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedFinalVisibleText: ["FINAL_SENTINEL_A"] }), "utf8")
+      await writeFile(path.join(dir, "viewport_final.txt"), "actual final viewport\n", "utf8")
+      await writeFile(path.join(dir, "scrollback_final.txt"), "stale FINAL_SENTINEL_A scrollback\n", "utf8")
+      const report = await evaluateInvariants(dir, "bad_final_viewport_masked_by_scrollback", "pty", [{ id: "FINAL-VISIBLE-TEXT-SENTINELS-PRESENT", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails duplicated declared final visible text sentinels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedFinalUniqueText: ["FINAL_SENTINEL_A"] }), "utf8")
+      await writeFile(path.join(dir, "viewport_final.txt"), "FINAL_SENTINEL_A\nFINAL_SENTINEL_A\n", "utf8")
+      const report = await evaluateInvariants(dir, "bad_duplicate_final_sentinel", "pty", [{ id: "FINAL-VISIBLE-TEXT-SENTINELS-UNIQUE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("passes declared snapshot visible text sentinels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedSnapshotVisibleText: { compact: ["SNAP_A", "SNAP_B"] } }), "utf8")
+      await writeFile(path.join(dir, "terminal_grid.ndjson"), JSON.stringify({ snapshots: [{ label: "compact", cleaned: "SNAP_A\nSNAP_B\nenter send" }] }), "utf8")
+      const report = await evaluateInvariants(dir, "good_snapshot_sentinels", "pty", [{ id: "SNAPSHOT-VISIBLE-TEXT-SENTINELS-PRESENT", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+    })
+  })
+
+  it("fails missing declared snapshot visible text sentinels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedSnapshotVisibleText: { compact: ["SNAP_A", "SNAP_B"] } }), "utf8")
+      await writeFile(path.join(dir, "terminal_grid.ndjson"), JSON.stringify({ snapshots: [{ label: "compact", cleaned: "SNAP_A\nenter send" }] }), "utf8")
+      const report = await evaluateInvariants(dir, "bad_snapshot_sentinels", "pty", [{ id: "SNAPSHOT-VISIBLE-TEXT-SENTINELS-PRESENT", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({ missingSentinels: [{ label: "compact", sentinel: "SNAP_B" }] })
+    })
+  })
+
+  it("fails missing declared snapshot labels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedSnapshotVisibleText: { compact: ["SNAP_A"] } }), "utf8")
+      await writeFile(path.join(dir, "terminal_grid.ndjson"), JSON.stringify({ snapshots: [{ label: "wide", cleaned: "SNAP_A" }] }), "utf8")
+      const report = await evaluateInvariants(dir, "bad_missing_snapshot_label", "pty", [{ id: "SNAPSHOT-VISIBLE-TEXT-SENTINELS-PRESENT", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({ missingSnapshots: ["compact"] })
+    })
+  })
+
+  it("fails missing snapshot artifacts for declared snapshot sentinels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedSnapshotVisibleText: { compact: ["SNAP_A"] } }), "utf8")
+      const report = await evaluateInvariants(dir, "bad_missing_snapshot_artifact", "pty", [{ id: "SNAPSHOT-VISIBLE-TEXT-SENTINELS-PRESENT", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("passes unique declared snapshot visible text sentinels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedSnapshotUniqueText: { compact: ["SNAP_A", "SNAP_B"] } }), "utf8")
+      await writeFile(path.join(dir, "terminal_grid.ndjson"), JSON.stringify({ snapshots: [{ label: "compact", cleaned: "SNAP_A\nSNAP_B\nenter send" }] }), "utf8")
+      const report = await evaluateInvariants(dir, "good_snapshot_unique_sentinels", "pty", [{ id: "SNAPSHOT-VISIBLE-TEXT-SENTINELS-UNIQUE", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+    })
+  })
+
+  it("fails duplicated declared snapshot visible text sentinels", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedSnapshotUniqueText: { compact: ["SNAP_A"] } }), "utf8")
+      await writeFile(path.join(dir, "terminal_grid.ndjson"), JSON.stringify({ snapshots: [{ label: "compact", cleaned: "SNAP_A\nSNAP_A\nenter send" }] }), "utf8")
+      const report = await evaluateInvariants(dir, "bad_snapshot_duplicate_sentinel", "pty", [{ id: "SNAPSHOT-VISIBLE-TEXT-SENTINELS-UNIQUE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({ nonUnique: [{ label: "compact", sentinel: "SNAP_A", count: 2 }] })
+    })
+  })
+
+  it("fails visible bracketed paste markers", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "viewport_final.txt"), "❯ [200~pasted text[201~\n", "utf8")
+      const report = await evaluateInvariants(dir, "bad_paste_marker", "pty", [{ id: "COMPOSER-NO-BRACKETED-PASTE-MARKERS", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails duplicate footer status lines", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "viewport_final.txt"), "• [ready] last 1s · enter send\n• [ready] last 1s · enter send\nresume /sessions · ctrl+o transcript\nresume /sessions · ctrl+o transcript\n", "utf8")
+      const report = await evaluateInvariants(dir, "bad_footer_duplicate", "pty", [{ id: "FOOTER-NO-DUPLICATE-STATUS", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
   it("fails ready-lie lifecycle state", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(path.join(dir, "state_dumps.ndjson"), `${JSON.stringify({ state: { status: "[ready] enter send", disconnected: true, pendingResponse: false } })}\n`, "utf8")

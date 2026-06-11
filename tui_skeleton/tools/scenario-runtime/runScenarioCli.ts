@@ -670,6 +670,11 @@ const main = async () => {
     hostHistorySentinels: (scenario.environment.prelaunchShellHistory ?? []).map((item) => item.text),
     expectedPrompt,
     expectedAssistantText,
+    expectedVisibleText: scenario.expectedVisibleText ?? [],
+    expectedFinalVisibleText: scenario.expectedFinalVisibleText ?? [],
+    expectedFinalUniqueText: scenario.expectedFinalUniqueText ?? [],
+    expectedSnapshotVisibleText: scenario.expectedSnapshotVisibleText ?? {},
+    expectedSnapshotUniqueText: scenario.expectedSnapshotUniqueText ?? {},
     artifactCompleteness: {
       raw: true,
       grid: true,

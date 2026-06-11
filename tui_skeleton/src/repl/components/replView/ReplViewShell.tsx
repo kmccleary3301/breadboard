@@ -104,6 +104,7 @@ export const resolveManagedResizeClearSequence = (args: {
   readonly preConversationIdle?: boolean
   readonly terminalRows: number
   readonly pendingResponse?: boolean
+  readonly shrinkingWidth?: boolean
 }): string => {
   const { liveShellOwnershipMode, scrollbackMode, resetOnResizeEnabled, reclaimRows } = args
   if (liveShellOwnershipMode === "owned-live") return ""
@@ -112,7 +113,11 @@ export const resolveManagedResizeClearSequence = (args: {
     if (args.pendingResponse || !args.preConversationIdle) return ""
     const composerRows = Math.max(0, Math.floor(args.composerRowsAboveCursor ?? 0))
     if (args.volatileActiveBand) {
-      return buildLineAboveActiveBandClearSequence(Math.min(Math.max(3, composerRows + 2), Math.max(1, args.terminalRows - 1)))
+      const upperBoundaryRows = Math.min(Math.max(3, composerRows + 2), Math.max(1, args.terminalRows - 1))
+      if (args.shrinkingWidth) {
+        return buildLineRangeAboveActiveBandClearSequence(upperBoundaryRows, 2)
+      }
+      return buildLineRangeAboveActiveBandClearSequence(upperBoundaryRows, 4)
     }
     if (!resetOnResizeEnabled) return ""
     const idleActiveBandRows = Math.min(Math.max(16, safeReclaimRows, composerRows + 1), Math.max(2, args.terminalRows - 2))
@@ -465,6 +470,7 @@ export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ co
         preConversationIdle: conversationCount === 0 && !pendingResponse && !disconnected,
         terminalRows: rows,
         pendingResponse,
+        shrinkingWidth: previous.cols > cols,
       })
       if (nextSequence) {
         stdout.write(nextSequence)

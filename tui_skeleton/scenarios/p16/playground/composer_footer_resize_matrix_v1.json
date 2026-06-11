@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 1,
+  "id": "composer_footer_resize_matrix_v1",
+  "title": "Composer Footer Resize Matrix V1",
+  "description": "Production-path composer/footer ownership profile that exercises empty composer, slash suggestions, filtered slash suggestions, bracketed multiline paste, and resize churn without submitting a turn or mutating durable transcript state.",
+  "tags": ["resize-spine", "composer", "footer", "slash", "paste", "playground", "scrollback"],
+  "family": "resize-spine-playground",
+  "campaign": "post-p16-resize-resilience-spine",
+  "claimScope": "pty",
+  "expectedOutcome": { "verdict": "pass" },
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "time", "workspace"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "footer", "slash-suggestions", "scrollback-feed", "direct-cell-mutation"]
+  },
+  "environment": {
+    "env": {
+      "BREADBOARD_TUI_STRICT_TRANSCRIPT_SAFETY": "1"
+    },
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        { "path": "README.md", "content": "# Composer footer resize matrix\n\nThis workspace is synthetic and must not affect the project checkout.\n" }
+      ]
+    },
+    "prelaunchShellHistory": [
+      { "id": "composer-footer-pre", "kind": "long-wrap", "text": "BB_RESIZE_SPINE_COMPOSER_FOOTER_PRE_HISTORY_BEGIN alpha beta gamma delta epsilon zeta eta theta BB_RESIZE_SPINE_COMPOSER_FOOTER_PRE_HISTORY_END" }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": { "composerReady": true, "timeoutMs": 20000 },
+    "timeoutMs": 90000
+  },
+  "terminal": {
+    "lanes": ["pty"],
+    "initial": { "cols": 116, "rows": 34 },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true,
+    "captureScreenshots": true
+  },
+  "expectedVisibleText": [
+    "/resume",
+    "/transcript",
+    "/models",
+    "COMPOSER_ALPHA_SENTINEL",
+    "COMPOSER_BETA_SENTINEL",
+    "enter send"
+  ],
+  "expectedFinalVisibleText": [
+    "COMPOSER_ALPHA_SENTINEL",
+    "COMPOSER_BETA_SENTINEL",
+    "enter send"
+  ],
+  "expectedFinalUniqueText": [
+    "COMPOSER_ALPHA_SENTINEL",
+    "COMPOSER_BETA_SENTINEL"
+  ],
+  "expectedSnapshotVisibleText": {
+    "empty-composer-wide": ["Type your request", "enter send"],
+    "slash-root-wide": ["/resume", "/transcript", "enter send"],
+    "slash-root-compact": ["/transcript", "enter send"],
+    "slash-filter-models": ["/models", "enter send"],
+    "slash-filter-models-after-resize": ["/models", "enter send"],
+    "pasted-multiline-wide": ["COMPOSER_ALPHA_SENTINEL", "COMPOSER_BETA_SENTINEL", "enter send"],
+    "pasted-multiline-compact": ["COMPOSER_ALPHA_SENTINEL", "COMPOSER_BETA_SENTINEL", "enter send"],
+    "pasted-multiline-final-wide": ["COMPOSER_ALPHA_SENTINEL", "COMPOSER_BETA_SENTINEL", "enter send"]
+  },
+  "expectedSnapshotUniqueText": {
+    "pasted-multiline-wide": ["COMPOSER_ALPHA_SENTINEL", "COMPOSER_BETA_SENTINEL"],
+    "pasted-multiline-compact": ["COMPOSER_ALPHA_SENTINEL", "COMPOSER_BETA_SENTINEL"],
+    "pasted-multiline-final-wide": ["COMPOSER_ALPHA_SENTINEL", "COMPOSER_BETA_SENTINEL"]
+  },
+  "timeline": [
+    { "kind": "checkpoint", "id": "empty-composer-wide", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "type", "text": "/", "delayMs": 8 },
+    { "kind": "waitFor", "target": { "text": "/resume" }, "timeoutMs": 10000 },
+    { "kind": "checkpoint", "id": "slash-root-wide", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "resize", "cols": 74, "rows": 22, "settleMs": 180 },
+    { "kind": "waitFor", "target": { "text": "/transcript" }, "timeoutMs": 10000 },
+    { "kind": "checkpoint", "id": "slash-root-compact", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "type", "text": "mo", "delayMs": 8 },
+    { "kind": "waitFor", "target": { "text": "/models" }, "timeoutMs": 10000 },
+    { "kind": "checkpoint", "id": "slash-filter-models", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "resize", "cols": 94, "rows": 26, "settleMs": 180 },
+    { "kind": "waitFor", "target": { "text": "/models" }, "timeoutMs": 10000 },
+    { "kind": "checkpoint", "id": "slash-filter-models-after-resize", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "key", "key": "ctrl+backspace", "repeat": 2, "delayMs": 80 },
+    { "kind": "key", "key": "backspace", "repeat": 2, "delayMs": 40 },
+    { "kind": "paste", "text": "COMPOSER_ALPHA_SENTINEL\nCOMPOSER_BETA_SENTINEL with enough trailing words to wrap under narrow terminal width" },
+    { "kind": "waitFor", "target": { "text": "COMPOSER_ALPHA_SENTINEL" }, "timeoutMs": 10000 },
+    { "kind": "checkpoint", "id": "pasted-multiline-wide", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "resize", "cols": 68, "rows": 18, "settleMs": 220 },
+    { "kind": "waitFor", "target": { "text": "COMPOSER_BETA_SENTINEL" }, "timeoutMs": 10000 },
+    { "kind": "checkpoint", "id": "pasted-multiline-compact", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "resize", "cols": 122, "rows": 34, "settleMs": 220 },
+    { "kind": "wait", "ms": 350 },
+    { "kind": "checkpoint", "id": "pasted-multiline-final-wide", "capture": { "stateDump": true, "grid": true, "scrollback": true } }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-NO-SYSTEM-PROMPT-LEAK", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "GLOBAL-FOOTER-TRUTHFUL", "severity": "blocker" },
+    { "id": "VISIBLE-TEXT-SENTINELS-PRESENT", "severity": "blocker" },
+    { "id": "FINAL-VISIBLE-TEXT-SENTINELS-PRESENT", "severity": "blocker" },
+    { "id": "FINAL-VISIBLE-TEXT-SENTINELS-UNIQUE", "severity": "blocker" },
+    { "id": "SNAPSHOT-VISIBLE-TEXT-SENTINELS-PRESENT", "severity": "blocker" },
+    { "id": "SNAPSHOT-VISIBLE-TEXT-SENTINELS-UNIQUE", "severity": "blocker" },
+    { "id": "COMPOSER-NO-BRACKETED-PASTE-MARKERS", "severity": "blocker" },
+    { "id": "FOOTER-NO-DUPLICATE-STATUS", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" },
+    { "id": "OVERLAY-NO-DURABLE-MUTATION", "severity": "blocker" },
+    { "id": "LIVE-NO-PENDING-SLOTS-WHEN-IDLE", "severity": "blocker" },
+    { "id": "SCROLL-NO-INPUT-SEPARATOR-REPLAY", "severity": "blocker" },
+    { "id": "SCROLL-NO-COMPOSER-PROMPT-REPLAY", "severity": "blocker" },
+    { "id": "RESIZE-NO-STALE-BORDER", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report", "scrollback", "viewport"] },
+  "actionRequirements": {
+    "resizeRequested": "required",
+    "resizeObserved": "required",
+    "waitTargetsObserved": "required",
+    "stateDumpObservedAfterResize": "required",
+    "artifactCaptureComplete": "required"
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "not-required",
+    "assistantCardinality": "not-required",
+    "toolCardinality": "not-required"
+  },
+  "mutationProfile": {
+    "seed": 13,
+    "dimensions": ["composer-empty", "slash-suggestions", "slash-filter", "bracketed-paste", "multiline-draft", "footer-cardinality", "resize-churn"]
+  }
+}

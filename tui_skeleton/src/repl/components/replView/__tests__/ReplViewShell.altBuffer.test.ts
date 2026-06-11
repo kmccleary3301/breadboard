@@ -157,7 +157,7 @@ describe("ReplViewShell preserved resize clear policy", () => {
     ).toBe("")
   })
 
-  it("issues a single stale-line clear above volatile preserved-scrollback composer resize", () => {
+  it("issues a bounded upper stale-boundary clear for volatile preserved-scrollback width growth", () => {
     expect(
       resolveManagedResizeClearSequence({
         liveShellOwnershipMode: "inline-scrollback",
@@ -169,8 +169,26 @@ describe("ReplViewShell preserved resize clear policy", () => {
         preConversationIdle: true,
         terminalRows: 24,
         pendingResponse: false,
+        shrinkingWidth: false,
       }),
-    ).toBe("\u001b7\r\u001b[8A\u001b[2K\u001b8")
+    ).toBe(buildLineRangeAboveActiveBandClearSequence(8, 4))
+  })
+
+  it("issues a bounded upper stale-boundary clear for volatile preserved-scrollback width shrink", () => {
+    expect(
+      resolveManagedResizeClearSequence({
+        liveShellOwnershipMode: "inline-scrollback",
+        scrollbackMode: true,
+        resetOnResizeEnabled: false,
+        volatileActiveBand: true,
+        reclaimRows: 9,
+        composerRowsAboveCursor: 6,
+        preConversationIdle: true,
+        terminalRows: 24,
+        pendingResponse: false,
+        shrinkingWidth: true,
+      }),
+    ).toBe(buildLineRangeAboveActiveBandClearSequence(8, 2))
   })
 
   it("does not issue volatile preserved-scrollback resize clears after conversation starts", () => {
@@ -189,7 +207,7 @@ describe("ReplViewShell preserved resize clear policy", () => {
     ).toBe("")
   })
 
-  it("keeps volatile preserved-scrollback resize bounded to the line above composer when reset clear is enabled", () => {
+  it("keeps volatile preserved-scrollback resize bounded to the stale boundary when reset clear is enabled", () => {
     expect(
       resolveManagedResizeClearSequence({
         liveShellOwnershipMode: "inline-scrollback",
@@ -201,11 +219,12 @@ describe("ReplViewShell preserved resize clear policy", () => {
         preConversationIdle: true,
         terminalRows: 24,
         pendingResponse: false,
+        shrinkingWidth: false,
       }),
-    ).toBe("\u001b7\r\u001b[8A\u001b[2K\u001b8")
+    ).toBe(buildLineRangeAboveActiveBandClearSequence(8, 4))
   })
 
-  it("ignores high reclaim estimates for volatile stale-line resize cleanup", () => {
+  it("ignores high reclaim estimates for volatile stale-boundary resize cleanup", () => {
     expect(
       resolveManagedResizeClearSequence({
         liveShellOwnershipMode: "inline-scrollback",
@@ -217,8 +236,9 @@ describe("ReplViewShell preserved resize clear policy", () => {
         preConversationIdle: true,
         terminalRows: 24,
         pendingResponse: false,
+        shrinkingWidth: false,
       }),
-    ).toBe("\u001b7\r\u001b[8A\u001b[2K\u001b8")
+    ).toBe(buildLineRangeAboveActiveBandClearSequence(8, 4))
   })
 
   it("keeps an explicit opt-in idle active-band clear budget when row estimates are low", () => {

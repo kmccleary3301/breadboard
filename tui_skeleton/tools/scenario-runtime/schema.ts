@@ -29,6 +29,11 @@ export interface Scenario {
   readonly terminalMatrix?: Record<string, TerminalLaneExpectation>
   readonly performanceBudget?: PerformanceBudgetSpec
   readonly visualEvidence?: VisualEvidenceSpec
+  readonly expectedVisibleText?: string[]
+  readonly expectedFinalVisibleText?: string[]
+  readonly expectedFinalUniqueText?: string[]
+  readonly expectedSnapshotVisibleText?: Record<string, string[]>
+  readonly expectedSnapshotUniqueText?: Record<string, string[]>
   readonly transcriptExpectation?: TranscriptExpectationSpec
   readonly hotRegionExpectation?: HotRegionExpectationSpec
   readonly mutationProfile?: MutationProfileSpec
@@ -301,6 +306,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const isString = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0
 const isNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value)
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === "string")
+const isStringArrayRecord = (value: unknown): value is Record<string, string[]> =>
+  isRecord(value) && Object.values(value).every((item) => isStringArray(item))
 
 export interface ValidationResult {
   readonly ok: boolean
@@ -400,6 +407,22 @@ export const validateScenario = (value: unknown): ValidationResult => {
         if (!isRecord(expectation)) fail(`terminalMatrix.${lane} must be an object`)
       }
     }
+  }
+
+  if (value.expectedVisibleText !== undefined && !isStringArray(value.expectedVisibleText)) {
+    fail("expectedVisibleText must be string[]")
+  }
+  if (value.expectedFinalVisibleText !== undefined && !isStringArray(value.expectedFinalVisibleText)) {
+    fail("expectedFinalVisibleText must be string[]")
+  }
+  if (value.expectedFinalUniqueText !== undefined && !isStringArray(value.expectedFinalUniqueText)) {
+    fail("expectedFinalUniqueText must be string[]")
+  }
+  if (value.expectedSnapshotVisibleText !== undefined && !isStringArrayRecord(value.expectedSnapshotVisibleText)) {
+    fail("expectedSnapshotVisibleText must be Record<string, string[]>")
+  }
+  if (value.expectedSnapshotUniqueText !== undefined && !isStringArrayRecord(value.expectedSnapshotUniqueText)) {
+    fail("expectedSnapshotUniqueText must be Record<string, string[]>")
   }
 
   const timeline = Array.isArray(value.timeline) ? value.timeline : null

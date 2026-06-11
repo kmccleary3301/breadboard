@@ -178,8 +178,86 @@ const expectedAssistantTerms = (artifacts: ScenarioArtifacts): string[] => {
 }
 
 const finalVisibleText = (artifacts: ScenarioArtifacts): string =>
-  [artifacts.scrollbackText, artifacts.viewportText, artifacts.terminalGridText, artifacts.plainText]
+  [artifacts.viewportText, artifacts.scrollbackText, artifacts.terminalGridText, artifacts.plainText]
     .find((value) => typeof value === "string" && value.trim().length > 0) ?? ""
+
+const manifestStringArray = (artifacts: ScenarioArtifacts, key: string): string[] => {
+  const value = artifacts.manifest?.[key]
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : []
+}
+
+const manifestStringArrayRecord = (artifacts: ScenarioArtifacts, key: string): Record<string, string[]> => {
+  const value = artifacts.manifest?.[key]
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  const entries = Object.entries(value).flatMap(([label, raw]) => {
+    if (!Array.isArray(raw)) return []
+    const expected = raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    return expected.length > 0 ? [[label, expected] as const] : []
+  })
+  return Object.fromEntries(entries)
+}
+
+const snapshotVisibleText = (artifacts: ScenarioArtifacts): Record<string, string> | null => {
+  const raw = artifacts.terminalGridText
+  if (!raw?.trim()) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (parsed && typeof parsed === "object" && "snapshots" in parsed && Array.isArray((parsed as { snapshots?: unknown }).snapshots)) {
+      return Object.fromEntries(
+        (parsed as { snapshots: unknown[] }).snapshots.flatMap((snapshot) => {
+          if (!snapshot || typeof snapshot !== "object") return []
+          const record = snapshot as Record<string, unknown>
+          const label = typeof record.label === "string" ? record.label.trim() : ""
+          const text =
+            typeof record.cleaned === "string"
+              ? record.cleaned
+              : typeof record.text === "string"
+                ? record.text
+                : typeof record.viewport === "string"
+                  ? record.viewport
+                  : ""
+          return label && text ? [[label, text] as const] : []
+        }),
+      )
+    }
+  } catch {
+    const snapshots: Record<string, string> = {}
+    for (const line of raw.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      try {
+        const record = JSON.parse(trimmed) as Record<string, unknown>
+        const label = typeof record.label === "string" ? record.label.trim() : ""
+        const text =
+          typeof record.cleaned === "string"
+            ? record.cleaned
+            : typeof record.text === "string"
+              ? record.text
+              : typeof record.viewport === "string"
+                ? record.viewport
+                : ""
+        if (label && text) snapshots[label] = text
+      } catch {
+        // Keep parsing later lines; malformed diagnostics should not hide valid snapshots.
+      }
+    }
+    return snapshots
+  }
+  return {}
+}
+
+const countLiteralOccurrences = (text: string, needle: string): number => {
+  if (!needle) return 0
+  let count = 0
+  let index = 0
+  while (index <= text.length) {
+    const next = text.indexOf(needle, index)
+    if (next < 0) break
+    count += 1
+    index = next + needle.length
+  }
+  return count
+}
 
 const pass = (request: InvariantRequest, message: string, evidence?: Record<string, unknown>): InvariantResult => ({
   id: request.id,
@@ -311,6 +389,88 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     const text = textBlob(artifacts)
     const hasFooter = /enter send|resume \/sessions|ctrl\+|shortcuts|mdl /.test(text)
     return hasFooter ? pass(request, "footer/status affordance visible") : fail(request, "footer/status affordance missing")
+  },
+  "VISIBLE-TEXT-SENTINELS-PRESENT": (request, artifacts) => {
+    const expected = manifestStringArray(artifacts, "expectedVisibleText")
+    if (expected.length === 0) return skip(request, "no expected visible text sentinels declared")
+    const text = textBlob(artifacts)
+    const missing = expected.filter((item) => !text.includes(item))
+    return missing.length === 0
+      ? pass(request, "expected visible text sentinels are present", { count: expected.length })
+      : fail(request, "expected visible text sentinels missing", { missing })
+  },
+  "FINAL-VISIBLE-TEXT-SENTINELS-PRESENT": (request, artifacts) => {
+    const expected = manifestStringArray(artifacts, "expectedFinalVisibleText")
+    if (expected.length === 0) return skip(request, "no expected final visible text sentinels declared")
+    const text = finalVisibleText(artifacts)
+    const missing = expected.filter((item) => !text.includes(item))
+    return missing.length === 0
+      ? pass(request, "expected final visible text sentinels are present", { count: expected.length })
+      : fail(request, "expected final visible text sentinels missing", { missing })
+  },
+  "FINAL-VISIBLE-TEXT-SENTINELS-UNIQUE": (request, artifacts) => {
+    const expected = manifestStringArray(artifacts, "expectedFinalUniqueText")
+    if (expected.length === 0) return skip(request, "no expected final unique text sentinels declared")
+    const text = finalVisibleText(artifacts)
+    const duplicates = expected
+      .map((item) => ({ item, count: countLiteralOccurrences(text, item) }))
+      .filter((entry) => entry.count !== 1)
+    return duplicates.length === 0
+      ? pass(request, "expected final visible text sentinels are unique", { count: expected.length })
+      : fail(request, "expected final visible text sentinels are missing or duplicated", { duplicates })
+  },
+  "SNAPSHOT-VISIBLE-TEXT-SENTINELS-PRESENT": (request, artifacts) => {
+    const expectedByLabel = manifestStringArrayRecord(artifacts, "expectedSnapshotVisibleText")
+    const labels = Object.keys(expectedByLabel)
+    if (labels.length === 0) return skip(request, "no expected snapshot visible text sentinels declared")
+    const snapshots = snapshotVisibleText(artifacts)
+    if (!snapshots) return fail(request, "terminal grid snapshot artifact is missing or empty")
+    const missingSnapshots = labels.filter((label) => snapshots[label] === undefined)
+    const missingSentinels = labels.flatMap((label) => {
+      const text = snapshots[label] ?? ""
+      return expectedByLabel[label]
+        .filter((sentinel) => !text.includes(sentinel))
+        .map((sentinel) => ({ label, sentinel }))
+    })
+    if (missingSnapshots.length === 0 && missingSentinels.length === 0) {
+      return pass(request, "expected snapshot visible text sentinels are present", { snapshotCount: labels.length })
+    }
+    return fail(request, "expected snapshot visible text sentinels missing", { missingSnapshots, missingSentinels })
+  },
+  "SNAPSHOT-VISIBLE-TEXT-SENTINELS-UNIQUE": (request, artifacts) => {
+    const expectedByLabel = manifestStringArrayRecord(artifacts, "expectedSnapshotUniqueText")
+    const labels = Object.keys(expectedByLabel)
+    if (labels.length === 0) return skip(request, "no expected snapshot unique text sentinels declared")
+    const snapshots = snapshotVisibleText(artifacts)
+    if (!snapshots) return fail(request, "terminal grid snapshot artifact is missing or empty")
+    const missingSnapshots = labels.filter((label) => snapshots[label] === undefined)
+    const nonUnique = labels.flatMap((label) => {
+      const text = snapshots[label] ?? ""
+      return expectedByLabel[label]
+        .map((sentinel) => ({ label, sentinel, count: countLiteralOccurrences(text, sentinel) }))
+        .filter((entry) => entry.count !== 1)
+    })
+    if (missingSnapshots.length === 0 && nonUnique.length === 0) {
+      return pass(request, "expected snapshot visible text sentinels are unique", { snapshotCount: labels.length })
+    }
+    return fail(request, "expected snapshot visible text sentinels are missing or duplicated", { missingSnapshots, nonUnique })
+  },
+  "COMPOSER-NO-BRACKETED-PASTE-MARKERS": (request, artifacts) => {
+    const text = finalVisibleText(artifacts)
+    const leaked = /\[200~|\[201~|\x1b\[200~|\x1b\[201~/.test(text)
+    return leaked ? fail(request, "bracketed paste marker leaked into visible composer output") : pass(request, "no bracketed paste marker visible")
+  },
+  "FOOTER-NO-DUPLICATE-STATUS": (request, artifacts) => {
+    const text = finalVisibleText(artifacts)
+    const footerLines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => /enter send|resume \/sessions|ctrl\+|shortcuts|mdl /.test(line))
+    const unique = new Set(footerLines)
+    const excessive = footerLines.length > 4 || unique.size < footerLines.length - 1
+    return excessive
+      ? fail(request, "footer/status lines appear duplicated in final visible output", { footerLines })
+      : pass(request, "footer/status line cardinality is bounded", { footerLineCount: footerLines.length })
   },
   "LIVE-NO-STALE-STREAMING-WHEN-IDLE": (request, artifacts) => {
     if (latestPendingResponse(artifacts)) return pass(request, "pending response still active; streaming rows are allowed")
