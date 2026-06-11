@@ -44,6 +44,7 @@ import {
 import { formatActivityTransitionTimeline } from "./controllerTransitionTimeline.js"
 import { getActiveEngineLifecycleSnapshot, restartOwnedEngine } from "../../engine/engineSupervisor.js"
 import { assertDurableTranscriptSafe } from "./transcriptSafety.js"
+import { applyTextBudget } from "./textBudget.js"
 
 type SlashHandler = (args: string[]) => Promise<void>
 
@@ -66,17 +67,8 @@ const normalizeTaskStatus = (rawStatus?: string | null, rawKind?: string | null)
   return rawStatus ?? rawKind ?? null
 }
 
-const clampLines = (text: string, maxLines: number): string => {
-  const lines = text.split(/\r?\n/)
-  if (lines.length <= maxLines) return text
-  return `${lines.slice(0, maxLines).join("\n")}…`
-}
-
-const clampChars = (text: string, maxChars: number): string =>
-  text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 1))}…`
-
 const formatThinkingPreview = (raw: string, maxLines: number, maxChars: number): string =>
-  clampChars(clampLines(raw, maxLines), maxChars)
+  applyTextBudget(raw, { maxLines, maxChars, omissionText: "…" }).text
 
 const resolveTranscriptTimestamp = (ctx: any): number => {
   const seq = ctx.currentEventSeq

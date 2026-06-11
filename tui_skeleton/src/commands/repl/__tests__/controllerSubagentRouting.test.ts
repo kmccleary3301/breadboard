@@ -199,6 +199,7 @@ describe("ReplSessionController subagent routing", () => {
     expect(rendered).not.toContain("\u001b")
     expect(rendered).not.toContain("\u0007")
     expect(rendered).toContain("...")
+    expect(rendered.length).toBeLessThanOrEqual(160)
   })
 
   it("dedupes repeated status toasts inside merge window", () => {

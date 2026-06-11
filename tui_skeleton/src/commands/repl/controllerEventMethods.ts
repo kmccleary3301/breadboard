@@ -48,6 +48,7 @@ import {
 } from "./controllerUtils.js"
 import { isLifecycleNoiseHint } from "./hintPolicy.js"
 import { resolveSubagentUiPolicy, type SubagentUiPolicy } from "./subagentUiPolicy.js"
+import { formatOneLinePreview } from "./textBudget.js"
 type CompletionView = {
   completed: boolean
   status: string
@@ -629,13 +630,7 @@ const resolveSubagentStatus = (payload: Record<string, unknown>, fallback?: stri
 }
 
 const sanitizeSubagentPreview = (value: string, maxChars = 120): string => {
-  const cleaned = stripAnsi(value)
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-  if (!cleaned) return "task"
-  if (cleaned.length <= maxChars) return cleaned
-  return `${cleaned.slice(0, Math.max(1, maxChars - 3))}...`
+  return formatOneLinePreview(value, { maxChars, fallback: "task", ellipsis: "..." }).text
 }
 
 const emitSubagentToast = (

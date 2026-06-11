@@ -9,6 +9,7 @@ import type {
   ThinkingMode,
 } from "../../repl/types.js"
 import { extractRawString, isRecord, parseNumberish } from "./controllerUtils.js"
+import { clampTextByChars, clampTextByLines } from "./textBudget.js"
 
 const DEFAULT_MIN_DISPLAY_MS = 200
 const DEFAULT_STATUS_UPDATE_MS = 60
@@ -404,17 +405,6 @@ export const reduceActivityTransition = (
   }
 }
 
-const truncateByLines = (text: string, maxLines: number): { text: string; truncated: boolean } => {
-  const lines = text.split(/\r?\n/)
-  if (lines.length <= maxLines) return { text, truncated: false }
-  return { text: lines.slice(0, maxLines).join("\n"), truncated: true }
-}
-
-const truncateByChars = (text: string, maxChars: number): { text: string; truncated: boolean } => {
-  if (text.length <= maxChars) return { text, truncated: false }
-  return { text: `${text.slice(0, Math.max(0, maxChars - 1))}…`, truncated: true }
-}
-
 export const createThinkingArtifact = (
   mode: ThinkingMode,
   now = Date.now(),
@@ -439,14 +429,14 @@ export const appendThinkingArtifact = (
   now = Date.now(),
 ): ThinkingArtifact => {
   const baseSummary = artifact.summary ? `${artifact.summary}\n${signal.text}` : signal.text
-  const lineSummary = truncateByLines(baseSummary, flags.thinkingMaxLines)
-  const charSummary = truncateByChars(lineSummary.text, flags.thinkingMaxChars)
+  const lineSummary = clampTextByLines(baseSummary, flags.thinkingMaxLines)
+  const charSummary = clampTextByChars(lineSummary.text, flags.thinkingMaxChars)
   const nextSummary = charSummary.text
   const nextRaw =
     artifact.mode === "full"
       ? (() => {
           const rawBase = `${artifact.rawText ?? ""}${signal.text}`
-          const rawTrim = truncateByChars(rawBase, flags.thinkingMaxChars * 4)
+          const rawTrim = clampTextByChars(rawBase, flags.thinkingMaxChars * 4)
           return { text: rawTrim.text, truncated: rawTrim.truncated }
         })()
       : { text: null as string | null, truncated: false }
@@ -507,9 +497,7 @@ const extractAnthropicThinkingText = (payload: Record<string, unknown>): string 
   normalizeThinkingText(payload.text)
 
 const truncateThinkingPreviewLine = (line: string, maxChars: number): string => {
-  if (line.length <= maxChars) return line
-  const safe = Math.max(1, maxChars - 1)
-  return `${line.slice(0, safe)}…`
+  return clampTextByChars(line, maxChars).text
 }
 
 const splitThinkingPreviewLines = (text: string, maxChars = 240): string[] =>
