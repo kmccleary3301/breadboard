@@ -457,6 +457,23 @@ const semanticDiagnosticKey = (message: string): string => {
   const lower = normalized.toLowerCase()
   const scopeMatch = lower.match(/missing scopes?:?\s+([a-z0-9_.:-]+)/i)
   const scope = scopeMatch?.[1]?.replace(/[.:-]+$/, "")
+  if (
+    lower.includes("insufficient_quota") ||
+    lower.includes("exceeded your current quota") ||
+    lower.includes("provider quota exceeded")
+  ) {
+    return "provider-quota"
+  }
+  if (
+    lower.includes("context_length_exceeded") ||
+    lower.includes("maximum context length") ||
+    lower.includes("provider context limit exceeded")
+  ) {
+    return "provider-context-limit"
+  }
+  if (lower.includes("rate limit") || lower.includes("rate_limit_error") || lower.includes("provider rate limit hit")) {
+    return "provider-rate-limit"
+  }
   if (lower.includes("retrying provider route") && scope) {
     return `provider-retry-auth-scope:${scope}`
   }
@@ -478,6 +495,23 @@ const compactDiagnosticMessage = (message: string): string => {
   const scope = scopeMatch?.[1]?.replace(/[.:-]+$/, "")
   if ((lower.includes("error code: 401") || lower.includes("insufficient permissions")) && scope) {
     return `OpenAI auth failed: missing scope ${scope}.`
+  }
+  if (
+    lower.includes("insufficient_quota") ||
+    lower.includes("exceeded your current quota") ||
+    (lower.includes("quota") && lower.includes("billing"))
+  ) {
+    return "Provider quota exceeded. Check billing/quota or switch routes."
+  }
+  if (
+    lower.includes("context_length_exceeded") ||
+    lower.includes("maximum context length") ||
+    (lower.includes("context length") && lower.includes("tokens"))
+  ) {
+    return "Provider context limit exceeded. Compact context or reduce prompt size."
+  }
+  if (lower.includes("rate limit") || lower.includes("rate_limit_error")) {
+    return "Provider rate limit hit. Retry later or switch routes."
   }
   return normalized
 }

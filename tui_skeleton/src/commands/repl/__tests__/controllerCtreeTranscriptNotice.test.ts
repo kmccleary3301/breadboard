@@ -200,9 +200,9 @@ describe("ReplSessionController ctree transcript notices", () => {
     const state = controller.getState()
     expect(state.pendingResponse).toBe(false)
     expect(state.activity?.primary).toBe("error")
-    expect(state.hints.some((hint: string) => hint.includes("[error] Error code: 429 - insufficient_quota"))).toBe(false)
-    expect(state.conversation.some((entry: any) => entry.speaker === "system" && String(entry.text).includes("[error] Error code: 429 - insufficient_quota"))).toBe(true)
-    expect(state.guardrailNotice?.summary).toContain("Error: Error code: 429 - insufficient_quota")
+    expect(state.hints.some((hint: string) => hint.includes("[error] Provider quota exceeded"))).toBe(false)
+    expect(state.conversation.some((entry: any) => entry.speaker === "system" && String(entry.text).includes("[error] Provider quota exceeded"))).toBe(true)
+    expect(state.guardrailNotice?.summary).toContain("Error: Provider quota exceeded")
   })
 
   it("surfaces failed completion summaries as visible terminal errors", () => {
@@ -230,13 +230,13 @@ describe("ReplSessionController ctree transcript notices", () => {
     expect(state.pendingResponse).toBe(false)
     expect(state.activity?.primary).toBe("halted")
     expect(state.hints.some((hint: string) => hint.includes("✻ Cooked for") || hint.includes("✻ Halted"))).toBe(false)
-    expect(state.hints.some((hint: string) => hint.includes("[error] Error code: 429 - insufficient_quota"))).toBe(false)
-    expect(state.conversation.some((entry: any) => entry.speaker === "system" && String(entry.text).includes("[error] Error code: 429 - insufficient_quota"))).toBe(true)
+    expect(state.hints.some((hint: string) => hint.includes("[error] Provider quota exceeded"))).toBe(false)
+    expect(state.conversation.some((entry: any) => entry.speaker === "system" && String(entry.text).includes("[error] Provider quota exceeded"))).toBe(true)
     const errorEntry = state.toolEvents.find((entry: any) => entry.kind === "error")
-    expect(errorEntry?.text).toContain("[error] Error code: 429 - insufficient_quota")
+    expect(errorEntry?.text).toContain("[error] Provider quota exceeded")
     expect(errorEntry?.display?.title).toBe("Runtime error")
     expect(errorEntry?.display?.detail?.join("\n") ?? "").toContain("ProviderRuntimeError: quota")
-    expect(state.guardrailNotice?.summary).toContain("Error: Error code: 429 - insufficient_quota")
+    expect(state.guardrailNotice?.summary).toContain("Error: Provider quota exceeded")
   })
 
   it("surfaces non-exception workloop halts as readable system transcript rows", () => {
@@ -297,12 +297,73 @@ describe("ReplSessionController ctree transcript notices", () => {
     const state = controller.getState()
     expect(state.pendingResponse).toBe(false)
     expect(state.activity?.primary).toBe("error")
-    expect(state.hints.some((hint: string) => hint.includes("[error] You exceeded your current quota."))).toBe(false)
+    expect(state.hints.some((hint: string) => hint.includes("[error] Provider quota exceeded"))).toBe(false)
     const errorEntry = state.toolEvents.find((entry: any) => entry.kind === "error")
-    expect(errorEntry?.text).toContain("[error] You exceeded your current quota.")
+    expect(errorEntry?.text).toContain("[error] Provider quota exceeded")
     expect(errorEntry?.display?.title).toBe("Runtime error")
     expect(errorEntry?.display?.detail?.join("\n") ?? "").toContain("ProviderRuntimeError: quota")
-    expect(state.conversation.some((entry: any) => entry.speaker === "system" && String(entry.text).includes("[error] You exceeded your current quota."))).toBe(true)
-    expect(state.guardrailNotice?.summary).toContain("Error: You exceeded your current quota.")
+    expect(state.conversation.some((entry: any) => entry.speaker === "system" && String(entry.text).includes("[error] Provider quota exceeded"))).toBe(true)
+    expect(state.guardrailNotice?.summary).toContain("Error: Provider quota exceeded")
+  })
+
+  it("compacts and dedupes quota and context diagnostics without raw provider payload leaks", () => {
+    const controller = new ReplSessionController({
+      configPath: "agent_configs/misc/test_simple_native.yaml",
+      workspace: ".",
+    }) as unknown as {
+      applyEvent: (evt: any) => void
+      getState: () => any
+    }
+
+    controller.applyEvent(event(1, "run.start"))
+    const quotaRaw =
+      "Error code: 429 - {'error': {'message': \"You exceeded your current quota. Check your plan and billing details.\", 'type': 'insufficient_quota'}}"
+    const contextRaw =
+      "Error code: 400 - {'error': {'message': \"This model's maximum context length is 128000 tokens. However, your messages resulted in 140000 tokens.\", 'type': 'invalid_request_error', 'code': 'context_length_exceeded'}}"
+    const providerRetryPayload = (reason: string, attempt: number) => ({
+      node: {
+        id: `retry-${attempt}`,
+        payload: {
+          transcript: {
+            provider_retry: {
+              route: attempt % 2 === 0 ? "openai/gpt-5.4-mini" : "gpt-5.4-mini",
+              attempt,
+              reason,
+            },
+          },
+        },
+      },
+      snapshot: ctreeSnapshot,
+    })
+    const exceptionPayload = (reason: string, id: string) => ({
+      node: {
+        id,
+        payload: {
+          transcript: {
+            run_loop_exception: {
+              type: "ProviderRuntimeError",
+              message: reason,
+            },
+          },
+        },
+      },
+      snapshot: ctreeSnapshot,
+    })
+
+    controller.applyEvent(event(2, "ctree_node", providerRetryPayload(quotaRaw, 1)))
+    controller.applyEvent(event(3, "ctree_node", providerRetryPayload(quotaRaw, 2)))
+    controller.applyEvent(event(4, "ctree_node", exceptionPayload(quotaRaw, "quota-error-1")))
+    controller.applyEvent(event(5, "ctree_node", exceptionPayload(quotaRaw, "quota-error-2")))
+    controller.applyEvent(event(6, "ctree_node", providerRetryPayload(contextRaw, 3)))
+    controller.applyEvent(event(7, "ctree_node", exceptionPayload(contextRaw, "context-error-1")))
+
+    const state = controller.getState()
+    const toolText = state.toolEvents.map((entry: any) => String(entry.text)).join("\n")
+    const conversationText = state.conversation.map((entry: any) => String(entry.text)).join("\n")
+    expect((toolText.match(/Provider quota exceeded/g) ?? []).length).toBe(2)
+    expect((conversationText.match(/Provider quota exceeded/g) ?? []).length).toBe(1)
+    expect((toolText.match(/Provider context limit exceeded/g) ?? []).length).toBe(2)
+    expect((conversationText.match(/Provider context limit exceeded/g) ?? []).length).toBe(1)
+    expect(`${toolText}\n${conversationText}`).not.toMatch(/\{'error':|'type': 'insufficient_quota'|context_length_exceeded|Error code:/)
   })
 })

@@ -43,6 +43,7 @@ import {
 } from "./controllerUtils.js"
 import { formatActivityTransitionTimeline } from "./controllerTransitionTimeline.js"
 import { getActiveEngineLifecycleSnapshot, restartOwnedEngine } from "../../engine/engineSupervisor.js"
+import { assertDurableTranscriptSafe } from "./transcriptSafety.js"
 
 type SlashHandler = (args: string[]) => Promise<void>
 
@@ -958,6 +959,7 @@ export function addConversation(this: any,
     return
   }
   this.finalizeStreamingEntry()
+  assertDurableTranscriptSafe(text, { surface: "conversation", speaker }, `conversation:${speaker}`)
   const entry: ConversationEntry = {
     id: this.nextConversationId(),
     speaker,
@@ -1102,6 +1104,7 @@ export function addTool(this: any,
   status?: LiveSlotStatus,
   options?: { callId?: string | null; insertAfterId?: string | null; display?: ToolDisplayPayload | null },
 ): ToolLogEntry {
+  assertDurableTranscriptSafe(text, { surface: "tool", kind }, `tool:${kind}`)
   const insertAfterId = options?.insertAfterId ?? null
   if (!insertAfterId && this.toolEvents.length > 0) {
     const last = this.toolEvents[this.toolEvents.length - 1] as ToolLogEntry
@@ -1165,6 +1168,7 @@ export function updateToolEntry(
     id: current.id,
     createdAt: current.createdAt,
   }
+  assertDurableTranscriptSafe(next.text, { surface: "tool", kind: next.kind }, `tool:${next.kind}:update`)
   this.toolEvents[index] = next
   return next
 }
