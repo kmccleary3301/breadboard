@@ -11,7 +11,7 @@ const read = (name: string): string => {
 }
 
 const count = (value: string, pattern: RegExp): number => value.match(pattern)?.length ?? 0
-const rawLeakPattern = /\{'error':|"error"\s*:|'type':\s*'(?:insufficient_quota|invalid_request_error)'|context_length_exceeded|Error code:\s*(?:400|429)/i
+const rawLeakPattern = /\{'error':|"error"\s*:|'type':\s*'(?:insufficient_quota|invalid_request_error|rate_limit_error)'|context_length_exceeded|Error code:\s*(?:400|429)/i
 const records = read("state.ndjson")
   .split(/\r?\n/)
   .map((line) => line.trim())
@@ -39,13 +39,18 @@ const quotaToolCount = count(toolText, /Provider quota exceeded/g)
 const quotaConversationCount = count(conversationText, /Provider quota exceeded/g)
 const contextToolCount = count(toolText, /Provider context limit exceeded/g)
 const contextConversationCount = count(conversationText, /Provider context limit exceeded/g)
+const rateToolCount = count(toolText, /Provider rate limit hit/g)
+const rateConversationCount = count(conversationText, /Provider rate limit hit/g)
 const rawStateLeak = rawLeakPattern.test(allStateText)
 const rawSnapshotLeak = rawLeakPattern.test(snapshots)
 const resizeSnapshots = count(snapshots, /^# diagnostic-/gm)
 const duplicateSnapshotSections = snapshots
   .split(/^# /m)
   .filter(Boolean)
-  .some((section) => count(section, /\[error\] Provider quota exceeded/g) > 2 || count(section, /\[error\] Provider context limit exceeded/g) > 2)
+  .some((section) =>
+    count(section, /\[error\] Provider quota exceeded/g) > 2 ||
+    count(section, /\[error\] Provider context limit exceeded/g) > 2 ||
+    count(section, /\[error\] Provider rate limit hit/g) > 2)
 const maxListenersWarning = /MaxListenersExceededWarning/i.test(harnessOutput) || /MaxListenersExceededWarning/i.test(snapshots)
 const disconnectedBanner = /Disconnected:|Lost connection to the engine/.test(snapshots)
 
@@ -60,6 +65,8 @@ const report = [
   `quotaConversationCount: ${quotaConversationCount}`,
   `contextToolCount: ${contextToolCount}`,
   `contextConversationCount: ${contextConversationCount}`,
+  `rateToolCount: ${rateToolCount}`,
+  `rateConversationCount: ${rateConversationCount}`,
   `rawStateLeak: ${rawStateLeak}`,
   `rawSnapshotLeak: ${rawSnapshotLeak}`,
   `duplicateSnapshotSections: ${duplicateSnapshotSections}`,
@@ -79,6 +86,8 @@ if (quotaToolCount !== 2) failures.push(`expected one quota retry and one quota 
 if (quotaConversationCount !== 1) failures.push(`expected one quota system transcript row, saw ${quotaConversationCount}`)
 if (contextToolCount !== 2) failures.push(`expected one context retry and one context error tool row, saw ${contextToolCount}`)
 if (contextConversationCount !== 1) failures.push(`expected one context system transcript row, saw ${contextConversationCount}`)
+if (rateToolCount !== 2) failures.push(`expected one rate retry and one rate error tool row, saw ${rateToolCount}`)
+if (rateConversationCount !== 1) failures.push(`expected one rate system transcript row, saw ${rateConversationCount}`)
 if (rawStateLeak) failures.push("raw provider payload leaked into final reducer state")
 if (rawSnapshotLeak) failures.push("raw provider payload leaked into terminal snapshots")
 if (duplicateSnapshotSections) failures.push("diagnostic error row duplicated inside a visible snapshot section")

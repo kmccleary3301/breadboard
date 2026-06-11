@@ -37,6 +37,7 @@ cat > "$SCRIPT_PATH" <<JSON
   { "action": "snapshot", "label": "diagnostic-wide", "maxLines": 160, "mode": "frame" },
   { "action": "waitFor", "text": "Provider context limit exceeded", "timeoutMs": 45000, "mode": "either" },
   { "action": "resize", "cols": 78, "rows": 24, "delayMs": 300 },
+  { "action": "waitFor", "text": "Provider rate limit hit", "timeoutMs": 45000, "mode": "either" },
   { "action": "snapshot", "label": "diagnostic-final-narrow", "maxLines": 180, "mode": "frame" }
 ]
 JSON

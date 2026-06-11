@@ -306,7 +306,7 @@ describe("ReplSessionController ctree transcript notices", () => {
     expect(state.guardrailNotice?.summary).toContain("Error: Provider quota exceeded")
   })
 
-  it("compacts and dedupes quota and context diagnostics without raw provider payload leaks", () => {
+  it("compacts and dedupes quota, context, and rate diagnostics without raw provider payload leaks", () => {
     const controller = new ReplSessionController({
       configPath: "agent_configs/misc/test_simple_native.yaml",
       workspace: ".",
@@ -320,6 +320,8 @@ describe("ReplSessionController ctree transcript notices", () => {
       "Error code: 429 - {'error': {'message': \"You exceeded your current quota. Check your plan and billing details.\", 'type': 'insufficient_quota'}}"
     const contextRaw =
       "Error code: 400 - {'error': {'message': \"This model's maximum context length is 128000 tokens. However, your messages resulted in 140000 tokens.\", 'type': 'invalid_request_error', 'code': 'context_length_exceeded'}}"
+    const rateRaw =
+      "Error code: 429 - {'error': {'message': \"Rate limit reached for requests. Please try again later.\", 'type': 'rate_limit_error'}}"
     const providerRetryPayload = (reason: string, attempt: number) => ({
       node: {
         id: `retry-${attempt}`,
@@ -356,6 +358,8 @@ describe("ReplSessionController ctree transcript notices", () => {
     controller.applyEvent(event(5, "ctree_node", exceptionPayload(quotaRaw, "quota-error-2")))
     controller.applyEvent(event(6, "ctree_node", providerRetryPayload(contextRaw, 3)))
     controller.applyEvent(event(7, "ctree_node", exceptionPayload(contextRaw, "context-error-1")))
+    controller.applyEvent(event(8, "ctree_node", providerRetryPayload(rateRaw, 4)))
+    controller.applyEvent(event(9, "ctree_node", exceptionPayload(rateRaw, "rate-error-1")))
 
     const state = controller.getState()
     const toolText = state.toolEvents.map((entry: any) => String(entry.text)).join("\n")
@@ -364,6 +368,8 @@ describe("ReplSessionController ctree transcript notices", () => {
     expect((conversationText.match(/Provider quota exceeded/g) ?? []).length).toBe(1)
     expect((toolText.match(/Provider context limit exceeded/g) ?? []).length).toBe(2)
     expect((conversationText.match(/Provider context limit exceeded/g) ?? []).length).toBe(1)
-    expect(`${toolText}\n${conversationText}`).not.toMatch(/\{'error':|'type': 'insufficient_quota'|context_length_exceeded|Error code:/)
+    expect((toolText.match(/Provider rate limit hit/g) ?? []).length).toBe(2)
+    expect((conversationText.match(/Provider rate limit hit/g) ?? []).length).toBe(1)
+    expect(`${toolText}\n${conversationText}`).not.toMatch(/\{'error':|'type': 'insufficient_quota'|'type': 'rate_limit_error'|context_length_exceeded|Error code:/)
   })
 })
