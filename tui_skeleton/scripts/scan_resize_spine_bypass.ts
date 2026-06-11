@@ -16,6 +16,8 @@ const root = process.cwd()
 const outputPath =
   process.argv.find((arg) => arg.startsWith("--out="))?.slice("--out=".length) ??
   path.join(root, "scripts", "_tmp_resize_spine_bypass_scan.md")
+const allowlistBudgetRaw = process.env.BREADBOARD_RESIZE_SPINE_MAX_ALLOWLISTED ?? "114"
+const allowlistBudget = Number(allowlistBudgetRaw)
 
 const scanRoots = [
   "src/commands/repl",
@@ -129,6 +131,7 @@ for (const scanRoot of scanRoots) {
 
 const blockers = findings.filter((finding) => finding.severity === "blocker")
 const allowlisted = findings.filter((finding) => finding.severity === "allowlisted")
+const budgetExceeded = Number.isFinite(allowlistBudget) && allowlisted.length > allowlistBudget
 const renderFinding = (finding: Finding): string =>
   `- ${finding.severity.toUpperCase()} ${finding.rule} ${finding.file}:${finding.line}` +
   `${finding.reason ? ` (${finding.reason})` : ""}\n  \`${finding.text.replaceAll("`", "'")}\``
@@ -139,6 +142,8 @@ const report = [
   `root: ${root}`,
   `blockers: ${blockers.length}`,
   `allowlisted: ${allowlisted.length}`,
+  `allowlistBudget: ${Number.isFinite(allowlistBudget) ? allowlistBudget : "disabled"}`,
+  `budgetExceeded: ${budgetExceeded}`,
   "",
   "## Blockers",
   "",
@@ -151,8 +156,13 @@ const report = [
 ].join("\n")
 
 writeFileSync(outputPath, report, "utf8")
-if (blockers.length > 0) {
+if (blockers.length > 0 || budgetExceeded) {
   console.error(report)
+  if (budgetExceeded) {
+    console.error(
+      `[resize-spine] allowlist grew from budget ${allowlistBudget} to ${allowlisted.length}; reduce exceptions or raise the documented budget intentionally.`,
+    )
+  }
   process.exit(1)
 }
 console.log(report)
