@@ -81,6 +81,10 @@
     { "id": "LIVE-NO-PENDING-SLOTS-WHEN-IDLE", "severity": "blocker" },
     { "id": "LIVE-TRANSCRIPT-CELL-IDS-UNIQUE", "severity": "blocker" },
     { "id": "LIVE-DURABLE-DEDUPE-KEYS-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-PROMPT-IDS-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-ASSISTANT-FINAL-IDS-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-TOOL-IDS-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-RECOVERY-EPISODES-UNIQUE", "severity": "blocker" },
     { "id": "LIVE-HANDOFF-CLEAN-WHEN-IDLE", "severity": "blocker" }
   ],
   "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report", "scrollback", "viewport"] },

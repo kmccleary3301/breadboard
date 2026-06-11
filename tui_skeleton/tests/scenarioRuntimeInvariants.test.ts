@@ -430,6 +430,123 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("fails duplicate durable prompt semantic IDs", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: {
+            pendingResponse: false,
+            conversation: [
+              { id: "conv-user-1", speaker: "user", phase: "final", text: "Hello" },
+              { id: "conv-user-1", speaker: "user", phase: "final", text: "Hello" },
+            ],
+            liveSlots: [],
+          },
+          transcriptCells: [
+            { id: "msg:conv-user-1", role: "user-request", lifecycle: "committed", streaming: false },
+            { id: "msg:conv-user-1", role: "user-request", lifecycle: "committed", streaming: false },
+          ],
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_duplicate_prompt_ids", "pty", [{ id: "DURABLE-PROMPT-IDS-UNIQUE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({
+        duplicateConversationIds: ["conv-user-1"],
+        duplicateCellIds: ["msg:conv-user-1"],
+      })
+    })
+  })
+
+  it("fails duplicate durable assistant final semantic IDs", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: {
+            pendingResponse: false,
+            conversation: [
+              { id: "conv-assistant-1", speaker: "assistant", phase: "final", text: "Done" },
+              { id: "conv-assistant-1", speaker: "assistant", phase: "final", text: "Done" },
+            ],
+            liveSlots: [],
+          },
+          transcriptCells: [
+            { id: "msg:conv-assistant-1", role: "assistant-message", lifecycle: "committed", streaming: false },
+            { id: "msg:conv-assistant-1", role: "assistant-message", lifecycle: "committed", streaming: false },
+          ],
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_duplicate_assistant_ids", "pty", [{ id: "DURABLE-ASSISTANT-FINAL-IDS-UNIQUE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({
+        duplicateConversationIds: ["conv-assistant-1"],
+        duplicateCellIds: ["msg:conv-assistant-1"],
+      })
+    })
+  })
+
+  it("fails duplicate durable tool semantic IDs", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: {
+            pendingResponse: false,
+            conversation: [],
+            toolEvents: [
+              { id: "slot-a", kind: "result", status: "success", callId: "tool-call-1" },
+              { id: "slot-b", kind: "result", status: "success", callId: "tool-call-1" },
+            ],
+            liveSlots: [],
+          },
+          transcriptCells: [
+            { id: "tool:tool-call-1", kind: "tool", role: "tool-result", lifecycle: "committed", streaming: false },
+            { id: "tool:tool-call-1", kind: "tool", role: "tool-result", lifecycle: "committed", streaming: false },
+          ],
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_duplicate_tool_ids", "pty", [{ id: "DURABLE-TOOL-IDS-UNIQUE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({
+        duplicateToolEventIds: ["tool-call-1"],
+        duplicateCellIds: ["tool:tool-call-1"],
+      })
+    })
+  })
+
+  it("fails duplicate recovery episode lines in latest state", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: {
+            pendingResponse: false,
+            conversation: [],
+            liveSlots: [],
+            hints: [
+              "Engine interrupted: terminated. Restarting owned engine (attempt 1/5).",
+              "Engine interrupted: terminated. Restarting owned engine (attempt 1/5).",
+            ],
+          },
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_duplicate_recovery_episode", "pty", [{ id: "DURABLE-RECOVERY-EPISODES-UNIQUE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({
+        duplicates: ["Engine interrupted: terminated. Restarting owned engine (attempt 1/5)."],
+      })
+    })
+  })
+
   it("fails overlay-only durable transcript mutation", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(

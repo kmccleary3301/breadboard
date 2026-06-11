@@ -138,6 +138,11 @@ const latestConversationEntries = (artifacts: ScenarioArtifacts): any[] => {
   return Array.isArray(state?.conversation) ? state.conversation : []
 }
 
+const latestToolEvents = (artifacts: ScenarioArtifacts): any[] => {
+  const state = latestState(artifacts)
+  return Array.isArray(state?.toolEvents) ? state.toolEvents : []
+}
+
 const latestLiveSlots = (artifacts: ScenarioArtifacts): any[] => {
   const state = latestState(artifacts)
   return Array.isArray(state?.liveSlots) ? state.liveSlots : []
@@ -157,6 +162,34 @@ const isActiveLiveSlot = (slot: any): boolean => {
 const cellIdentity = (cell: any): string => String(cell?.id ?? "").trim()
 
 const cellDedupeKey = (cell: any): string => String(cell?.dedupeKey ?? "").trim()
+
+const isDurableCell = (cell: any): boolean =>
+  cell?.streaming !== true && cell?.phase !== "streaming" && cell?.lifecycle !== "live"
+
+const findDuplicateStrings = (values: Iterable<string>): string[] => {
+  const seen = new Set<string>()
+  const duplicates = new Set<string>()
+  for (const value of values) {
+    const normalized = value.trim()
+    if (!normalized) continue
+    if (seen.has(normalized)) duplicates.add(normalized)
+    else seen.add(normalized)
+  }
+  return Array.from(duplicates)
+}
+
+const conversationEntryId = (entry: any): string => String(entry?.id ?? entry?.message_id ?? entry?.messageId ?? "").trim()
+
+const toolSemanticId = (entry: any): string =>
+  String(
+    entry?.callId ??
+      entry?.toolCallId ??
+      entry?.tool_call_id ??
+      entry?.toolCallID ??
+      entry?.requestId ??
+      entry?.id ??
+      "",
+  ).trim()
 
 const getAcceptedPrompts = (artifacts: ScenarioArtifacts): string[] => {
   const manifestPrompt = artifacts.manifest?.expectedPrompt
@@ -541,6 +574,85 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     return duplicates.length === 0
       ? pass(request, "durable transcript dedupe keys are unique", { durableCells: cells.length, keyedCells: seen.size })
       : fail(request, "duplicate durable transcript dedupe keys detected", { duplicates: Array.from(new Set(duplicates)).slice(0, 12) })
+  },
+  "DURABLE-PROMPT-IDS-UNIQUE": (request, artifacts) => {
+    const conversation = latestConversationEntries(artifacts).filter((entry) => {
+      const speaker = String(entry?.speaker ?? entry?.role ?? "").trim().toLowerCase()
+      return speaker === "user" || speaker === "user-request"
+    })
+    const cells = latestTranscriptCells(artifacts).filter((cell) => {
+      const role = String(cell?.role ?? "").trim().toLowerCase()
+      return isDurableCell(cell) && role === "user-request"
+    })
+    if (conversation.length === 0 && cells.length === 0) return skip(request, "no durable prompt entries available")
+    const duplicateConversationIds = findDuplicateStrings(conversation.map(conversationEntryId))
+    const duplicateCellIds = findDuplicateStrings(cells.map(cellIdentity))
+    return duplicateConversationIds.length === 0 && duplicateCellIds.length === 0
+      ? pass(request, "durable prompt semantic IDs are unique", {
+          conversationPrompts: conversation.length,
+          promptCells: cells.length,
+        })
+      : fail(request, "duplicate durable prompt semantic IDs detected", { duplicateConversationIds, duplicateCellIds })
+  },
+  "DURABLE-ASSISTANT-FINAL-IDS-UNIQUE": (request, artifacts) => {
+    const conversation = latestConversationEntries(artifacts).filter((entry) => {
+      const speaker = String(entry?.speaker ?? entry?.role ?? "").trim().toLowerCase()
+      const phase = String(entry?.phase ?? entry?.lifecycle ?? "final").trim().toLowerCase()
+      return (speaker === "assistant" || speaker === "assistant-message") && phase !== "streaming" && phase !== "live"
+    })
+    const cells = latestTranscriptCells(artifacts).filter((cell) => {
+      const role = String(cell?.role ?? "").trim().toLowerCase()
+      return isDurableCell(cell) && role === "assistant-message"
+    })
+    if (conversation.length === 0 && cells.length === 0) return skip(request, "no durable assistant final entries available")
+    const duplicateConversationIds = findDuplicateStrings(conversation.map(conversationEntryId))
+    const duplicateCellIds = findDuplicateStrings(cells.map(cellIdentity))
+    return duplicateConversationIds.length === 0 && duplicateCellIds.length === 0
+      ? pass(request, "durable assistant final semantic IDs are unique", {
+          assistantFinals: conversation.length,
+          assistantCells: cells.length,
+        })
+      : fail(request, "duplicate durable assistant final semantic IDs detected", { duplicateConversationIds, duplicateCellIds })
+  },
+  "DURABLE-TOOL-IDS-UNIQUE": (request, artifacts) => {
+    const toolEvents = latestToolEvents(artifacts).filter((entry) => {
+      const kind = String(entry?.kind ?? "").trim().toLowerCase()
+      const status = String(entry?.status ?? "").trim().toLowerCase()
+      return kind === "result" || status === "success" || status === "error" || status === "failed"
+    })
+    const cells = latestTranscriptCells(artifacts).filter((cell) => {
+      const kind = String(cell?.kind ?? "").trim().toLowerCase()
+      const role = String(cell?.role ?? "").trim().toLowerCase()
+      return isDurableCell(cell) && (kind === "tool" || role.startsWith("tool-"))
+    })
+    if (toolEvents.length === 0 && cells.length === 0) return skip(request, "no durable tool entries available")
+    const duplicateToolEventIds = findDuplicateStrings(toolEvents.map(toolSemanticId))
+    const duplicateCellIds = findDuplicateStrings(cells.map(cellIdentity))
+    return duplicateToolEventIds.length === 0 && duplicateCellIds.length === 0
+      ? pass(request, "durable tool semantic IDs are unique", {
+          toolEvents: toolEvents.length,
+          toolCells: cells.length,
+        })
+      : fail(request, "duplicate durable tool semantic IDs detected", { duplicateToolEventIds, duplicateCellIds })
+  },
+  "DURABLE-RECOVERY-EPISODES-UNIQUE": (request, artifacts) => {
+    const state = latestState(artifacts)
+    const hints = Array.isArray(state?.hints) ? state.hints.map((hint: unknown) => String(hint ?? "").trim()).filter(Boolean) : []
+    const liveSlots = latestLiveSlots(artifacts).map((slot) => String(slot?.text ?? slot?.label ?? "").trim()).filter(Boolean)
+    const recoveryLines = [...hints, ...liveSlots]
+      .filter((line) => /\b(?:reconnect|recover|restart|interrupted|disconnected|engine crashed|stream interruption)\b/i.test(line))
+      .map((line) =>
+        line
+          .replace(/\blast\s+\d+s\b/gi, "last <n>s")
+          .replace(/\battempt\s+(\d+)\s*\/\s*(\d+)\b/gi, "attempt $1/$2")
+          .replace(/\s+/g, " ")
+          .trim(),
+      )
+    if (recoveryLines.length === 0) return skip(request, "no recovery episode lines available")
+    const duplicates = findDuplicateStrings(recoveryLines)
+    return duplicates.length === 0
+      ? pass(request, "durable/live recovery episode lines are unique", { recoveryLineCount: recoveryLines.length })
+      : fail(request, "duplicate recovery episode lines detected", { duplicates })
   },
   "LIVE-HANDOFF-CLEAN-WHEN-IDLE": (request, artifacts) => {
     if (latestPendingResponse(artifacts)) return pass(request, "pending response still active; handoff is not expected yet")
