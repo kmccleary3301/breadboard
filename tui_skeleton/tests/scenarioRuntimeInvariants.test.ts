@@ -281,4 +281,38 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("fails overlay-only durable transcript mutation", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: {
+            pendingResponse: false,
+            conversation: [{ id: "conv-overlay", speaker: "system", text: "unexpected overlay transcript row", phase: "final" }],
+            toolEvents: [],
+          },
+          transcriptCells: [{ id: "msg:conv-overlay", kind: "message", source: "conversation" }],
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_overlay_mutation", "pty", [{ id: "OVERLAY-NO-DURABLE-MUTATION", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("skips overlay-only durable mutation check after a submitted prompt", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(path.join(dir, "manifest.json"), JSON.stringify({ expectedPrompt: "Submitted turn." }), "utf8")
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({ state: { pendingResponse: false, conversation: [{ id: "conv-1", speaker: "user", text: "Submitted turn.", phase: "final" }], toolEvents: [] } })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "submitted_overlay_skip", "pty", [{ id: "OVERLAY-NO-DURABLE-MUTATION", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("skip")
+    })
+  })
+
 })

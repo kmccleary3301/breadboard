@@ -604,6 +604,34 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     if (value === undefined) return skip(request, "focus return confirmation unavailable")
     return value ? pass(request, "focus returned to composer") : fail(request, "focus did not return to composer")
   },
+  "OVERLAY-NO-DURABLE-MUTATION": (request, artifacts) => {
+    const expectedPrompt = artifacts.manifest?.expectedPrompt
+    if (typeof expectedPrompt === "string" && expectedPrompt.trim()) {
+      return skip(request, "scenario contains a submitted prompt; overlay-only mutation contract not applicable")
+    }
+    const state = latestState(artifacts)
+    const conversation = Array.isArray(state?.conversation) ? state.conversation : []
+    const toolEvents = Array.isArray(state?.toolEvents) ? state.toolEvents : []
+    const transcriptCells = latestTranscriptCells(artifacts)
+    const durableTranscriptCells = transcriptCells.filter((cell) => {
+      const source = String(cell?.source ?? "").trim().toLowerCase()
+      const kind = String(cell?.kind ?? "").trim().toLowerCase()
+      return source === "conversation" || source === "tool" || kind === "message" || kind === "tool"
+    })
+    const mutated = conversation.length > 0 || toolEvents.length > 0 || durableTranscriptCells.length > 0
+    return mutated
+      ? fail(request, "overlay-only scenario mutated durable transcript state", {
+          conversationCount: conversation.length,
+          toolEventCount: toolEvents.length,
+          durableTranscriptCellCount: durableTranscriptCells.length,
+          durableTranscriptCells: durableTranscriptCells.slice(0, 6),
+        })
+      : pass(request, "overlay-only scenario did not mutate durable transcript state", {
+          conversationCount: conversation.length,
+          toolEventCount: toolEvents.length,
+          transcriptCellCount: transcriptCells.length,
+        })
+  },
   "COMPOSER-EMPTY-VISIBLE": (request, artifacts) => invariantFns["GLOBAL-COMPOSER-VISIBLE"](request, artifacts),
   "LIFE-DISCONNECT-STATUS-TRUTHFUL": (request, artifacts) => invariantFns["GLOBAL-NO-READY-LIE"](request, artifacts),
   "LIFE-RECOVERY-DOES-NOT-DUPLICATE-PROMPT": (request, artifacts) => invariantFns["GLOBAL-NO-DUPLICATE-PROMPT"](request, artifacts),

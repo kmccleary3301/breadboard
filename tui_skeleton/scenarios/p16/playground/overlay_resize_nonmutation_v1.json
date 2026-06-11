@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "id": "overlay_resize_nonmutation_v1",
+  "title": "Overlay Resize Non-Mutation Playground V1",
+  "description": "Production-path overlay ownership profile that opens local overlays without submitting a turn, resizes while overlays are active, closes them, and proves overlay interaction did not mutate durable transcript state.",
+  "tags": ["resize-spine", "overlay", "nonmutation", "playground", "scrollback"],
+  "family": "resize-spine-playground",
+  "campaign": "post-p16-resize-resilience-spine",
+  "claimScope": "pty",
+  "expectedOutcome": { "verdict": "pass" },
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["model", "time", "workspace"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "footer", "overlay-stack", "scrollback-feed", "direct-cell-mutation"]
+  },
+  "environment": {
+    "env": {
+      "BREADBOARD_TUI_STRICT_TRANSCRIPT_SAFETY": "1"
+    },
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        { "path": "README.md", "content": "# Overlay nonmutation playground\n\nThis workspace is synthetic and must not affect the project checkout.\n" }
+      ]
+    },
+    "prelaunchShellHistory": [
+      { "id": "overlay-pre", "kind": "long-wrap", "text": "BB_RESIZE_SPINE_OVERLAY_PRE_HISTORY_BEGIN alpha beta gamma delta epsilon zeta eta theta BB_RESIZE_SPINE_OVERLAY_PRE_HISTORY_END" }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": { "composerReady": true, "timeoutMs": 20000 },
+    "timeoutMs": 90000
+  },
+  "terminal": {
+    "lanes": ["pty"],
+    "initial": { "cols": 118, "rows": 34 },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true,
+    "captureScreenshots": true
+  },
+  "timeline": [
+    { "kind": "open", "surface": "shortcuts" },
+    { "kind": "resize", "cols": 82, "rows": 22, "settleMs": 180 },
+    { "kind": "navigate", "keys": ["down", "up"] },
+    { "kind": "checkpoint", "id": "shortcuts-active-compact", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "key", "key": "escape" },
+    { "kind": "wait", "ms": 250 },
+    { "kind": "checkpoint", "id": "shortcuts-closed", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "open", "surface": "transcript" },
+    { "kind": "resize", "cols": 72, "rows": 20, "settleMs": 180 },
+    { "kind": "navigate", "keys": ["pagedown", "pageup"] },
+    { "kind": "checkpoint", "id": "transcript-active-narrow", "capture": { "stateDump": true, "grid": true, "scrollback": true } },
+    { "kind": "key", "key": "escape" },
+    { "kind": "resize", "cols": 126, "rows": 34, "settleMs": 220 },
+    { "kind": "wait", "ms": 350 },
+    { "kind": "checkpoint", "id": "overlays-final-wide", "capture": { "stateDump": true, "grid": true, "scrollback": true } }
+  ],
+  "invariants": [
+    { "id": "GLOBAL-HOST-HISTORY-PRESERVED", "severity": "blocker" },
+    { "id": "GLOBAL-NO-RAW-ANSI", "severity": "blocker" },
+    { "id": "GLOBAL-NO-SYSTEM-PROMPT-LEAK", "severity": "blocker" },
+    { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
+    { "id": "GLOBAL-FOOTER-TRUTHFUL", "severity": "blocker" },
+    { "id": "RESIZE-ACTION-OBSERVED", "severity": "blocker" },
+    { "id": "MODAL-OPEN-CONFIRMED", "severity": "blocker" },
+    { "id": "MODAL-CLOSE-CONFIRMED", "severity": "blocker" },
+    { "id": "MODAL-FOCUS-RETURNS-TO-COMPOSER", "severity": "blocker" },
+    { "id": "OVERLAY-NO-DURABLE-MUTATION", "severity": "blocker" },
+    { "id": "LIVE-NO-PENDING-SLOTS-WHEN-IDLE", "severity": "blocker" },
+    { "id": "LIVE-TRANSCRIPT-CELL-IDS-UNIQUE", "severity": "blocker" },
+    { "id": "SCROLL-NO-INPUT-SEPARATOR-REPLAY", "severity": "blocker" },
+    { "id": "SCROLL-NO-COMPOSER-PROMPT-REPLAY", "severity": "blocker" },
+    { "id": "RESIZE-NO-STALE-BORDER", "severity": "blocker" }
+  ],
+  "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report", "scrollback", "viewport"] },
+  "actionRequirements": {
+    "resizeRequested": "required",
+    "resizeObserved": "required",
+    "modalOpened": "required",
+    "modalClosed": "required",
+    "focusReturned": "required",
+    "stateDumpObservedAfterResize": "required",
+    "artifactCaptureComplete": "required"
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "not-required",
+    "assistantCardinality": "not-required",
+    "toolCardinality": "not-required"
+  },
+  "mutationProfile": {
+    "seed": 12,
+    "dimensions": ["overlay-open-close", "overlay-resize", "transcript-nonmutation", "footer-composer-return"]
+  }
+}
