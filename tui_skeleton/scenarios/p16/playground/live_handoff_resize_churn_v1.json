@@ -85,6 +85,7 @@
     { "id": "DURABLE-ASSISTANT-FINAL-IDS-UNIQUE", "severity": "blocker" },
     { "id": "DURABLE-TOOL-IDS-UNIQUE", "severity": "blocker" },
     { "id": "DURABLE-RECOVERY-EPISODES-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-FINALIZED-CELLS-STABLE-AFTER-IDLE", "severity": "blocker" },
     { "id": "LIVE-HANDOFF-CLEAN-WHEN-IDLE", "severity": "blocker" }
   ],
   "artifacts": { "required": ["manifest", "raw", "grid", "state", "invariant-report", "scrollback", "viewport"] },

@@ -422,6 +422,10 @@
       "severity": "blocker"
     },
     {
+      "id": "DURABLE-FINALIZED-CELLS-STABLE-AFTER-IDLE",
+      "severity": "blocker"
+    },
+    {
       "id": "LIVE-HANDOFF-CLEAN-WHEN-IDLE",
       "severity": "blocker"
     }

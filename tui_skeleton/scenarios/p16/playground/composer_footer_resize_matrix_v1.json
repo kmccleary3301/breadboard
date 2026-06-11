@@ -110,6 +110,7 @@
     { "id": "DURABLE-ASSISTANT-FINAL-IDS-UNIQUE", "severity": "blocker" },
     { "id": "DURABLE-TOOL-IDS-UNIQUE", "severity": "blocker" },
     { "id": "DURABLE-RECOVERY-EPISODES-UNIQUE", "severity": "blocker" },
+    { "id": "DURABLE-FINALIZED-CELLS-STABLE-AFTER-IDLE", "severity": "blocker" },
     { "id": "GLOBAL-COMPOSER-VISIBLE", "severity": "blocker" },
     { "id": "GLOBAL-FOOTER-TRUTHFUL", "severity": "blocker" },
     { "id": "VISIBLE-TEXT-SENTINELS-PRESENT", "severity": "blocker" },

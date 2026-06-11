@@ -547,6 +547,93 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("fails durable finalized cell append after settled idle", async () => {
+    await withArtifactDir(async (dir) => {
+      const rows = [
+        {
+          state: { pendingResponse: true, status: "Assistant responding..." },
+          transcriptCells: [{ id: "msg:1", role: "user-request", lifecycle: "committed", textPreview: "Prompt" }],
+        },
+        {
+          state: { pendingResponse: false, status: "ready" },
+          transcriptCells: [
+            { id: "msg:1", role: "user-request", lifecycle: "committed", textPreview: "Prompt" },
+            { id: "msg:2", role: "assistant-message", lifecycle: "committed", textPreview: "Answer" },
+          ],
+        },
+        {
+          state: { pendingResponse: false, status: "ready" },
+          transcriptCells: [
+            { id: "msg:1", role: "user-request", lifecycle: "committed", textPreview: "Prompt" },
+            { id: "msg:2", role: "assistant-message", lifecycle: "committed", textPreview: "Answer" },
+            { id: "msg:2-dup", role: "assistant-message", lifecycle: "committed", textPreview: "Answer" },
+          ],
+        },
+      ]
+      await writeFile(path.join(dir, "state_dumps.ndjson"), `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8")
+      const report = await evaluateInvariants(dir, "bad_finalized_append_after_idle", "pty", [{ id: "DURABLE-FINALIZED-CELLS-STABLE-AFTER-IDLE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("fails durable finalized cell mutation after settled idle", async () => {
+    await withArtifactDir(async (dir) => {
+      const rows = [
+        {
+          state: { pendingResponse: false, status: "ready" },
+          transcriptCells: [
+            { id: "msg:1", role: "user-request", lifecycle: "committed", textPreview: "Prompt" },
+            { id: "msg:2", role: "assistant-message", lifecycle: "committed", textPreview: "Answer v1" },
+          ],
+        },
+        {
+          state: { pendingResponse: false, status: "ready" },
+          transcriptCells: [
+            { id: "msg:1", role: "user-request", lifecycle: "committed", textPreview: "Prompt" },
+            { id: "msg:2", role: "assistant-message", lifecycle: "committed", textPreview: "Answer v2" },
+          ],
+        },
+      ]
+      await writeFile(path.join(dir, "state_dumps.ndjson"), `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8")
+      const report = await evaluateInvariants(dir, "bad_finalized_mutation_after_idle", "pty", [{ id: "DURABLE-FINALIZED-CELLS-STABLE-AFTER-IDLE", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+    })
+  })
+
+  it("passes durable finalized cell growth before settled idle then stability after resize churn", async () => {
+    await withArtifactDir(async (dir) => {
+      const rows = [
+        {
+          state: { pendingResponse: true, status: "Assistant responding..." },
+          transcriptCells: [
+            { id: "msg:1", role: "user-request", lifecycle: "committed", textPreview: "Prompt" },
+            { id: "msg:2", role: "assistant-message", lifecycle: "live", streaming: true, textPreview: "Answer streaming" },
+          ],
+        },
+        {
+          state: { pendingResponse: false, status: "ready" },
+          transcriptCells: [
+            { id: "msg:1", role: "user-request", lifecycle: "committed", textPreview: "Prompt" },
+            { id: "msg:2", role: "assistant-message", lifecycle: "committed", textPreview: "Answer final" },
+          ],
+        },
+        {
+          state: { pendingResponse: false, status: "ready" },
+          transcriptCells: [
+            { id: "msg:1", role: "user-request", lifecycle: "committed", textPreview: "Prompt" },
+            { id: "msg:2", role: "assistant-message", lifecycle: "committed", textPreview: "Answer final" },
+          ],
+        },
+      ]
+      await writeFile(path.join(dir, "state_dumps.ndjson"), `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`, "utf8")
+      const report = await evaluateInvariants(dir, "good_finalized_stability_after_idle", "pty", [{ id: "DURABLE-FINALIZED-CELLS-STABLE-AFTER-IDLE", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+    })
+  })
+
   it("fails overlay-only durable transcript mutation", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(

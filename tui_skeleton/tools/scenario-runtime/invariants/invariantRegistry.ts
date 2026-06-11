@@ -123,9 +123,16 @@ const latestStateRecord = (artifacts: ScenarioArtifacts): any | null => {
   return records.at(-1) ?? null
 }
 
+const stateDumpRecords = (artifacts: ScenarioArtifacts): any[] => parseNdjson(artifacts.stateDumpText)
+
+const transcriptCellsFromRecord = (record: any): any[] | null => {
+  const cells = record?.transcriptCells ?? record?.state?.transcriptCells
+  return Array.isArray(cells) ? cells : null
+}
+
 const latestTranscriptCells = (artifacts: ScenarioArtifacts): any[] => {
   const record = latestStateRecord(artifacts)
-  const cells = record?.transcriptCells ?? record?.state?.transcriptCells
+  const cells = transcriptCellsFromRecord(record)
   if (Array.isArray(cells)) return cells
   const records = parseNdjson(artifacts.transcriptCellsText)
   if (records.length === 1 && Array.isArray(records[0]?.transcriptCells)) return records[0].transcriptCells
@@ -165,6 +172,19 @@ const cellDedupeKey = (cell: any): string => String(cell?.dedupeKey ?? "").trim(
 
 const isDurableCell = (cell: any): boolean =>
   cell?.streaming !== true && cell?.phase !== "streaming" && cell?.lifecycle !== "live"
+
+const durableCellSignature = (cells: any[]): string =>
+  JSON.stringify(
+    cells.filter(isDurableCell).map((cell) => ({
+      id: String(cell?.id ?? "").trim(),
+      kind: String(cell?.kind ?? "").trim(),
+      role: String(cell?.role ?? "").trim(),
+      source: String(cell?.source ?? "").trim(),
+      lifecycle: String(cell?.lifecycle ?? "").trim(),
+      speaker: String(cell?.speaker ?? "").trim(),
+      textPreview: String(cell?.textPreview ?? cell?.text ?? cell?.content ?? "").trim(),
+    })),
+  )
 
 const findDuplicateStrings = (values: Iterable<string>): string[] => {
   const seen = new Set<string>()
@@ -653,6 +673,43 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     return duplicates.length === 0
       ? pass(request, "durable/live recovery episode lines are unique", { recoveryLineCount: recoveryLines.length })
       : fail(request, "duplicate recovery episode lines detected", { duplicates })
+  },
+  "DURABLE-FINALIZED-CELLS-STABLE-AFTER-IDLE": (request, artifacts) => {
+    const samples = stateDumpRecords(artifacts)
+      .map((record, index) => {
+        const state = record?.state ?? record
+        const cells = (transcriptCellsFromRecord(record) ?? []).filter(isDurableCell)
+        return {
+          index,
+          pendingResponse: state?.pendingResponse === true,
+          status: String(state?.status ?? "").trim(),
+          cells,
+          count: cells.length,
+          signature: durableCellSignature(cells),
+        }
+      })
+      .filter((sample) => !sample.pendingResponse)
+    if (samples.length === 0) return skip(request, "no idle state dumps available")
+    if (samples.every((sample) => sample.count === 0)) return pass(request, "no durable transcript cells observed during idle", { idleSamples: samples.length })
+    const baselineIndex = samples.findIndex((sample) => sample.count > 0)
+    if (baselineIndex < 0) return skip(request, "no settled durable transcript baseline found")
+    const baseline = samples[baselineIndex]
+    const unstable = samples.slice(baselineIndex + 1).filter((sample) => sample.count !== baseline.count || sample.signature !== baseline.signature)
+    return unstable.length === 0
+      ? pass(request, "durable finalized cells remain stable after settled idle", {
+          idleSamples: samples.length,
+          baselineStateIndex: baseline.index,
+          durableCellCount: baseline.count,
+        })
+      : fail(request, "durable finalized cells changed after settled idle", {
+          baselineStateIndex: baseline.index,
+          durableCellCount: baseline.count,
+          unstable: unstable.slice(0, 8).map((sample) => ({
+            stateIndex: sample.index,
+            status: sample.status,
+            count: sample.count,
+          })),
+        })
   },
   "LIVE-HANDOFF-CLEAN-WHEN-IDLE": (request, artifacts) => {
     if (latestPendingResponse(artifacts)) return pass(request, "pending response still active; handoff is not expected yet")
