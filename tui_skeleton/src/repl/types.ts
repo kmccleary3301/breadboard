@@ -1,4 +1,5 @@
 import type { Block, DiffKind, TokenLineV1 } from "@stream-mdx/core/types"
+import type { RenderableNodePolicy } from "./renderPolicy.js"
 
 export interface ConversationEntry {
   readonly id: string
@@ -22,6 +23,15 @@ export interface LiveSlotEntry {
   readonly status: LiveSlotStatus
   readonly updatedAt: number
   readonly summary?: string
+  readonly renderPolicy?: RenderableNodePolicy
+  readonly ownershipClass?: RenderableNodePolicy["ownershipClass"]
+  readonly stabilityState?: RenderableNodePolicy["stabilityState"]
+  readonly contentSafetyClass?: RenderableNodePolicy["contentSafetyClass"]
+  readonly widthPolicy?: RenderableNodePolicy["widthPolicy"]
+  readonly heightPolicy?: RenderableNodePolicy["heightPolicy"]
+  readonly truncationPolicy?: RenderableNodePolicy["truncationPolicy"]
+  readonly detailPolicy?: RenderableNodePolicy["detailPolicy"]
+  readonly priority?: RenderableNodePolicy["priority"]
 }
 
 export interface StreamStats {

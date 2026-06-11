@@ -476,6 +476,65 @@ describe("scenario runtime invariants", () => {
     })
   })
 
+  it("fails live slots without render policy metadata", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: {
+            pendingResponse: true,
+            conversation: [],
+            liveSlots: [{ id: "provider-retry", status: "warning", text: "[warning] Retrying provider route" }],
+          },
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "bad_live_slot_missing_render_policy", "pty", [{ id: "GLOBAL-LIVE-SLOTS-HAVE-RENDER-POLICY", severity: "blocker" }])
+      expect(report.ok).toBe(false)
+      expect(report.results[0]?.status).toBe("fail")
+      expect(report.results[0]?.evidence).toMatchObject({
+        missing: expect.arrayContaining([expect.objectContaining({ field: "componentKind" })]),
+      })
+    })
+  })
+
+  it("passes live slots with render policy metadata", async () => {
+    await withArtifactDir(async (dir) => {
+      await writeFile(
+        path.join(dir, "state_dumps.ndjson"),
+        `${JSON.stringify({
+          state: {
+            pendingResponse: true,
+            conversation: [],
+            liveSlots: [
+              {
+                id: "provider-retry",
+                status: "warning",
+                text: "[warning] Retrying provider route",
+                renderPolicy: {
+                  componentKind: "live-slot",
+                  ownershipClass: "live-region",
+                  stabilityState: "recovery",
+                  contentSafetyClass: "diagnostic-summary",
+                  widthPolicy: "truncate",
+                  heightPolicy: "viewport-reserved",
+                  truncationPolicy: "collapse-detail",
+                  detailPolicy: "inspector-or-export",
+                  priority: "high",
+                },
+              },
+            ],
+          },
+        })}\n`,
+        "utf8",
+      )
+      const report = await evaluateInvariants(dir, "good_live_slot_render_policy", "pty", [{ id: "GLOBAL-LIVE-SLOTS-HAVE-RENDER-POLICY", severity: "blocker" }])
+      expect(report.ok).toBe(true)
+      expect(report.results[0]?.status).toBe("pass")
+      expect(report.results[0]?.evidence).toMatchObject({ liveSlotSamples: 1 })
+    })
+  })
+
   it("fails duplicate transcript cell IDs", async () => {
     await withArtifactDir(async (dir) => {
       await writeFile(

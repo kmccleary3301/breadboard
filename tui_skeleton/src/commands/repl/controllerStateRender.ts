@@ -2,6 +2,7 @@ import type { Block } from "@stream-mdx/core/types"
 import { MarkdownStreamer } from "../../markdown/streamer.js"
 import { scanStableBoundary } from "../../repl/markdown/stableBoundaryScanner.js"
 import { writeMarkdownMetricsDebugRecord } from "../../repl/components/replView/controller/qcDebugLog.js"
+import { resolveLiveSlotRenderPolicy } from "../../repl/renderPolicy.js"
 import type {
   ConversationEntry,
   LiveSlotEntry,
@@ -398,7 +399,24 @@ export function upsertLiveSlot(
   )
     return
   const now = this.clock?.now?.() ?? Date.now()
-  const entry: LiveSlotEntry = { id, text, color, status, updatedAt: now, summary }
+  const renderPolicy = resolveLiveSlotRenderPolicy({ id, text, status, summary })
+  const entry: LiveSlotEntry = {
+    id,
+    text,
+    color,
+    status,
+    updatedAt: now,
+    summary,
+    renderPolicy,
+    ownershipClass: renderPolicy.ownershipClass,
+    stabilityState: renderPolicy.stabilityState,
+    contentSafetyClass: renderPolicy.contentSafetyClass,
+    widthPolicy: renderPolicy.widthPolicy,
+    heightPolicy: renderPolicy.heightPolicy,
+    truncationPolicy: renderPolicy.truncationPolicy,
+    detailPolicy: renderPolicy.detailPolicy,
+    priority: renderPolicy.priority,
+  }
   this.liveSlots.set(id, entry)
   if (stickyMs && stickyMs > 0) {
     const schedule = this.clock?.setTimeout?.bind(this.clock) ?? setTimeout

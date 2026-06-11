@@ -155,6 +155,11 @@ const latestLiveSlots = (artifacts: ScenarioArtifacts): any[] => {
   return Array.isArray(state?.liveSlots) ? state.liveSlots : []
 }
 
+const liveSlotsFromRecord = (record: any): any[] => {
+  const state = record?.state ?? record
+  return Array.isArray(state?.liveSlots) ? state.liveSlots : []
+}
+
 const latestPendingResponse = (artifacts: ScenarioArtifacts): boolean => latestState(artifacts)?.pendingResponse === true
 
 const activeLiveSlotStatuses = new Set(["active", "pending", "running", "streaming", "recovering", "reconnecting"])
@@ -638,6 +643,26 @@ const invariantFns: Record<string, (request: InvariantRequest, artifacts: Scenar
     return missing.length === 0
       ? pass(request, "all transcript cells have render policy metadata", { transcriptCellCount: cells.length })
       : fail(request, "transcript cells missing render policy metadata", { missing: missing.slice(0, 12), missingCount: missing.length })
+  },
+  "GLOBAL-LIVE-SLOTS-HAVE-RENDER-POLICY": (request, artifacts) => {
+    const slots = stateDumpRecords(artifacts).flatMap((record, recordIndex) =>
+      liveSlotsFromRecord(record).map((slot, slotIndex) => ({ recordIndex, slotIndex, slot })),
+    )
+    if (slots.length === 0) return skip(request, "no live slots observed in state dumps")
+    const missing = slots.flatMap(({ recordIndex, slotIndex, slot }) => {
+      const id = String(slot?.id ?? `record:${recordIndex}:slot:${slotIndex}`)
+      const componentKind = String(slot?.componentKind ?? slot?.renderPolicy?.componentKind ?? "").trim()
+      const componentMissing = componentKind === "live-slot" ? [] : [{ recordIndex, slotIndex, id, field: "componentKind", value: componentKind }]
+      const policyMissing = renderPolicyFields.flatMap((field) => {
+        const value = renderPolicyValue(slot, field)
+        const valid = renderPolicyAllowedValues[field].has(value)
+        return valid ? [] : [{ recordIndex, slotIndex, id, field, value }]
+      })
+      return [...componentMissing, ...policyMissing]
+    })
+    return missing.length === 0
+      ? pass(request, "all observed live slots have render policy metadata", { liveSlotSamples: slots.length })
+      : fail(request, "live slots missing render policy metadata", { missing: missing.slice(0, 12), missingCount: missing.length })
   },
   "DURABLE-PROMPT-IDS-UNIQUE": (request, artifacts) => {
     const conversation = latestConversationEntries(artifacts).filter((entry) => {

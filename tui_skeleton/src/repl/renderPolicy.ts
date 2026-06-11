@@ -51,8 +51,10 @@ export type RenderTruncationPolicy =
 
 export type RenderDetailPolicy = "inline-only" | "raw-copy" | "inspector" | "export" | "inspector-or-export"
 
+export type RenderComponentKind = TranscriptCellRole | "live-slot"
+
 export interface RenderableNodePolicy {
-  readonly componentKind: TranscriptCellRole
+  readonly componentKind: RenderComponentKind
   readonly ownershipClass: RenderOwnershipClass
   readonly stabilityState: RenderStabilityState
   readonly contentSafetyClass: RenderContentSafetyClass
@@ -71,6 +73,13 @@ export interface TranscriptPolicyInput {
   readonly status?: LiveSlotStatus
   readonly speaker?: "assistant" | "user" | "system"
   readonly textPreview?: string
+}
+
+export interface LiveSlotPolicyInput {
+  readonly id: string
+  readonly text: string
+  readonly status: LiveSlotStatus
+  readonly summary?: string
 }
 
 const durable = (role: TranscriptCellRole, overrides: Partial<RenderableNodePolicy> = {}): RenderableNodePolicy => ({
@@ -200,5 +209,74 @@ export const resolveTranscriptRenderPolicy = (input: TranscriptPolicyInput): Ren
         truncationPolicy: "truncate-end",
         detailPolicy: "inspector-or-export",
       })
+  }
+}
+
+const matchesLiveDiagnostic = (input: LiveSlotPolicyInput): boolean => {
+  const text = `${input.id} ${input.text} ${input.summary ?? ""}`
+  return /\b(?:provider|retry|reconnect|recover|recovery|guardrail|engine|stream|disconnect|interrupted|stalled|error|failed|auth|quota|rate|context)\b/i.test(text)
+}
+
+const matchesToolPreview = (input: LiveSlotPolicyInput): boolean => {
+  const text = `${input.id} ${input.text} ${input.summary ?? ""}`
+  return /\b(?:tool|stdout|stderr|bash|shell|shell_command|command|subagent|task|ctree|diff|patch|apply_patch)\b/i.test(text)
+}
+
+export const resolveLiveSlotRenderPolicy = (input: LiveSlotPolicyInput): RenderableNodePolicy => {
+  const diagnostic = matchesLiveDiagnostic(input)
+  const toolPreview = matchesToolPreview(input)
+
+  if (input.status === "error") {
+    return {
+      componentKind: "live-slot",
+      ownershipClass: "live-region",
+      stabilityState: "terminal-error",
+      contentSafetyClass: "diagnostic-summary",
+      widthPolicy: "truncate",
+      heightPolicy: "viewport-reserved",
+      truncationPolicy: "collapse-detail",
+      detailPolicy: "inspector-or-export",
+      priority: "high",
+    }
+  }
+
+  if (input.status === "warning") {
+    return {
+      componentKind: "live-slot",
+      ownershipClass: "live-region",
+      stabilityState: diagnostic ? "recovery" : "pending",
+      contentSafetyClass: diagnostic ? "diagnostic-summary" : toolPreview ? "tool-output-preview" : "safe-text",
+      widthPolicy: "truncate",
+      heightPolicy: "viewport-reserved",
+      truncationPolicy: diagnostic ? "collapse-detail" : "truncate-end",
+      detailPolicy: diagnostic ? "inspector-or-export" : "inline-only",
+      priority: diagnostic ? "high" : "normal",
+    }
+  }
+
+  if (input.status === "success") {
+    return {
+      componentKind: "live-slot",
+      ownershipClass: "live-region",
+      stabilityState: "ephemeral",
+      contentSafetyClass: toolPreview ? "tool-output-preview" : "safe-text",
+      widthPolicy: "truncate",
+      heightPolicy: "viewport-reserved",
+      truncationPolicy: "truncate-end",
+      detailPolicy: toolPreview ? "inspector-or-export" : "inline-only",
+      priority: "low",
+    }
+  }
+
+  return {
+    componentKind: "live-slot",
+    ownershipClass: "live-region",
+    stabilityState: "pending",
+    contentSafetyClass: diagnostic ? "diagnostic-summary" : toolPreview ? "tool-output-preview" : "safe-text",
+    widthPolicy: "truncate",
+    heightPolicy: "viewport-reserved",
+    truncationPolicy: diagnostic ? "collapse-detail" : "truncate-end",
+    detailPolicy: diagnostic || toolPreview ? "inspector-or-export" : "inline-only",
+    priority: diagnostic ? "high" : "normal",
   }
 }
