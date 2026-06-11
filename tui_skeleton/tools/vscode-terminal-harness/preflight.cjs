@@ -18,10 +18,10 @@ function commandInfo(command) {
   const resolved = (which.stdout || '').trim()
   let version = []
   if (resolved) {
-    const result = cp.spawnSync(command, ['--version'], { encoding: 'utf8', timeout: 10000 })
+    const result = cp.spawnSync(command, ['--version'], { encoding: 'utf8', timeout: 10000, env: { ...process.env, VSCODE_IPC_HOOK_CLI: '' } })
     version = String(result.stdout || result.stderr || '').trim().split(/\r?\n/).filter(Boolean).slice(0, 6)
   }
-  return { command, resolved: resolved || null, version }
+  return { command, resolved: resolved || null, version, unsupportedRemoteCli: resolved.includes('/remote-cli/') }
 }
 
 function inotifyInstances() {
@@ -66,6 +66,13 @@ function main() {
   const observed = inotifyInstances()
   const failures = []
   if (!code.resolved) failures.push({ id: 'code-missing', message: '`code` executable was not found.' })
+  if (code.unsupportedRemoteCli) {
+    failures.push({
+      id: 'code-remote-cli-unsupported',
+      actual: code.resolved,
+      message: '`code` resolves to a Cursor/VSCode remote CLI, which does not support extensionDevelopmentPath/user-data-dir desktop harness flags.',
+    })
+  }
   if (limits.maxUserWatches == null || limits.maxUserWatches < minWatches) {
     failures.push({
       id: 'max-user-watches-low',

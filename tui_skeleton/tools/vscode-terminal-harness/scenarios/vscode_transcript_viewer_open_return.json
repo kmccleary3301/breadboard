@@ -4,6 +4,10 @@
     "initialCols": 118,
     "initialRows": 36
   },
+  "env": {
+    "BREADBOARD_DEFAULT_CONFIG": "$BREADBOARD_REPO_ROOT/agent_configs/misc/breadboard_tui_smoke_chat.yaml",
+    "BREADBOARD_SMOKE_CHAT_CONTENT": "TRANSCRIPTOKDONE\n\nTASK COMPLETE\n\n>>>>>> END RESPONSE"
+  },
   "steps": [
     {
       "kind": "write",
@@ -98,6 +102,11 @@
         {
           "kind": "notContains",
           "scope": "raw",
+          "text": "BREADBOARD_SMOKE_CHAT_CONTENT"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
           "text": "You are Codex"
         },
         {
@@ -153,6 +162,11 @@
       "kind": "contains",
       "scope": "viewport",
       "text": "Type your request"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "BREADBOARD_SMOKE_CHAT_CONTENT"
     },
     {
       "kind": "notContains",

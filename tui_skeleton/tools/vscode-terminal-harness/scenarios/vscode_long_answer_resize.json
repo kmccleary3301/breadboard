@@ -4,6 +4,10 @@
     "initialCols": 124,
     "initialRows": 38
   },
+  "env": {
+    "BREADBOARD_DEFAULT_CONFIG": "$BREADBOARD_REPO_ROOT/agent_configs/misc/breadboard_tui_smoke_chat.yaml",
+    "BREADBOARD_SMOKE_CHAT_CONTENT": "# Demo Markdown\n\n- Alpha bullet\n- Beta bullet\n- Gamma bullet\n\n| key | value |\n| --- | --- |\n| status | ok |\n\n```txt\nhello from vscode host lane\n```\n\nLONGANSWERDONE\n\nTASK COMPLETE\n\n>>>>>> END RESPONSE"
+  },
   "steps": [
     {
       "kind": "write",
@@ -31,7 +35,7 @@
     },
     {
       "kind": "write",
-      "text": "Write a markdown answer with one heading, three bullets, a tiny table, and a fenced code block. End with the single word formed by joining LONG, ANSWER, and DONE with no separators.\r"
+      "text": "Show a markdown answer with one heading, three bullets, a tiny table, and a fenced code block. End with the single word formed by joining LONG, ANSWER, and DONE with no separators.\r"
     },
     {
       "kind": "waitForText",
@@ -65,8 +69,18 @@
         },
         {
           "kind": "contains",
+          "scope": "raw",
+          "text": "hello from vscode host lane"
+        },
+        {
+          "kind": "contains",
           "scope": "viewport",
           "text": "Type your request"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "BREADBOARD_SMOKE_CHAT_CONTENT"
         },
         {
           "kind": "notContains",
@@ -110,8 +124,18 @@
     },
     {
       "kind": "contains",
+      "scope": "raw",
+      "text": "hello from vscode host lane"
+    },
+    {
+      "kind": "contains",
       "scope": "viewport",
       "text": "Type your request"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "BREADBOARD_SMOKE_CHAT_CONTENT"
     },
     {
       "kind": "notContains",

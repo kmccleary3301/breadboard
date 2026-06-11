@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import datetime
 import json
+import os
 import random
 import re
 from dataclasses import dataclass, field
@@ -2587,10 +2588,11 @@ class SmokeRuntime(ProviderRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
+        content = os.environ.get("BREADBOARD_SMOKE_CHAT_CONTENT") or "Hi! All systems nominal.\n\nTASK COMPLETE\n\n>>>>>> END RESPONSE"
         out_messages = [
             ProviderMessage(
                 role="assistant",
-                content="Hi! All systems nominal.\n\nTASK COMPLETE\n\n>>>>>> END RESPONSE",
+                content=content,
                 tool_calls=[],
                 finish_reason="stop",
                 index=0,

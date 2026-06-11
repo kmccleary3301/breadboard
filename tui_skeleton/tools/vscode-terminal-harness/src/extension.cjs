@@ -11,6 +11,21 @@ const { TerminalBufferMirror } = require('./terminalBuffer.cjs')
 const nowIso = () => new Date().toISOString()
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+function expandScenarioEnvValue(value) {
+  return String(value)
+    .replaceAll('$BREADBOARD_REPO_ROOT', process.env.BREADBOARD_REPO_ROOT || '')
+    .replaceAll('$BREADBOARD_TUI_ROOT', process.env.BREADBOARD_TUI_ROOT || '')
+}
+
+function scenarioEnv(scenario) {
+  const raw = scenario && typeof scenario.env === 'object' && scenario.env && !Array.isArray(scenario.env) ? scenario.env : {}
+  return Object.fromEntries(
+    Object.entries(raw)
+      .filter(([key, value]) => typeof key === 'string' && key.length > 0 && value != null)
+      .map(([key, value]) => [key, expandScenarioEnvValue(value)]),
+  )
+}
+
 class HarnessPty {
   constructor(options) {
     this.options = options
@@ -440,6 +455,7 @@ async function runScenario(context, scenarioPath, artifactDir) {
   const cols = scenario.terminal?.initialCols || 100
   const rows = scenario.terminal?.initialRows || 30
   const breadboardArtifactDir = path.join(artifactDir, 'breadboard_artifacts')
+  const scenarioEnvironment = scenarioEnv(scenario)
   ensureDir(breadboardArtifactDir)
   writeJson(path.join(artifactDir, 'scenario.json'), scenario)
   writeJson(path.join(artifactDir, 'vscode_info.json'), {
@@ -466,7 +482,15 @@ async function runScenario(context, scenarioPath, artifactDir) {
   })
   writeJson(path.join(artifactDir, 'env.json'), {
     PATH: process.env.PATH || '',
+    HOME: process.env.HOME || null,
     DISPLAY: process.env.DISPLAY || null,
+    BREADBOARD_API_URL: process.env.BREADBOARD_API_URL || null,
+    BREADBOARD_CLI_PORT: process.env.BREADBOARD_CLI_PORT || null,
+    BREADBOARD_ENGINE_MODE: process.env.BREADBOARD_ENGINE_MODE || null,
+    BREADBOARD_ENGINE_KEEPALIVE: process.env.BREADBOARD_ENGINE_KEEPALIVE || null,
+    BREADBOARD_ENGINE_ROOT: process.env.BREADBOARD_ENGINE_ROOT || null,
+    MOCK_API_KEY_PRESENT: process.env.MOCK_API_KEY ? true : false,
+    SCENARIO_ENV_KEYS: Object.keys(scenarioEnvironment).sort(),
     BREADBOARD_VSCODE_HARNESS_SCENARIO: scenarioPath,
     BREADBOARD_VSCODE_HARNESS_ARTIFACT_DIR: artifactDir,
     BREADBOARD_VSCODE_NODE_BIN: process.env.BREADBOARD_VSCODE_NODE_BIN || 'node',
@@ -501,6 +525,8 @@ async function runScenario(context, scenarioPath, artifactDir) {
       BREADBOARD_TUI_MANAGED_REGION_BOUNDS_FILE: path.join(breadboardArtifactDir, 'managed_region_bounds.ndjson'),
       BREADBOARD_TUI_APP_START_ANCHOR_FILE: path.join(breadboardArtifactDir, 'app_start_anchor.json'),
       BREADBOARD_TUI_SCROLLBACK_CLAUSE_VERDICTS_FILE: path.join(breadboardArtifactDir, 'scrollback_clause_verdicts.json'),
+      MOCK_API_KEY: process.env.MOCK_API_KEY || 'mock',
+      ...scenarioEnvironment,
     },
   })
   const terminal = vscode.window.createTerminal({ name: `BreadBoard Harness: ${scenario.id}`, pty })

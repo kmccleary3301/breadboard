@@ -12,6 +12,13 @@ RUN_DIR="$OUT_ROOT/vscode_final_core_$STAMP"
 mkdir -p "$RUN_DIR/runs"
 cd "$ROOT_DIR"
 
+if [[ -z "${CODE_BIN:-}" ]]; then
+  RESOLVED_CODE="$(command -v code || true)"
+  if [[ "${RESOLVED_CODE}" == *"/remote-cli/"* && -x /snap/bin/code ]]; then
+    export CODE_BIN="/snap/bin/code"
+  fi
+fi
+
 if [[ ! -f "$BATCH" ]]; then
   echo "missing VSCode batch: $BATCH" >&2
   exit 2

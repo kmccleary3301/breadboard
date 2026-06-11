@@ -21,6 +21,7 @@ from .capabilities import CAPABILITY_MATRIX, ProviderCapabilities
 _CODEX_AUTH_PATH = Path.home() / ".codex" / "auth.json"
 _OPENAI_AUTH_HEADERS_ENV = "BREADBOARD_OPENAI_AUTH_HEADERS_JSON"
 _OPENAI_AUTH_BASE_URL_ENV = "BREADBOARD_OPENAI_AUTH_BASE_URL"
+_LOCAL_NO_AUTH_PROVIDER_IDS = {"mock", "cli_mock", "smoke"}
 
 @dataclass
 class ProviderDescriptor:
@@ -434,7 +435,7 @@ class ProviderRouter:
                 api_key = projected_api_key
         if config.provider_id == "codex":
             api_key = api_key or "codex"
-        if config.provider_id == "mock":
+        if config.provider_id in _LOCAL_NO_AUTH_PROVIDER_IDS:
             api_key = api_key or "mock"
 
         # In-memory auth material overlay (never persisted). This allows the CLI bridge

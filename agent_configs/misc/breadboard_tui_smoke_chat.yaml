@@ -1,0 +1,78 @@
+version: 2
+
+profile: { name: breadboard-tui-smoke-chat }
+
+workspace:
+  root: ./agent_ws
+  sandbox:
+    driver: process
+  mirror:
+    enabled: false
+    path: ./agent_ws
+    mode: development
+
+providers:
+  default_model: smoke/dev
+  models:
+    - id: smoke/dev
+      adapter: smoke_chat
+
+provider_tools:
+  use_native: false
+  suppress_prompts: true
+
+prompts:
+  packs:
+    base:
+      system: implementations/system_prompts/default.md
+      chat: implementations/system_prompts/default.md
+  tool_prompt_mode: none
+  tool_prompt_synthesis:
+    enabled: false
+
+tools:
+  mark_task_complete: false
+  registry:
+    paths: []
+    include: []
+
+modes:
+  - name: chat
+    prompt: "@pack(base).chat"
+    tools_enabled: []
+    tools_disabled: []
+
+loop:
+  sequence:
+    - mode: chat
+  plan_turn_limit: 0
+  turn_strategy:
+    relay: tool_role
+    flow: assistant_continuation
+    allow_multiple_per_turn: false
+  guardrails:
+    zero_tool_watchdog:
+      warn_after_turns: 0
+      abort_after_turns: 0
+      emit_event: false
+
+features:
+  plan: false
+  todos:
+    enabled: false
+    strict: false
+    reset_streak_on_todo: false
+
+guardrails:
+  overrides:
+    plan_bootstrap:
+      strategy: never
+
+completion:
+  confidence_threshold: 0.6
+  primary: hybrid
+  provider_signals: true
+  allow_zero_tool_completion: true
+  text_sentinels:
+    - TASK COMPLETE
+    - '>>>>>> END RESPONSE'

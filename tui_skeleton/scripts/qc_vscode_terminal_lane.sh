@@ -13,13 +13,30 @@ RUNTIME_ROOT="${BREADBOARD_VSCODE_RUNTIME_ROOT:-$(mktemp -d /tmp/bb-vscode-harne
 WORKSPACE="$RUNTIME_ROOT/workspace"
 USER_DATA="$RUNTIME_ROOT/vscode-user-data"
 EXT_DIR="$RUNTIME_ROOT/vscode-extensions"
+HARNESS_HOME="$RUNTIME_ROOT/home"
 ARTIFACT_DIR="$RUN_DIR/artifacts"
 LOG_FILE="$RUN_DIR/code.log"
 CODE_BIN="${CODE_BIN:-code}"
 USE_XVFB="${BREADBOARD_VSCODE_USE_XVFB:-auto}"
 read -r -a CODE_EXTRA_ARGS <<< "${BREADBOARD_VSCODE_EXTRA_ARGS:-}"
+ENGINE_PORT="$(python3 - <<'PY'
+import socket
+s = socket.socket()
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)"
+ENGINE_URL="http://127.0.0.1:$ENGINE_PORT"
 
-mkdir -p "$OUT_ROOT" "$RUN_DIR" "$WORKSPACE" "$USER_DATA/User" "$EXT_DIR" "$ARTIFACT_DIR"
+if [[ "${CODE_BIN}" == "code" ]]; then
+  RESOLVED_CODE="$(command -v code || true)"
+  if [[ "${RESOLVED_CODE}" == *"/remote-cli/"* && -x /snap/bin/code ]]; then
+    CODE_BIN="/snap/bin/code"
+  fi
+fi
+
+mkdir -p "$OUT_ROOT" "$RUN_DIR" "$WORKSPACE" "$USER_DATA/User" "$EXT_DIR" "$ARTIFACT_DIR" "$HARNESS_HOME"
 cat > "$WORKSPACE/README.md" <<'WORKSPACE_EOF'
 # BreadBoard VSCode Harness Workspace
 
@@ -59,6 +76,8 @@ cat > "$RUN_DIR/launch_env.json" <<EOF_JSON
   "artifactDir": "$ARTIFACT_DIR",
   "userDataDir": "$USER_DATA",
   "extensionsDir": "$EXT_DIR",
+  "harnessHome": "$HARNESS_HOME",
+  "engineUrl": "$ENGINE_URL",
   "extensionDevelopmentPath": "$ROOT_DIR/tools/vscode-terminal-harness"
 }
 EOF_JSON
@@ -126,8 +145,16 @@ set +e
   flock 9
   BREADBOARD_VSCODE_HARNESS_SCENARIO="$SCENARIO" \
   BREADBOARD_VSCODE_HARNESS_ARTIFACT_DIR="$ARTIFACT_DIR" \
+  BREADBOARD_REPO_ROOT="$REPO_ROOT" \
+  BREADBOARD_TUI_ROOT="$ROOT_DIR" \
+  BREADBOARD_ENGINE_ROOT="$REPO_ROOT" \
+  BREADBOARD_ENGINE_MODE=local-owned \
+  BREADBOARD_ENGINE_KEEPALIVE=0 \
+  BREADBOARD_API_URL="$ENGINE_URL" \
+  BREADBOARD_CLI_PORT="$ENGINE_PORT" \
+  HOME="$HARNESS_HOME" \
   PATH="$HOME/.local/bin:$PATH" \
-  "${CODE_CMD[@]}" >"$LOG_FILE" 2>&1
+  env -u VSCODE_IPC_HOOK_CLI "${CODE_CMD[@]}" >"$LOG_FILE" 2>&1
 ) 9>"$OUT_ROOT/.vscode_harness.lock"
 CODE_EXIT=$?
 set -e
