@@ -104,6 +104,44 @@ jobs:
           path: artifacts/compat_break_guard_report.json
           if-no-files-found: error
 
+
+  zero_importer_advisory:
+    name: Zero-importer advisory
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Resolve changed files for advisory
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" > artifacts/changed_files.txt
+          else
+            git diff-tree --no-commit-id --name-only -r "${{ github.sha }}" > artifacts/changed_files.txt
+          fi
+
+      - name: Report new zero-importer modules
+        run: |
+          python scripts/check_zero_importer_advisory.py \
+            --changed-files-file artifacts/changed_files.txt \
+            --json-out artifacts/zero_importer_advisory_report.json
+
+      - name: Upload zero-importer advisory report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zero-importer-advisory-report
+          path: artifacts/zero_importer_advisory_report.json
+          if-no-files-found: error
+
   danger_zone_acr_guard:
     name: Danger-zone ACR guard
     if: ${{ github.event_name == 'pull_request' }}
@@ -351,23 +389,34 @@ jobs:
 
       - name: Generate CT rows and sync matrix statuses
         run: |
+          set +e
           python scripts/run_ct_scenarios.py \
             --json-out artifacts/conformance/ct_scenarios_result_v1.json \
             --rows-out artifacts/conformance/ct_scenarios_rows_v1.json
+          ct_exit=$?
+          set -e
           python scripts/sync_conformance_matrix_status.py \
             --matrix-csv docs/conformance/CONFORMANCE_TEST_MATRIX_V1.csv \
             --rows-json artifacts/conformance/ct_scenarios_rows_v1.json \
             --out-csv artifacts/conformance/CONFORMANCE_TEST_MATRIX_V1.synced.csv \
             --summary-json artifacts/conformance/conformance_matrix_sync_summary_v1.json \
             --summary-md artifacts/conformance/conformance_matrix_sync_summary_v1.md
-          python - <<'PY'
+          python - "$ct_exit" <<'PY'
           import json
+          import sys
           from pathlib import Path
+          ct_exit = int(sys.argv[1])
+          result = json.loads(Path("artifacts/conformance/ct_scenarios_result_v1.json").read_text(encoding="utf-8"))
           summary = json.loads(Path("artifacts/conformance/conformance_matrix_sync_summary_v1.json").read_text(encoding="utf-8"))
           failing = int(summary.get("failing_rows", 0))
-          if failing > 0:
-              raise SystemExit(f"conformance matrix sync guard failed: failing_rows={failing}")
-          print(f"conformance matrix sync guard OK: failing_rows={failing}")
+          blocking_not_implemented = int(summary.get("blocking_not_implemented_rows", 0))
+          print(
+              "conformance matrix sync guard: "
+              f"ct_exit={ct_exit} ct_ok={result.get('ok')} sync_ok={summary.get('ok')} "
+              f"failing_rows={failing} blocking_not_implemented_rows={blocking_not_implemented}"
+          )
+          if ct_exit != 0 or not result.get("ok", False) or not summary.get("ok", False):
+              raise SystemExit(1)
           PY
 
       - name: Upload conformance matrix sync artifacts
