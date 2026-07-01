@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.resource_ref.v1.schema.json",
+  "title": "BreadBoard resource reference V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "uri",
+    "scheme",
+    "resolver_id",
+    "authority",
+    "path",
+    "query_hash",
+    "fragment",
+    "scope",
+    "visibility",
+    "immutability",
+    "retention",
+    "containment"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.resource_ref.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "uri": {
+      "type": "string",
+      "minLength": 1,
+      "description": "URI for the uri.",
+      "examples": [
+        "file:///workspace/example.txt"
+      ]
+    },
+    "scheme": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9+.-]*$",
+      "description": "Scheme value for this primitive."
+    },
+    "resolver_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the resolver.",
+      "examples": [
+        "resolver_example"
+      ]
+    },
+    "authority": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Authority value for this primitive."
+    },
+    "path": {
+      "type": "string",
+      "description": "Path value for the path.",
+      "examples": [
+        "docs/conformance/example.json"
+      ]
+    },
+    "query_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[A-Fa-f0-9]{64}$",
+      "description": "SHA-256 digest for the query hash.",
+      "examples": [
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "fragment": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Fragment value for this primitive."
+    },
+    "scope": {
+      "$ref": "#/$defs/scope",
+      "description": "Scope record for this primitive."
+    },
+    "visibility": {
+      "enum": [
+        "model_visible",
+        "provider_visible",
+        "host_only",
+        "secret",
+        "redacted"
+      ],
+      "description": "Allowed visibility value."
+    },
+    "immutability": {
+      "$ref": "#/$defs/immutability",
+      "description": "Immutability record for this primitive."
+    },
+    "retention": {
+      "$ref": "#/$defs/retention",
+      "description": "Retention record for this primitive."
+    },
+    "containment": {
+      "$ref": "#/$defs/containment",
+      "description": "Containment record for this primitive."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope_id",
+        "kind",
+        "boundary"
+      ],
+      "properties": {
+        "scope_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the scope.",
+          "examples": [
+            "scope_example"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "workspace",
+            "session",
+            "project",
+            "system",
+            "external"
+          ],
+          "description": "Allowed kind value."
+        },
+        "boundary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Boundary value for this primitive."
+        }
+      }
+    },
+    "immutability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "content_hash"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "mutable",
+            "snapshot",
+            "content_addressed",
+            "append_only"
+          ],
+          "description": "Allowed mode value."
+        },
+        "content_hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[A-Fa-f0-9]{64}$",
+          "description": "SHA-256 digest for the content hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "expires_at"
+      ],
+      "properties": {
+        "policy": {
+          "enum": [
+            "ephemeral",
+            "session",
+            "project",
+            "pinned",
+            "external"
+          ],
+          "description": "Allowed policy value."
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "UTC timestamp for the expires at event.",
+          "examples": [
+            "2026-07-04T00:00:00Z"
+          ]
+        }
+      }
+    },
+    "containment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "root_uri",
+        "parent_uri",
+        "relationship"
+      ],
+      "properties": {
+        "root_uri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URI for the root.",
+          "examples": [
+            "file:///workspace/example.txt"
+          ]
+        },
+        "parent_uri": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "URI for the parent.",
+          "examples": [
+            "file:///workspace/example.txt"
+          ]
+        },
+        "relationship": {
+          "enum": [
+            "root",
+            "descendant",
+            "sibling",
+            "external",
+            "derived"
+          ],
+          "description": "Allowed relationship value."
+        }
+      }
+    }
+  }
+}

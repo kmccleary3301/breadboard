@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "bb.terminal_session_end.v1.schema.json",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.terminal_session_end.v1.schema.json",
   "type": "object",
   "required": [
     "schema_version",
@@ -11,21 +11,54 @@
     "schema_version": {
       "const": "bb.terminal_session_end.v1"
     },
-    "terminal_session_id": {"type": "string"},
-    "startup_call_id": {"type": ["string", "null"]},
-    "causing_call_id": {"type": ["string", "null"]},
-    "terminal_state": {
-      "enum": ["completed", "failed", "cancelled", "cleaned_up", "backend_lost"]
+    "terminal_session_id": {
+      "type": "string"
     },
-    "exit_code": {"type": ["integer", "null"]},
-    "duration_ms": {"type": ["integer", "null"], "minimum": 0},
+    "startup_call_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "causing_call_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "terminal_state": {
+      "enum": [
+        "completed",
+        "failed",
+        "cancelled",
+        "cleaned_up",
+        "backend_lost"
+      ]
+    },
+    "exit_code": {
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "duration_ms": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 0
+    },
     "artifact_refs": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": {
+        "type": "string"
+      }
     },
     "evidence_refs": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": {
+        "type": "string"
+      }
     }
   },
   "additionalProperties": false

@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.resource_access.v1.schema.json",
+  "title": "BreadBoard resource access V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "access_id",
+    "resource",
+    "operation",
+    "status",
+    "content_hash",
+    "blob_refs",
+    "truncation",
+    "redaction",
+    "approval"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.resource_access.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "access_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the access.",
+      "examples": [
+        "access_example"
+      ]
+    },
+    "resource": {
+      "$ref": "bb.resource_ref.v1.schema.json",
+      "description": "Resource record for this primitive."
+    },
+    "operation": {
+      "enum": [
+        "read",
+        "write",
+        "append",
+        "delete",
+        "list",
+        "stat",
+        "resolve"
+      ],
+      "description": "Allowed operation value."
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "denied",
+        "failed",
+        "not_found",
+        "truncated",
+        "redacted"
+      ],
+      "description": "Allowed status value."
+    },
+    "content_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^sha256:[A-Fa-f0-9]{64}$",
+      "description": "SHA-256 digest for the content hash.",
+      "examples": [
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "blob_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "bb.blob_ref.v1.schema.json",
+        "description": "One entry in blob refs.",
+        "examples": [
+          [
+            "docs/conformance/blob.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the blob entries.",
+      "examples": [
+        [
+          "docs/conformance/blob.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "truncation": {
+      "$ref": "bb.resource_access.v1.schema.json#/$defs/truncation",
+      "description": "Truncation record for this primitive."
+    },
+    "redaction": {
+      "$ref": "bb.resource_access.v1.schema.json#/$defs/redaction",
+      "description": "Redaction record for this primitive."
+    },
+    "approval": {
+      "$ref": "bb.resource_access.v1.schema.json#/$defs/approval",
+      "description": "Approval record for this primitive."
+    },
+    "model_provider_visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible",
+        "provider_visible"
+      ],
+      "properties": {
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        }
+      },
+      "description": "Model provider visibility value for this primitive."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "truncation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "truncated",
+        "original_size_bytes",
+        "returned_size_bytes",
+        "strategy"
+      ],
+      "properties": {
+        "truncated": {
+          "type": "boolean",
+          "description": "Truncated value for this primitive."
+        },
+        "original_size_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Original size bytes value for this primitive."
+        },
+        "returned_size_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Returned size bytes value for this primitive."
+        },
+        "strategy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Strategy value for this primitive."
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "redacted",
+        "policy_ids",
+        "redaction_refs"
+      ],
+      "properties": {
+        "redacted": {
+          "type": "boolean",
+          "description": "Boolean flag for a redacted state."
+        },
+        "policy_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "One entry in policy ids.",
+            "examples": [
+              [
+                "policy_example"
+              ]
+            ]
+          },
+          "description": "Stable identifiers for the policy entries.",
+          "examples": [
+            [
+              "policy_example"
+            ]
+          ]
+        },
+        "redaction_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "One entry in redaction refs.",
+            "examples": [
+              [
+                "docs/conformance/redaction.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the redaction entries.",
+          "examples": [
+            [
+              "docs/conformance/redaction.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        }
+      }
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "status",
+        "approval_id"
+      ],
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "description": "Boolean flag for a required state."
+        },
+        "status": {
+          "enum": [
+            "not_required",
+            "requested",
+            "approved",
+            "denied",
+            "expired"
+          ],
+          "description": "Allowed status value."
+        },
+        "approval_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Stable identifier for the approval.",
+          "examples": [
+            "approval_example"
+          ]
+        },
+        "approver": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Approver value for this primitive."
+        }
+      }
+    }
+  }
+}

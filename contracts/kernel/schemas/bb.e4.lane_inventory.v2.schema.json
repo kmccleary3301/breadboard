@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json",
+  "title": "BreadBoard E4 lane inventory V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "inventory_id",
+    "generated_at_utc",
+    "revision",
+    "lanes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.lane_inventory.v2"
+    },
+    "inventory_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "lanes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "lane_id",
+          "config_id",
+          "phase",
+          "kind",
+          "status",
+          "points",
+          "target_family",
+          "target_version",
+          "run_id",
+          "provider_model",
+          "sandbox_mode",
+          "primitives",
+          "artifact_roles",
+          "ledger_feature_ids"
+        ],
+        "properties": {
+          "lane_id": {
+            "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+          },
+          "config_id": {
+            "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+          },
+          "claim_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Historical label (P3/P5/P6/P7/...). Informational."
+          },
+          "kind": {
+            "enum": [
+              "target_support",
+              "non_target_accounting",
+              "infrastructure"
+            ]
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "scaffolded",
+              "captured",
+              "replayed",
+              "compared",
+              "claimed",
+              "accepted",
+              "blocked",
+              "superseded"
+            ]
+          },
+          "points": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "target_family": {
+            "$comment": "Registry key in contracts/kernel/registries/target_families.v1.json (bb.registry.v1).",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[a-z0-9][a-z0-9_.:/-]*$"
+          },
+          "target_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "run_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "provider_model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sandbox_mode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "lane_def_ref": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^[^\\s]+$",
+            "description": "Optional repo-relative path or path#fragment for the source lane definition that produced this inventory row."
+          },
+          "primitives": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "schema_version strings of primitives this lane exercises."
+          },
+          "builder": {
+            "anyOf": [
+              {
+                "$ref": "bb.kernel.common.v1.schema.json#/$defs/argv_command"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "comparator_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Registry key in bb.e4.comparator_registry.v1."
+          },
+          "ct": {
+            "anyOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "test_id",
+                  "gate_level",
+                  "command"
+                ],
+                "properties": {
+                  "test_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "gate_level": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "command": {
+                    "$ref": "bb.kernel.common.v1.schema.json#/$defs/argv_command"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "artifact_roles": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+            },
+            "description": "role name -> catalog role_id (identifier-constrained, same contract as catalog entries[].role_id). Accepted C4 lanes MUST include: freeze, capture, replay, comparator, support_claim, evidence_manifest, node_gate (validator-enforced)."
+          },
+          "ledger_feature_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "score_row_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "blocked_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reverify_command": {
+            "anyOf": [
+              {
+                "$ref": "bb.kernel.common.v1.schema.json#/$defs/argv_command"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Check-only command for revalidating this lane's support claim (consumed by claim v2 and the /v1/e4 reverify endpoint). Null until WS-E.4 populates it."
+          },
+          "metadata": {
+            "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+          }
+        }
+      }
+    }
+  }
+}

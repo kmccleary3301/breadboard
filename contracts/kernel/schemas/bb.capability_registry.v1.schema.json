@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.capability_registry.v1.schema.json",
+  "title": "BreadBoard capability registry V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "registry_id",
+    "generated_at",
+    "subject",
+    "capabilities"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.capability_registry.v1"
+    },
+    "registry_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environment_id",
+        "run_id"
+      ],
+      "properties": {
+        "environment_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/capability_entry"
+      }
+    },
+    "registry_revision": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "basis_registry_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "mutation_log": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/mutation_operation"
+      }
+    }
+  },
+  "$defs": {
+    "capability_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_id",
+        "capability_type",
+        "name",
+        "discovery",
+        "exposure"
+      ],
+      "properties": {
+        "capability_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capability_type": {
+          "enum": [
+            "tool",
+            "model",
+            "resource_resolver",
+            "extension_hook",
+            "runtime",
+            "permission",
+            "storage"
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": false,
+          "required": [
+            "provider_id",
+            "version"
+          ],
+          "properties": {
+            "provider_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "discovery": {
+          "$ref": "#/$defs/discovery"
+        },
+        "exposure": {
+          "$ref": "#/$defs/exposure"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "visibility": {
+          "enum": [
+            "model_visible",
+            "provider_visible",
+            "host_only",
+            "policy_hidden"
+          ]
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "discovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "mode",
+        "evidence_ref"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "discovered",
+            "not_discovered",
+            "failed"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "static_manifest",
+            "runtime_probe",
+            "host_advertised",
+            "provider_advertised",
+            "manual"
+          ]
+        },
+        "evidence_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "discovered_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
+    },
+    "exposure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "mode",
+        "model_visible",
+        "surface_refs"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "exposed",
+            "hidden",
+            "conditional"
+          ]
+        },
+        "mode": {
+          "enum": [
+            "model_visible",
+            "provider_visible",
+            "host_only",
+            "policy_hidden",
+            "conditional"
+          ]
+        },
+        "model_visible": {
+          "type": "boolean"
+        },
+        "surface_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "mutation_operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mutation_id",
+        "operation",
+        "target_type",
+        "target_ref",
+        "phase",
+        "source",
+        "outcome"
+      ],
+      "properties": {
+        "mutation_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operation": {
+          "enum": [
+            "discover",
+            "register",
+            "activate",
+            "deactivate",
+            "enable",
+            "disable",
+            "shadow",
+            "override",
+            "replace",
+            "remove",
+            "source_handoff",
+            "conflict_rejected",
+            "block",
+            "modify_result",
+            "inject_context",
+            "append_state"
+          ]
+        },
+        "target_type": {
+          "enum": [
+            "registry",
+            "provider",
+            "tool",
+            "model",
+            "resource_resolver",
+            "extension_hook",
+            "runtime",
+            "permission",
+            "storage",
+            "slash_command",
+            "extension_module",
+            "plugin"
+          ]
+        },
+        "target_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "phase": {
+          "enum": [
+            "discovery",
+            "registration",
+            "resolution",
+            "activation",
+            "execution",
+            "cleanup"
+          ]
+        },
+        "source": {
+          "$ref": "#/$defs/mutation_source"
+        },
+        "outcome": {
+          "enum": [
+            "applied",
+            "ignored",
+            "shadowed",
+            "rejected",
+            "removed"
+          ]
+        },
+        "occurred_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "basis_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "affected_capability_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "before_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "after_ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "mutation_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_type",
+        "source_ref"
+      ],
+      "properties": {
+        "source_type": {
+          "enum": [
+            "static_manifest",
+            "runtime_probe",
+            "host_advertised",
+            "provider_advertised",
+            "manual",
+            "extension_api",
+            "hook_api",
+            "plugin_manager",
+            "system"
+          ]
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

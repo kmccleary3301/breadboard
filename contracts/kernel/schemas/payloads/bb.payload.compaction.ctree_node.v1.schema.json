@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.compaction.ctree_node.v1.schema.json",
+  "title": "BreadBoard Kernel Event Payload compaction.ctree_node V1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "node": {
+      "type": "object"
+    },
+    "snapshot": true
+  }
+}

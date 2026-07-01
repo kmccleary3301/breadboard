@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.tool.called.v1.schema.json",
+  "title": "BreadBoard Kernel Event Payload tool.called V1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "call": {
+      "type": "object"
+    },
+    "call_id": {
+      "type": "string"
+    },
+    "tool": {
+      "type": "string"
+    },
+    "tool_name": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    }
+  }
+}

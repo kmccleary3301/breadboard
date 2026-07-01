@@ -1,0 +1,250 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.common.v1.schema.json",
+  "title": "BreadBoard E4 shared definitions V1",
+  "description": "Shared $defs for E4 evidence-pack contracts. Defines no record type; referenced via $ref. E4-pack analog of bb.kernel.common.v1.",
+  "$defs": {
+    "e4_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "config_id",
+        "lane_id",
+        "run_id",
+        "target_family",
+        "target_version",
+        "provider_model",
+        "sandbox_mode"
+      ],
+      "properties": {
+        "config_id": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+        },
+        "lane_id": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+        },
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target_family": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "$comment": "MUST be an active id in contracts/kernel/registries/target_families.v1.json; enforced by generators and c4_chain, not by JSON Schema."
+        },
+        "target_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sandbox_mode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "extra": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+        }
+      },
+      "description": "The exact-scope tuple every E4 claim/lane names ONCE. Root-level duplication of these fields is prohibited in v4+ contracts."
+    },
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "sha256"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Repo-root-relative or evidence-root-relative path. Never absolute."
+        },
+        "sha256": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "role_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "media_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "catalog_snapshot_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "catalog_path",
+        "segment_id",
+        "segment_hash",
+        "shared_segment_hash"
+      ],
+      "properties": {
+        "catalog_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "catalog_revision": {
+          "type": "integer",
+          "minimum": 0,
+          "$comment": "Informational only. Validators MUST NOT require equality with the live catalog revision (that equality is what caused revision-churn rebinding cycles)."
+        },
+        "segment_id": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+        },
+        "segment_hash": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+        },
+        "shared_segment_hash": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+        }
+      },
+      "description": "One-way binding to the lane's stable catalog segment plus the shared stable segment, computed over stable-class entries only (BB_CL_MASTER_PLAN.md section 4.5)."
+    },
+    "typed_assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "path",
+        "op"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+        },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Dotted path into the comparison subject. Segments split on '.'; array indices are bare integers, e.g. 'items.0.name'. '$' addresses the subject root."
+        },
+        "op": {
+          "enum": [
+            "equals",
+            "not_equals",
+            "exists",
+            "absent",
+            "length_equals",
+            "length_gte",
+            "length_lte",
+            "contains",
+            "matches",
+            "gte",
+            "lte",
+            "digest_equals"
+          ]
+        },
+        "value": true,
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "enum": [
+                  "exists",
+                  "absent"
+                ]
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "properties": {
+              "value": false
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "op": {
+                "enum": [
+                  "equals",
+                  "not_equals",
+                  "length_equals",
+                  "length_gte",
+                  "length_lte",
+                  "contains",
+                  "matches",
+                  "gte",
+                  "lte",
+                  "digest_equals"
+                ]
+              }
+            },
+            "required": [
+              "op"
+            ]
+          },
+          "then": {
+            "required": [
+              "id",
+              "path",
+              "op",
+              "value"
+            ]
+          }
+        }
+      ],
+      "description": "Machine-checkable assertion. Semantics table and evaluator contract: BB_CL_MASTER_PLAN.md section 4.13."
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upstream_repo",
+        "upstream_commit",
+        "upstream_commit_date",
+        "upstream_release_label",
+        "source_paths"
+      ],
+      "properties": {
+        "upstream_repo": {
+          "type": "string",
+          "minLength": 1
+        },
+        "upstream_commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{7,40}$"
+        },
+        "upstream_commit_date": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+        },
+        "upstream_release_label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_paths": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "description": "Pinned upstream identity of a captured target. Replaces the schema-invisible metadata.acceptance_packet provenance fields."
+    }
+  }
+}

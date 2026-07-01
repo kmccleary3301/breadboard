@@ -17,6 +17,7 @@ This directory exists now as an explicit scaffold so that the multi-engine progr
 
 - `schemas/` — versioned schema artifacts such as `bb.kernel_event.v1.schema.json`
 - `examples/` — minimal valid examples for each contract family
+- `registries/` — machine-readable identifier registries that are the single source of truth for shared enumerations
 - `manifests/` — optional package/version manifests if we formalize them
 
 ---
@@ -37,23 +38,13 @@ Those may reference the kernel, but they should not redefine it.
 
 ## Initial contract families
 
-- run request / context
-- kernel event
-- transcript/session snapshot
-- provider exchange
-- tool spec / call / execution / render
-- permission / approval record
-- middleware lifecycle
-- task / subagent / background task
-- checkpoint / longrun state
-- execution capability / placement
-- sandbox request / result
-- distributed task descriptor
-- transcript continuation patch
-- unsupported case taxonomy
-- replay session
-- conformance evidence
-- import/export session
+The machine-readable source of truth for initial contract families is
+`contracts/kernel/registries/kernel_families.v1.json`, validated by
+`contracts/kernel/schemas/bb.registry.v1.schema.json`.
+
+Do not maintain a divergent literal family list in this README. Human-readable
+kernel doctrine and semantic docs may summarize the families, but additions,
+deprecations, and no-schema-yet reservations belong in the registry.
 
 ---
 

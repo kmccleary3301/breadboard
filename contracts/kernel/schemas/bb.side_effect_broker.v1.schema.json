@@ -1,0 +1,439 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.side_effect_broker.v1.schema.json",
+  "title": "BreadBoard side effect broker V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "broker_id",
+    "request",
+    "policy_refs",
+    "permission_approval_refs",
+    "target_refs",
+    "execution_placement",
+    "before_refs",
+    "after_refs",
+    "status",
+    "errors",
+    "visibility_impact"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.side_effect_broker.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "broker_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the broker.",
+      "examples": [
+        "broker_example"
+      ]
+    },
+    "request": {
+      "$ref": "#/$defs/request",
+      "description": "Request record for this primitive."
+    },
+    "policy_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in policy refs.",
+        "examples": [
+          [
+            "docs/conformance/policy.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the policy entries.",
+      "examples": [
+        [
+          "docs/conformance/policy.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "permission_approval_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in permission approval refs.",
+        "examples": [
+          [
+            "docs/conformance/permission_approval.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the permission approval entries.",
+      "examples": [
+        [
+          "docs/conformance/permission_approval.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "target_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/target_ref",
+        "description": "One entry in target refs.",
+        "examples": [
+          [
+            "docs/conformance/target.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the target entries.",
+      "examples": [
+        [
+          "docs/conformance/target.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "execution_placement": {
+      "$ref": "#/$defs/execution_placement",
+      "description": "Execution placement record for this primitive."
+    },
+    "before_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/state_ref",
+        "description": "One entry in before refs.",
+        "examples": [
+          [
+            "docs/conformance/before.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the before entries.",
+      "examples": [
+        [
+          "docs/conformance/before.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "after_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/state_ref",
+        "description": "One entry in after refs.",
+        "examples": [
+          [
+            "docs/conformance/after.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the after entries.",
+      "examples": [
+        [
+          "docs/conformance/after.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "status": {
+      "enum": [
+        "requested",
+        "approved",
+        "denied",
+        "executing",
+        "applied",
+        "rolled_back",
+        "failed",
+        "cancelled"
+      ],
+      "description": "Allowed status value."
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/error",
+        "description": "One entry in errors."
+      },
+      "description": "Ordered errors entries."
+    },
+    "visibility_impact": {
+      "$ref": "#/$defs/visibility_impact",
+      "description": "Visibility impact record for this primitive."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "effect_type",
+        "operation",
+        "requested_by",
+        "reason",
+        "idempotency_key"
+      ],
+      "properties": {
+        "request_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the request.",
+          "examples": [
+            "request_example"
+          ]
+        },
+        "effect_type": {
+          "enum": [
+            "resource_write",
+            "process_spawn",
+            "network_call",
+            "permission_change",
+            "state_mutation",
+            "external_action"
+          ],
+          "description": "Allowed effect type value."
+        },
+        "operation": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Operation value for this primitive."
+        },
+        "requested_by": {
+          "$ref": "#/$defs/actor_ref",
+          "description": "Requested by record for this primitive."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reason value for this primitive."
+        },
+        "idempotency_key": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Idempotency key value for this primitive."
+        }
+      }
+    },
+    "actor_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor_kind",
+        "actor_id"
+      ],
+      "properties": {
+        "actor_kind": {
+          "enum": [
+            "model",
+            "agent",
+            "subagent",
+            "host",
+            "tool",
+            "system",
+            "user"
+          ],
+          "description": "Allowed actor kind value."
+        },
+        "actor_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the actor.",
+          "examples": [
+            "actor_example"
+          ]
+        }
+      }
+    },
+    "target_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_kind",
+        "ref",
+        "scope"
+      ],
+      "properties": {
+        "target_kind": {
+          "enum": [
+            "resource",
+            "process",
+            "network",
+            "permission",
+            "state",
+            "artifact"
+          ],
+          "description": "Allowed target kind value."
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the ref.",
+          "examples": [
+            "docs/conformance/ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Scope value for this primitive."
+        }
+      }
+    },
+    "execution_placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "placement_id",
+        "environment_id",
+        "runner_ref",
+        "isolation"
+      ],
+      "properties": {
+        "placement_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the placement.",
+          "examples": [
+            "placement_example"
+          ]
+        },
+        "environment_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the environment.",
+          "examples": [
+            "environment_example"
+          ]
+        },
+        "runner_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the runner.",
+          "examples": [
+            "docs/conformance/runner_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "isolation": {
+          "enum": [
+            "host",
+            "sandbox",
+            "remote_worker",
+            "provider_runtime"
+          ],
+          "description": "Allowed isolation value."
+        }
+      }
+    },
+    "state_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "hash",
+        "captured_at"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the ref.",
+          "examples": [
+            "docs/conformance/ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "hash": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^sha256:[A-Fa-f0-9]{64}$",
+          "description": "SHA-256 digest for the hash.",
+          "examples": [
+            "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "captured_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC timestamp for the captured at event.",
+          "examples": [
+            "2026-07-04T00:00:00Z"
+          ]
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Code value for this primitive."
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Message value for this primitive."
+        },
+        "retryable": {
+          "type": "boolean",
+          "description": "Retryable value for this primitive."
+        }
+      }
+    },
+    "visibility_impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible",
+        "provider_visible",
+        "host_visible",
+        "model_visible_ref",
+        "provider_visible_ref"
+      ],
+      "properties": {
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        },
+        "host_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a host visible state."
+        },
+        "model_visible_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the model visible.",
+          "examples": [
+            "docs/conformance/model_visible_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "provider_visible_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the provider visible.",
+          "examples": [
+            "docs/conformance/provider_visible_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    }
+  }
+}

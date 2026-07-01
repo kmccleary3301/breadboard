@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.tool_model_render.v2.schema.json",
+  "title": "BreadBoard Tool Model Render V2",
+  "type": "object",
+  "$comment": "Supersedes bb.tool_model_render.v1. v1 is frozen for accepted evidence. Migration map: docs/contracts/CONTRACT_CONVENTIONS.md#v1-to-v2-runtime-records.",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "call_id",
+    "parts",
+    "visibility"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.tool_model_render.v2"
+    },
+    "call_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "part_kind",
+          "content"
+        ],
+        "properties": {
+          "part_kind": {
+            "enum": [
+              "text",
+              "json",
+              "diff",
+              "image",
+              "table",
+              "error",
+              "elision",
+              "other"
+            ]
+          },
+          "content": true,
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "truncation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "truncated"
+      ],
+      "properties": {
+        "truncated": {
+          "type": "boolean"
+        },
+        "original_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "strategy": {
+          "anyOf": [
+            {
+              "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "visibility": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/visibility"
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  }
+}

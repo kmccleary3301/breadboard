@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v1.schema.json",
+  "title": "BreadBoard E4 lane definition V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "lane_id",
+    "target_family",
+    "target_version",
+    "kind",
+    "status",
+    "points",
+    "capture",
+    "normalize",
+    "replay",
+    "compare",
+    "claim",
+    "artifacts_root"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.lane_def.v1"
+    },
+    "lane_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "config_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "target_family": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_]*$"
+    },
+    "target_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "package_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "target_support",
+        "non_target_accounting",
+        "infrastructure"
+      ]
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "captured",
+        "replayed",
+        "compared",
+        "claimed",
+        "accepted",
+        "blocked",
+        "superseded",
+        "scaffolded"
+      ]
+    },
+    "points": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "inputs"
+      ],
+      "properties": {
+        "strategy": {
+          "enum": [
+            "probe_argv",
+            "tmux_scripted",
+            "replay_dump",
+            "runtime_records",
+            "legacy_builder"
+          ]
+        },
+        "argv": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "workspace_template": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "normalize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "translator",
+        "config"
+      ],
+      "properties": {
+        "translator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config": {
+          "$ref": "#/$defs/freeform_object"
+        }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "session",
+        "comparator_class"
+      ],
+      "properties": {
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "comparator_class": {
+          "enum": [
+            "byte",
+            "semantic"
+          ]
+        }
+      }
+    },
+    "compare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "comparator",
+        "config"
+      ],
+      "properties": {
+        "comparator": {
+          "type": "string",
+          "minLength": 1
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "assertions": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/json_assertion"
+              }
+            }
+          }
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "exclusions"
+      ],
+      "properties": {
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "behaviors",
+            "surfaces"
+          ],
+          "properties": {
+            "behaviors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "surfaces": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "ct": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "artifacts_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reverify_command": {
+      "anyOf": [
+        {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/argv_command"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  },
+  "$defs": {
+    "freeform_object": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "json_assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "equals": true,
+        "length_equals": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "equals"
+          ]
+        },
+        {
+          "required": [
+            "length_equals"
+          ]
+        }
+      ]
+    }
+  }
+}

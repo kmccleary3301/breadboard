@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_pack.v3.schema.json",
+  "title": "BreadBoard Coordination Pack V3",
+  "type": "object",
+  "$comment": "Consolidates accepted coordination_slice.v2 evidence into a pack-level envelope. v2 slices stay valid accepted evidence; v3 records dialect coverage and migration/deprecation status without rewriting source evidence.",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pack_id",
+    "generated_at_utc",
+    "producer",
+    "source_dialects",
+    "records",
+    "migration"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.coordination_pack.v3"
+    },
+    "pack_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "producer": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/actor_ref"
+    },
+    "source_dialects": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "bb.coordination_reference_slice.v1",
+          "bb.coordination_multi_worker_reference_slice.v1",
+          "bb.coordination_intervention_reference_slice.v1",
+          "bb.coordination_longrun_reference_slice.v1",
+          "bb.coordination_delegated_verification_reference_slice.v1",
+          "bb.coordination_slice.v2",
+          "bb.coordination_pack.v3"
+        ]
+      }
+    },
+    "records": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slices"
+      ],
+      "properties": {
+        "slices": {
+          "type": "array",
+          "items": {
+            "$ref": "bb.coordination_slice.v2.schema.json"
+          }
+        },
+        "record_refs": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/evidence_refs"
+        }
+      }
+    },
+    "migration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "v1_acceptance",
+        "v2_acceptance",
+        "v3_write_mode"
+      ],
+      "properties": {
+        "v1_acceptance": {
+          "enum": [
+            "read_only_accepted_evidence"
+          ]
+        },
+        "v2_acceptance": {
+          "enum": [
+            "read_write"
+          ]
+        },
+        "v3_write_mode": {
+          "enum": [
+            "preferred"
+          ]
+        },
+        "deprecation_notice": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  }
+}

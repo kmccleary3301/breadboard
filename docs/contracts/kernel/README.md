@@ -46,9 +46,13 @@ Then read:
 
 - [semantics/README.md](semantics/README.md)
 
-Machine-readable contract artifacts live under:
+Machine-readable contract artifacts and registries live under:
 
 - [../../../contracts/kernel/README.md](../../../contracts/kernel/README.md)
+- `../../../contracts/kernel/schemas/bb.registry.v1.schema.json`
+- `../../../contracts/kernel/registries/kernel_families.v1.json`
+- `../../../contracts/kernel/registries/kernel_event_kinds.v1.json`
+- `../../../contracts/kernel/registries/target_families.v1.json`
 - [../../../conformance/engine_fixtures/README.md](../../../conformance/engine_fixtures/README.md)
 
 ---
@@ -79,31 +83,15 @@ Hybrid-delegation boundaries live alongside the kernel docs so they are constrai
 
 ## Immediate intended contract families
 
-The initial contract families are:
+The machine-readable source of truth for the immediate kernel contract-family
+set is `contracts/kernel/registries/kernel_families.v1.json`. That registry is
+the union of the historical lists that used to live in this README and in
+`contracts/kernel/README.md`; entries with `status: "reserved"` are named
+families that do not have a dedicated schema yet.
 
-1. run request / run context
-2. backbone API
-3. kernel event log
-4. session / transcript snapshot
-5. provider exchange IR
-6. support claim / projection profile
-7. workspace layer and artifact shaping
-8. host-kit boundaries
-9. tool lifecycle and tool render
-10. permission / approval / guardrail record
-11. middleware / hook lifecycle
-12. task / subagent / background task
-13. checkpoint / longrun state
-14. execution capability / placement
-15. execution driver policy / evidence expectations
-16. sandbox request / result
-17. distributed task descriptor
-18. transcript continuation patch
-19. unsupported-case taxonomy
-20. replay session
-21. conformance evidence
-22. import / export session
-23. projection adapter boundaries
+Do not maintain a divergent literal family list here. Update the registry first,
+then adjust doctrine or semantic prose only when the prose needs to explain a
+registry entry.
 
 ---
 
