@@ -1,0 +1,421 @@
+{
+  "entries": [
+    {
+      "example_path": "contracts/kernel/examples/agent_config_surface_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.agent_config_surface.v1.schema.json",
+      "schema_version": "bb.agent_config_surface.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/atomic_feature_ledger_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.atomic_feature_ledger.v1.schema.json",
+      "schema_version": "bb.atomic_feature_ledger.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/blob_ref_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.blob_ref.v1.schema.json",
+      "schema_version": "bb.blob_ref.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/capability_registry_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.capability_registry.v1.schema.json",
+      "schema_version": "bb.capability_registry.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/checkpoint_metadata_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.checkpoint_metadata.v1.schema.json",
+      "schema_version": "bb.checkpoint_metadata.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/config_mutation_record_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.config_mutation_record.v1.schema.json",
+      "schema_version": "bb.config_mutation_record.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/context_resource_pack_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json",
+      "schema_version": "bb.context_resource_pack.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/coordination_delegated_verification_reference_slice_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json",
+      "schema_version": "bb.coordination_delegated_verification_reference_slice.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/coordination_intervention_reference_slice_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_intervention_reference_slice.v1.schema.json",
+      "schema_version": "bb.coordination_intervention_reference_slice.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/coordination_longrun_reference_slice_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json",
+      "schema_version": "bb.coordination_longrun_reference_slice.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/coordination_multi_worker_reference_slice_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_multi_worker_reference_slice.v1.schema.json",
+      "schema_version": "bb.coordination_multi_worker_reference_slice.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/coordination_pack_v3_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_pack.v3.schema.json",
+      "schema_version": "bb.coordination_pack.v3"
+    },
+    {
+      "example_path": "contracts/kernel/examples/coordination_reference_slice_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_reference_slice.v1.schema.json",
+      "schema_version": "bb.coordination_reference_slice.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/coordination_slice_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_slice.v2.schema.json",
+      "schema_version": "bb.coordination_slice.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/coordination_verification_result_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json",
+      "schema_version": "bb.coordination_verification_result.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/directive_retry_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.directive.v1.schema.json",
+      "schema_version": "bb.directive.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/distributed_task_descriptor_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json",
+      "schema_version": "bb.distributed_task_descriptor.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_artifact_catalog_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.artifact_catalog.v1.schema.json",
+      "schema_version": "bb.e4.artifact_catalog.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_artifact_catalog_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.artifact_catalog.v2.schema.json",
+      "schema_version": "bb.e4.artifact_catalog.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_comparator_registry_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.comparator_registry.v1.schema.json",
+      "schema_version": "bb.e4.comparator_registry.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_lane_def_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.lane_def.v1.schema.json",
+      "schema_version": "bb.e4.lane_def.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_lane_def_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json",
+      "schema_version": "bb.e4.lane_def.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_lane_inventory_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.lane_inventory.v1.schema.json",
+      "schema_version": "bb.e4.lane_inventory.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_lane_inventory_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json",
+      "schema_version": "bb.e4.lane_inventory.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_support_claim_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.support_claim.v1.schema.json",
+      "schema_version": "bb.e4.support_claim.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_support_claim_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.support_claim.v2.schema.json",
+      "schema_version": "bb.e4.support_claim.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_support_claim_v3_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.support_claim.v3.schema.json",
+      "schema_version": "bb.e4.support_claim.v3"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_support_claim_v4_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.support_claim.v4.schema.json",
+      "schema_version": "bb.e4.support_claim.v4"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_target_coverage_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.target_coverage.v1.schema.json",
+      "schema_version": "bb.e4.target_coverage.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_target_coverage_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.target_coverage.v2.schema.json",
+      "schema_version": "bb.e4.target_coverage.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/effective_config_graph_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json",
+      "schema_version": "bb.effective_config_graph.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/effective_operation_policy_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json",
+      "schema_version": "bb.effective_operation_policy.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/effective_tool_surface_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.effective_tool_surface.v1.schema.json",
+      "schema_version": "bb.effective_tool_surface.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/environment_selector_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.environment_selector.v1.schema.json",
+      "schema_version": "bb.environment_selector.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/environment_selector_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.environment_selector.v2.schema.json",
+      "schema_version": "bb.environment_selector.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/er_progress_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.er.progress.v1.schema.json",
+      "schema_version": "bb.er.progress.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/execution_capability_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.execution_capability.v1.schema.json",
+      "schema_version": "bb.execution_capability.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/execution_placement_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.execution_placement.v1.schema.json",
+      "schema_version": "bb.execution_placement.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/extension_hook_execution_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.extension_hook_execution.v1.schema.json",
+      "schema_version": "bb.extension_hook_execution.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/external_protocol_session_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.external_protocol_session.v1.schema.json",
+      "schema_version": "bb.external_protocol_session.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_common_usage.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.common.v1.schema.json",
+      "schema_version": "bb.e4.common.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/kernel_common_usage.json",
+      "schema_path": "contracts/kernel/schemas/bb.kernel.common.v1.schema.json",
+      "schema_version": "bb.kernel.common.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/kernel_event_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.kernel_event.v1.schema.json",
+      "schema_version": "bb.kernel_event.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/kernel_event_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.kernel_event.v2.schema.json",
+      "schema_version": "bb.kernel_event.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/memory_compaction_plan_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
+      "schema_version": "bb.memory_compaction_plan.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/permission_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.permission.v1.schema.json",
+      "schema_version": "bb.permission.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/projection_event_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.projection_event.v1.schema.json",
+      "schema_version": "bb.projection_event.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/provider_exchange_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.provider_exchange.v1.schema.json",
+      "schema_version": "bb.provider_exchange.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/provider_route_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.provider_route.v1.schema.json",
+      "schema_version": "bb.provider_route.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/registry_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.registry.v1.schema.json",
+      "schema_version": "bb.registry.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/replay_session_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.replay_session.v1.schema.json",
+      "schema_version": "bb.replay_session.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/resource_access_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.resource_access.v1.schema.json",
+      "schema_version": "bb.resource_access.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/resource_ref_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.resource_ref.v1.schema.json",
+      "schema_version": "bb.resource_ref.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/review_verdict_blocked_retry.json",
+      "schema_path": "contracts/kernel/schemas/bb.review_verdict.v1.schema.json",
+      "schema_version": "bb.review_verdict.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/run_context_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.run_context.v1.schema.json",
+      "schema_version": "bb.run_context.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/run_request_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.run_request.v1.schema.json",
+      "schema_version": "bb.run_request.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/sandbox_request_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.sandbox_request.v1.schema.json",
+      "schema_version": "bb.sandbox_request.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/sandbox_result_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.sandbox_result.v1.schema.json",
+      "schema_version": "bb.sandbox_result.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/session_transcript_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.session_transcript.v1.schema.json",
+      "schema_version": "bb.session_transcript.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/session_transcript_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.session_transcript.v2.schema.json",
+      "schema_version": "bb.session_transcript.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/side_effect_broker_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.side_effect_broker.v1.schema.json",
+      "schema_version": "bb.side_effect_broker.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/signal_blocked_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.signal.v1.schema.json",
+      "schema_version": "bb.signal.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/task_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.task.v1.schema.json",
+      "schema_version": "bb.task.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/terminal_cleanup_result_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.terminal_cleanup_result.v1.schema.json",
+      "schema_version": "bb.terminal_cleanup_result.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/terminal_interaction_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.terminal_interaction.v1.schema.json",
+      "schema_version": "bb.terminal_interaction.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/terminal_output_delta_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.terminal_output_delta.v1.schema.json",
+      "schema_version": "bb.terminal_output_delta.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/terminal_registry_snapshot_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.terminal_registry_snapshot.v1.schema.json",
+      "schema_version": "bb.terminal_registry_snapshot.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/terminal_session_descriptor_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.terminal_session_descriptor.v1.schema.json",
+      "schema_version": "bb.terminal_session_descriptor.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/terminal_session_end_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.terminal_session_end.v1.schema.json",
+      "schema_version": "bb.terminal_session_end.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_binding_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_binding.v1.schema.json",
+      "schema_version": "bb.tool_binding.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_call_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_call.v1.schema.json",
+      "schema_version": "bb.tool_call.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_call_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_call.v2.schema.json",
+      "schema_version": "bb.tool_call.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_execution_outcome_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_execution_outcome.v1.schema.json",
+      "schema_version": "bb.tool_execution_outcome.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_execution_outcome_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_execution_outcome.v2.schema.json",
+      "schema_version": "bb.tool_execution_outcome.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_model_render_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_model_render.v1.schema.json",
+      "schema_version": "bb.tool_model_render.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_model_render_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_model_render.v2.schema.json",
+      "schema_version": "bb.tool_model_render.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_spec_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_spec.v1.schema.json",
+      "schema_version": "bb.tool_spec.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_spec_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_spec.v2.schema.json",
+      "schema_version": "bb.tool_spec.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/tool_support_claim_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.tool_support_claim.v1.schema.json",
+      "schema_version": "bb.tool_support_claim.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/transcript_continuation_patch_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.transcript_continuation_patch.v1.schema.json",
+      "schema_version": "bb.transcript_continuation_patch.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/unsupported_case_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.unsupported_case.v1.schema.json",
+      "schema_version": "bb.unsupported_case.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/wake_subscription_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.wake_subscription.v1.schema.json",
+      "schema_version": "bb.wake_subscription.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/work_item_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.work_item.v1.schema.json",
+      "schema_version": "bb.work_item.v1"
+    }
+  ],
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "schema_version": "bb.kernel.examples_manifest.v1"
+}

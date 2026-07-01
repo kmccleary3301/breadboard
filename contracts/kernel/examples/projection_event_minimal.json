@@ -1,0 +1,38 @@
+{
+  "schema_version": "bb.projection_event.v1",
+  "projection_event_id": "projection_event_minimal",
+  "source": {
+    "source_kernel_event_ref": "bb.kernel_event.v1:event_001",
+    "source_refs": ["bb.tool_execution_outcome.v1:call_001"],
+    "source_hash": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+  },
+  "projection_surface": {
+    "surface_id": "surface_model_context",
+    "surface_kind": "model_context",
+    "audience": "model",
+    "path": "/messages/3/content"
+  },
+  "projection_payload_ref": {
+    "ref": "bb.resource_ref.v1:projection_payload_001",
+    "media_type": "application/json",
+    "hash": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "redaction_state": "summarized"
+  },
+  "status_frames": [
+    {
+      "frame_id": "projection_frame_001",
+      "seq": 0,
+      "status": "projected",
+      "message_ref": "bb.tool_model_render.v1:render_001",
+      "emitted_at": "2026-03-08T00:00:00Z",
+      "visible_to_model": true,
+      "visible_to_host": true
+    }
+  ],
+  "visibility": {
+    "model_visible": true,
+    "host_visible": true,
+    "provider_visible": true
+  },
+  "kernel_truth": false
+}

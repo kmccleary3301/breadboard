@@ -1,0 +1,25 @@
+{
+  "schema_version": "bb.config_mutation_record.v1",
+  "mutation_id": "cfg_mutation_minimal",
+  "config_graph_id": "cfg_graph_minimal",
+  "write_authority": {
+    "actor_kind": "user",
+    "actor_id": "user.local",
+    "authority_scope": "workspace",
+    "approved_by": null
+  },
+  "mutation_type": "update",
+  "before_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "after_hash": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "produced_paths": ["model.name"],
+  "removed_paths": [],
+  "path_hashes": [
+    {
+      "path": "model.name",
+      "operation": "update",
+      "before_hash": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "after_hash": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ],
+  "reason": "User selected a workspace model override."
+}

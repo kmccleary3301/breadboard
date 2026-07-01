@@ -1,0 +1,78 @@
+{
+  "acceptance": {
+    "assertions": [
+      {
+        "description": "example report is ok",
+        "id": "ok_true"
+      }
+    ],
+    "behavior_family": "example_behavior",
+    "semantic_key": "example_semantic",
+    "target": "breadboard"
+  },
+  "artifacts_root": "docs/conformance/e4_target_support/example_adapter_lane",
+  "capture": {
+    "adapter": "example_capture_adapter",
+    "argv": null,
+    "inputs": [
+      "docs/conformance/example.json"
+    ],
+    "strategy": "adapter",
+    "workspace_template": null
+  },
+  "claim": {
+    "exclusions": [],
+    "scope": {
+      "behaviors": [
+        "bb.example.behavior"
+      ],
+      "surfaces": [
+        "example surface"
+      ]
+    }
+  },
+  "compare": {
+    "comparator": "north_star_stored_report_replay",
+    "config": {
+      "assertions": [
+        {
+          "description": "example report is ok",
+          "id": "ok_true",
+          "op": "equals",
+          "path": "ok",
+          "value": true
+        }
+      ]
+    }
+  },
+  "config_id": "example_adapter_lane",
+  "ct": {
+    "description": "Example CT row",
+    "test_id": "CT-EXAMPLE-ADAPTER-LANE",
+    "timeout_seconds": 60
+  },
+  "kind": "target_support",
+  "lane_id": "example_adapter_lane",
+  "metadata": {},
+  "normalize": {
+    "config": {},
+    "translator": "identity"
+  },
+  "package_ref": null,
+  "points": 1,
+  "provenance": null,
+  "replay": {
+    "comparator_class": "semantic",
+    "session": null
+  },
+  "reverify_command": null,
+  "run": {
+    "provider_model": "no-provider",
+    "run_id": "20260708_example_run",
+    "sandbox_mode": "deterministic"
+  },
+  "schema_version": "bb.e4.lane_def.v2",
+  "status": "claimed",
+  "target_family": "breadboard",
+  "target_version": "breadboard example runtime"
+}

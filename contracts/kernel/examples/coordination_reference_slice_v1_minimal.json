@@ -1,0 +1,47 @@
+{
+  "accepted_signal": {
+    "code": "example",
+    "schema_version": "bb.signal.v1",
+    "signal_id": "example",
+    "status": "accepted",
+    "task_id": "example",
+    "validation": {
+      "accepted": true,
+      "reasons": [
+        "example"
+      ]
+    }
+  },
+  "events": [
+    {
+      "agent_id": "example",
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    }
+  ],
+  "scenario_id": "example",
+  "schema_version": "bb.coordination_reference_slice.v1",
+  "subscription_id": "example",
+  "supervisor_decision": {
+    "decision": "example",
+    "job_id": "example",
+    "mission_completed": true,
+    "source_task_id": "example",
+    "subscription_id": "example",
+    "supervisor_task_id": "example",
+    "trigger_code": "example",
+    "trigger_signal_id": "example"
+  },
+  "supervisor_task_id": "example",
+  "wakeup_payload": {
+    "agent_id": "example",
+    "job_id": "example",
+    "reason": "example",
+    "source_task_id": "example",
+    "subscription_id": "example",
+    "trigger_code": "example",
+    "trigger_signal_id": "example"
+  },
+  "worker_task_id": "example"
+}

@@ -1,0 +1,271 @@
+{
+  "schema_version": "bb.registry.v1",
+  "registry_id": "kernel_families",
+  "entries": [
+    {
+      "id": "run_request",
+      "status": "active",
+      "description": "Run request contract family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.run_request.v1"
+        ]
+      }
+    },
+    {
+      "id": "run_context",
+      "status": "active",
+      "description": "Run context contract family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.run_context.v1"
+        ]
+      }
+    },
+    {
+      "id": "backbone_api",
+      "status": "reserved",
+      "description": "Backbone API family reserved until a machine-readable schema is introduced.",
+      "metadata": {
+        "schema_versions": []
+      }
+    },
+    {
+      "id": "kernel_event_log",
+      "status": "active",
+      "description": "Kernel event log contract family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.kernel_event.v1",
+          "bb.kernel_event.v2"
+        ]
+      }
+    },
+    {
+      "id": "session_transcript_snapshot",
+      "status": "active",
+      "description": "Session/transcript snapshot contract family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.session_transcript.v1",
+          "bb.session_transcript.v2"
+        ]
+      }
+    },
+    {
+      "id": "provider_exchange_ir",
+      "status": "active",
+      "description": "Provider exchange intermediate representation family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.provider_exchange.v1",
+          "bb.provider_route.v1"
+        ]
+      }
+    },
+    {
+      "id": "support_claim",
+      "status": "active",
+      "description": "Evidence-backed support claim family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.support_claim.v1",
+          "bb.e4.support_claim.v2",
+          "bb.tool_support_claim.v1"
+        ]
+      }
+    },
+    {
+      "id": "projection_profile",
+      "status": "reserved",
+      "description": "Projection profile family reserved until a dedicated schema exists.",
+      "metadata": {
+        "schema_versions": []
+      }
+    },
+    {
+      "id": "workspace_layer_artifact_shaping",
+      "status": "reserved",
+      "description": "Workspace layer and artifact shaping family reserved until a dedicated schema exists.",
+      "metadata": {
+        "schema_versions": []
+      }
+    },
+    {
+      "id": "host_kit_boundaries",
+      "status": "reserved",
+      "description": "Host-kit boundaries family reserved until a dedicated schema exists.",
+      "metadata": {
+        "schema_versions": []
+      }
+    },
+    {
+      "id": "tool_lifecycle",
+      "status": "active",
+      "description": "Tool specification, call, and execution lifecycle family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.tool_spec.v1",
+          "bb.tool_spec.v2",
+          "bb.tool_call.v1",
+          "bb.tool_call.v2",
+          "bb.tool_execution_outcome.v1",
+          "bb.tool_execution_outcome.v2",
+          "bb.tool_binding.v1"
+        ]
+      }
+    },
+    {
+      "id": "tool_render",
+      "status": "active",
+      "description": "Tool model-render family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.tool_model_render.v1",
+          "bb.tool_model_render.v2"
+        ]
+      }
+    },
+    {
+      "id": "permission_approval_guardrail",
+      "status": "active",
+      "description": "Permission, approval, and guardrail record family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.permission.v1",
+          "bb.effective_operation_policy.v1"
+        ]
+      }
+    },
+    {
+      "id": "middleware_hook_lifecycle",
+      "status": "active",
+      "description": "Middleware and hook lifecycle family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.extension_hook_execution.v1"
+        ]
+      }
+    },
+    {
+      "id": "task_subagent_background_task",
+      "status": "active",
+      "description": "Task, subagent, and background task family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.task.v1",
+          "bb.distributed_task_descriptor.v1",
+          "bb.wake_subscription.v1",
+          "bb.signal.v1",
+          "bb.work_item.v1"
+        ]
+      }
+    },
+    {
+      "id": "checkpoint_longrun_state",
+      "status": "active",
+      "description": "Checkpoint and longrun state family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.checkpoint_metadata.v1",
+          "bb.terminal_session_descriptor.v1",
+          "bb.terminal_session_end.v1"
+        ]
+      }
+    },
+    {
+      "id": "execution_capability_placement",
+      "status": "active",
+      "description": "Execution capability and placement family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.execution_capability.v1",
+          "bb.execution_placement.v1"
+        ]
+      }
+    },
+    {
+      "id": "execution_driver_policy_evidence",
+      "status": "reserved",
+      "description": "Execution driver policy and evidence expectations family reserved until a dedicated schema exists.",
+      "metadata": {
+        "schema_versions": []
+      }
+    },
+    {
+      "id": "sandbox_request_result",
+      "status": "active",
+      "description": "Sandbox request/result family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.sandbox_request.v1",
+          "bb.sandbox_result.v1"
+        ]
+      }
+    },
+    {
+      "id": "distributed_task_descriptor",
+      "status": "active",
+      "description": "Distributed task descriptor family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.distributed_task_descriptor.v1"
+        ]
+      }
+    },
+    {
+      "id": "transcript_continuation_patch",
+      "status": "active",
+      "description": "Transcript continuation patch family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.transcript_continuation_patch.v1"
+        ]
+      }
+    },
+    {
+      "id": "unsupported_case_taxonomy",
+      "status": "active",
+      "description": "Unsupported-case taxonomy family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.unsupported_case.v1"
+        ]
+      }
+    },
+    {
+      "id": "replay_session",
+      "status": "active",
+      "description": "Replay session family.",
+      "metadata": {
+        "schema_versions": [
+          "bb.replay_session.v1"
+        ]
+      }
+    },
+    {
+      "id": "conformance_evidence",
+      "status": "reserved",
+      "description": "Conformance evidence family reserved until a dedicated schema exists.",
+      "metadata": {
+        "schema_versions": []
+      }
+    },
+    {
+      "id": "import_export_session",
+      "status": "reserved",
+      "description": "Import/export session family reserved until a dedicated schema exists.",
+      "metadata": {
+        "schema_versions": []
+      }
+    },
+    {
+      "id": "projection_adapter_boundaries",
+      "status": "reserved",
+      "description": "Projection adapter boundaries family reserved until a dedicated schema exists.",
+      "metadata": {
+        "schema_versions": []
+      }
+    }
+  ]
+}

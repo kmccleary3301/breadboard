@@ -1,0 +1,108 @@
+{
+  "schema_version": "bb.coordination_slice.v2",
+  "slice_id": "coordination-slice-1",
+  "slice_kind": "delegated_verification",
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "participants": [
+    {
+      "actor_kind": "subagent",
+      "actor_id": "worker-1"
+    }
+  ],
+  "records": {
+    "signals": [
+      {
+        "schema_version": "bb.signal.v1",
+        "signal_id": "signal-1",
+        "code": "complete",
+        "task_id": "worker-task-1",
+        "authority_scope": "task",
+        "status": "accepted",
+        "source": {
+          "kind": "worker",
+          "emitter_role": "worker"
+        },
+        "evidence_refs": [
+          "artifacts/coordination/worker-output.json"
+        ],
+        "payload": {
+          "result": "done"
+        }
+      }
+    ],
+    "review_verdicts": [
+      {
+        "schema_version": "bb.review_verdict.v1",
+        "verdict_id": "verdict-1",
+        "reviewer_task_id": "supervisor-task-1",
+        "reviewer_role": "supervisor",
+        "subject": {
+          "kind": "signal",
+          "signal_id": "signal-1",
+          "signal_code": "complete",
+          "source_task_id": "worker-task-1"
+        },
+        "verdict_code": "validated",
+        "mission_completed": true,
+        "required_deliverable_refs": [
+          "artifacts/coordination/worker-output.json"
+        ],
+        "deliverable_refs": [
+          "artifacts/coordination/worker-output.json"
+        ],
+        "missing_deliverable_refs": [],
+        "signal_evidence_refs": [
+          "artifacts/coordination/worker-output.json"
+        ],
+        "metadata": {}
+      }
+    ],
+    "directives": [
+      {
+        "schema_version": "bb.directive.v1",
+        "directive_id": "directive-1",
+        "directive_code": "continue",
+        "issuer_task_id": "supervisor-task-1",
+        "issuer_role": "supervisor",
+        "target_task_id": "worker-task-1",
+        "based_on_verdict_id": "verdict-1",
+        "based_on_signal_id": "signal-1",
+        "payload": {},
+        "evidence_refs": [
+          "artifacts/coordination/worker-output.json"
+        ],
+        "metadata": {}
+      }
+    ],
+    "wake_subscriptions": [
+      {
+        "schema_version": "bb.wake_subscription.v1",
+        "subscription_id": "subscription-1",
+        "on_codes": [
+          "complete"
+        ],
+        "action": "resume"
+      }
+    ],
+    "tasks": [
+      {
+        "schema_version": "bb.task.v1",
+        "task_id": "worker-task-1",
+        "kind": "subagent",
+        "status": "complete"
+      }
+    ],
+    "verification_results": [
+      {
+        "schema_version": "bb.coordination_verification_result.v1",
+        "subject_signal_id": "signal-1",
+        "subject_task_id": "worker-task-1",
+        "validator_task_id": "verifier-task-1",
+        "status": "pass",
+        "verification_artifact_refs": [
+          "artifacts/coordination/verification.json"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "schema_version": "bb.e4.support_claim.v3",
+  "claim_id": "example_support_claim_v3",
+  "config_id": "example_config_v1",
+  "lane_id": "example_lane_v1",
+  "kind": "target_support",
+  "accepted": false,
+  "summary": "Minimal support-claim v3 fixture for schema validation.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@example",
+  "run_id": "example_run_20260703",
+  "provider_model": "no-provider",
+  "sandbox_mode": "read-only",
+  "scope": {
+    "config_id": "example_config_v1",
+    "lane_id": "example_lane_v1",
+    "run_id": "example_run_20260703",
+    "target_version": "@oh-my-pi/pi-coding-agent@example",
+    "provider_model": "no-provider",
+    "sandbox_mode": "read-only"
+  },
+  "exclusions": [
+    "No production C4 claim is asserted by this schema fixture."
+  ],
+  "exclusion_facets": {
+    "excluded_families": [
+      "all_other_families"
+    ],
+    "excluded_lanes": [],
+    "excluded_sandbox_modes": [],
+    "excluded_provider_modes": [],
+    "excluded_behavior_classes": [
+      "broad_target_parity"
+    ]
+  },
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "example_behavior",
+        "description": "Example behavior only.",
+        "comparator_assertion_ids": [
+          "example_assertion"
+        ]
+      }
+    ]
+  },
+  "freeze_ref": "docs/conformance/example.json#example_config_v1#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "capture_ref": "docs/conformance/example.json#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "replay_ref": "docs/conformance/example.json#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "comparator_ref": "docs/conformance/example.json#sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "evidence_manifest_ref": "docs/conformance/support_claims/example_v3_c4_evidence_manifest.json",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#example_feature#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "validation_refs": [
+    "docs/conformance/example.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  ],
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "segment_id": "example_lane_v1",
+    "segment_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "shared_segment_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "reverify_command": {
+    "argv": [
+      "python",
+      "scripts/validate_e4_c4_chain.py",
+      "--check-only",
+      "example_support_claim_v3"
+    ],
+    "cwd": "."
+  },
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "metadata": {
+    "fixture": true
+  }
+}

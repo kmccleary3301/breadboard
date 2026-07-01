@@ -1,0 +1,19 @@
+{
+  "frozen_target_versions": [
+    "example"
+  ],
+  "generated_at_utc": "example",
+  "rows": [
+    {
+      "behavior_family": "config_graph",
+      "behavior_id": "example",
+      "claim_refs": [
+        "example"
+      ],
+      "description": "example",
+      "status": "not_started"
+    }
+  ],
+  "schema_version": "bb.e4.target_coverage.v1",
+  "target_family": "pi"
+}

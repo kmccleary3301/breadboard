@@ -1,0 +1,16 @@
+{
+  "schema_version": "bb.tool_model_render.v2",
+  "call_id": "call-1",
+  "parts": [
+    {
+      "part_kind": "text",
+      "content": "ok"
+    }
+  ],
+  "visibility": {
+    "model_visible": true,
+    "provider_visible": true,
+    "host_visible": true,
+    "redaction_state": "none"
+  }
+}

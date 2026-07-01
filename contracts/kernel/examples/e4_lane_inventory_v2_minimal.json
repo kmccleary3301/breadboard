@@ -1,0 +1,39 @@
+{
+  "schema_version": "bb.e4.lane_inventory.v2",
+  "inventory_id": "e4_lane_inventory_v2_example",
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "revision": 1,
+  "lanes": [
+    {
+      "lane_id": "example_lane_v2",
+      "config_id": "example_config_v2",
+      "claim_id": null,
+      "phase": "P0",
+      "kind": "target_support",
+      "status": "planned",
+      "points": 0,
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@example",
+      "run_id": "example_run_20260703",
+      "provider_model": "no-provider",
+      "sandbox_mode": "read-only",
+      "lane_def_ref": "docs/conformance/lane_defs/example_lane_v2.json",
+      "primitives": [
+        "bb.effective_config_graph.v1"
+      ],
+      "builder": null,
+      "comparator_id": "example_hash_only_legacy",
+      "ct": null,
+      "artifact_roles": {
+        "capture": "example_lane_capture"
+      },
+      "ledger_feature_ids": [],
+      "score_row_id": null,
+      "blocked_reason": "fixture only",
+      "reverify_command": null,
+      "metadata": {
+        "fixture": true
+      }
+    }
+  ]
+}

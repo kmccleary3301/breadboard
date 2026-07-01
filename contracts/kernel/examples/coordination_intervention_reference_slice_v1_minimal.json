@@ -1,0 +1,77 @@
+{
+  "events": [
+    {
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    },
+    {
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    },
+    {
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    },
+    {
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    },
+    {
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    }
+  ],
+  "host_directive": {
+    "directive_code": "continue",
+    "directive_id": "example",
+    "issuer_role": "host",
+    "schema_version": "bb.directive.v1",
+    "target_task_id": "example"
+  },
+  "resolved_interventions_after": [
+    {
+      "host_responses": [
+        "example"
+      ],
+      "intervention_id": "example",
+      "review_verdict_id": "example",
+      "status": "resolved"
+    }
+  ],
+  "review_verdict": {
+    "schema_version": "bb.review_verdict.v1",
+    "subject": {},
+    "verdict_code": "human_required",
+    "verdict_id": "example"
+  },
+  "scenario_id": "example",
+  "schema_version": "bb.coordination_intervention_reference_slice.v1",
+  "signal": {
+    "code": "human_required",
+    "schema_version": "bb.signal.v1",
+    "signal_id": "example",
+    "status": "accepted",
+    "task_id": "example"
+  },
+  "supervisor_directive": {
+    "directive_code": "escalate",
+    "directive_id": "example",
+    "issuer_role": "supervisor",
+    "schema_version": "bb.directive.v1",
+    "target_task_id": "example"
+  },
+  "supervisor_task_id": "example",
+  "unresolved_interventions_before": [
+    {
+      "intervention_id": "example",
+      "review_verdict_id": "example",
+      "status": "pending"
+    }
+  ],
+  "worker_task_id": "example"
+}

@@ -1,0 +1,21 @@
+{
+  "schema_version": "bb.kernel_event.v2",
+  "event_id": "event-1",
+  "run_id": "run-1",
+  "session_id": "session-1",
+  "seq": 0,
+  "occurred_at_utc": "2026-07-03T00:00:00Z",
+  "actor": {
+    "actor_kind": "system",
+    "actor_id": "kernel"
+  },
+  "visibility": {
+    "model_visible": true,
+    "provider_visible": true,
+    "host_visible": true,
+    "redaction_state": "none"
+  },
+  "kind": "turn.started",
+  "payload": {},
+  "payload_schema_version": null
+}

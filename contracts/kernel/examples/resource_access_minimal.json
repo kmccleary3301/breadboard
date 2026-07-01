@@ -1,0 +1,93 @@
+{
+  "schema_version": "bb.resource_access.v1",
+  "access_id": "access_workspace_main",
+  "resource": {
+    "schema_version": "bb.resource_ref.v1",
+    "uri": "file:///workspace/src/main.py?rev=abc123#L10",
+    "scheme": "file",
+    "resolver_id": "resolver_workspace",
+    "authority": "",
+    "path": "/workspace/src/main.py",
+    "query_hash": "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+    "fragment": "L10",
+    "scope": {
+      "scope_id": "workspace_default",
+      "kind": "workspace",
+      "boundary": "/workspace"
+    },
+    "visibility": "model_visible",
+    "immutability": {
+      "mode": "snapshot",
+      "content_hash": "sha256:3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
+    },
+    "retention": {
+      "policy": "project",
+      "expires_at": null
+    },
+    "containment": {
+      "root_uri": "file:///workspace",
+      "parent_uri": "file:///workspace/src",
+      "relationship": "descendant"
+    }
+  },
+  "operation": "read",
+  "status": "completed",
+  "content_hash": "sha256:3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+  "blob_refs": [
+    {
+      "schema_version": "bb.blob_ref.v1",
+      "blob_id": "blob_workspace_main_snapshot",
+      "digest": {
+        "algorithm": "sha256",
+        "value": "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
+      },
+      "media_type": "text/x-python",
+      "size_bytes": 42,
+      "storage": {
+        "storage_class": "content_addressed",
+        "uri": "bb+blob://sha256/3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+        "resolver_id": "resolver_blob_store",
+        "encrypted_at_rest": true
+      },
+      "retention": {
+        "policy": "project",
+        "expires_at": null,
+        "legal_hold": false
+      },
+      "sidecars": [
+        {
+          "sidecar_id": "sidecar_workspace_main_manifest",
+          "kind": "hash_manifest",
+          "digest": {
+            "algorithm": "sha256",
+            "value": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
+          },
+          "media_type": "application/json",
+          "size_bytes": 128,
+          "uri": "bb+blob://sha256/3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7/sidecars/hash_manifest.json"
+        }
+      ]
+    }
+  ],
+  "truncation": {
+    "truncated": false,
+    "original_size_bytes": 42,
+    "returned_size_bytes": 42,
+    "strategy": null
+  },
+  "redaction": {
+    "redacted": false,
+    "policy_ids": [],
+    "redaction_refs": []
+  },
+  "approval": {
+    "required": false,
+    "status": "not_required",
+    "approval_id": null,
+    "approver": null
+  },
+  "model_provider_visibility": {
+    "model_visible": true,
+    "provider_visible": false
+  }
+}

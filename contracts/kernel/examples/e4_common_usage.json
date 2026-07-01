@@ -1,0 +1,44 @@
+{
+  "artifact_ref": {
+    "bytes": 0,
+    "media_type": "application/json",
+    "path": "docs/conformance/example.json",
+    "role_id": "example_role",
+    "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "catalog_snapshot_ref": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 0,
+    "segment_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "segment_id": "example_segment",
+    "shared_segment_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "e4_scope": {
+    "config_id": "example_config",
+    "extra": {
+      "note": "usage fixture for bb.e4.common.v1 definitions"
+    },
+    "lane_id": "example_lane",
+    "provider_model": "no-provider",
+    "run_id": "20260708_example_run",
+    "sandbox_mode": "deterministic",
+    "target_family": "breadboard",
+    "target_version": "example target 1.0"
+  },
+  "provenance": {
+    "source_paths": [
+      "docs/conformance/example.json"
+    ],
+    "upstream_commit": "abcdef0",
+    "upstream_commit_date": "2026-07-03T00:00:00Z",
+    "upstream_release_label": "example-release",
+    "upstream_repo": "local://breadboard"
+  },
+  "typed_assertion": {
+    "description": "example assertion passes",
+    "id": "example_assertion",
+    "op": "equals",
+    "path": "ok",
+    "value": true
+  }
+}

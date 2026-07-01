@@ -1,0 +1,6 @@
+{
+  "schema_version": "bb.tool_execution_outcome.v2",
+  "call_id": "call-1",
+  "terminal_state": "completed",
+  "completed_at_utc": "2026-07-03T00:00:00Z"
+}

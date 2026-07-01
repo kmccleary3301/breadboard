@@ -1,0 +1,29 @@
+{
+  "schema_version": "bb.resource_ref.v1",
+  "uri": "file:///workspace/src/main.py?rev=abc123#L10",
+  "scheme": "file",
+  "resolver_id": "resolver_workspace",
+  "authority": "",
+  "path": "/workspace/src/main.py",
+  "query_hash": "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+  "fragment": "L10",
+  "scope": {
+    "scope_id": "workspace_default",
+    "kind": "workspace",
+    "boundary": "/workspace"
+  },
+  "visibility": "model_visible",
+  "immutability": {
+    "mode": "snapshot",
+    "content_hash": "sha256:3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
+  },
+  "retention": {
+    "policy": "project",
+    "expires_at": null
+  },
+  "containment": {
+    "root_uri": "file:///workspace",
+    "parent_uri": "file:///workspace/src",
+    "relationship": "descendant"
+  }
+}
