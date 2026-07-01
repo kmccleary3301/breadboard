@@ -1,0 +1,22 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.effective_tool_surface.v1",
+  "fixture_family": "effective_tool_surface",
+  "fixture_id": "effective_tool_surface_invalid_missing_surface_id",
+  "invalid_reason": "Removes required reference_output field 'surface_id' from bb.effective_tool_surface.v1.",
+  "reference_output": {
+    "binding_ids": [
+      "bind_cuda_profile_default",
+      "bind_firecrawl_service_default"
+    ],
+    "hidden_tool_ids": [],
+    "projection_profile_id": "host_callbacks",
+    "schema_version": "bb.effective_tool_surface.v1",
+    "tool_ids": [
+      "cuda.profile.capture",
+      "firecrawl.search"
+    ]
+  },
+  "source_fixture": "effective_tool_surface/minimal_fixture.json",
+  "support_tier": "draft-shape"
+}

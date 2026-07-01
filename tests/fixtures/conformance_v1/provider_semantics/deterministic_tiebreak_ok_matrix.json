@@ -1,0 +1,24 @@
+{
+  "candidates": [
+    {
+      "provider_id": "provider_gamma",
+      "score": 9
+    },
+    {
+      "provider_id": "provider_beta",
+      "score": 10
+    },
+    {
+      "provider_id": "provider_delta",
+      "score": 8
+    },
+    {
+      "provider_id": "provider_epsilon",
+      "score": 7
+    }
+  ],
+  "expected_output": {
+    "actual_winner": "provider_beta",
+    "candidate_count": 4
+  }
+}

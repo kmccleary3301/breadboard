@@ -1,0 +1,43 @@
+{
+  "conflicts": [
+    {
+      "blocking": true,
+      "id": "c1",
+      "resolved": false
+    },
+    {
+      "blocking": false,
+      "id": "c2",
+      "resolved": true
+    }
+  ],
+  "expected_output": {
+    "blocking_conflict_count": 1,
+    "conflict_count": 2,
+    "duplicate_key_count": 0,
+    "error_count": 0,
+    "pending_total": 4,
+    "resolved_conflict_count": 1,
+    "safe_reload_allowed": false,
+    "safe_reload_attempted": true,
+    "safe_reload_blocked": true,
+    "session_pending_count": 1,
+    "task_bucket_count": 2,
+    "unresolved_conflict_count": 1
+  },
+  "safe_reload_allowed": false,
+  "safe_reload_attempted": true,
+  "safe_reload_blocked": true,
+  "session_pending": [
+    "s1"
+  ],
+  "task_buckets": {
+    "t1": [
+      "a",
+      "b"
+    ],
+    "t2": [
+      "c"
+    ]
+  }
+}

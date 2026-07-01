@@ -1,0 +1,11 @@
+{
+  "decision": "deny",
+  "expected_output": {
+    "decision": "deny",
+    "expired": true
+  },
+  "request": {
+    "approval_id": "ap-1",
+    "expired": true
+  }
+}

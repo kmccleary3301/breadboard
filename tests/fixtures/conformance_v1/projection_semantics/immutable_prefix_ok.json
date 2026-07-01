@@ -1,0 +1,14 @@
+{
+  "base_events": [
+    "a",
+    "b",
+    "c"
+  ],
+  "prefix_length": 3,
+  "replayed_events": [
+    "a",
+    "b",
+    "c",
+    "d"
+  ]
+}

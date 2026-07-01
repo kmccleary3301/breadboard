@@ -1,0 +1,57 @@
+{
+  "fixture_family": "coordination",
+  "fixture_id": "coordination_minimal",
+  "comparator_class": "shape-equal",
+  "support_tier": "draft-shape",
+  "contract": "bb.coordination_reference_slice.v1",
+  "reference_output": {
+    "schema_version": "bb.coordination_reference_slice.v1",
+    "scenario_id": "coordination_minimal",
+    "supervisor_task_id": "task_supervisor_min",
+    "worker_task_id": "task_worker_min",
+    "subscription_id": "sub_worker_complete_min",
+    "accepted_signal": {
+      "schema_version": "bb.signal.v1",
+      "signal_id": "signal_worker_complete_min",
+      "code": "complete",
+      "task_id": "task_worker_min",
+      "status": "accepted",
+      "validation": {
+        "accepted": true,
+        "reasons": [
+          "minimal_signal_valid"
+        ]
+      }
+    },
+    "wakeup_payload": {
+      "job_id": "job_supervisor_min",
+      "agent_id": "supervisor_min",
+      "reason": "signal_complete",
+      "subscription_id": "sub_worker_complete_min",
+      "trigger_signal_id": "signal_worker_complete_min",
+      "trigger_code": "complete",
+      "source_task_id": "task_worker_min"
+    },
+    "supervisor_decision": {
+      "job_id": "job_supervisor_min",
+      "supervisor_task_id": "task_supervisor_min",
+      "subscription_id": "sub_worker_complete_min",
+      "trigger_signal_id": "signal_worker_complete_min",
+      "trigger_code": "complete",
+      "source_task_id": "task_worker_min",
+      "decision": "mission_complete_validated",
+      "mission_completed": true
+    },
+    "events": [
+      {
+        "event_id": 1,
+        "type": "agent.signal.accepted",
+        "agent_id": "supervisor_min",
+        "payload": {
+          "signal_id": "signal_worker_complete_min",
+          "task_id": "task_worker_min"
+        }
+      }
+    ]
+  }
+}

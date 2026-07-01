@@ -1,0 +1,36 @@
+{
+  "backend": "feature_file",
+  "expected": {
+    "actual_backend": "feature_file",
+    "actual_episode_file_count": 3,
+    "actual_open_count": 1,
+    "actual_run3_stop_reason": "episode_completed",
+    "actual_state_queue_matches_sidecar": true,
+    "actual_summary_queue_matches_sidecar": true,
+    "actual_summary_state_stop_reason_consistent": true
+  },
+  "queue": [
+    {
+      "id": "closed",
+      "status": "closed"
+    },
+    {
+      "id": "open",
+      "status": "open"
+    }
+  ],
+  "run3": {
+    "stop_reason": "episode_completed"
+  },
+  "schema_version": "bb.ct.longrun.queue_backend_trace_coherence.fixture.v1",
+  "trace": {
+    "episode_files": [
+      "episode_1.json",
+      "episode_2.json",
+      "episode_3.json"
+    ],
+    "state_queue_matches_sidecar": true,
+    "summary_queue_matches_sidecar": true,
+    "summary_state_stop_reason_consistent": true
+  }
+}

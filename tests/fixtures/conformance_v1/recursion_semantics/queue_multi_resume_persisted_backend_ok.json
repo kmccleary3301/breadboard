@@ -1,0 +1,30 @@
+{
+  "backend": "feature_file",
+  "expected": {
+    "actual_backend": "feature_file",
+    "actual_open_count": 1,
+    "actual_run1_stop_reason": "max_episodes_reached",
+    "actual_run2_stop_reason": "max_episodes_reached",
+    "actual_run3_stop_reason": "episode_completed"
+  },
+  "queue": [
+    {
+      "id": "closed",
+      "status": "closed"
+    },
+    {
+      "id": "open",
+      "status": "open"
+    }
+  ],
+  "run1": {
+    "stop_reason": "max_episodes_reached"
+  },
+  "run2": {
+    "stop_reason": "max_episodes_reached"
+  },
+  "run3": {
+    "stop_reason": "episode_completed"
+  },
+  "schema_version": "bb.ct.longrun.queue_multi_resume_persisted_backend.fixture.v1"
+}

@@ -1,0 +1,7 @@
+queued:
+  - running
+  - cancelled
+running:
+  - completed
+  - failed
+  - cancelled

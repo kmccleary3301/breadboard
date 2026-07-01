@@ -1,0 +1,16 @@
+{
+  "conflicts": [],
+  "expected_output": {
+    "blocking_conflict_count": 0,
+    "error_count": 0,
+    "safe_reload_allowed": true,
+    "safe_reload_attempted": true,
+    "safe_reload_blocked": false,
+    "unresolved_conflict_count": 0
+  },
+  "safe_reload_allowed": true,
+  "safe_reload_attempted": true,
+  "safe_reload_blocked": false,
+  "session_pending": [],
+  "task_buckets": {}
+}

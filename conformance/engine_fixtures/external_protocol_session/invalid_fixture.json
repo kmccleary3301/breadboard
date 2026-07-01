@@ -1,0 +1,66 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.external_protocol_session.v1",
+  "fixture_family": "external_protocol_session",
+  "fixture_id": "external_protocol_session_invalid_required_contract",
+  "notes": "Invalid external_protocol_session fixture proving schema rejection.",
+  "reference_output": {
+    "auth_scope": {
+      "credential_ref": "secret://protocol/mcp/session-token",
+      "method_ref": "auth-method://mcp/oauth-client",
+      "provider_visible": false,
+      "scope_id": "scope_mcp_read_tools",
+      "scopes": [
+        "tools.read",
+        "resources.read"
+      ]
+    },
+    "bindings": [
+      {
+        "binding_id": "binding_mcp_search_tool",
+        "binding_kind": "tool",
+        "model_visible": true,
+        "provider_visible": false,
+        "target_ref": "tool://mcp/search"
+      }
+    ],
+    "endpoint_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "errors": [],
+    "evidence_refs": [
+      "evidence://protocol/mcp/session-opened"
+    ],
+    "link_refs": [
+      "link://external/mcp/search-result-001"
+    ],
+    "protocol": "smtp",
+    "schema_version": "bb.external_protocol_session.v1",
+    "session_id": "external_protocol_mcp_001",
+    "session_window": {
+      "expires_at": "2026-06-27T01:00:00Z",
+      "renewable": true,
+      "started_at": "2026-06-27T00:00:00Z",
+      "ttl_seconds": 3600,
+      "window_id": "window_mcp_001"
+    },
+    "status": "active",
+    "transcript_refs": [
+      "transcript://external/mcp/session-001"
+    ],
+    "visibility": {
+      "host_only_refs": [
+        "auth_scope.credential_ref",
+        "endpoint_hash"
+      ],
+      "model_visible": true,
+      "model_visible_refs": [
+        "binding_mcp_search_tool"
+      ],
+      "provider_visible": false,
+      "provider_visible_refs": [],
+      "redacted_refs": [
+        "credential_material"
+      ]
+    }
+  },
+  "support_tier": "draft-shape"
+}

@@ -1,0 +1,45 @@
+{
+  "fixture_family": "context_resource_pack",
+  "fixture_id": "context_resource_pack_invalid_empty_render_order",
+  "comparator_class": "shape-equal",
+  "support_tier": "draft-shape",
+  "contract": "bb.context_resource_pack.v1",
+  "invalid_reason": "render_order must include the declared context sources",
+  "reference_output": {
+    "schema_version": "bb.context_resource_pack.v1",
+    "pack_id": "ctx_pack_invalid_empty_render_order",
+    "sources": [
+      {
+        "source_id": "system_base",
+        "source_kind": "system-prompt",
+        "uri": "kernel://prompts/system_base",
+        "content_hash": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "order": 0,
+        "model_visible": true,
+        "host_visible": true
+      },
+      {
+        "source_id": "project_instructions",
+        "source_kind": "project-file",
+        "uri": "workspace://.github/copilot-instructions.md",
+        "content_hash": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+        "order": 10,
+        "model_visible": true,
+        "host_visible": true
+      }
+    ],
+    "render_order": [],
+    "render_plan_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "model_visibility": {
+      "visible_source_ids": ["system_base", "project_instructions"],
+      "redacted_source_ids": []
+    },
+    "host_visibility": {
+      "visible_source_ids": ["system_base", "project_instructions"],
+      "hidden_source_ids": []
+    },
+    "metadata": {
+      "render_profile": "minimal"
+    }
+  }
+}

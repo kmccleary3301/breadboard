@@ -1,0 +1,103 @@
+{
+  "comparatorClass": "shape-equal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.resource_access.v1",
+  "fixture_family": "resource_access",
+  "fixture_id": "resource_access_invalid_required_contract",
+  "notes": "Invalid resource_access fixture proving schema rejection.",
+  "reference_output": {
+    "access_id": "access_workspace_main",
+    "approval": {
+      "approval_id": null,
+      "approver": null,
+      "required": false,
+      "status": "not_required"
+    },
+    "blob_refs": [
+      {
+        "blob_id": "blob_workspace_main_snapshot",
+        "digest": {
+          "algorithm": "sha256",
+          "value": "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
+        },
+        "media_type": "text/x-python",
+        "retention": {
+          "expires_at": null,
+          "legal_hold": false,
+          "policy": "project"
+        },
+        "schema_version": "bb.blob_ref.v1",
+        "sidecars": [
+          {
+            "digest": {
+              "algorithm": "sha256",
+              "value": "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4"
+            },
+            "kind": "hash_manifest",
+            "media_type": "application/json",
+            "sidecar_id": "sidecar_workspace_main_manifest",
+            "size_bytes": 128,
+            "uri": "bb+blob://sha256/3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7/sidecars/hash_manifest.json"
+          }
+        ],
+        "size_bytes": 42,
+        "storage": {
+          "encrypted_at_rest": true,
+          "resolver_id": "resolver_blob_store",
+          "storage_class": "content_addressed",
+          "uri": "bb+blob://sha256/3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
+        }
+      }
+    ],
+    "content_hash": "sha256:3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+    "model_provider_visibility": {
+      "model_visible": true,
+      "provider_visible": false
+    },
+    "operation": "execute",
+    "redaction": {
+      "policy_ids": [],
+      "redacted": false,
+      "redaction_refs": []
+    },
+    "resource": {
+      "authority": "",
+      "containment": {
+        "parent_uri": "file:///workspace/src",
+        "relationship": "descendant",
+        "root_uri": "file:///workspace"
+      },
+      "fragment": "L10",
+      "immutability": {
+        "content_hash": "sha256:3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+        "mode": "snapshot"
+      },
+      "path": "/workspace/src/main.py",
+      "query_hash": "sha256:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      "resolver_id": "resolver_workspace",
+      "retention": {
+        "expires_at": null,
+        "policy": "project"
+      },
+      "schema_version": "bb.resource_ref.v1",
+      "scheme": "file",
+      "scope": {
+        "boundary": "/workspace",
+        "kind": "workspace",
+        "scope_id": "workspace_default"
+      },
+      "uri": "file:///workspace/src/main.py?rev=abc123#L10",
+      "visibility": "model_visible"
+    },
+    "schema_version": "bb.resource_access.v1",
+    "status": "completed",
+    "truncation": {
+      "original_size_bytes": 42,
+      "returned_size_bytes": 42,
+      "strategy": null,
+      "truncated": false
+    }
+  },
+  "supportTier": "draft-shape",
+  "support_tier": "draft-shape"
+}

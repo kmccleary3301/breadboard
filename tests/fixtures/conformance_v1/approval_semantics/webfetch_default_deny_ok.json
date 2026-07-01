@@ -1,0 +1,7 @@
+{
+  "denied": true,
+  "expected_output": {
+    "denied": true,
+    "violation_count": 0
+  }
+}

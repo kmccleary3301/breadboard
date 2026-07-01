@@ -1,0 +1,12 @@
+{
+  "decisions": [
+    {
+      "approval_id": "ap-1",
+      "decision": "allow"
+    }
+  ],
+  "expected_output": {
+    "conflict_count": 0,
+    "decision_count": 1
+  }
+}

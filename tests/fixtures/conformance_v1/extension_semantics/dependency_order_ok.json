@@ -1,0 +1,22 @@
+{
+  "expected_output": {
+    "actual_order": [
+      "alpha",
+      "beta"
+    ],
+    "error_count": 0,
+    "spec_count": 2
+  },
+  "specs": [
+    {
+      "after": [
+        "alpha"
+      ],
+      "id": "beta"
+    },
+    {
+      "after": [],
+      "id": "alpha"
+    }
+  ]
+}

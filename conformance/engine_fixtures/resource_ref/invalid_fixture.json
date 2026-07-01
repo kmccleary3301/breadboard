@@ -1,0 +1,39 @@
+{
+  "comparatorClass": "shape-equal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.resource_ref.v1",
+  "fixture_family": "resource_ref",
+  "fixture_id": "resource_ref_invalid_required_contract",
+  "notes": "Invalid resource_ref fixture proving schema rejection.",
+  "reference_output": {
+    "authority": "",
+    "containment": {
+      "parent_uri": "file:///workspace/src",
+      "relationship": "descendant",
+      "root_uri": "file:///workspace"
+    },
+    "fragment": "L10",
+    "immutability": {
+      "content_hash": "sha256:3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+      "mode": "snapshot"
+    },
+    "path": "/workspace/src/main.py",
+    "query_hash": "not-a-sha",
+    "resolver_id": "resolver_workspace",
+    "retention": {
+      "expires_at": null,
+      "policy": "project"
+    },
+    "schema_version": "bb.resource_ref.v1",
+    "scheme": "file",
+    "scope": {
+      "boundary": "/workspace",
+      "kind": "workspace",
+      "scope_id": "workspace_default"
+    },
+    "uri": "file:///workspace/src/main.py?rev=abc123#L10",
+    "visibility": "model_visible"
+  },
+  "supportTier": "draft-shape",
+  "support_tier": "draft-shape"
+}
