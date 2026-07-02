@@ -33,6 +33,12 @@ import {
   resolveToolBindings,
 } from "../src/index.js"
 
+function expectRecord(value: unknown, label: string): Record<string, unknown> {
+  assert.equal(value !== null && typeof value === "object" && !Array.isArray(value), true, `${label} must be an object`)
+  return value as Record<string, unknown>
+}
+
+
 test("kernel core helpers remain deterministic", () => {
   assert.equal(buildKernelEventId("run-1", 7), "run-1:evt:7")
 
@@ -784,25 +790,29 @@ test("kernel core can execute a constrained scripted tool turn", () => {
   const result = executeScriptedToolTurn(request, {
     sessionId: "sess-tool-1",
     toolCall: {
-      schemaVersion: "bb.tool_call.v1",
-      callId: "call-1",
-      toolName: "calculator",
+      schema_version: "bb.tool_call.v2",
+      call_id: "call-1",
+      tool_name: "calculator",
       args: { expression: "2+2" },
       state: "completed",
-      taskId: "task-1",
+      requested_at_utc: "2026-03-08T00:00:00Z",
+      actor: { actor_kind: "host", actor_id: "test" },
+      visibility: { model_visible: true, provider_visible: true, host_visible: true },
+      task_id: "task-1",
     },
     toolOutcome: {
-      schemaVersion: "bb.tool_execution_outcome.v1",
-      callId: "call-1",
-      terminalState: "completed",
+      schema_version: "bb.tool_execution_outcome.v2",
+      call_id: "call-1",
+      terminal_state: "completed",
+      completed_at_utc: "2026-03-08T00:00:01Z",
       result: { value: 4 },
       metadata: { tool: "calculator" },
     },
     toolRender: {
-      schemaVersion: "bb.tool_model_render.v1",
-      callId: "call-1",
-      parts: [{ tool: "calculator", preview: "4", status: "ok" }],
-      visibility: "model",
+      schema_version: "bb.tool_model_render.v2",
+      call_id: "call-1",
+      parts: [{ part_kind: "text", content: "4", truncated: false }],
+      visibility: { model_visible: true, provider_visible: true, host_visible: true },
       metadata: { tool: "calculator" },
     },
     assistantText: "The calculator returned 4.",
@@ -814,7 +824,7 @@ test("kernel core can execute a constrained scripted tool turn", () => {
   assert.equal(result.events[3]?.kind, "assistant_message")
   assert.equal(result.transcript.items.length, 3)
   assert.deepEqual(result.transcript.items[1]?.content, {
-    parts: [{ tool: "calculator", preview: "4", status: "ok" }],
+    parts: [{ part_kind: "text", content: "4", truncated: false }],
   })
 })
 
@@ -945,6 +955,116 @@ test("kernel core can execute a driver-mediated remote tool turn", async () => {
   assert.equal(result.sandboxRequest.placement_class, "remote_worker")
   assert.equal(result.sandboxResult.placement_id, "remote:exec:1")
   assert.equal(result.sideEffectExpectation.filesystem_scope, "remote_scoped")
+})
+
+test("kernel core maps failed sandbox driver results to errored v2 tool outcomes", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-failed-1",
+    entry_mode: "interactive",
+    task: "Run a formatter that fails.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-failed-1",
+    toolName: "formatter",
+    command: ["prettier", "--check", "README.md"],
+    workspaceRef: "/tmp/workspace",
+    allowRunPrograms: ["prettier"],
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "failed",
+      placement_id: "placement-failed-1",
+      stdout_ref: "artifact://stdout/failed-1",
+      stderr_ref: "artifact://stderr/failed-1",
+      artifact_refs: [],
+      side_effect_digest: "sha256:failed1",
+      usage: { wall_ms: 18 },
+      evidence_refs: ["evidence://failed/1"],
+      error: { message: "formatter exited 1", code: "exit_nonzero", retryable: false },
+    }),
+  })
+
+  const toolCallPayload = expectRecord(result.events[1]?.payload, "failed tool-call payload")
+  const toolResultPayload = expectRecord(result.events[2]?.payload, "failed tool-result payload")
+  const toolResultMetadata = expectRecord(toolResultPayload.metadata, "failed tool-result metadata")
+  const toolRenderContent = expectRecord(result.transcript.items[1]?.content, "failed tool-render content")
+
+  assert.equal(result.sandboxResult.status, "failed")
+  assert.equal(result.events[1]?.kind, "tool_call")
+  assert.equal(toolCallPayload.state, "failed")
+  if ("schema_version" in toolCallPayload) {
+    assert.equal(toolCallPayload.schema_version, "bb.tool_call.v2")
+  }
+  assert.equal(result.events[2]?.kind, "tool_result")
+  assert.equal(toolResultPayload.terminalState, "errored")
+  assert.equal(toolResultPayload.result, null)
+  assert.deepEqual(toolResultPayload.error, { message: "formatter exited 1", code: "exit_nonzero", retryable: false })
+  assert.equal(toolResultMetadata.sandbox_status, "failed")
+  if ("schema_version" in toolResultPayload) {
+    assert.equal(toolResultPayload.schema_version, "bb.tool_execution_outcome.v2")
+  }
+  assert.deepEqual(toolRenderContent.parts, [{ part_kind: "error", content: "formatter failed via sandbox", truncated: false }])
+  if ("schema_version" in toolRenderContent) {
+    assert.equal(toolRenderContent.schema_version, "bb.tool_model_render.v2")
+  }
+})
+
+test("kernel core maps timed out sandbox driver results to timed_out v2 tool outcomes", async () => {
+  const request = {
+    schema_version: "bb.run_request.v1",
+    request_id: "run-driver-timed-out-1",
+    entry_mode: "interactive",
+    task: "Run a long job that times out.",
+    workspace_root: "/tmp/workspace",
+  } as const
+
+  const result = await executeDriverMediatedToolTurn(request, {
+    sessionId: "sess-driver-timed-out-1",
+    toolName: "long_job",
+    command: ["node", "slow-job.js"],
+    workspaceRef: "/tmp/workspace",
+    allowRunPrograms: ["node"],
+    executeSandbox: async (sandboxRequest) => ({
+      schema_version: "bb.sandbox_result.v1",
+      request_id: sandboxRequest.request_id,
+      status: "timed_out",
+      placement_id: "placement-timeout-1",
+      stdout_ref: "artifact://stdout/timed-out-1",
+      stderr_ref: "artifact://stderr/timed-out-1",
+      artifact_refs: [],
+      side_effect_digest: "sha256:timeout1",
+      usage: { wall_ms: 30000 },
+      evidence_refs: ["evidence://timed-out/1"],
+      error: { message: "sandbox timed out", code: "timeout", retryable: true },
+    }),
+  })
+
+  const toolCallPayload = expectRecord(result.events[1]?.payload, "timed-out tool-call payload")
+  const toolResultPayload = expectRecord(result.events[2]?.payload, "timed-out tool-result payload")
+  const toolResultMetadata = expectRecord(toolResultPayload.metadata, "timed-out tool-result metadata")
+  const toolRenderContent = expectRecord(result.transcript.items[1]?.content, "timed-out tool-render content")
+
+  assert.equal(result.sandboxResult.status, "timed_out")
+  assert.equal(result.events[1]?.kind, "tool_call")
+  assert.equal(toolCallPayload.state, "timed_out")
+  if ("schema_version" in toolCallPayload) {
+    assert.equal(toolCallPayload.schema_version, "bb.tool_call.v2")
+  }
+  assert.equal(result.events[2]?.kind, "tool_result")
+  assert.equal(toolResultPayload.terminalState, "timed_out")
+  assert.equal(toolResultPayload.result, null)
+  assert.deepEqual(toolResultPayload.error, { message: "sandbox timed out", code: "timeout", retryable: true })
+  assert.equal(toolResultMetadata.sandbox_status, "timed_out")
+  if ("schema_version" in toolResultPayload) {
+    assert.equal(toolResultPayload.schema_version, "bb.tool_execution_outcome.v2")
+  }
+  assert.deepEqual(toolRenderContent.parts, [{ part_kind: "error", content: "long_job timed_out via sandbox", truncated: false }])
+  if ("schema_version" in toolRenderContent) {
+    assert.equal(toolRenderContent.schema_version, "bb.tool_model_render.v2")
+  }
 })
 
 test("kernel core can execute a provider-aware constrained text turn", () => {

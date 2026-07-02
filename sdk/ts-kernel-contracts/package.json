@@ -8,21 +8,29 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "default": "./dist/src/index.js"
+    },
+    "./generated": {
+      "types": "./dist/src/generated/index.d.ts",
+      "default": "./dist/src/generated/index.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
+    "generate": "tsx scripts/generate.ts",
+    "verify:generated": "tmp=$(mktemp -d) && cp -R src/generated \"$tmp/generated.before\" && npm run -s generate >/dev/null && diff -ru \"$tmp/generated.before\" src/generated",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test dist/test/contracts.test.js"
+    "test": "npm run build && node --test dist/test/contracts.test.js dist/test/generated.test.js"
   },
   "dependencies": {
     "ajv": "^8.17.1"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
+    "json-schema-to-typescript": "^15.0.4",
+    "tsx": "^4.23.0",
     "typescript": "^5.5.4"
   }
 }

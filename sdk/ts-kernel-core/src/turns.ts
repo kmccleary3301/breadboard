@@ -9,9 +9,9 @@ import {
   type SandboxResultV1,
   type SessionTranscriptV1,
   type SessionTranscriptV1Item,
-  type ToolCallV1,
-  type ToolExecutionOutcomeV1,
-  type ToolModelRenderV1,
+  type ToolCallV2,
+  type ToolExecutionOutcomeV2,
+  type ToolModelRenderV2,
 } from "@breadboard/kernel-contracts"
 import {
   buildExecutionDriverUnsupportedCase,
@@ -56,11 +56,19 @@ function buildDriverMediatedToolOutcome(input: {
   sandboxResult: SandboxResultV1
   callId: string
   toolName: string
-}): ToolExecutionOutcomeV1 {
+  completedAtUtc: string
+}): ToolExecutionOutcomeV2 {
+  const terminalState =
+    input.sandboxResult.status === "completed"
+      ? "completed"
+      : input.sandboxResult.status === "timed_out"
+        ? "timed_out"
+        : "errored"
   const outcome: Record<string, unknown> = {
-    schemaVersion: "bb.tool_execution_outcome.v1",
-    callId: input.callId,
-    terminalState: input.sandboxResult.status === "completed" ? "completed" : "errored",
+    schema_version: "bb.tool_execution_outcome.v2",
+    call_id: input.callId,
+    terminal_state: terminalState,
+    completed_at_utc: input.completedAtUtc,
     result:
       input.sandboxResult.status === "completed"
         ? {
@@ -73,6 +81,7 @@ function buildDriverMediatedToolOutcome(input: {
             usage: input.sandboxResult.usage ?? null,
           }
         : null,
+    visibility: { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" },
     metadata: {
       placement_id: input.sandboxResult.placement_id ?? null,
       sandbox_status: input.sandboxResult.status,
@@ -89,7 +98,7 @@ function buildDriverMediatedToolOutcome(input: {
       message: `${input.toolName} ended with status ${input.sandboxResult.status}`,
     }
   }
-  return assertValid<ToolExecutionOutcomeV1>("toolExecutionOutcome", outcome)
+  return assertValid<ToolExecutionOutcomeV2>("toolExecutionOutcomeV2", outcome)
 }
 
 function buildDriverMediatedToolRender(input: {
@@ -97,20 +106,20 @@ function buildDriverMediatedToolRender(input: {
   callId: string
   toolName: string
   command: string[]
-}): ToolModelRenderV1 {
+}): ToolModelRenderV2 {
   const preview =
     input.sandboxResult.status === "completed"
       ? `${input.toolName} completed via sandbox (${input.command.join(" ")})`
       : `${input.toolName} ${input.sandboxResult.status} via sandbox`
-  return assertValid<ToolModelRenderV1>("toolModelRender", {
-    schemaVersion: "bb.tool_model_render.v1",
-    callId: input.callId,
-    visibility: "model",
+  return assertValid<ToolModelRenderV2>("toolModelRenderV2", {
+    schema_version: "bb.tool_model_render.v2",
+    call_id: input.callId,
+    visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
     parts: [
       {
-        tool: input.toolName,
-        preview,
-        status: input.sandboxResult.status === "completed" ? "ok" : "error",
+        part_kind: input.sandboxResult.status === "completed" ? "text" : "error",
+        content: preview,
+        truncated: false,
       },
     ],
     metadata: {
@@ -259,20 +268,27 @@ export async function executeDriverMediatedToolTurn(
     }),
   )
   const callId = `${request.request_id}:tool:1`
-  const toolCall = assertValid<ToolCallV1>("toolCall", {
-    schemaVersion: "bb.tool_call.v1",
-    callId,
-    toolName: options.toolName,
+  const completedAtUtc = options.startedAt ?? new Date().toISOString()
+  const toolCallState: ToolCallV2["state"] =
+    sandboxResult.status === "completed" ? "completed" : sandboxResult.status === "timed_out" ? "timed_out" : "failed"
+  const toolCall = assertValid<ToolCallV2>("toolCallV2", {
+    schema_version: "bb.tool_call.v2",
+    call_id: callId,
+    tool_name: options.toolName,
     args: {
       command: options.command,
       image_ref: options.imageRef ?? null,
     },
-    state: sandboxResult.status === "completed" ? "completed" : "errored",
+    state: toolCallState,
+    requested_at_utc: completedAtUtc,
+    actor: { actor_kind: "host", actor_id: "breadboard.ts-kernel-core" },
+    visibility: { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" },
   })
   const toolOutcome = buildDriverMediatedToolOutcome({
     sandboxResult,
     callId,
     toolName: options.toolName,
+    completedAtUtc,
   })
   const toolRender = buildDriverMediatedToolRender({
     sandboxResult,
@@ -376,9 +392,9 @@ export function executeScriptedToolTurn(
   options: ScriptedToolTurnOptions,
 ): StaticTextTurnResult {
   const request = assertValid<RunRequestV1>("runRequest", requestInput)
-  const toolCall = assertValid<ToolCallV1>("toolCall", options.toolCall)
-  const toolOutcome = assertValid<ToolExecutionOutcomeV1>("toolExecutionOutcome", options.toolOutcome)
-  const toolRender = assertValid<ToolModelRenderV1>("toolModelRender", options.toolRender)
+  const toolCall = assertValid<ToolCallV2>("toolCallV2", options.toolCall)
+  const toolOutcome = assertValid<ToolExecutionOutcomeV2>("toolExecutionOutcomeV2", options.toolOutcome)
+  const toolRender = assertValid<ToolModelRenderV2>("toolModelRenderV2", options.toolRender)
   const runContext = buildRunContextFromRequest(request, {
     sessionId: options.sessionId,
     engineFamily: options.engineFamily,
@@ -413,14 +429,14 @@ export function executeScriptedToolTurn(
       visibility: "host",
       kind: "tool_call",
       payload: {
-        callId: toolCall.callId,
-        toolName: toolCall.toolName,
+        callId: toolCall.call_id,
+        toolName: toolCall.tool_name,
         args: toolCall.args,
         state: toolCall.state,
         metadata: toolCall.metadata ?? {},
       },
-      taskId: toolCall.taskId,
-      callId: toolCall.callId,
+      taskId: toolCall.task_id,
+      callId: toolCall.call_id,
     },
     {
       schemaVersion: "bb.kernel_event.v1",
@@ -433,14 +449,14 @@ export function executeScriptedToolTurn(
       visibility: "host",
       kind: "tool_result",
       payload: {
-        callId: toolOutcome.callId,
-        terminalState: toolOutcome.terminalState,
+        callId: toolOutcome.call_id,
+        terminalState: toolOutcome.terminal_state,
         result: toolOutcome.result,
         error: toolOutcome.error,
         metadata: toolOutcome.metadata ?? {},
       },
-      taskId: toolCall.taskId,
-      callId: toolOutcome.callId,
+      taskId: toolCall.task_id,
+      callId: toolOutcome.call_id,
       causedBy: buildKernelEventId(request.request_id, 2),
     },
   ]
@@ -453,8 +469,8 @@ export function executeScriptedToolTurn(
     },
     {
       kind: "tool_result",
-      visibility: toolRender.visibility ?? "model",
-      callId: toolRender.callId,
+      visibility: "model",
+      callId: toolRender.call_id,
       content: { parts: toolRender.parts },
       provenance: { source: "ts_scripted_tool_turn", eventId: events[2].eventId },
     },
@@ -490,7 +506,7 @@ export function executeScriptedToolTurn(
     metadata: {
       execution_mode: runContext.execution_mode,
       source: "ts-kernel-core",
-      tool_name: toolCall.toolName,
+      tool_name: toolCall.tool_name,
     },
   }
   return { runContext, events, transcript }
