@@ -24,6 +24,29 @@ EOF
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  if [[ "${PYTHON_BIN}" == */* ]]; then
+    if [[ ! -x "${PYTHON_BIN}" ]]; then
+      echo "[capture-omo-golden] PYTHON_BIN is not executable: ${PYTHON_BIN}" >&2
+      exit 127
+    fi
+  elif command -v -- "${PYTHON_BIN}" >/dev/null 2>&1; then
+    PYTHON_BIN="$(command -v -- "${PYTHON_BIN}")"
+  else
+    echo "[capture-omo-golden] PYTHON_BIN command not found: ${PYTHON_BIN}" >&2
+    exit 127
+  fi
+elif [[ -x "${ROOT_DIR}/.venv/bin/python" ]]; then
+  PYTHON_BIN="${ROOT_DIR}/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_BIN="$(command -v python)"
+else
+  echo "[capture-omo-golden] no python interpreter found" >&2
+  exit 127
+fi
+
 SCENARIO=""
 PROMPT=""
 VERSION=""
@@ -110,7 +133,7 @@ if [[ ! -f "${OMO_PACKAGE_JSON}" ]]; then
   exit 2
 fi
 
-OPENCODE_VERSION="$(python - "${OPENCODE_PACKAGE_JSON}" <<'PY'
+OPENCODE_VERSION="$("${PYTHON_BIN}" - "${OPENCODE_PACKAGE_JSON}" <<'PY'
 import json
 import sys
 with open(sys.argv[1], "r", encoding="utf-8") as f:
@@ -119,7 +142,7 @@ print(data.get("version") or "unknown")
 PY
 )"
 
-OMO_VERSION="$(python - "${OMO_PACKAGE_JSON}" <<'PY'
+OMO_VERSION="$("${PYTHON_BIN}" - "${OMO_PACKAGE_JSON}" <<'PY'
 import json
 import sys
 with open(sys.argv[1], "r", encoding="utf-8") as f:
@@ -188,7 +211,7 @@ OMO_COMMIT="$(git -C "${OMO_REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)"
 OPENCODE_COMMIT="$(git -C "${OPENCODE_REPO_ROOT}" rev-parse HEAD 2>/dev/null || true)"
 TS_UTC="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-python - "${RUN_DIR}/scenario.json" "${SCENARIO}" "${VERSION}" "${MODEL}" "${AGENT}" "${OPENCODE_COMMIT}" "${OMO_COMMIT}" "${TS_UTC}" "${RUN_ID}" "${EXTRA_ARGS[@]-}" <<'PY'
+"${PYTHON_BIN}" - "${RUN_DIR}/scenario.json" "${SCENARIO}" "${VERSION}" "${MODEL}" "${AGENT}" "${OPENCODE_COMMIT}" "${OMO_COMMIT}" "${TS_UTC}" "${RUN_ID}" ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} <<'PY'
 import json
 import sys
 
@@ -250,11 +273,29 @@ export OPENCODE_PERMISSION='{"edit":"allow","bash":"allow","skill":"allow","webf
 # Ensure a deterministic plugin config inside the workspace.
 mkdir -p "${RUN_DIR}/workspace/.opencode"
 ABS_PLUGIN_PATH="file://${OMO_DIST_ENTRY}"
-cat >"${RUN_DIR}/workspace/.opencode/opencode.json" <<EOF
-{
-  "plugin": ["${ABS_PLUGIN_PATH}"]
+"${PYTHON_BIN}" - "${RUN_DIR}/workspace/.opencode/opencode.json" "${ABS_PLUGIN_PATH}" "${MODEL}" <<'PY'
+import json
+import sys
+
+out_path, plugin_path, model = sys.argv[1:4]
+provider_id, sep, model_id = model.partition("/")
+payload = {
+    "plugin": [plugin_path],
+    "model": model,
 }
-EOF
+if sep and provider_id and model_id:
+    payload["provider"] = {
+        provider_id: {
+            "models": {
+                model_id: {}
+            }
+        }
+    }
+
+with open(out_path, "w", encoding="utf-8") as f:
+    json.dump(payload, f, indent=2, sort_keys=True)
+    f.write("\n")
+PY
 
 pushd "${RUN_DIR}/workspace" >/dev/null
 set +e
@@ -265,7 +306,7 @@ if [[ -n "${AGENT}" ]]; then
     --dir "${RUN_DIR}/workspace" \
     --agent "${AGENT}" \
     --title "${SCENARIO}_${RUN_ID}" \
-    "${EXTRA_ARGS[@]}" \
+    ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
     >"${RUN_DIR}/stdout.jsonl" \
     2>"${RUN_DIR}/stderr.txt"
 else
@@ -274,7 +315,7 @@ else
     --model "${MODEL}" \
     --dir "${RUN_DIR}/workspace" \
     --title "${SCENARIO}_${RUN_ID}" \
-    "${EXTRA_ARGS[@]}" \
+    ${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"} \
     >"${RUN_DIR}/stdout.jsonl" \
     2>"${RUN_DIR}/stderr.txt"
 fi
@@ -284,10 +325,57 @@ popd >/dev/null
 
 echo "${RUN_EXIT_CODE}" >"${RUN_DIR}/exit_code.txt"
 if [[ "${RUN_EXIT_CODE}" != "0" ]]; then
-  echo "[capture-omo-golden] warning: opencode (with oh-my-opencode) exited with ${RUN_EXIT_CODE}" >&2
+  echo "[capture-omo-golden] opencode (with oh-my-opencode) exited with ${RUN_EXIT_CODE}" >&2
+  exit "${RUN_EXIT_CODE}"
 fi
 
-SESSION_ID="$(python - "${RUN_DIR}/stdout.jsonl" <<'PY'
+"${PYTHON_BIN}" - "${RUN_DIR}/stdout.jsonl" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print("[capture-omo-golden] stdout.jsonl missing", file=sys.stderr)
+    raise SystemExit(1)
+
+error_events = []
+session_ids = set()
+non_error_events = 0
+for raw in path.read_text(encoding="utf-8").splitlines():
+    raw = raw.strip()
+    if not raw:
+        continue
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        non_error_events += 1
+        continue
+    if payload.get("type") == "error":
+        error = payload.get("error") or {}
+        data = error.get("data") if isinstance(error, dict) else {}
+        message = data.get("message") if isinstance(data, dict) else None
+        error_events.append(message or error.get("name") or payload)
+    else:
+        non_error_events += 1
+    session_id = payload.get("sessionID")
+    if isinstance(session_id, str) and session_id:
+        session_ids.add(session_id)
+
+if error_events:
+    print("[capture-omo-golden] opencode emitted error event(s):", file=sys.stderr)
+    for event in error_events:
+        print(f"  - {event}", file=sys.stderr)
+    raise SystemExit(1)
+if not session_ids:
+    print("[capture-omo-golden] no sessionID found in stdout.jsonl", file=sys.stderr)
+    raise SystemExit(1)
+if non_error_events == 0:
+    print("[capture-omo-golden] no non-error events found in stdout.jsonl", file=sys.stderr)
+    raise SystemExit(1)
+PY
+
+SESSION_ID="$("${PYTHON_BIN}" - "${RUN_DIR}/stdout.jsonl" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -314,28 +402,64 @@ PY
 )"
 echo "${SESSION_ID}" >"${RUN_DIR}/session_id.txt"
 
-# Export OpenCode session (best-effort).
-if [[ -n "${SESSION_ID}" ]]; then
-  pushd "${RUN_DIR}/workspace" >/dev/null
-  set +e
-  bun run --cwd "${OPENCODE_PACKAGE_DIR}" --conditions=browser src/index.ts export "${SESSION_ID}" \
-    >"${RUN_DIR}/exports/opencode_export.json" \
-    2>>"${RUN_DIR}/stderr.txt"
-  EXPORT_EXIT_CODE="$?"
-  set -e
-  popd >/dev/null
-  echo "${EXPORT_EXIT_CODE}" >"${RUN_DIR}/exports/export_exit_code.txt"
-
-  if [[ -f "${RUN_DIR}/exports/opencode_export.json" ]]; then
-    python "${ROOT_DIR}/scripts/convert_opencode_export_to_replay_session.py" \
-      --in "${RUN_DIR}/exports/opencode_export.json" \
-      --out "${RUN_DIR}/exports/replay_session.json" \
-      >>"${RUN_DIR}/stderr.txt" 2>&1 || true
-  fi
+# Export OpenCode session.
+if [[ -z "${SESSION_ID}" ]]; then
+  echo "[capture-omo-golden] no session id captured" >&2
+  exit 1
 fi
 
-python "${ROOT_DIR}/scripts/sanitize_provider_logs.py" "${RUN_DIR}/provider_dumps" >>"${RUN_DIR}/stderr.txt" 2>&1 || true
-python "${ROOT_DIR}/scripts/process_provider_dumps.py" \
+pushd "${RUN_DIR}/workspace" >/dev/null
+set +e
+bun run --cwd "${OPENCODE_PACKAGE_DIR}" --conditions=browser src/index.ts export "${SESSION_ID}" \
+  >"${RUN_DIR}/exports/opencode_export.json" \
+  2>>"${RUN_DIR}/stderr.txt"
+EXPORT_EXIT_CODE="$?"
+set -e
+popd >/dev/null
+echo "${EXPORT_EXIT_CODE}" >"${RUN_DIR}/exports/export_exit_code.txt"
+if [[ "${EXPORT_EXIT_CODE}" != "0" ]]; then
+  echo "[capture-omo-golden] opencode export exited with ${EXPORT_EXIT_CODE}" >&2
+  exit "${EXPORT_EXIT_CODE}"
+fi
+
+if [[ ! -f "${RUN_DIR}/exports/opencode_export.json" ]]; then
+  echo "[capture-omo-golden] opencode export file missing" >&2
+  exit 1
+fi
+
+"${PYTHON_BIN}" "${ROOT_DIR}/scripts/convert_opencode_export_to_replay_session.py" \
+  --in "${RUN_DIR}/exports/opencode_export.json" \
+  --out "${RUN_DIR}/exports/replay_session.json" \
+  >>"${RUN_DIR}/stderr.txt" 2>&1
+
+"${PYTHON_BIN}" - "${RUN_DIR}/exports/replay_session.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+if not path.exists():
+    print("[capture-omo-golden] replay_session.json missing", file=sys.stderr)
+    raise SystemExit(1)
+
+try:
+    messages = json.loads(path.read_text(encoding="utf-8"))
+except Exception as exc:
+    print(f"[capture-omo-golden] replay_session.json is invalid JSON: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+if not isinstance(messages, list):
+    print("[capture-omo-golden] replay_session.json is not a message list", file=sys.stderr)
+    raise SystemExit(1)
+
+roles = [message.get("role") for message in messages if isinstance(message, dict)]
+if len(messages) < 2 or "user" not in roles or "assistant" not in roles:
+    print("[capture-omo-golden] replay_session.json must contain at least one user message and one assistant message", file=sys.stderr)
+    raise SystemExit(1)
+PY
+
+"${PYTHON_BIN}" "${ROOT_DIR}/scripts/sanitize_provider_logs.py" "${RUN_DIR}/provider_dumps" >>"${RUN_DIR}/stderr.txt" 2>&1 || true
+"${PYTHON_BIN}" "${ROOT_DIR}/scripts/process_provider_dumps.py" \
   --input-dir "${RUN_DIR}/provider_dumps" \
   --output-dir "${RUN_DIR}/normalized" \
   >>"${RUN_DIR}/stderr.txt" 2>&1 || true
