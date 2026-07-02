@@ -1,0 +1,1932 @@
+{
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "lane_artifact_roles": [
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:effective_config_graph",
+      "role_key": "effective_config_graph"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:primitive_projection_manifest",
+      "role_key": "primitive_projection_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:compiled_records",
+      "role_key": "compiled_records"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:schema_validation",
+      "role_key": "schema_validation"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:compiled_records",
+      "role_key": "compiled_records"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:schema_validation",
+      "role_key": "schema_validation"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "role_id": "oh_my_pi_p3_3_capability_registry_compiler:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:compiled_records",
+      "role_key": "compiled_records"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:schema_validation",
+      "role_key": "schema_validation"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:compiled_records",
+      "role_key": "compiled_records"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:schema_validation",
+      "role_key": "schema_validation"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "role_id": "oh_my_pi_p3_5_resource_blob_compiler:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:compiled_records",
+      "role_key": "compiled_records"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:schema_validation",
+      "role_key": "schema_validation"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:compiled_records",
+      "role_key": "compiled_records"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:schema_validation",
+      "role_key": "schema_validation"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "role_id": "oh_my_pi_p3_7_memory_work_compiler:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:compiled_records",
+      "role_key": "compiled_records"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:schema_validation",
+      "role_key": "schema_validation"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "role_id": "oh_my_pi_p3_8_projection_broker_adapter:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:source_archive",
+      "role_key": "source_archive"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:target_probe_output",
+      "role_key": "target_probe_output"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:target_probe_script",
+      "role_key": "target_probe_script"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:target_setup_report",
+      "role_key": "target_setup_report"
+    },
+    {
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "role_id": "pi_p5_l1_cli_config_context_tool_surface:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:agent_config",
+      "role_key": "agent_config"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:source_archive",
+      "role_key": "source_archive"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:target_probe_output",
+      "role_key": "target_probe_output"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:target_probe_script",
+      "role_key": "target_probe_script"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:target_setup_report",
+      "role_key": "target_setup_report"
+    },
+    {
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "role_id": "pi_p5_l2_extension_session_residual:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "role_id": "oh_my_pi_p6_0_l2_tool_execution:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "role_id": "oh_my_pi_p6_0_l3_command_network_hook:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:memory_compaction_plan",
+      "role_key": "memory_compaction_plan"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:target_probe_output",
+      "role_key": "target_probe_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:transcript_continuation_patch",
+      "role_key": "transcript_continuation_patch"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "role_id": "oh_my_pi_p6_0_l5_memory_compaction:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:projection_events",
+      "role_key": "projection_events"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "role_id": "oh_my_pi_p6_0_l6_tui_projection:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:detached_subagent_target_capture",
+      "role_key": "detached_subagent_target_capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:joined_subagent_target_capture",
+      "role_key": "joined_subagent_target_capture"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:source_freeze",
+      "role_key": "source_freeze"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:target_probe_output",
+      "role_key": "target_probe_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:target_setup_report",
+      "role_key": "target_setup_report"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:task_job_subagent_comparator",
+      "role_key": "task_job_subagent_comparator"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:work_item",
+      "role_key": "work_item"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent:work_item_replay",
+      "role_key": "work_item_replay"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:target_config",
+      "role_key": "target_config"
+    },
+    {
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "role_id": "codex_cli_e4_capture_probe_v1:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:target_config",
+      "role_key": "target_config"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:target_probe_output",
+      "role_key": "target_probe_output"
+    },
+    {
+      "lane_id": "claude_code_north_star_capture_v1",
+      "role_id": "claude_code_north_star_capture_v1:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:target_config",
+      "role_key": "target_config"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:target_probe_output",
+      "role_key": "target_probe_output"
+    },
+    {
+      "lane_id": "opencode_north_star_capture_v1",
+      "role_id": "opencode_north_star_capture_v1:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:atomic_feature_ledger",
+      "role_key": "atomic_feature_ledger"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:capture",
+      "role_key": "capture"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:comparator",
+      "role_key": "comparator"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:freeze_manifest",
+      "role_key": "freeze_manifest"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:node_gate",
+      "role_key": "node_gate"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:parity_results",
+      "role_key": "parity_results"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:replay",
+      "role_key": "replay"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:session_transcript",
+      "role_key": "session_transcript"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:secret_scan_report",
+      "role_key": "secret_scan_report"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:support_claim",
+      "role_key": "support_claim"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:target_config",
+      "role_key": "target_config"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:target_probe_output",
+      "role_key": "target_probe_output"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:validator_output",
+      "role_key": "validator_output"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:primitive_projection_manifest",
+      "role_key": "primitive_projection_manifest"
+    },
+    {
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "role_id": "breadboard_self_runtime_records_v1:projection_events",
+      "role_key": "projection_events"
+    }
+  ],
+  "report_id": "e4_report_roles_v1",
+  "schema_version": "bb.e4.report_roles.v1",
+  "static_artifact_roles": [
+    {
+      "artifact_kind": "raw_source",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/bb_replay_result.json",
+      "role_id": "codex_cli_e4_capture_probe_v1:source_bb_replay_result"
+    },
+    {
+      "artifact_kind": "raw_source",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/comparator_report.json",
+      "role_id": "codex_cli_e4_capture_probe_v1:source_comparator_report"
+    },
+    {
+      "artifact_kind": "raw_source",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/raw_capture_manifest.json",
+      "role_id": "codex_cli_e4_capture_probe_v1:source_raw_capture_manifest"
+    },
+    {
+      "artifact_kind": "raw_source",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/exports/replay_session.json",
+      "role_id": "codex_cli_e4_capture_probe_v1:source_replay_session"
+    },
+    {
+      "artifact_kind": "raw_source",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "media_type": "application/jsonl",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/rollout.jsonl",
+      "role_id": "codex_cli_e4_capture_probe_v1:source_rollout"
+    },
+    {
+      "artifact_kind": "config",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs/conformance/e4_lane_inventory.json",
+      "role_id": "e4_static:config/e4_lane_inventory"
+    },
+    {
+      "artifact_kind": "config",
+      "derived_from": [
+        "e4_static:config/e4_lane_inventory"
+      ],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs/conformance/e4_report_roles.json",
+      "role_id": "e4_static:config/e4_report_roles"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "scripts/e4_parity/seed_atomic_feature_ledger.py",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_REPORT.json",
+      "role_id": "e4_static:report/bb_e4_atomic_feature_ledger_report_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "scripts/e4_parity/seed_atomic_feature_ledger.py",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+      "role_id": "e4_static:report/bb_e4_atomic_feature_ledger_seed_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/markdown",
+      "path": "docs_tmp/phase_15/BB_E4_COMPATIBILITY_MIGRATION_NOTES.md",
+      "role_id": "e4_static:report/bb_e4_compatibility_migration_notes_md"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json",
+      "role_id": "e4_static:report/bb_e4_current_baseline_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_EVIDENCE_GOVERNANCE.json",
+      "role_id": "e4_static:report/bb_e4_evidence_governance_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "scripts/e4_parity/build_e4_final_readiness_packet.py",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_FINAL_ARTIFACT_FRESHNESS_MANIFEST.json",
+      "role_id": "e4_static:report/bb_e4_final_artifact_freshness_manifest_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "scripts/e4_parity/build_e4_final_readiness_packet.py",
+      "lane_id": null,
+      "media_type": "text/markdown",
+      "path": "docs_tmp/phase_15/BB_E4_FINAL_READINESS_REPORT.md",
+      "role_id": "e4_static:report/bb_e4_final_readiness_report_md"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_NEGATIVE_PRIMITIVE_LEDGER.json",
+      "role_id": "e4_static:report/bb_e4_negative_primitive_ledger_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/markdown",
+      "path": "docs_tmp/phase_15/BB_E4_OH_MY_PI_P6_COMPLETION_PLAYBOOK.md",
+      "role_id": "e4_static:report/bb_e4_oh_my_pi_p6_completion_playbook_md"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_PRIMITIVE_DECISION_LEDGER.json",
+      "role_id": "e4_static:report/bb_e4_primitive_decision_ledger_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "scripts/e4_parity/validate_e4_primitive_readiness.py",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_PRIMITIVE_FAMILY_READINESS_REPORT.json",
+      "role_id": "e4_static:report/bb_e4_primitive_family_readiness_report_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/markdown",
+      "path": "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_MASTER_PLAN.md",
+      "role_id": "e4_static:report/bb_e4_primitive_parity_master_plan_md"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json",
+      "role_id": "e4_static:report/bb_e4_primitive_parity_scorecard_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_REMAINING_PREREQUISITES_AFTER_L6.json",
+      "role_id": "e4_static:report/bb_e4_remaining_prerequisites_after_l6_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "scripts/e4_parity/validate_e4_score_subledger.py",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_SCORE_SUBLEDGER.json",
+      "role_id": "e4_static:report/bb_e4_score_subledger_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "scripts/e4_parity/build_source_index.py",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json",
+      "role_id": "e4_static:report/bb_e4_source_index_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_HASH_MANIFEST.json",
+      "role_id": "e4_static:report/bb_e4_target_support_accepted_claim_hash_manifest_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json",
+      "role_id": "e4_static:report/bb_e4_target_support_accepted_claim_report_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json",
+      "role_id": "e4_static:report/bb_e4_target_support_accepted_claim_validation_report_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_BLOCKED_READY_REPORT.json",
+      "role_id": "e4_static:report/bb_e4_target_support_blocked_ready_report_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/markdown",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_BLOCKED_READY_REPORT.md",
+      "role_id": "e4_static:report/bb_e4_target_support_blocked_ready_report_md"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/markdown",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_FINAL_HANDOFF.md",
+      "role_id": "e4_static:report/bb_e4_target_support_final_handoff_md"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_FINAL_HASH_MANIFEST.json",
+      "role_id": "e4_static:report/bb_e4_target_support_final_hash_manifest_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_FINAL_VALIDATION_REPORT.json",
+      "role_id": "e4_static:report/bb_e4_target_support_final_validation_report_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_HASH_REPORT.json",
+      "role_id": "e4_static:report/bb_e4_target_support_hash_report_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_POST_HASH_VALIDATION.json",
+      "role_id": "e4_static:report/bb_e4_target_support_post_hash_validation_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json",
+      "role_id": "e4_static:report/bb_e4_target_support_progress_json"
+    },
+    {
+      "artifact_kind": "report",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "application/json",
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_VALIDATION_REPORT.json",
+      "role_id": "e4_static:report/bb_e4_target_support_validation_report_json"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_artifact_catalog.py",
+      "role_id": "e4_static:script/build_artifact_catalog"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_e4_final_readiness_packet.py",
+      "role_id": "e4_static:script/build_e4_final_readiness_packet"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_oh_my_pi_l5_memory_compaction.py",
+      "role_id": "e4_static:script/build_oh_my_pi_l5_memory_compaction"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_oh_my_pi_l6_tui_projection.py",
+      "role_id": "e4_static:script/build_oh_my_pi_l6_tui_projection"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py",
+      "role_id": "e4_static:script/build_oh_my_pi_p3_1_effective_config_graph"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py",
+      "role_id": "e4_static:script/build_oh_my_pi_p3_remaining_helper_runtime"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_oh_my_pi_p6_6_task_job_subagent.py",
+      "role_id": "e4_static:script/build_oh_my_pi_p6_6_task_job_subagent"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_pi_p5_cli_config_context_tool_surface.py",
+      "role_id": "e4_static:script/build_pi_p5_cli_config_context_tool_surface"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_pi_p5_extension_session_residual.py",
+      "role_id": "e4_static:script/build_pi_p5_extension_session_residual"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_primitive_projection.py",
+      "role_id": "e4_static:script/build_primitive_projection"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/build_source_index.py",
+      "role_id": "e4_static:script/build_source_index"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/regenerate_evidence.py",
+      "role_id": "e4_static:script/regenerate_evidence"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/report_atomic_feature_ledger.py",
+      "role_id": "e4_static:script/report_atomic_feature_ledger"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/scaffold_e4_target_lane.py",
+      "role_id": "e4_static:script/scaffold_e4_target_lane"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/seed_atomic_feature_ledger.py",
+      "role_id": "e4_static:script/seed_atomic_feature_ledger"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/validate_atomic_feature_ledger.py",
+      "role_id": "e4_static:script/validate_atomic_feature_ledger"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/validate_e4_primitive_readiness.py",
+      "role_id": "e4_static:script/validate_e4_primitive_readiness"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/validate_e4_report_hash_freshness.py",
+      "role_id": "e4_static:script/validate_e4_report_hash_freshness"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": null,
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/validate_e4_score_subledger.py",
+      "role_id": "e4_static:script/validate_e4_score_subledger"
+    }
+  ]
+}

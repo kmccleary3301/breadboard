@@ -1,0 +1,54 @@
+{
+  "acceptance_rationale": "The governed claim is limited to frozen target runtime execution of prepareCompaction, @oh-my-pi/snapcompact.compact, createCompactionSummaryMessage, convertMessageToLlm, and retain/recall/reflect memory-tool visibility. The packet contains raw command reports, BreadBoard replay into bb.memory_compaction_plan.v1 and bb.transcript_continuation_patch.v1, comparator pass, parity result, packet-local secret scan, validator-output hash, and ledger-row freshness.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:581086ca57a9e5a862641dccff5a514cb7f91b171ee2a3aadc4b8d7c521e55bc",
+  "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:9a6575e9b8832023f0f1295fe6199bccf2b86b824c03c2b0ea97b190dec707ab",
+  "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+  "exclusions": [
+    "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+    "No Pi, OpenCode, Opencode, Codex, Claude, provider-parity, task/agent-routing/job, browser automation, screenshot, or general P6/P7 support claim is made.",
+    "No write-enabled, provider-authenticated, or danger-full-access sandbox behavior is claimed.",
+    "No claim is made for provider endpoints, web search execution, external SaaS APIs, model inference, remote compaction, or provider-native compaction.",
+    "No initialized durable Mnemopi/Hindsight memory store or successful memory persistence is claimed; the evidence captures target-observed backend/tool visibility and blocked status without initialized backend state.",
+    "No task, job, subagent, IRC, wake subscription, or work_item lane semantics are claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l5_memory_compaction_v1#sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124",
+  "generated_at_utc": "2026-07-04T10:57:53Z",
+  "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_oh_my_pi_p6_0_l5_memory_compaction#sha256:289978bc95cf69dd63ba017f5b24c8d7455279858b9bc34e194597ac97e9b7d6"
+  ],
+  "level": "P6.0-L5",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json#sha256:adcccd653cb90b604f96d722a71600b4bd76d5c1c4fe3d1299c2459d54c4305f",
+  "phase": "P6",
+  "points": 15,
+  "provider_model": "no-provider",
+  "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:bc0b6152efd7389d5773ba8534faa33ccfbfe02e622dadabeae4be3691eb3544",
+  "run_id": "20260703_oh_my_pi_p6_0_l5_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v1",
+  "scope": {
+    "compaction_strategy": "snapcompact",
+    "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+    "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+    "memory_backend_state": "none absent; mnemopi/hindsight blocked without initialized state",
+    "memory_boundary": "provider-free snapcompact compaction plus memory-backend/tool visibility only",
+    "provider_model": "no-provider",
+    "remote_compaction": false,
+    "run_id": "20260703_oh_my_pi_p6_0_l5_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json#sha256:94325d54f6a6c7b61e7f52122d131d73be637d6f35d8d1486b0675274a5d74a2",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "Oh-My-Pi 16.2.13 provider-free memory/compaction support is accepted only for the named P6.0-L5 lane: target snapcompact compaction preparation and transcript continuation plus target-observed memory backend/tool visibility without initialized backend state.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "tool_id": "oh_my_pi_p6_0_l5_memory_compaction",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json#sha256:1cd2f517bbc610da5f4a40aed9a83432483d474f674fc8c8c7c6bf425c56843b"
+  ]
+}

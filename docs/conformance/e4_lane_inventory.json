@@ -1,0 +1,1666 @@
+{
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "inventory_id": "e4_lane_inventory_v1",
+  "lanes": [
+    {
+      "artifact_roles": {
+        "agent_config": "oh_my_pi_p3_1_effective_config_graph_compiler:agent_config",
+        "capture": "oh_my_pi_p3_1_effective_config_graph_compiler:capture",
+        "comparator": "oh_my_pi_p3_1_effective_config_graph_compiler:comparator",
+        "effective_config_graph": "oh_my_pi_p3_1_effective_config_graph_compiler:effective_config_graph",
+        "evidence_manifest": "oh_my_pi_p3_1_effective_config_graph_compiler:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p3_1_effective_config_graph_compiler:freeze_manifest",
+        "node_gate": "oh_my_pi_p3_1_effective_config_graph_compiler:node_gate",
+        "parity_results": "oh_my_pi_p3_1_effective_config_graph_compiler:parity_results",
+        "primitive_projection_manifest": "oh_my_pi_p3_1_effective_config_graph_compiler:primitive_projection_manifest",
+        "replay": "oh_my_pi_p3_1_effective_config_graph_compiler:replay",
+        "secret_scan_report": "oh_my_pi_p3_1_effective_config_graph_compiler:secret_scan_report",
+        "source_freeze": "oh_my_pi_p3_1_effective_config_graph_compiler:source_freeze",
+        "support_claim": "oh_my_pi_p3_1_effective_config_graph_compiler:support_claim",
+        "validator_output": "oh_my_pi_p3_1_effective_config_graph_compiler:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P3-OHMYPI-P31-EFFECTIVE-CONFIG-GRAPH-C4"
+      },
+      "kind": "non_target_accounting",
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+      "ledger_feature_ids": [
+        "feat_b3bcb7697f3ea258"
+      ],
+      "phase": "P3",
+      "points": 25,
+      "primitives": [
+        "bb.effective_config_graph.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_p3_1_helper_runtime_effective_config_graph_compiler",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "agent_config": "oh_my_pi_p3_2_context_resource_pack_compiler:agent_config",
+        "capture": "oh_my_pi_p3_2_context_resource_pack_compiler:capture",
+        "comparator": "oh_my_pi_p3_2_context_resource_pack_compiler:comparator",
+        "compiled_records": "oh_my_pi_p3_2_context_resource_pack_compiler:compiled_records",
+        "evidence_manifest": "oh_my_pi_p3_2_context_resource_pack_compiler:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p3_2_context_resource_pack_compiler:freeze_manifest",
+        "node_gate": "oh_my_pi_p3_2_context_resource_pack_compiler:node_gate",
+        "parity_results": "oh_my_pi_p3_2_context_resource_pack_compiler:parity_results",
+        "replay": "oh_my_pi_p3_2_context_resource_pack_compiler:replay",
+        "schema_validation": "oh_my_pi_p3_2_context_resource_pack_compiler:schema_validation",
+        "secret_scan_report": "oh_my_pi_p3_2_context_resource_pack_compiler:secret_scan_report",
+        "source_freeze": "oh_my_pi_p3_2_context_resource_pack_compiler:source_freeze",
+        "support_claim": "oh_my_pi_p3_2_context_resource_pack_compiler:support_claim",
+        "validator_output": "oh_my_pi_p3_2_context_resource_pack_compiler:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p32_context_resource_pack_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P3-OHMYPI-P32-CONTEXT-RESOURCE-PACK-C4"
+      },
+      "kind": "non_target_accounting",
+      "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+      "ledger_feature_ids": [
+        "feat_e9ae27a72149301b"
+      ],
+      "phase": "P3",
+      "points": 20,
+      "primitives": [
+        "bb.context_resource_pack.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p32_context_resource_pack_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_oh_my_pi_p3_2_context_resource_pack_compiler",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "agent_config": "oh_my_pi_p3_3_capability_registry_compiler:agent_config",
+        "capture": "oh_my_pi_p3_3_capability_registry_compiler:capture",
+        "comparator": "oh_my_pi_p3_3_capability_registry_compiler:comparator",
+        "compiled_records": "oh_my_pi_p3_3_capability_registry_compiler:compiled_records",
+        "evidence_manifest": "oh_my_pi_p3_3_capability_registry_compiler:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p3_3_capability_registry_compiler:freeze_manifest",
+        "node_gate": "oh_my_pi_p3_3_capability_registry_compiler:node_gate",
+        "parity_results": "oh_my_pi_p3_3_capability_registry_compiler:parity_results",
+        "replay": "oh_my_pi_p3_3_capability_registry_compiler:replay",
+        "schema_validation": "oh_my_pi_p3_3_capability_registry_compiler:schema_validation",
+        "secret_scan_report": "oh_my_pi_p3_3_capability_registry_compiler:secret_scan_report",
+        "source_freeze": "oh_my_pi_p3_3_capability_registry_compiler:source_freeze",
+        "support_claim": "oh_my_pi_p3_3_capability_registry_compiler:support_claim",
+        "validator_output": "oh_my_pi_p3_3_capability_registry_compiler:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p3_3_capability_registry_compiler_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p3_3_capability_registry_compiler_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p33_capability_registry_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P3-OHMYPI-P33-CAPABILITY-REGISTRY-C4"
+      },
+      "kind": "non_target_accounting",
+      "lane_id": "oh_my_pi_p3_3_capability_registry_compiler",
+      "ledger_feature_ids": [
+        "feat_5123d3276f9ca468"
+      ],
+      "phase": "P3",
+      "points": 20,
+      "primitives": [
+        "bb.capability_registry.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p3_3_capability_registry_compiler_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p33_capability_registry_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_oh_my_pi_p3_3_capability_registry_compiler",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "agent_config": "oh_my_pi_p3_4_extension_hook_execution_compiler:agent_config",
+        "capture": "oh_my_pi_p3_4_extension_hook_execution_compiler:capture",
+        "comparator": "oh_my_pi_p3_4_extension_hook_execution_compiler:comparator",
+        "compiled_records": "oh_my_pi_p3_4_extension_hook_execution_compiler:compiled_records",
+        "evidence_manifest": "oh_my_pi_p3_4_extension_hook_execution_compiler:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p3_4_extension_hook_execution_compiler:freeze_manifest",
+        "node_gate": "oh_my_pi_p3_4_extension_hook_execution_compiler:node_gate",
+        "parity_results": "oh_my_pi_p3_4_extension_hook_execution_compiler:parity_results",
+        "replay": "oh_my_pi_p3_4_extension_hook_execution_compiler:replay",
+        "schema_validation": "oh_my_pi_p3_4_extension_hook_execution_compiler:schema_validation",
+        "secret_scan_report": "oh_my_pi_p3_4_extension_hook_execution_compiler:secret_scan_report",
+        "source_freeze": "oh_my_pi_p3_4_extension_hook_execution_compiler:source_freeze",
+        "support_claim": "oh_my_pi_p3_4_extension_hook_execution_compiler:support_claim",
+        "validator_output": "oh_my_pi_p3_4_extension_hook_execution_compiler:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p3_4_extension_hook_execution_compiler_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p3_4_extension_hook_execution_compiler_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p34_extension_hook_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P3-OHMYPI-P34-EXTENSION-HOOK-C4"
+      },
+      "kind": "non_target_accounting",
+      "lane_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "ledger_feature_ids": [
+        "feat_dcc5055b78969aba"
+      ],
+      "phase": "P3",
+      "points": 15,
+      "primitives": [
+        "bb.extension_hook_execution.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p3_4_extension_hook_execution_compiler_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p34_extension_hook_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_oh_my_pi_p3_4_extension_hook_execution_compiler",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "agent_config": "oh_my_pi_p3_5_resource_blob_compiler:agent_config",
+        "capture": "oh_my_pi_p3_5_resource_blob_compiler:capture",
+        "comparator": "oh_my_pi_p3_5_resource_blob_compiler:comparator",
+        "compiled_records": "oh_my_pi_p3_5_resource_blob_compiler:compiled_records",
+        "evidence_manifest": "oh_my_pi_p3_5_resource_blob_compiler:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p3_5_resource_blob_compiler:freeze_manifest",
+        "node_gate": "oh_my_pi_p3_5_resource_blob_compiler:node_gate",
+        "parity_results": "oh_my_pi_p3_5_resource_blob_compiler:parity_results",
+        "replay": "oh_my_pi_p3_5_resource_blob_compiler:replay",
+        "schema_validation": "oh_my_pi_p3_5_resource_blob_compiler:schema_validation",
+        "secret_scan_report": "oh_my_pi_p3_5_resource_blob_compiler:secret_scan_report",
+        "source_freeze": "oh_my_pi_p3_5_resource_blob_compiler:source_freeze",
+        "support_claim": "oh_my_pi_p3_5_resource_blob_compiler:support_claim",
+        "validator_output": "oh_my_pi_p3_5_resource_blob_compiler:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p3_5_resource_blob_compiler_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p3_5_resource_blob_compiler_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p35_resource_blob_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P3-OHMYPI-P35-RESOURCE-BLOB-C4"
+      },
+      "kind": "non_target_accounting",
+      "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
+      "ledger_feature_ids": [
+        "feat_bc11e30da175b4a9"
+      ],
+      "phase": "P3",
+      "points": 20,
+      "primitives": [
+        "bb.resource_access.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p3_5_resource_blob_compiler_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p35_resource_blob_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_oh_my_pi_p3_5_resource_blob_compiler",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "agent_config": "oh_my_pi_p3_6_protocol_provider_policy_compiler:agent_config",
+        "capture": "oh_my_pi_p3_6_protocol_provider_policy_compiler:capture",
+        "comparator": "oh_my_pi_p3_6_protocol_provider_policy_compiler:comparator",
+        "compiled_records": "oh_my_pi_p3_6_protocol_provider_policy_compiler:compiled_records",
+        "evidence_manifest": "oh_my_pi_p3_6_protocol_provider_policy_compiler:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p3_6_protocol_provider_policy_compiler:freeze_manifest",
+        "node_gate": "oh_my_pi_p3_6_protocol_provider_policy_compiler:node_gate",
+        "parity_results": "oh_my_pi_p3_6_protocol_provider_policy_compiler:parity_results",
+        "replay": "oh_my_pi_p3_6_protocol_provider_policy_compiler:replay",
+        "schema_validation": "oh_my_pi_p3_6_protocol_provider_policy_compiler:schema_validation",
+        "secret_scan_report": "oh_my_pi_p3_6_protocol_provider_policy_compiler:secret_scan_report",
+        "source_freeze": "oh_my_pi_p3_6_protocol_provider_policy_compiler:source_freeze",
+        "support_claim": "oh_my_pi_p3_6_protocol_provider_policy_compiler:support_claim",
+        "validator_output": "oh_my_pi_p3_6_protocol_provider_policy_compiler:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p36_protocol_provider_policy_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P3-OHMYPI-P36-PROTOCOL-PROVIDER-POLICY-C4"
+      },
+      "kind": "non_target_accounting",
+      "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "ledger_feature_ids": [
+        "feat_0234bfa2b266f538"
+      ],
+      "phase": "P3",
+      "points": 15,
+      "primitives": [
+        "bb.provider_route.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p36_protocol_provider_policy_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_oh_my_pi_p3_6_protocol_provider_policy_compiler",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "agent_config": "oh_my_pi_p3_7_memory_work_compiler:agent_config",
+        "capture": "oh_my_pi_p3_7_memory_work_compiler:capture",
+        "comparator": "oh_my_pi_p3_7_memory_work_compiler:comparator",
+        "compiled_records": "oh_my_pi_p3_7_memory_work_compiler:compiled_records",
+        "evidence_manifest": "oh_my_pi_p3_7_memory_work_compiler:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p3_7_memory_work_compiler:freeze_manifest",
+        "node_gate": "oh_my_pi_p3_7_memory_work_compiler:node_gate",
+        "parity_results": "oh_my_pi_p3_7_memory_work_compiler:parity_results",
+        "replay": "oh_my_pi_p3_7_memory_work_compiler:replay",
+        "schema_validation": "oh_my_pi_p3_7_memory_work_compiler:schema_validation",
+        "secret_scan_report": "oh_my_pi_p3_7_memory_work_compiler:secret_scan_report",
+        "source_freeze": "oh_my_pi_p3_7_memory_work_compiler:source_freeze",
+        "support_claim": "oh_my_pi_p3_7_memory_work_compiler:support_claim",
+        "validator_output": "oh_my_pi_p3_7_memory_work_compiler:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p3_7_memory_work_compiler_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P3-OHMYPI-P37-MEMORY-WORK-C4"
+      },
+      "kind": "non_target_accounting",
+      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "ledger_feature_ids": [
+        "feat_b650fa627d57aa92"
+      ],
+      "phase": "P3",
+      "points": 15,
+      "primitives": [
+        "bb.work_item.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p3_7_memory_work_compiler_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_oh_my_pi_p3_7_memory_work_compiler",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "agent_config": "oh_my_pi_p3_8_projection_broker_adapter:agent_config",
+        "capture": "oh_my_pi_p3_8_projection_broker_adapter:capture",
+        "comparator": "oh_my_pi_p3_8_projection_broker_adapter:comparator",
+        "compiled_records": "oh_my_pi_p3_8_projection_broker_adapter:compiled_records",
+        "evidence_manifest": "oh_my_pi_p3_8_projection_broker_adapter:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p3_8_projection_broker_adapter:freeze_manifest",
+        "node_gate": "oh_my_pi_p3_8_projection_broker_adapter:node_gate",
+        "parity_results": "oh_my_pi_p3_8_projection_broker_adapter:parity_results",
+        "replay": "oh_my_pi_p3_8_projection_broker_adapter:replay",
+        "schema_validation": "oh_my_pi_p3_8_projection_broker_adapter:schema_validation",
+        "secret_scan_report": "oh_my_pi_p3_8_projection_broker_adapter:secret_scan_report",
+        "source_freeze": "oh_my_pi_p3_8_projection_broker_adapter:source_freeze",
+        "support_claim": "oh_my_pi_p3_8_projection_broker_adapter:support_claim",
+        "validator_output": "oh_my_pi_p3_8_projection_broker_adapter:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p3_8_projection_broker_adapter_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p3_8_projection_broker_adapter_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p38_projection_broker_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P3-OHMYPI-P38-PROJECTION-BROKER-C4"
+      },
+      "kind": "non_target_accounting",
+      "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+      "ledger_feature_ids": [
+        "feat_a8c1754af302f290"
+      ],
+      "phase": "P3",
+      "points": 10,
+      "primitives": [
+        "bb.side_effect_broker.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p3_8_projection_broker_adapter_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p38_projection_broker_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_oh_my_pi_p3_8_projection_broker_adapter",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "agent_config": "pi_p5_l1_cli_config_context_tool_surface:agent_config",
+        "capture": "pi_p5_l1_cli_config_context_tool_surface:capture",
+        "comparator": "pi_p5_l1_cli_config_context_tool_surface:comparator",
+        "evidence_manifest": "pi_p5_l1_cli_config_context_tool_surface:evidence_manifest",
+        "freeze_manifest": "pi_p5_l1_cli_config_context_tool_surface:freeze_manifest",
+        "node_gate": "pi_p5_l1_cli_config_context_tool_surface:node_gate",
+        "parity_results": "pi_p5_l1_cli_config_context_tool_surface:parity_results",
+        "replay": "pi_p5_l1_cli_config_context_tool_surface:replay",
+        "secret_scan_report": "pi_p5_l1_cli_config_context_tool_surface:secret_scan_report",
+        "source_archive": "pi_p5_l1_cli_config_context_tool_surface:source_archive",
+        "source_freeze": "pi_p5_l1_cli_config_context_tool_surface:source_freeze",
+        "support_claim": "pi_p5_l1_cli_config_context_tool_surface:support_claim",
+        "target_probe_output": "pi_p5_l1_cli_config_context_tool_surface:target_probe_output",
+        "target_probe_script": "pi_p5_l1_cli_config_context_tool_surface:target_probe_script",
+        "target_setup_report": "pi_p5_l1_cli_config_context_tool_surface:target_setup_report",
+        "validator_output": "pi_p5_l1_cli_config_context_tool_surface:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_pi_p5_cli_config_context_tool_surface.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim",
+      "comparator_id": "pi_stored_report_replay",
+      "config_id": "pi_p5_l1_cli_config_context_tool_surface_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "pi_p5_l1_cli_config_context_tool_surface_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p5_pi_l1_cli_config_context_tool_surface_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P5-PI-L1-CLI-CONFIG-CONTEXT-TOOL-C4"
+      },
+      "kind": "target_support",
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+      "ledger_feature_ids": [
+        "feat_2f47f564bacc6202"
+      ],
+      "phase": "P5",
+      "points": 95,
+      "primitives": [
+        "bb.effective_config_graph.v1",
+        "bb.context_resource_pack.v1",
+        "bb.capability_registry.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "pi_p5_l1_cli_config_context_tool_surface_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p5_pi_l1_cli_config_context_tool_surface_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260703_pi_p5_l1_cli_config_context_tool_surface_capture",
+      "sandbox_mode": "read-only-no-secret",
+      "score_row_id": "score_p5_pi_l1_cli_config_context_tool_surface",
+      "status": "accepted",
+      "target_family": "pi",
+      "target_version": "@mariozechner/pi-coding-agent@0.57.1"
+    },
+    {
+      "artifact_roles": {
+        "agent_config": "pi_p5_l2_extension_session_residual:agent_config",
+        "capture": "pi_p5_l2_extension_session_residual:capture",
+        "comparator": "pi_p5_l2_extension_session_residual:comparator",
+        "evidence_manifest": "pi_p5_l2_extension_session_residual:evidence_manifest",
+        "freeze_manifest": "pi_p5_l2_extension_session_residual:freeze_manifest",
+        "node_gate": "pi_p5_l2_extension_session_residual:node_gate",
+        "parity_results": "pi_p5_l2_extension_session_residual:parity_results",
+        "replay": "pi_p5_l2_extension_session_residual:replay",
+        "secret_scan_report": "pi_p5_l2_extension_session_residual:secret_scan_report",
+        "source_archive": "pi_p5_l2_extension_session_residual:source_archive",
+        "source_freeze": "pi_p5_l2_extension_session_residual:source_freeze",
+        "support_claim": "pi_p5_l2_extension_session_residual:support_claim",
+        "target_probe_output": "pi_p5_l2_extension_session_residual:target_probe_output",
+        "target_probe_script": "pi_p5_l2_extension_session_residual:target_probe_script",
+        "target_setup_report": "pi_p5_l2_extension_session_residual:target_setup_report",
+        "validator_output": "pi_p5_l2_extension_session_residual:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_pi_p5_extension_session_residual.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "pi_p5_l2_extension_session_residual_v1_c4_support_claim",
+      "comparator_id": "pi_stored_report_replay",
+      "config_id": "pi_p5_l2_extension_session_residual_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "pi_p5_l2_extension_session_residual_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P5-PI-L2-EXTENSION-SESSION-RESIDUAL-C4"
+      },
+      "kind": "target_support",
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "ledger_feature_ids": [
+        "feat_38725eb172b28cb1"
+      ],
+      "phase": "P5",
+      "points": 40,
+      "primitives": [
+        "bb.extension_hook_execution.v1",
+        "bb.work_item.v1",
+        "bb.memory_compaction_plan.v1",
+        "bb.transcript_continuation_patch.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "pi_p5_l2_extension_session_residual_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
+      "sandbox_mode": "read-only-no-secret",
+      "score_row_id": "score_p5_pi_l2_extension_session_residual",
+      "status": "accepted",
+      "target_family": "pi",
+      "target_version": "@mariozechner/pi-coding-agent@0.57.1"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "oh_my_pi_p6_0_l1_config_context_tool_surface:atomic_feature_ledger",
+        "capture": "oh_my_pi_p6_0_l1_config_context_tool_surface:capture",
+        "comparator": "oh_my_pi_p6_0_l1_config_context_tool_surface:comparator",
+        "evidence_manifest": "oh_my_pi_p6_0_l1_config_context_tool_surface:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p6_0_l1_config_context_tool_surface:freeze_manifest",
+        "node_gate": "oh_my_pi_p6_0_l1_config_context_tool_surface:node_gate",
+        "parity_results": "oh_my_pi_p6_0_l1_config_context_tool_surface:parity_results",
+        "replay": "oh_my_pi_p6_0_l1_config_context_tool_surface:replay",
+        "secret_scan_report": "oh_my_pi_p6_0_l1_config_context_tool_surface:secret_scan_report",
+        "support_claim": "oh_my_pi_p6_0_l1_config_context_tool_surface:support_claim",
+        "validator_output": "oh_my_pi_p6_0_l1_config_context_tool_surface:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": null,
+      "claim_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P6-OHMYPI-C4-CHAIN"
+      },
+      "kind": "target_support",
+      "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+      "ledger_feature_ids": [
+        "feat_24c075bc2a24cae0"
+      ],
+      "phase": "P6",
+      "points": 20,
+      "primitives": [
+        "bb.effective_config_graph.v1",
+        "bb.context_resource_pack.v1",
+        "bb.effective_tool_surface.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p6_oh_my_pi_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_p6_oh_my_pi_l1_config_context_tool_surface",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "oh_my_pi_p6_0_l2_tool_execution:atomic_feature_ledger",
+        "capture": "oh_my_pi_p6_0_l2_tool_execution:capture",
+        "comparator": "oh_my_pi_p6_0_l2_tool_execution:comparator",
+        "evidence_manifest": "oh_my_pi_p6_0_l2_tool_execution:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p6_0_l2_tool_execution:freeze_manifest",
+        "node_gate": "oh_my_pi_p6_0_l2_tool_execution:node_gate",
+        "parity_results": "oh_my_pi_p6_0_l2_tool_execution:parity_results",
+        "replay": "oh_my_pi_p6_0_l2_tool_execution:replay",
+        "secret_scan_report": "oh_my_pi_p6_0_l2_tool_execution:secret_scan_report",
+        "support_claim": "oh_my_pi_p6_0_l2_tool_execution:support_claim",
+        "validator_output": "oh_my_pi_p6_0_l2_tool_execution:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": null,
+      "claim_id": "oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p6_0_l2_tool_execution_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p6_0_l2_tool_execution_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l2_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P6-OHMYPI-L2-C4-CHAIN"
+      },
+      "kind": "target_support",
+      "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+      "ledger_feature_ids": [
+        "feat_b0d3b6e55812d206"
+      ],
+      "phase": "P6",
+      "points": 20,
+      "primitives": [
+        "bb.extension_hook_execution.v1",
+        "bb.tool_execution_outcome.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p6_0_l2_tool_execution_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l2_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l2_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_p6_oh_my_pi_l2_tool_execution",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "oh_my_pi_p6_0_l3_command_network_hook:atomic_feature_ledger",
+        "capture": "oh_my_pi_p6_0_l3_command_network_hook:capture",
+        "comparator": "oh_my_pi_p6_0_l3_command_network_hook:comparator",
+        "evidence_manifest": "oh_my_pi_p6_0_l3_command_network_hook:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p6_0_l3_command_network_hook:freeze_manifest",
+        "node_gate": "oh_my_pi_p6_0_l3_command_network_hook:node_gate",
+        "parity_results": "oh_my_pi_p6_0_l3_command_network_hook:parity_results",
+        "replay": "oh_my_pi_p6_0_l3_command_network_hook:replay",
+        "secret_scan_report": "oh_my_pi_p6_0_l3_command_network_hook:secret_scan_report",
+        "support_claim": "oh_my_pi_p6_0_l3_command_network_hook:support_claim",
+        "validator_output": "oh_my_pi_p6_0_l3_command_network_hook:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": null,
+      "claim_id": "oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p6_0_l3_command_network_hook_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p6_0_l3_command_network_hook_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l3_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P6-OHMYPI-L3-C4-CHAIN"
+      },
+      "kind": "target_support",
+      "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+      "ledger_feature_ids": [
+        "feat_33a6210bdc129f5b"
+      ],
+      "phase": "P6",
+      "points": 20,
+      "primitives": [
+        "bb.extension_hook_execution.v1",
+        "bb.effective_operation_policy.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p6_0_l3_command_network_hook_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l3_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260701_oh_my_pi_p6_0_l3_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_p6_oh_my_pi_l3_command_network_hook",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "oh_my_pi_p6_0_l4_mcp_browser_resource:atomic_feature_ledger",
+        "capture": "oh_my_pi_p6_0_l4_mcp_browser_resource:capture",
+        "comparator": "oh_my_pi_p6_0_l4_mcp_browser_resource:comparator",
+        "evidence_manifest": "oh_my_pi_p6_0_l4_mcp_browser_resource:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p6_0_l4_mcp_browser_resource:freeze_manifest",
+        "node_gate": "oh_my_pi_p6_0_l4_mcp_browser_resource:node_gate",
+        "parity_results": "oh_my_pi_p6_0_l4_mcp_browser_resource:parity_results",
+        "replay": "oh_my_pi_p6_0_l4_mcp_browser_resource:replay",
+        "secret_scan_report": "oh_my_pi_p6_0_l4_mcp_browser_resource:secret_scan_report",
+        "support_claim": "oh_my_pi_p6_0_l4_mcp_browser_resource:support_claim",
+        "validator_output": "oh_my_pi_p6_0_l4_mcp_browser_resource:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": null,
+      "claim_id": "oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p6_0_l4_mcp_browser_resource_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p6_0_l4_mcp_browser_resource_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l4_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P6-OHMYPI-L4-C4-CHAIN"
+      },
+      "kind": "target_support",
+      "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+      "ledger_feature_ids": [
+        "feat_cca28b225f4e6aeb"
+      ],
+      "phase": "P6",
+      "points": 20,
+      "primitives": [
+        "bb.external_protocol_session.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p6_0_l4_mcp_browser_resource_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l4_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260702_oh_my_pi_p6_0_l4_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_p6_oh_my_pi_l4_mcp_browser_resource",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "oh_my_pi_p6_0_l5_memory_compaction:atomic_feature_ledger",
+        "capture": "oh_my_pi_p6_0_l5_memory_compaction:capture",
+        "comparator": "oh_my_pi_p6_0_l5_memory_compaction:comparator",
+        "evidence_manifest": "oh_my_pi_p6_0_l5_memory_compaction:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p6_0_l5_memory_compaction:freeze_manifest",
+        "memory_compaction_plan": "oh_my_pi_p6_0_l5_memory_compaction:memory_compaction_plan",
+        "node_gate": "oh_my_pi_p6_0_l5_memory_compaction:node_gate",
+        "parity_results": "oh_my_pi_p6_0_l5_memory_compaction:parity_results",
+        "replay": "oh_my_pi_p6_0_l5_memory_compaction:replay",
+        "secret_scan_report": "oh_my_pi_p6_0_l5_memory_compaction:secret_scan_report",
+        "support_claim": "oh_my_pi_p6_0_l5_memory_compaction:support_claim",
+        "target_probe_output": "oh_my_pi_p6_0_l5_memory_compaction:target_probe_output",
+        "transcript_continuation_patch": "oh_my_pi_p6_0_l5_memory_compaction:transcript_continuation_patch",
+        "validator_output": "oh_my_pi_p6_0_l5_memory_compaction:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_l5_memory_compaction.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p6_0_l5_memory_compaction_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P6-OHMYPI-L5-MEMORY-COMPACTION-C4"
+      },
+      "kind": "target_support",
+      "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+      "ledger_feature_ids": [
+        "feat_oh_my_pi_p6_0_l5_memory_compaction"
+      ],
+      "phase": "P6",
+      "points": 15,
+      "primitives": [
+        "bb.memory_compaction_plan.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p6_0_l5_memory_compaction_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260703_oh_my_pi_p6_0_l5_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_p6_oh_my_pi_l5_memory_compaction",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "oh_my_pi_p6_0_l6_tui_projection:atomic_feature_ledger",
+        "capture": "oh_my_pi_p6_0_l6_tui_projection:capture",
+        "comparator": "oh_my_pi_p6_0_l6_tui_projection:comparator",
+        "evidence_manifest": "oh_my_pi_p6_0_l6_tui_projection:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p6_0_l6_tui_projection:freeze_manifest",
+        "node_gate": "oh_my_pi_p6_0_l6_tui_projection:node_gate",
+        "parity_results": "oh_my_pi_p6_0_l6_tui_projection:parity_results",
+        "projection_events": "oh_my_pi_p6_0_l6_tui_projection:projection_events",
+        "replay": "oh_my_pi_p6_0_l6_tui_projection:replay",
+        "secret_scan_report": "oh_my_pi_p6_0_l6_tui_projection:secret_scan_report",
+        "support_claim": "oh_my_pi_p6_0_l6_tui_projection:support_claim",
+        "validator_output": "oh_my_pi_p6_0_l6_tui_projection:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_l6_tui_projection.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p6_0_l6_tui_projection_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P6-OHMYPI-L6-TUI-PROJECTION-C4"
+      },
+      "kind": "target_support",
+      "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+      "ledger_feature_ids": [
+        "feat_55bf4adc8ee7717b"
+      ],
+      "phase": "P6",
+      "points": 20,
+      "primitives": [
+        "bb.projection_event.v1"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p6_0_l6_tui_projection_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260702_oh_my_pi_p6_0_l6_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_p6_oh_my_pi_l6_tui_projection",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "oh_my_pi_p6_6_task_job_subagent:atomic_feature_ledger",
+        "capture": "oh_my_pi_p6_6_task_job_subagent:capture",
+        "comparator": "oh_my_pi_p6_6_task_job_subagent:comparator",
+        "detached_subagent_target_capture": "oh_my_pi_p6_6_task_job_subagent:detached_subagent_target_capture",
+        "evidence_manifest": "oh_my_pi_p6_6_task_job_subagent:evidence_manifest",
+        "freeze_manifest": "oh_my_pi_p6_6_task_job_subagent:freeze_manifest",
+        "joined_subagent_target_capture": "oh_my_pi_p6_6_task_job_subagent:joined_subagent_target_capture",
+        "node_gate": "oh_my_pi_p6_6_task_job_subagent:node_gate",
+        "parity_results": "oh_my_pi_p6_6_task_job_subagent:parity_results",
+        "replay": "oh_my_pi_p6_6_task_job_subagent:replay",
+        "secret_scan_report": "oh_my_pi_p6_6_task_job_subagent:secret_scan_report",
+        "source_freeze": "oh_my_pi_p6_6_task_job_subagent:source_freeze",
+        "support_claim": "oh_my_pi_p6_6_task_job_subagent:support_claim",
+        "target_probe_output": "oh_my_pi_p6_6_task_job_subagent:target_probe_output",
+        "target_setup_report": "oh_my_pi_p6_6_task_job_subagent:target_setup_report",
+        "task_job_subagent_comparator": "oh_my_pi_p6_6_task_job_subagent:task_job_subagent_comparator",
+        "validator_output": "oh_my_pi_p6_6_task_job_subagent:validator_output",
+        "work_item": "oh_my_pi_p6_6_task_job_subagent:work_item",
+        "work_item_replay": "oh_my_pi_p6_6_task_job_subagent:work_item_replay"
+      },
+      "blocked_reason": null,
+      "builder": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/e4_parity/build_oh_my_pi_p6_6_task_job_subagent.py"
+        ],
+        "cwd": "."
+      },
+      "claim_id": "oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p6_6_task_job_subagent_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P6-OHMYPI-P66-TASK-JOB-SUBAGENT-C4"
+      },
+      "kind": "target_support",
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+      "ledger_feature_ids": [
+        "feat_397dab44f9f126c3"
+      ],
+      "phase": "P6",
+      "points": 20,
+      "primitives": [
+        "bb.work_item.v1"
+      ],
+      "provider_model": "anthropic/claude-haiku-4-5",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p6_6_task_job_subagent_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_p6_oh_my_pi_p66_task_job_subagent",
+      "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "codex_cli_e4_capture_probe_v1:atomic_feature_ledger",
+        "capture": "codex_cli_e4_capture_probe_v1:capture",
+        "comparator": "codex_cli_e4_capture_probe_v1:comparator",
+        "evidence_manifest": "codex_cli_e4_capture_probe_v1:evidence_manifest",
+        "freeze_manifest": "codex_cli_e4_capture_probe_v1:freeze_manifest",
+        "node_gate": "codex_cli_e4_capture_probe_v1:node_gate",
+        "parity_results": "codex_cli_e4_capture_probe_v1:parity_results",
+        "replay": "codex_cli_e4_capture_probe_v1:replay",
+        "secret_scan_report": "codex_cli_e4_capture_probe_v1:secret_scan_report",
+        "support_claim": "codex_cli_e4_capture_probe_v1:support_claim",
+        "target_config": "codex_cli_e4_capture_probe_v1:target_config",
+        "validator_output": "codex_cli_e4_capture_probe_v1:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": null,
+      "claim_id": "codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim",
+      "comparator_id": "codex_stored_report_replay",
+      "config_id": "codex_cli_gpt55_e4_capture_probe_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "codex_cli_gpt55_e4_capture_probe_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p7_codex_gpt55_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P7-CODEX-GPT55-C4-CHAIN"
+      },
+      "kind": "target_support",
+      "lane_id": "codex_cli_e4_capture_probe_v1",
+      "ledger_feature_ids": [
+        "feat_79951d1fdd8a3937"
+      ],
+      "phase": "P7",
+      "points": 100,
+      "primitives": [
+        "bb.replay_session.v1"
+      ],
+      "provider_model": "gpt-5.5",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "codex_cli_gpt55_e4_capture_probe_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p7_codex_gpt55_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260630_codex_gpt55_capture_probe",
+      "sandbox_mode": "read-only",
+      "score_row_id": "score_p7_codex_cli_gpt55_c4_support",
+      "status": "accepted",
+      "target_family": "codex",
+      "target_version": "codex-cli 0.139.0"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "claude_code_north_star_capture_v1:atomic_feature_ledger",
+        "capture": "claude_code_north_star_capture_v1:capture",
+        "comparator": "claude_code_north_star_capture_v1:comparator",
+        "evidence_manifest": "claude_code_north_star_capture_v1:evidence_manifest",
+        "freeze_manifest": "claude_code_north_star_capture_v1:freeze_manifest",
+        "node_gate": "claude_code_north_star_capture_v1:node_gate",
+        "parity_results": "claude_code_north_star_capture_v1:parity_results",
+        "replay": "claude_code_north_star_capture_v1:replay",
+        "secret_scan_report": "claude_code_north_star_capture_v1:secret_scan_report",
+        "support_claim": "claude_code_north_star_capture_v1:support_claim",
+        "target_config": "claude_code_north_star_capture_v1:target_config",
+        "target_probe_output": "claude_code_north_star_capture_v1:target_probe_output",
+        "validator_output": "claude_code_north_star_capture_v1:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": null,
+      "claim_id": "claude_code_haiku45_north_star_capture_v1_c4_support_claim",
+      "comparator_id": "north_star_stored_report_replay",
+      "config_id": "claude_code_haiku45_north_star_capture_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "claude_code_haiku45_north_star_capture_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_north_star_claude_code_capture_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-NORTH-STAR-CLAUDE-CODE-CAPTURE-C4"
+      },
+      "kind": "target_support",
+      "lane_id": "claude_code_north_star_capture_v1",
+      "ledger_feature_ids": [
+        "feat_d5be8aa4451edbac"
+      ],
+      "phase": "WS-J",
+      "points": 30,
+      "primitives": [
+        "bb.replay_session.v1"
+      ],
+      "provider_model": "anthropic/claude-haiku-4-5-20251001",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "claude_code_haiku45_north_star_capture_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_north_star_claude_code_capture_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260707_north_star_claude_code_capture",
+      "sandbox_mode": "read-only static package capture",
+      "score_row_id": "score_claude_code_north_star_capture_v1",
+      "status": "accepted",
+      "support_claim_schema_version": "bb.e4.support_claim.v3",
+      "target_family": "claude_code",
+      "target_version": "claude-code 2.1.63"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "opencode_north_star_capture_v1:atomic_feature_ledger",
+        "capture": "opencode_north_star_capture_v1:capture",
+        "comparator": "opencode_north_star_capture_v1:comparator",
+        "evidence_manifest": "opencode_north_star_capture_v1:evidence_manifest",
+        "freeze_manifest": "opencode_north_star_capture_v1:freeze_manifest",
+        "node_gate": "opencode_north_star_capture_v1:node_gate",
+        "parity_results": "opencode_north_star_capture_v1:parity_results",
+        "replay": "opencode_north_star_capture_v1:replay",
+        "secret_scan_report": "opencode_north_star_capture_v1:secret_scan_report",
+        "support_claim": "opencode_north_star_capture_v1:support_claim",
+        "target_config": "opencode_north_star_capture_v1:target_config",
+        "target_probe_output": "opencode_north_star_capture_v1:target_probe_output",
+        "validator_output": "opencode_north_star_capture_v1:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": null,
+      "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
+      "comparator_id": "north_star_stored_report_replay",
+      "config_id": "opencode_gpt51mini_north_star_capture_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "opencode_gpt51mini_north_star_capture_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_north_star_opencode_capture_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-NORTH-STAR-OPENCODE-CAPTURE-C4"
+      },
+      "kind": "target_support",
+      "lane_id": "opencode_north_star_capture_v1",
+      "ledger_feature_ids": [
+        "feat_48d391c67faf0adf"
+      ],
+      "phase": "WS-J",
+      "points": 20,
+      "primitives": [
+        "bb.replay_session.v1"
+      ],
+      "provider_model": "openai/gpt-5.1-codex-mini",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "opencode_gpt51mini_north_star_capture_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_north_star_opencode_capture_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260707_north_star_opencode_capture",
+      "sandbox_mode": "read-only static package capture",
+      "score_row_id": "score_opencode_north_star_capture_v1",
+      "status": "accepted",
+      "support_claim_schema_version": "bb.e4.support_claim.v3",
+      "target_family": "opencode",
+      "target_version": "opencode 1.2.17"
+    },
+    {
+      "artifact_roles": {
+        "atomic_feature_ledger": "breadboard_self_runtime_records_v1:atomic_feature_ledger",
+        "capture": "breadboard_self_runtime_records_v1:capture",
+        "comparator": "breadboard_self_runtime_records_v1:comparator",
+        "evidence_manifest": "breadboard_self_runtime_records_v1:evidence_manifest",
+        "freeze_manifest": "breadboard_self_runtime_records_v1:freeze_manifest",
+        "node_gate": "breadboard_self_runtime_records_v1:node_gate",
+        "parity_results": "breadboard_self_runtime_records_v1:parity_results",
+        "primitive_projection_manifest": "breadboard_self_runtime_records_v1:primitive_projection_manifest",
+        "projection_events": "breadboard_self_runtime_records_v1:projection_events",
+        "replay": "breadboard_self_runtime_records_v1:replay",
+        "secret_scan_report": "breadboard_self_runtime_records_v1:secret_scan_report",
+        "session_transcript": "breadboard_self_runtime_records_v1:session_transcript",
+        "support_claim": "breadboard_self_runtime_records_v1:support_claim",
+        "target_config": "breadboard_self_runtime_records_v1:target_config",
+        "target_probe_output": "breadboard_self_runtime_records_v1:target_probe_output",
+        "validator_output": "breadboard_self_runtime_records_v1:validator_output"
+      },
+      "blocked_reason": null,
+      "builder": null,
+      "claim_id": "breadboard_self_runtime_records_v1_c4_support_claim",
+      "comparator_id": "north_star_stored_report_replay",
+      "config_id": "breadboard_self_runtime_records_v1",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "breadboard_self_runtime_records_v1",
+            "--support-claim",
+            "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_north_star_breadboard_self_runtime_records_c4_chain.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-NORTH-STAR-BREADBOARD-SELF-RUNTIME-RECORDS-C4"
+      },
+      "kind": "non_target_accounting",
+      "lane_id": "breadboard_self_runtime_records_v1",
+      "ledger_feature_ids": [
+        "feat_e7bfda921c4e30ed"
+      ],
+      "phase": "WS-J",
+      "points": 15,
+      "primitives": [
+        "bb.kernel_event.v2"
+      ],
+      "provider_model": "no-provider",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "breadboard_self_runtime_records_v1",
+          "--support-claim",
+          "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_north_star_breadboard_self_runtime_records_c4_chain.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260707_north_star_breadboard_self_capture",
+      "sandbox_mode": "strict runtime_records self-capture",
+      "score_row_id": "score_breadboard_self_runtime_records_v1",
+      "status": "accepted",
+      "support_claim_schema_version": "bb.e4.support_claim.v3",
+      "target_family": "breadboard",
+      "target_version": "breadboard runtime_records strict kernel emission"
+    }
+  ],
+  "revision": 1,
+  "schema_version": "bb.e4.lane_inventory.v1"
+}

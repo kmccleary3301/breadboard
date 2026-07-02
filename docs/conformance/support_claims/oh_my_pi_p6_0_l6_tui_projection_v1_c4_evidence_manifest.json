@@ -1,0 +1,79 @@
+{
+  "artifacts": [
+    {
+      "path": "config/e4_target_freeze_manifest.yaml",
+      "role": "freeze_manifest",
+      "sha256": "sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json",
+      "role": "capture_ref",
+      "sha256": "sha256:e63c844aba1015ac8342bf8fdee158998e93f433dcb88bafe86aa3a991ee49ed"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e63c844aba1015ac8342bf8fdee158998e93f433dcb88bafe86aa3a991ee49ed",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:30cd98a820847b435c9d5c55a6aa32223400523dd50517a06cef579b5902481f"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json",
+      "role": "replay_ref",
+      "sha256": "sha256:bec0bf7df9488aa569ea0c542c7af9d70f3d7f91c8acc83482b298add1bb158e"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e63c844aba1015ac8342bf8fdee158998e93f433dcb88bafe86aa3a991ee49ed",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:bec0bf7df9488aa569ea0c542c7af9d70f3d7f91c8acc83482b298add1bb158e",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:30cd98a820847b435c9d5c55a6aa32223400523dd50517a06cef579b5902481f"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json",
+      "role": "comparator_ref",
+      "sha256": "sha256:8039c799c92c48e4480b8b408ce1875f6efb9a75be23343ac858ed0837b8bb0f"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:8039c799c92c48e4480b8b408ce1875f6efb9a75be23343ac858ed0837b8bb0f"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json",
+      "role": "parity_results",
+      "sha256": "sha256:d1e9441253c356b849372993151e0a63e9c9b6700cb0b825b61c858a9206929e"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json",
+      "role": "secret_scan_report",
+      "sha256": "sha256:119454623291a5a74d08b7c4a66b6c274ad2f1788abbdafc2028f555b4c1e8c1"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json",
+      "role": "validator_output",
+      "sha256": "sha256:39aa37fd86adfe5cf47621721c2b4ce259976bd7325a5404d27037fb63d6eccb"
+    },
+    {
+      "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+      "role": "support_claim_ref",
+      "sha256": "sha256:d19766373ce9de1f817531faa283bc1209029275539ad15125a651f124ee7b13"
+    },
+    {
+      "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+      "role": "atomic_feature_ledger",
+      "sha256": "sha256:5e4e5eca69deb70174194c075e1958bc62fe5f04ab154eec482f788dda14b3b4"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",
+      "role": "projection_events",
+      "sha256": "sha256:30cd98a820847b435c9d5c55a6aa32223400523dd50517a06cef579b5902481f"
+    }
+  ],
+  "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
+  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+  "forbidden_roots_checked": [
+    "scratch",
+    "tmp",
+    "scratch_runs",
+    "/shared_folders"
+  ],
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "hash_algorithm": "sha256",
+  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+  "manifest_scope_note": "Every governed artifact for this oh_my_pi_p6_0_l6_tui_projection C4 chain is packet-local canonical repo evidence, source-freeze evidence under docs_tmp/phase_15/source_freezes, or a named target command/probe artifact. Scratch/tmp/shared roots are not promotion evidence.",
+  "schema_version": "bb.e4.evidence_manifest.v1"
+}

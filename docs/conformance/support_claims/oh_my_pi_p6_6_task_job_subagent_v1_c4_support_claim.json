@@ -1,0 +1,174 @@
+{
+  "acceptance_rationale": "The packet uses a fresh canonical capture with an explicit npx @oh-my-pi/pi-coding-agent@16.2.13 runner, lane-local cwd, and lane-local session dirs. The replay emits bb.work_item.v1 records for joined and detached subagents plus background/cancel work items; the comparator rejects job-manager-only evidence and records provider/API transport as capture machinery, not provider-parity support.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:5b27d787d4365382b31bcbbbe4ac5e09438f05c14f376d4e9e58344f4dea319f",
+  "catalog_binding": {
+    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 288
+  },
+  "claim_id": "oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "work_items_scope_matches_exact_claim",
+        "comparator_assertion_ids": [
+          "scope_matches_exact_claim"
+        ],
+        "description": "scope matches exact claim"
+      },
+      {
+        "behavior_id": "work_items_commands_exit_zero",
+        "comparator_assertion_ids": [
+          "commands_exit_zero"
+        ],
+        "description": "commands exit zero"
+      },
+      {
+        "behavior_id": "work_items_breadboard_work_items_schema_valid",
+        "comparator_assertion_ids": [
+          "breadboard_work_items_schema_valid"
+        ],
+        "description": "breadboard work items schema valid"
+      },
+      {
+        "behavior_id": "work_items_target_joined_subagent_lifecycle_observed",
+        "comparator_assertion_ids": [
+          "target_joined_subagent_lifecycle_observed"
+        ],
+        "description": "target joined subagent lifecycle observed"
+      },
+      {
+        "behavior_id": "work_items_target_detached_subagent_lifecycle_observed",
+        "comparator_assertion_ids": [
+          "target_detached_subagent_lifecycle_observed"
+        ],
+        "description": "target detached subagent lifecycle observed"
+      },
+      {
+        "behavior_id": "work_items_background_job_lifecycle_observed",
+        "comparator_assertion_ids": [
+          "background_job_lifecycle_observed"
+        ],
+        "description": "background job lifecycle observed"
+      },
+      {
+        "behavior_id": "work_items_cancel_lifecycle_observed",
+        "comparator_assertion_ids": [
+          "cancel_lifecycle_observed"
+        ],
+        "description": "cancel lifecycle observed"
+      },
+      {
+        "behavior_id": "work_items_job_manager_only_evidence_rejected",
+        "comparator_assertion_ids": [
+          "job_manager_only_evidence_rejected"
+        ],
+        "description": "job manager only evidence rejected"
+      },
+      {
+        "behavior_id": "work_items_provider_network_scope_limited",
+        "comparator_assertion_ids": [
+          "provider_network_scope_limited"
+        ],
+        "description": "provider network scope limited"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:729cfc49caf5cf2714a0b9fa4115c0426618119f37297c57a50d0d8050243795",
+  "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "final_readiness",
+      "model_inference",
+      "provider_authenticated",
+      "ui_parity",
+      "write_enabled"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+    "No job-manager-only, job manager only, list-only, poll-only, or cancel-only evidence is sufficient for this P6.6 claim.",
+    "No Pi target, P3 helper/runtime, P5 Pi lineage, P8 final-readiness, browser, screenshot, memory, compaction, TUI projection, or general P6/P7 support claim is made.",
+    "No provider parity, provider endpoint correctness, model quality, web search, external SaaS API, or credential behavior is claimed; provider/API/model events are present only because the target capture is provider-authenticated.",
+    "No write-enabled or danger-full-access sandbox behavior is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_6_task_job_subagent_v1#sha256:3fb7286e5cecc187d1039eb7358155eaaea92e0d13779e46085af710ccf7252a",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "target_support",
+  "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_397dab44f9f126c3#sha256:80f63c8744a7c23058943fc0b1d6b7985d338347b3b2656d41e5d2920810ec7d"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v1",
+    "legacy_scope": {
+      "background_job_observed": true,
+      "cancel_observed": true,
+      "detached_subagent_target_capture": true,
+      "fetch_event_count": 2,
+      "job_manager_only_evidence": false,
+      "joined_subagent_target_capture": true,
+      "network_observed": true,
+      "provider_authenticated_capture": true,
+      "provider_dispatch_observed": true,
+      "provider_parity_claimed": false,
+      "target_family": "oh_my_pi"
+    },
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json#sha256:4841267ce838a22b7216b3f88a8e509741716f268a3bdbc90366af0249366f44",
+  "phase_label": "P6",
+  "provider_model": "anthropic/claude-haiku-4-5",
+  "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:c163b9e72ab65429dd8366571387917ed67bc21c23a606b6a9405db2899d1966",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:559698a82fbb4ca5b082bccd30adf9642a43366b74df17aa3bc7bf4a2d6963c6",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p6_6_task_job_subagent_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v2",
+  "scope": {
+    "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+    "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+    "provider_model": "anthropic/claude-haiku-4-5",
+    "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json#sha256:66da20e9a02a36e84fe35a7a95c0d21ae11adcd3d4580ac007c3166e5b09f228",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "Oh-My-Pi 16.2.13 P6.6 task/job/subagent support is accepted for the named provider-authenticated capture only: joined subagent completion, detached subagent lifecycle, background job observation, and cancellation projected into bb.work_item.v1 records.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json#sha256:766703f7b060761a9bc7219c774186924d26a8b3cbd789d98fb9b50efd8d70c4"
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "artifacts": [
+    {
+      "path": "config/e4_target_freeze_manifest.yaml",
+      "role": "freeze_manifest",
+      "sha256": "sha256:bce8fbcec756c4ca1713151df21c08aceb2789a06b3f312bc1c230a84315fd87"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json",
+      "role": "capture_ref",
+      "sha256": "sha256:ba52dbe1e87ffc79e6fd6eeb83e8895f76507cde24e899936eec4462e2818459"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:ba52dbe1e87ffc79e6fd6eeb83e8895f76507cde24e899936eec4462e2818459",
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json#sha256:f0f713c53b9d159708097ef5f2e0ddd82035dcd49ce668993386fa1f48ed28ad"
+      ],
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json",
+      "role": "replay_ref",
+      "sha256": "sha256:32b41b3cefbcf56613db6ec6aaf893813a83a116eee52437510717064ced6506"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:ba52dbe1e87ffc79e6fd6eeb83e8895f76507cde24e899936eec4462e2818459",
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json#sha256:32b41b3cefbcf56613db6ec6aaf893813a83a116eee52437510717064ced6506",
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json#sha256:f0f713c53b9d159708097ef5f2e0ddd82035dcd49ce668993386fa1f48ed28ad"
+      ],
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json",
+      "role": "comparator_ref",
+      "sha256": "sha256:02e7a2420af066d8d97961f18891057b838332f77df21f739df4a320c8e71d0a"
+    },
+    {
+      "path": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+      "role": "support_claim_ref",
+      "sha256": "sha256:f39a0272e102ef52692828a1a069e0644c8ddadc454b4127800eb85954b19612"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json",
+      "role": "parity_results",
+      "sha256": "sha256:d19ed41388024e94849cf9087d2ff89d2e37513faa2565d4cfb62f354716304e"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json",
+      "role": "secret_scan_report",
+      "sha256": "sha256:f033e4e2b70364f8b0c178252c862a98d91aa7d9e08a4c56375e4ea448ac42d7"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/prevalidation_report.json",
+      "role": "validator_output",
+      "sha256": "sha256:049cbe20737a74146df0e5e0b0fad6be80daf2f6810a6d498c98dee08ee62ca9"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json",
+      "role": "target_setup_report",
+      "sha256": "sha256:d11e1155d75b5bb80f2bc21754c836056734ed7c6861cb9d5931fd7709ee1057"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json",
+      "role": "target_probe_output",
+      "sha256": "sha256:f0f713c53b9d159708097ef5f2e0ddd82035dcd49ce668993386fa1f48ed28ad"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs",
+      "role": "target_probe_script",
+      "sha256": "sha256:d84700ffe82039146008260f2cf43b5e8b8488571e99543d251a2fe9694bae47"
+    },
+    {
+      "path": "agent_configs/misc/pi_p5_l2_extension_session_residual_v1.yaml",
+      "role": "agent_config",
+      "sha256": "sha256:756fdbcab340647580f6cf4a090ea566420e58387c61a83c3d7e9302987c35b1"
+    },
+    {
+      "path": "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
+      "role": "source_freeze",
+      "sha256": "sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602"
+    },
+    {
+      "bytes": 4755355,
+      "path": "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
+      "role": "source_archive",
+      "sha256": "sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b"
+    }
+  ],
+  "claim_id": "pi_p5_l2_extension_session_residual_v1_c4_support_claim",
+  "config_id": "pi_p5_l2_extension_session_residual_v1",
+  "forbidden_roots_checked": [
+    "scratch",
+    "tmp",
+    "scratch_runs",
+    "/shared_folders"
+  ],
+  "generated_at_utc": "2026-07-03T10:45:00Z",
+  "hash_algorithm": "sha256",
+  "lane_id": "pi_p5_l2_extension_session_residual",
+  "manifest_scope_note": "Every governed artifact for this Pi P5 residual C4 chain is canonical repo evidence or source-freeze/archive evidence under docs_tmp/phase_15; temporary target extraction paths are not promotion evidence.",
+  "schema_version": "bb.e4.evidence_manifest.v1"
+}

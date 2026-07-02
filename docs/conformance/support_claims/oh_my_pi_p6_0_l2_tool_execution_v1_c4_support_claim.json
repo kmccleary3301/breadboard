@@ -1,0 +1,123 @@
+{
+  "acceptance_rationale": "The governed claim is limited to the exact config, lane, run, Oh-My-Pi coding-agent version, and provider-free read-only sandbox named in the evidence. The packet contains raw command reports, a target API probe, replay normalization, comparator pass, parity result, packet-local secret scan, and validator-output hashes.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json#sha256:541c8fa785cf5d8e48b9619755fd201e95df956c14e91e43479b358309bcbf67",
+  "catalog_binding": {
+    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 288
+  },
+  "claim_id": "oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "tool_execution_scope_matches_exact_claim",
+        "comparator_assertion_ids": [
+          "scope_matches_exact_claim"
+        ],
+        "description": "scope matches exact claim"
+      },
+      {
+        "behavior_id": "tool_execution_commands_exit_zero",
+        "comparator_assertion_ids": [
+          "commands_exit_zero"
+        ],
+        "description": "commands exit zero"
+      },
+      {
+        "behavior_id": "tool_execution_custom_extension_surfaces_exercised",
+        "comparator_assertion_ids": [
+          "custom_extension_surfaces_exercised"
+        ],
+        "description": "custom extension surfaces exercised"
+      },
+      {
+        "behavior_id": "tool_execution_provider_network_surfaces_absent",
+        "comparator_assertion_ids": [
+          "provider_network_surfaces_absent"
+        ],
+        "description": "provider network surfaces absent"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/comparator_report.json#sha256:75cef22187aec0a95aa98a383c5c1754af99fd5b3a9d44ef4a9f35fc93e0208c",
+  "config_id": "oh_my_pi_p6_0_l2_tool_execution_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "mcp",
+      "network",
+      "provider_authenticated",
+      "ui_parity",
+      "write_enabled"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+    "No provider-authenticated, browser, UI, write-enabled sandbox, danger-full-access, MCP, memory, or task/agent-routing support claim is made.",
+    "No network/provider fetch interception claim is made beyond the packet-local probe showing no fetch/provider dispatch occurred in this run."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l2_tool_execution_v1#sha256:ab8d9820d4d68a9b0567568a10a1e3d0f88844f194c4c947a5173ca0cf61901d",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "target_support",
+  "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_b0d3b6e55812d206#sha256:e6be57be4822707879a7ed3f41c8c1289687206cb7ee7d5f92504fbd4ff97511"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v2",
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/parity_results.json#sha256:f88837fa163d4d82ba1fa66e047012aee8090ddefbf48e4f32c3ab2f13905289",
+  "phase_label": "P6",
+  "provider_model": "no-provider",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/bb_replay_result.json#sha256:3461b6a831c014511370cd321a9cfcfdb4d4fde72495b2d37463a7fdbe5be88d",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p6_0_l2_tool_execution_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l2_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "run_id": "20260701_oh_my_pi_p6_0_l2_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v2",
+  "scope": {
+    "config_id": "oh_my_pi_p6_0_l2_tool_execution_v1",
+    "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l2_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/secret_scan_report.json#sha256:9b7acf436cff49b94783bb241aa0cdd8a871a779968029b943dcf0c55792d6c6",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "Oh-My-Pi 16.2.13 provider-free local tool execution, custom command, custom tool, and hook support is accepted only for the named P6.0-L2 lane, run, config, target version, and read-only sandbox scope.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/prevalidation_report.json#sha256:451572bedadc9e37bc6b59de72908d02cf1df2bdc743cb2b02a6a7bb81dacc7a"
+  ]
+}

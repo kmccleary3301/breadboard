@@ -1,0 +1,122 @@
+{
+  "acceptance_rationale": "The packet binds freeze row, capture, replay, comparator, secret-scan, parity, ledger row, and prevalidation artifacts under canonical roots; comparator rerun is deterministic over current input hashes.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/raw_capture_manifest.json#sha256:08eb9b4cef8fac675dfea16ca3bdb48a01851bd9ec830feb8dd278ca1ca71f43",
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "segment_hash": "sha256:102f2567633de63277174cf0e93487536877fbee3ce6ac3d344e57fe0c5bb4a1",
+    "segment_id": "opencode_north_star_capture_v1",
+    "shared_segment_hash": "sha256:51a9973aaf723738443d2d12ceb94b41d642106179d7e7f06d028f95e0db1d6c"
+  },
+  "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "replay_capture_target_config_present",
+        "comparator_assertion_ids": [
+          "target_config_present"
+        ],
+        "description": "target config present"
+      },
+      {
+        "behavior_id": "replay_capture_package_ref_present",
+        "comparator_assertion_ids": [
+          "package_ref_present"
+        ],
+        "description": "package ref present"
+      },
+      {
+        "behavior_id": "replay_capture_pinned_target_version",
+        "comparator_assertion_ids": [
+          "pinned_target_version"
+        ],
+        "description": "pinned target version"
+      },
+      {
+        "behavior_id": "replay_capture_read_only_scope_declared",
+        "comparator_assertion_ids": [
+          "read_only_scope_declared"
+        ],
+        "description": "read only scope declared"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/comparator_report.json#sha256:a1bf2d54a221b0f833d834c1c11310067111da8ef70b6c81c75aae0614eada11",
+  "config_id": "opencode_gpt51mini_north_star_capture_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "final_readiness",
+      "model_inference",
+      "network",
+      "provider_authenticated",
+      "ui_parity",
+      "write_enabled"
+    ],
+    "excluded_families": [
+      "all_other_families"
+    ]
+  },
+  "exclusions": [
+    "No broad opencode target-family support claim is made from this exact north-star micro-lane.",
+    "No provider-authenticated inference, network, browser, write-enabled, danger-full-access, UI-parity, or final-readiness behavior is claimed.",
+    "No claim is made for any other target family or any surface outside the named config, run, target version, provider model, and sandbox mode."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#opencode_gpt51mini_north_star_capture_v1#sha256:01983e5e42c4effb785306c0361812d96d0a91761f9f82a9f35165fb930607c9",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "target_support",
+  "lane_id": "opencode_north_star_capture_v1",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_48d391c67faf0adf#sha256:b3c02fb48db410d0258908a94831d5999670ae861c5d97016bc49284355a57c8"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v3"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/parity_results.json#sha256:b424503963be649e190cd1a7f528fd69278b13b5ae7ed3e7eee03f2bba9373a6",
+  "phase_label": "WS-J",
+  "provider_model": "openai/gpt-5.1-codex-mini",
+  "replay_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/bb_replay_result.json#sha256:45e63bc3acca7379178003b17fd4ac4fafec703130164c044f06c27aeb7bc121",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "opencode_gpt51mini_north_star_capture_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_north_star_opencode_capture_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "run_id": "20260707_north_star_opencode_capture",
+  "sandbox_mode": "read-only static package capture",
+  "schema_version": "bb.e4.support_claim.v3",
+  "scope": {
+    "config_id": "opencode_gpt51mini_north_star_capture_v1",
+    "lane_id": "opencode_north_star_capture_v1",
+    "provider_model": "openai/gpt-5.1-codex-mini",
+    "run_id": "20260707_north_star_opencode_capture",
+    "sandbox_mode": "read-only static package capture",
+    "target_version": "opencode 1.2.17"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/secret_scan_report.json#sha256:0b494d085ac516eb663f84f9cb579a1b938bb6aa8ad3ade6cd289df24ee20f01",
+  "summary": "opencode 1.2.17 north-star exact-scope evidence packet is accepted for opencode_north_star_capture_v1 only.",
+  "target_family": "opencode",
+  "target_version": "opencode 1.2.17",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/opencode_north_star_capture_v1/prevalidation_report.json#sha256:f1dcea7648456c1ef3357c2a9e6561a0f7c364d2f7e526f0c04e713469e4ec30"
+  ]
+}

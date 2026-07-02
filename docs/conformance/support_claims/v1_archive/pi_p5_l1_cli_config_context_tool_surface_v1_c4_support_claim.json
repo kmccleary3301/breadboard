@@ -1,0 +1,57 @@
+{
+  "acceptance_rationale": "The target capture installs and runs the frozen Pi source in an isolated no-secret workspace, executes CLI help/version, imports Pi modules through tsx, and compares observed settings/context/tool outputs to exact expectations.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:4fa47024e2588687109ecce4733f8280d611e8733efb158ae874f4d332681ecf",
+  "claim_id": "pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim",
+  "comparator_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json#sha256:49ed8583d974e97994523aa3635412dfcf2bfc44a6ed96af664e0ac54b60bf20",
+  "config_id": "pi_p5_l1_cli_config_context_tool_surface_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
+  "exclusions": [
+    "No full P5.2 claim for every migration/writeback path; only the observed queueMode/websockets/skills migrations, runtime override, and default-model writeback are accepted.",
+    "No full P5.3 claim for every environment/date context; only observed AGENTS/CLAUDE ancestry, SYSTEM/APPEND prompt discovery, cwd, and Pi env capture are accepted.",
+    "No P5.5 extension hook behavior is claimed.",
+    "No P5.6 session/resume/fork/compaction behavior is claimed.",
+    "No provider-authenticated inference, network, UI, or broad Pi customization parity is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#pi_p5_l1_cli_config_context_tool_surface_v1#sha256:6eb1a6ec54942a0db703d6b4e96b78c653b3571c6532a86fbfc42503a6e4ec94",
+  "generated_at_utc": "2026-07-03T08:30:00Z",
+  "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_2f47f564bacc6202#sha256:5b33930005caecc68dd4ec7c54a4d5015370b91ea42284b45350cc29be729f7d"
+  ],
+  "level": "P5.1/P5.2-subset/P5.3-subset/P5.4/P5.7/P5.8",
+  "parity_results_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/parity_results.json#sha256:5bf019a8790d877ace0525dc8a75c41ed5c9a58a64bd601208fb8b0f94569d80",
+  "phase": "P5",
+  "points": 95,
+  "provider_model": "no-provider",
+  "replay_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json#sha256:f79d0d2a1abd3f10e688ee2be99334aa7217cd9abface2ba18218398751a2360",
+  "run_id": "20260703_pi_p5_l1_cli_config_context_tool_surface_capture",
+  "sandbox_mode": "read-only-no-secret",
+  "schema_version": "bb.e4.support_claim.v1",
+  "scope": {
+    "config_id": "pi_p5_l1_cli_config_context_tool_surface_v1",
+    "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+    "p5_items": [
+      "P5.1",
+      "P5.2-subset",
+      "P5.3-subset",
+      "P5.4",
+      "P5.7",
+      "P5.8"
+    ],
+    "phase": "P5",
+    "provider_model": "no-provider",
+    "run_id": "20260703_pi_p5_l1_cli_config_context_tool_surface_capture",
+    "sandbox_mode": "read-only-no-secret",
+    "target_version": "@mariozechner/pi-coding-agent@0.57.1"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/secret_scan_report.json#sha256:3e0b2f97143bed23a8b459b51648638c96be15107dc69a47c8b04f5f52ad4432",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json#sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602",
+  "summary": "Pi P5 L1 no-secret CLI/module support is accepted only for observed settings merge/runtime override/writeback, AGENTS/CLAUDE/SYSTEM/APPEND context ordering, and declared tool surfaces.",
+  "target_family": "pi",
+  "target_version": "@mariozechner/pi-coding-agent@0.57.1",
+  "tool_id": "pi.p5.target_probe(settings-manager,resource-loader,tools)",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/prevalidation_report.json#sha256:183cd0cdbf0cc6944e4fb3dc47c60b186c9aff0e8763cb1b8a63e89a3e446d3b"
+  ]
+}

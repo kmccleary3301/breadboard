@@ -1,0 +1,140 @@
+{
+  "acceptance_rationale": "The governed claim is limited to exact gallery stdout projections for read success, bash error, and report_tool_issue success. The packet contains raw command reports, replay normalization into bb.projection_event.v1 with kernel_truth=false, comparator pass, parity result, packet-local secret scan, validator-output hash, and ledger-row freshness.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e63c844aba1015ac8342bf8fdee158998e93f433dcb88bafe86aa3a991ee49ed",
+  "catalog_binding": {
+    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 288
+  },
+  "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "projection_ui_scope_matches_exact_claim",
+        "comparator_assertion_ids": [
+          "scope_matches_exact_claim"
+        ],
+        "description": "scope matches exact claim"
+      },
+      {
+        "behavior_id": "projection_ui_commands_exit_zero",
+        "comparator_assertion_ids": [
+          "commands_exit_zero"
+        ],
+        "description": "commands exit zero"
+      },
+      {
+        "behavior_id": "projection_ui_plain_gallery_stdout_contains_lifecycle_frames",
+        "comparator_assertion_ids": [
+          "plain_gallery_stdout_contains_lifecycle_frames"
+        ],
+        "description": "plain gallery stdout contains lifecycle frames"
+      },
+      {
+        "behavior_id": "projection_ui_projection_events_are_host_visible_not_kernel_truth",
+        "comparator_assertion_ids": [
+          "projection_events_are_host_visible_not_kernel_truth"
+        ],
+        "description": "projection events are host visible not kernel truth"
+      },
+      {
+        "behavior_id": "projection_ui_provider_network_scope_limited",
+        "comparator_assertion_ids": [
+          "provider_network_scope_limited"
+        ],
+        "description": "provider network scope limited"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:8039c799c92c48e4480b8b408ce1875f6efb9a75be23343ac858ed0837b8bb0f",
+  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "model_inference",
+      "provider_authenticated",
+      "write_enabled"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "breadboard",
+      "codex",
+      "opencode",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+    "No Pi, Opencode, OpenCode, Codex, Claude, provider-parity, memory, task/agent-routing, browser automation, screenshot, or general P6/P7 support claim is made.",
+    "No write-enabled, provider-authenticated, or danger-full-access sandbox behavior is claimed.",
+    "No claim is made for provider endpoints, web search execution, external SaaS APIs, model inference, or live transcript/session behavior.",
+    "No kernel-truth state mutation is claimed; the BreadBoard primitive records host-visible projection events with kernel_truth=false.",
+    "No memory backend, compaction, Hindsight, Mnemopi, task, job, or subagent semantics are claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l6_tui_projection_v1#sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "target_support",
+  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_55bf4adc8ee7717b#sha256:67333fa99f53666e6dc2f3aabd142011617df5a91263938120be6a7548d5f0aa"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v1",
+    "legacy_scope": {
+      "plain": true,
+      "projection_boundary": "host-visible projection-only; kernel_truth=false",
+      "terminal_width": 100
+    },
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json#sha256:d1e9441253c356b849372993151e0a63e9c9b6700cb0b825b61c858a9206929e",
+  "phase_label": "P6",
+  "provider_model": "no-provider",
+  "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:30cd98a820847b435c9d5c55a6aa32223400523dd50517a06cef579b5902481f",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:bec0bf7df9488aa569ea0c542c7af9d70f3d7f91c8acc83482b298add1bb158e",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p6_0_l6_tui_projection_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "run_id": "20260702_oh_my_pi_p6_0_l6_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v2",
+  "scope": {
+    "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+    "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+    "provider_model": "no-provider",
+    "run_id": "20260702_oh_my_pi_p6_0_l6_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json#sha256:119454623291a5a74d08b7c4a66b6c274ad2f1788abbdafc2028f555b4c1e8c1",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "Oh-My-Pi 16.2.13 provider-free `omp gallery --plain` host TUI/tool-surface projection is accepted only for the named P6.0-L6 lane, run, config, target version, fixed terminal width, selected renderer lifecycle states, and read-only projection-only scope.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json#sha256:39aa37fd86adfe5cf47621721c2b4ce259976bd7325a5404d27037fb63d6eccb"
+  ]
+}

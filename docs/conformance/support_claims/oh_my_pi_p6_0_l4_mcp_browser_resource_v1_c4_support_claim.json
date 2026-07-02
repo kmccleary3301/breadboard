@@ -1,0 +1,135 @@
+{
+  "acceptance_rationale": "The governed claim is limited to the exact config, lane, run, Oh-My-Pi coding-agent version, and provider-free read-only sandbox named in the evidence. The packet contains raw command reports, replay normalization, comparator pass, parity result, packet-local secret scan, validator-output hashes, and ledger-row freshness.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw_capture_manifest.json#sha256:6a1b4bd8293aeaa910dc010dec6d9f5e91cf55456ca2f17b2f05714f878eca87",
+  "catalog_binding": {
+    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 288
+  },
+  "claim_id": "oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "protocol_sessions_scope_matches_exact_claim",
+        "comparator_assertion_ids": [
+          "scope_matches_exact_claim"
+        ],
+        "description": "scope matches exact claim"
+      },
+      {
+        "behavior_id": "protocol_sessions_commands_exit_zero",
+        "comparator_assertion_ids": [
+          "commands_exit_zero"
+        ],
+        "description": "commands exit zero"
+      },
+      {
+        "behavior_id": "protocol_sessions_browser_mcp_filtered_local_resource_preserved",
+        "comparator_assertion_ids": [
+          "browser_mcp_filtered_local_resource_preserved"
+        ],
+        "description": "browser mcp filtered local resource preserved"
+      },
+      {
+        "behavior_id": "protocol_sessions_local_mcp_resource_read_and_tool_call",
+        "comparator_assertion_ids": [
+          "local_mcp_resource_read_and_tool_call"
+        ],
+        "description": "local mcp resource read and tool call"
+      },
+      {
+        "behavior_id": "protocol_sessions_provider_network_scope_limited",
+        "comparator_assertion_ids": [
+          "provider_network_scope_limited"
+        ],
+        "description": "provider network scope limited"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/comparator_report.json#sha256:8a3020309dbe445f96a5409ea10c97395f7bf8948180d21be92699429acbb491",
+  "config_id": "oh_my_pi_p6_0_l4_mcp_browser_resource_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "mcp",
+      "model_inference",
+      "provider_authenticated",
+      "ui_parity",
+      "write_enabled"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "codex",
+      "opencode",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+    "No Pi, Opencode, OpenCode, Codex, Claude, provider-parity, UI-parity, memory, task/agent-routing, or general P6/P7 support claim is made.",
+    "No write-enabled, provider-authenticated, or danger-full-access sandbox behavior is claimed.",
+    "No claim is made for provider endpoints, web search execution, external SaaS APIs, or model inference.",
+    "No external browser automation service execution is claimed; playwright and browserbase entries are only classified and filtered by target code before connection.",
+    "No broad MCP ecosystem support is claimed; evidence covers one packet-local stdio MCP fixture server, one deterministic resource read, one resource template, and one deterministic local tool call."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l4_mcp_browser_resource_v1#sha256:56a0a8d01d96df777c70e8938066a54ea5aab26c7bba132665c72c1eebad8d10",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "target_support",
+  "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_cca28b225f4e6aeb#sha256:a524f06c33ddd4cf69d9fa89b276872ae065073b426c78815685f6785c8a3555"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v2",
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/parity_results.json#sha256:4a6fce33c13e929c4dfe314a0d808382d688562e884fa9e87e6e7a91e007ed3e",
+  "phase_label": "P6",
+  "provider_model": "no-provider",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/bb_replay_result.json#sha256:7821101f52dece47e28cae604cc9a3c20c824bf18e8c415e9ff0f23cc5ada8ec",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p6_0_l4_mcp_browser_resource_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l4_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "run_id": "20260702_oh_my_pi_p6_0_l4_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v2",
+  "scope": {
+    "config_id": "oh_my_pi_p6_0_l4_mcp_browser_resource_v1",
+    "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+    "provider_model": "no-provider",
+    "run_id": "20260702_oh_my_pi_p6_0_l4_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/secret_scan_report.json#sha256:816a7fd42eb826ce0f15224e8ec3334b38a44b272a9f67d141aa11c10f5913e5",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "Oh-My-Pi 16.2.13 provider-free local MCP config loading, browser-automation MCP filtering, local stdio MCP resource listing/reading, resource-template listing, and deterministic local MCP tool calling are accepted only for the named P6.0-L4 lane, run, config, target version, and read-only sandbox scope.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/prevalidation_report.json#sha256:a48462e6b6e97379e95fa53fd37c9afda7c3b31aa2bcdda302480c4cf6a8511d"
+  ]
+}

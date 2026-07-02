@@ -1,0 +1,128 @@
+{
+  "acceptance_rationale": "P3.2 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715",
+  "catalog_binding": {
+    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 288
+  },
+  "claim_id": "oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "context_pack_schema_validation_passed",
+        "comparator_assertion_ids": [
+          "schema_validation_passed"
+        ],
+        "description": "schema validation passed"
+      },
+      {
+        "behavior_id": "context_pack_primary_primitive_present",
+        "comparator_assertion_ids": [
+          "primary_primitive_present"
+        ],
+        "description": "primary primitive present"
+      },
+      {
+        "behavior_id": "context_pack_context_order_preserved",
+        "comparator_assertion_ids": [
+          "context_order_preserved"
+        ],
+        "description": "context order preserved"
+      },
+      {
+        "behavior_id": "context_pack_redacted_env_hidden_from_model",
+        "comparator_assertion_ids": [
+          "redacted_env_hidden_from_model"
+        ],
+        "description": "redacted env hidden from model"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:d0f2f7555bd9683c38df531ef0247b3f3c188da05df9098ac4908135b72105cb",
+  "config_id": "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "final_readiness",
+      "mcp",
+      "model_inference",
+      "network",
+      "provider_authenticated",
+      "ui_parity"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Oh-My-Pi, OMP, Pi, provider-parity, UI, final-readiness, or target-customization support claim is made from this P3.2 helper/runtime lane.",
+    "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
+    "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_2_context_resource_pack_compiler_v1#sha256:714a8588ed5968a1fb5499819674f4a6e3382d7fdc4e2f7761132ac33acdaba8",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "non_target_accounting",
+  "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_e9ae27a72149301b#sha256:60bb174aaea97abb417401c8da3f41ed7f99aa667d52c2637a7d5eafbc6fa7ae"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v1",
+    "legacy_scope": {
+      "p3_item": "P3.2",
+      "phase": "P3"
+    },
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json#sha256:3f1664f39e845e895c2d3618838200c64fa5bb2bbd3894aa1b33f1f093a357e7",
+  "phase_label": "P3",
+  "provider_model": "no-provider",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:0c808af1ba7e021e869fd7825a20599510f884b5bd71cde7a84f777fcd48121f",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p32_context_resource_pack_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v2",
+  "scope": {
+    "config_id": "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
+    "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/secret_scan_report.json#sha256:2b67f284c84f11e2d589be24b7ecf248a96a55588795ee985ca37e8ba4ee9b5c",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "BreadBoard P3.2 context resource pack compiler support is accepted only for the named Oh-My-Pi source-derived helper/runtime fixture.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/prevalidation_report.json#sha256:71763ce363824a6203828cfc54117d996412b2fcf367ac354845af907aa93227"
+  ]
+}

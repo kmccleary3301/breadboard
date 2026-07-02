@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/schemas/bb.e4.lane_scaffold_manifest.v1.schema.json",
+  "title": "bb.e4.lane_scaffold_manifest.v1",
+  "description": "Deterministic manifest for scaffold-only E4 target lane packets. Manifests describe generated placeholders and guardrails only; they are not support claims.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "lane_id",
+    "config_id",
+    "target_family",
+    "target_version",
+    "provider_model",
+    "sandbox_mode",
+    "run_id",
+    "promotion_state",
+    "output_root",
+    "default_output_root",
+    "contracts",
+    "generated_directories",
+    "generated_files",
+    "guardrails"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.lane_scaffold_manifest.v1"
+    },
+    "lane_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "config_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "target_family": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "minLength": 2,
+      "maxLength": 80
+    },
+    "target_version": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+-]*$",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "provider_model": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:/+-]*$",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "sandbox_mode": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$",
+      "minLength": 2,
+      "maxLength": 80
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]*$",
+      "minLength": 2,
+      "maxLength": 160
+    },
+    "promotion_state": {
+      "const": "scaffold_only"
+    },
+    "output_root": {
+      "type": "string",
+      "pattern": "^docs_tmp/phase_15/lane_scaffolds/[a-z0-9][a-z0-9_-]*$"
+    },
+    "default_output_root": {
+      "type": "string",
+      "pattern": "^docs_tmp/phase_15/lane_scaffolds/[a-z0-9][a-z0-9_-]*$"
+    },
+    "contracts": {
+      "type": "object",
+      "required": [
+        "probe_report_schema",
+        "scaffold_manifest_schema"
+      ],
+      "properties": {
+        "probe_report_schema": {
+          "const": "docs/conformance/schemas/bb.e4.target_probe_report.v1.schema.json"
+        },
+        "scaffold_manifest_schema": {
+          "const": "docs/conformance/schemas/bb.e4.lane_scaffold_manifest.v1.schema.json"
+        }
+      },
+      "additionalProperties": false
+    },
+    "generated_directories": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "pattern": "^docs_tmp/phase_15/lane_scaffolds/[a-z0-9][a-z0-9_-]*(/[A-Za-z0-9_.-]+)*$"
+      }
+    },
+    "generated_files": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "$ref": "#/$defs/generated_file"
+      }
+    },
+    "guardrails": {
+      "type": "object",
+      "required": [
+        "scaffold_only",
+        "writes_accepted_evidence_roots",
+        "creates_support_claim",
+        "changes_accepted_score"
+      ],
+      "properties": {
+        "scaffold_only": {
+          "const": true
+        },
+        "writes_accepted_evidence_roots": {
+          "const": false
+        },
+        "creates_support_claim": {
+          "const": false
+        },
+        "changes_accepted_score": {
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "generated_file": {
+      "type": "object",
+      "required": [
+        "role",
+        "path"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$",
+          "minLength": 2,
+          "maxLength": 80
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^docs_tmp/phase_15/lane_scaffolds/[a-z0-9][a-z0-9_-]*(/[A-Za-z0-9_.-]+)+$"
+        },
+        "schema_version": {
+          "type": "string",
+          "pattern": "^bb\\.[A-Za-z0-9_.-]+\\.v[0-9]+$"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

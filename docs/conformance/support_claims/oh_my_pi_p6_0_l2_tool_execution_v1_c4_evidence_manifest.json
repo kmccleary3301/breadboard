@@ -1,0 +1,74 @@
+{
+  "artifacts": [
+    {
+      "path": "config/e4_target_freeze_manifest.yaml",
+      "role": "freeze_manifest",
+      "sha256": "sha256:ab8d9820d4d68a9b0567568a10a1e3d0f88844f194c4c947a5173ca0cf61901d"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json",
+      "role": "capture_ref",
+      "sha256": "sha256:541c8fa785cf5d8e48b9619755fd201e95df956c14e91e43479b358309bcbf67"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json#sha256:541c8fa785cf5d8e48b9619755fd201e95df956c14e91e43479b358309bcbf67"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/bb_replay_result.json",
+      "role": "replay_ref",
+      "sha256": "sha256:3461b6a831c014511370cd321a9cfcfdb4d4fde72495b2d37463a7fdbe5be88d"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json#sha256:541c8fa785cf5d8e48b9619755fd201e95df956c14e91e43479b358309bcbf67",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/bb_replay_result.json#sha256:3461b6a831c014511370cd321a9cfcfdb4d4fde72495b2d37463a7fdbe5be88d"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/comparator_report.json",
+      "role": "comparator_ref",
+      "sha256": "sha256:75cef22187aec0a95aa98a383c5c1754af99fd5b3a9d44ef4a9f35fc93e0208c"
+    },
+    {
+      "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+      "role": "support_claim_ref",
+      "sha256": "sha256:e9f6e602eb756776275c4f859f901556d20da08790ca0f56537bf49ac542e4b9"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/comparator_report.json#sha256:75cef22187aec0a95aa98a383c5c1754af99fd5b3a9d44ef4a9f35fc93e0208c"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/parity_results.json",
+      "role": "parity_results",
+      "sha256": "sha256:f88837fa163d4d82ba1fa66e047012aee8090ddefbf48e4f32c3ab2f13905289"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/secret_scan_report.json",
+      "role": "secret_scan_report",
+      "sha256": "sha256:9b7acf436cff49b94783bb241aa0cdd8a871a779968029b943dcf0c55792d6c6"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/prevalidation_report.json",
+      "role": "validator_output",
+      "sha256": "sha256:451572bedadc9e37bc6b59de72908d02cf1df2bdc743cb2b02a6a7bb81dacc7a"
+    },
+    {
+      "bytes": 124899,
+      "exists": true,
+      "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+      "role": "atomic_feature_ledger",
+      "sha256": "sha256:5e4e5eca69deb70174194c075e1958bc62fe5f04ab154eec482f788dda14b3b4"
+    }
+  ],
+  "claim_id": "oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim",
+  "config_id": "oh_my_pi_p6_0_l2_tool_execution_v1",
+  "forbidden_roots_checked": [
+    "scratch",
+    "tmp",
+    "scratch_runs",
+    "/shared_folders"
+  ],
+  "generated_at_utc": "2026-07-02T23:06:29Z",
+  "hash_algorithm": "sha256",
+  "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+  "manifest_scope_note": "Every governed artifact for this Oh-My-Pi P6.0-L2 C4 chain is packet-local canonical repo evidence, source-freeze evidence under docs_tmp/phase_15/source_freezes, or a named target command/probe artifact. Scratch/tmp/shared roots are not promotion evidence.",
+  "schema_version": "bb.e4.evidence_manifest.v1"
+}
