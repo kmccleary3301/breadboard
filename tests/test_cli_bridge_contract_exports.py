@@ -1,7 +1,107 @@
 from __future__ import annotations
 
+import ast
+
+import re
 import json
 from pathlib import Path
+
+
+SESSION_FILE_DTO_FIELDS = {
+    "SessionFileInfo": {
+        "path": {"optional": False, "ts_type": "string"},
+        "type": {"optional": False, "ts_type": '"file" | "directory"'},
+        "size": {"optional": True, "ts_type": "number"},
+        "updated_at": {"optional": True, "ts_type": "string"},
+    },
+    "SessionFileContent": {
+        "path": {"optional": False, "ts_type": "string"},
+        "content": {"optional": False, "ts_type": "string"},
+        "truncated": {"optional": True, "ts_type": "boolean"},
+        "total_bytes": {"optional": True, "ts_type": "number"},
+    },
+}
+
+
+def _python_bridge_model_fields(models_path: Path) -> dict[str, dict[str, dict[str, object]]]:
+    tree = ast.parse(models_path.read_text(encoding="utf-8"))
+    definitions: dict[str, int] = {name: 0 for name in SESSION_FILE_DTO_FIELDS}
+    fields_by_model: dict[str, dict[str, dict[str, object]]] = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef) or node.name not in SESSION_FILE_DTO_FIELDS:
+            continue
+        definitions[node.name] += 1
+        fields: dict[str, dict[str, object]] = {}
+        for statement in node.body:
+            if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+                fields[statement.target.id] = {
+                    "optional": _python_field_is_optional(statement),
+                    "ts_type": _python_annotation_ts_type(statement.annotation),
+                }
+        fields_by_model[node.name] = fields
+    duplicates = {name: count for name, count in definitions.items() if count != 1}
+    assert not duplicates, f"Expected exactly one Python DTO class definition per contract: {duplicates}"
+    return fields_by_model
+
+
+
+def _python_field_is_optional(statement: ast.AnnAssign) -> bool:
+    value = statement.value
+    if value is None:
+        return False
+    if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id == "Field":
+        if value.args and isinstance(value.args[0], ast.Constant) and value.args[0].value is Ellipsis:
+            return False
+        for keyword in value.keywords:
+            if keyword.arg == "default" and isinstance(keyword.value, ast.Constant) and keyword.value.value is Ellipsis:
+                return False
+    return True
+
+
+def _python_annotation_ts_type(annotation: ast.expr) -> str:
+    if isinstance(annotation, ast.Name):
+        mapping = {"str": "string", "int": "number", "bool": "boolean"}
+        if annotation.id in mapping:
+            return mapping[annotation.id]
+    if isinstance(annotation, ast.Subscript) and isinstance(annotation.value, ast.Name):
+        if annotation.value.id == "Optional":
+            return _python_annotation_ts_type(annotation.slice)
+        if annotation.value.id == "Literal":
+            values = annotation.slice.elts if isinstance(annotation.slice, ast.Tuple) else [annotation.slice]
+            return " | ".join(json.dumps(value.value) for value in values if isinstance(value, ast.Constant))
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        if isinstance(annotation.right, ast.Constant) and annotation.right.value is None:
+            return _python_annotation_ts_type(annotation.left)
+        if isinstance(annotation.left, ast.Constant) and annotation.left.value is None:
+            return _python_annotation_ts_type(annotation.right)
+    raise AssertionError(f"Unsupported Python DTO annotation: {ast.unparse(annotation)}")
+
+
+def _ts_interface_fields(types_path: Path, interface_name: str) -> dict[str, dict[str, object]]:
+    text = types_path.read_text(encoding="utf-8")
+    match = re.search(rf"export interface {interface_name} \{{(?P<body>.*?)\n\}}", text, flags=re.DOTALL)
+    assert match, f"Missing {interface_name} in {types_path}"
+    fields: dict[str, dict[str, object]] = {}
+    for raw_line in match.group("body").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("//"):
+            continue
+        prop = re.match(r"readonly (?P<name>[A-Za-z0-9_]+)(?P<optional>\?)?: (?P<type>.+)$", line)
+        assert prop, f"Unsupported {interface_name} property syntax in {types_path}: {raw_line!r}"
+        fields[prop.group("name")] = {
+            "optional": bool(prop.group("optional")),
+            "ts_type": prop.group("type").strip(),
+        }
+    return fields
+
+
+def test_session_file_dtos_do_not_drift_between_python_and_ts_contracts() -> None:
+    root = Path(__file__).resolve().parents[1]
+    python_fields = _python_bridge_model_fields(root / "agentic_coder_prototype" / "api" / "cli_bridge" / "models.py")
+    for model_name, expected_fields in SESSION_FILE_DTO_FIELDS.items():
+        assert python_fields[model_name] == expected_fields
+        for types_path in (root / "sdk" / "ts" / "src" / "types.ts", root / "tui_skeleton" / "src" / "api" / "types.ts"):
+            assert _ts_interface_fields(types_path, model_name) == expected_fields
 
 
 def test_cli_bridge_contract_files_present() -> None:
