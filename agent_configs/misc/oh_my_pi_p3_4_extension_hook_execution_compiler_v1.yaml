@@ -1,0 +1,12 @@
+schema_version: bb.e4.helper_runtime_lane_config.v1
+config_id: oh_my_pi_p3_4_extension_hook_execution_compiler_v1
+lane_id: oh_my_pi_p3_4_extension_hook_execution_compiler
+phase: P3
+p3_item: P3.4
+target_family: oh_my_pi
+target_version: '@oh-my-pi/pi-coding-agent@16.2.13'
+provider_model: no-provider
+sandbox_mode: read-only
+compiler: agentic_coder_prototype.compilation.helper_runtime_primitives.compile_extension_hook_execution
+primary_primitive: bb.extension_hook_execution.v1
+source_capture_ref: docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json

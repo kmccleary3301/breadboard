@@ -1,10 +1,8 @@
 schema_version: e4_target_freeze_manifest_v1
-manifest_updated_utc: '2026-03-05T18:48:46Z'
+manifest_updated_utc: '2026-07-01T18:37:08Z'
 notes:
-- This manifest pins each E4 BreadBoard config to the exact upstream harness snapshot
-  it was calibrated against.
-- When upstream harness behavior changes, add a new snapshot row and update the mapped
-  config intentionally.
+- This manifest pins each E4 BreadBoard config to the exact upstream harness snapshot it was calibrated against.
+- When upstream harness behavior changes, add a new snapshot row and update the mapped config intentionally.
 - Do not edit E4 configs without updating this manifest and re-running parity calibration.
 - Rows whose config files are no longer shipped are pruned during manifest maintenance.
 e4_configs:
@@ -501,3 +499,552 @@ e4_configs:
       - docs/conformance/e4_recalibration_evidence/ohmy_opencode_phase8_async_subagents_v1_20260305_v3100/parity_summary.json
     snapshot_source_entry: oh_my_opencode_e4_phase8_async_subagents_v1_replay
     snapshot_tag: codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305
+  codex_cli_gpt55_e4_capture_probe_v1:
+    config_path: agent_configs/misc/codex_cli_gpt55_e4_capture_probe_v1.yaml
+    harness:
+      family: codex_cli
+      upstream_repo: https://github.com/openai/codex
+      upstream_commit: npm-dist-shasum:e8fd38c8e293d358b8ae14102dd8f18213d4c8a0
+      upstream_commit_date: '2026-06-09T20:17:25.855Z'
+      upstream_release_label: '@openai/codex@0.139.0'
+      runtime_surface:
+        provider_model: gpt-5.5
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: codex_cli_e4_capture_probe_v1
+      run_id: 20260630_codex_gpt55_capture_probe
+      evidence_paths:
+      - docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/bb_replay_result.json
+      - docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json
+      - docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json
+      - docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/c4_validation_report.json
+      - docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/parity_results.jsonl
+      - docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json
+    snapshot_source_entry: codex_cli_gpt55_e4_capture_probe_v1
+    snapshot_tag: codex_cli_0.139.0_gpt55_live_probe_20260630
+  oh_my_pi_p6_0_l1_config_context_tool_surface_v1:
+    config_path: agent_configs/misc/oh_my_pi_p6_0_l1_config_context_tool_surface_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: oh_my_pi_p6_0_l1_config_context_tool_surface
+      run_id: 20260701_oh_my_pi_p6_0_l1_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p6_0_l1_config_context_tool_surface_v1
+    snapshot_tag: oh_my_pi_16.2.13_main_5356713e_p6_0_l1_20260701
+  oh_my_pi_p6_0_l2_tool_execution_v1:
+    config_path: agent_configs/misc/oh_my_pi_p6_0_l2_tool_execution_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: oh_my_pi_p6_0_l2_tool_execution
+      run_id: 20260701_oh_my_pi_p6_0_l2_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p6_0_l2_tool_execution_v1
+    snapshot_tag: oh_my_pi_16.2.13_main_5356713e_p6_0_l2_20260701
+  oh_my_pi_p6_0_l3_command_network_hook_v1:
+    config_path: agent_configs/misc/oh_my_pi_p6_0_l3_command_network_hook_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: oh_my_pi_p6_0_l3_command_network_hook
+      run_id: 20260701_oh_my_pi_p6_0_l3_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p6_0_l3_command_network_hook_v1
+    snapshot_tag: oh_my_pi_16.2.13_main_5356713e_p6_0_l3_20260701
+  oh_my_pi_p6_0_l4_mcp_browser_resource_v1:
+    config_path: agent_configs/misc/oh_my_pi_p6_0_l4_mcp_browser_resource_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: oh_my_pi_p6_0_l4_mcp_browser_resource
+      run_id: 20260702_oh_my_pi_p6_0_l4_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p6_0_l4_mcp_browser_resource_v1
+    snapshot_tag: oh_my_pi_16.2.13_main_5356713e_p6_0_l4_20260702
+  oh_my_pi_p6_0_l6_tui_projection_v1:
+    config_path: agent_configs/misc/oh_my_pi_p6_0_l6_tui_projection_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: oh_my_pi_p6_0_l6_tui_projection
+      run_id: 20260702_oh_my_pi_p6_0_l6_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p6_0_l6_tui_projection_v1
+    snapshot_tag: oh_my_pi_16.2.13_main_5356713e_p6_0_l6_20260702
+  oh_my_pi_p6_0_l5_memory_compaction_v1:
+    config_path: agent_configs/misc/oh_my_pi_p6_0_l5_memory_compaction_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713e
+      upstream_commit_date: '2026-07-02T00:00:00Z'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: oh_my_pi_p6_0_l5_memory_compaction
+      run_id: 20260703_oh_my_pi_p6_0_l5_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p6_0_l5_memory_compaction_v1
+    snapshot_tag: oh_my_pi_16.2.13_main_5356713e_p6_0_l5_20260703
+  oh_my_pi_p6_6_task_job_subagent_v1:
+    config_path: agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: anthropic/claude-haiku-4-5
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: oh_my_pi_p6_6_task_job_subagent
+      run_id: 20260703_oh_my_pi_p6_6_task_job_subagent_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p6_6_task_job_subagent_v1
+    snapshot_tag: oh_my_pi_16.2.13_main_5356713e_p6_6_20260703
+  oh_my_pi_p3_1_effective_config_graph_compiler_v1:
+    config_path: agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: oh_my_pi_p3_1_effective_config_graph_compiler
+      run_id: 20260701_oh_my_pi_p6_0_l1_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/secret_scan_report.json
+      - artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/effective_config_graph.v1.json
+      - artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/primitive_projection_manifest.v1.json
+    snapshot_source_entry: oh_my_pi_p3_1_effective_config_graph_compiler_v1
+    snapshot_tag: oh_my_pi_16.2.13_main_5356713e_p3_1_config_graph_20260703
+  oh_my_pi_p3_2_context_resource_pack_compiler_v1:
+    config_path: agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_ref: main
+      upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only
+        target_profile_id: oh_my_pi_p3_2_context_resource_pack_compiler
+    calibration_anchor:
+      class: derived_capture
+      scenario_id: oh_my_pi_p3_2_context_resource_pack_compiler
+      run_id: 20260701_oh_my_pi_p6_0_l1_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p3_2_context_resource_pack_compiler_v1
+    snapshot_tag: oh_my_pi_16.2.13_p3_helper_runtime_p3_2_20260703
+  oh_my_pi_p3_3_capability_registry_compiler_v1:
+    config_path: agent_configs/misc/oh_my_pi_p3_3_capability_registry_compiler_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_ref: main
+      upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only
+        target_profile_id: oh_my_pi_p3_3_capability_registry_compiler
+    calibration_anchor:
+      class: derived_capture
+      scenario_id: oh_my_pi_p3_3_capability_registry_compiler
+      run_id: 20260701_oh_my_pi_p6_0_l1_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p3_3_capability_registry_compiler_v1
+    snapshot_tag: oh_my_pi_16.2.13_p3_helper_runtime_p3_3_20260703
+  oh_my_pi_p3_4_extension_hook_execution_compiler_v1:
+    config_path: agent_configs/misc/oh_my_pi_p3_4_extension_hook_execution_compiler_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_ref: main
+      upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only
+        target_profile_id: oh_my_pi_p3_4_extension_hook_execution_compiler
+    calibration_anchor:
+      class: derived_capture
+      scenario_id: oh_my_pi_p3_4_extension_hook_execution_compiler
+      run_id: 20260701_oh_my_pi_p6_0_l1_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p3_4_extension_hook_execution_compiler_v1
+    snapshot_tag: oh_my_pi_16.2.13_p3_helper_runtime_p3_4_20260703
+  oh_my_pi_p3_5_resource_blob_compiler_v1:
+    config_path: agent_configs/misc/oh_my_pi_p3_5_resource_blob_compiler_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_ref: main
+      upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only
+        target_profile_id: oh_my_pi_p3_5_resource_blob_compiler
+    calibration_anchor:
+      class: derived_capture
+      scenario_id: oh_my_pi_p3_5_resource_blob_compiler
+      run_id: 20260701_oh_my_pi_p6_0_l1_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p3_5_resource_blob_compiler_v1
+    snapshot_tag: oh_my_pi_16.2.13_p3_helper_runtime_p3_5_20260703
+  oh_my_pi_p3_6_protocol_provider_policy_compiler_v1:
+    config_path: agent_configs/misc/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_ref: main
+      upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only
+        target_profile_id: oh_my_pi_p3_6_protocol_provider_policy_compiler
+    calibration_anchor:
+      class: derived_capture
+      scenario_id: oh_my_pi_p3_6_protocol_provider_policy_compiler
+      run_id: 20260701_oh_my_pi_p6_0_l1_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p3_6_protocol_provider_policy_compiler_v1
+    snapshot_tag: oh_my_pi_16.2.13_p3_helper_runtime_p3_6_20260703
+  oh_my_pi_p3_7_memory_work_compiler_v1:
+    config_path: agent_configs/misc/oh_my_pi_p3_7_memory_work_compiler_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_ref: main
+      upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only
+        target_profile_id: oh_my_pi_p3_7_memory_work_compiler
+    calibration_anchor:
+      class: derived_capture
+      scenario_id: oh_my_pi_p3_7_memory_work_compiler
+      run_id: 20260701_oh_my_pi_p6_0_l1_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p3_7_memory_work_compiler_v1
+    snapshot_tag: oh_my_pi_16.2.13_p3_helper_runtime_p3_7_20260703
+  oh_my_pi_p3_8_projection_broker_adapter_v1:
+    config_path: agent_configs/misc/oh_my_pi_p3_8_projection_broker_adapter_v1.yaml
+    harness:
+      family: oh_my_pi
+      upstream_repo: https://github.com/can1357/oh-my-pi
+      upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_ref: main
+      upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only
+        target_profile_id: oh_my_pi_p3_8_projection_broker_adapter
+    calibration_anchor:
+      class: derived_capture
+      scenario_id: oh_my_pi_p3_8_projection_broker_adapter
+      run_id: 20260701_oh_my_pi_p6_0_l1_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json
+      - docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json
+      - docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/prevalidation_report.json
+      - docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/secret_scan_report.json
+    snapshot_source_entry: oh_my_pi_p3_8_projection_broker_adapter_v1
+    snapshot_tag: oh_my_pi_16.2.13_p3_helper_runtime_p3_8_20260703
+  pi_p5_l1_cli_config_context_tool_surface_v1:
+    config_path: agent_configs/misc/pi_p5_l1_cli_config_context_tool_surface_v1.yaml
+    harness:
+      family: pi
+      upstream_repo: https://github.com/badlogic/pi-mono.git
+      upstream_commit: archive-sha256-bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
+      upstream_ref: archive:01_pi_mono_git_tracked.zip
+      upstream_version: '@mariozechner/pi-coding-agent@0.57.1'
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only-no-secret
+        target_profile_id: pi_p5_l1_cli_config_context_tool_surface
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: pi_p5_l1_cli_config_context_tool_surface
+      run_id: 20260703_pi_p5_l1_cli_config_context_tool_surface_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_setup_and_capture_report.json
+      - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json
+      - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json
+      - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json
+      - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/parity_results.json
+      - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/secret_scan_report.json
+      - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/prevalidation_report.json
+      - docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json
+      - docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json
+    snapshot_source_entry: pi_p5_l1_cli_config_context_tool_surface_v1
+    snapshot_tag: pi_0_57_1_p5_l1_cli_config_context_tool_surface_20260703
+  pi_p5_l2_extension_session_residual_v1:
+    config_path: agent_configs/misc/pi_p5_l2_extension_session_residual_v1.yaml
+    harness:
+      family: pi
+      upstream_repo: https://github.com/badlogic/pi-mono.git
+      upstream_commit: archive-sha256-bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
+      upstream_ref: archive:01_pi_mono_git_tracked.zip
+      upstream_version: '@mariozechner/pi-coding-agent@0.57.1'
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only-no-secret
+        target_profile_id: pi_p5_l2_extension_session_residual
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: pi_p5_l2_extension_session_residual
+      run_id: 20260703_pi_p5_l2_extension_session_residual_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/prevalidation_report.json
+      - docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json
+      - docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json
+    snapshot_source_entry: pi_p5_l2_extension_session_residual_v1
+    snapshot_tag: pi_0_57_1_p5_l2_extension_session_residual_20260703
+  claude_code_haiku45_north_star_capture_v1:
+    config_path: agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
+    harness:
+      family: claude_code
+      upstream_repo: https://github.com/anthropics/claude-code.git
+      upstream_commit: 9582ad480f687bbeaf0025852ac4f020b07f20bb
+      upstream_commit_date: '2026-03-05T00:25:31+00:00'
+      upstream_release_label: claude-code@snapshot-2026-03-04
+      runtime_surface:
+        provider_model: anthropic/claude-haiku-4-5-20251001
+    calibration_anchor:
+      class: probe_argv
+      scenario_id: claude_code_north_star_capture_v1
+      run_id: 20260707_north_star_claude_code_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/claude_code_north_star_capture_v1/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/claude_code_north_star_capture_v1/bb_replay_result.json
+      - docs/conformance/e4_target_support/claude_code_north_star_capture_v1/comparator_report.json
+      - docs/conformance/e4_target_support/claude_code_north_star_capture_v1/parity_results.json
+      - docs/conformance/e4_target_support/claude_code_north_star_capture_v1/secret_scan_report.json
+      - docs/conformance/e4_target_support/claude_code_north_star_capture_v1/prevalidation_report.json
+      - docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json
+      - docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json
+      - artifacts/conformance/node_gate/ct_north_star_claude_code_capture_c4_chain.json
+  opencode_gpt51mini_north_star_capture_v1:
+    config_path: agent_configs/opencode_1-2-17_e4_3-6-2026.yaml
+    harness:
+      family: opencode
+      upstream_repo: https://github.com/anomalyco/opencode
+      upstream_commit: 85ff05670a53079066fcbc0abc0271ea355585c1
+      upstream_commit_date: '2026-03-04T22:23:22-05:00'
+      upstream_release_label: opencode@dev-snapshot-2026-03-04
+      runtime_surface:
+        provider_model: openai/gpt-5.1-codex-mini
+    calibration_anchor:
+      class: probe_argv
+      scenario_id: opencode_north_star_capture_v1
+      run_id: 20260707_north_star_opencode_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/opencode_north_star_capture_v1/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/opencode_north_star_capture_v1/bb_replay_result.json
+      - docs/conformance/e4_target_support/opencode_north_star_capture_v1/comparator_report.json
+      - docs/conformance/e4_target_support/opencode_north_star_capture_v1/parity_results.json
+      - docs/conformance/e4_target_support/opencode_north_star_capture_v1/secret_scan_report.json
+      - docs/conformance/e4_target_support/opencode_north_star_capture_v1/prevalidation_report.json
+      - docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json
+      - docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json
+      - artifacts/conformance/node_gate/ct_north_star_opencode_capture_c4_chain.json
+  breadboard_self_runtime_records_v1:
+    config_path: agent_configs/atp_hilbert_like_gpt54_v1.yaml
+    harness:
+      family: breadboard
+      upstream_repo: local://breadboard
+      upstream_commit: '0000000'
+      upstream_commit_date: '2026-07-07T00:00:00Z'
+      upstream_release_label: breadboard-runtime-records-self-capture
+      runtime_surface:
+        provider_model: no-provider
+    calibration_anchor:
+      class: runtime_records
+      scenario_id: breadboard_self_runtime_records_v1
+      run_id: 20260707_north_star_breadboard_self_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json
+      - docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json
+      - docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/parity_results.json
+      - docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/secret_scan_report.json
+      - docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/prevalidation_report.json
+      - docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json
+      - docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json
+      - artifacts/conformance/node_gate/ct_north_star_breadboard_self_runtime_records_c4_chain.json
+      - docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json
+      - docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl
+      - docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl

@@ -1,0 +1,98 @@
+{
+  "schema_version": "bb.e4.lane_def.v1",
+  "lane_id": "codex_cli_e4_capture_probe_v1",
+  "config_id": "codex_cli_gpt55_e4_capture_probe_v1",
+  "target_family": "codex",
+  "target_version": "codex-cli 0.139.0",
+  "package_ref": "config/e4_targets/codex/0.107.0",
+  "kind": "target_support",
+  "status": "accepted",
+  "points": 100,
+  "capture": {
+    "strategy": "probe_argv",
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "codex_cli_gpt55_e4_capture_probe_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p7_codex_gpt55_c4_chain.json"
+    ],
+    "inputs": [],
+    "workspace_template": null
+  },
+  "normalize": {
+    "translator": "identity",
+    "config": {}
+  },
+  "replay": {
+    "session": null,
+    "comparator_class": "semantic"
+  },
+  "compare": {
+    "comparator": "codex_stored_report_replay",
+    "config": {
+      "assertions": [
+        {
+          "equals": true,
+          "path": "ok"
+        },
+        {
+          "equals": true,
+          "path": "accepted"
+        },
+        {
+          "equals": "codex_cli_gpt55_e4_capture_probe_v1",
+          "path": "config_id"
+        },
+        {
+          "equals": "gpt-5.5",
+          "path": "claimed_scope.provider_model"
+        },
+        {
+          "length_equals": 0,
+          "path": "errors"
+        }
+      ]
+    }
+  },
+  "claim": {
+    "scope": {
+      "behaviors": [
+        "bb.replay_session.v1"
+      ],
+      "surfaces": [
+        "P7 exact-scope C4 support chain"
+      ]
+    },
+    "exclusions": []
+  },
+  "ct": {
+    "description": "Codex CLI 0.139.0 gpt-5.5 exact-scope C4 support chain validation",
+    "timeout_seconds": 180
+  },
+  "artifacts_root": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "codex_cli_gpt55_e4_capture_probe_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p7_codex_gpt55_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "metadata": {
+    "legacy_inventory_ct_test_id": "CT-P7-CODEX-GPT55-C4-CHAIN"
+  }
+}

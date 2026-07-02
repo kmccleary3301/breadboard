@@ -1,0 +1,84 @@
+schema_version: bb.e4.lane_def.v2
+lane_id: breadboard_self_runtime_records_v1
+config_id: breadboard_self_runtime_records_v1
+target_family: breadboard
+target_version: breadboard runtime_records strict kernel emission
+package_ref: docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json
+kind: non_target_accounting
+status: accepted
+points: 15
+capture:
+  strategy: runtime_records
+  argv: null
+  inputs:
+    - agent_configs/atp_hilbert_like_gpt54_v1.yaml
+    - docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json
+  workspace_template: null
+normalize:
+  translator: identity
+  config: {}
+replay:
+  session: null
+  comparator_class: semantic
+compare:
+  comparator: north_star_stored_report_replay
+  config:
+    assertions:
+      - id: ok_true
+        path: ok
+        op: equals
+        value: true
+claim:
+  scope:
+    behaviors:
+      - bb.kernel_event.v2
+    surfaces:
+      - WS-J BreadBoard self-capture runtime_records
+  exclusions:
+    - broad target-family support
+artifacts_root: docs/conformance/e4_target_support/breadboard_self_runtime_records_v1
+reverify_command:
+  argv:
+    - .venv/bin/python
+    - scripts/validate_e4_c4_chain.py
+    - --config-id
+    - breadboard_self_runtime_records_v1
+    - --support-claim
+    - docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json
+    - --evidence-manifest
+    - docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json
+    - --json-out
+    - artifacts/conformance/node_gate/ct_north_star_breadboard_self_runtime_records_c4_chain.json
+    - --check-only
+  cwd: .
+ct:
+  test_id: CT-NORTH-STAR-BREADBOARD-SELF-RUNTIME-RECORDS-C4
+run:
+  run_id: 20260707_north_star_breadboard_self_capture
+  provider_model: no-provider
+  sandbox_mode: strict runtime_records self-capture
+provenance:
+  upstream_repo: local://breadboard
+  upstream_commit: "0000000"
+  upstream_commit_date: "2026-07-07T00:00:00Z"
+  upstream_release_label: breadboard-runtime-records-self-capture
+  source_paths:
+    - agent_configs/atp_hilbert_like_gpt54_v1.yaml
+    - docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json
+acceptance:
+  behavior_family: runtime_records
+  semantic_key: north_star_breadboard_runtime_records_self_capture
+  target: breadboard
+  assertions:
+    - id: runtime_records_manifest_present
+      description: runtime records manifest is present
+    - id: kernel_event_stream_present
+      description: kernel event stream is present
+    - id: strict_mode_quarantine_zero
+      description: strict mode has zero quarantine
+    - id: session_transcript_stream_present
+      description: session transcript stream is present
+    - id: replay_transcript_digest_matches_manifest
+      description: replay transcript digest matches manifest
+    - id: self_capture_schema_count
+      description: self capture emitted kernel_event records

@@ -1,0 +1,96 @@
+{
+  "schema_version": "bb.e4.lane_def.v1",
+  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "package_ref": null,
+  "kind": "target_support",
+  "status": "accepted",
+  "points": 20,
+  "capture": {
+    "strategy": "legacy_builder",
+    "argv": [
+      ".venv/bin/python",
+      "scripts/e4_parity/build_oh_my_pi_l6_tui_projection.py"
+    ],
+    "inputs": [
+      "scripts/e4_parity/build_oh_my_pi_l6_tui_projection.py"
+    ],
+    "workspace_template": null
+  },
+  "normalize": {
+    "translator": "identity",
+    "config": {}
+  },
+  "replay": {
+    "session": null,
+    "comparator_class": "semantic"
+  },
+  "compare": {
+    "comparator": "oh_my_pi_stored_report_replay",
+    "config": {
+      "assertions": [
+        {
+          "equals": true,
+          "path": "ok"
+        },
+        {
+          "length_equals": 0,
+          "path": "errors"
+        },
+        {
+          "equals": "oh_my_pi_p6_0_l6_tui_projection_v1",
+          "path": "claimed_scope.config_id"
+        },
+        {
+          "equals": "oh_my_pi_p6_0_l6_tui_projection",
+          "path": "claimed_scope.lane_id"
+        },
+        {
+          "equals": "no-provider",
+          "path": "claimed_scope.provider_model"
+        },
+        {
+          "equals": "read-only",
+          "path": "claimed_scope.sandbox_mode"
+        }
+      ]
+    }
+  },
+  "claim": {
+    "scope": {
+      "behaviors": [
+        "bb.projection_event.v1"
+      ],
+      "surfaces": [
+        "P6 exact-scope C4 support chain"
+      ]
+    },
+    "exclusions": []
+  },
+  "ct": {
+    "description": "Oh-My-Pi 16.2.13 provider-free P6.0-L6 TUI/gallery projection exact-scope C4 chain validation.",
+    "timeout_seconds": 180
+  },
+  "artifacts_root": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p6_0_l6_tui_projection_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "metadata": {
+    "legacy_inventory_ct_test_id": "CT-P6-OHMYPI-L6-TUI-PROJECTION-C4"
+  }
+}

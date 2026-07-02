@@ -1,0 +1,11 @@
+extends: oh_my_pi_p6_0_l1_config_context_tool_surface_v1.yaml
+
+profile:
+  name: oh-my-pi-p3-1-effective-config-graph-compiler-v1
+
+p3_acceptance:
+  item: P3.1
+  helper_module: agentic_coder_prototype.compilation.effective_config_graph
+  contract: bb.effective_config_graph.v1
+  source_capture: oh_my_pi_p6_0_l1_config_context_tool_surface
+  compiler_behavior: precedence_hash_migration_redaction_loader_separation
