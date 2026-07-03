@@ -1,5 +1,7 @@
 id: todo.list
 name: todo.list
+aliases:
+  - todoread
 description: List current todos, optionally filtering by status.
 type_id: python
 syntax_formats_supported: [native_function_calling]

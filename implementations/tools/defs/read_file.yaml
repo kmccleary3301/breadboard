@@ -2,6 +2,16 @@ id: read_file
 name: read_file
 description: Read a file's content with optional offset/limit for large files
 type_id: python
+binding:
+  module: agentic_coder_prototype.tools.files
+  callable: read_file
+aliases:
+  - read
+classification:
+  blocking: false
+  readonly: true
+  guardrail_class: read
+  guardrail_sets: [read]
 manipulations:
   - file.read
 syntax_formats_supported: [native_function_calling, json_block]

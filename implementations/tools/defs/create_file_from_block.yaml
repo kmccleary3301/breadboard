@@ -2,6 +2,8 @@ id: create_file_from_block
 name: create_file_from_block
 description: Create a new file from provided content block
 type_id: python
+aliases:
+  - write
 manipulations:
   - file.write
 syntax_formats_supported: [json_block]
