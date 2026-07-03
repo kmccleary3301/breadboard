@@ -11,6 +11,7 @@ from .concurrency_validator import (
     ConcurrencyConfigError,
     validate_concurrency_config,
 )
+from agentic_coder_prototype.compilation.tool_registry import load_tool_registry
 
 
 class AgentToolExecutor:
@@ -62,16 +63,13 @@ class AgentToolExecutor:
     def _load_concurrency_config(self) -> None:
         tools_cfg = (self.config.get("tools", {}) or {})
         raw_aliases = {str(k): str(v) for k, v in (tools_cfg.get("aliases") or {}).items()}
-        self.alias_map = raw_aliases
+        registry = load_tool_registry(tools_cfg.get("defs_dir"), aliases=raw_aliases)
+        self.alias_map = registry.alias_map()
 
         conc_cfg = dict(self._validated_concurrency)
 
         nb_override = conc_cfg.get("nonblocking_tools", []) or []
-        default_nb = [
-            'apply_unified_patch', 'apply_search_replace', 'create_file_from_block',
-            'read', 'read_file', 'glob', 'grep', 'list', 'list_dir', 'patch'
-        ]
-        source_nb = nb_override if nb_override else default_nb
+        source_nb = nb_override if nb_override else sorted(registry.nonblocking_names())
         self.nonblocking_names = {self._canonical_tool_name(str(n)) for n in source_nb if n}
 
         self.at_most_one_of = {self._canonical_tool_name(str(n)) for n in conc_cfg.get("at_most_one_of", []) or [] if n}
@@ -331,6 +329,7 @@ class AgentToolExecutor:
                     "expected_output": getattr(p, "expected_output", None),
                     "expected_status": getattr(p, "expected_status", None),
                     "expected_metadata": getattr(p, "expected_metadata", None),
+                    "id": getattr(p, "id", None) or getattr(p, "call_id", None),
                 }
                 tool_name = self._canonical_tool_name(p.function)
                 group = self.tool_to_group.get(tool_name)
@@ -403,6 +402,7 @@ class AgentToolExecutor:
                     "expected_output": getattr(p, "expected_output", None),
                     "expected_status": getattr(p, "expected_status", None),
                     "expected_metadata": getattr(p, "expected_metadata", None),
+                    "id": getattr(p, "id", None) or getattr(p, "call_id", None),
                 }
                 out = self.execute_tool_call(tool_call, exec_func)
             except Exception as e:
