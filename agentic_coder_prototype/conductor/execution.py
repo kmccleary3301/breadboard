@@ -176,11 +176,22 @@ def build_exec_func(conductor: ConductorContext, session_state: SessionState) ->
             tool_name = call.get("function") or call.get("name") or call.get("tool")
             turn_index = session_state.get_provider_metadata("current_turn_index")
             payload: Dict[str, Any] = {"tool": tool_name}
+            error = None
             if result is not None:
                 error = result.get("error") if isinstance(result, dict) else None
                 payload["success"] = bool(not error)
                 if error:
                     payload["error"] = str(error)
+            primitive = getattr(session_state, "emit_tool_call_primitive", None)
+            if callable(primitive):
+                primitive(call, "declared")
+                if phase == "started":
+                    primitive(call, "executing")
+                elif phase == "finished":
+                    primitive(call, "failed" if error else "completed", result=result if isinstance(result, dict) else None)
+                    outcome = getattr(session_state, "emit_tool_outcome_primitives", None)
+                    if callable(outcome) and isinstance(result, dict):
+                        outcome(call, result)
             session_state.record_lifecycle_event(
                 f"tool_call_{phase}",
                 payload,
@@ -502,6 +513,20 @@ def maybe_transition_plan_mode(conductor: ConductorContext, session_state: Sessi
     )
 
 
+def _emit_tool_denial_primitives(session_state: SessionState, parsed_calls: List[Any], reason: str) -> None:
+    for call in parsed_calls:
+        try:
+            primitive = getattr(session_state, "emit_tool_call_primitive", None)
+            if callable(primitive):
+                primitive(call, "declared")
+                primitive(call, "denied", result={"error": reason, "denied": True})
+            outcome = getattr(session_state, "emit_tool_outcome_primitives", None)
+            if callable(outcome):
+                outcome(call, {"error": reason, "denied": True})
+        except Exception:
+            pass
+
+
 def execute_agent_calls(
     conductor: ConductorContext,
     parsed_calls: List[Any],
@@ -520,6 +545,7 @@ def execute_agent_calls(
             conductor.permission_broker.ensure_allowed(session_state, parsed_calls)
         except Exception as exc:
             if exc.__class__.__name__ == "PermissionDeniedError":
+                _emit_tool_denial_primitives(session_state, parsed_calls, str(exc))
                 return [], 0, {"error": str(exc), "validation_failed": True, "permission_denied": True}, {}
             raise
 
@@ -574,6 +600,9 @@ def execute_agent_calls(
             transcript_callback=transcript_callback,
             policy_bypass=policy_bypass,
         )
+        if validation_error:
+            reason = str(validation_error.get("error") if isinstance(validation_error, dict) else validation_error)
+            _emit_tool_denial_primitives(session_state, parsed_calls, reason)
         if checkpoint_manager and before_tool and executed_results and not validation_error:
             after_tool: Optional[str] = None
             for parsed_call, tool_out in executed_results:

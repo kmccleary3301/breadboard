@@ -288,6 +288,8 @@ class AgenticCoder:
         replay_session: Optional[str] = None,
         parity_guardrails: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
+        kernel_emitter_run_dir: Optional[str] = None,
+        kernel_emitter_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run a single task and return results."""
         if replay_session and self.agent is not None:
@@ -354,6 +356,8 @@ class AgenticCoder:
                 event_queue=event_queue,
                 permission_queue=permission_queue,
                 control_queue=control_queue,
+                kernel_emitter_run_dir=kernel_emitter_run_dir,
+                kernel_emitter_mode=kernel_emitter_mode,
                 context=context,
             )
 
@@ -370,6 +374,8 @@ class AgenticCoder:
             event_queue=event_queue,
             permission_queue=permission_queue,
             control_queue=control_queue,
+            kernel_emitter_run_dir=kernel_emitter_run_dir,
+            kernel_emitter_mode=kernel_emitter_mode,
             context=context,
         )
         ray_mod = _get_ray()

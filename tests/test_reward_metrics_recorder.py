@@ -11,7 +11,7 @@ from agentic_coder_prototype.monitoring.reward_metrics import (
 from agentic_coder_prototype.state.session_state import SessionState
 from agentic_coder_prototype.provider.metrics import ProviderMetricsCollector
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from scripts.export_provider_metrics import aggregate
+from scripts.ops.export_provider_metrics import aggregate
 
 
 def test_sanitize_metric_name_enforces_uppercase_strip():
