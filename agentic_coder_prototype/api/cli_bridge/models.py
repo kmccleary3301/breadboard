@@ -58,9 +58,23 @@ class SessionSummary(BaseModel):
     metadata: Dict[str, Any] | None = None
 
 
-class ErrorResponse(BaseModel):
-    message: str
-    detail: Dict[str, Any] | None = None
+class ErrorEnvelope(BaseModel):
+    """Stable API error envelope.
+
+    Code taxonomy: unauthorized, not_found, conflict, invalid_request,
+    internal, gate_failed, unsupported_filter, and endpoint-specific stable
+    snake_case codes such as lane_not_found or schema_not_found.
+    """
+
+    error: str
+    detail: str | Dict[str, Any] | None = None
+    path: str | None = None
+
+
+class ErrorResponse(ErrorEnvelope):
+    """Backward-compatible OpenAPI name for legacy response declarations."""
+
+    pass
 
 
 class AttachmentHandle(BaseModel):
@@ -115,7 +129,7 @@ class SessionCommandResponse(BaseModel):
 
 class SessionFileInfo(BaseModel):
     path: str
-    type: str = Field(..., description="file or directory")
+    type: Literal["file", "directory"] = Field(..., description="file or directory")
     size: Optional[int] = None
     updated_at: Optional[str] = None
 
@@ -127,18 +141,6 @@ class SessionFileContent(BaseModel):
     total_bytes: Optional[int] = None
 
 
-class SessionFileInfo(BaseModel):
-    path: str
-    type: str = Field(..., description="file or directory")
-    size: Optional[int] = None
-    updated_at: Optional[str] = None
-
-
-class SessionFileContent(BaseModel):
-    path: str
-    content: str
-    truncated: bool = Field(default=False)
-    total_bytes: Optional[int] = None
 
 
 class ModelCatalogEntry(BaseModel):
