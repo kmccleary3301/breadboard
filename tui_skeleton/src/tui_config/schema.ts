@@ -1,4 +1,5 @@
 import type { TuiConfigInput } from "./types.js"
+import { parseBooleanLikeValue } from "../utils/envBoolean.js"
 
 type ValidationIssue = {
   readonly severity: "error" | "warning"
@@ -15,21 +16,10 @@ type ValidationOptions = {
   readonly strictUnknownKeys: boolean
 }
 
-const BOOL_TRUE = new Set(["1", "true", "yes", "on"])
-const BOOL_FALSE = new Set(["0", "false", "no", "off"])
-
 const toPath = (parts: readonly string[]): string => (parts.length > 0 ? parts.join(".") : "<root>")
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value != null
 
-const parseBooleanLike = (value: unknown): boolean | undefined => {
-  if (typeof value === "boolean") return value
-  if (typeof value !== "string") return undefined
-  const normalized = value.trim().toLowerCase()
-  if (BOOL_TRUE.has(normalized)) return true
-  if (BOOL_FALSE.has(normalized)) return false
-  return undefined
-}
 
 const readRecord = (
   source: Record<string, unknown>,
@@ -57,7 +47,7 @@ const readBoolean = (
   issues: ValidationIssue[],
 ): boolean | undefined => {
   if (!(key in source) || source[key] == null) return undefined
-  const parsed = parseBooleanLike(source[key])
+  const parsed = parseBooleanLikeValue(source[key])
   if (parsed == null) {
     issues.push({
       severity: "error",

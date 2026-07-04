@@ -5,6 +5,7 @@ import { ApiClient, ApiError } from "../api/client.js"
 import type { HealthResponse } from "../api/types.js"
 import { DEFAULT_CONFIG_PATH, loadAppConfig } from "../config/appConfig.js"
 import { getUserConfigPath } from "../config/userConfig.js"
+import { resolveAuthToken } from "../config/authTokenProvider.js"
 import { resolveBreadboardRepoPath } from "../utils/paths.js"
 import { shutdownEngine } from "../engine/engineSupervisor.js"
 
@@ -18,6 +19,8 @@ const maskToken = (token?: string): string => {
   if (token.length <= 6) return "***"
   return `${token.slice(0, 3)}…${token.slice(-3)}`
 }
+
+export const resolveDoctorAuthLabel = async (baseUrl: string): Promise<string> => maskToken(await resolveAuthToken(baseUrl))
 
 export const doctorCommand = Command.make(
   "doctor",
@@ -33,7 +36,7 @@ export const doctorCommand = Command.make(
 
       await Console.log("Breadboard doctor")
       await Console.log(`Base URL: ${appConfig.baseUrl}`)
-      await Console.log(`Auth token: ${maskToken(appConfig.authToken)}`)
+      await Console.log(`Auth token: ${await resolveDoctorAuthLabel(appConfig.baseUrl)}`)
       await Console.log(`User config: ${userConfigPath}`)
       await Console.log(`Config path: ${configPath}${configExists ? "" : " (missing)"}`)
 

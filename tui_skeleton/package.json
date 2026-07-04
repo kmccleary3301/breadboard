@@ -15,6 +15,8 @@
     "preflight:snapshot": "node --import tsx scripts/preflight_integrity_check.ts --snapshot",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "generate:api-client": "node --import tsx scripts/generate_api_client.ts",
+    "verify:generated": "node --import tsx scripts/generate_api_client.ts --check",
     "runtime:gate:jitter": "node --import tsx scripts/runtime_jitter_gate.ts",
     "runtime:gate:jitter:matrix": "node --import tsx scripts/runtime_jitter_matrix.ts",
     "runtime:gate:noise": "node --import tsx scripts/runtime_transcript_noise_gate.ts",
@@ -69,6 +71,7 @@
     "claude:compare:report": "node --import tsx scripts/claude_compare_report.ts"
   },
   "dependencies": {
+    "@breadboard/kernel-contracts": "file:../sdk/ts-kernel-contracts",
     "@effect/cli": "^0.69.0",
     "@effect/cluster": "^0.47.0",
     "@effect/platform": "^0.90.2",

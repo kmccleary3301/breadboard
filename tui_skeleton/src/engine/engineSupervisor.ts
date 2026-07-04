@@ -7,6 +7,7 @@ import net from "node:net"
 import { fileURLToPath } from "node:url"
 import { loadAppConfig } from "../config/appConfig.js"
 import { loadUserConfigSync } from "../config/userConfig.js"
+import { resolveAuthToken } from "../config/authTokenProvider.js"
 import { CLI_PROTOCOL_VERSION, CLI_VERSION } from "../config/version.js"
 import { assertRuntimeIntegrity, resolveEngineRoot as resolveRuntimeEngineRoot } from "../config/runtimePaths.js"
 
@@ -107,14 +108,50 @@ const resolveBaseUrl = (value: string | undefined): URL | null => {
   }
 }
 
+const HEALTH_AUTH_ABORTED = Symbol("health-auth-aborted")
+
+const resolveHealthAuthTokenWithAbort = async (
+  baseUrl: string,
+  signal: AbortSignal,
+): Promise<string | undefined | typeof HEALTH_AUTH_ABORTED> => {
+  if (signal.aborted) return HEALTH_AUTH_ABORTED
+
+  return await new Promise<string | undefined | typeof HEALTH_AUTH_ABORTED>((resolve, reject) => {
+    const onAbort = () => resolve(HEALTH_AUTH_ABORTED)
+    signal.addEventListener("abort", onAbort, { once: true })
+    Promise.resolve()
+      .then(() => resolveAuthToken(baseUrl))
+      .then(resolve, reject)
+      .finally(() => {
+        signal.removeEventListener("abort", onAbort)
+      })
+  })
+}
+
+
+const shouldRetryHealthWithAuth = (status: number): boolean => status === 401 || status === 403
+
+const fetchHealthResponse = async (
+  baseUrl: string,
+  controller: AbortController,
+): Promise<Response | typeof HEALTH_AUTH_ABORTED> => {
+  const url = new URL("health", baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`)
+  const response = await fetch(url, { signal: controller.signal })
+  if (!shouldRetryHealthWithAuth(response.status)) return response
+
+  const token = await resolveHealthAuthTokenWithAbort(baseUrl, controller.signal)
+  if (token === HEALTH_AUTH_ABORTED) return HEALTH_AUTH_ABORTED
+  const headers: Record<string, string> = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  return await fetch(url, { signal: controller.signal, headers })
+}
+
 const healthCheck = async (baseUrl: string, timeoutMs = HEALTH_TIMEOUT_MS): Promise<boolean> => {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const token = loadAppConfig().authToken
-    const headers: Record<string, string> = {}
-    if (token) headers.Authorization = `Bearer ${token}`
-    const response = await fetch(new URL("/health", baseUrl), { signal: controller.signal, headers })
+    const response = await fetchHealthResponse(baseUrl, controller)
+    if (response === HEALTH_AUTH_ABORTED) return false
     return response.ok
   } catch {
     return false
@@ -130,11 +167,8 @@ const fetchHealth = async (
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
-    const token = loadAppConfig().authToken
-    const headers: Record<string, string> = {}
-    if (token) headers.Authorization = `Bearer ${token}`
-    const response = await fetch(new URL("/health", baseUrl), { signal: controller.signal, headers })
-    if (!response.ok) return null
+    const response = await fetchHealthResponse(baseUrl, controller)
+    if (response === HEALTH_AUTH_ABORTED || !response.ok) return null
     const payload = (await response.json().catch(() => null)) as Record<string, any> | null
     if (!payload || typeof payload !== "object") return null
     return {
@@ -483,6 +517,8 @@ export const ensureEngine = async ({
 
   const config = loadAppConfig()
   const configUrl = resolveBaseUrl(config.baseUrl)
+  const explicitBaseUrl = process.env.BREADBOARD_API_URL?.trim() || loadUserConfigSync().baseUrl?.trim()
+  const explicitUrl = explicitBaseUrl ? resolveBaseUrl(explicitBaseUrl)?.toString().replace(/\/$/, "") : undefined
   const baseHost = isolated ? DEFAULT_HOST : configUrl?.hostname ?? DEFAULT_HOST
   const baseUrl = isolated
     ? `http://${baseHost}:${DEFAULT_PORT}`
@@ -490,7 +526,10 @@ export const ensureEngine = async ({
 
   if (!isolated) {
     const lock = readLockSync()
-    if (lock && isProcessAlive(lock.pid)) {
+    const lockBaseUrl = lock ? resolveBaseUrl(lock.baseUrl)?.toString().replace(/\/$/, "") : undefined
+    const lockMatchesRequestedUrl = !explicitUrl || explicitUrl === lockBaseUrl
+    const lockAlive = lock ? isProcessAlive(lock.pid) : false
+    if (lockMatchesRequestedUrl && lock && lockAlive) {
       const ok = await healthCheck(lock.baseUrl)
       if (ok) {
         activeBaseUrl = lock.baseUrl
@@ -498,7 +537,7 @@ export const ensureEngine = async ({
         await verifyProtocol(lock.baseUrl)
         return { baseUrl: lock.baseUrl, started: false, pid: lock.pid }
       }
-    } else if (lock) {
+    } else if (lock && (!lockAlive || lockMatchesRequestedUrl)) {
       await clearLock()
     }
   }
