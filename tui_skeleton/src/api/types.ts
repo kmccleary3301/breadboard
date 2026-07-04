@@ -1,3 +1,11 @@
+import type {
+  E4ArtifactCatalogV1,
+  E4LaneInventoryV2,
+  E4SupportClaimV2,
+  E4SupportClaimV3,
+  KernelEventV2,
+} from "@breadboard/kernel-contracts/generated"
+
 export type EventType =
   | "stream.hello"
   | "stream.gap"
@@ -85,6 +93,15 @@ export interface SessionFileContent {
   readonly content: string
   readonly truncated?: boolean
   readonly total_bytes?: number
+}
+
+export interface SessionInputResponse {
+  readonly status?: string
+}
+
+export interface SessionCommandResponse {
+  readonly status?: string
+  readonly detail?: Record<string, unknown> | null
 }
 
 export interface HealthResponse {
@@ -361,6 +378,209 @@ export interface ProviderAuthStatusItem {
 
 export interface ProviderAuthStatusResponse {
   readonly attached: ProviderAuthStatusItem[]
+}
+
+export interface E4Health {
+  readonly ok: boolean
+  readonly repo_root: string
+  readonly inventory_revision: number
+  readonly catalog_revision: number
+}
+
+export interface E4ApiErrorEnvelope {
+  readonly error: string
+  readonly detail?: string | null
+  readonly path?: string | null
+}
+
+export interface E4SchemaInfo {
+  readonly schema_id: string
+  readonly schema_version?: string | null
+  readonly path: string
+  readonly sha256: string
+}
+
+export interface E4SchemaList {
+  readonly schemas: E4SchemaInfo[]
+  readonly total: number
+}
+
+export type E4Lane = E4LaneInventoryV2["lanes"][number] & {
+  readonly [key: string]: unknown
+}
+
+export interface E4LaneList {
+  readonly lanes: E4Lane[]
+  readonly total: number
+}
+
+export interface E4ResolvedArtifact {
+  readonly role: string
+  readonly role_id: string
+  readonly path: string
+  readonly sha256?: string | null
+  readonly bytes?: number | null
+  readonly exists: boolean
+}
+
+export interface E4LaneDetail {
+  readonly lane: E4Lane
+  readonly resolved_artifacts: E4ResolvedArtifact[]
+}
+
+export type E4SupportClaim = (E4SupportClaimV2 | E4SupportClaimV3) & {
+  readonly [key: string]: unknown
+}
+
+export interface E4ClaimList {
+  readonly claims: E4SupportClaim[]
+  readonly total: number
+}
+
+export interface E4ClaimDetail {
+  readonly claim: E4SupportClaim
+  readonly evidence_manifest: Record<string, unknown>
+}
+
+export type E4CatalogEntry = E4ArtifactCatalogV1["entries"][number] & {
+  readonly [key: string]: unknown
+}
+
+export interface E4CatalogPage {
+  readonly revision: number
+  readonly total: number
+  readonly entries: E4CatalogEntry[]
+}
+
+export interface E4CatalogBindingSegment {
+  readonly segment_id: string
+  readonly stable_entries_hash: string
+}
+
+export interface E4CatalogBinding {
+  readonly catalog_path: string
+  readonly schema_version: string
+  readonly segments: E4CatalogBindingSegment[]
+  readonly segments_hash: string
+  readonly generated_at_utc?: string | null
+}
+
+export interface RegistryInfo {
+  readonly registry_id: string
+  readonly schema_version?: string | null
+  readonly path: string
+  readonly entries: number
+}
+
+export interface RegistryList {
+  readonly registries: RegistryInfo[]
+  readonly total: number
+}
+
+export interface E4LedgerRow {
+  readonly feature_id: string
+  readonly lane_id?: string | null
+  readonly points?: number | null
+  readonly status?: string | null
+  readonly [key: string]: unknown
+}
+
+export interface E4LedgerRows {
+  readonly rows: E4LedgerRow[]
+  readonly total: number
+}
+
+export interface E4RecordEnvelope {
+  readonly schema_version: string | null
+  readonly source: "evidence" | "runtime"
+  readonly path: string
+  readonly line?: number
+  readonly record: KernelEventV2 | Record<string, unknown>
+}
+
+export interface E4RecordList {
+  readonly records: E4RecordEnvelope[]
+  readonly total: number
+}
+
+export interface SessionKernelRecordEnvelope {
+  readonly schema_version: string | null
+  readonly path: string
+  readonly line: number
+  readonly record: KernelEventV2 | Record<string, unknown>
+}
+
+export interface SessionKernelRecordList {
+  readonly session_id: string
+  readonly records: SessionKernelRecordEnvelope[]
+  readonly offset: number
+  readonly limit: number
+  readonly total: number
+}
+
+export interface E4ReverifyRequest {
+  readonly rerun_comparators?: boolean
+}
+
+export interface E4ReverifyResult {
+  readonly ok: boolean
+  readonly errors: string[]
+  readonly claim_id: string
+  readonly mode: "check_only"
+  readonly comparator_rerun: boolean
+  readonly checked_at: string
+}
+
+export type E4CoverageMatrix = Record<string, unknown>
+
+export interface RlRunSubmitRequest {
+  readonly run_id: string
+  readonly tenant_id: string
+  readonly workspace_id: string
+  readonly env_package_ref: string
+  readonly target_run_id: string
+  readonly requested_tasks?: number
+  readonly requested_gpus?: number
+  readonly requested_budget_usd?: number
+  readonly requested_duration_seconds?: number
+  readonly metadata?: Record<string, unknown>
+}
+
+export interface RlRunStatus {
+  readonly run_id: string
+  readonly state: string
+  readonly target_run_id: string
+  readonly accepted: boolean
+  readonly cancellation_state: string
+  readonly reason?: string
+}
+
+export interface RlStreamEvent {
+  readonly sequence: number
+  readonly run_id: string
+  readonly event_type: string
+  readonly state: string
+  readonly message: string
+  readonly target_run_id: string
+  readonly payload: Record<string, unknown>
+}
+
+export interface RlArtifact {
+  readonly artifact_id: string
+  readonly relative_path: string
+  readonly sha256: string
+  readonly bytes: number
+  readonly egress_allowed: boolean
+}
+
+export interface RlAuditReport {
+  readonly run_id: string
+  readonly tenant_id: string
+  readonly workspace_id: string
+  readonly target_run_id: string
+  readonly state: string
+  readonly persistent_store: string
+  readonly scorecard_update_allowed: boolean
 }
 
 export interface ApiError extends Error {
