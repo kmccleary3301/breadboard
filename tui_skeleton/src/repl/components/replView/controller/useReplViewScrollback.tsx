@@ -22,6 +22,7 @@ import {
   reduceSubagentStripLifecycle,
   type SubagentStripSummary,
 } from "./subagentStrip.js"
+import { parseBooleanEnv } from "../../../../utils/envBoolean.js"
 
 type ScrollbackContext = Record<string, any>
 
@@ -34,13 +35,6 @@ const parseBoundedIntEnv = (value: string | undefined, fallback: number, min: nu
   return parsed
 }
 
-const parseBooleanEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (!value?.trim()) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
 const SUBAGENT_STRIP_IDLE_COOLDOWN_MS = parseBoundedIntEnv(
   process.env.BREADBOARD_SUBAGENTS_STRIP_IDLE_COOLDOWN_MS,

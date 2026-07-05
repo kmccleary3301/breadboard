@@ -3,17 +3,10 @@ import { Box, Text } from "ink"
 import type { TranscriptItem } from "../../../transcriptModel.js"
 import { buildCommandResultEntry, COMMAND_RESULT_LIMIT } from "./commandResults.js"
 import type { StaticFeedItem } from "../types.js"
+import { parseBooleanEnv } from "../../../../utils/envBoolean.js"
 
-const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return fallback
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
-const LANDING_ALWAYS = parseBoolEnv(process.env.BREADBOARD_TUI_LANDING_ALWAYS, true)
+const LANDING_ALWAYS = parseBooleanEnv(process.env.BREADBOARD_TUI_LANDING_ALWAYS, true)
 
 interface ScrollbackFeedOptions {
   readonly enabled: boolean

@@ -1,3 +1,5 @@
+import { parseBooleanEnv } from "../utils/envBoolean.js"
+
 export const DESIGN_SYSTEM_VERSION = "1.0.0"
 
 export const BRAND_COLORS = {
@@ -175,9 +177,8 @@ const ANSI16_FALLBACK: Record<string, Ansi16ColorName> = {
 
 export const resolveAsciiOnly = (override?: boolean): boolean => {
   if (override != null) return override
-  const raw = (process.env.BREADBOARD_ASCII ?? process.env.BREADBOARD_NO_UNICODE ?? "").toString().toLowerCase().trim()
-  if (!raw) return false
-  return ["1", "true", "yes", "on"].includes(raw)
+  const raw = process.env.BREADBOARD_ASCII ?? process.env.BREADBOARD_NO_UNICODE
+  return parseBooleanEnv(raw, false)
 }
 
 export const resolveIcons = (asciiOnly?: boolean): Icons =>

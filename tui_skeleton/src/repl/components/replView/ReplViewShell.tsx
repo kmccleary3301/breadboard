@@ -4,16 +4,9 @@ import { useStdout } from "ink"
 import { ModalHost } from "../ModalHost.js"
 import { TranscriptViewer } from "../TranscriptViewer.js"
 import type { ReplViewController } from "./controller/useReplViewController.js"
-import { createAltBufferSession } from "./altBufferSession.js"
+import { createAltBufferSession, type AltBufferSession } from "./altBufferSession.js"
+import { parseBooleanEnv } from "../../../utils/envBoolean.js"
 
-const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return fallback
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
 export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ controller }) => {
   const { stdout } = useStdout()
@@ -36,12 +29,12 @@ export const ReplViewShell: React.FC<{ controller: ReplViewController }> = ({ co
     modalStack,
     baseContent,
   } = controller
-  const altBufferEnabled = useMemo(() => parseBoolEnv(process.env.BREADBOARD_TUI_ALT_BUFFER_VIEWER, false), [])
+  const altBufferEnabled = useMemo(() => parseBooleanEnv(process.env.BREADBOARD_TUI_ALT_BUFFER_VIEWER, false), [])
   const resetOnResizeEnabled = useMemo(
-    () => parseBoolEnv(process.env.BREADBOARD_TUI_SCROLLBACK_RESET_ON_RESIZE, true),
+    () => parseBooleanEnv(process.env.BREADBOARD_TUI_SCROLLBACK_RESET_ON_RESIZE, true),
     [],
   )
-  const altBufferSessionRef = useRef<ReturnType<typeof createAltBufferSession> | null>(null)
+  const altBufferSessionRef = useRef<AltBufferSession | null>(null)
   const previousSizeRef = useRef<{ cols: number; rows: number } | null>(null)
   const [scrollbackEpoch, setScrollbackEpoch] = useState(0)
 

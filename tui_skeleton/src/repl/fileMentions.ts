@@ -1,3 +1,5 @@
+import { parseBooleanEnv } from "../utils/envBoolean.js"
+
 export type FileMentionMode = "reference" | "inline" | "auto"
 
 export interface FileMentionConfig {
@@ -10,13 +12,6 @@ export interface FileMentionConfig {
   readonly snippetTailLines: number
 }
 
-const parseBooleanEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
 const parseNumberEnv = (value: string | undefined, fallback: number): number => {
   if (value == null) return fallback

@@ -39,6 +39,8 @@ import { loadChromeMode } from "../../../chrome.js"
 import { configureShikiTheme, ensureShikiLoaded, maybeHighlightCode, subscribeShiki } from "../../../shikiHighlighter.js"
 import { getSessionDraft, updateSessionDraft } from "../../../../cache/sessionCache.js"
 import { buildConversationWindow, MAX_TRANSCRIPT_ENTRIES, MIN_TRANSCRIPT_ROWS } from "../../../transcriptUtils.js"
+import { parseBooleanEnv } from "../../../../utils/envBoolean.js"
+import type { UIClockTimeoutHandle } from "../../../clock/UIClock.js"
 import { CLI_VERSION, COLOR_MODE, DELTA_GLYPH, DOT_SEPARATOR, uiText } from "../theme.js"
 import {
   formatBytes,
@@ -57,7 +59,7 @@ import {
 } from "../utils/text.js"
 import { clampCommandLines, formatListCommandLines } from "../features/filePicker/atCommands.js"
 import { formatSizeDetail } from "../utils/files.js"
-import type { TranscriptMatch } from "../types.js"
+import type { StaticFeedItem, TranscriptMatch } from "../types.js"
 import { useReplLayout } from "../layout/useReplLayout.js"
 import { formatIsoTimestamp } from "../utils/diff.js"
 import { stripAnsiCodes } from "../utils/ansi.js"
@@ -96,6 +98,7 @@ import {
 } from "./replViewControllerUtils.js"
 import { useReplViewModalStack } from "./useReplViewModalStack.js"
 import { ReplViewBaseContent } from "./ReplViewBaseContent.js"
+import type { ModalDescriptor } from "../../ModalHost.js"
 import { buildTodoPreviewModel } from "../composer/todoPreview.js"
 import { buildThinkingPreviewModel } from "../composer/thinkingPreview.js"
 import { useTuiConfig } from "../../../../tui_config/context.js"
@@ -124,14 +127,6 @@ type TaskboardSessionPrefs = {
 }
 
 const TASKBOARD_SESSION_PREFS = new Map<string, TaskboardSessionPrefs>()
-const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return fallback
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
 const parseIntEnv = (value: string | undefined, fallback: number, minimum: number, maximum: number): number => {
   if (value == null) return fallback
@@ -144,15 +139,35 @@ const resolveScrollbackMode = (): boolean => {
   const explicitMode = (process.env.BREADBOARD_TUI_MODE ?? "").trim().toLowerCase()
   if (explicitMode === "window") return false
   if (explicitMode === "scrollback") return true
-  return parseBoolEnv(process.env.BREADBOARD_TUI_SCROLLBACK, true)
+  return parseBooleanEnv(process.env.BREADBOARD_TUI_SCROLLBACK, true)
 }
 
-const resolveScreenReaderMode = (): boolean => parseBoolEnv(process.env.BREADBOARD_TUI_SCREEN_READER, false)
+const resolveScreenReaderMode = (): boolean => parseBooleanEnv(process.env.BREADBOARD_TUI_SCREEN_READER, false)
 
 const resolveScreenReaderProfile = (): "concise" | "balanced" | "verbose" => {
   const raw = (process.env.BREADBOARD_TUI_SCREEN_READER_PROFILE ?? "").trim().toLowerCase()
   if (raw === "concise" || raw === "verbose") return raw
   return "balanced"
+}
+
+export interface ReplViewController {
+  readonly scrollbackMode: boolean
+  readonly staticFeed: StaticFeedItem[]
+  readonly transcriptViewerOpen: boolean
+  readonly transcriptViewerLines: string[]
+  readonly columnWidth: number
+  readonly rowCount: number
+  readonly transcriptViewerEffectiveScroll: number
+  readonly transcriptSearchOpen: boolean
+  readonly transcriptSearchQuery: string
+  readonly transcriptSearchLineMatches: number[]
+  readonly transcriptSearchMatches: TranscriptMatch[]
+  readonly transcriptSearchSafeIndex: number
+  readonly transcriptSearchActiveLine: number | null
+  readonly transcriptDetailLabel: string
+  readonly keymap: string
+  readonly modalStack: ModalDescriptor[]
+  readonly baseContent: React.ReactNode
 }
 
 export const useReplViewController = ({
@@ -214,12 +229,12 @@ export const useReplViewController = ({
   onReadFile,
   onCtreeRequest,
   onCtreeRefresh,
-}: ReplViewProps) => {
+}: ReplViewProps): ReplViewController => {
   const tuiConfig = useTuiConfig()
   const SCROLLBACK_MODE = useMemo(() => resolveScrollbackMode(), [])
   const SCREEN_READER_MODE = useMemo(() => resolveScreenReaderMode(), [])
   const SCREEN_READER_PROFILE = useMemo(() => resolveScreenReaderProfile(), [])
-  const FOOTER_V2_ENABLED = useMemo(() => parseBoolEnv(process.env.BREADBOARD_TUI_FOOTER_V2, true), [])
+  const FOOTER_V2_ENABLED = useMemo(() => parseBooleanEnv(process.env.BREADBOARD_TUI_FOOTER_V2, true), [])
   const collapsedEntriesRef = useRef(new Map<string, boolean>())
   const [collapsedVersion, setCollapsedVersion] = useState(0)
   const [selectedCollapsibleEntryId, setSelectedCollapsibleEntryId] = useState<string | null>(null)
@@ -263,7 +278,7 @@ export const useReplViewController = ({
   const permissionInputSnapshotRef = useRef<{ value: string; cursor: number } | null>(null)
   const permissionActiveRef = useRef(false)
   const permissionNoteRef = useRef(permissionNote)
-  const permissionDecisionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const permissionDecisionTimerRef = useRef<UIClockTimeoutHandle | null>(null)
   const [todosOpen, setTodosOpen] = useState(false)
   const [todoScroll, setTodoScroll] = useState(0)
   const [tasksOpen, setTasksOpen] = useState(false)
@@ -315,7 +330,7 @@ export const useReplViewController = ({
   const [transcriptNudge, setTranscriptNudge] = useState(0)
   const draftAppliedRef = useRef(false)
   const draftLoadSeq = useRef(0)
-  const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const draftSaveTimerRef = useRef<UIClockTimeoutHandle | null>(null)
   const lastSavedDraftRef = useRef<{ text: string; cursor: number } | null>(null)
   const { stdout } = useStdout()
   const [, forceShikiRefresh] = useState(0)
@@ -1255,10 +1270,10 @@ export const useReplViewController = ({
     global: handleGlobalKeys,
   })
 
-  const landingAlways = useMemo(() => {
-    const raw = (process.env.BREADBOARD_TUI_LANDING_ALWAYS ?? "").trim().toLowerCase()
-    return ["1", "true", "yes", "on"].includes(raw)
-  }, [])
+  const landingAlways = useMemo(
+    () => parseBooleanEnv(process.env.BREADBOARD_TUI_LANDING_ALWAYS, false),
+    [],
+  )
 
   const showLandingInline =
     SCROLLBACK_MODE &&
@@ -1470,5 +1485,3 @@ export const useReplViewController = ({
     baseContent,
   }
 }
-
-export type ReplViewController = ReturnType<typeof useReplViewController>

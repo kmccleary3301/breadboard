@@ -1,6 +1,7 @@
 import type { Block } from "@stream-mdx/core/types"
 import { MarkdownStreamer } from "../../markdown/streamer.js"
 import { scanStableBoundary } from "../../repl/markdown/stableBoundaryScanner.js"
+import { parseBooleanEnv } from "../../utils/envBoolean.js"
 import type {
   ConversationEntry,
   LiveSlotEntry,
@@ -8,16 +9,8 @@ import type {
   TranscriptPreferences,
 } from "../../repl/types.js"
 
-const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (!normalized) return fallback
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
-const STREAM_MARKDOWN = parseBoolEnv(process.env.BREADBOARD_MARKDOWN_STREAM, true)
+const STREAM_MARKDOWN = parseBooleanEnv(process.env.BREADBOARD_MARKDOWN_STREAM, true)
 const DEFAULT_MARKDOWN_MIN_CHUNK_CHARS = 24
 const DEFAULT_STABLE_TAIL_FLUSH_CHARS = 96
 const ENV_MARKDOWN_COALESCE_MS = Number(process.env.BREADBOARD_MARKDOWN_COALESCE_MS ?? "")
