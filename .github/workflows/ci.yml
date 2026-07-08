@@ -132,11 +132,11 @@ jobs:
               missing=1
             fi
           done
-          if [ "$missing" -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
+          if [ "$missing" -ne 0 ]; then
+            echo "Danger-zone ACR guard prerequisites are missing; failing closed."
+            exit 1
           fi
+          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-python@v5
         if: steps.danger_zone_prereqs.outputs.ready == 'true'
@@ -170,9 +170,9 @@ jobs:
             --repo-root . \
             --json-out artifacts/kernel_contract_pack_report.json
 
-      - name: Danger-zone ACR guard skipped (missing prerequisites)
-        if: steps.danger_zone_prereqs.outputs.ready != 'true'
-        run: echo "Danger-zone ACR guard skipped on this branch."
+      - name: Danger-zone ACR guard failed closed (missing prerequisites)
+        if: failure() && steps.danger_zone_prereqs.outputs.ready != 'true'
+        run: echo "Danger-zone ACR guard prerequisites were missing; the prerequisite step failed closed."
 
       - name: Upload danger-zone ACR report
         if: ${{ always() && steps.danger_zone_prereqs.outputs.ready == 'true' }}

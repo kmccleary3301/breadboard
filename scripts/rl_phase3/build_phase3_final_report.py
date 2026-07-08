@@ -63,6 +63,21 @@ def _scorecard(phase_dir: Path) -> dict:
     }
 
 
+def _require_ready_errors(report: Mapping[str, object]) -> list[str]:
+    errors: list[str] = []
+    active_scope = report.get("active_scope")
+    if not isinstance(active_scope, Mapping):
+        errors.append("active_scope must be present for --require-ready")
+        return errors
+    if active_scope.get("ready") is not True:
+        errors.append("active_scope.ready must be true for --require-ready")
+    verified = active_scope.get("core_raw_points_verified")
+    total = active_scope.get("core_raw_points_total")
+    if not isinstance(verified, int) or not isinstance(total, int) or verified != total:
+        errors.append("core_raw_points_verified must equal core_raw_points_total for --require-ready")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--phase-dir", required=True, type=Path)
@@ -80,12 +95,13 @@ def main() -> int:
         claim_ledger_text=_read_text(ledger_path),
     )
     errors = validate_phase3_final_report(report, repo_root=Path.cwd(), evidence_root=args.phase_dir.parents[1])
+    readiness_errors = _require_ready_errors(report) if args.require_ready else []
     report["validation_errors"] = errors
     output = runs / "p3_m12_final_report.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")
-    print(json.dumps({"report": str(output), "validation_errors": errors}, sort_keys=True))
-    return 0 if not args.require_ready or not errors else 1
+    print(json.dumps({"report": str(output), "validation_errors": errors, "readiness_errors": readiness_errors}, sort_keys=True))
+    return 0 if not args.require_ready or (not errors and not readiness_errors) else 1
 
 
 if __name__ == "__main__":

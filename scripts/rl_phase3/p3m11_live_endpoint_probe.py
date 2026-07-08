@@ -261,6 +261,8 @@ def collect_object_store_metrics() -> tuple[dict[str, Any], list[str]]:
     ]
     errors.extend(local_endpoint_errors)
     payload = f"breadboard-p3m11-object-store-probe\n{TARGET_RUN_ID}\n{COMMAND_ID}\n".encode("utf-8")
+    payload_sha256 = "sha256:" + hashlib.sha256(payload).hexdigest()
+    readback_body_sha256 = ""
     put_result: dict[str, Any] = {}
     get_result: dict[str, Any] = {}
     delete_result: dict[str, Any] = {}
@@ -271,7 +273,10 @@ def collect_object_store_metrics() -> tuple[dict[str, Any], list[str]]:
         put_result = _request(prefix=prefix, url=put_url, method=put_method, body=payload, extra_headers={"Content-Type": "text/plain"})
         if put_result.get("ok"):
             get_result = _request(prefix=prefix, url=get_url, method=get_method)
-            verified = bool(get_result.get("ok") and get_result.get("body") == payload)
+            readback_body = get_result.get("body")
+            if isinstance(readback_body, bytes):
+                readback_body_sha256 = "sha256:" + hashlib.sha256(readback_body).hexdigest()
+            verified = bool(get_result.get("ok") and readback_body == payload)
         if not put_result.get("ok"):
             errors.append("object_store_put_failed")
         elif not verified:
@@ -289,7 +294,9 @@ def collect_object_store_metrics() -> tuple[dict[str, Any], list[str]]:
         "object_store": backend,
         "object_store_writes": 1 if verified else 0,
         "artifact_bytes": len(payload) if verified else 0,
-        "artifact_sha256": "sha256:" + hashlib.sha256(payload).hexdigest() if verified else "",
+        "artifact_sha256": payload_sha256 if verified else "",
+        "written_sha256": payload_sha256 if verified else "",
+        "readback_sha256": readback_body_sha256 if verified else "",
         "env_presence": {
             "BREADBOARD_OBJECT_STORE_BASE_URL": present("BREADBOARD_OBJECT_STORE_BASE_URL"),
             "BREADBOARD_OBJECT_STORE_BUCKET": bool(bucket),

@@ -153,6 +153,34 @@ def _artifact_mapping(report: Mapping[str, Any]) -> dict[str, Any]:
         return {str(index): value for index, value in enumerate(artifacts)}
     return {}
 
+def validate_phase3_artifact_hashes(
+    report: Mapping[str, Any], *, required_artifact_keys: Sequence[str], evidence_root: Path
+) -> list[str]:
+    errors: list[str] = []
+    artifact_paths = _artifact_mapping(report)
+    input_hashes = report.get("input_hashes")
+    input_hashes = input_hashes if isinstance(input_hashes, Mapping) else {}
+    root = evidence_root.resolve()
+    for key in required_artifact_keys:
+        if key not in artifact_paths:
+            errors.append(f"artifact_paths.{key} must be present")
+            continue
+        path = _resolve_under(root, artifact_paths[key])
+        if path is None:
+            errors.append(f"artifact_paths.{key} must stay under evidence_root")
+            continue
+        if not path.exists() or not path.is_file():
+            errors.append(f"artifact_paths.{key} must exist")
+            continue
+        expected_hash = input_hashes.get(key)
+        if not isinstance(expected_hash, str) or not expected_hash:
+            errors.append(f"input_hashes.{key} must be present")
+            continue
+        if expected_hash != sha256_file(path):
+            errors.append(f"input_hashes.{key} must match artifact_paths.{key} content sha256")
+    return errors
+
+
 
 def validate_phase3_component_report(
     report: Mapping[str, Any], *, expected_schema: str, expected_claim_boundary: str, target_run_id: str,
@@ -178,14 +206,5 @@ def validate_phase3_component_report(
     artifact_paths = _artifact_mapping(report)
     if not artifact_paths:
         errors.append("artifact_paths must be present")
-    root = evidence_root.resolve()
-    for key in required_artifact_keys:
-        if key not in artifact_paths:
-            errors.append(f"artifact_paths.{key} must be present")
-            continue
-        path = _resolve_under(root, artifact_paths[key])
-        if path is None:
-            errors.append(f"artifact_paths.{key} must stay under evidence_root")
-        elif not path.exists():
-            errors.append(f"artifact_paths.{key} must exist")
+    errors.extend(validate_phase3_artifact_hashes(report, required_artifact_keys=required_artifact_keys, evidence_root=evidence_root))
     return errors

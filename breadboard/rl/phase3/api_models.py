@@ -19,10 +19,10 @@ class RLRunSubmitRequest(BaseModel):
     workspace_id: str
     env_package_ref: str
     target_run_id: str
-    requested_tasks: int = 1
-    requested_gpus: int = 1
-    requested_budget_usd: float = 0.0
-    requested_duration_seconds: int = 60
+    requested_tasks: int = Field(default=1, gt=0)
+    requested_gpus: int = Field(default=1, gt=0)
+    requested_budget_usd: float = Field(default=1.0, gt=0.0)
+    requested_duration_seconds: int = Field(default=60, gt=0)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -76,7 +76,17 @@ class RLRunAuditResponse(BaseModel):
     scorecard_update_allowed: bool
 
 
-class RLStreamEventModel(BaseModel):
+
+class RLProjectionEventModel(BaseModel):
+    """Projection-only RL run event.
+
+    This is a host-facing `/rl/runs/{run_id}/events` convenience envelope. It is
+    not the canonical kernel event envelope and must not be used as replay or
+    conformance truth.
+    """
+
+
+class RLStreamEventModel(RLProjectionEventModel):
     sequence: int
     run_id: str
     event_type: str

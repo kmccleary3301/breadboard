@@ -90,6 +90,8 @@ def create_phase3_rl_router(rl_service: LiveRLRunService | None = None) -> APIRo
             raise HTTPException(status_code=404, detail="run not found") from exc
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @router.get("/runs/{run_id}/artifacts", response_model=RLRunArtifactListResponse)
     def list_artifacts(run_id: str, tenant_id: str, workspace_id: str) -> RLRunArtifactListResponse:

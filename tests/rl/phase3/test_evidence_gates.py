@@ -105,3 +105,24 @@ def test_component_report_with_real_artifact_passes(tmp_path: Path) -> None:
         "artifact_paths": {"artifact": "artifact.json"},
     }
     assert validate_phase3_component_report(report, expected_schema=PHASE3_COMPONENT_REPORT_SCHEMA, expected_claim_boundary="boundary", target_run_id=TARGET, required_artifact_keys=("artifact",), evidence_root=tmp_path) == []
+
+
+
+def test_component_report_rejects_stale_artifact_input_hash(tmp_path: Path) -> None:
+    artifact = tmp_path / "artifact.json"
+    artifact.write_text('{"changed": true}\n')
+    report = {
+        "schema_version": PHASE3_COMPONENT_REPORT_SCHEMA,
+        "component": "gate",
+        "claim_boundary": "boundary",
+        "target_run_id": TARGET,
+        "passed": True,
+        "scorecard_update_allowed": False,
+        "report_id": "r",
+        "input_hashes": {"artifact": "sha256:" + "0" * 64},
+        "artifact_paths": {"artifact": "artifact.json"},
+    }
+
+    errors = validate_phase3_component_report(report, expected_schema=PHASE3_COMPONENT_REPORT_SCHEMA, expected_claim_boundary="boundary", target_run_id=TARGET, required_artifact_keys=("artifact",), evidence_root=tmp_path)
+
+    assert "input_hashes.artifact must match artifact_paths.artifact content sha256" in errors

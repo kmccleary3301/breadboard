@@ -96,6 +96,97 @@ def _scheduler_presence(scheduler_metrics: Mapping[str, Any], keys: tuple[str, .
         candidates.append(_env_presence_flag(section, env_name))
     return any(value is True for value in candidates)
 
+def _any_presence(section: Mapping[str, Any], keys: tuple[str, ...], env_names: tuple[str, ...] = ()) -> bool:
+    if any(_presence_flag(section, key) is True for key in keys):
+        return True
+    return any(_env_presence_flag(section, env_name) is True for env_name in env_names)
+
+
+def _status_is_success(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return 200 <= value < 300
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"ok", "passed", "success", "succeeded", "verified"}:
+            return True
+        try:
+            return 200 <= int(normalized) < 300
+        except ValueError:
+            return False
+    return False
+
+
+def _operation_status_ok(section: Mapping[str, Any], operation: str) -> bool:
+    candidates = (
+        f"{operation}_status",
+        f"{operation}_status_code",
+        f"{operation}_http_status",
+        f"{operation}_passed",
+        f"{operation}_verified",
+    )
+    for key in candidates:
+        if key in section and _status_is_success(section[key]):
+            return True
+    operation_payload = section.get(operation)
+    if isinstance(operation_payload, Mapping):
+        for key in ("status", "status_code", "http_status", "passed", "verified"):
+            if key in operation_payload and _status_is_success(operation_payload[key]):
+                return True
+    return False
+
+
+def _validate_object_store_live_contract(object_store_metrics: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if not _any_presence(
+        object_store_metrics,
+        ("token_present", "object_store_token_present", "credential_present", "credentials_present", "access_key_present"),
+        ("BREADBOARD_OBJECT_STORE_TOKEN", "BREADBOARD_OBJECT_STORE_ACCESS_KEY"),
+    ):
+        errors.append("object_store_token_missing")
+    endpoint = str(object_store_metrics.get("endpoint") or "")
+    if not endpoint:
+        errors.append("production_object_store_endpoint_missing")
+    elif endpoint_is_local(endpoint):
+        errors.append("production_object_store_endpoint_local")
+    for endpoint_field in ("put_endpoint", "get_endpoint", "delete_endpoint"):
+        endpoint = str(object_store_metrics.get(endpoint_field) or "")
+        if not endpoint:
+            errors.append(f"object_store_{endpoint_field}_missing")
+        elif endpoint_is_local(endpoint):
+            errors.append(f"object_store_{endpoint_field}_local")
+    for operation in ("put", "get", "delete"):
+        if not _operation_status_ok(object_store_metrics, operation):
+            errors.append(f"object_store_{operation}_status_missing")
+    if object_store_metrics.get("write_read_verified") is not True:
+        errors.append("object_store_write_read_verified_missing")
+    for key in ("readback_verified", "read_after_write_verified", "readback_matches", "durability_verified", "readback_durable"):
+        if key in object_store_metrics and object_store_metrics.get(key) is not True:
+            errors.append(f"object_store_{key}_failed")
+    expected_hash = object_store_metrics.get("written_sha256") or object_store_metrics.get("put_sha256")
+    readback_hash = object_store_metrics.get("readback_sha256") or object_store_metrics.get("get_sha256")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        errors.append("object_store_written_sha256_missing")
+    if not isinstance(readback_hash, str) or not readback_hash:
+        errors.append("object_store_readback_sha256_missing")
+    if isinstance(expected_hash, str) and expected_hash and isinstance(readback_hash, str) and readback_hash and expected_hash != readback_hash:
+        errors.append("object_store_readback_hash_mismatch")
+    return errors
+
+
+def _validate_verifier_live_contract(verifier_metrics: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    endpoint = str(verifier_metrics.get("endpoint") or "")
+    if not endpoint:
+        errors.append("verifier_endpoint_missing")
+    elif endpoint_is_local(endpoint):
+        errors.append("verifier_endpoint_is_local")
+    if not _any_presence(verifier_metrics, ("token_present", "verifier_token_present"), ("BREADBOARD_VERIFIER_TOKEN",)):
+        errors.append("verifier_token_missing")
+    return errors
+
+
 
 def validate_scheduler_metrics_readiness(scheduler_metrics: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
@@ -130,8 +221,7 @@ def _validate_live_semantics(
         errors.append("service_event_metrics_missing")
     if not _has_metric_value(verifier_metrics, "verifier_latency_seconds"):
         errors.append("verifier_latency_seconds_missing")
-    if endpoint_is_local(str(verifier_metrics.get("endpoint") or "")):
-        errors.append("verifier_endpoint_is_local")
+    errors.extend(_validate_verifier_live_contract(verifier_metrics))
     object_store_backend = _object_store_backend(object_store_metrics)
     if not (
         object_store_backend
@@ -141,13 +231,11 @@ def _validate_live_semantics(
         errors.append("object_store_metrics_missing")
     elif object_store_backend in LOCAL_OBJECT_STORE_BACKENDS:
         errors.append("production_object_store_endpoint_missing")
-    if endpoint_is_local(str(object_store_metrics.get("endpoint") or "")):
-        errors.append("production_object_store_endpoint_local")
-    if scheduler_metrics:
-        scheduler_control = scheduler_metrics.get("scheduler_control")
-        if isinstance(scheduler_control, Mapping) and endpoint_is_local(str(scheduler_control.get("endpoint") or "")):
-            errors.append("scheduler_control_endpoint_local")
-        errors.extend(validate_scheduler_metrics_readiness(scheduler_metrics))
+    errors.extend(_validate_object_store_live_contract(object_store_metrics))
+    scheduler_control = scheduler_metrics.get("scheduler_control")
+    if isinstance(scheduler_control, Mapping) and endpoint_is_local(str(scheduler_control.get("endpoint") or "")):
+        errors.append("scheduler_control_endpoint_local")
+    errors.extend(validate_scheduler_metrics_readiness(scheduler_metrics))
 
 
 def build_live_observability_report(

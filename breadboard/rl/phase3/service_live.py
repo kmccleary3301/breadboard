@@ -4,12 +4,25 @@ from pathlib import Path
 from typing import Any
 
 from breadboard.rl.phase2.hardening import ArtifactEgressRequest, EgressPolicy
-from breadboard.rl.phase2.service import ArtifactRecord, ResourceCaps, RunStatus, RunSubmission, StreamEvent, resource_cap_rejections
+from breadboard.rl.phase2.service import ACTIVE_STATES, TERMINAL_STATES, ArtifactRecord, ResourceCaps, RunStatus, RunSubmission, StreamEvent, resource_cap_rejections
 from breadboard.rl.phase3.security_enforcement import enforce_artifact_egress, enforce_command_request, enforce_workspace_path
 from breadboard.rl.phase3.store import SQLiteRLRunStore
 
 DEFAULT_CAPS = ResourceCaps(max_tasks=128, max_gpus=8, max_budget_usd=500.0, max_duration_seconds=7200, max_artifact_bytes=512 * 1024 * 1024)
 DEFAULT_EGRESS_POLICY = EgressPolicy(allowed_prefixes=("ws",), max_artifact_bytes=DEFAULT_CAPS.max_artifact_bytes)
+
+
+def _resource_floor_rejections(submission: RunSubmission) -> list[str]:
+    rejections: list[str] = []
+    if submission.requested_tasks <= 0:
+        rejections.append("requested_tasks must be positive")
+    if submission.requested_gpus <= 0:
+        rejections.append("requested_gpus must be positive")
+    if submission.requested_budget_usd <= 0:
+        rejections.append("requested_budget_usd must be positive")
+    if submission.requested_duration_seconds <= 0:
+        rejections.append("requested_duration_seconds must be positive")
+    return rejections
 
 
 class LiveRLRunService:
@@ -25,7 +38,7 @@ class LiveRLRunService:
                 raise PermissionError("command request denied: command must be a list")
             enforce_command_request(command, workspace_relative_path=submission.env_package_ref, workspace_id=submission.workspace_id)
         enforce_workspace_path(submission.env_package_ref, tenant_id=submission.tenant_id, workspace_id=submission.workspace_id)
-        rejections = resource_cap_rejections(submission, self.caps)
+        rejections = _resource_floor_rejections(submission) + resource_cap_rejections(submission, self.caps)
         state = "queued" if not rejections else "rejected"
         reason = "; ".join(rejections)
         self.store.create_run(submission, self.caps, state=state, reason=reason)
@@ -39,24 +52,32 @@ class LiveRLRunService:
 
     def start(self, run_id: str) -> RunStatus:
         status = self.store.status(run_id)
+        if status.state != "queued":
+            raise ValueError(f"run {run_id} cannot start from state {status.state}")
         self.store.update_state(run_id, state="running")
         self.store.append_event(run_id, event_type="run.start", state="running", message="run started", target_run_id=status.target_run_id)
         return self.store.status(run_id)
 
     def cancel(self, run_id: str, *, reason: str = "cancel requested") -> RunStatus:
         status = self.store.status(run_id)
+        if status.state in TERMINAL_STATES:
+            raise ValueError(f"run {run_id} is already terminal: {status.state}")
         self.store.update_state(run_id, state="cancel_requested", cancellation_state="requested", reason=reason)
         self.store.append_event(run_id, event_type="cancel.requested", state="cancel_requested", message=reason, target_run_id=status.target_run_id)
         return self.store.status(run_id)
 
     def acknowledge_cancelled(self, run_id: str, *, reason: str = "cancelled") -> RunStatus:
         status = self.store.status(run_id)
+        if status.state != "cancel_requested":
+            raise ValueError(f"run {run_id} has no pending cancellation")
         self.store.update_state(run_id, state="cancelled", cancellation_state="acknowledged", reason=reason)
         self.store.append_event(run_id, event_type="cancel.acknowledged", state="cancelled", message=reason, target_run_id=status.target_run_id)
         return self.store.status(run_id)
 
     def complete(self, run_id: str, *, succeeded: bool = True, reason: str = "") -> RunStatus:
         status = self.store.status(run_id)
+        if status.state not in ACTIVE_STATES:
+            raise ValueError(f"run {run_id} cannot complete from state {status.state}")
         state = "succeeded" if succeeded else "failed"
         self.store.update_state(run_id, state=state, reason=reason)
         self.store.append_event(run_id, event_type="run.end", state=state, message=reason or state, target_run_id=status.target_run_id)

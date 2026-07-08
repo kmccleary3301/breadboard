@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from breadboard.rl.phase3.evidence import PHASE3_COMPONENT_REPORT_SCHEMA, sha256_file, validate_phase3_command_log_manifest, validate_phase3_component_report
+from breadboard.rl.phase3.evidence import PHASE3_COMPONENT_REPORT_SCHEMA, sha256_file, validate_phase3_artifact_hashes, validate_phase3_command_log_manifest, validate_phase3_component_report
 from breadboard.rl.phase3.observability_live import LOCAL_OBJECT_STORE_BACKENDS, endpoint_is_local, validate_scheduler_metrics_readiness
 from breadboard.rl.phase3.parity import PHASE3_PARITY_REPORT_ID, validate_phase3_parity_report
 
@@ -40,7 +40,7 @@ PHASE3_CORE_READINESS_SCHEMA = PHASE3_ACTIVE_SCOPE_SCHEMA
 PHASE3_CORE_CLAIM_BOUNDARY = PHASE3_ACTIVE_SCOPE_CLAIM_BOUNDARY
 PHASE3_DEFERRED_MILESTONES: tuple[str, ...] = PHASE3_RETIRED_MILESTONES
 PHASE3_CORE_MILESTONES = PHASE3_ACTIVE_MILESTONES
-PHASE3_CORE_RAW_POINTS_TOTAL = 0
+PHASE3_CORE_RAW_POINTS_TOTAL = sum(PHASE3_MILESTONE_POINTS[milestone] for milestone in PHASE3_CORE_MILESTONES)
 PHASE3_MILESTONE_CLAIM_BOUNDARIES = {
     "P3-M0": "phase3_strict_evidence_gates_named_scope",
     "P3-M1": "phase3_target_verl_api_introspection_named_scope",
@@ -101,16 +101,7 @@ def _validate_blocked_component_report(
     artifact_paths = artifact_paths if isinstance(artifact_paths, Mapping) else {}
     if not artifact_paths:
         errors.append("artifact_paths must be present")
-    root = evidence_root.resolve()
-    for key in required_artifact_keys:
-        if key not in artifact_paths:
-            errors.append(f"artifact_paths.{key} must be present")
-            continue
-        path = (root / str(artifact_paths[key])).resolve()
-        if root != path and root not in path.parents:
-            errors.append(f"artifact_paths.{key} must stay under evidence_root")
-        elif not path.exists():
-            errors.append(f"artifact_paths.{key} must exist")
+    errors.extend(validate_phase3_artifact_hashes(report, required_artifact_keys=required_artifact_keys, evidence_root=evidence_root))
     return errors
 
 
@@ -260,6 +251,91 @@ def _reject_local_metric_urls(metric_sections: Mapping[str, Any]) -> list[str]:
         errors.append("P3-M11 scheduler_metrics.scheduler_control.endpoint must not be local")
     return errors
 
+def _presence_flag(section: Mapping[str, Any], key: str) -> bool | None:
+    if key not in section:
+        return None
+    value = section[key]
+    if isinstance(value, Mapping):
+        if "present" in value:
+            return value["present"] is True
+        return None
+    if isinstance(value, bool):
+        return value
+    return None
+
+
+def _env_presence_flag(section: Mapping[str, Any], env_name: str) -> bool | None:
+    env_presence = section.get("env_presence")
+    if not isinstance(env_presence, Mapping):
+        return None
+    return _presence_flag(env_presence, env_name)
+
+
+def _any_presence(section: Mapping[str, Any], keys: tuple[str, ...], env_names: tuple[str, ...] = ()) -> bool:
+    if any(_presence_flag(section, key) is True for key in keys):
+        return True
+    return any(_env_presence_flag(section, env_name) is True for env_name in env_names)
+
+
+def _status_is_success(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return 200 <= value < 300
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"ok", "passed", "success", "succeeded", "verified"}:
+            return True
+        try:
+            return 200 <= int(normalized) < 300
+        except ValueError:
+            return False
+    return False
+
+
+def _operation_status_ok(section: Mapping[str, Any], operation: str) -> bool:
+    candidates = (
+        f"{operation}_status",
+        f"{operation}_status_code",
+        f"{operation}_http_status",
+        f"{operation}_passed",
+        f"{operation}_verified",
+    )
+    for key in candidates:
+        if key in section and _status_is_success(section[key]):
+            return True
+    operation_payload = section.get(operation)
+    if isinstance(operation_payload, Mapping):
+        for key in ("status", "status_code", "http_status", "passed", "verified"):
+            if key in operation_payload and _status_is_success(operation_payload[key]):
+                return True
+    return False
+
+
+def _validate_readback_durability(object_store: Mapping[str, Any]) -> list[str]:
+    errors: list[str] = []
+    if object_store.get("write_read_verified") is not True:
+        errors.append("P3-M11 object_store_metrics.write_read_verified must be true")
+    boolean_signals = (
+        "readback_verified",
+        "read_after_write_verified",
+        "readback_matches",
+        "durability_verified",
+        "readback_durable",
+    )
+    for key in boolean_signals:
+        if key in object_store and object_store.get(key) is not True:
+            errors.append(f"P3-M11 object_store_metrics.{key} must be true when present")
+    expected_hash = object_store.get("written_sha256") or object_store.get("put_sha256")
+    readback_hash = object_store.get("readback_sha256") or object_store.get("get_sha256")
+    if not isinstance(expected_hash, str) or not expected_hash:
+        errors.append("P3-M11 object_store_metrics written_sha256/put_sha256 must be present")
+    if not isinstance(readback_hash, str) or not readback_hash:
+        errors.append("P3-M11 object_store_metrics readback_sha256/get_sha256 must be present")
+    if isinstance(expected_hash, str) and expected_hash and isinstance(readback_hash, str) and readback_hash and expected_hash != readback_hash:
+        errors.append("P3-M11 object_store_metrics readback hash must match written hash")
+    return errors
+
 
 def _validate_p3m11_observability_promotion(component: Mapping[str, Any]) -> list[str]:
     errors: list[str] = []
@@ -284,6 +360,33 @@ def _validate_p3m11_observability_promotion(component: Mapping[str, Any]) -> lis
     elif object_store_backend in LOCAL_OBJECT_STORE_BACKENDS:
         errors.append("P3-M11 object_store_metrics.object_store must be a production object-store backend")
     errors.extend(_reject_local_metric_urls(metric_sections))
+    verifier = metric_sections.get("verifier_metrics")
+    if not isinstance(verifier, Mapping):
+        errors.append("P3-M11 observability_evidence.metric_sections.verifier_metrics must be present")
+        verifier = {}
+    verifier_endpoint = str(verifier.get("endpoint") or "")
+    if not verifier_endpoint:
+        errors.append("P3-M11 verifier_metrics.endpoint must be present")
+    elif endpoint_is_local(verifier_endpoint):
+        errors.append("P3-M11 verifier_metrics.endpoint must not be local")
+    if not _any_presence(verifier, ("token_present", "verifier_token_present"), ("BREADBOARD_VERIFIER_TOKEN",)):
+        errors.append("P3-M11 verifier_metrics token evidence must be present")
+    if not _any_presence(
+        object_store,
+        ("token_present", "object_store_token_present", "credential_present", "credentials_present", "access_key_present"),
+        ("BREADBOARD_OBJECT_STORE_TOKEN", "BREADBOARD_OBJECT_STORE_ACCESS_KEY"),
+    ):
+        errors.append("P3-M11 object_store_metrics token evidence must be present")
+    for endpoint_field in ("put_endpoint", "get_endpoint", "delete_endpoint"):
+        endpoint = str(object_store.get(endpoint_field) or "")
+        if not endpoint:
+            errors.append(f"P3-M11 object_store_metrics.{endpoint_field} must be present")
+        elif endpoint_is_local(endpoint):
+            errors.append(f"P3-M11 object_store_metrics.{endpoint_field} must not be local")
+    for operation in ("put", "get", "delete"):
+        if not _operation_status_ok(object_store, operation):
+            errors.append(f"P3-M11 object_store_metrics.{operation} status evidence must show success")
+    errors.extend(_validate_readback_durability(object_store))
     scheduler = metric_sections.get("scheduler_metrics")
     if not isinstance(scheduler, Mapping):
         errors.append("P3-M11 observability_evidence.metric_sections.scheduler_metrics must be present")
@@ -353,8 +456,10 @@ def build_phase3_core_readiness(milestone_reports: Mapping[str, Mapping[str, Any
         active_complete = blocker == ""
         if not active_complete:
             blocked_milestones.append(milestone_id)
+        point_value = PHASE3_MILESTONE_POINTS[milestone_id]
         milestone_statuses.append({
             "milestone_id": milestone_id,
+            "point_value": point_value,
             "active_complete": active_complete,
             "blocker": blocker,
             "report_id": component.get("report_id"),
@@ -363,6 +468,11 @@ def build_phase3_core_readiness(milestone_reports: Mapping[str, Mapping[str, Any
     ready = not blocked_milestones
     label = "active-artifact-audit-clean" if ready else "active-artifact-audit-blocked"
     ready_meaning = PHASE3_ACTIVE_SCOPE_READY_MEANING
+    core_raw_points_verified = sum(
+        PHASE3_MILESTONE_POINTS[status["milestone_id"]]
+        for status in milestone_statuses
+        if status["active_complete"]
+    )
     return {
         "schema_version": PHASE3_ACTIVE_SCOPE_SCHEMA,
         "claim_boundary": PHASE3_ACTIVE_SCOPE_CLAIM_BOUNDARY,
@@ -376,8 +486,8 @@ def build_phase3_core_readiness(milestone_reports: Mapping[str, Mapping[str, Any
         "core_milestones": list(PHASE3_ACTIVE_MILESTONES),
         "deferred_milestones": list(PHASE3_RETIRED_MILESTONES),
         "blocked_core_milestones": blocked_milestones,
-        "core_raw_points_total": 0,
-        "core_raw_points_verified": 0 if ready else 0,
+        "core_raw_points_total": PHASE3_CORE_RAW_POINTS_TOTAL,
+        "core_raw_points_verified": core_raw_points_verified,
         "original_scorecard_total_points": PHASE3_ORIGINAL_TOTAL_POINTS,
         "report_label": label,
         "milestone_statuses": milestone_statuses,

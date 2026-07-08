@@ -866,22 +866,26 @@
             "type": "object"
           },
           "requested_budget_usd": {
-            "default": 0.0,
+            "default": 1.0,
+            "exclusiveMinimum": 0.0,
             "title": "Requested Budget Usd",
             "type": "number"
           },
           "requested_duration_seconds": {
             "default": 60,
+            "exclusiveMinimum": 0.0,
             "title": "Requested Duration Seconds",
             "type": "integer"
           },
           "requested_gpus": {
             "default": 1,
+            "exclusiveMinimum": 0.0,
             "title": "Requested Gpus",
             "type": "integer"
           },
           "requested_tasks": {
             "default": 1,
+            "exclusiveMinimum": 0.0,
             "title": "Requested Tasks",
             "type": "integer"
           },
