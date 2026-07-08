@@ -29,6 +29,9 @@ These exist because current clients need direct convenience payloads. They are n
 | --- | --- | --- | --- |
 | `todo_event` | `projection.todo_snapshot` | `service` | `host` |
 | `ctree_snapshot` | `projection.ctree_snapshot` | `service` | `host` |
+| `rl.run.event` | `projection.rl_run_event` | `service` | `host` |
+
+`rl.run.event` covers the `/rl/runs/{run_id}/events` stream exposed by the Phase 3 RL API. It is a host-facing run-status projection, not a kernel event envelope and not a replay/conformance truth surface. The stream may carry convenience lifecycle strings such as `run.submitted`, `run.start`, `run.end`, and `cancel.requested`; those strings must not be promoted to canonical kernel event families without a separate schema, semantic dossier, and fixture update.
 
 ## CLI bridge stream-only and host-only events
 

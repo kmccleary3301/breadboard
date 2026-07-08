@@ -19,7 +19,7 @@ Summary counts live at:
 
 Current Python scripts inventoried: `260`
 
-Primary category counts:
+Primary category counts from the 2026-04-01 inventory remain:
 
 - `research`: `229`
 - `migration`: `10`
@@ -27,6 +27,11 @@ Primary category counts:
 - `ops`: `5`
 - `dev`: `5`
 - `archive`: `3`
+
+Additional canonical research campaign families added after that inventory:
+
+- `rl_phase1`: Phase 1 RL evidence, transfer, and target-validation commands.
+- `rl_phase3`: Phase 3/4 RL evidence, promotion, target-runner, and bounded target-validation commands.
 
 ## Category meanings
 
@@ -48,6 +53,8 @@ the live repo:
 - `scripts/release/`
 - `scripts/archive/`
 - `scripts/research/parity/`
+- `scripts/rl_phase1/`
+- `scripts/rl_phase3/`
 
 ## Stable vs internal expectation
 
@@ -62,6 +69,8 @@ Treat these as primarily internal:
 - most `research`
 - most `migration`
 - `archive`
+- `rl_phase1`
+- `rl_phase3`
 
 ## Canonical taxonomy
 
@@ -76,6 +85,8 @@ scripts/
 │   ├── provider/
 │   ├── rendering/
 │   └── repo_hygiene/
+├── rl_phase1/
+├── rl_phase3/
 ├── release/
 ├── ops/
 ├── migration/
@@ -100,8 +111,8 @@ examples:
 - `scripts/research/parity/audit_e4_target_drift.py`
 - `scripts/research/parity/check_e4_snapshot_coverage.py`
 
-The old top-level script paths still exist only as compatibility wrappers while
-the migration window is open.
+Legacy top-level script paths still exist only as compatibility wrappers while
+the migration window is open. `scripts/rl_phase1/` and `scripts/rl_phase3/` are the exception: they are canonical, phase-scoped research/evidence command families until their long-run evidence campaigns are retired or folded into a broader `scripts/research/rl/` taxonomy.
 
 ## Operator quick commands
 
