@@ -49,6 +49,8 @@ from .models import (
     SessionSummary,
 )
 from .service import SessionService
+from breadboard.rl.phase3.api_router import create_phase3_rl_router
+from breadboard.rl.phase3.service_live import LiveRLRunService
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
@@ -177,6 +179,11 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
+    store_path = os.environ.get("BREADBOARD_RL_RUN_STORE")
+    rl_service = LiveRLRunService(Path(store_path) if store_path else ":memory:")
+    rl_router = create_phase3_rl_router(rl_service)
+    app.include_router(rl_router, prefix="/v1/rl", tags=["rl"])
+    app.include_router(rl_router, prefix="/rl", tags=["rl"])
     chaos_config = _load_chaos_config()
     required_token = (os.environ.get("BREADBOARD_API_TOKEN") or "").strip()
     extension_config = None
