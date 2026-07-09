@@ -144,6 +144,8 @@ The stable top-level zone model is documented in
 breadboard/
 ├── agent_configs/                 public top-level E4 dossier configs + misc overlays
 │   └── misc/                      scenario-specific, historical, and supporting configs
+├── breadboard/
+│   └── rl/harness/                profile-driven RL episode, sandbox, verifier, and HTTP module
 ├── agentic_coder_prototype/       canonical Python engine and runtime substrate
 │   ├── api/                       CLI bridge server, session runner, protocol surfaces
 │   ├── execution/                 runtime execution primitives
@@ -307,6 +309,21 @@ Run the engine directly from source:
 ```bash
 python -m agentic_coder_prototype.api.cli_bridge.server
 ```
+
+### RL episode harness
+
+`breadboard.rl.harness` runs SWE and terminal training episodes for external trainers. The wrapper creates an episode, runs it through the versioned HTTP interface, and closes it when NeMo returns or cancels the rollout. BreadBoard selects the trusted profile, drives policy turns, executes tools in the admitted sandbox image, runs the verifier in a separate copied lease, records artifacts, and closes both leases.
+
+Profiles come from `BREADBOARD_HARNESS_PROFILES_FILE` or `BREADBOARD_HARNESS_PROFILES_JSON`. A profile must admit immutable image digests and named verifier commands. SWE profiles set `require_repository_binding: true` and map each repository snapshot digest to its approved image with `repository_images`. The process driver requires `trusted_process: true` and reports `network: host`; use it only for local tests because it executes on the host without network isolation.
+
+```bash
+BREADBOARD_HARNESS_PROFILES_FILE=/secure/breadboard-harness-profiles.json \
+BREADBOARD_HARNESS_TOKEN="$(cat /secure/breadboard-harness.token)" \
+BREADBOARD_POLICY_ALLOWED_HOSTS=policy-model.internal \
+python -m breadboard.rl.harness.api
+```
+
+The server binds to `127.0.0.1:8097` by default. A non-loopback bind requires `BREADBOARD_HARNESS_TOKEN`, and custom ASGI launchers must opt into unauthenticated loopback mode explicitly. Artifacts persist under `BREADBOARD_HARNESS_ARTIFACT_ROOT` (default `~/.breadboard/rl-harness/artifacts`) and are available through the authenticated retrieval paths returned in each artifact reference. The token-only policy bridge rejects policy-visible image content; sandbox images and repository snapshots travel as immutable digests.
 
 ### Python SDK
 
