@@ -24,16 +24,91 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def test_contract_tier_schema_and_checked_in_registry_validate() -> None:
-    """The checked-in tier registry conforms to a valid Draft 2020-12 registry schema."""
+def _entries_by_schema_id() -> dict[str, dict[str, Any]]:
+    registry = _load_json(TIER_REGISTRY_PATH)
+    return {entry["schema_id"]: entry for entry in registry["entries"]}
+
+
+def test_contract_tier_schema_and_product_spine_consumers_validate() -> None:
+    """Kept runtime/config contracts name consumers that are present in the tracked snapshot."""
     schema = _load_json(TIER_SCHEMA_PATH)
     Draft202012Validator.check_schema(schema)
+    kept_product_spine_tiers = {
+        entry["tier"]
+        for entry in _entries_by_schema_id().values()
+        if entry["disposition"] == "keep"
+        and entry["tier"] in {"runtime_protocol", "config_algebra"}
+    }
+    assert kept_product_spine_tiers == {"runtime_protocol", "config_algebra"}
 
     assert check_contract_tiers.validate_contract_tiers(
         registry_path=TIER_REGISTRY_PATH,
         schema_path=TIER_SCHEMA_PATH,
         packs_path=PACKS_PATH,
     ) == []
+
+
+@pytest.mark.parametrize(
+    ("schema_id", "tier", "consumer"),
+    [
+        (
+            "bb.run_context.v1",
+            "host_protocol",
+            {
+                "kind": "runtime_emission",
+                "path": "sdk/ts-kernel-core/src/contracts.ts",
+            },
+        ),
+        (
+            "bb.run_request.v1",
+            "host_protocol",
+            {
+                "kind": "runtime_emission",
+                "path": "sdk/ts-host-bridges/src/index.ts",
+            },
+        ),
+        (
+            "bb.tool_binding.v1",
+            "config_algebra",
+            {
+                "kind": "sdk",
+                "path": "sdk/ts-kernel-core/src/tool-surfaces.ts",
+            },
+        ),
+        (
+            "bb.task.v1",
+            "evidence",
+            {
+                "kind": "evidence_machinery",
+                "path": "scripts/build_python_reference_contract_fixtures.py",
+            },
+        ),
+    ],
+)
+def test_audited_contracts_name_their_actual_tier_and_consumer(
+    schema_id: str,
+    tier: str,
+    consumer: dict[str, str],
+) -> None:
+    """Audited contracts remain classified by their actual runtime or evidence use."""
+    entry = _entries_by_schema_id()[schema_id]
+
+    assert entry["tier"] == tier
+    assert consumer in entry["consumers"]
+
+
+def test_frozen_legacy_contracts_are_never_marked_for_continued_use() -> None:
+    """A frozen-legacy classification always carries the freeze disposition."""
+    frozen_legacy = [
+        entry
+        for entry in _entries_by_schema_id().values()
+        if entry["tier"] == "frozen_legacy"
+    ]
+
+    assert frozen_legacy
+    assert {entry["disposition"] for entry in frozen_legacy} == {"freeze"}
+
+
 
 
 def test_contract_tier_registry_exactly_matches_generated_schema_census() -> None:

@@ -713,24 +713,24 @@
     {
       "consumers": [
         {
-          "kind": "evidence_machinery",
-          "path": "scripts/release/validate_kernel_contract_fixtures.py"
+          "kind": "runtime_emission",
+          "path": "sdk/ts-kernel-core/src/contracts.ts"
         }
       ],
       "disposition": "keep",
-      "notes": "S5a confidence medium.",
+      "notes": "E2 audit confirmed a TypeScript runtime producer.",
       "schema_id": "bb.run_context.v1",
       "tier": "host_protocol"
     },
     {
       "consumers": [
         {
-          "kind": "evidence_machinery",
-          "path": "scripts/release/validate_kernel_contract_fixtures.py"
+          "kind": "runtime_emission",
+          "path": "sdk/ts-host-bridges/src/index.ts"
         }
       ],
       "disposition": "keep",
-      "notes": "S5a confidence medium.",
+      "notes": "E2 audit confirmed TypeScript host runtime producers.",
       "schema_id": "bb.run_request.v1",
       "tier": "host_protocol"
     },
@@ -817,13 +817,13 @@
       "consumers": [
         {
           "kind": "evidence_machinery",
-          "path": "scripts/release/validate_kernel_contract_fixtures.py"
+          "path": "scripts/build_python_reference_contract_fixtures.py"
         }
       ],
       "disposition": "keep",
-      "notes": "S5a confidence medium.",
+      "notes": "E2 audit found only reference-fixture production; classified as evidence.",
       "schema_id": "bb.task.v1",
-      "tier": "host_protocol"
+      "tier": "evidence"
     },
     {
       "consumers": [
@@ -900,12 +900,12 @@
     {
       "consumers": [
         {
-          "kind": "loader",
-          "path": "agentic_coder_prototype/compilation/primitive_records.py"
+          "kind": "sdk",
+          "path": "sdk/ts-kernel-core/src/tool-surfaces.ts"
         }
       ],
       "disposition": "keep",
-      "notes": "S5a confidence medium.",
+      "notes": "E2 audit confirmed the TypeScript SDK runtime resolver consumes bindings.",
       "schema_id": "bb.tool_binding.v1",
       "tier": "config_algebra"
     },
