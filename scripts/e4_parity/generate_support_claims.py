@@ -22,28 +22,29 @@ from agentic_coder_prototype.compilation.primitive_records import finalize_recor
 from agentic_coder_prototype.conformance.catalog_binding import (
     CATALOG_PATH as CATALOG_BINDING_PATH,
     catalog_segment_hash,
+    reusable_catalog_revision,
     stable_entries_hash,
 )
+from scripts.e4_parity import catalog_refs
+from scripts.e4_parity.validators.registries import schema_generation_default
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 CATALOG_PATH = ROOT / "docs" / "conformance" / "e4_artifact_catalog.json"
+
+def _load_catalog() -> Mapping[str, Any]:
+    catalog = load_json(CATALOG_PATH)
+    if not isinstance(catalog, Mapping):
+        raise TypeError(f"artifact catalog must be a JSON object: {CATALOG_PATH}")
+    return catalog
+
 CLAIM_SCHEMA_PATHS = {
     "bb.e4.support_claim.v2": ROOT / "contracts" / "kernel" / "schemas" / "bb.e4.support_claim.v2.schema.json",
     "bb.e4.support_claim.v3": ROOT / "contracts" / "kernel" / "schemas" / "bb.e4.support_claim.v3.schema.json",
     "bb.e4.support_claim.v4": ROOT / "contracts" / "kernel" / "schemas" / "bb.e4.support_claim.v4.schema.json",
 }
-CLAIM_SCHEMA_PATH = CLAIM_SCHEMA_PATHS["bb.e4.support_claim.v2"]
-CLAIM_SCHEMA_VERSION = "bb.e4.support_claim.v2"
-CLAIM_SCHEMA_VERSION_V3 = "bb.e4.support_claim.v3"
 CLAIM_SCHEMA_VERSION_V4 = "bb.e4.support_claim.v4"
-WSJ_PHASE_LABEL = "WS-J"
-WSJ_LANE_IDS = {
-    "breadboard_self_runtime_records_v1",
-    "claude_code_north_star_capture_v1",
-    "opencode_north_star_capture_v1",
-}
 COMMON_SCHEMA_PATH = ROOT / "contracts" / "kernel" / "schemas" / "bb.kernel.common.v1.schema.json"
 E4_COMMON_SCHEMA_PATH = ROOT / "contracts" / "kernel" / "schemas" / "bb.e4.common.v1.schema.json"
 SUPPORT_CLAIMS_DIR = ROOT / "docs" / "conformance" / "support_claims"
@@ -117,33 +118,70 @@ def support_paths(lane: Mapping[str, Any]) -> tuple[Path, Path, Path]:
     node_gate_path = resolve_ref(_argv_value(argv, "--json-out"))
     return support_claim_path, evidence_manifest_path, node_gate_path
 
+def _artifact_role(lane: Mapping[str, Any], key: str) -> str | None:
+    roles = lane.get("artifact_roles")
+    if isinstance(roles, Mapping):
+        value = roles.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _refresh_hash_ref(prior_ref: Any) -> str:
+    path = resolve_ref(str(prior_ref))
+    return f"{display(path)}#{sha256_path(path)}"
+
+
+def _catalog_hash_ref(catalog: Mapping[str, Any], lane: Mapping[str, Any], role_key: str, prior_ref: Any) -> str:
+    role_id = _artifact_role(lane, role_key)
+    if role_id:
+        return catalog_refs.hash_ref(catalog, role_id)
+    return _refresh_hash_ref(prior_ref)
+
+
+def _catalog_row_refs(catalog: Mapping[str, Any], lane: Mapping[str, Any], prior_refs: Sequence[Any]) -> list[str]:
+    role_id = _artifact_role(lane, "atomic_feature_ledger") or "e4_static:report/bb_e4_atomic_feature_ledger_seed_json"
+    feature_ids = lane.get("ledger_feature_ids")
+    if not isinstance(feature_ids, list) or not all(isinstance(item, str) and item for item in feature_ids):
+        feature_ids = [str(ref).split("#")[1] for ref in prior_refs if len(str(ref).split("#")) >= 3 and str(ref).split("#")[1]]
+    return [catalog_refs.row_ref(catalog, role_id, feature_id) for feature_id in feature_ids]
+
+
+def _ref_set_for_lane(lane: Mapping[str, Any], prior: Mapping[str, Any]) -> dict[str, Any]:
+    catalog = _load_catalog()
+    return {
+        "freeze_ref": str(prior["freeze_ref"]),
+        "capture_ref": _catalog_hash_ref(catalog, lane, "capture", prior["capture_ref"]),
+        "replay_ref": _catalog_hash_ref(catalog, lane, "replay", prior["replay_ref"]),
+        "comparator_ref": _catalog_hash_ref(catalog, lane, "comparator", prior["comparator_ref"]),
+        "ledger_row_refs": _catalog_row_refs(catalog, lane, list(prior["ledger_row_refs"])),
+        "validation_refs": [_catalog_hash_ref(catalog, lane, "validator_output", ref) for ref in prior["validation_refs"]],
+    }
+
 
 def _claim_generation_key(lane: Mapping[str, Any]) -> tuple[str, str, str, str]:
     claim_path, manifest_path, node_gate_path = support_paths(lane)
     return (display(manifest_path), display(claim_path), display(node_gate_path), str(lane.get("lane_id", "")))
 
 
-def _catalog_binding_v2(catalog: Mapping[str, Any]) -> dict[str, Any]:
-    revision = catalog.get("revision")
-    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
-        raise ValueError("artifact catalog revision must be an int >= 1 for support-claim catalog_binding")
+def _catalog_binding_v2(catalog: Mapping[str, Any], prior_binding: Mapping[str, Any] | None = None) -> dict[str, Any]:
     integrity = catalog.get("integrity")
     stable_hash = integrity.get("stable_entries_hash") if isinstance(integrity, Mapping) else None
     if not isinstance(stable_hash, str) or not stable_hash.startswith("sha256:"):
         raise ValueError("artifact catalog integrity.stable_entries_hash is required for support-claim catalog_binding")
+    binding_hashes = {"catalog_hash": stable_hash}
     return {
         "catalog_path": CATALOG_BINDING_PATH,
-        "catalog_revision": revision,
-        "catalog_hash": stable_hash,
+        "catalog_revision": reusable_catalog_revision(catalog, prior_binding, binding_hashes),
+        **binding_hashes,
     }
-
 
 def _catalog_binding_v3(catalog: Mapping[str, Any], lane_id: str) -> dict[str, Any]:
     schema_version = catalog.get("schema_version")
     if schema_version == "bb.e4.artifact_catalog.v2":
         segment_hash = catalog_segment_hash(catalog, lane_id)
         shared_segment_hash = catalog_segment_hash(catalog, "shared")
-    else:
+    elif schema_version == "bb.e4.artifact_catalog.v1":
         entries = catalog.get("entries")
         if not isinstance(entries, list):
             raise ValueError("artifact catalog entries must be a list for support-claim v3 segment binding")
@@ -153,6 +191,8 @@ def _catalog_binding_v3(catalog: Mapping[str, Any], lane_id: str) -> dict[str, A
         shared_segment_hash = stable_entries_hash(
             [entry for entry in entries if isinstance(entry, Mapping) and not entry.get("lane_id")]
         )
+    else:
+        raise ValueError(f"unsupported artifact catalog schema: {schema_version!r}")
     return {
         "catalog_path": CATALOG_BINDING_PATH,
         "segment_id": lane_id,
@@ -161,26 +201,35 @@ def _catalog_binding_v3(catalog: Mapping[str, Any], lane_id: str) -> dict[str, A
     }
 
 
+def _support_claim_generation_default() -> str:
+    return schema_generation_default("support_claim")
+
+
 def _claim_schema_version(lane: Mapping[str, Any]) -> str:
+    generation_default = _support_claim_generation_default()
     requested = lane.get("support_claim_schema_version")
-    if isinstance(requested, str) and requested:
-        return requested
-    if lane.get("phase") == WSJ_PHASE_LABEL or lane.get("lane_id") in WSJ_LANE_IDS:
-        return CLAIM_SCHEMA_VERSION_V3
-    return CLAIM_SCHEMA_VERSION
+    if requested is not None and requested != generation_default:
+        raise ValueError(
+            f"support_claim_schema_version {requested!r} is not the lifecycle generation default {generation_default!r}"
+        )
+    return generation_default
 
 
-def _catalog_binding(lane: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    catalog = load_json(Path(CATALOG_PATH))
-    if lane is not None and _claim_schema_version(lane) in {CLAIM_SCHEMA_VERSION_V3, CLAIM_SCHEMA_VERSION_V4}:
-        binding = _catalog_binding_v3(catalog, str(lane["lane_id"]))
-        if _claim_schema_version(lane) == CLAIM_SCHEMA_VERSION_V4:
-            revision = catalog.get("revision")
-            if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
-                raise ValueError("artifact catalog revision must be an int >= 1 for support-claim v4 catalog_binding")
-            binding["catalog_revision"] = revision
-        return binding
-    return _catalog_binding_v2(catalog)
+def _catalog_binding(lane: Mapping[str, Any], prior_binding: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    schema_version = _claim_schema_version(lane)
+    if schema_version != CLAIM_SCHEMA_VERSION_V4:
+        raise ValueError(f"unsupported generation schema for catalog binding: {schema_version!r}")
+    catalog = _load_catalog()
+    binding = _catalog_binding_v3(catalog, str(lane["lane_id"]))
+    binding["catalog_revision"] = reusable_catalog_revision(
+        catalog,
+        prior_binding,
+        {
+            "segment_hash": binding["segment_hash"],
+            "shared_segment_hash": binding["shared_segment_hash"],
+        },
+    )
+    return binding
 
 
 def _schema_validators() -> dict[str, Draft202012Validator]:
@@ -302,14 +351,15 @@ def _asserted_behaviors(lane: Mapping[str, Any], comparator: Mapping[str, Any]) 
     return behaviors
 
 
-def _archive_v1(path: Path, payload: Mapping[str, Any]) -> str | None:
+def _archive_v1(path: Path, payload: Mapping[str, Any], *, write: bool = True) -> str | None:
     archive_path = ARCHIVE_DIR / path.name
     if archive_path.exists():
         return display(archive_path)
     if payload.get("schema_version") != "bb.e4.support_claim.v1":
         return None
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(path, archive_path)
+    if write:
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, archive_path)
     return display(archive_path)
 
 
@@ -369,13 +419,19 @@ def _updated_node_gate(path: Path, claim_path: Path, manifest_path: Path) -> Non
 
 
 
-def _claim_for_lane(lane: Mapping[str, Any], claim_path: Path, manifest_path: Path) -> tuple[dict[str, Any], str | None]:
+def _claim_for_lane(
+    lane: Mapping[str, Any],
+    claim_path: Path,
+    manifest_path: Path,
+    *,
+    archive_legacy: bool = True,
+) -> tuple[dict[str, Any], str | None]:
     prior = load_json(claim_path)
     legacy_prior = prior
     archive_candidate = ARCHIVE_DIR / claim_path.name
-    if prior.get("schema_version") == "bb.e4.support_claim.v2" and archive_candidate.exists():
+    if prior.get("schema_version") in ("bb.e4.support_claim.v2", CLAIM_SCHEMA_VERSION_V4) and archive_candidate.exists():
         legacy_prior = load_json(archive_candidate)
-    archive_ref = _archive_v1(claim_path, prior)
+    archive_ref = _archive_v1(claim_path, prior, write=archive_legacy)
     comparator_path = resolve_ref(str(prior["comparator_ref"]))
     comparator = load_json(comparator_path)
     exclusions = list(prior.get("exclusions") or ["No broad target-parity claim is made by this exact lane claim."])
@@ -392,6 +448,7 @@ def _claim_for_lane(lane: Mapping[str, Any], claim_path: Path, manifest_path: Pa
     }
     if schema_version == CLAIM_SCHEMA_VERSION_V4:
         scope["target_family"] = target_family
+    refs = _ref_set_for_lane(lane, prior)
     claim: dict[str, Any] = {
         "schema_version": schema_version,
         "claim_id": claim_id,
@@ -409,14 +466,14 @@ def _claim_for_lane(lane: Mapping[str, Any], claim_path: Path, manifest_path: Pa
                 {"behavior_id": "broad_target_parity", "description": "Broad target-family parity remains outside this exact C4 lane claim."}
             ],
         },
-        "freeze_ref": str(prior["freeze_ref"]),
-        "capture_ref": str(prior["capture_ref"]),
-        "replay_ref": str(prior["replay_ref"]),
-        "comparator_ref": str(prior["comparator_ref"]),
+        "freeze_ref": refs["freeze_ref"],
+        "capture_ref": refs["capture_ref"],
+        "replay_ref": refs["replay_ref"],
+        "comparator_ref": refs["comparator_ref"],
         "evidence_manifest_ref": display(manifest_path),
-        "ledger_row_refs": list(prior["ledger_row_refs"]),
-        "validation_refs": list(prior["validation_refs"]),
-        "catalog_binding": _catalog_binding(lane),
+        "ledger_row_refs": refs["ledger_row_refs"],
+        "validation_refs": refs["validation_refs"],
+        "catalog_binding": _catalog_binding(lane, prior.get("catalog_binding") if isinstance(prior.get("catalog_binding"), Mapping) else None),
         "reverify_command": lane.get("reverify_command") or lane.get("ct", {}).get("command"),
         "generated_at_utc": GENERATED_AT,
     }
@@ -433,13 +490,14 @@ def _claim_for_lane(lane: Mapping[str, Any], claim_path: Path, manifest_path: Pa
             }
         )
     if prior.get("raw_source_ref"):
-        claim["raw_source_ref"] = prior["raw_source_ref"]
+        claim["raw_source_ref"] = _refresh_hash_ref(prior["raw_source_ref"])
+    catalog = _load_catalog()
     if prior.get("source_freeze_ref"):
-        claim["source_freeze_ref"] = prior["source_freeze_ref"]
+        claim["source_freeze_ref"] = _catalog_hash_ref(catalog, lane, "source_freeze", prior["source_freeze_ref"])
     if prior.get("parity_results_ref"):
-        claim["parity_results_ref"] = prior["parity_results_ref"]
+        claim["parity_results_ref"] = _catalog_hash_ref(catalog, lane, "parity_results", prior["parity_results_ref"])
     if prior.get("secret_scan_ref"):
-        claim["secret_scan_ref"] = prior["secret_scan_ref"]
+        claim["secret_scan_ref"] = _catalog_hash_ref(catalog, lane, "secret_scan_report", prior["secret_scan_ref"])
     prior_scope = legacy_prior.get("scope") if isinstance(legacy_prior.get("scope"), Mapping) else {}
     metadata = {"generated_from_schema_version": str(prior.get("schema_version", "unknown"))}
     legacy_scope = {
@@ -456,7 +514,7 @@ def _claim_for_lane(lane: Mapping[str, Any], claim_path: Path, manifest_path: Pa
     return claim, archive_ref
 
 
-def generate(*, dry_run: bool = False) -> dict[str, Any]:
+def generate(*, dry_run: bool = False, update_node_gates: bool = True) -> dict[str, Any]:
     inventory = load_json(INVENTORY_PATH)
     lanes = sorted(
         (lane for lane in inventory.get("lanes", []) if isinstance(lane, Mapping) and lane.get("status") == "accepted"),
@@ -466,7 +524,9 @@ def generate(*, dry_run: bool = False) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for lane in lanes:
         claim_path, manifest_path, node_gate_path = support_paths(lane)
-        claim, archive_ref = _claim_for_lane(lane, claim_path, manifest_path)
+        claim, archive_ref = _claim_for_lane(
+            lane, claim_path, manifest_path, archive_legacy=not dry_run
+        )
         validator = validators.get(str(claim["schema_version"]))
         if validator is None:
             raise ValueError(f"claim {claim['claim_id']} requested unsupported schema {claim['schema_version']}")
@@ -477,7 +537,8 @@ def generate(*, dry_run: bool = False) -> dict[str, Any]:
         if not dry_run:
             write_json(claim_path, claim)
             _updated_manifest(manifest_path, claim_path, claim)
-            _updated_node_gate(node_gate_path, claim_path, manifest_path)
+            if update_node_gates:
+                _updated_node_gate(node_gate_path, claim_path, manifest_path)
         rows.append(
             {
                 "claim_id": claim["claim_id"],
@@ -494,16 +555,22 @@ def generate(*, dry_run: bool = False) -> dict[str, Any]:
         "claim_count": len(rows),
         "rows": rows,
         "dry_run": dry_run,
+        "update_node_gates": update_node_gates,
         "ok": True,
     }
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Generate E4 support_claim.v2/v3 files from inventory, catalog, and comparator reports.")
+    parser = argparse.ArgumentParser(description="Generate lifecycle-default E4 support claims from inventory, catalog, and comparator reports.")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--defer-node-gates",
+        action="store_true",
+        help="leave node-gate reports to the canonical lane reverify stages",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
-    report = generate(dry_run=args.dry_run)
+    report = generate(dry_run=args.dry_run, update_node_gates=not args.defer_node_gates)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     else:

@@ -26,7 +26,6 @@ DEFAULT_REPORT_ROLES_PATH = ROOT / "docs" / "conformance" / "e4_report_roles.jso
 DEFAULT_OUTPUT_PATH = ROOT / "docs" / "conformance" / "e4_artifact_catalog.json"
 DEFAULT_TOOLING_MANIFEST_PATH = ROOT / "docs" / "conformance" / "e4_tooling_manifest.json"
 DEFAULT_GENERATED_AT_UTC = "2026-07-03T00:00:00Z"
-CATALOG_ID = "e4_artifact_catalog_v1"
 CATALOG_V2_ID = "e4_artifact_catalog_v2"
 CHECKOUT_PREFIX = f"{ROOT.name}/"
 
@@ -698,11 +697,9 @@ def _revision_and_timestamp(
 
 
 def _catalog_schema_version(value: str) -> str:
-    if value in {"v1", "bb.e4.artifact_catalog.v1"}:
-        return "bb.e4.artifact_catalog.v1"
     if value in {"v2", "bb.e4.artifact_catalog.v2"}:
         return "bb.e4.artifact_catalog.v2"
-    raise ValueError(f"unsupported artifact catalog schema_version: {value}")
+    raise ValueError(f"artifact catalog generation requires bb.e4.artifact_catalog.v2, got {value!r}")
 
 
 def _catalog_record(
@@ -716,7 +713,7 @@ def _catalog_record(
     entries_hash = sha256_ref(canonical_record_bytes(entries_list))
     stable_hash = stable_entries_hash(entries_list)
     record: dict[str, Any] = {
-        "catalog_id": CATALOG_ID if schema_version == "bb.e4.artifact_catalog.v1" else CATALOG_V2_ID,
+        "catalog_id": CATALOG_V2_ID,
         "generated_at_utc": generated_at_utc,
         "revision": revision,
         "entries": entries_list,
@@ -726,10 +723,9 @@ def _catalog_record(
             "stable_entries_hash": stable_hash,
         },
     }
-    if schema_version == "bb.e4.artifact_catalog.v2":
-        segments = catalog_segments(entries_list)
-        record["segments"] = segments
-        record["integrity"]["segments_hash"] = sha256_ref(canonical_record_bytes(segments))
+    segments = catalog_segments(entries_list)
+    record["segments"] = segments
+    record["integrity"]["segments_hash"] = sha256_ref(canonical_record_bytes(segments))
     return record
 
 
@@ -739,7 +735,7 @@ def build_catalog(
     output_path: Path | str = DEFAULT_OUTPUT_PATH,
     generated_at_utc: str | None = None,
     write_bindings: bool = False,
-    schema_version: str = "bb.e4.artifact_catalog.v1",
+    schema_version: str = "bb.e4.artifact_catalog.v2",
 ) -> dict[str, Any]:
     schema_version = _catalog_schema_version(schema_version)
     inventory_file = Path(inventory_path)
@@ -788,7 +784,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--generated-at-utc", default=None)
     parser.add_argument("--write-bindings", action="store_true", help="refresh support-claim and evidence-manifest hash refs before cataloging")
-    parser.add_argument("--schema-version", choices=("v1", "v2", "bb.e4.artifact_catalog.v1", "bb.e4.artifact_catalog.v2"), default="bb.e4.artifact_catalog.v1")
+    parser.add_argument("--schema-version", choices=("v2", "bb.e4.artifact_catalog.v2"), default="bb.e4.artifact_catalog.v2")
     parser.add_argument("--json", action="store_true", help="print catalog JSON to stdout instead of writing --output")
     args = parser.parse_args(argv)
 

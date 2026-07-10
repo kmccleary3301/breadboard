@@ -39,6 +39,28 @@ def load_registry(registry_id: str) -> dict[str, Any]:
 
 load_registry.cache_clear = _load_registry_from_dir.cache_clear  # type: ignore[attr-defined]
 
+def schema_generation_default(family: str) -> str:
+    """Return the single active generation-default schema for a lifecycle family."""
+    if not family:
+        raise ValueError("schema lifecycle family must be non-empty")
+    registry = load_registry("schema_lifecycle")
+    entries = registry.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError("schema_lifecycle entries must be a list")
+    defaults = [
+        entry
+        for entry in entries
+        if isinstance(entry, Mapping)
+        and entry.get("family") == family
+        and entry.get("default_for_generation") is True
+    ]
+    if len(defaults) != 1:
+        raise ValueError(f"schema lifecycle family {family!r} has {len(defaults)} generation defaults")
+    schema_id = defaults[0].get("schema_id")
+    if defaults[0].get("lifecycle") != "active_production" or not isinstance(schema_id, str):
+        raise ValueError(f"schema lifecycle family {family!r} generation default is not active")
+    return schema_id
+
 
 def _unregistered_identifier_error(
     registry_id: str,
@@ -61,8 +83,7 @@ def _unregistered_identifier_error(
     )
 
 
-def assert_registered(registry_id: str, value: str, *, allow_deprecated: bool = False) -> None:
-    """Raise RegistryValidationError when value is not active in the named registry."""
+def _registry_entry(registry_id: str, value: str) -> Mapping[str, Any] | None:
     registry = load_registry(registry_id)
     entries = registry.get("entries")
     if not isinstance(entries, list):
@@ -72,18 +93,46 @@ def assert_registered(registry_id: str, value: str, *, allow_deprecated: bool = 
         for entry in entries
         if isinstance(entry, Mapping) and isinstance(entry.get("id"), str)
     }
-    entry = by_id.get(value)
+    return by_id.get(value)
+
+
+def assert_registered(
+    registry_id: str,
+    value: str,
+    *,
+    allow_deprecated: bool = False,
+    expected_kind: str | None = None,
+) -> None:
+    """Raise RegistryValidationError when value is not active in the named registry."""
+    entry = _registry_entry(registry_id, value)
     if entry is None:
         raise RegistryValidationError(_unregistered_identifier_error(registry_id, value))
     status = entry.get("status")
-    if status == "active" or (allow_deprecated and status == "deprecated"):
-        return
-    expected = "active or deprecated" if allow_deprecated else "active"
-    raise RegistryValidationError(
-        _unregistered_identifier_error(
-            registry_id,
-            value,
-            status=str(status) if isinstance(status, str) else "invalid_status",
-            expected=expected,
+    if status != "active" and not (allow_deprecated and status == "deprecated"):
+        expected = "active or deprecated" if allow_deprecated else "active"
+        raise RegistryValidationError(
+            _unregistered_identifier_error(
+                registry_id,
+                value,
+                status=str(status) if isinstance(status, str) else "invalid_status",
+                expected=expected,
+            )
         )
-    )
+    if expected_kind is None:
+        return
+    metadata = entry.get("metadata")
+    actual_kind = metadata.get("kind") if isinstance(metadata, Mapping) else None
+    if actual_kind != expected_kind:
+        raise RegistryValidationError(
+            GateError(
+                code="wrong_registry_kind",
+                gate="c4_chain",
+                klass="semantic",
+                subject={"registry_id": registry_id, "value": value},
+                expected=f"active {expected_kind}",
+                got=str(actual_kind) if isinstance(actual_kind, str) else "missing_kind",
+                remedy=f"Correct {value!r} metadata.kind in contracts/kernel/registries/{registry_id}.v1.json or use an id of kind {expected_kind!r}.",
+                blame=(),
+                message=f"{registry_id}: identifier {value!r} has wrong kind (expected {expected_kind!r}, got {actual_kind!r})",
+            )
+        )
