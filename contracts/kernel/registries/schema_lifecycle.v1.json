@@ -1,0 +1,662 @@
+{
+  "entries": [
+    {
+      "default_for_generation": false,
+      "family": "agent_config_surface",
+      "lifecycle": "validate_only",
+      "notes": "Retained for validation; producers must not emit for new artifacts.",
+      "schema_id": "bb.agent_config_surface.v1",
+      "superseded_by": "bb.agent_config_surface.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "agent_config_surface",
+      "lifecycle": "active_production",
+      "schema_id": "bb.agent_config_surface.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "atomic_feature_ledger",
+      "lifecycle": "active_production",
+      "schema_id": "bb.atomic_feature_ledger.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "blob_ref",
+      "lifecycle": "active_production",
+      "schema_id": "bb.blob_ref.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "capability_registry",
+      "lifecycle": "active_production",
+      "schema_id": "bb.capability_registry.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "checkpoint_metadata",
+      "lifecycle": "active_production",
+      "schema_id": "bb.checkpoint_metadata.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "config_explanation",
+      "lifecycle": "active_production",
+      "schema_id": "bb.config_explanation.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "config_mutation_record",
+      "lifecycle": "active_production",
+      "schema_id": "bb.config_mutation_record.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "context_resource_pack",
+      "lifecycle": "active_production",
+      "schema_id": "bb.context_resource_pack.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "coordination_delegated_verification_reference_slice",
+      "lifecycle": "active_production",
+      "schema_id": "bb.coordination_delegated_verification_reference_slice.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "coordination_intervention_reference_slice",
+      "lifecycle": "active_production",
+      "schema_id": "bb.coordination_intervention_reference_slice.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "coordination_longrun_reference_slice",
+      "lifecycle": "active_production",
+      "schema_id": "bb.coordination_longrun_reference_slice.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "coordination_multi_worker_reference_slice",
+      "lifecycle": "active_production",
+      "schema_id": "bb.coordination_multi_worker_reference_slice.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "coordination_pack",
+      "lifecycle": "active_production",
+      "schema_id": "bb.coordination_pack.v3",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "coordination_reference_slice",
+      "lifecycle": "active_production",
+      "schema_id": "bb.coordination_reference_slice.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "coordination_slice",
+      "lifecycle": "active_production",
+      "schema_id": "bb.coordination_slice.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "coordination_verification_result",
+      "lifecycle": "active_production",
+      "schema_id": "bb.coordination_verification_result.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "directive",
+      "lifecycle": "active_production",
+      "schema_id": "bb.directive.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "distributed_task_descriptor",
+      "lifecycle": "active_production",
+      "schema_id": "bb.distributed_task_descriptor.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "e4_artifact_catalog",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.artifact_catalog.v1",
+      "superseded_by": "bb.e4.artifact_catalog.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_artifact_catalog",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.artifact_catalog.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_closure_report",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.closure_report.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_common",
+      "lifecycle": "active_production",
+      "notes": "Shared definition schema; not a finalized record family in kernel_families census.",
+      "schema_id": "bb.e4.common.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_comparator_registry",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.comparator_registry.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_fixed_point_report",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.fixed_point_report.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "e4_lane_definition",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.lane_def.v1",
+      "superseded_by": "bb.e4.lane_def.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_lane_definition",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.lane_def.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "e4_lane_inventory",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.lane_inventory.v1",
+      "superseded_by": "bb.e4.lane_inventory.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_lane_inventory",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.lane_inventory.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_regen_failure_classification",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.regen_failure_classification.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_regen_plan",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.regen_plan.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "e4_target_coverage",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.target_coverage.v1",
+      "superseded_by": "bb.e4.target_coverage.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_target_coverage",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.target_coverage.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "effective_config_graph",
+      "lifecycle": "active_production",
+      "schema_id": "bb.effective_config_graph.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "effective_operation_policy",
+      "lifecycle": "active_production",
+      "schema_id": "bb.effective_operation_policy.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "effective_tool_surface",
+      "lifecycle": "active_production",
+      "schema_id": "bb.effective_tool_surface.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "environment_selector",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.environment_selector.v1",
+      "superseded_by": "bb.environment_selector.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "environment_selector",
+      "lifecycle": "active_production",
+      "schema_id": "bb.environment_selector.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "er_progress",
+      "lifecycle": "active_production",
+      "schema_id": "bb.er.progress.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "execution_capability",
+      "lifecycle": "active_production",
+      "schema_id": "bb.execution_capability.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "execution_placement",
+      "lifecycle": "active_production",
+      "schema_id": "bb.execution_placement.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "external_protocol_session",
+      "lifecycle": "active_production",
+      "schema_id": "bb.external_protocol_session.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "kernel_common",
+      "lifecycle": "active_production",
+      "notes": "Shared definition schema; not a finalized record family in kernel_families census.",
+      "schema_id": "bb.kernel.common.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "kernel_event_log",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.kernel_event.v1",
+      "superseded_by": "bb.kernel_event.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "kernel_event_log",
+      "lifecycle": "active_production",
+      "schema_id": "bb.kernel_event.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "lane_validation_report",
+      "lifecycle": "active_production",
+      "schema_id": "bb.lane_validation_report.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "memory_compaction_plan",
+      "lifecycle": "active_production",
+      "schema_id": "bb.memory_compaction_plan.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "middleware_hook_lifecycle",
+      "lifecycle": "active_production",
+      "schema_id": "bb.extension_hook_execution.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "permission",
+      "lifecycle": "active_production",
+      "schema_id": "bb.permission.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "projection_event",
+      "lifecycle": "active_production",
+      "schema_id": "bb.projection_event.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "provider_exchange",
+      "lifecycle": "active_production",
+      "schema_id": "bb.provider_exchange.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "provider_route",
+      "lifecycle": "active_production",
+      "schema_id": "bb.provider_route.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "registry",
+      "lifecycle": "active_production",
+      "schema_id": "bb.registry.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "replay_session",
+      "lifecycle": "active_production",
+      "schema_id": "bb.replay_session.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "resource_access",
+      "lifecycle": "active_production",
+      "schema_id": "bb.resource_access.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "resource_ref",
+      "lifecycle": "active_production",
+      "schema_id": "bb.resource_ref.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "review_verdict",
+      "lifecycle": "active_production",
+      "schema_id": "bb.review_verdict.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "run_context",
+      "lifecycle": "active_production",
+      "schema_id": "bb.run_context.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "run_request",
+      "lifecycle": "active_production",
+      "schema_id": "bb.run_request.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "sandbox_request",
+      "lifecycle": "active_production",
+      "schema_id": "bb.sandbox_request.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "sandbox_result",
+      "lifecycle": "active_production",
+      "schema_id": "bb.sandbox_result.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "schema_lifecycle",
+      "lifecycle": "active_production",
+      "notes": "Lifecycle registry schema introduced by WS-C C1.",
+      "schema_id": "bb.schema_lifecycle.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "session_transcript_snapshot",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.session_transcript.v1",
+      "superseded_by": "bb.session_transcript.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "session_transcript_snapshot",
+      "lifecycle": "active_production",
+      "schema_id": "bb.session_transcript.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "side_effect_broker",
+      "lifecycle": "active_production",
+      "schema_id": "bb.side_effect_broker.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "signal",
+      "lifecycle": "active_production",
+      "schema_id": "bb.signal.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "support_claim",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.support_claim.v1",
+      "superseded_by": "bb.e4.support_claim.v4"
+    },
+    {
+      "default_for_generation": false,
+      "family": "support_claim",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.support_claim.v2",
+      "superseded_by": "bb.e4.support_claim.v4"
+    },
+    {
+      "default_for_generation": false,
+      "family": "support_claim",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.support_claim.v3",
+      "superseded_by": "bb.e4.support_claim.v4"
+    },
+    {
+      "default_for_generation": true,
+      "family": "support_claim",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.support_claim.v4",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "task",
+      "lifecycle": "active_production",
+      "schema_id": "bb.task.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "terminal_cleanup_result",
+      "lifecycle": "active_production",
+      "schema_id": "bb.terminal_cleanup_result.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "terminal_interaction",
+      "lifecycle": "active_production",
+      "schema_id": "bb.terminal_interaction.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "terminal_output_delta",
+      "lifecycle": "active_production",
+      "schema_id": "bb.terminal_output_delta.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "terminal_registry_snapshot",
+      "lifecycle": "active_production",
+      "schema_id": "bb.terminal_registry_snapshot.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "terminal_session_descriptor",
+      "lifecycle": "active_production",
+      "schema_id": "bb.terminal_session_descriptor.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "terminal_session_end",
+      "lifecycle": "active_production",
+      "schema_id": "bb.terminal_session_end.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "tool_binding",
+      "lifecycle": "active_production",
+      "schema_id": "bb.tool_binding.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "tool_call",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.tool_call.v1",
+      "superseded_by": "bb.tool_call.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "tool_call",
+      "lifecycle": "active_production",
+      "schema_id": "bb.tool_call.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "tool_execution_outcome",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.tool_execution_outcome.v1",
+      "superseded_by": "bb.tool_execution_outcome.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "tool_execution_outcome",
+      "lifecycle": "active_production",
+      "schema_id": "bb.tool_execution_outcome.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "tool_render",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.tool_model_render.v1",
+      "superseded_by": "bb.tool_model_render.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "tool_render",
+      "lifecycle": "active_production",
+      "schema_id": "bb.tool_model_render.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "tool_spec",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.tool_spec.v1",
+      "superseded_by": "bb.tool_spec.v2"
+    },
+    {
+      "default_for_generation": true,
+      "family": "tool_spec",
+      "lifecycle": "active_production",
+      "schema_id": "bb.tool_spec.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "tool_support_claim",
+      "lifecycle": "active_production",
+      "schema_id": "bb.tool_support_claim.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "transcript_continuation_patch",
+      "lifecycle": "active_production",
+      "schema_id": "bb.transcript_continuation_patch.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "unsupported_case_taxonomy",
+      "lifecycle": "active_production",
+      "schema_id": "bb.unsupported_case.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "wake_subscription",
+      "lifecycle": "active_production",
+      "schema_id": "bb.wake_subscription.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "work_item",
+      "lifecycle": "active_production",
+      "schema_id": "bb.work_item.v1",
+      "superseded_by": null
+    }
+  ],
+  "generated_at_utc": "2026-07-09T00:00:00Z",
+  "registry_id": "schema_lifecycle",
+  "schema_version": "bb.schema_lifecycle.v1"
+}

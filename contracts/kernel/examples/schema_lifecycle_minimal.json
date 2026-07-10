@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "default_for_generation": true,
+      "family": "schema_lifecycle",
+      "lifecycle": "active_production",
+      "notes": "Minimal example row.",
+      "schema_id": "bb.schema_lifecycle.v1",
+      "superseded_by": null
+    }
+  ],
+  "generated_at_utc": "2026-07-09T00:00:00Z",
+  "registry_id": "schema_lifecycle",
+  "schema_version": "bb.schema_lifecycle.v1"
+}
