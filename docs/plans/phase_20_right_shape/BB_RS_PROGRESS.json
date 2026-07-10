@@ -1,0 +1,859 @@
+{
+ "schema_version": "bb.rs_progress.v1",
+ "campaign": "phase_20_right_shape",
+ "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
+ "points_total": 1000,
+ "points_done": 0,
+ "conditional_total": 250,
+ "conditional_done": 0,
+ "updated_at_utc": "2026-07-10T00:00:00Z",
+ "items": [
+  {
+   "id": "A1",
+   "ws": "A",
+   "title": "ts client /v1 prefix",
+   "weight": 15,
+   "status": "todo",
+   "deps": [],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "A2",
+   "ws": "A",
+   "title": "ts readSessionFile files/content",
+   "weight": 5,
+   "status": "todo",
+   "deps": [
+    "A1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "A3",
+   "ws": "A",
+   "title": "ts SSE URL /v1",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "A1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "A4",
+   "ws": "A",
+   "title": "py client /v1 prefix incl multipart+stream",
+   "weight": 15,
+   "status": "todo",
+   "deps": [],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "A5",
+   "ws": "A",
+   "title": "py read_session_file files/content",
+   "weight": 5,
+   "status": "todo",
+   "deps": [
+    "A4"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "A6",
+   "ws": "A",
+   "title": "SDK tests/fixtures assert exact /v1 URLs",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "A1",
+    "A2",
+    "A3",
+    "A4",
+    "A5"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "A7",
+   "ws": "A",
+   "title": "default-server README-flow smoke (both SDKs)",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "A6"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "A8",
+   "ws": "A",
+   "title": "verifier packet incl base-SHA repro",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "A7"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "B1",
+   "ws": "B",
+   "title": "commit FREEZE_POLICY.md verbatim",
+   "weight": 15,
+   "status": "todo",
+   "deps": [],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "B2",
+   "ws": "B",
+   "title": "freeze gate script + CI wiring",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "B1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "B3",
+   "ws": "B",
+   "title": "bd epic + child issues",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "B1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "C1",
+   "ws": "C",
+   "title": "commit DIRECTION_CHARTER.md verbatim",
+   "weight": 15,
+   "status": "todo",
+   "deps": [],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "C2",
+   "ws": "C",
+   "title": "thesis numbers from J-evidence",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "C1",
+    "J1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "C3",
+   "ws": "C",
+   "title": "INDEX.md + README links",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "C1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "C4",
+   "ws": "C",
+   "title": "charter verifier",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "C1",
+    "C2",
+    "C3",
+    "E3"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "D1",
+   "ws": "D",
+   "title": "product-spine CI job",
+   "weight": 30,
+   "status": "todo",
+   "deps": [],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "D2",
+   "ws": "D",
+   "title": "e4-battery nightly workflow",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "D1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "D3",
+   "ws": "D",
+   "title": "touched-path triggers",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "D1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "D4",
+   "ws": "D",
+   "title": "canonical exporter everywhere in ci.yml",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "D1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "D5",
+   "ws": "D",
+   "title": "SDK smokes in spine; <=10min",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "A7",
+    "D1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "E1",
+   "ws": "E",
+   "title": "tier registry schema+file committed",
+   "weight": 25,
+   "status": "todo",
+   "deps": [
+    "B1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "E2",
+   "ws": "E",
+   "title": "adversarial consumer audit",
+   "weight": 30,
+   "status": "todo",
+   "deps": [
+    "E1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "E3",
+   "ws": "E",
+   "title": "packs.v1.json language fix",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "E1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "E4",
+   "ws": "E",
+   "title": "schemas README tier column",
+   "weight": 5,
+   "status": "todo",
+   "deps": [
+    "E3"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "E5",
+   "ws": "E",
+   "title": "consumer links verified 100% spine tiers",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "E1",
+    "E2"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "E6",
+   "ws": "E",
+   "title": "workstream skeptic zero unresolved",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "E1",
+    "E2",
+    "E3",
+    "E4",
+    "E5"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "F1",
+   "ws": "F",
+   "title": "lane_manifest schema committed verbatim",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "B1",
+    "C1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "F2",
+   "ws": "F",
+   "title": "lane_lock schema committed verbatim",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "F1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "F3",
+   "ws": "F",
+   "title": "compile_lane_lock deterministic compiler+sidecar",
+   "weight": 35,
+   "status": "todo",
+   "deps": [
+    "F1",
+    "F2"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "F4",
+   "ws": "F",
+   "title": "P6.6 pilot manifest+lock round-trip equality",
+   "weight": 35,
+   "status": "todo",
+   "deps": [
+    "F3"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "F5",
+   "ws": "F",
+   "title": "parity+churn proof (run, fixed-point, locality)",
+   "weight": 25,
+   "status": "todo",
+   "deps": [
+    "F4"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "F6",
+   "ws": "F",
+   "title": "refresh writes lock only; manifest untouchable",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "F5"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "G1",
+   "ws": "G",
+   "title": "root pyproject + bbh skeleton",
+   "weight": 20,
+   "status": "todo",
+   "deps": [],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "G2",
+   "ws": "G",
+   "title": "harness init/validate/explain + lane init/validate",
+   "weight": 30,
+   "status": "todo",
+   "deps": [
+    "G1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "G3",
+   "ws": "G",
+   "title": "bbh harness run --server/--local",
+   "weight": 25,
+   "status": "todo",
+   "deps": [
+    "G1",
+    "A7"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "G4",
+   "ws": "G",
+   "title": "bbh lane lock/capture",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "G1",
+    "F3"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "G5",
+   "ws": "G",
+   "title": "docs front-door rewrite",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "G2",
+    "G3",
+    "G4"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "G6",
+   "ws": "G",
+   "title": "verifier E2E transcript",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "G5"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "H1",
+   "ws": "H",
+   "title": "StageReport + check_stage_report in run_lane",
+   "weight": 30,
+   "status": "todo",
+   "deps": [],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "H2",
+   "ws": "H",
+   "title": "normalize executes translator",
+   "weight": 25,
+   "status": "todo",
+   "deps": [
+    "H1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "H3",
+   "ws": "H",
+   "title": "Replay honesty: replay.mode 'stored' declared explicitly in every lane source ('executed' deferred; loader rejects it with deferral error)",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "H1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "H4",
+   "ws": "H",
+   "title": "compare invokes comparator; claim consumes report",
+   "weight": 25,
+   "status": "todo",
+   "deps": [
+    "H1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "H5",
+   "ws": "H",
+   "title": "21 lane sources declare stage modes; validate_lane enforces",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "H1",
+    "H2",
+    "H3",
+    "H4"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "H6",
+   "ws": "H",
+   "title": "verifier incl base-SHA silent-skip repro",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "H5"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "I1",
+   "ws": "I",
+   "title": "VALIDATION_GAP_MATRIX.md committed",
+   "weight": 25,
+   "status": "todo",
+   "deps": [],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "I2",
+   "ws": "I",
+   "title": "schema-first constraint additions",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "I1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "I3",
+   "ws": "I",
+   "title": "consolidation; guarded tests green unmodified",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "I2"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "I4",
+   "ws": "I",
+   "title": "verifier fixture-corpus behavior diff",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "I3"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "J1",
+   "ws": "J",
+   "title": "FLAGSHIP_DEMO_PROTOCOL.md predeclared",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "C1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "J2",
+   "ws": "J",
+   "title": "Flagship demo: outsider protocol executed honestly and completely (budget/functional pass-fail recorded as gate G-J, not in this item)",
+   "weight": 40,
+   "status": "todo",
+   "deps": [
+    "J1",
+    "G6",
+    "A8",
+    "H5"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "J3",
+   "ws": "J",
+   "title": "retro + fix packets",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "J2"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "J4",
+   "ws": "J",
+   "title": "charter carries measured numbers",
+   "weight": 25,
+   "status": "todo",
+   "deps": [
+    "J2"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "J5",
+   "ws": "J",
+   "title": "demo verifier + outsider-rule audit",
+   "weight": 15,
+   "status": "todo",
+   "deps": [
+    "J2",
+    "J3",
+    "J4"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "K1",
+   "ws": "K",
+   "title": "Gate G-K decision doc + countersign",
+   "weight": 20,
+   "status": "todo",
+   "deps": [
+    "F6",
+    "H6",
+    "J4",
+    "J5"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "L1",
+   "ws": "L",
+   "title": "Gate G-L decision doc + countersign",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "K1"
+   ],
+   "evidence": [],
+   "notes": "",
+   "verifiers": []
+  },
+  {
+   "id": "K2",
+   "ws": "K",
+   "title": "migrate remaining 20 lanes to manifest+lock (5x4 batches)",
+   "weight": 100,
+   "status": "na_gated",
+   "deps": [
+    "K1"
+   ],
+   "evidence": [],
+   "notes": "conditional track; unlocks only on gate PASS",
+   "verifiers": []
+  },
+  {
+   "id": "K3",
+   "ws": "K",
+   "title": "retire legacy lane_def loader + legacy refresh mode",
+   "weight": 30,
+   "status": "na_gated",
+   "deps": [
+    "K1"
+   ],
+   "evidence": [],
+   "notes": "conditional track; unlocks only on gate PASS",
+   "verifiers": []
+  },
+  {
+   "id": "K4",
+   "ws": "K",
+   "title": "global pin-graph acyclicity audit",
+   "weight": 20,
+   "status": "na_gated",
+   "deps": [
+    "K1"
+   ],
+   "evidence": [],
+   "notes": "conditional track; unlocks only on gate PASS",
+   "verifiers": []
+  },
+  {
+   "id": "L2",
+   "ws": "L",
+   "title": "extract evidence core to libs/evidence_core",
+   "weight": 70,
+   "status": "na_gated",
+   "deps": [
+    "L1"
+   ],
+   "evidence": [],
+   "notes": "conditional track; unlocks only on gate PASS",
+   "verifiers": []
+  },
+  {
+   "id": "L3",
+   "ws": "L",
+   "title": "migrate scripts onto evidence core",
+   "weight": 30,
+   "status": "na_gated",
+   "deps": [
+    "L1"
+   ],
+   "evidence": [],
+   "notes": "conditional track; unlocks only on gate PASS",
+   "verifiers": []
+  },
+  {
+   "id": "M1",
+   "ws": "M",
+   "title": "Campaign closeout: bd closure, dolt push, final derailment audit, SPEC_AMENDMENTS finalization, final completeness critic",
+   "weight": 10,
+   "status": "todo",
+   "deps": [
+    "A8",
+    "B3",
+    "C4",
+    "D5",
+    "E5",
+    "F6",
+    "G6",
+    "H6",
+    "I4",
+    "J5",
+    "K1",
+    "L1"
+   ],
+   "evidence": [],
+   "verifiers": [],
+   "notes": ""
+  }
+ ],
+ "gates": [
+  {
+   "id": "G-D",
+   "status": "pending",
+   "decision_ref": ""
+  },
+  {
+   "id": "G-F",
+   "status": "pending",
+   "decision_ref": ""
+  },
+  {
+   "id": "G-J",
+   "status": "pending",
+   "decision_ref": ""
+  },
+  {
+   "id": "G-K",
+   "status": "pending",
+   "decision_ref": ""
+  },
+  {
+   "id": "G-L",
+   "status": "pending",
+   "decision_ref": ""
+  }
+ ],
+ "amendments": []
+}
