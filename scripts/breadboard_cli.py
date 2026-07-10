@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
+import os
 import shutil
+import socket
 import sys
-from collections.abc import Sequence
+import threading
+import time
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 EXIT_OK = 0
@@ -22,6 +27,11 @@ def _repo_root() -> Path:
 
 def _print_error(message: str) -> None:
     print(f"bbh: {message}", file=sys.stderr)
+def _not_implemented(command: str, item: str) -> int:
+    _print_error(f"{command} is not implemented yet; see Phase 20 item {item}")
+    return EXIT_VALIDATION_FAILURE
+
+
 
 
 def _copy_bundle(files: Sequence[tuple[Path, Path]]) -> int:
@@ -85,6 +95,103 @@ def _harness_explain(args: argparse.Namespace) -> int:
     if args.strict:
         argv.append("--strict")
     return explain_main(argv)
+
+
+@contextlib.contextmanager
+def _local_server() -> Iterator[str]:
+    import uvicorn
+
+    from agentic_coder_prototype.api.cli_bridge.app import create_app
+
+    previous_legacy_routes = os.environ.pop("BREADBOARD_LEGACY_ROUTES", None)
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    port = int(listener.getsockname()[1])
+    server = uvicorn.Server(
+        uvicorn.Config(create_app(), host="127.0.0.1", port=port, log_level="error")
+    )
+    thread = threading.Thread(
+        target=server.run,
+        kwargs={"sockets": [listener]},
+        daemon=True,
+    )
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not server.started and thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    if not server.started:
+        server.should_exit = True
+        thread.join(timeout=5)
+        listener.close()
+        if previous_legacy_routes is not None:
+            os.environ["BREADBOARD_LEGACY_ROUTES"] = previous_legacy_routes
+        raise RuntimeError("local create_app server did not start")
+    try:
+        yield f"http://127.0.0.1:{port}"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        listener.close()
+        if previous_legacy_routes is not None:
+            os.environ["BREADBOARD_LEGACY_ROUTES"] = previous_legacy_routes
+        if thread.is_alive():
+            raise RuntimeError("local create_app server did not stop")
+
+def _poll_records(client: object, session_id: str) -> object:
+    deadline = time.monotonic() + 5
+    while True:
+        response = client.read_session_records(session_id)
+        if _record_count(response) > 0 or time.monotonic() >= deadline:
+            return response
+        time.sleep(0.1)
+
+
+
+
+def _record_count(response: object) -> int:
+    if not isinstance(response, dict):
+        return 0
+    records = response.get("records")
+    if isinstance(records, list):
+        return len(records)
+    total = response.get("total")
+    return int(total) if isinstance(total, int) else 0
+
+def _run_session(base_url: str, args: argparse.Namespace) -> int:
+    import breadboard_sdk
+
+    task = args.task or "List files"
+    client = breadboard_sdk.BreadboardClient(base_url)
+    session = client.create_session(config_path=args.PATH, task=task)
+    session_id = str(session["session_id"])
+    client.post_input(session_id, content=task)
+    records = _poll_records(client, session_id)
+    for event in client.stream_events(session_id, query={"replay": "true"}):
+        event_type = str(event.get("type") or "") if isinstance(event, dict) else ""
+        if event_type == "error":
+            payload = event.get("payload") if isinstance(event, dict) else None
+            raise RuntimeError(f"session event stream failed: {payload}")
+        if event_type in {"completion", "run_finished"}:
+            break
+    result = {"ok": True, "session_id": session_id, "record_count": _record_count(records)}
+    if args.json:
+        print(json.dumps(result, sort_keys=True))
+    elif not args.quiet:
+        print(f"Session {session_id} completed; record count: {result['record_count']}")
+    return EXIT_OK
+
+
+def _harness_run(args: argparse.Namespace) -> int:
+    try:
+        if args.local:
+            with _local_server() as base_url:
+                return _run_session(base_url, args)
+        return _run_session(args.server, args)
+    except Exception as exc:
+        _print_error(str(exc))
+        return EXIT_RUNTIME_FAILURE
 
 
 LANE_MANIFEST_SKELETON = """\
@@ -239,10 +346,11 @@ def build_parser() -> argparse.ArgumentParser:
         item="G3",
     )
     harness_run.add_argument("PATH")
-    run_target = harness_run.add_mutually_exclusive_group()
+    run_target = harness_run.add_mutually_exclusive_group(required=True)
     run_target.add_argument("--server", metavar="URL")
     run_target.add_argument("--local", action="store_true")
     harness_run.add_argument("--task", metavar="TEXT")
+    harness_run.set_defaults(handler=_harness_run)
 
     lane = namespaces.add_parser(
         "lane", help="operate on E4 conformance lane manifests"
