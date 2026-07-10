@@ -6,7 +6,7 @@
  "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:49:31Z",
+ "updated_at_utc": "2026-07-10T21:53:31Z",
  "items": [
   {
    "id": "A1",
@@ -532,7 +532,7 @@
      "bound_sha": "c11add8c1a11"
     }
    ],
-   "notes": "[blocked_missing_repo_admin_credentials] Path filters + job graph merged+verified; required-check activation needs GitHub Administration write permission (gh api PUT recorded in evidence); activation or signed waiver owned by D5. No enforcement claimed.",
+   "notes": "[pending_integration] Path filters + job graph merged+verified; D3 acceptance closes with one green PR-triggered E4-battery run on a matched-path PR (run evidence pending integration). Required-status-check activation is NOT a D3 obligation \u2014 it belongs to D5 per AM3/\u00a76.3 (needs GitHub Administration write permission; gh api PUT command recorded in D3 evidence; activation or signed human waiver owned by D5). No enforcement claimed. Reclassified per Wave2DerailAudit finding 1 (was: blocked_missing_repo_admin_credentials).",
    "verifiers": [
     {
      "agent": "VerifyWsDStatic",
@@ -1442,7 +1442,7 @@
    "wave": 2,
    "closed_at_utc": "2026-07-10T21:49:31Z",
    "head": "27deb570b7d7ac11a872dca90e628cfbe28c71b1",
-   "semantics": "packet implementations verified+merged only. NOT acceptance-complete: D1/D2 green run URLs pending integration (push at this boundary starts PR runs), D3 required-check activation blocked on admin credentials. Acceptance closure owned by D5 (activation/waiver) and K1 (gate decisions). No points awarded for D1-D3."
+   "semantics": "packet implementations verified+merged only. NOT acceptance-complete: D1/D2/D3 green run URLs pending integration (push at this boundary starts PR runs; D3 needs a matched-path PR battery run). Required-check activation (admin credentials or waiver) is a D5 obligation, distinct from D3. Acceptance closure owned by D5 and K1. No points awarded for D1-D3."
   }
  ]
 }

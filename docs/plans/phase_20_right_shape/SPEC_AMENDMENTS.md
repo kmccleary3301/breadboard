@@ -82,3 +82,14 @@ Two declaration gaps are resolved together because F1 introduces the manifest ki
 **Classification:** spec_gap.
 **Owner:** WS-F F1 (enforcement layer); H2 (table row + test).
 **Recorded-by:** orchestrator.
+
+---
+
+## Registry normalization - 2026-07-10 - explicit fields for AM1, AM2, AM4, AM6 (bookkeeping; no normative change)
+
+Wave-2 derailment audit found four amendments lacking explicit owner/classification fields in this prose registry (the machine ledger already carried them). For the record:
+
+- **AM1** (shared immutable interpreter): Classification: spec_gap. Owner: campaign-wide. Recorded-by: orchestrator.
+- **AM2** (G1 fresh-venv bootstrap pip>=21.3): Classification: gate_wrong. Owner: G-items. Recorded-by: orchestrator.
+- **AM4** (bootstrap installs requirements.txt before editable package): Classification: gate_wrong (AM4 itself; the parenthetical in its body classifies the AM2 defect it corrects). Owner: G6 gate + any fresh-venv gate. Recorded-by: orchestrator.
+- **AM6** (minimal records-read op in both SDKs): Classification: spec_gap. Owner: A7. Recorded-by: orchestrator.
