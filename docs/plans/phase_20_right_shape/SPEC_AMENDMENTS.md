@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **15 amendments** (below).
+Current state: **16 amendments** (below).
 
 ---
 
@@ -235,3 +235,18 @@ Anything else is a red gate at lock/--check time (exit 3 behavior confirmed corr
 **F4 disposition (owner WsF3Compiler):** classify that path — if the lane CONSUMES it, replace with a tracked canonical input (or a declared derivation from tracked sources); if it is actually an OUTPUT of the capture chain, remove it from inputs and place it in the artifact/output roles. Then regenerate the lock and rerun `migrate --check`. G6 stays blocked on this fix; its refusal to weaken the gate is correct.
 
 **Classification:** product_defect (F4 manifest content) + spec_gap (rule not yet written). **Recorded-by:** orchestrator.
+
+**AM14 addendum (AM14a, same date):** legacy payload-block retirement is gated on MORE than sidecar byte-equality: (1) consumer inventory proving compiler/runtime read ONLY the promoted manifest-referenced source; (2) schema/path validation of the promoted file; (3) its digest pinned in the lock; (4) legacy-vs-new SEMANTIC output parity (normalized lane dict), not just sidecar bytes; (5) the one-time extractor is a committed, reproducible script — the authored file must not be an unverifiable manual transcription.
+
+---
+
+## Amendment 16 - 2026-07-10 - pilot manifest input surface: clean-checkout sources only; sidecar derives runtime payloads; parity-only legacy mapping (spec_gap; subsumes the AM15 F4 disposition, resolves F6 jointly with AM14)
+
+F4's deeper defect: the pilot manifest references downstream run/evidence artifacts (node_gate chains, target captures, session dirs — untracked/ignored), violating the manifest<-lock<-evidence direction and the AM15 rule. `--check` recompiles every input digest per F3's contract and MUST NOT trust recorded pins for missing inputs (WsF3Compiler's refusal to weaken is correct). Authorized redesign:
+
+- **Manifest inputs = clean-checkout sources ONLY** (tracked zip per AM11/AM11a, scripts, schemas, config, the AM14 promoted payloads source). No run/evidence artifact may appear as a manifest input.
+- **Machine-owned sidecar derives runtime payload inputs** deterministically from the declared sources (+ lock artifact roles); the adapter consumes sidecar-derived payloads directly — no physical untracked/ignored artifact required at runtime. Digest chain recorded in the lock.
+- **Parity-only legacy mapping:** post-normalization deep-equality against the legacy lane dict uses a declared expansion of legacy capture.inputs (comparison layer exclusively; never consulted by compile/run/--check).
+- `--check` semantics unchanged: recompute EVERY digest from clean-checkout state; missing input = red exit 3.
+
+**Classification:** spec_gap. **Owner:** F4/F6 (WsF3Compiler). **Recorded-by:** orchestrator.

@@ -6,7 +6,7 @@
  "points_done": 385,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:40:23Z",
+ "updated_at_utc": "2026-07-10T22:41:24Z",
  "items": [
   {
    "id": "A1",
@@ -1587,6 +1587,22 @@
    "classification": "product_defect+spec_gap",
    "what": "universal rule: every declared manifest input resolves on clean checkout (tracked or declared deterministic derivation); F4 pilot manifest declares untracked node_gate artifact as input - fix + relock; G6 blocked honestly",
    "owner": "F4",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM14a",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "sidecar-source retirement gates: consumer inventory, schema validation, digest pin, semantic parity, reproducible extractor",
+   "owner": "F6",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM16",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "manifest inputs restricted to clean-checkout sources; sidecar derives runtime payloads; parity-only legacy capture.inputs mapping; --check stays strict",
+   "owner": "F4+F6",
    "recorded_by": "orchestrator"
   }
  ],
