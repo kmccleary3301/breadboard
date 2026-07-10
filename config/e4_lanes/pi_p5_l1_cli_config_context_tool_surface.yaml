@@ -1,102 +1,159 @@
-{
-  "schema_version": "bb.e4.lane_def.v1",
-  "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
-  "config_id": "pi_p5_l1_cli_config_context_tool_surface_v1",
-  "target_family": "pi",
-  "target_version": "@mariozechner/pi-coding-agent@0.57.1",
-  "package_ref": null,
-  "kind": "target_support",
-  "status": "accepted",
-  "points": 95,
-  "capture": {
-    "strategy": "legacy_builder",
-    "argv": [
-      ".venv/bin/python",
-      "scripts/e4_parity/build_pi_p5_cli_config_context_tool_surface.py"
-    ],
-    "inputs": [
-      "scripts/e4_parity/build_pi_p5_cli_config_context_tool_surface.py"
-    ],
-    "workspace_template": null
-  },
-  "normalize": {
-    "translator": "identity",
-    "config": {}
-  },
-  "replay": {
-    "session": null,
-    "comparator_class": "semantic"
-  },
-  "compare": {
-    "comparator": "pi_stored_report_replay",
-    "config": {
-      "assertions": [
-        {
-          "equals": true,
-          "path": "ok"
-        },
-        {
-          "length_equals": 0,
-          "path": "errors"
-        },
-        {
-          "equals": "pi_p5_l1_cli_config_context_tool_surface_v1",
-          "path": "claimed_scope.config_id"
-        },
-        {
-          "equals": "pi_p5_l1_cli_config_context_tool_surface",
-          "path": "claimed_scope.lane_id"
-        },
-        {
-          "equals": "P5",
-          "path": "claimed_scope.phase"
-        },
-        {
-          "equals": "no-provider",
-          "path": "claimed_scope.provider_model"
-        },
-        {
-          "equals": "read-only-no-secret",
-          "path": "claimed_scope.sandbox_mode"
-        }
-      ]
-    }
-  },
-  "claim": {
-    "scope": {
-      "behaviors": [
-        "bb.effective_config_graph.v1",
-        "bb.context_resource_pack.v1",
-        "bb.capability_registry.v1"
-      ],
-      "surfaces": [
-        "P5 exact-scope C4 support chain"
-      ]
-    },
-    "exclusions": []
-  },
-  "ct": {
-    "description": "Pi 0.57.1 P5 L1 no-secret CLI/config/context/tool-surface exact-scope C4 chain validation.",
-    "timeout_seconds": 240
-  },
-  "artifacts_root": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface",
-  "reverify_command": {
-    "argv": [
-      ".venv/bin/python",
-      "scripts/validate_e4_c4_chain.py",
-      "--config-id",
-      "pi_p5_l1_cli_config_context_tool_surface_v1",
-      "--support-claim",
-      "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
-      "--evidence-manifest",
-      "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
-      "--json-out",
-      "artifacts/conformance/node_gate/ct_p5_pi_l1_cli_config_context_tool_surface_c4_chain.json",
-      "--check-only"
-    ],
-    "cwd": "."
-  },
-  "metadata": {
-    "legacy_inventory_ct_test_id": "CT-P5-PI-L1-CLI-CONFIG-CONTEXT-TOOL-C4"
-  }
-}
+schema_version: bb.e4.lane_def.v2
+lane_id: pi_p5_l1_cli_config_context_tool_surface
+config_id: pi_p5_l1_cli_config_context_tool_surface_v1
+target_family: pi
+target_version: '@mariozechner/pi-coding-agent@0.57.1'
+package_ref: null
+kind: target_support
+status: accepted
+points: 95
+capture:
+  strategy: adapter
+  argv: null
+  inputs:
+    - docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip
+    - docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json
+    - agent_configs/misc/pi_p5_l1_cli_config_context_tool_surface_v1.yaml
+  workspace_template: null
+  adapter: pi_p5_l1_capture
+normalize:
+  translator: identity
+  config: {}
+replay:
+  session: null
+  comparator_class: semantic
+compare:
+  comparator: pi_stored_report_replay
+  config:
+    assertions:
+      - id: ok_true
+        path: ok
+        op: equals
+        value: true
+        description: comparator report is ok
+      - id: no_errors
+        path: errors
+        op: length_equals
+        value: 0
+        description: comparator report has no errors
+      - id: config_id_matches
+        path: claimed_scope.config_id
+        op: equals
+        value: pi_p5_l1_cli_config_context_tool_surface_v1
+        description: exact config id is claimed
+      - id: lane_id_matches
+        path: claimed_scope.lane_id
+        op: equals
+        value: pi_p5_l1_cli_config_context_tool_surface
+        description: exact lane id is claimed
+      - id: phase_p5
+        path: claimed_scope.phase
+        op: equals
+        value: P5
+        description: P5 phase scope is claimed
+      - id: provider_no_provider
+        path: claimed_scope.provider_model
+        op: equals
+        value: no-provider
+        description: no-provider scope is claimed
+      - id: sandbox_read_only_no_secret
+        path: claimed_scope.sandbox_mode
+        op: equals
+        value: read-only-no-secret
+        description: read-only no-secret sandbox is claimed
+claim:
+  scope:
+    behaviors:
+      - bb.effective_config_graph.v1
+      - bb.context_resource_pack.v1
+      - bb.capability_registry.v1
+    surfaces:
+      - P5 exact-scope C4 support chain
+  exclusions: []
+ct:
+  description: Pi 0.57.1 P5 L1 no-secret CLI/config/context/tool-surface exact-scope C4 chain validation.
+  timeout_seconds: 240
+  test_id: CT-P5-PI-L1-CLI-CONFIG-CONTEXT-TOOL-C4
+artifacts_root: docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface
+reverify_command:
+  argv:
+    - .venv/bin/python
+    - scripts/validate_e4_c4_chain.py
+    - --config-id
+    - pi_p5_l1_cli_config_context_tool_surface_v1
+    - --support-claim
+    - docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json
+    - --evidence-manifest
+    - docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json
+    - --json-out
+    - artifacts/conformance/node_gate/ct_p5_pi_l1_cli_config_context_tool_surface_c4_chain.json
+    - --check-only
+  cwd: .
+run:
+  run_id: 20260703_pi_p5_l1_cli_config_context_tool_surface_capture
+  provider_model: no-provider
+  sandbox_mode: read-only-no-secret
+provenance:
+  provenance_kind: archive_snapshot_without_git_dir
+  upstream_repo: https://github.com/badlogic/pi-mono.git
+  upstream_ref: archive:01_pi_mono_git_tracked.zip
+  upstream_release_label: '@mariozechner/pi-coding-agent@0.57.1'
+  source_paths:
+    - docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip
+    - docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json
+    - agent_configs/misc/pi_p5_l1_cli_config_context_tool_surface_v1.yaml
+    - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/pi_p5_target_probe.mjs
+  source_archive:
+    path: docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip
+    sha256: sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
+    bytes: 4755355
+  source_freeze_ref: docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json#sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602
+  package:
+    name: '@mariozechner/pi-coding-agent'
+    version: 0.57.1
+  note: Archive-only Pi source has no .git directory; archive path/hash plus package identity are the normative source identity.
+acceptance:
+  behavior_family: pi_p5_l1_capture
+  semantic_key: pi_p5_l1_cli_config_context_tool_surface
+  target: pi
+  assertions:
+    - id: package_version
+      description: package version
+    - id: app_config_dir
+      description: app config dir
+    - id: version_command
+      description: version command
+    - id: help_declares_default_tools
+      description: help declares default tools
+    - id: help_declares_read_only_tools
+      description: help declares read only tools
+    - id: settings_project_model_wins
+      description: settings project model wins
+    - id: settings_global_provider_preserved
+      description: settings global provider preserved
+    - id: settings_nested_merge_preserves_reserve
+      description: settings nested merge preserves reserve
+    - id: settings_runtime_override_provider
+      description: settings runtime override provider
+    - id: settings_runtime_override_nested
+      description: settings runtime override nested
+    - id: settings_migration_queue_mode
+      description: settings migration queue mode
+    - id: settings_migration_websockets
+      description: settings migration websockets
+    - id: settings_migration_skills
+      description: settings migration skills
+    - id: settings_writeback
+      description: settings writeback
+    - id: context_order
+      description: context order
+    - id: context_contents
+      description: context contents
+    - id: context_no_missing_files
+      description: context no missing files
+    - id: tool_count
+      description: tool count
+    - id: tool_names
+      description: tool names
+    - id: no_provider_secrets
+      description: no provider secrets

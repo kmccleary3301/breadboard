@@ -920,9 +920,18 @@ e4_configs:
     harness:
       family: pi
       upstream_repo: https://github.com/badlogic/pi-mono.git
-      upstream_commit: archive-sha256-bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
       upstream_ref: archive:01_pi_mono_git_tracked.zip
       upstream_version: '@mariozechner/pi-coding-agent@0.57.1'
+      provenance:
+        kind: archive_snapshot_without_git_dir
+        source_archive:
+          path: docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip
+          sha256: sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
+          bytes: 4755355
+        source_freeze_ref: docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json#sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602
+        package:
+          name: '@mariozechner/pi-coding-agent'
+          version: 0.57.1
       runtime_surface:
         provider_model: no-provider
         sandbox_mode: read-only-no-secret
@@ -949,9 +958,18 @@ e4_configs:
     harness:
       family: pi
       upstream_repo: https://github.com/badlogic/pi-mono.git
-      upstream_commit: archive-sha256-bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
       upstream_ref: archive:01_pi_mono_git_tracked.zip
       upstream_version: '@mariozechner/pi-coding-agent@0.57.1'
+      provenance:
+        kind: archive_snapshot_without_git_dir
+        source_archive:
+          path: docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip
+          sha256: sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
+          bytes: 4755355
+        source_freeze_ref: docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json#sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602
+        package:
+          name: '@mariozechner/pi-coding-agent'
+          version: 0.57.1
       runtime_surface:
         provider_model: no-provider
         sandbox_mode: read-only-no-secret

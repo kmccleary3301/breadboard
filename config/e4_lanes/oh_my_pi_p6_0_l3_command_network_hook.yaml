@@ -1,5 +1,5 @@
 {
-  "schema_version": "bb.e4.lane_def.v1",
+  "schema_version": "bb.e4.lane_def.v2",
   "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
   "config_id": "oh_my_pi_p6_0_l3_command_network_hook_v1",
   "target_family": "oh_my_pi",
@@ -9,14 +9,40 @@
   "status": "accepted",
   "points": 20,
   "capture": {
-    "strategy": "legacy_builder",
+    "strategy": "adapter",
     "argv": null,
-    "inputs": [],
-    "workspace_template": null
+    "inputs": [
+      "agent_configs/misc/oh_my_pi_p6_0_l3_command_network_hook_v1.yaml",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_probe_output.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_setup_and_capture_report.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_l3_hook_network_probe.command_report.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_l3_hook_network_probe.stderr.txt",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_l3_hook_network_probe.stdout.txt",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_version.command_report.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_version.stderr.txt",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_version.stdout.txt",
+      "docs/conformance/e4_artifact_catalog.json",
+      "docs/conformance/e4_lane_inventory.json",
+      "config/e4_target_freeze_manifest.yaml",
+      "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "scripts/e4_parity/oh_my_pi_p6_lane_projection.py",
+      "scripts/e4_parity/adapters/lane_definition_build.py"
+    ],
+    "workspace_template": null,
+    "adapter": "lane_definition_build"
   },
   "normalize": {
     "translator": "identity",
-    "config": {}
+    "config": {
+      "projection": "oh_my_pi_p6_packet_v1",
+      "raw_at": "2026-07-02T00:17:51Z",
+      "generated_at": "2026-07-02T00:17:51Z",
+      "prevalidation_at": "2026-07-02T22:55:56Z",
+      "manifest_at": "2026-07-02T23:06:29Z",
+      "support_at": "2026-07-04T00:00:00Z",
+      "snapshot_tag": "oh_my_pi_16.2.13_main_5356713e_p6_0_l3_20260701"
+    }
   },
   "replay": {
     "session": null,
@@ -27,28 +53,46 @@
     "config": {
       "assertions": [
         {
-          "equals": true,
-          "path": "ok"
+          "id": "ok",
+          "path": "ok",
+          "description": "ok assertion",
+          "op": "equals",
+          "value": true
         },
         {
-          "length_equals": 0,
-          "path": "errors"
+          "id": "errors",
+          "path": "errors",
+          "description": "errors assertion",
+          "op": "length_equals",
+          "value": 0
         },
         {
-          "equals": "oh_my_pi_p6_0_l3_command_network_hook_v1",
-          "path": "claimed_scope.config_id"
+          "id": "claimed_scope_config_id",
+          "path": "claimed_scope.config_id",
+          "description": "claimed_scope.config_id assertion",
+          "op": "equals",
+          "value": "oh_my_pi_p6_0_l3_command_network_hook_v1"
         },
         {
-          "equals": "oh_my_pi_p6_0_l3_command_network_hook",
-          "path": "claimed_scope.lane_id"
+          "id": "claimed_scope_lane_id",
+          "path": "claimed_scope.lane_id",
+          "description": "claimed_scope.lane_id assertion",
+          "op": "equals",
+          "value": "oh_my_pi_p6_0_l3_command_network_hook"
         },
         {
-          "equals": "no-provider",
-          "path": "claimed_scope.provider_model"
+          "id": "claimed_scope_provider_model",
+          "path": "claimed_scope.provider_model",
+          "description": "claimed_scope.provider_model assertion",
+          "op": "equals",
+          "value": "no-provider"
         },
         {
-          "equals": "read-only",
-          "path": "claimed_scope.sandbox_mode"
+          "id": "claimed_scope_sandbox_mode",
+          "path": "claimed_scope.sandbox_mode",
+          "description": "claimed_scope.sandbox_mode assertion",
+          "op": "equals",
+          "value": "read-only"
         }
       ]
     }
@@ -67,7 +111,8 @@
   },
   "ct": {
     "description": "Oh-My-Pi 16.2.13 provider-free P6.0-L3 command/network hook exact-scope C4 chain validation.",
-    "timeout_seconds": 180
+    "timeout_seconds": 180,
+    "test_id": "CT-P6-OHMYPI-L3-C4-CHAIN"
   },
   "artifacts_root": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook",
   "reverify_command": {
@@ -88,5 +133,56 @@
   },
   "metadata": {
     "legacy_inventory_ct_test_id": "CT-P6-OHMYPI-L3-C4-CHAIN"
+  },
+  "run": {
+    "run_id": "20260701_oh_my_pi_p6_0_l3_capture",
+    "provider_model": "no-provider",
+    "sandbox_mode": "read-only"
+  },
+  "provenance": {
+    "provenance_kind": "git_commit",
+    "upstream_repo": "https://github.com/can1357/oh-my-pi",
+    "upstream_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "upstream_commit_date": "2026-07-01T18:03:42Z",
+    "upstream_release_label": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "source_paths": [
+      "agent_configs/misc/oh_my_pi_p6_0_l3_command_network_hook_v1.yaml",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_probe_output.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_setup_and_capture_report.json",
+      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "scripts/e4_parity/oh_my_pi_p6_lane_projection.py",
+      "scripts/e4_parity/adapters/lane_definition_build.py"
+    ]
+  },
+  "acceptance": {
+    "behavior_family": "oh_my_pi_p6_0_l3_command_network_hook",
+    "semantic_key": "oh_my_pi_p6_0_l3_command_network_hook",
+    "target": "oh_my_pi",
+    "assertions": [
+      {
+        "id": "ok",
+        "description": "ok comparator assertion"
+      },
+      {
+        "id": "errors",
+        "description": "errors comparator assertion"
+      },
+      {
+        "id": "claimed_scope_config_id",
+        "description": "claimed_scope_config_id comparator assertion"
+      },
+      {
+        "id": "claimed_scope_lane_id",
+        "description": "claimed_scope_lane_id comparator assertion"
+      },
+      {
+        "id": "claimed_scope_provider_model",
+        "description": "claimed_scope_provider_model comparator assertion"
+      },
+      {
+        "id": "claimed_scope_sandbox_mode",
+        "description": "claimed_scope_sandbox_mode comparator assertion"
+      }
+    ]
   }
 }

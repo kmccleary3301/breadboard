@@ -1,5 +1,5 @@
 {
-  "schema_version": "bb.e4.lane_def.v1",
+  "schema_version": "bb.e4.lane_def.v2",
   "lane_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
   "config_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
   "target_family": "oh_my_pi",
@@ -9,19 +9,90 @@
   "status": "accepted",
   "points": 15,
   "capture": {
-    "strategy": "legacy_builder",
-    "argv": [
-      ".venv/bin/python",
-      "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py"
-    ],
+    "strategy": "adapter",
+    "argv": null,
     "inputs": [
-      "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py"
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
+      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+      "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+      "scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+      "scripts/e4_parity/adapters/oh_my_pi_p3_remaining_projections.py",
+      "scripts/e4_parity/adapters/oh_my_pi_p3_packet.py",
+      "scripts/e4_parity/fixtures/p3_lane_fixtures.py",
+      "contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json",
+      "contracts/kernel/schemas/bb.capability_registry.v1.schema.json",
+      "contracts/kernel/schemas/bb.extension_hook_execution.v1.schema.json",
+      "contracts/kernel/schemas/bb.resource_ref.v1.schema.json",
+      "contracts/kernel/schemas/bb.resource_access.v1.schema.json",
+      "contracts/kernel/schemas/bb.blob_ref.v1.schema.json",
+      "contracts/kernel/schemas/bb.external_protocol_session.v1.schema.json",
+      "contracts/kernel/schemas/bb.provider_route.v1.schema.json",
+      "contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json",
+      "contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
+      "contracts/kernel/schemas/bb.work_item.v1.schema.json",
+      "contracts/kernel/schemas/bb.projection_event.v1.schema.json",
+      "contracts/kernel/schemas/bb.side_effect_broker.v1.schema.json"
     ],
-    "workspace_template": null
+    "workspace_template": null,
+    "adapter": "oh_my_pi_compiler_capture"
   },
   "normalize": {
     "translator": "identity",
-    "config": {}
+    "config": {
+      "record_builders": [
+        {
+          "id": "p3_6_external_protocol_session",
+          "schema_version": "bb.external_protocol_session.v1",
+          "source": "scripts/e4_parity/fixtures/p3_lane_fixtures.py",
+          "projection": "p3_6_external_protocol_session",
+          "records": [
+            "external_protocol_session"
+          ]
+        },
+        {
+          "id": "p3_6_provider_route",
+          "schema_version": "bb.provider_route.v1",
+          "source": "scripts/e4_parity/fixtures/p3_lane_fixtures.py",
+          "projection": "p3_6_provider_route",
+          "records": [
+            "provider_route"
+          ]
+        },
+        {
+          "id": "p3_6_effective_operation_policy",
+          "schema_version": "bb.effective_operation_policy.v1",
+          "source": "scripts/e4_parity/fixtures/p3_lane_fixtures.py",
+          "projection": "p3_6_effective_operation_policy",
+          "records": [
+            "effective_operation_policy"
+          ]
+        }
+      ],
+      "roles": {
+        "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/raw_capture_manifest.json",
+        "compiled_records": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/compiled_records.json",
+        "schema_validation": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/schema_validation_report.json",
+        "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/bb_replay_result.json",
+        "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json",
+        "parity_results": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/parity_results.json",
+        "secret_scan_report": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/secret_scan_report.json",
+        "validator_output": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/prevalidation_report.json",
+        "agent_config": "agent_configs/misc/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1.yaml"
+      },
+      "packet_constants": {
+        "summary": "BreadBoard P3.6 protocol/provider/policy compiler support is accepted only for local static protocol, provider-route, and operation-policy records in the named helper/runtime fixture.",
+        "behavior_prefix": "command_network_policy",
+        "comparator_expected": {
+          "schema_validation_passed": true,
+          "primary_primitive_present": true,
+          "fallback_selected_index": 0,
+          "policy_feeds_route": "provider_route:oh_my_pi_p3_6_protocol_provider_policy_compiler_route"
+        }
+      }
+    }
   },
   "replay": {
     "session": null,
@@ -32,36 +103,60 @@
     "config": {
       "assertions": [
         {
-          "equals": true,
-          "path": "ok"
+          "id": "ok_true",
+          "path": "ok",
+          "op": "equals",
+          "value": true,
+          "description": "comparator report is ok"
         },
         {
-          "length_equals": 0,
-          "path": "errors"
+          "id": "no_errors",
+          "path": "errors",
+          "op": "length_equals",
+          "value": 0,
+          "description": "errors has expected length"
         },
         {
-          "equals": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
-          "path": "claimed_scope.config_id"
+          "id": "config_id_matches",
+          "path": "claimed_scope.config_id",
+          "op": "equals",
+          "value": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+          "description": "claimed_scope.config_id matches expected value"
         },
         {
-          "equals": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
-          "path": "claimed_scope.lane_id"
+          "id": "lane_id_matches",
+          "path": "claimed_scope.lane_id",
+          "op": "equals",
+          "value": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+          "description": "claimed_scope.lane_id matches expected value"
         },
         {
-          "equals": "P3",
-          "path": "claimed_scope.phase"
+          "id": "phase_matches",
+          "path": "claimed_scope.phase",
+          "op": "equals",
+          "value": "P3",
+          "description": "claimed_scope.phase matches expected value"
         },
         {
-          "equals": "P3.6",
-          "path": "claimed_scope.p3_item"
+          "id": "p3_item_matches",
+          "path": "claimed_scope.p3_item",
+          "op": "equals",
+          "value": "P3.6",
+          "description": "claimed_scope.p3_item matches expected value"
         },
         {
-          "equals": "no-provider",
-          "path": "claimed_scope.provider_model"
+          "id": "provider_model_matches",
+          "path": "claimed_scope.provider_model",
+          "op": "equals",
+          "value": "no-provider",
+          "description": "claimed_scope.provider_model matches expected value"
         },
         {
-          "equals": "read-only",
-          "path": "claimed_scope.sandbox_mode"
+          "id": "sandbox_mode_matches",
+          "path": "claimed_scope.sandbox_mode",
+          "op": "equals",
+          "value": "read-only",
+          "description": "claimed_scope.sandbox_mode matches expected value"
         }
       ]
     }
@@ -79,7 +174,8 @@
   },
   "ct": {
     "description": "Oh-My-Pi 16.2.13 P3.6 helper/runtime exact-scope C4 chain validation.",
-    "timeout_seconds": 180
+    "timeout_seconds": 180,
+    "test_id": "CT-P3-OHMYPI-P36-PROTOCOL-PROVIDER-POLICY-C4"
   },
   "artifacts_root": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler",
   "reverify_command": {
@@ -99,6 +195,84 @@
     "cwd": "."
   },
   "metadata": {
-    "legacy_inventory_ct_test_id": "CT-P3-OHMYPI-P36-PROTOCOL-PROVIDER-POLICY-C4"
+    "legacy_inventory_ct_test_id": "CT-P3-OHMYPI-P36-PROTOCOL-PROVIDER-POLICY-C4",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only"
+  },
+  "run": {
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "provider_model": "no-provider",
+    "sandbox_mode": "read-only"
+  },
+  "provenance": {
+    "provenance_kind": "git_commit",
+    "upstream_repo": "https://github.com/can1357/oh-my-pi",
+    "upstream_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "upstream_commit_date": "2026-07-01T18:03:42Z",
+    "upstream_release_label": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "source_paths": [
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
+      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+      "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+      "scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+      "scripts/e4_parity/adapters/oh_my_pi_p3_remaining_projections.py",
+      "scripts/e4_parity/fixtures/p3_lane_fixtures.py",
+      "contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json",
+      "contracts/kernel/schemas/bb.capability_registry.v1.schema.json",
+      "contracts/kernel/schemas/bb.extension_hook_execution.v1.schema.json",
+      "contracts/kernel/schemas/bb.resource_ref.v1.schema.json",
+      "contracts/kernel/schemas/bb.resource_access.v1.schema.json",
+      "contracts/kernel/schemas/bb.blob_ref.v1.schema.json",
+      "contracts/kernel/schemas/bb.external_protocol_session.v1.schema.json",
+      "contracts/kernel/schemas/bb.provider_route.v1.schema.json",
+      "contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json",
+      "contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
+      "contracts/kernel/schemas/bb.work_item.v1.schema.json",
+      "contracts/kernel/schemas/bb.projection_event.v1.schema.json",
+      "contracts/kernel/schemas/bb.side_effect_broker.v1.schema.json"
+    ]
+  },
+  "acceptance": {
+    "behavior_family": "protocol_sessions",
+    "semantic_key": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+    "target": "oh_my_pi",
+    "assertions": [
+      {
+        "id": "ok_true",
+        "description": "comparator report is ok"
+      },
+      {
+        "id": "no_errors",
+        "description": "errors has expected length"
+      },
+      {
+        "id": "config_id_matches",
+        "description": "claimed_scope.config_id matches expected value"
+      },
+      {
+        "id": "lane_id_matches",
+        "description": "claimed_scope.lane_id matches expected value"
+      },
+      {
+        "id": "phase_matches",
+        "description": "claimed_scope.phase matches expected value"
+      },
+      {
+        "id": "p3_item_matches",
+        "description": "claimed_scope.p3_item matches expected value"
+      },
+      {
+        "id": "provider_model_matches",
+        "description": "claimed_scope.provider_model matches expected value"
+      },
+      {
+        "id": "sandbox_mode_matches",
+        "description": "claimed_scope.sandbox_mode matches expected value"
+      }
+    ]
   }
 }
