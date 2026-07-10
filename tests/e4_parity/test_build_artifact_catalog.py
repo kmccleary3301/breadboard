@@ -291,12 +291,13 @@ def test_build_catalog_is_deterministic_valid_and_covers_lane_and_static_roles(
     ]
     assert unresolved == []
 
-    finalized = finalize_record(get_spec("bb.e4.artifact_catalog.v1"), copy.deepcopy(first))
+    finalized = finalize_record(get_spec(first["schema_version"]), copy.deepcopy(first))
     assert finalized == first
     assert first["integrity"] == {
         "entry_count": len(first["entries"]),
         "entries_hash": sha256_ref(canonical_record_bytes(first["entries"])),
         "stable_entries_hash": stable_entries_hash(first["entries"]),
+        "segments_hash": sha256_ref(canonical_record_bytes(first["segments"])),
     }
 
     script_entry = _catalog_entry(first, "e4_static:script/scaffold_e4_target_lane")
@@ -647,37 +648,37 @@ def test_build_catalog_validates_with_finalize_record(
         generated_at_utc=GENERATED_AT,
     )
 
-    assert ("bb.e4.artifact_catalog.v1", True) in calls
+    assert ("bb.e4.artifact_catalog.v2", True) in calls
 
 
 
-def test_build_catalog_can_emit_v2_segments_without_changing_v1_default(
+def test_build_catalog_defaults_to_v2_and_rejects_v1(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     paths = _write_catalog_fixture(tmp_path, monkeypatch)
 
-    v1 = builder.build_catalog(
-        inventory_path=paths["inventory"],
-        report_roles_path=paths["report_roles"],
-        output_path=paths["output"],
-        generated_at_utc=GENERATED_AT,
-    )
     v2 = builder.build_catalog(
         inventory_path=paths["inventory"],
         report_roles_path=paths["report_roles"],
         output_path=paths["output"],
         generated_at_utc=GENERATED_AT,
-        schema_version="v2",
     )
 
-    assert v1["schema_version"] == "bb.e4.artifact_catalog.v1"
-    assert "segments" not in v1
+    with pytest.raises(
+        ValueError,
+        match=r"artifact catalog generation requires bb\.e4\.artifact_catalog\.v2, got 'v1'",
+    ):
+        builder.build_catalog(
+            inventory_path=paths["inventory"],
+            report_roles_path=paths["report_roles"],
+            output_path=paths["output"],
+            generated_at_utc=GENERATED_AT,
+            schema_version="v1",
+        )
+
     assert v2["schema_version"] == "bb.e4.artifact_catalog.v2"
     assert finalize_record(get_spec("bb.e4.artifact_catalog.v2"), copy.deepcopy(v2)) == v2
-    assert v2["entries"] == v1["entries"]
-    assert v2["integrity"]["entries_hash"] == v1["integrity"]["entries_hash"]
-    assert v2["integrity"]["stable_entries_hash"] == v1["integrity"]["stable_entries_hash"]
     assert v2["segments"] == catalog_segments(v2["entries"])
     assert v2["integrity"]["segments_hash"] == sha256_ref(canonical_record_bytes(v2["segments"]))
     assert {segment["segment_id"] for segment in v2["segments"]} == {"lane_alpha", "shared"}

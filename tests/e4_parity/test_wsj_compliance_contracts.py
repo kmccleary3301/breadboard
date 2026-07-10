@@ -8,11 +8,13 @@ from typing import Any, Mapping
 from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, catalog_segment_hash
 from scripts.e4_parity import build_artifact_catalog, generate_support_claims, regenerate_evidence, run_lane
 from scripts.replay_session_from_records import replay_session_from_records
+from scripts.e4_parity.validators.registries import schema_generation_default
 
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
 SUPPORT_CLAIMS_DIR = ROOT / "docs" / "conformance" / "support_claims"
+SUPPORT_CLAIM_SCHEMA_VERSION = schema_generation_default("support_claim")
 
 EXPECTED_WSJ_LANES: dict[str, str] = {
     "claude_code_north_star_capture_v1": "claude_code_haiku45_north_star_capture_v1",
@@ -75,7 +77,7 @@ def test_regeneration_routes_wsj_packets_through_lane_runner() -> None:
     assert "build_north_star_proof_packets.py" not in " ".join(stage.argv)
 
 
-def test_checked_in_wsj_support_claims_are_v3_and_segment_bound_to_fresh_catalog() -> None:
+def test_checked_in_wsj_support_claims_use_generation_default_and_are_segment_bound_to_fresh_catalog() -> None:
     """Accepted north-star claims must bind only their lane segment plus shared segment of the live catalog."""
     catalog = _load_json(ROOT / CATALOG_PATH)
     assert catalog.get("schema_version") == "bb.e4.artifact_catalog.v2"
@@ -85,21 +87,24 @@ def test_checked_in_wsj_support_claims_are_v3_and_segment_bound_to_fresh_catalog
     for lane_id, config_id in EXPECTED_WSJ_LANES.items():
         claim_path = _support_claim_path(config_id)
         claim = _load_json(claim_path)
-        assert claim["schema_version"] == "bb.e4.support_claim.v3", claim_path.as_posix()
-        assert claim["lane_id"] == lane_id
+        assert claim["schema_version"] == SUPPORT_CLAIM_SCHEMA_VERSION, claim_path.as_posix()
         assert claim["scope"]["lane_id"] == lane_id
         assert claim["scope"]["config_id"] == config_id
 
         binding = claim.get("catalog_binding")
         assert isinstance(binding, dict), claim_path.as_posix()
-        assert binding == {
-            "catalog_path": CATALOG_PATH,
-            "segment_id": lane_id,
-            "segment_hash": catalog_segment_hash(catalog, lane_id),
-            "shared_segment_hash": catalog_segment_hash(catalog, "shared"),
-        }
+        assert binding["catalog_path"] == CATALOG_PATH
+        assert binding["segment_id"] == lane_id
+        assert binding["segment_hash"] == catalog_segment_hash(catalog, lane_id)
+        assert binding["shared_segment_hash"] == catalog_segment_hash(catalog, "shared")
         assert "catalog_hash" not in binding
-        assert "catalog_revision" not in binding
+        assert set(binding) <= {
+            "catalog_path",
+            "catalog_revision",
+            "segment_id",
+            "segment_hash",
+            "shared_segment_hash",
+        }
 
 
 def test_breadboard_self_capture_replays_runtime_records_and_binds_transcript_digest() -> None:

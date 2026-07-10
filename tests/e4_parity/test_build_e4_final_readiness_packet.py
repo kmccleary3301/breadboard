@@ -118,6 +118,26 @@ def _patch_ct_artifacts(monkeypatch: Any, paths: dict[str, Path]) -> None:
     monkeypatch.setattr(builder, "CT_MATRIX_SYNC_SUMMARY_PATH", paths["summary"])
 
 
+def test_prune_stale_current_artifacts_drops_missing_repo_relative_path(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    monkeypatch.setattr(builder, "ROOT", tmp_path)
+    existing_path = tmp_path / "artifacts" / "existing.json"
+    _write_json(existing_path, {"status": "current"})
+    existing_artifact = {"path": "artifacts/existing.json", "role": "evidence"}
+    payload = {
+        "current_artifacts": [
+            existing_artifact,
+            {"path": "artifacts/missing.json", "role": "evidence"},
+        ]
+    }
+
+    builder.prune_stale_current_artifacts(payload)
+
+    assert payload["current_artifacts"] == [existing_artifact]
+
+
 def test_collect_ct_artifact_errors_reports_blocking_not_implemented_artifacts(
     tmp_path: Path,
     monkeypatch: Any,

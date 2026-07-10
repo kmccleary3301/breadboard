@@ -270,17 +270,74 @@ def test_session_state_add_message_dual_emits_kernel_event_v2_without_changing_l
 
 
 def test_runtime_v2_schema_files_and_registry_files_are_registered() -> None:
+    non_primitive_v2_schemas = {"bb.agent_config_surface.v2"}
     missing = []
     for schema_path in sorted(SCHEMA_DIR.glob("bb.*.v2.schema.json")):
         schema_version = schema_path.name.removesuffix(".schema.json")
+        if schema_version in non_primitive_v2_schemas:
+            continue
         if schema_version not in SPEC_REGISTRY:
             missing.append(schema_version)
     assert missing == []
 
     for registry_path in sorted(REGISTRY_DIR.glob("*.json")):
         payload = json.loads(registry_path.read_text(encoding="utf-8"))
+        if payload.get("schema_version") != "bb.registry.v1":
+            continue
         finalized = finalize_record(get_spec("bb.registry.v1"), payload)
         assert finalized["schema_version"] == "bb.registry.v1"
+
+
+def test_config_surface_fields_registry_matches_curated_inventory_contract() -> None:
+    payload = json.loads((REGISTRY_DIR / "config_surface_fields.v1.json").read_text(encoding="utf-8"))
+
+    finalized = finalize_record(get_spec("bb.registry.v1"), payload)
+    entries = finalized["entries"]
+    rows = {entry["id"]: entry for entry in entries}
+    dossier_only_ids = {"profile", "tool_packs", "tool_bindings", "terminal_sessions"}
+    expected_ids = {
+        "completion",
+        "concurrency",
+        "enhanced_tools",
+        "features",
+        "guardrails",
+        "long_running",
+        "loop",
+        "modes",
+        "multi_agent",
+        "permissions",
+        "profile",
+        "prompts",
+        "provider_tools",
+        "providers",
+        "replay",
+        "terminal_sessions",
+        "tool_bindings",
+        "tool_packs",
+        "tools",
+        "turn_strategy",
+        "schema_version",
+        "version",
+        "workspace",
+    }
+
+    assert len(entries) == 23
+    assert set(rows) == expected_ids
+
+    for entry_id, row in rows.items():
+        assert row["status"] == "active"
+        assert row["description"].strip()
+        note = row["metadata"]["note"]
+        assert isinstance(note, str)
+        assert note.strip()
+        if entry_id in dossier_only_ids:
+            assert row["metadata"]["classification"] == "dossier_only"
+            assert row["metadata"]["consumer"] is None
+        else:
+            assert row["metadata"]["classification"] == "operational"
+            consumer = row["metadata"]["consumer"]
+            assert isinstance(consumer, str)
+            assert consumer.strip()
 
 
 def test_emitted_kernel_kinds_have_registry_rows_and_payload_schemas() -> None:

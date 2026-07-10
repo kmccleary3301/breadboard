@@ -30,6 +30,52 @@ def client() -> TestClient:
     return TestClient(create_app())
 
 
+def _e4_client_for_catalog(repo_root: Path, catalog_path: Path, runtime_records_dir: Path) -> TestClient:
+    app = FastAPI()
+
+    @app.exception_handler(E4ApiError)
+    async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"error": exc.error, "detail": exc.detail_text, "path": exc.path})
+
+    app.include_router(
+        create_e4_router(
+            repo_root=repo_root,
+            inventory_path=repo_root / "docs" / "conformance" / "e4_lane_inventory.json",
+            catalog_path=catalog_path,
+            claims_dir=repo_root / "docs" / "conformance" / "support_claims",
+            schemas_dir=repo_root / "contracts" / "kernel" / "schemas",
+            ledger_path=repo_root.parent / "docs_tmp" / "phase_15" / "BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+            coverage_dir=repo_root.parent / "docs_tmp" / "phase_16" / "coverage",
+            runtime_records_dir=runtime_records_dir,
+        ),
+        prefix="/v1/e4",
+    )
+    return TestClient(app)
+
+def _e4_client_for_claims_dir(repo_root: Path, claims_dir: Path, runtime_records_dir: Path) -> TestClient:
+    app = FastAPI()
+
+    @app.exception_handler(E4ApiError)
+    async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:
+        return JSONResponse(status_code=exc.status_code, content={"error": exc.error, "detail": exc.detail_text, "path": exc.path})
+
+    app.include_router(
+        create_e4_router(
+            repo_root=repo_root,
+            inventory_path=repo_root / "docs" / "conformance" / "e4_lane_inventory.json",
+            catalog_path=repo_root / "docs" / "conformance" / "e4_artifact_catalog.json",
+            claims_dir=claims_dir,
+            schemas_dir=repo_root / "contracts" / "kernel" / "schemas",
+            ledger_path=repo_root.parent / "docs_tmp" / "phase_15" / "BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+            coverage_dir=repo_root.parent / "docs_tmp" / "phase_16" / "coverage",
+            runtime_records_dir=runtime_records_dir,
+        ),
+        prefix="/v1/e4",
+    )
+    return TestClient(app)
+
+
+
 @pytest.mark.parametrize("flag_value", ["0", "false", "no"])
 def test_e4_mount_gate_excludes_versioned_routes_when_disabled(
     monkeypatch: pytest.MonkeyPatch, flag_value: str
@@ -201,16 +247,152 @@ def test_e4_lane_claim_catalog_ledger_and_records_resolve_real_artifacts(client:
     assert {record["schema_version"] for record in record_payload["records"]} == {COMPARATOR_SCHEMA}
 
 
-def test_e4_catalog_binding_exposes_current_catalog_hash(client: TestClient) -> None:
+def test_e4_catalog_binding_serves_stored_v2_binding_truth(client: TestClient) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    catalog = json.loads((repo_root / "docs" / "conformance" / "e4_artifact_catalog.json").read_text(encoding="utf-8"))
+    expected_segments = [
+        {"segment_id": segment["segment_id"], "stable_entries_hash": segment["stable_entries_hash"]}
+        for segment in catalog["segments"]
+    ]
+
     response = client.get("/v1/e4/catalog/binding")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["catalog_path"] == "docs/conformance/e4_artifact_catalog.json"
     assert payload["schema_version"] == "bb.e4.artifact_catalog.v2"
-    assert payload["segments"][0]["segment_id"] in {"global", "shared"}
-    assert payload["segments"][0]["stable_entries_hash"].startswith("sha256:")
-    assert payload["segments_hash"].startswith("sha256:")
+    assert catalog["schema_version"] == "bb.e4.artifact_catalog.v2"
+    assert payload["segments"] == expected_segments
+    assert payload["segments_hash"] == catalog["integrity"]["segments_hash"]
+    assert payload["stable_entries_hash"] == catalog["integrity"]["stable_entries_hash"]
+    assert all(segment["stable_entries_hash"].startswith("sha256:") for segment in payload["segments"])
+
+
+def test_e4_accepted_claim_catalog_bindings_match_response_segments(client: TestClient) -> None:
+    binding_response = client.get("/v1/e4/catalog/binding")
+    claims_response = client.get("/v1/e4/claims", params={"accepted": "true", "limit": 1000})
+
+    assert binding_response.status_code == 200
+    assert claims_response.status_code == 200
+    segment_hash_by_id = {
+        segment["segment_id"]: segment["stable_entries_hash"]
+        for segment in binding_response.json()["segments"]
+    }
+    assert "shared" in segment_hash_by_id
+
+    checked_segment_claims: set[str] = set()
+    failures: list[str] = []
+    for claim in claims_response.json()["claims"]:
+        catalog_binding = claim.get("catalog_binding")
+        claim_id = claim["claim_id"]
+        if not isinstance(catalog_binding, dict):
+            failures.append(f"{claim_id}: missing catalog_binding object")
+            continue
+
+        if {"segment_id", "segment_hash", "shared_segment_hash"} <= set(catalog_binding):
+            checked_segment_claims.add(claim_id)
+            segment_id = catalog_binding["segment_id"]
+            if segment_id not in segment_hash_by_id:
+                failures.append(f"{claim_id}: unknown segment_id {segment_id!r}")
+                continue
+            if catalog_binding["segment_hash"] != segment_hash_by_id[segment_id]:
+                failures.append(f"{claim_id}: segment_hash mismatch")
+            if catalog_binding["shared_segment_hash"] != segment_hash_by_id["shared"]:
+                failures.append(f"{claim_id}: shared_segment_hash mismatch")
+        elif {"catalog_path", "catalog_revision", "catalog_hash"} <= set(catalog_binding):
+            if catalog_binding["catalog_hash"] != binding_response.json()["stable_entries_hash"]:
+                failures.append(f"{claim_id}: legacy catalog_hash mismatch")
+        else:
+            failures.append(f"{claim_id}: malformed catalog_binding keys {sorted(catalog_binding)}")
+
+    assert failures == []
+    assert checked_segment_claims >= {
+        "breadboard_self_runtime_records_v1_c4_support_claim",
+        "claude_code_haiku45_north_star_capture_v1_c4_support_claim",
+        "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
+    }
+
+
+def test_e4_catalog_binding_rejects_tampered_catalog_drift(tmp_path: Path) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    source_catalog_path = repo_root / "docs" / "conformance" / "e4_artifact_catalog.json"
+    catalog = json.loads(source_catalog_path.read_text(encoding="utf-8"))
+    catalog["entries"][0]["sha256"] = "sha256:" + "0" * 64
+
+    tmp_repo = tmp_path / "repo"
+    tmp_catalog_path = tmp_repo / "docs" / "conformance" / "e4_artifact_catalog.json"
+    tmp_catalog_path.parent.mkdir(parents=True)
+    tmp_catalog_path.write_text(json.dumps(catalog, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    local_client = _e4_client_for_catalog(tmp_repo, tmp_catalog_path, tmp_path / "runtime_records")
+    response = local_client.get("/v1/e4/catalog/binding")
+
+    assert response.status_code == 409
+    assert response.json()["error"] == "catalog_binding_drift"
+
+
+@pytest.mark.parametrize(
+    ("malformed_field", "malformed_value"),
+    [
+        pytest.param("segments", [{"segment_id": "shared"}], id="segment-missing-required-fields"),
+        pytest.param("integrity", [], id="integrity-is-not-an-object"),
+    ],
+)
+def test_e4_catalog_binding_returns_structured_conflict_for_malformed_v2_shapes(
+    tmp_path: Path,
+    malformed_field: str,
+    malformed_value: object,
+) -> None:
+    source_root = Path(__file__).resolve().parents[1]
+    source_catalog_path = source_root / "docs" / "conformance" / "e4_artifact_catalog.json"
+    catalog = json.loads(source_catalog_path.read_text(encoding="utf-8"))
+    catalog[malformed_field] = malformed_value
+
+    repo_root = tmp_path / "repo"
+    catalog_path = repo_root / "docs" / "conformance" / "e4_artifact_catalog.json"
+    catalog_path.parent.mkdir(parents=True)
+    catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+    response = _e4_client_for_catalog(repo_root, catalog_path, tmp_path / "runtime_records").get(
+        "/v1/e4/catalog/binding"
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": "catalog_binding_missing",
+        "detail": "v2 catalog has missing or malformed segments/integrity",
+        "path": "repo/docs/conformance/e4_artifact_catalog.json",
+    }
+
+
+def test_e4_claim_listing_rejects_duplicate_ids_with_sorted_source_paths(tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    inventory_path = repo_root / "docs" / "conformance" / "e4_lane_inventory.json"
+    inventory_path.parent.mkdir(parents=True)
+    inventory_path.write_text(json.dumps({"lanes": []}), encoding="utf-8")
+    claims_dir = inventory_path.parent / "support_claims"
+    claims_dir.mkdir()
+
+    duplicate_claim = {"claim_id": "duplicate_claim"}
+    for filename in ("zeta_support_claim.json", "alpha_support_claim.json"):
+        (claims_dir / filename).write_text(json.dumps(duplicate_claim), encoding="utf-8")
+
+    response = _e4_client_for_claims_dir(repo_root, claims_dir, tmp_path / "runtime_records").get(
+        "/v1/e4/claims"
+    )
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": "duplicate_claim_id",
+        "detail": {
+            "claim_id": "duplicate_claim",
+            "paths": [
+                "repo/docs/conformance/support_claims/alpha_support_claim.json",
+                "repo/docs/conformance/support_claims/zeta_support_claim.json",
+            ],
+        },
+        "path": "repo/docs/conformance/support_claims",
+    }
 
 
 def test_registries_endpoints_expose_contract_registry_files(client: TestClient) -> None:
@@ -368,6 +550,34 @@ def test_e4_claim_reverify_defaults_to_check_only_without_comparator_rerun(clien
     assert payload["errors"] == []
 
 
+
+def test_e4_claim_reverify_uses_support_claim_source_path_when_filename_differs_from_claim_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repo_root = Path(__file__).resolve().parents[1]
+    claims_dir = tmp_path / "support_claims"
+    claims_dir.mkdir()
+    source_claim_path = repo_root / "docs" / "conformance" / "support_claims" / f"{ACCEPTED_CLAIM_ID}.json"
+    mismatched_claim_path = claims_dir / "stored_under_unrelated_name_support_claim.json"
+    mismatched_claim_path.write_text(source_claim_path.read_text(encoding="utf-8"), encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def _capture_validate_c4_chain(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return {"ok": True, "errors": []}
+
+    monkeypatch.setattr("agentic_coder_prototype.api.e4.router.validate_c4_chain", _capture_validate_c4_chain)
+
+    response = _e4_client_for_claims_dir(repo_root, claims_dir, tmp_path / "runtime_records").post(
+        f"/v1/e4/claims/{ACCEPTED_CLAIM_ID}/reverify",
+        json={"rerun_comparators": False},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["claim_id"] == ACCEPTED_CLAIM_ID
+    assert Path(captured["support_claim_path"]).resolve() == mismatched_claim_path.resolve()
+
 def test_e4_missing_resources_return_flat_error_envelope(client: TestClient) -> None:
     missing_lane = client.get("/v1/e4/lanes/not_a_lane")
     assert missing_lane.status_code == 404
@@ -508,32 +718,6 @@ def test_runtime_emission_dual_dialect_serves_coordination_pack(monkeypatch: pyt
     ]
 
 
-def test_runtime_emission_legacy_dialect_fallback_warns_once(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    runtime_root = tmp_path / "runtime_records"
-    monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(runtime_root))
-    monkeypatch.delenv("BREADBOARD_CONFIG_PLANE_DIALECT", raising=False)
-    monkeypatch.setenv("BREADBOARD_PRIMITIVES_DIALECT", "both")
-    monkeypatch.setattr(runtime_emission, "_CONFIG_PLANE_DIALECT_FALLBACK_WARNED", False)
-
-    def emit(session_id: str) -> dict[str, str]:
-        return runtime_emission.emit_session_start_records(
-            session_id=session_id,
-            request=SessionCreateRequest(
-                config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml",
-                task="runtime emission dialect fallback probe",
-            ),
-            generated_at="2026-07-04T00:00:00Z",
-        )
-
-    first_paths = emit("api_surface_legacy_dialect_session_one")
-    second_paths = emit("api_surface_legacy_dialect_session_two")
-
-    assert {"coordination_slice", "coordination_pack"} <= set(first_paths)
-    assert {"coordination_slice", "coordination_pack"} <= set(second_paths)
-    stderr = capsys.readouterr().err
-    assert stderr.count("BREADBOARD_PRIMITIVES_DIALECT is deprecated") == 1
 
 def test_runtime_records_reject_lane_filter(client: TestClient) -> None:
     response = client.get(

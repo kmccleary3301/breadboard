@@ -9,7 +9,9 @@ from jsonschema import Draft202012Validator, RefResolver
 
 from scripts.e4_parity.scaffold_e4_target_lane import (
     INVENTORY_SCHEMA_REF,
+    INVENTORY_SCHEMA_VERSION,
     LANE_DEF_SCHEMA_REF,
+    LANE_DEF_SCHEMA_VERSION,
     PROBE_SCHEMA_PATH,
     SCAFFOLD_SCHEMA_PATH,
     ScaffoldInputs,
@@ -129,7 +131,7 @@ def test_emit_inventory_row_dry_run_validates_against_lane_inventory_schema() ->
     inputs = _inputs("sample_scaffold_lane")
     row = build_inventory_row(inputs)
     inventory = {
-        "schema_version": "bb.e4.lane_inventory.v1",
+        "schema_version": INVENTORY_SCHEMA_VERSION,
         "inventory_id": "sample_scaffold_inventory",
         "generated_at_utc": "2026-07-03T00:00:00Z",
         "revision": 1,
@@ -171,7 +173,7 @@ def test_cli_emits_optional_scaffold_artifacts_in_dry_run() -> None:
 
     assert completed.stderr == ""
     assert payload["inventory_row"]["status"] == "scaffolded"
-    assert payload["lane_def"]["schema_version"] == "bb.e4.lane_def.v1"
+    assert payload["lane_def"]["schema_version"] == LANE_DEF_SCHEMA_VERSION
     assert "TODO" not in payload["builder_skeleton"]
     assert "TODO" not in payload["comparator_skeleton"]
     assert "ComparatorInput" in payload["comparator_skeleton"]
@@ -269,7 +271,7 @@ def test_cli_write_mode_emits_schema_valid_scaffold_files() -> None:
         assert config_placeholder["promotion_state"] == "scaffold_only"
         assert inventory_row["status"] == "scaffolded"
         assert inventory_row["points"] == 0
-        assert lane_def["schema_version"] == "bb.e4.lane_def.v1"
+        assert lane_def["schema_version"] == LANE_DEF_SCHEMA_VERSION
         assert (output_root / "builder" / "build_scaffold_lane.py").is_file()
         assert (output_root / "comparator" / "scaffold_lane_comparator.py").is_file()
         assert scaffold_manifest["guardrails"] == {

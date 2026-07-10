@@ -15,6 +15,7 @@ SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 SUPPORT_CLAIM_V4_SCHEMA_PATH = SCHEMA_DIR / "bb.e4.support_claim.v4.schema.json"
 KERNEL_COMMON_SCHEMA_PATH = SCHEMA_DIR / "bb.kernel.common.v1.schema.json"
 E4_COMMON_SCHEMA_PATH = SCHEMA_DIR / "bb.e4.common.v1.schema.json"
+SUPPORT_CLAIMS_DIR = ROOT / "docs" / "conformance" / "support_claims"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -115,6 +116,52 @@ def test_support_claim_v4_schema_exists_and_valid_fixture_validates(
     assert errors == [], _format_errors(errors)
 
 
+def test_support_claim_v4_scope_schema_is_common_e4_scope_ref() -> None:
+    schema = _load_json(SUPPORT_CLAIM_V4_SCHEMA_PATH)
+
+    assert schema["properties"]["scope"] == {
+        "$ref": "bb.e4.common.v1.schema.json#/$defs/e4_scope"
+    }
+
+
+def test_support_claim_v4_scope_target_family_uses_e4_scope_pattern(
+    support_claim_v4_validator: Draft202012Validator,
+) -> None:
+    payload = _valid_v4_claim()
+    payload["scope"] = copy.deepcopy(payload["scope"])
+    payload["scope"]["target_family"] = "oh-my-pi"
+
+    errors = _schema_errors(support_claim_v4_validator, payload)
+
+    target_family_errors = [
+        error
+        for error in errors
+        if tuple(error.absolute_path) == ("scope", "target_family")
+    ]
+    assert [error.validator for error in target_family_errors] == ["pattern"], _format_errors(errors)
+
+
+def test_support_claim_v4_target_family_other_conditional_reads_nested_scope(
+    support_claim_v4_validator: Draft202012Validator,
+) -> None:
+    payload = _valid_v4_claim()
+    payload["scope"] = copy.deepcopy(payload["scope"])
+    payload["scope"]["target_family"] = "other"
+
+    errors = _schema_errors(support_claim_v4_validator, payload)
+
+    target_family_other_errors = [
+        error
+        for error in errors
+        if tuple(error.absolute_path) == () and error.validator == "required"
+    ]
+    assert any(
+        "'target_family_other' is a required property" == error.message
+        for error in target_family_other_errors
+    ), _format_errors(errors)
+
+
+
 def test_support_claim_v4_rejects_root_scope_duplicate_fields(
     support_claim_v4_validator: Draft202012Validator,
 ) -> None:
@@ -139,3 +186,29 @@ def test_support_claim_v4_excluded_families_are_registry_identifiers_not_a_close
     errors = _schema_errors(support_claim_v4_validator, payload)
 
     assert errors == [], _format_errors(errors)
+
+
+def test_checked_in_support_claim_v4_records_validate(
+    support_claim_v4_validator: Draft202012Validator,
+) -> None:
+    support_claim_paths = sorted(SUPPORT_CLAIMS_DIR.glob("*_support_claim.json"))
+    checked_count = 0
+    failures: list[str] = []
+
+    for path in support_claim_paths:
+        payload = _load_json(path)
+        if payload.get("schema_version") != "bb.e4.support_claim.v4":
+            continue
+
+        checked_count += 1
+        errors = _schema_errors(support_claim_v4_validator, payload)
+        if errors:
+            failures.append(
+                f"{path.relative_to(ROOT)} ({len(errors)} error(s)):\n{_format_errors(errors)}"
+            )
+
+    assert failures == [], (
+        f"validated {checked_count} checked-in v4 support claim(s) from "
+        f"{len(support_claim_paths)} support claim file(s); failures:\n"
+        + "\n\n".join(failures)
+    )

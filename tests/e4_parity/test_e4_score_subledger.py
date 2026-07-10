@@ -62,10 +62,7 @@ PathValidator = Callable[..., list[str]]
 
 
 def _validator_module() -> Any | None:
-    try:
-        return importlib.import_module("scripts.e4_parity.validate_e4_score_subledger")
-    except ModuleNotFoundError:
-        return None
+    return importlib.import_module("scripts.e4_parity.e4_closure_score_section")
 
 
 def _path_validator() -> PathValidator | None:
@@ -123,7 +120,7 @@ def _require_path_validator() -> PathValidator:
     validator = _path_validator()
     if validator is None:
         pytest.fail(
-            "missing scripts.e4_parity.validate_e4_score_subledger.collect_score_subledger_errors; "
+            "missing scripts.e4_parity.e4_closure_score_section.collect_score_subledger_errors; "
             "mutation tests need a production helper that rejects broken score-subledger payloads"
         )
     return validator
@@ -345,7 +342,7 @@ def test_validate_score_subledger_json_helper_envelopes_minimal_invalid_payload(
     module = _validator_module()
     validate_score_subledger = getattr(module, "validate_score_subledger", None) if module is not None else None
     if not callable(validate_score_subledger):
-        pytest.fail("missing scripts.e4_parity.validate_e4_score_subledger.validate_score_subledger")
+        pytest.fail("missing scripts.e4_parity.e4_closure_score_section.validate_score_subledger")
     subledger_path = tmp_path / "BB_E4_SCORE_SUBLEDGER.json"
     accepted_report_path = tmp_path / "BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json"
     _write_json(

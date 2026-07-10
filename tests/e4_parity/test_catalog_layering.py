@@ -262,16 +262,21 @@ def test_all_static_report_reclassification_would_violate_br1_hash_neutrality() 
     assert stable_entries_hash(entries) != stable_entries_hash(legacy_binding_subset)
 
 
-def test_live_catalog_stable_hash_matches_accepted_v3_binding() -> None:
-    """BR-1 guard: current classifier must preserve accepted v3 catalog binding hashes."""
+def test_live_catalog_stable_hash_matches_accepted_v4_binding() -> None:
+    """The accepted v4 claim binds the current catalog revision and stable segment hashes."""
 
     repo_root = Path(__file__).resolve().parents[2]
     catalog = json.loads((repo_root / "docs/conformance/e4_artifact_catalog.json").read_text(encoding="utf-8"))
     claim = json.loads(
         (
             repo_root
-            / "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json"
+            / "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json"
         ).read_text(encoding="utf-8")
     )
+    binding = claim["catalog_binding"]
+    segments = {segment["segment_id"]: segment for segment in catalog["segments"]}
 
-    assert stable_entries_hash(catalog["entries"]) == claim["catalog_binding"]["catalog_hash"]
+    assert stable_entries_hash(catalog["entries"]) == catalog["integrity"]["stable_entries_hash"]
+    assert binding["catalog_revision"] == catalog["revision"]
+    assert binding["segment_hash"] == segments[binding["segment_id"]]["stable_entries_hash"]
+    assert binding["shared_segment_hash"] == segments["shared"]["stable_entries_hash"]

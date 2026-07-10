@@ -27,7 +27,7 @@ def _catalog(stable_sha: str = "sha256:" + "1" * 64) -> dict[str, Any]:
             "lane_id": "lane_alpha",
             "media_type": "application/json",
             "derived_from": [],
-            "generated_by": "scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py",
+            "generated_by": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
         },
         {
             "role_id": "lane_alpha:support_claim",
@@ -39,7 +39,7 @@ def _catalog(stable_sha: str = "sha256:" + "1" * 64) -> dict[str, Any]:
             "lane_id": "lane_alpha",
             "media_type": "application/json",
             "derived_from": [],
-            "generated_by": "scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py",
+            "generated_by": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
         },
     ]
     return {

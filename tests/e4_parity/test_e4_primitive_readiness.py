@@ -20,10 +20,7 @@ PathValidator = Callable[..., list[str]]
 
 
 def _validator_module() -> Any | None:
-    try:
-        return importlib.import_module("scripts.e4_parity.validate_e4_primitive_readiness")
-    except ModuleNotFoundError:
-        return None
+    return importlib.import_module("scripts.e4_parity.e4_closure_readiness_section")
 
 
 def _path_validator() -> PathValidator | None:
@@ -38,7 +35,7 @@ def _require_path_validator() -> PathValidator:
     validator = _path_validator()
     if validator is None:
         pytest.fail(
-            "missing scripts.e4_parity.validate_e4_primitive_readiness.collect_primitive_readiness_errors; "
+            "missing scripts.e4_parity.e4_closure_readiness_section.collect_primitive_readiness_errors; "
             "primitive-readiness tests need a production helper that rejects ready C4 rows whose primitive contract "
             "or row-scoped C4 evidence is absent/stale"
         )

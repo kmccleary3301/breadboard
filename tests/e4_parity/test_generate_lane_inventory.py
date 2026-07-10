@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from scripts.e4_parity.generate_lane_inventory import build_inventory, compare_with_canonical, lane_inventory_row
 
 
@@ -62,18 +64,29 @@ def test_probe_argv_capture_does_not_become_builder() -> None:
 
 def test_build_inventory_sorts_lane_defs() -> None:
     inventory = build_inventory({"z_lane": _lane_def("oh_my_pi_p9_z"), "a_lane": _lane_def("oh_my_pi_p9_a")})
+    assert inventory["schema_version"] == "bb.e4.lane_inventory.v2"
+    assert inventory["inventory_id"] == "e4_lane_inventory_from_lane_defs_v2"
 
     assert [row["lane_id"] for row in inventory["lanes"]] == ["oh_my_pi_p9_a", "oh_my_pi_p9_z"]
 
 
-def test_compare_with_canonical_reports_field_mismatch() -> None:
+@pytest.mark.parametrize(
+    ("field", "canonical_value"),
+    [
+        pytest.param("points", 8, id="points"),
+        pytest.param("run_id", "different-run", id="run-id"),
+        pytest.param("provider_model", "different/model", id="provider-model"),
+        pytest.param("sandbox_mode", "different sandbox", id="sandbox-mode"),
+    ],
+)
+def test_compare_with_canonical_reports_field_mismatch(field: str, canonical_value: object) -> None:
     generated = build_inventory({"demo": _lane_def()})
-    canonical = {"lanes": [{**generated["lanes"][0], "points": 8}]}
+    canonical_row = {**generated["lanes"][0], field: canonical_value}
 
-    report = compare_with_canonical(generated, canonical)
+    report = compare_with_canonical(generated, {"lanes": [canonical_row]})
 
     assert report["ok"] is False
-    assert report["errors"] == ["oh_my_pi_p9_demo.points mismatch"]
+    assert report["errors"] == [f"oh_my_pi_p9_demo.{field} mismatch"]
 
 
 def test_compare_with_canonical_accepts_matching_subset() -> None:

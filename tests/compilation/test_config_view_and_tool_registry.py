@@ -271,46 +271,58 @@ def test_tool_registry_loads_alias_dispatch_guardrails_and_nonblocking_from_yaml
     ("config_text", "expected_pointer", "expected_fragment"),
     [
         pytest.param(
-            """version: 2
-workspace: {}
+            """schema_version: bb.agent_config_surface.v2
+version: 2
+workspace:
+  root: .
 providers:
   models:
     - id: model-a
       adapter: mock
-modes: {}
+modes:
+  - name: main
 loop:
-  sequence: [main]
+  sequence:
+    - mode: main
 """,
             "/providers/default_model",
             "'default_model' is a required property",
             id="missing-nested-provider-default-model",
         ),
         pytest.param(
-            """version: 2
-workspace: {}
+            """schema_version: bb.agent_config_surface.v2
+version: 2
+workspace:
+  root: .
 providers:
   default_model: model-a
   models:
     - id: model-a
-modes: {}
+modes:
+  - name: main
 loop:
-  sequence: [main]
+  sequence:
+    - mode: main
 """,
             "/providers/models/0/adapter",
             "'adapter' is a required property",
             id="missing-provider-model-adapter",
         ),
         pytest.param(
-            """version: 2
-workspace: {}
+            """schema_version: bb.agent_config_surface.v2
+version: 2
+workspace:
+  root: .
 providers:
   default_model: model-a
   models:
     - id: model-a
       adapter: mock
-modes: {}
+modes:
+  - name: main
 loop:
-  sequence: [main]
+  sequence:
+    - mode: main
 features:
   rlm:
     budget:
@@ -322,14 +334,17 @@ features:
             id="negative-nested-rlm-budget",
         ),
         pytest.param(
-            """version: 2
-workspace: {}
+            """schema_version: bb.agent_config_surface.v2
+version: 2
+workspace:
+  root: .
 providers:
   default_model: model-a
   models:
     - id: model-a
       adapter: mock
-modes: {}
+modes:
+  - name: main
 loop:
   sequence: main
 """,

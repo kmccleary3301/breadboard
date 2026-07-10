@@ -164,6 +164,64 @@ def test_sync_conformance_matrix_status_does_not_family_fallback(tmp_path: Path)
     assert summary["ok"] is False
 
 
+
+def test_sync_conformance_matrix_status_fail_closed_flag_returns_one_for_blocking_not_implemented(
+    tmp_path: Path,
+) -> None:
+    matrix = tmp_path / "matrix.csv"
+    _write_matrix(
+        matrix,
+        [
+            {
+                "test_id": "CT-BLOCKING-001",
+                "primitive_family": "Blocking",
+                "schema_target": "bb.blocking.v1",
+                "fixture_source": "fixtures/blocking/missing.json",
+                "gate_level": "P0-blocking",
+                "owner": "unit",
+            },
+            {
+                "test_id": "CT-PASSING-001",
+                "primitive_family": "Passing",
+                "schema_target": "bb.passing.v1",
+                "fixture_source": "fixtures/passing/pass.json",
+                "gate_level": "P2-nonblocking",
+                "owner": "unit",
+            },
+        ],
+    )
+    rows = tmp_path / "rows.json"
+    rows.write_text(
+        json.dumps([{"test_id": "CT-PASSING-001", "status": "pass", "source": "unit-check"}]) + "\n",
+        encoding="utf-8",
+    )
+    out_csv = tmp_path / "synced.csv"
+    summary_json = tmp_path / "summary.json"
+    summary_md = tmp_path / "summary.md"
+
+    exit_code = sync_status.main(
+        [
+            "--matrix-csv",
+            str(matrix),
+            "--rows-json",
+            str(rows),
+            "--out-csv",
+            str(out_csv),
+            "--summary-json",
+            str(summary_json),
+            "--summary-md",
+            str(summary_md),
+            "--fail-on-summary-not-ok",
+        ]
+    )
+
+    assert exit_code == 1
+    assert out_csv.exists()
+    summary = json.loads(summary_json.read_text(encoding="utf-8"))
+    assert summary["ok"] is False
+    assert summary["failing_rows"] == 0
+    assert summary["blocking_not_implemented_rows"] == 1
+
 def test_sync_conformance_matrix_status_rejects_generated_source_columns(tmp_path: Path) -> None:
     matrix = tmp_path / "matrix.csv"
     with matrix.open("w", newline="", encoding="utf-8") as handle:
@@ -332,3 +390,47 @@ def test_sync_conformance_matrix_status_rejects_duplicate_result_rows(tmp_path: 
     )
 
     assert exit_code == 2
+
+
+def test_sync_conformance_matrix_status_fail_closed_flag_returns_one_for_blocking_not_implemented(tmp_path: Path) -> None:
+    matrix = tmp_path / "matrix.csv"
+    _write_matrix(
+        matrix,
+        [
+            {
+                "test_id": "CT-UNIT-001",
+                "primitive_family": "Unit",
+                "schema_target": "bb.unit.v1",
+                "fixture_source": "fixtures/unit/pass.json",
+                "gate_level": "P0-blocking",
+                "owner": "unit",
+            }
+        ],
+    )
+    rows = tmp_path / "rows.json"
+    rows.write_text(
+        json.dumps([{"test_id": "CT-UNIT-001", "status": "not_implemented"}]) + "\n",
+        encoding="utf-8",
+    )
+    summary_json = tmp_path / "summary.json"
+
+    exit_code = sync_status.main(
+        [
+            "--matrix-csv",
+            str(matrix),
+            "--rows-json",
+            str(rows),
+            "--out-csv",
+            str(tmp_path / "synced.csv"),
+            "--summary-json",
+            str(summary_json),
+            "--summary-md",
+            str(tmp_path / "summary.md"),
+            "--fail-on-summary-not-ok",
+        ]
+    )
+
+    summary = json.loads(summary_json.read_text(encoding="utf-8"))
+    assert exit_code == 1
+    assert summary["ok"] is False
+    assert summary["blocking_not_implemented_rows"] == 1

@@ -6,8 +6,12 @@ from typing import Any
 
 import pytest
 
+from agentic_coder_prototype.compilation import primitive_records
 from agentic_coder_prototype.compilation.primitive_records import (
+    CORE_SPEC_REGISTRY,
+    E4_SPEC_REGISTRY,
     PrimitiveCompileError,
+    SPEC_REGISTRY,
     canonical_record_bytes,
     finalize_record,
     get_spec,
@@ -18,6 +22,72 @@ from agentic_coder_prototype.compilation.visibility_adapters import (
     from_registry_enum,
     from_resource_ref_enum,
 )
+
+EXPECTED_SCHEMA_VERSIONS = {
+    "bb.effective_config_graph.v1",
+    "bb.config_mutation_record.v1",
+    "bb.config_explanation.v1",
+    "bb.context_resource_pack.v1",
+    "bb.capability_registry.v1",
+    "bb.extension_hook_execution.v1",
+    "bb.resource_ref.v1",
+    "bb.resource_access.v1",
+    "bb.blob_ref.v1",
+    "bb.external_protocol_session.v1",
+    "bb.provider_route.v1",
+    "bb.memory_compaction_plan.v1",
+    "bb.transcript_continuation_patch.v1",
+    "bb.work_item.v1",
+    "bb.side_effect_broker.v1",
+    "bb.projection_event.v1",
+    "bb.effective_operation_policy.v1",
+    "bb.effective_tool_surface.v1",
+    "bb.e4.support_claim.v2",
+    "bb.e4.support_claim.v3",
+    "bb.e4.support_claim.v4",
+    "bb.e4.lane_def.v1",
+    "bb.e4.lane_def.v2",
+    "bb.lane_validation_report.v1",
+    "bb.coordination_slice.v2",
+    "bb.coordination_pack.v3",
+    "bb.e4.lane_inventory.v2",
+    "bb.e4.target_coverage.v2",
+    "bb.environment_selector.v2",
+    "bb.kernel_event.v2",
+    "bb.tool_call.v2",
+    "bb.tool_execution_outcome.v2",
+    "bb.tool_model_render.v2",
+    "bb.tool_spec.v2",
+    "bb.session_transcript.v2",
+    "bb.e4.artifact_catalog.v1",
+    "bb.e4.artifact_catalog.v2",
+    "bb.e4.lane_inventory.v1",
+    "bb.registry.v1",
+}
+
+
+def test_spec_registry_preserves_keys_and_partitions_by_ownership() -> None:
+    core_keys = set(CORE_SPEC_REGISTRY)
+    e4_keys = set(E4_SPEC_REGISTRY)
+    registry_keys = set(SPEC_REGISTRY)
+
+    assert registry_keys == EXPECTED_SCHEMA_VERSIONS
+    assert all(schema_version.startswith("bb.e4.") for schema_version in e4_keys)
+    assert all(not schema_version.startswith("bb.e4.") for schema_version in core_keys)
+    assert core_keys.isdisjoint(e4_keys)
+    assert core_keys | e4_keys == registry_keys
+    assert "bb.lane_validation_report.v1" in core_keys
+
+    for schema_version, spec in SPEC_REGISTRY.items():
+        assert get_spec(schema_version) is spec
+
+
+def test_spec_registry_exports_partition_names_through_all() -> None:
+    assert {
+        "CORE_SPEC_REGISTRY",
+        "E4_SPEC_REGISTRY",
+        "SPEC_REGISTRY",
+    }.issubset(primitive_records.__all__)
 
 
 def _minimal_effective_config_graph() -> dict[str, Any]:
@@ -166,6 +236,30 @@ def test_finalize_record_round_trips_unhashed_capability_registry() -> None:
     assert source == original
     assert finalized == {"schema_version": "bb.capability_registry.v1", **source}
     assert "registry_hash" not in finalized
+
+
+def test_registered_transcript_continuation_patch_finalizes_with_patch_identity() -> None:
+    schema_version = "bb.transcript_continuation_patch.v1"
+    spec = get_spec(schema_version)
+    source = {
+        "patch_id": "patch-roundtrip",
+        "pre_state_ref": "local://transcript-before.json",
+        "appended_messages": [{"role": "assistant", "content": "continued"}],
+        "post_state_digest": "sha256:" + "5" * 64,
+    }
+    original = copy.deepcopy(source)
+
+    finalized = finalize_record(spec, source)
+
+    assert spec is CORE_SPEC_REGISTRY[schema_version] is SPEC_REGISTRY[schema_version]
+    assert source == original
+    assert finalized == {"schema_version": schema_version, **source}
+
+    invalid = {**source, "post_state_digest": ""}
+    with pytest.raises(PrimitiveCompileError) as exc_info:
+        finalize_record(spec, invalid)
+
+    assert exc_info.value.record_id == source["patch_id"]
 
 def test_finalize_record_resolves_registered_cross_schema_refs() -> None:
     spec = get_spec("bb.resource_access.v1")

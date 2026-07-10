@@ -7,11 +7,17 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, stable_entries_hash
+from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, catalog_segment_hash, stable_entries_hash
+from scripts.e4_parity.validators.registries import schema_generation_default
 
 
 generator = importlib.import_module("scripts.e4_parity.generate_support_claims")
 ROOT = Path(__file__).resolve().parents[2]
+SUPPORT_CLAIM_SCHEMA_VERSION = schema_generation_default("support_claim")
+
+
+def _lane(lane_id: str = "lane_alpha") -> dict[str, str]:
+    return {"lane_id": lane_id, "support_claim_schema_version": SUPPORT_CLAIM_SCHEMA_VERSION}
 
 
 def _write_json(path: Path, payload: Any) -> None:
@@ -26,7 +32,7 @@ def _catalog(*, revision: int | bool = 3, include_stable_hash: bool = True) -> d
             "bytes": 2,
             "derived_from": [],
             "exists": True,
-            "generated_by": "scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py",
+            "generated_by": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
             "lane_id": "lane_alpha",
             "media_type": "application/json",
             "path": "docs/conformance/e4_target_support/lane_alpha/raw_capture_manifest.json",
@@ -38,7 +44,7 @@ def _catalog(*, revision: int | bool = 3, include_stable_hash: bool = True) -> d
             "bytes": 3,
             "derived_from": [],
             "exists": True,
-            "generated_by": "scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py",
+            "generated_by": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
             "lane_id": "lane_alpha",
             "media_type": "application/json",
             "path": "docs/conformance/support_claims/lane_alpha_v1_c4_support_claim.json",
@@ -59,22 +65,72 @@ def _catalog(*, revision: int | bool = 3, include_stable_hash: bool = True) -> d
     }
 
 
-def test_catalog_binding_uses_fixture_revision_and_stable_entries_hash(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_catalog_binding_uses_fixture_revision_and_segment_hashes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     catalog_path = tmp_path / "e4_artifact_catalog.json"
     catalog = _catalog()
     _write_json(catalog_path, catalog)
     monkeypatch.setattr(generator, "CATALOG_PATH", catalog_path)
 
-    binding = generator._catalog_binding()
+    binding = generator._catalog_binding(_lane())
 
     assert binding == {
         "catalog_path": CATALOG_PATH,
         "catalog_revision": catalog["revision"],
-        "catalog_hash": catalog["integrity"]["stable_entries_hash"],
+        "segment_id": "lane_alpha",
+        "segment_hash": stable_entries_hash(catalog["entries"]),
+        "shared_segment_hash": stable_entries_hash([]),
     }
 
 
-@pytest.mark.parametrize("catalog", [_catalog(include_stable_hash=False), _catalog(revision=True), _catalog(revision=0)])
+def test_catalog_binding_reuses_prior_revision_when_segment_digests_match(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog_path = tmp_path / "e4_artifact_catalog.json"
+    catalog = _catalog(revision=9)
+    _write_json(catalog_path, catalog)
+    monkeypatch.setattr(generator, "CATALOG_PATH", catalog_path)
+    prior_binding = {
+        "catalog_path": CATALOG_PATH,
+        "catalog_revision": 4,
+        "segment_id": "lane_alpha",
+        "segment_hash": stable_entries_hash(catalog["entries"]),
+        "shared_segment_hash": stable_entries_hash([]),
+    }
+
+    binding = generator._catalog_binding(_lane(), prior_binding=prior_binding)
+
+    assert binding == prior_binding
+
+
+def test_catalog_binding_uses_live_revision_when_segment_digest_changes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    catalog_path = tmp_path / "e4_artifact_catalog.json"
+    catalog = _catalog(revision=9)
+    _write_json(catalog_path, catalog)
+    monkeypatch.setattr(generator, "CATALOG_PATH", catalog_path)
+
+    binding = generator._catalog_binding(
+        _lane(),
+        prior_binding={
+            "catalog_path": CATALOG_PATH,
+            "catalog_revision": 4,
+            "segment_id": "lane_alpha",
+            "segment_hash": "sha256:" + "9" * 64,
+            "shared_segment_hash": stable_entries_hash([]),
+        },
+    )
+
+    assert binding["catalog_revision"] == 9
+    assert binding["segment_hash"] == stable_entries_hash(catalog["entries"])
+
+
+@pytest.mark.parametrize("catalog", [{**_catalog(), "entries": None}, _catalog(revision=True), _catalog(revision=0)])
 def test_catalog_binding_rejects_missing_digest_or_invalid_revision(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -85,7 +141,7 @@ def test_catalog_binding_rejects_missing_digest_or_invalid_revision(
     monkeypatch.setattr(generator, "CATALOG_PATH", catalog_path)
 
     with pytest.raises(ValueError):
-        generator._catalog_binding()
+        generator._catalog_binding(_lane())
 
 
 def test_updated_node_gate_only_syncs_refs_and_hashes(tmp_path: Path) -> None:
@@ -150,20 +206,23 @@ def test_claim_generation_key_orders_manifest_before_claim_outputs() -> None:
     assert ordered == ["a", "m", "z"]
 
 
-def test_checked_in_v2_claims_bind_to_live_catalog_revision_and_stable_digest() -> None:
+def test_checked_in_v4_claims_bind_to_live_catalog_segments() -> None:
     catalog = json.loads((ROOT / CATALOG_PATH).read_text(encoding="utf-8"))
-    expected_hash = stable_entries_hash(catalog["entries"])
     claims = sorted((ROOT / "docs" / "conformance" / "support_claims").glob("*_c4_support_claim.json"))
     checked = 0
 
     for claim_path in claims:
         claim = json.loads(claim_path.read_text(encoding="utf-8"))
-        if claim.get("schema_version") != "bb.e4.support_claim.v2":
+        if claim.get("schema_version") != SUPPORT_CLAIM_SCHEMA_VERSION:
             continue
         checked += 1
         binding = claim.get("catalog_binding")
         assert isinstance(binding, dict), claim_path.as_posix()
-        assert binding["catalog_revision"] == catalog["revision"], claim_path.as_posix()
-        assert binding["catalog_hash"] == expected_hash, claim_path.as_posix()
+        lane_id = claim["scope"]["lane_id"]
+        assert binding["segment_id"] == lane_id, claim_path.as_posix()
+        assert binding["segment_hash"] == catalog_segment_hash(catalog, lane_id), claim_path.as_posix()
+        assert binding["shared_segment_hash"] == catalog_segment_hash(catalog, "shared"), claim_path.as_posix()
+        assert isinstance(binding["catalog_revision"], int) and not isinstance(binding["catalog_revision"], bool), claim_path.as_posix()
+        assert 1 <= binding["catalog_revision"] <= catalog["revision"], claim_path.as_posix()
 
     assert checked > 0

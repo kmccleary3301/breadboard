@@ -293,6 +293,155 @@ def test_all_stages_execute_safe_json_contract_and_resolve_comparator_registry(
     assert result["stages"][3]["skipped"] is True
 
 
+
+def test_capture_adapter_runs_for_scratch_out_without_promoted_refresh(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lane_id = "run_lane_test_scratch_adapter"
+    config_id = "run_lane_test_config"
+    lane_def_dir = tmp_path / "lane_defs"
+    inventory_path = tmp_path / "inventory.json"
+    scratch_root = tmp_path / "scratch"
+    _write_lane_def(
+        lane_def_dir,
+        lane_id=lane_id,
+        config_id=config_id,
+        status="claimed",
+        reverify_command=None,
+    )
+    lane_payload = json.loads((lane_def_dir / f"{lane_id}.yaml").read_text(encoding="utf-8"))
+    lane_payload["schema_version"] = "bb.e4.lane_def.v2"
+    lane_payload["status"] = "planned"
+    lane_payload["capture"] = {"strategy": "adapter", "inputs": ["fixture"], "adapter": "north_star_package_capture"}
+    lane_payload["normalize"] = {"translator": "identity", "config": {}}
+    lane_payload["compare"] = {"comparator": "semantic_replay_v1", "config": {}}
+    (lane_def_dir / f"{lane_id}.yaml").write_text(json.dumps(lane_payload), encoding="utf-8")
+    _write_inventory(inventory_path, [{"lane_id": lane_id, "config_id": config_id}])
+    calls: list[tuple[bool, Path | None]] = []
+
+    def fake_adapter(lane_def: dict[str, object], inventory_lane: dict[str, object] | None, *, promote_accepted: bool, out_dir: Path | None) -> dict[str, object]:
+        calls.append((promote_accepted, out_dir))
+        output = out_dir / "adapter_capture.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text('{"ok": true}\n', encoding="utf-8")
+        return {"ok": True, "node_gate": output.as_posix()}
+
+    fake_adapter.supports_scratch_out_dir = True
+    monkeypatch.setattr(run_lane, "_capture_adapter_callable", lambda lane_def: fake_adapter)
+    monkeypatch.setattr(run_lane, "_refresh_promoted_bindings", lambda: pytest.fail("scratch adapter must not refresh promoted bindings"))
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="capture",
+        out_dir=scratch_root,
+        lane_def_dir=lane_def_dir,
+        inventory_path=inventory_path,
+        promote_accepted=False,
+    )
+
+    assert result["ok"] is True
+    assert calls == [(False, scratch_root)]
+    stage = result["stages"][0]
+    assert stage["artifact_writer"] == "north_star_package_capture"
+    assert stage["promotion_refresh"] is None
+    assert stage["packet_report"]["node_gate"] == (scratch_root / "adapter_capture.json").as_posix()
+
+
+def test_capture_adapter_scratch_out_requires_adapter_out_dir_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lane_id = "run_lane_test_unsafe_scratch_adapter"
+    config_id = "run_lane_test_config"
+    lane_def_dir = tmp_path / "lane_defs"
+    inventory_path = tmp_path / "inventory.json"
+    scratch_root = tmp_path / "scratch"
+    _write_lane_def(
+        lane_def_dir,
+        lane_id=lane_id,
+        config_id=config_id,
+        status="claimed",
+        reverify_command=None,
+    )
+    lane_payload = json.loads((lane_def_dir / f"{lane_id}.yaml").read_text(encoding="utf-8"))
+    lane_payload["schema_version"] = "bb.e4.lane_def.v2"
+    lane_payload["status"] = "planned"
+    lane_payload["capture"] = {"strategy": "adapter", "inputs": ["fixture"], "adapter": "north_star_package_capture"}
+    lane_payload["normalize"] = {"translator": "identity", "config": {}}
+    lane_payload["compare"] = {"comparator": "semantic_replay_v1", "config": {}}
+    (lane_def_dir / f"{lane_id}.yaml").write_text(json.dumps(lane_payload), encoding="utf-8")
+    _write_inventory(inventory_path, [{"lane_id": lane_id, "config_id": config_id}])
+    called = False
+
+    def unsafe_adapter(lane_def: dict[str, object], inventory_lane: dict[str, object] | None, *, promote_accepted: bool, out_dir: Path | None) -> dict[str, object]:
+        nonlocal called
+        called = True
+        return {"ok": True, "node_gate": "accepted/path.json"}
+
+    monkeypatch.setattr(run_lane, "_capture_adapter_callable", lambda lane_def: unsafe_adapter)
+
+    with pytest.raises(run_lane.LaneRunError, match="does not declare scratch out_dir support"):
+        run_lane.run_lane(
+            lane_id,
+            stage="capture",
+            out_dir=scratch_root,
+            lane_def_dir=lane_def_dir,
+            inventory_path=inventory_path,
+            promote_accepted=False,
+        )
+
+    assert called is False
+
+
+def test_capture_adapter_promoted_run_refreshes_promoted_bindings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lane_id = "run_lane_test_promoted_adapter"
+    config_id = "run_lane_test_config"
+    lane_def_dir = tmp_path / "lane_defs"
+    inventory_path = tmp_path / "inventory.json"
+    _write_lane_def(
+        lane_def_dir,
+        lane_id=lane_id,
+        config_id=config_id,
+        status="accepted",
+        reverify_command=None,
+    )
+    lane_payload = json.loads((lane_def_dir / f"{lane_id}.yaml").read_text(encoding="utf-8"))
+    lane_payload["schema_version"] = "bb.e4.lane_def.v2"
+    lane_payload["run"] = {"run_id": "test_run", "provider_model": "none", "sandbox_mode": "none"}
+    lane_payload["provenance"] = None
+    lane_payload["acceptance"] = {
+        "behavior_family": "fixture_behavior",
+        "semantic_key": "fixture_semantic",
+        "assertions": [{"id": "fixture_assertion", "description": "fixture assertion"}],
+    }
+    lane_payload["capture"] = {"strategy": "adapter", "inputs": ["fixture"], "adapter": "north_star_package_capture"}
+    lane_payload["normalize"] = {"translator": "identity", "config": {}}
+    lane_payload["compare"] = {"comparator": "semantic_replay_v1", "config": {}}
+    (lane_def_dir / f"{lane_id}.yaml").write_text(json.dumps(lane_payload), encoding="utf-8")
+    _write_inventory(inventory_path, [{"lane_id": lane_id, "config_id": config_id}])
+    calls: list[tuple[bool, Path | None]] = []
+
+    def fake_adapter(lane_def: dict[str, object], inventory_lane: dict[str, object] | None, *, promote_accepted: bool, out_dir: Path | None) -> dict[str, object]:
+        calls.append((promote_accepted, out_dir))
+        return {"ok": True, "node_gate": "artifacts/promoted_adapter_capture.json"}
+
+    monkeypatch.setattr(run_lane, "_capture_adapter_callable", lambda lane_def: fake_adapter)
+    monkeypatch.setattr(run_lane, "_refresh_promoted_bindings", lambda: {"ok": True, "refreshed": True})
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="capture",
+        out_dir=None,
+        lane_def_dir=lane_def_dir,
+        inventory_path=inventory_path,
+        promote_accepted=True,
+    )
+
+    assert result["ok"] is True
+    assert calls == [(True, None)]
+    assert result["stages"][0]["promotion_refresh"] == {"ok": True, "refreshed": True}
+
 def test_output_with_only_empty_gate_envelope_fields_is_rewritten_to_accepted_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

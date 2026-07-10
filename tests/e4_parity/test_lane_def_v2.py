@@ -10,6 +10,8 @@ from jsonschema import Draft202012Validator, RefResolver
 from jsonschema.exceptions import ValidationError
 
 from scripts.e4_parity.lane_definitions import LaneDefValidationError, load_lane_def
+from scripts.e4_parity.validators import registries
+from scripts.e4_parity.validators.registries import assert_registered
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -129,6 +131,35 @@ def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
+def _write_adapter_registry(path: Path, *, identity_status: str = "active") -> None:
+    import json
+
+    payload = {
+        "schema_version": "bb.registry.v1",
+        "registry_id": "e4_adapters",
+        "entries": [
+            {
+                "id": "identity",
+                "status": identity_status,
+                "description": "test identity translator",
+                "metadata": {"kind": "translator", "config_keys": [], "impl": "scripts.e4_parity.adapters.identity:translate"},
+            },
+            {
+                "id": "north_star_stored_report_replay",
+                "status": "active",
+                "description": "test stored-report comparator",
+                "metadata": {
+                    "kind": "comparator",
+                    "config_keys": ["assertions"],
+                    "impl": "scripts.e4_parity.adapters.stored_report:compare",
+                },
+            },
+        ],
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _v1_lane() -> dict[str, Any]:
     return {
         "schema_version": "bb.e4.lane_def.v1",
@@ -218,6 +249,111 @@ def test_adapter_capture_strategy_requires_adapter_id(lane_def_v2_validator: Dra
     assert _schema_errors(lane_def_v2_validator, lane) == []
 
 
+
+def test_loader_enforces_v2_translator_registry_kind(tmp_path: Path) -> None:
+    lane = _valid_v2_lane()
+    lane["normalize"]["translator"] = "north_star_stored_report_replay"
+    lane_path = tmp_path / "wrong_translator_kind.yaml"
+    _write_yaml(lane_path, lane)
+
+    with pytest.raises(LaneDefValidationError) as exc_info:
+        load_lane_def(lane_path)
+
+    message = str(exc_info.value)
+    assert "normalize.translator" in message
+    assert "wrong kind" in message
+    assert "translator" in message
+
+
+def test_loader_enforces_v2_comparator_registry_kind(tmp_path: Path) -> None:
+    lane = _valid_v2_lane()
+    lane["compare"]["comparator"] = "identity"
+    lane_path = tmp_path / "wrong_comparator_kind.yaml"
+    _write_yaml(lane_path, lane)
+
+    with pytest.raises(LaneDefValidationError) as exc_info:
+        load_lane_def(lane_path)
+
+    message = str(exc_info.value)
+    assert "compare.comparator" in message
+    assert "wrong kind" in message
+    assert "comparator" in message
+
+
+def test_loader_rejects_unknown_v2_adapter_registry_id(tmp_path: Path) -> None:
+    lane = _valid_v2_lane()
+    lane["normalize"]["translator"] = "missing_translator"
+    lane_path = tmp_path / "unknown_translator.yaml"
+    _write_yaml(lane_path, lane)
+
+    with pytest.raises(LaneDefValidationError) as exc_info:
+        load_lane_def(lane_path)
+
+    message = str(exc_info.value)
+    assert "normalize.translator" in message
+    assert "unregistered identifier 'missing_translator'" in message
+
+
+@pytest.mark.parametrize("identity_status", ["deprecated", "reserved"])
+def test_loader_rejects_inactive_v2_adapter_registry_id(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, identity_status: str) -> None:
+    registry_dir = tmp_path / "contracts" / "kernel" / "registries"
+    _write_adapter_registry(registry_dir / "e4_adapters.v1.json", identity_status=identity_status)
+    monkeypatch.setattr(registries, "REGISTRY_DIR", registry_dir)
+    registries.load_registry.cache_clear()
+    lane_path = tmp_path / "inactive_translator.yaml"
+    _write_yaml(lane_path, _valid_v2_lane())
+
+    try:
+        with pytest.raises(LaneDefValidationError) as exc_info:
+            load_lane_def(lane_path)
+    finally:
+        registries.load_registry.cache_clear()
+
+    message = str(exc_info.value)
+    assert "normalize.translator" in message
+    assert f"expected active, got {identity_status}" in message
+
+
+def test_loader_enforces_v2_capture_adapter_registry_kind(tmp_path: Path) -> None:
+    lane = _valid_v2_lane()
+    lane["capture"] = {
+        "strategy": "adapter",
+        "argv": None,
+        "inputs": ["docs_tmp/phase_15/packet"],
+        "workspace_template": None,
+        "adapter": "identity",
+    }
+    lane_path = tmp_path / "wrong_capture_adapter_kind.yaml"
+    _write_yaml(lane_path, lane)
+
+    with pytest.raises(LaneDefValidationError) as exc_info:
+        load_lane_def(lane_path)
+
+    message = str(exc_info.value)
+    assert "capture.adapter" in message
+    assert "wrong kind" in message
+    assert "capture_adapter" in message
+
+
+def test_e4_adapter_registry_seeds_required_lane_def_ids() -> None:
+    assert_registered("e4_adapters", "identity", expected_kind="translator")
+    assert_registered("e4_adapters", "north_star_stored_report_replay", expected_kind="comparator")
+    assert_registered("e4_adapters", "north_star_package_capture", expected_kind="capture_adapter")
+    assert_registered("e4_adapters", "pi_p5_l1_capture", expected_kind="capture_adapter")
+    assert_registered("e4_adapters", "pi_p5_l2_capture", expected_kind="capture_adapter")
+
+
+def test_e4_adapter_registry_impl_paths_are_importable() -> None:
+    import importlib
+
+    registry = registries.load_registry("e4_adapters")
+    for entry in registry["entries"]:
+        impl = entry["metadata"]["impl"]
+        module_name, callable_name = impl.split(":", 1)
+        module = importlib.import_module(module_name)
+        assert callable(getattr(module, callable_name))
+
+
 def test_v1_lane_loads_normalized_compatibility_views(tmp_path: Path) -> None:
     lane_path = tmp_path / "lane_alpha.yaml"
     _write_yaml(lane_path, _v1_lane())
@@ -239,6 +375,54 @@ def test_v1_lane_loads_normalized_compatibility_views(tmp_path: Path) -> None:
     }
     assert loaded["ct"]["test_id"] == "CT-LANE-ALPHA"
 
+
+
+def test_v2_lane_accepts_archive_provenance_without_fake_commit(
+    tmp_path: Path,
+    lane_def_v2_validator: Draft202012Validator,
+) -> None:
+    lane = _valid_v2_lane()
+    lane["capture"] = {
+        "strategy": "adapter",
+        "argv": None,
+        "inputs": ["docs_tmp/phase_15/source.zip"],
+        "workspace_template": None,
+        "adapter": "pi_p5_l1_capture",
+    }
+    lane["provenance"] = {
+        "provenance_kind": "archive_snapshot_without_git_dir",
+        "upstream_repo": "https://github.com/badlogic/pi-mono.git",
+        "upstream_ref": "archive:01_pi_mono_git_tracked.zip",
+        "upstream_release_label": "@mariozechner/pi-coding-agent@0.57.1",
+        "source_paths": ["docs_tmp/phase_15/source.zip"],
+        "source_archive": {
+            "path": "docs_tmp/phase_15/source.zip",
+            "sha256": "sha256:" + "a" * 64,
+            "bytes": 1,
+        },
+        "package": {"name": "@mariozechner/pi-coding-agent", "version": "0.57.1"},
+    }
+    lane.pop("metadata", None)
+    lane_path = tmp_path / "archive_lane.yaml"
+    _write_yaml(lane_path, lane)
+
+    assert _schema_errors(lane_def_v2_validator, lane) == []
+    loaded = load_lane_def(lane_path)
+
+    assert loaded["provenance"]["provenance_kind"] == "archive_snapshot_without_git_dir"
+    assert "upstream_commit" not in loaded["provenance"]
+
+
+def test_v2_git_provenance_rejects_archive_hash_as_upstream_commit(
+    lane_def_v2_validator: Draft202012Validator,
+) -> None:
+    lane = _valid_v2_lane()
+    lane["provenance"]["upstream_commit"] = "archive-sha256-" + "a" * 64
+
+    errors = _schema_errors(lane_def_v2_validator, lane)
+
+    assert errors != []
+    assert "not valid under any of the given schemas" in _format_errors(errors)
 
 def test_unknown_lane_def_schema_version_errors_clearly(tmp_path: Path) -> None:
     lane = copy.deepcopy(_v1_lane())

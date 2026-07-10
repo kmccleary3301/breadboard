@@ -7,7 +7,8 @@ from typing import Any, Mapping
 
 from jsonschema import Draft202012Validator
 
-from scripts.e4_parity import build_pi_p5_extension_session_residual as builder
+from scripts.e4_parity.adapters import pi_p5_l2_capture as builder
+from scripts.e4_parity.validators.registries import schema_generation_default
 
 
 EXPECTED_ASSERTIONS = {
@@ -146,7 +147,7 @@ def test_comparator_prevalidation_secret_scan_and_node_gate_are_passing() -> Non
 def test_support_claim_and_evidence_manifest_use_current_hashes() -> None:
     support = load_json(builder.SUPPORT_CLAIM_PATH)
     assert support["accepted"] is True
-    assert support["schema_version"] == "bb.e4.support_claim.v2"
+    assert support["schema_version"] == schema_generation_default("support_claim")
     assert support["scope"] == {
         "config_id": builder.CONFIG_ID,
         "lane_id": builder.LANE_ID,
@@ -154,6 +155,7 @@ def test_support_claim_and_evidence_manifest_use_current_hashes() -> None:
         "run_id": builder.RUN_ID,
         "sandbox_mode": builder.SANDBOX_MODE,
         "target_version": builder.TARGET_VERSION,
+        "target_family": builder.TARGET_FAMILY,
     }
     assert support["metadata"]["legacy_scope"] == {
         "phase": builder.PHASE,

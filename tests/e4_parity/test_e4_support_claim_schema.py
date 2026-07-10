@@ -8,19 +8,21 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator, RefResolver
 from jsonschema.exceptions import ValidationError
+from scripts.e4_parity.validators.registries import schema_generation_default
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SCHEMA_PATH = ROOT / "contracts" / "kernel" / "schemas" / "bb.e4.support_claim.v2.schema.json"
-COMMON_SCHEMA_PATH = ROOT / "contracts" / "kernel" / "schemas" / "bb.kernel.common.v1.schema.json"
 SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
+SCHEMA_VERSION = schema_generation_default("support_claim")
+SCHEMA_PATH = SCHEMA_DIR / f"{SCHEMA_VERSION}.schema.json"
 SUPPORT_CLAIM_FIXTURE_DIR = ROOT / "docs" / "conformance" / "support_claims"
-SUPPORT_CLAIM_FIXTURES = sorted(SUPPORT_CLAIM_FIXTURE_DIR.glob("*_support_claim.json"))
+SUPPORT_CLAIM_FIXTURES = sorted(SUPPORT_CLAIM_FIXTURE_DIR.glob("*_c4_support_claim.json"))
 REQUIRED_SCOPE_KEYS = (
     "config_id",
     "lane_id",
     "provider_model",
     "run_id",
+    "target_family",
     "sandbox_mode",
     "target_version",
 )
@@ -28,7 +30,7 @@ REQUIRED_SCOPE_KEYS = (
 
 requires_support_claim_schema = pytest.mark.skipif(
     not SCHEMA_PATH.is_file(),
-    reason="bb.e4.support_claim.v2 dedicated schema is not present yet",
+    reason=f"{SCHEMA_VERSION} dedicated schema is not present",
 )
 
 
@@ -43,37 +45,39 @@ def _load_schema() -> dict[str, Any]:
     Draft202012Validator.check_schema(schema)
     return schema
 
+def _local_schema_store() -> dict[str, dict[str, Any]]:
+    store: dict[str, dict[str, Any]] = {}
+    for schema_path in SCHEMA_DIR.glob("*.schema.json"):
+        schema = _load_json(schema_path)
+        store[schema_path.name] = schema
+        schema_id = schema.get("$id")
+        if isinstance(schema_id, str):
+            store[schema_id] = schema
+    return store
+
+
+def _reject_remote_ref(uri: str) -> Any:
+    raise AssertionError(f"schema validation attempted network access: {uri}")
+
 
 @pytest.fixture(scope="module")
 def support_claim_validator() -> Draft202012Validator:
     schema = _load_schema()
-    common_schema = _load_json(COMMON_SCHEMA_PATH)
-    store = {str(schema["$id"]): schema, str(common_schema["$id"]): common_schema}
-    return Draft202012Validator(schema, resolver=RefResolver.from_schema(schema, store=store))
+    resolver = RefResolver.from_schema(
+        schema,
+        store=_local_schema_store(),
+        handlers={"http": _reject_remote_ref, "https": _reject_remote_ref},
+    )
+    return Draft202012Validator(schema, resolver=resolver)
 
 
 def _fixture_payload() -> dict[str, Any]:
-    for fixture_path in SUPPORT_CLAIM_FIXTURES:
-        payload = _load_json(fixture_path)
-        if payload.get("schema_version") == "bb.e4.support_claim.v2":
-            return payload
-    raise AssertionError("expected at least one checked-in v2 support-claim fixture")
+    assert SUPPORT_CLAIM_FIXTURES, "expected at least one checked-in v4 support-claim fixture"
+    payload = _load_json(SUPPORT_CLAIM_FIXTURES[0])
+    assert payload.get("schema_version") == SCHEMA_VERSION
+    return payload
 
 
-def _schema_path_for_payload(payload: dict[str, Any]) -> Path:
-    schema_version = payload.get("schema_version")
-    assert isinstance(schema_version, str) and schema_version, "support claim fixture must declare schema_version"
-    schema_path = SCHEMA_DIR / f"{schema_version}.schema.json"
-    assert schema_path.is_file(), f"missing schema for checked-in support claim fixture: {schema_version}"
-    return schema_path
-
-
-def _validator_for_payload(payload: dict[str, Any]) -> Draft202012Validator:
-    schema = _load_json(_schema_path_for_payload(payload))
-    Draft202012Validator.check_schema(schema)
-    common_schema = _load_json(COMMON_SCHEMA_PATH)
-    store = {str(schema["$id"]): schema, str(common_schema["$id"]): common_schema}
-    return Draft202012Validator(schema, resolver=RefResolver.from_schema(schema, store=store))
 
 
 def _schema_errors(
@@ -110,20 +114,24 @@ def _assert_schema_rejects(
 
 def test_dedicated_support_claim_schema_exists_and_is_a_valid_json_schema() -> None:
     """Support claims have their own contract, not an implicit validator-only shape."""
-    assert SCHEMA_PATH.is_file(), "missing contracts/kernel/schemas/bb.e4.support_claim.v2.schema.json"
+    assert SCHEMA_PATH.is_file(), f"missing contracts/kernel/schemas/{SCHEMA_PATH.name}"
     _load_schema()
 
 
 @requires_support_claim_schema
-def test_checked_in_support_claim_fixtures_validate_against_dedicated_schema() -> None:
-    """Accepted support-claim evidence already in the repo remains schema-valid."""
-    assert SUPPORT_CLAIM_FIXTURES, "expected checked-in support-claim fixtures"
+def test_checked_in_support_claim_fixtures_validate_against_dedicated_schema(
+    support_claim_validator: Draft202012Validator,
+) -> None:
+    """Accepted v4 support-claim evidence already in the repo remains schema-valid."""
+    assert SUPPORT_CLAIM_FIXTURES, "expected checked-in v4 support-claim fixtures"
 
     errors: list[str] = []
     for fixture_path in SUPPORT_CLAIM_FIXTURES:
         payload = _load_json(fixture_path)
-        validator = _validator_for_payload(payload)
-        for error in _schema_errors(validator, payload):
+        if payload.get("schema_version") != SCHEMA_VERSION:
+            errors.append(f"{fixture_path.relative_to(ROOT)}: expected {SCHEMA_VERSION}")
+            continue
+        for error in _schema_errors(support_claim_validator, payload):
             errors.append(f"{fixture_path.relative_to(ROOT)}: {_format_error(error)}")
 
     assert errors == []

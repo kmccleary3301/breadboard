@@ -5,8 +5,6 @@ import json
 from pathlib import Path
 
 from scripts.e4_parity import lane_runtime
-from scripts.e4_parity import build_oh_my_pi_p3_1_effective_config_graph as p3_1
-from scripts.e4_parity import build_oh_my_pi_p3_remaining_helper_runtime as p3_remaining
 
 
 def test_canonical_json_supports_default_and_compact_styles() -> None:
@@ -87,14 +85,3 @@ def test_upsert_ledger_row_replaces_feature_and_returns_compact_row_hash(tmp_pat
     assert row_ref == lane_runtime.sha256_text(expected_row_text)
 
 
-def test_migrated_builder_module_constants_still_exist() -> None:
-    assert p3_1.GENERATED_AT_UTC == "2026-07-03T07:30:00Z"
-    assert isinstance(p3_1.CONFIG_ID, str) and p3_1.CONFIG_ID
-    assert isinstance(p3_1.CLAIM_ID, str) and p3_1.CLAIM_ID
-    assert isinstance(p3_1.CT_OUTPUT, str) and p3_1.CT_OUTPUT
-
-    assert p3_remaining.GENERATED_AT_UTC == "2026-07-03T07:30:00Z"
-    assert isinstance(p3_remaining.LANES, tuple) and p3_remaining.LANES
-    for spec in p3_remaining.LANES:
-        assert isinstance(spec["config_id"], str) and spec["config_id"]
-        assert isinstance(spec["ct_output"], str) and spec["ct_output"]

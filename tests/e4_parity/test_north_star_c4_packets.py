@@ -3,7 +3,7 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import pytest
 import yaml
@@ -11,6 +11,7 @@ import yaml
 from agentic_coder_prototype.conformance import c4_chain
 from scripts.e4_parity import generate_support_claims, run_lane
 from scripts.e4_parity.lane_definitions import load_lane_defs
+from scripts.e4_parity.validators.registries import schema_generation_default
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -21,6 +22,7 @@ COMPARATOR_REGISTRY_PATH = REPO_ROOT / "conformance" / "comparators" / "registry
 FREEZE_MANIFEST_PATH = REPO_ROOT / "config" / "e4_target_freeze_manifest.yaml"
 RUN_LANE_SCRIPT = REPO_ROOT / "scripts" / "e4_parity" / "run_lane.py"
 NORTH_STAR_WRAPPER_SCRIPT = REPO_ROOT / "scripts" / "e4_parity" / "build_north_star_proof_packets.py"
+SUPPORT_CLAIM_SCHEMA_VERSION = schema_generation_default("support_claim")
 
 EXPECTED_LANES: dict[str, dict[str, str]] = {
     "claude_code_north_star_capture_v1": {
@@ -208,6 +210,14 @@ def test_checked_in_north_star_lane_defs_promote_expected_targets() -> None:
             assert "self" in joined_text and "runtime" in joined_text and "records" in joined_text
 
 
+def _support_claim_schema_version(row: Mapping[str, Any]) -> str:
+    command = row["reverify_command"]
+    argv = command["argv"]
+    claim_path = argv[argv.index("--support-claim") + 1]
+    claim = json.loads((REPO_ROOT / claim_path).read_text(encoding="utf-8"))
+    return claim["schema_version"]
+
+
 def test_inventory_report_roles_registry_and_regeneration_cover_north_star_lanes() -> None:
     """Generated indices must mirror the three accepted WS-J lanes instead of leaving promotion state in a builder-only side channel."""
     inventory = _inventory_by_lane()
@@ -224,7 +234,7 @@ def test_inventory_report_roles_registry_and_regeneration_cover_north_star_lanes
         assert row["target_family"] == expected["target_family"]
         assert row["kind"] == expected["kind"]
         assert row["builder"] is None
-        assert row["support_claim_schema_version"] == "bb.e4.support_claim.v3"
+        assert _support_claim_schema_version(row) == SUPPORT_CLAIM_SCHEMA_VERSION
         assert row["comparator_id"] == "north_star_stored_report_replay"
         assert row["primitives"], f"{lane_id} must claim at least one behavior primitive"
 
@@ -249,9 +259,9 @@ def test_north_star_lanes_run_through_lane_def_and_support_claim_generators(tmp_
     for lane_id, expected in EXPECTED_LANES.items():
         claim_path, manifest_path, node_gate_path = generate_support_claims.support_paths(inventory[lane_id])
         claim, _archive_ref = generate_support_claims._claim_for_lane(inventory[lane_id], claim_path, manifest_path)
-        assert claim["schema_version"] == "bb.e4.support_claim.v3"
-        assert claim["lane_id"] == lane_id
-        assert claim["config_id"] == expected["config_id"]
+        assert claim["schema_version"] == SUPPORT_CLAIM_SCHEMA_VERSION
+        assert claim["scope"]["lane_id"] == lane_id
+        assert claim["scope"]["config_id"] == expected["config_id"]
         assert claim["catalog_binding"]["segment_id"] == lane_id
         assert claim["catalog_binding"]["segment_hash"].startswith("sha256:")
         assert claim["catalog_binding"]["shared_segment_hash"].startswith("sha256:")
@@ -281,9 +291,9 @@ def test_north_star_reverify_commands_and_checked_in_artifacts_are_canonical_and
         support_claim = _load_json(support_claim_path)
         evidence_manifest = _load_json(evidence_manifest_path)
         assert support_claim["accepted"] is True
-        assert support_claim["schema_version"] == "bb.e4.support_claim.v3"
-        assert support_claim["lane_id"] == lane_id
-        assert support_claim["target_family"] == expected["target_family"]
+        assert support_claim["schema_version"] == SUPPORT_CLAIM_SCHEMA_VERSION
+        assert support_claim["scope"]["lane_id"] == lane_id
+        assert support_claim["scope"]["target_family"] == expected["target_family"]
         assert support_claim["reverify_command"] == command
         assert support_claim["catalog_binding"]["segment_id"] == lane_id
         assert evidence_manifest["lane_id"] == lane_id
