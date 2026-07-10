@@ -109,6 +109,8 @@ export const createBreadboardClient = (config: BreadboardClientConfig) => ({
   postCommand: (sessionId: string, body: Record<string, unknown>) =>
     requestWithConfig<void>(config, `/v1/sessions/${sessionId}/command`, "POST", { body }),
   deleteSession: (sessionId: string) => requestWithConfig<void>(config, `/v1/sessions/${sessionId}`, "DELETE"),
+  readSessionRecords: (sessionId: string) =>
+    requestWithConfig<Record<string, unknown>>(config, `/v1/sessions/${sessionId}/records`, "GET"),
   listSessionFiles: (sessionId: string, path?: string) =>
     requestWithConfig<SessionFileInfo[]>(config, `/v1/sessions/${sessionId}/files`, "GET", {
       query: path ? { path } : undefined,
