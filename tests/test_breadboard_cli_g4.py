@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 
 from scripts import breadboard_cli
@@ -137,15 +138,65 @@ def test_lane_capture_delegates_exact_manifest_directory_to_capture_stage(
     ]
 
 
-def test_lane_capture_missing_manifest_returns_validation_exit(
+def test_lane_capture_runs_supplied_manifest_when_default_has_same_lane_id(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
+    supplied_manifest_dir = tmp_path / "supplied-lanes"
+    default_manifest_dir = tmp_path / "default-lanes"
+    supplied_manifest_dir.mkdir()
+    default_manifest_dir.mkdir()
+    supplied_manifest = _write_manifest(supplied_manifest_dir)
+    default_manifest = _write_manifest(default_manifest_dir)
+
+    supplied_data = yaml.safe_load(supplied_manifest.read_text(encoding="utf-8"))
+    supplied_data["capture"] = {
+        "strategy": "replay_dump",
+        "argv": None,
+        "inputs": ["pyproject.toml"],
+    }
+    supplied_manifest.write_text(
+        yaml.safe_dump(supplied_data, sort_keys=False),
+        encoding="utf-8",
+    )
+
+    default_data = yaml.safe_load(default_manifest.read_text(encoding="utf-8"))
+    default_data["capture"] = {
+        "strategy": "probe_argv",
+        "argv": ["python", "-c", "raise SystemExit(9)"],
+        "inputs": [],
+    }
+    default_manifest.write_text(
+        yaml.safe_dump(default_data, sort_keys=False),
+        encoding="utf-8",
+    )
+    assert breadboard_cli.main(["lane", "lock", str(supplied_manifest)]) == 0
+    assert breadboard_cli.main(["lane", "lock", str(default_manifest)]) == 0
+
+    monkeypatch.setattr(run_lane, "DEFAULT_LANE_DEF_DIR", default_manifest_dir)
+
+    assert breadboard_cli.main(
+        [
+            "lane",
+            "capture",
+            str(supplied_manifest),
+            "--out",
+            str(tmp_path / "capture"),
+        ]
+    ) == 0
+
+
+@pytest.mark.parametrize("command", ["lock", "capture"])
+def test_lane_command_missing_manifest_returns_validation_exit(
+    tmp_path: Path,
+    monkeypatch,
+    command: str,
+) -> None:
     def fail_if_delegated(argv: list[str]) -> int:
-        raise AssertionError(f"run_lane must not receive a missing manifest: {argv}")
+        raise AssertionError(f"runner must not receive a missing manifest: {argv}")
 
     monkeypatch.setattr(run_lane, "main", fail_if_delegated)
 
     assert breadboard_cli.main(
-        ["lane", "capture", str(tmp_path / "missing.manifest.yaml")]
+        ["lane", command, str(tmp_path / "missing.manifest.yaml")]
     ) == 3

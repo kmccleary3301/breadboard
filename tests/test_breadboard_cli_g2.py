@@ -35,6 +35,10 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
     assert harness["prompts"]["packs"]["base"]["system"] == (
         "prompts/minimal_system.md"
     )
+    prompt_path.write_text(
+        "This content exists only in the initialized bundle.\n",
+        encoding="utf-8",
+    )
 
     exit_code, _, stderr = _invoke(
         ["harness", "validate", str(harness_path)], capsys
