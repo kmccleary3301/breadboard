@@ -8,6 +8,7 @@ import json
 import sys
 import shutil
 import stat
+import tempfile
 import zipfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -20,9 +21,14 @@ try:
         ReferenceResolutionError,
         resolve_declared_reference,
     )
+    from scripts.e4_parity.promote_lane_payload_source import (
+        extract_payload_source,
+        validate_payload_source,
+    )
     from scripts.e4_parity.tree_digest import TreeDigest, TreeDigestError, digest_directory
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from path_refs import ReferenceResolutionError, resolve_declared_reference
+    from promote_lane_payload_source import extract_payload_source, validate_payload_source
     from tree_digest import TreeDigest, TreeDigestError, digest_directory
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
@@ -34,6 +40,31 @@ SOURCE_FREEZE_ARCHIVE_REF = (
 SOURCE_FREEZE_EXTRACTION_REF = (
     "docs_tmp/phase_20/derived/oh_my_pi_main_5356713e_extracted"
 )
+PILOT_LANE_ID = "oh_my_pi_p6_6_task_job_subagent"
+
+_PILOT_ARTIFACT_ROLES = {
+    "agent_config": "agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml",
+    "artifact_catalog": "docs/conformance/e4_artifact_catalog.json",
+    "atomic_feature_ledger": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+    "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json",
+    "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
+    "detached_subagent_target_capture": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json",
+    "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+    "freeze_manifest": "config/e4_target_freeze_manifest.yaml",
+    "joined_subagent_target_capture": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json",
+    "node_gate": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
+    "parity_results": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json",
+    "probe_script": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/oh_my_pi_p6_6_task_job_subagent_probe.mjs",
+    "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json",
+    "secret_scan_report": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json",
+    "support_claim_ref": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+    "target_probe_output": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json",
+    "target_setup_report": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json",
+    "task_job_subagent_comparator": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
+    "validator_output": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json",
+    "work_item_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json",
+    "work_item_replay": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_item_replay.json",
+}
 
 
 class ManifestError(ValueError):
@@ -136,10 +167,13 @@ def extract_source_archive(archive_path: Path, extraction_path: Path) -> TreeDig
     """Safely materialize a canonical regular-file-only ZIP extraction."""
     archive_path = Path(archive_path)
     extraction_path = Path(extraction_path)
-    temporary = extraction_path.with_name(extraction_path.name + ".tmp")
-    if temporary.exists():
-        shutil.rmtree(temporary)
-    temporary.mkdir(parents=True)
+    extraction_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(
+        tempfile.mkdtemp(
+            prefix=f".{extraction_path.name}.",
+            dir=extraction_path.parent,
+        )
+    )
     try:
         try:
             archive = zipfile.ZipFile(archive_path)
@@ -189,15 +223,20 @@ def extract_source_archive(archive_path: Path, extraction_path: Path) -> TreeDig
             directory.chmod(0o755)
         tree = digest_directory(temporary)
         if extraction_path.exists():
-            shutil.rmtree(extraction_path)
-        extraction_path.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                current = digest_directory(extraction_path)
+            except TreeDigestError:
+                current = None
+            if current == tree:
+                return tree
+            shutil.rmtree(extraction_path, ignore_errors=True)
         temporary.replace(extraction_path)
         return tree
     except (OSError, TreeDigestError) as exc:
         raise ReferenceError(f"cannot materialize source-freeze extraction: {exc}") from exc
     finally:
         if temporary.exists():
-            shutil.rmtree(temporary)
+            shutil.rmtree(temporary, ignore_errors=True)
 
 
 def _freeze_row(manifest: Mapping[str, Any], manifest_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -240,24 +279,6 @@ def _registry_pins(manifest: Mapping[str, Any]) -> list[dict[str, str]]:
     return sorted(pins, key=lambda pin: (pin["registry"], pin["entry_id"]))
 
 
-def _packet_constants(value: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    nested = value.get("packet_constants")
-    if isinstance(nested, Mapping):
-        return nested
-    if "payload_templates" in value or "substitutions" in value:
-        return value
-    return None
-
-
-def _merge_generated(target: dict[str, Any], source: Any, *, field: str, input_path: Path) -> None:
-    if source is None:
-        return
-    if not isinstance(source, Mapping):
-        raise ReferenceError(f"{_display(input_path)} {field} must be an object")
-    duplicates = sorted(set(target).intersection(str(key) for key in source))
-    if duplicates:
-        raise ReferenceError(f"duplicate {field} keys in {_display(input_path)}: {', '.join(duplicates)}")
-    target.update((str(key), value) for key, value in source.items())
 
 
 def _derived_reference_path(reference: str) -> Path:
@@ -275,6 +296,8 @@ def _derived_reference_path(reference: str) -> Path:
 
 def _resolved_input_rows(reference: str, manifest_path: Path) -> list[dict[str, Any]]:
     path = _repo_path(reference, source=manifest_path)
+    if reference.endswith(".payloads.yaml"):
+        return [_input_row(path, "payload_source", logical_path=reference)]
     if reference != SOURCE_FREEZE_ARCHIVE_REF:
         return [_input_row(path, "capture_input", logical_path=reference)]
     archive_row = _input_row(path, "source_freeze_archive", logical_path=reference)
@@ -298,7 +321,59 @@ def materialize_manifest_inputs(manifest_path: Path) -> None:
             _resolved_input_rows(reference, manifest_path)
 
 
-def _compile_sidecar(manifest: Mapping[str, Any], manifest_path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+def _payload_source(
+    manifest: Mapping[str, Any],
+    manifest_path: Path,
+) -> tuple[dict[str, Any], Path]:
+    references = [
+        str(value)
+        for value in manifest["capture"].get("inputs", [])
+        if str(value).endswith(".payloads.yaml")
+    ]
+    if len(references) != 1:
+        raise ManifestError("manifest must declare exactly one .payloads.yaml input")
+    reference = references[0]
+    path = _repo_path(reference, source=manifest_path)
+    try:
+        value = validate_payload_source(_load_mapping(path), source=path)
+    except ValueError as exc:
+        raise ReferenceError(str(exc)) from exc
+    return value, path
+
+
+def _packet_constants(value: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    nested = value.get("packet_constants")
+    if isinstance(nested, Mapping):
+        return nested
+    if "payload_templates" in value or "substitutions" in value:
+        return value
+    return None
+
+
+def _merge_generated(
+    target: dict[str, Any],
+    source: Any,
+    *,
+    field: str,
+    input_path: Path,
+) -> None:
+    if source is None:
+        return
+    if not isinstance(source, Mapping):
+        raise ReferenceError(f"{_display(input_path)} {field} must be an object")
+    duplicates = sorted(set(target).intersection(str(key) for key in source))
+    if duplicates:
+        raise ReferenceError(
+            f"duplicate {field} keys in {_display(input_path)}: "
+            + ", ".join(duplicates)
+        )
+    target.update((str(key), value) for key, value in source.items())
+
+
+def _generic_compile_sidecar(
+    manifest: Mapping[str, Any],
+    manifest_path: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     payload_templates: dict[str, Any] = {}
     substitutions: dict[str, Any] = {}
     rows: list[dict[str, Any]] = []
@@ -306,36 +381,100 @@ def _compile_sidecar(manifest: Mapping[str, Any], manifest_path: Path) -> tuple[
         reference = str(reference_value)
         path = _repo_path(reference, source=manifest_path)
         rows.extend(_resolved_input_rows(reference, manifest_path))
-        if reference == SOURCE_FREEZE_ARCHIVE_REF or path.suffix.lower() not in {".json", ".yaml", ".yml"}:
+        if path.suffix.lower() not in {".json", ".yaml", ".yml"}:
             continue
         constants = _packet_constants(_load_mapping(path))
         if constants is None:
             continue
-        _merge_generated(payload_templates, constants.get("payload_templates"), field="payload_templates", input_path=path)
-        _merge_generated(substitutions, constants.get("substitutions"), field="substitutions", input_path=path)
-    return {"payload_templates": payload_templates, "substitutions": substitutions}, rows
+        _merge_generated(
+            payload_templates,
+            constants.get("payload_templates"),
+            field="payload_templates",
+            input_path=path,
+        )
+        _merge_generated(
+            substitutions,
+            constants.get("substitutions"),
+            field="substitutions",
+            input_path=path,
+        )
+    return {
+        "payload_templates": payload_templates,
+        "substitutions": substitutions,
+    }, rows
 
 
-def _migrate_sidecar(legacy_path: Path) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+def _migrate_legacy_sidecar(
+    legacy_path: Path,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     legacy = _load_mapping(legacy_path)
     normalize = legacy.get("normalize")
     config = normalize.get("config") if isinstance(normalize, Mapping) else None
     constants = config.get("packet_constants") if isinstance(config, Mapping) else None
     if not isinstance(constants, Mapping):
-        raise ReferenceError("legacy descriptor has no /normalize/config/packet_constants object")
-    payload_templates = constants.get("payload_templates", {})
-    substitutions = constants.get("substitutions", {})
-    if not isinstance(payload_templates, Mapping) or not isinstance(substitutions, Mapping):
-        raise ReferenceError("legacy packet_constants payload_templates/substitutions must be objects")
+        raise ReferenceError(
+            "legacy descriptor has no /normalize/config/packet_constants object"
+        )
+    sidecar = validate_payload_source(
+        {
+            "payload_templates": constants.get("payload_templates"),
+            "substitutions": constants.get("substitutions"),
+        },
+        source=legacy_path,
+    )
     roles = config.get("roles", {}) if isinstance(config, Mapping) else {}
-    if not isinstance(roles, Mapping) or not all(isinstance(value, str) for value in roles.values()):
-        raise ReferenceError("legacy /normalize/config/roles must map role ids to paths")
+    if not isinstance(roles, Mapping) or not all(
+        isinstance(value, str)
+        for value in roles.values()
+    ):
+        raise ReferenceError(
+            "legacy /normalize/config/roles must map role ids to paths"
+        )
     artifact_roles = {
         str(role): {"path": str(path), "sha256": None, "bytes": None}
         for role, path in sorted(roles.items())
     }
-    sidecar = {"payload_templates": dict(payload_templates), "substitutions": dict(substitutions)}
-    return sidecar, artifact_roles, [_input_row(legacy_path, "legacy_lane_descriptor")]
+    return sidecar, artifact_roles
+
+
+def _compile_sidecar(
+    manifest: Mapping[str, Any],
+    manifest_path: Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if manifest.get("lane_id") != PILOT_LANE_ID:
+        return _generic_compile_sidecar(manifest, manifest_path)
+    sidecar, _ = _payload_source(manifest, manifest_path)
+    rows: list[dict[str, Any]] = []
+    for reference_value in manifest["capture"].get("inputs", []):
+        rows.extend(_resolved_input_rows(str(reference_value), manifest_path))
+    return sidecar, rows
+
+
+def _artifact_roles(manifest: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    if manifest.get("lane_id") != PILOT_LANE_ID:
+        raise ManifestError(
+            "artifact-role derivation is not declared for lane "
+            f"{manifest.get('lane_id')!r}"
+        )
+    return {
+        role: {"path": path, "sha256": None, "bytes": None}
+        for role, path in sorted(_PILOT_ARTIFACT_ROLES.items())
+    }
+
+
+def _assert_migration_equivalence(
+    legacy_path: Path,
+    promoted: Mapping[str, Any],
+) -> None:
+    try:
+        legacy_payloads = extract_payload_source(legacy_path)
+    except (OSError, ValueError, yaml.YAMLError) as exc:
+        raise ReferenceError(str(exc)) from exc
+    if legacy_payloads != promoted:
+        raise ReferenceError(
+            "promoted payload source does not match legacy "
+            "payload_templates/substitutions"
+        )
 
 
 def build_outputs(
@@ -350,14 +489,26 @@ def build_outputs(
     if mode == "migrate":
         if legacy_path is None:
             raise ManifestError("migrate mode requires --legacy")
-        sidecar, artifact_roles, input_rows = _migrate_sidecar(legacy_path)
-        for reference_value in manifest["capture"].get("inputs", []):
-            input_rows.extend(_resolved_input_rows(str(reference_value), manifest_path))
+        if manifest.get("lane_id") == PILOT_LANE_ID:
+            sidecar, input_rows = _compile_sidecar(manifest, manifest_path)
+            artifact_roles = _artifact_roles(manifest)
+            _assert_migration_equivalence(legacy_path, sidecar)
+        else:
+            sidecar, artifact_roles = _migrate_legacy_sidecar(legacy_path)
+            input_rows = [_input_row(legacy_path, "legacy_lane_descriptor")]
+            for reference_value in manifest["capture"].get("inputs", []):
+                input_rows.extend(
+                    _resolved_input_rows(str(reference_value), manifest_path)
+                )
     elif mode == "compile":
         if legacy_path is not None:
             raise ManifestError("compile mode never accepts or reads --legacy")
         sidecar, input_rows = _compile_sidecar(manifest, manifest_path)
-        artifact_roles = {}
+        artifact_roles = (
+            _artifact_roles(manifest)
+            if manifest.get("lane_id") == PILOT_LANE_ID
+            else {}
+        )
     else:
         raise ManifestError(f"unsupported mode: {mode}")
     input_rows.append(freeze_input)

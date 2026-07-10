@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import argparse
 try:
+    from scripts.e4_parity import compile_lane_lock
     from scripts.e4_parity.validators import hash_utils as _hash_utils
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    import compile_lane_lock
     from validators import hash_utils as _hash_utils
 import json
 import re
@@ -202,6 +204,23 @@ def refresh_pins_once(yaml_path: Path, prefixes: tuple[str, ...]) -> list[str]:
             stale.add("catalog_binding.catalog_revision")
     yaml_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return sorted(stale)
+
+
+def refresh_migrated_lane(
+    manifest_path: Path,
+    *,
+    check: bool = False,
+) -> int:
+    """Regenerate only machine-owned outputs for one migrated lane."""
+    manifest_path = Path(manifest_path)
+    if not manifest_path.name.endswith(".manifest.yaml"):
+        raise ValueError("migrated refresh target must end with .manifest.yaml")
+    if not manifest_path.is_file():
+        raise ValueError(f"manifest does not exist: {manifest_path}")
+    argv = ["compile", str(manifest_path)]
+    if check:
+        argv.append("--check")
+    return compile_lane_lock.main(argv)
 
 
 def refresh(lane_id: str, max_iterations: int = 6) -> dict[str, object]:
