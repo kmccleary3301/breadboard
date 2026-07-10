@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 25,
+ "points_done": 45,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:04:53Z",
+ "updated_at_utc": "2026-07-10T21:05:45Z",
  "items": [
   {
    "id": "A1",
@@ -471,11 +471,34 @@
    "ws": "G",
    "title": "root pyproject + bbh skeleton",
    "weight": 20,
-   "status": "todo",
+   "status": "done",
    "deps": [],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "p20/verify-wsG G1",
+     "sha": "0f09c736"
+    },
+    {
+     "kind": "doc",
+     "ref": "../docs_tmp/phase_20/evidence/G1/implementer.json",
+     "sha": "0f09c736"
+    },
+    {
+     "kind": "command",
+     "ref": "fresh-venv AM2 bootstrap: pip>=21.3 upgrade + editable install 1.49s + 8 leaves shown + stub exit 2",
+     "sha": "0f09c736"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsG(reviewer)",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "verdict bound to 0f09c736c767a9e13485d544a0def7d401805e0a; anti-scope clean; stdlib-only imports confirmed"
+    }
+   ]
   },
   {
    "id": "G2",
