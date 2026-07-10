@@ -6,7 +6,7 @@
  "points_done": 385,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:39:42Z",
+ "updated_at_utc": "2026-07-10T22:40:23Z",
  "items": [
   {
    "id": "A1",
@@ -1579,6 +1579,14 @@
    "classification": "spec_gap",
    "what": "P6.6 sidecar payload_templates/substitutions promoted one-time into a manifest-referenced authored source file; compile derives sidecar from it; byte-parity proof at migration; no reverse-derivation generator",
    "owner": "F6",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM15",
+   "date": "2026-07-10",
+   "classification": "product_defect+spec_gap",
+   "what": "universal rule: every declared manifest input resolves on clean checkout (tracked or declared deterministic derivation); F4 pilot manifest declares untracked node_gate artifact as input - fix + relock; G6 blocked honestly",
+   "owner": "F4",
    "recorded_by": "orchestrator"
   }
  ],

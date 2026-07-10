@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **14 amendments** (below).
+Current state: **15 amendments** (below).
 
 ---
 
@@ -220,3 +220,18 @@ The pilot sidecar's `payload_templates`/`substitutions` blocks were migration-ex
 - Compile mode purity is unchanged: no legacy reads in steady state; no machine-owned shadow sources; the promoted file is ordinary authored input from then on.
 
 **Classification:** spec_gap. **Owner:** F6 (WsF3Compiler). **Recorded-by:** orchestrator.
+
+---
+
+## Amendment 15 - 2026-07-10 - universal clean-checkout input rule (generalizes AM11a; G6 finding classified product_defect on F4)
+
+G6's clean-state gate exposed the pilot manifest declaring capture input `artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json` — untracked (`git ls-files` empty), absent on clean checkout; `lane lock --check` exits 3.
+
+**Rule (normative for every manifest, not just the source-freeze input):** every declared input MUST resolve on a clean checkout as exactly one of:
+1. a repo-TRACKED file/directory (digest-pinned in the lock), or
+2. a DERIVED input materialized deterministically by the compiler from tracked sources under a declared derivation rule (AM11a pattern), digest-chain recorded in the lock.
+Anything else is a red gate at lock/--check time (exit 3 behavior confirmed correct).
+
+**F4 disposition (owner WsF3Compiler):** classify that path — if the lane CONSUMES it, replace with a tracked canonical input (or a declared derivation from tracked sources); if it is actually an OUTPUT of the capture chain, remove it from inputs and place it in the artifact/output roles. Then regenerate the lock and rerun `migrate --check`. G6 stays blocked on this fix; its refusal to weaken the gate is correct.
+
+**Classification:** product_defect (F4 manifest content) + spec_gap (rule not yet written). **Recorded-by:** orchestrator.
