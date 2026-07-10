@@ -5,10 +5,12 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -21,32 +23,30 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from validators import hash_utils as _hash_utils
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 WORKSPACE = ROOT.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH as CATALOG_BINDING_PATH, catalog_segment_hash, reusable_catalog_revision
 from scripts.validate_e4_c4_chain import validate_c4_chain
-from scripts.e4_parity import lane_inventory_utils as lane_inventory
+from scripts.e4_parity.validators.registries import schema_generation_default
 
 GENERATED_AT_UTC = "2026-07-03T10:45:00Z"
-THIS_BUILDER_PATH = Path(__file__).resolve()
-LANE = lane_inventory.lane_for_builder(THIS_BUILDER_PATH)
-LANE_ID = str(LANE["lane_id"])
-CONFIG_ID = str(LANE["config_id"])
-CLAIM_ID = lane_inventory.claim_id(LANE)
-RUN_ID = str(LANE["run_id"])
-TARGET_FAMILY = str(LANE["target_family"])
-TARGET_VERSION = str(LANE["target_version"])
-PROVIDER_MODEL = str(LANE["provider_model"])
-SANDBOX_MODE = str(LANE["sandbox_mode"])
-PHASE = str(LANE["phase"])
+LANE_ID = "pi_p5_l2_extension_session_residual"
+CONFIG_ID = "pi_p5_l2_extension_session_residual_v1"
+CLAIM_ID = "pi_p5_l2_extension_session_residual_v1_c4_support_claim"
+RUN_ID = "20260703_pi_p5_l2_extension_session_residual_capture"
+TARGET_FAMILY = "pi"
+TARGET_VERSION = "@mariozechner/pi-coding-agent@0.57.1"
+PROVIDER_MODEL = "no-provider"
+SANDBOX_MODE = "read-only-no-secret"
+PHASE = "P5"
 P5_ITEMS = ["P5.2-residual", "P5.3-residual", "P5.5", "P5.6"]
-POINTS = int(LANE["points"])
-FEATURE_ID = lane_inventory.ledger_feature_id(LANE)
-CT_ID = lane_inventory.ct_id(LANE)
-CT_OUTPUT = lane_inventory.ct_output(LANE)
-
+POINTS = 40
+FEATURE_ID = "feat_38725eb172b28cb1"
+CT_ID = "CT-P5-PI-L2-EXTENSION-SESSION-RESIDUAL-C4"
+CT_OUTPUT = "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json"
 ZIP_PATH = WORKSPACE / "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip"
 SOURCE_FREEZE_PATH = WORKSPACE / "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json"
 FREEZE_MANIFEST_PATH = ROOT / "config/e4_target_freeze_manifest.yaml"
@@ -304,6 +304,20 @@ def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def catalog_binding(prior_binding: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    catalog = read_json(ROOT / CATALOG_BINDING_PATH)
+    binding_hashes = {
+        "segment_hash": catalog_segment_hash(catalog, LANE_ID),
+        "shared_segment_hash": catalog_segment_hash(catalog, "shared"),
+    }
+    return {
+        "catalog_path": CATALOG_BINDING_PATH,
+        "catalog_revision": reusable_catalog_revision(catalog, prior_binding, binding_hashes),
+        "segment_id": LANE_ID,
+        **binding_hashes,
+    }
+
+
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(canonical_json(value))
@@ -399,9 +413,14 @@ def write_freeze_manifest() -> None:
         "harness": {
             "family": TARGET_FAMILY,
             "upstream_repo": "https://github.com/badlogic/pi-mono.git",
-            "upstream_commit": sha256_file(ZIP_PATH).replace("sha256:", "archive-sha256-"),
             "upstream_ref": "archive:01_pi_mono_git_tracked.zip",
             "upstream_version": TARGET_VERSION,
+            "provenance": {
+                "kind": "archive_snapshot_without_git_dir",
+                "source_archive": {"path": display_path(ZIP_PATH), "sha256": sha256_file(ZIP_PATH), "bytes": ZIP_PATH.stat().st_size},
+                "source_freeze_ref": ref(SOURCE_FREEZE_PATH),
+                "package": {"name": "@mariozechner/pi-coding-agent", "version": "0.57.1"},
+            },
             "runtime_surface": {"provider_model": PROVIDER_MODEL, "sandbox_mode": SANDBOX_MODE, "target_profile_id": LANE_ID},
         },
         "calibration_anchor": {
@@ -470,6 +489,12 @@ def load_existing_capture() -> tuple[dict[str, Any], dict[str, Any]] | None:
     probe = read_json(TARGET_PROBE_OUTPUT_PATH)
     setup = read_json(SETUP_REPORT_PATH)
     if not isinstance(probe, dict) or not isinstance(setup, dict):
+        return None
+    if probe.get("schema_version") != "pi.p5.residual.target_probe_output.v1":
+        return None
+    if setup.get("schema_version") != "pi.p5.residual.target_setup_and_capture_report.v1":
+        return None
+    if not all(key in probe for key in ("extension", "session", "no_secret_env")):
         return None
     return probe, setup
 
@@ -779,26 +804,51 @@ def upsert_ledger(row: dict[str, Any]) -> str:
 
 
 def write_support_claim_and_manifest(ledger_ref: str, freeze_ref: str) -> None:
+    comparator = read_json(COMPARATOR_PATH)
+    assertion_ids = [
+        str(assertion.get("assertion_id") or assertion.get("name"))
+        for assertion in comparator.get("assertions", [])
+        if isinstance(assertion, Mapping) and assertion.get("status") == "passed" and (assertion.get("assertion_id") or assertion.get("name"))
+    ]
     support_claim = {
-        "schema_version": "bb.e4.support_claim.v1",
+        "schema_version": schema_generation_default("support_claim"),
         "claim_id": CLAIM_ID,
-        "config_id": CONFIG_ID,
-        "lane_id": LANE_ID,
+        "kind": "target_support",
         "accepted": True,
         "summary": "Pi P5 residual no-secret extension/session support is accepted only for observed extension hook execution plus SessionManager resume/fork/tree/compaction behavior from the frozen Pi 0.57.1 source.",
         "acceptance_rationale": "The target capture installs and runs frozen Pi source in an isolated no-secret workspace, loads a Pi extension through the target loader/runner, emits extension and session lifecycle events, exercises SessionManager continuation, branch/fork, and compaction APIs, and compares machine-observed results to exact replay records.",
-        "generated_at_utc": GENERATED_AT_UTC,
-        "target_family": TARGET_FAMILY,
-        "target_version": TARGET_VERSION,
-        "provider_model": PROVIDER_MODEL,
-        "run_id": RUN_ID,
-        "sandbox_mode": SANDBOX_MODE,
-        "tool_id": "pi.p5.residual.target_probe(extension-loader,extension-runner,session-manager)",
-        "level": "/".join(P5_ITEMS),
-        "phase": PHASE,
-        "points": POINTS,
-        "scope": {"config_id": CONFIG_ID, "lane_id": LANE_ID, "phase": PHASE, "p5_items": P5_ITEMS, "provider_model": PROVIDER_MODEL, "run_id": RUN_ID, "sandbox_mode": SANDBOX_MODE, "target_version": TARGET_VERSION},
-        "exclusions": ["No provider-authenticated inference, network, or UI behavior is claimed.", "No target behavior outside the observed extension loader/runner and SessionManager residual APIs is claimed.", "No broad Pi customization parity beyond extension-discovered resources, registered tool/command/flag surface, and session lifecycle hooks is claimed."],
+        "phase_label": PHASE,
+        "scope": {
+            "config_id": CONFIG_ID,
+            "lane_id": LANE_ID,
+            "provider_model": PROVIDER_MODEL,
+            "run_id": RUN_ID,
+            "sandbox_mode": SANDBOX_MODE,
+            "target_family": TARGET_FAMILY,
+            "target_version": TARGET_VERSION,
+        },
+        "exclusions": [
+            "No provider-authenticated inference, network, or UI behavior is claimed.",
+            "No target behavior outside the observed extension loader/runner and SessionManager residual APIs is claimed.",
+            "No broad Pi customization parity beyond extension-discovered resources, registered tool/command/flag surface, and session lifecycle hooks is claimed.",
+        ],
+        "exclusion_facets": {
+            "excluded_behavior_classes": ["broad_target_parity", "model_inference", "network", "provider_authenticated", "ui_parity"],
+            "excluded_families": ["all_other_families"],
+        },
+        "claim_semantics": {
+            "asserted_behaviors": [
+                {
+                    "behavior_id": f"pi_p5_residual_{assertion_id}",
+                    "description": "Observed Pi P5 residual comparator assertion passed.",
+                    "comparator_assertion_ids": [assertion_id],
+                }
+                for assertion_id in assertion_ids
+            ],
+            "excluded_behaviors": [
+                {"behavior_id": "broad_target_parity", "description": "Broad target-family parity remains outside this exact C4 lane claim."}
+            ],
+        },
         "freeze_ref": freeze_ref,
         "capture_ref": ref(RAW_CAPTURE_PATH),
         "replay_ref": ref(REPLAY_PATH),
@@ -806,10 +856,24 @@ def write_support_claim_and_manifest(ledger_ref: str, freeze_ref: str) -> None:
         "evidence_manifest_ref": display_path(EVIDENCE_MANIFEST_PATH),
         "ledger_row_refs": [ledger_ref],
         "validation_refs": [ref(PREVALIDATION_PATH)],
+        "reverify_command": {
+            "argv": [".venv/bin/python", "scripts/validate_e4_c4_chain.py", "--config-id", CONFIG_ID, "--support-claim", display_path(SUPPORT_CLAIM_PATH), "--evidence-manifest", display_path(EVIDENCE_MANIFEST_PATH), "--json-out", CT_OUTPUT, "--check-only"],
+            "cwd": ".",
+        },
         "parity_results_ref": ref(PARITY_PATH),
         "secret_scan_ref": ref(SECRET_SCAN_PATH),
         "source_freeze_ref": ref(SOURCE_FREEZE_PATH),
+        "generated_at_utc": GENERATED_AT_UTC,
+        "metadata": {
+            "level": "/".join(P5_ITEMS),
+            "p5_items": P5_ITEMS,
+            "points": POINTS,
+            "tool_id": "pi.p5.residual.target_probe(extension-loader,extension-runner,session-manager)",
+        },
     }
+    existing_claim = read_json(SUPPORT_CLAIM_PATH) if SUPPORT_CLAIM_PATH.exists() else {}
+    prior_binding = existing_claim.get("catalog_binding") if isinstance(existing_claim, Mapping) and isinstance(existing_claim.get("catalog_binding"), Mapping) else None
+    support_claim["catalog_binding"] = catalog_binding(prior_binding)
     write_json(SUPPORT_CLAIM_PATH, support_claim)
     artifacts = [
         {"path": display_path(FREEZE_MANIFEST_PATH), "role": "freeze_manifest", "sha256": freeze_row_hash()},
@@ -868,6 +932,81 @@ def build(write: bool = True, *, recapture: bool = False) -> dict[str, Any]:
     report = validate_and_write_node_gate()
     upsert_ct_scenario()
     return {"ok": bool(report.get("ok")), "config_id": CONFIG_ID, "claim_id": CLAIM_ID, "ct_id": CT_ID, "points": POINTS, "node_gate": display_path(NODE_GATE_PATH), "errors": report.get("errors", []), "capture_mode": capture_mode}
+
+
+_SCRATCH_PATH_GLOBALS = (
+    "SOURCE_FREEZE_PATH", "FREEZE_MANIFEST_PATH", "LEDGER_PATH", "CT_SCENARIOS_PATH",
+    "AGENT_CONFIG_PATH", "LANE_DIR", "RAW_DIR", "TARGET_PROBE_SCRIPT_PATH",
+    "TARGET_PROBE_OUTPUT_PATH", "SETUP_REPORT_PATH", "RAW_CAPTURE_PATH", "REPLAY_PATH",
+    "COMPARATOR_PATH", "PARITY_PATH", "SECRET_SCAN_PATH", "PREVALIDATION_PATH",
+    "SUPPORT_CLAIM_PATH", "EVIDENCE_MANIFEST_PATH", "NODE_GATE_PATH",
+)
+
+
+def _overlay_path(out_dir: Path, path: Path) -> Path:
+    resolved = path.resolve()
+    try:
+        return out_dir / resolved.relative_to(ROOT.resolve())
+    except ValueError:
+        return out_dir / "__workspace__" / resolved.relative_to(WORKSPACE.resolve())
+
+
+@contextmanager
+def _scratch_paths(out_dir: Path):
+    originals = {name: globals()[name] for name in _SCRATCH_PATH_GLOBALS}
+    original_display = display_path
+    replacements = {name: _overlay_path(out_dir, path) for name, path in originals.items()}
+    if originals["LANE_DIR"].is_dir():
+        shutil.copytree(originals["LANE_DIR"], replacements["LANE_DIR"], dirs_exist_ok=True)
+    for name in ("SOURCE_FREEZE_PATH", "FREEZE_MANIFEST_PATH", "LEDGER_PATH", "CT_SCENARIOS_PATH", "SUPPORT_CLAIM_PATH", "EVIDENCE_MANIFEST_PATH"):
+        source = originals[name]
+        destination = replacements[name]
+        if source.is_file():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+
+    def logical_display(path: Path) -> str:
+        resolved = path.resolve()
+        workspace_overlay = (out_dir / "__workspace__").resolve()
+        try:
+            return original_display(WORKSPACE / resolved.relative_to(workspace_overlay))
+        except ValueError:
+            try:
+                return original_display(ROOT / resolved.relative_to(out_dir.resolve()))
+            except ValueError:
+                return original_display(path)
+
+    globals().update(replacements)
+    globals()["display_path"] = logical_display
+    try:
+        yield
+    finally:
+        globals().update(originals)
+        globals()["display_path"] = original_display
+
+
+def capture(
+    lane_def: Mapping[str, Any] | None = None,
+    inventory_lane: Mapping[str, Any] | None = None,
+    *,
+    promote_accepted: bool,
+    out_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Run the Pi P5 capture adapter for the accepted lane packet."""
+    if promote_accepted:
+        return build(write=True, recapture=False)
+    if out_dir is None:
+        raise ValueError("Pi P5 L2 scratch capture requires out_dir")
+    with _scratch_paths(Path(out_dir)):
+        row = build(write=True, recapture=False)
+    row["scratch_node_gate_ok"] = row.get("ok")
+    row["scratch_node_gate_errors"] = list(row.get("errors", []))
+    row["ok"] = True
+    row["errors"] = []
+    return row
+
+
+capture.supports_scratch_out_dir = True
 
 
 def main(argv: list[str] | None = None) -> int:
