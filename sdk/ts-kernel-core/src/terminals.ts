@@ -3,6 +3,7 @@ import {
   type EffectiveToolSurfaceV1,
   type EnvironmentSelectorV1,
   type KernelEventV1,
+  type KernelEventV2,
   type TerminalCleanupResultV1,
   type TerminalInteractionV1,
   type TerminalOutputDeltaV1,
@@ -34,38 +35,39 @@ interface KernelTerminalEventContext {
 
 function buildTerminalKernelEvent(
   context: KernelTerminalEventContext,
-  kind: KernelEventV1["kind"],
-  payload: unknown,
-): KernelEventV1 {
+  kind: KernelEventV2["kind"],
+  payload: Record<string, unknown>,
+): KernelEventV2 {
   return {
-    schemaVersion: "bb.kernel_event.v1",
-    eventId: context.eventId,
-    runId: context.runId,
-    sessionId: context.sessionId,
+    schema_version: "bb.kernel_event.v2",
+    event_id: context.eventId,
+    run_id: context.runId,
+    session_id: context.sessionId,
     seq: context.seq,
-    ts: context.ts,
-    actor: "tool",
-    visibility: "host",
+    occurred_at_utc: context.ts,
+    actor: { actor_kind: "service", actor_id: "breadboard.ts-kernel-core.terminal" },
+    visibility: { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" },
     kind,
     payload,
-    taskId: context.taskId,
-    callId: context.callId,
-    causedBy: context.causedBy,
+    payload_schema_version: null,
+    ...(context.taskId === undefined ? {} : { task_id: context.taskId }),
+    ...(context.callId === undefined ? {} : { call_id: context.callId }),
+    ...(context.causedBy === undefined ? {} : { caused_by: context.causedBy }),
   }
 }
 
 export function buildTerminalSessionBeginEvent(
   context: KernelTerminalEventContext,
   descriptor: TerminalSessionDescriptorV1,
-): KernelEventV1 {
-  return buildTerminalKernelEvent(context, "terminal_session_begin", descriptor)
+): KernelEventV2 {
+  return buildTerminalKernelEvent(context, "terminal_session_begin", { ...descriptor })
 }
 
 export function buildTerminalInteractionEvent(
   context: KernelTerminalEventContext,
   interaction: TerminalInteractionV1,
-): KernelEventV1 {
-  return buildTerminalKernelEvent(context, "terminal_interaction", interaction)
+): KernelEventV2 {
+  return buildTerminalKernelEvent(context, "terminal_interaction", { ...interaction })
 }
 
 export function buildTerminalOutputDeltaEvents(
@@ -74,7 +76,7 @@ export function buildTerminalOutputDeltaEvents(
     eventIdForSeq: (seq: number, delta: TerminalOutputDeltaV1) => string
   },
   deltas: readonly TerminalOutputDeltaV1[],
-): KernelEventV1[] {
+): KernelEventV2[] {
   return deltas.map((delta, index) =>
     buildTerminalKernelEvent(
       {
@@ -83,7 +85,7 @@ export function buildTerminalOutputDeltaEvents(
         eventId: context.eventIdForSeq(context.startingSeq + index, delta),
       },
       "terminal_output_delta",
-      delta,
+      { ...delta },
     ),
   )
 }
@@ -91,11 +93,13 @@ export function buildTerminalOutputDeltaEvents(
 export function buildTerminalSessionEndEvent(
   context: KernelTerminalEventContext,
   end: TerminalSessionEndV1,
-): KernelEventV1 {
-  return buildTerminalKernelEvent(context, "terminal_session_end", end)
+): KernelEventV2 {
+  return buildTerminalKernelEvent(context, "terminal_session_end", { ...end })
 }
 
-export function reduceTerminalRegistry(events: readonly KernelEventV1[]): TerminalRegistrySnapshotV1 {
+export function reduceTerminalRegistry(
+  events: readonly (KernelEventV1 | KernelEventV2)[],
+): TerminalRegistrySnapshotV1 {
   const active = new Map<string, TerminalSessionSnapshot>()
   const ended: string[] = []
 
