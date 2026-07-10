@@ -17,6 +17,7 @@ URL_SCHEMA_ID = (
     "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v1.schema.json"
 )
 TEST_BASELINE_SHA = "1" * 40
+EVOLUTION_REF = "plan §3 H2/H3 + AM17a/AM17b-r"
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,25 @@ def freeze_repository(
             },
         },
     )
+    master_plan_path = (
+        tmp_path / "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md"
+    )
+    master_plan_path.write_text(
+        "# Mini master plan\n\n"
+        "## §3 Delivery packets\n\n"
+        "[H2 | Normalize and compare]\n"
+        "[H3 | Replay lanes]\n",
+        encoding="utf-8",
+    )
+    spec_amendments_path = (
+        tmp_path / "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md"
+    )
+    spec_amendments_path.write_text(
+        "# Mini amendments\n\n"
+        "## Amendment AM17a — Freeze governance\n\n"
+        "Freeze governance revision AM17b-r.\n",
+        encoding="utf-8",
+    )
 
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
@@ -94,6 +114,12 @@ def freeze_repository(
     monkeypatch.setattr(check_phase20_freeze, "ROOT", tmp_path)
     monkeypatch.setattr(check_phase20_freeze, "BASELINE_PATH", baseline_path)
     monkeypatch.setattr(check_phase20_freeze, "BASELINE_SHA", TEST_BASELINE_SHA)
+    monkeypatch.setattr(
+        check_phase20_freeze, "MASTER_PLAN_PATH", master_plan_path
+    )
+    monkeypatch.setattr(
+        check_phase20_freeze, "SPEC_AMENDMENTS_PATH", spec_amendments_path
+    )
     monkeypatch.setattr(check_phase20_freeze, "SCHEMA_ROOTS", (schema_root,))
     monkeypatch.setattr(
         check_phase20_freeze,
@@ -209,7 +235,7 @@ def test_plan_mandated_evolution_with_exact_hash_authorizes_drift(
                 "packet": "AM17a",
                 "sha256": post_change_sha,
                 "class": "plan_mandated_evolution",
-                "ref": "docs/plans/phase_20_right_shape/PLAN.md#am17a",
+                "ref": EVOLUTION_REF,
             }
         },
     )
@@ -219,6 +245,44 @@ def test_plan_mandated_evolution_with_exact_hash_authorizes_drift(
     captured = capsys.readouterr()
     assert captured.err == ""
     assert captured.out == f"phase20-freeze: PASS (baseline {TEST_BASELINE_SHA})\n"
+
+
+@pytest.mark.parametrize(
+    ("evolution_ref", "bad_segment"),
+    [
+        pytest.param("x", "x", id="unrecognized-segment"),
+        pytest.param("plan §3 H99", "plan §3 H99", id="unknown-plan-item"),
+        pytest.param("AM99", "AM99", id="unknown-amendment"),
+        pytest.param("AM17a + ", "", id="empty-segment"),
+    ],
+)
+def test_plan_mandated_evolution_with_invalid_ref_is_a_configuration_error(
+    freeze_repository: FreezeRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    evolution_ref: str,
+    bad_segment: str,
+) -> None:
+    post_change_sha = freeze_repository.replace_schema(SHORT_SCHEMA_ID)
+    monkeypatch.setattr(
+        check_phase20_freeze,
+        "TIGHTENING_ALLOWLIST",
+        {
+            SHORT_SCHEMA_ID: {
+                "packet": "AM17a",
+                "sha256": post_change_sha,
+                "class": "plan_mandated_evolution",
+                "ref": evolution_ref,
+            }
+        },
+    )
+
+    assert check_phase20_freeze.main() == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "phase20-freeze: allowlist config error:" in captured.err
+    assert f"invalid evolution ref segment {bad_segment!r}" in captured.err
 
 
 def test_plan_mandated_evolution_without_ref_is_a_configuration_error(

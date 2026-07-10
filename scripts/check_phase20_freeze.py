@@ -22,6 +22,8 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_PATH = ROOT / "docs/plans/phase_20_right_shape/PHASE20_FREEZE_BASELINE.json"
+MASTER_PLAN_PATH = ROOT / "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md"
+SPEC_AMENDMENTS_PATH = ROOT / "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md"
 BASELINE_SHA = "3b8d862f62ee9c2c421fe07758606b6973902c67"
 SCHEMA_ROOTS = (
     ROOT / "contracts/kernel/schemas",
@@ -256,7 +258,76 @@ def _string_map(payload: Any, label: str) -> dict[str, str]:
     return dict(payload)
 
 
-def _validated_tightening_allowlist() -> dict[str, str]:
+def _tracked_reference_text(path: Path, tracked_files: set[Path]) -> str:
+    if path not in tracked_files:
+        raise AllowlistConfigError(f"allowlist reference file is not tracked: {_relative(path)}")
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise AllowlistConfigError(
+            f"cannot read allowlist reference file {_relative(path)}: {exc}"
+        ) from exc
+
+
+def _amendment_exists(amendment_id: str, amendments_text: str) -> bool:
+    number_match = re.fullmatch(r"AM(\d+)", amendment_id)
+    numbered_heading = (
+        re.compile(rf"^## Amendment {number_match.group(1)}\b")
+        if number_match is not None
+        else None
+    )
+    literal = re.compile(rf"(?<![A-Za-z0-9]){re.escape(amendment_id)}(?![A-Za-z0-9-])")
+    for line in amendments_text.splitlines():
+        if numbered_heading is not None and numbered_heading.search(line):
+            return True
+        if (
+            ("Amendment" in line or "revision" in line.lower())
+            and literal.search(line)
+        ):
+            return True
+    return False
+
+
+def _validate_evolution_ref(ref: str, tracked_files: set[Path]) -> None:
+    plan_text: str | None = None
+    amendments_text: str | None = None
+    item_pattern = r"[A-L]\d+[a-z]?"
+    amendment_pattern = r"AM\d+[a-z]?(?:-r)?"
+    for segment in ref.split(" + "):
+        plan_match = re.fullmatch(
+            rf"plan §\d+ ({item_pattern}(?:/{item_pattern})*)", segment
+        )
+        amendment_match = re.fullmatch(
+            rf"{amendment_pattern}(?:/{amendment_pattern})*", segment
+        )
+        if plan_match is not None:
+            if plan_text is None:
+                plan_text = _tracked_reference_text(MASTER_PLAN_PATH, tracked_files)
+            item_ids = plan_match.group(1).split("/")
+            if any(f"[{item_id} |" not in plan_text for item_id in item_ids):
+                raise AllowlistConfigError(
+                    f"invalid evolution ref segment {segment!r}: unknown plan item"
+                )
+            continue
+        if amendment_match is not None:
+            if amendments_text is None:
+                amendments_text = _tracked_reference_text(
+                    SPEC_AMENDMENTS_PATH, tracked_files
+                )
+            amendment_ids = segment.split("/")
+            if any(
+                not _amendment_exists(amendment_id, amendments_text)
+                for amendment_id in amendment_ids
+            ):
+                raise AllowlistConfigError(
+                    f"invalid evolution ref segment {segment!r}: unknown amendment"
+                )
+            continue
+        raise AllowlistConfigError(f"invalid evolution ref segment {segment!r}")
+
+
+
+def _validated_tightening_allowlist(tracked_files: set[Path]) -> dict[str, str]:
     hashes: dict[str, str] = {}
     required_fields = {"packet", "sha256"}
     allowed_fields = required_fields | {"class", "ref"}
@@ -300,11 +371,18 @@ def _validated_tightening_allowlist() -> dict[str, str]:
             raise AllowlistConfigError(
                 f"{schema_id}: ref is required for plan_mandated_evolution"
             )
+        if entry_class == "plan_mandated_evolution":
+            assert isinstance(ref, str)
+            _validate_evolution_ref(ref, tracked_files)
         hashes[schema_id] = content_hash
     return hashes
 
 
-def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str, list[str]]:
+def _added_values(
+    baseline: dict[str, Any],
+    current: dict[str, Any],
+    tracked_files: set[Path],
+) -> dict[str, list[str]]:
     baseline_schema_ids = _string_set(baseline.get("schema_ids"), "schema_ids")
     current_schema_ids = _string_set(current.get("schema_ids"), "schema_ids")
     schema_additions = current_schema_ids - baseline_schema_ids - ALLOWED_SCHEMA_IDS
@@ -314,7 +392,7 @@ def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str
     current_hashes = _string_map(
         current.get("schema_content_sha256"), "schema_content_sha256"
     )
-    tightening_hashes = _validated_tightening_allowlist()
+    tightening_hashes = _validated_tightening_allowlist(tracked_files)
     schema_content_drift: set[str] = set()
     for schema_id, baseline_hash in baseline_hashes.items():
         current_hash = current_hashes.get(schema_id)
@@ -424,7 +502,9 @@ def main() -> int:
                 "contract tier registry invalid: "
                 + "; ".join(contract_tier_errors)
             )
-        additions = _added_values(baseline, build_inventory(tracked_files))
+        additions = _added_values(
+            baseline, build_inventory(tracked_files), tracked_files
+        )
     except AllowlistConfigError as exc:
         print(f"phase20-freeze: allowlist config error: {exc}", file=sys.stderr)
         return 2
