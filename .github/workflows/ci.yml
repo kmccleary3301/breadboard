@@ -5,6 +5,48 @@ on:
   pull_request:
 
 jobs:
+  product-spine:
+    name: product-spine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Bootstrap product-spine environment
+        run: |
+          python -m pip install -U pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Verify E4 API surface
+        run: pytest -q tests/test_e4_api_surface.py
+
+      - name: Verify compilation
+        run: pytest -q tests/compilation
+
+      - name: Verify E4 validation and regeneration front door
+        run: pytest -q tests/e4_parity/test_validate_lane.py tests/e4_parity/test_config_explanation.py tests/e4_parity/test_regen_front_door.py
+
+      - name: Verify exported CLI bridge contracts are current
+        run: |
+          python scripts/release/export_cli_bridge_contracts.py
+          git diff --exit-code docs/contracts/cli_bridge
+
+      - name: Verify CLI bridge contract exports
+        run: pytest -q tests/test_cli_bridge_contract_exports.py
+
+      - name: Enforce Phase 20 freeze
+        run: python scripts/check_phase20_freeze.py
+
   compat_break_guard:
     name: Compat break guard
     if: ${{ github.event_name == 'pull_request' }}
