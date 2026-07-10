@@ -156,9 +156,22 @@ def _validate_v2_adapter_references(lane_def: Mapping[str, Any], *, source: Path
             raise LaneDefValidationError(f"{prefix}{field}: {exc}") from exc
 
 
+def _validate_replay_mode(lane_def: Mapping[str, Any], *, source: Path | None = None) -> None:
+    replay = lane_def.get("replay")
+    if not isinstance(replay, Mapping) or "mode" not in replay:
+        return
+    if replay.get("mode") != "stored":
+        prefix = f"{source}: " if source is not None else ""
+        raise LaneDefValidationError(
+            f"{prefix}/replay/mode: executed replay is deferred; "
+            "no executable replay provider exists in Phase 20"
+        )
+
+
 def validate_lane_def(payload: Mapping[str, Any], *, source: Path | None = None) -> dict[str, Any]:
     schema_version = _schema_version(payload, source=source)
     lane_def = dict(payload)
+    _validate_replay_mode(lane_def, source=source)
     errors = sorted((_format_error(error) for error in _validator(schema_version).iter_errors(lane_def)))
     if errors:
         prefix = f"{source}: " if source is not None else ""

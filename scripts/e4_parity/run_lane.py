@@ -14,12 +14,14 @@ try:
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
+    from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
+    from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -114,6 +116,14 @@ def _resolve_repo_path(path_text: str) -> Path:
         )
         return workspace / path
     return ROOT / path
+
+
+def _digest_input(path: Path) -> str:
+    if path.is_file():
+        return sha256_file(path)
+    if path.is_dir():
+        return digest_directory(path).digest
+    raise FileNotFoundError(path)
 
 
 def _retarget_json_out(argv: Sequence[str], out_dir: Path | None) -> tuple[list[str], Path, Path]:
@@ -246,11 +256,13 @@ def _run_normalize(lane_def: Mapping[str, Any], out_dir: Path | None) -> dict[st
         input_hashes: list[dict[str, str]] = []
         for logical_path in inputs:
             input_path = _resolve_repo_path(logical_path)
-            if not input_path.is_file():
+            try:
+                digest = _digest_input(input_path)
+            except (OSError, ValueError) as exc:
                 raise LaneRunError(
-                    f"normalize input {logical_path!r} must be a regular file"
-                )
-            input_hashes.append({"path": logical_path, "sha256": sha256_file(input_path)})
+                    f"normalize input {logical_path!r} is not digestible: {exc}"
+                ) from exc
+            input_hashes.append({"path": logical_path, "sha256": digest})
         config = normalize.get("config")
         if config is not None and not isinstance(config, Mapping):
             raise LaneRunError("normalize.config must be a mapping or null")
@@ -320,6 +332,7 @@ def _declared_non_execution(
     stage_name: str,
     lane_def: Mapping[str, Any],
     registry_path: Path,
+    out_dir: Path | None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {"stage": stage_name, "lane_id": lane_def["lane_id"], "returncode": 0}
     kind = lane_def.get("kind")
@@ -380,8 +393,12 @@ def _declared_non_execution(
     elif stage_name == "replay" and isinstance(declaration, Mapping):
         if declaration.get("mode") == "stored":
             manifest_rule = "/replay/mode"
-            session = declaration.get("session")
-            reused_paths = [session] if isinstance(session, str) and session else []
+            artifacts = declaration.get("artifacts")
+            reused_paths = (
+                [path for path in artifacts if isinstance(path, str)]
+                if isinstance(artifacts, list)
+                else []
+            )
         result["comparator_class"] = declaration.get("comparator_class")
     elif stage_name == "normalize" and isinstance(declaration, Mapping):
         result["translator"] = declaration.get("translator")
@@ -392,14 +409,16 @@ def _declared_non_execution(
 
     if manifest_rule is not None:
         reused_inputs: list[dict[str, str]] = []
-        missing_paths: list[str] = []
+        digest_errors: list[str] = []
         for logical_path in reused_paths:
             artifact_path = _resolve_repo_path(logical_path)
-            if artifact_path.is_file():
-                reused_inputs.append({"path": logical_path, "sha256": sha256_file(artifact_path)})
-            else:
-                missing_paths.append(logical_path)
-        if reused_inputs and not missing_paths:
+            try:
+                digest = _digest_input(artifact_path)
+            except (OSError, ValueError) as exc:
+                digest_errors.append(f"{logical_path}: {exc}")
+                continue
+            reused_inputs.append({"path": logical_path, "sha256": digest})
+        if reused_inputs and not digest_errors:
             result.update(
                 outcome="reused_stored_result",
                 manifest_rule=manifest_rule,
@@ -411,17 +430,38 @@ def _declared_non_execution(
             return result
         detail = (
             f"{stage_name} declared stored reuse without reusable artifact provenance"
-            if not missing_paths
-            else f"{stage_name} declared stored reuse but artifacts are missing: {', '.join(missing_paths)}"
+            if not digest_errors
+            else f"{stage_name} declared stored reuse but artifacts are not digestible: "
+            + "; ".join(digest_errors)
         )
     else:
         detail = f"{stage_name} did not execute and has no author declaration allowing non-execution"
+    failure_report_ref: str | None = None
+    if manifest_rule is not None:
+        report_root = out_dir if out_dir is not None else ROOT / "tmp" / "e4_lane_runs"
+        report_path = report_root / str(lane_def["lane_id"]) / f"{stage_name}_failure_report.json"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(
+                {
+                    "ok": False,
+                    "lane_id": lane_def["lane_id"],
+                    "stage": stage_name,
+                    "detail": detail,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        failure_report_ref = _display_path(report_path)
     result.update(
         returncode=1,
         outcome="executed_fail",
         manifest_rule=None,
         reused_inputs=None,
-        report_ref=None,
+        report_ref=failure_report_ref,
         lock_sha256=None,
         detail=detail,
     )
@@ -755,7 +795,7 @@ def run_lane(
             continue
         if argv is None:
             metadata_result = _finalize_stage_result(
-                _declared_non_execution(stage_name, lane_def, comparator_registry_path),
+                _declared_non_execution(stage_name, lane_def, comparator_registry_path, out_dir),
                 lane_def,
                 executed=False,
             )
@@ -768,7 +808,7 @@ def run_lane(
         except LaneRunError:
             if stage_name == "capture":
                 metadata_result = _finalize_stage_result(
-                    _declared_non_execution(stage_name, lane_def, comparator_registry_path),
+                    _declared_non_execution(stage_name, lane_def, comparator_registry_path, out_dir),
                     lane_def,
                     executed=False,
                 )

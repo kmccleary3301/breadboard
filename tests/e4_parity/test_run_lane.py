@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.e4_parity import run_lane
+from scripts.e4_parity.tree_digest import digest_directory
 
 
 def _write_lane_def(
@@ -30,7 +31,12 @@ def _write_lane_def(
         "points": 1,
         "capture": {"strategy": "legacy_builder", "argv": None, "inputs": ["fixture"]},
         "normalize": {"mode": "identity", "translator": "identity", "config": {}},
-        "replay": {"session": None, "comparator_class": "byte"},
+        "replay": {
+            "mode": "stored",
+            "artifacts": ["fixture"],
+            "session": None,
+            "comparator_class": "byte",
+        },
         "compare": {"comparator": "byte", "config": {}},
         "claim": {"scope": {"behaviors": ["claim"], "surfaces": ["artifact"]}, "exclusions": []},
         "artifacts_root": "artifacts/conformance/node_gate",
@@ -122,6 +128,143 @@ def _report_path(repo_root: Path, report_ref: object) -> Path:
     assert isinstance(report_ref, str) and report_ref
     path = Path(report_ref)
     return path if path.is_absolute() else repo_root / path
+
+
+def test_stored_replay_hashes_every_declared_artifact_in_manifest_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts = [
+        ("replay/session.json", b'{"session":"stored"}\n'),
+        ("replay/transcript.jsonl", b'{"event":"first"}\n{"event":"second"}\n'),
+    ]
+    for logical_path, content in artifacts:
+        path = tmp_path / logical_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    lane_def = _normalized_h2_lane([])
+    lane_def["replay"]["artifacts"] = [logical_path for logical_path, _ in artifacts]
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="replay",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert result["ok"] is True
+    stage = result["stages"][0]
+    assert stage["outcome"] == "reused_stored_result"
+    assert stage["manifest_rule"] == "/replay/mode"
+    assert stage["reused_inputs"] == [
+        {
+            "path": logical_path,
+            "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+        }
+        for logical_path, content in artifacts
+    ]
+    assert stage["honesty_errors"] == []
+
+
+def test_stored_replay_fails_when_a_declared_artifact_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    missing_ref = "replay/missing-result.json"
+    lane_def = _normalized_h2_lane([])
+    lane_def["replay"]["artifacts"] = [missing_ref]
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="replay",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert result["ok"] is False
+    assert missing_ref in result["stages"][0]["detail"]
+
+
+def test_stored_replay_directory_uses_shared_canonical_tree_digest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logical_path = "replay/session-tree"
+    directory = tmp_path / logical_path
+    (directory / "nested").mkdir(parents=True)
+    (directory / "manifest.json").write_bytes(b'{"session":"stored"}\n')
+    (directory / "nested" / "events.jsonl").write_bytes(b'{"event":1}\n')
+    expected_digest = digest_directory(directory).digest
+    calls: list[Path] = []
+
+    def recording_digest_directory(path: Path):
+        calls.append(Path(path))
+        return digest_directory(path)
+
+    lane_def = _normalized_h2_lane([])
+    lane_def["replay"]["artifacts"] = [logical_path]
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+    monkeypatch.setattr(run_lane, "digest_directory", recording_digest_directory)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="replay",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert calls == [directory]
+    assert result["ok"] is True
+    stage = result["stages"][0]
+    assert stage["reused_inputs"] == [{"path": logical_path, "sha256": expected_digest}]
+    assert stage["honesty_errors"] == []
+
+
+def test_unsafe_stored_replay_tree_emits_honest_failure_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logical_path = "replay/unsafe-session-tree"
+    directory = tmp_path / logical_path
+    directory.mkdir(parents=True)
+    target = directory / "target.json"
+    target.write_bytes(b'{"stored":true}\n')
+    try:
+        (directory / "linked.json").symlink_to(target.name)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+    lane_def = _normalized_h2_lane([])
+    lane_def["replay"]["artifacts"] = [logical_path]
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="replay",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_fail"
+    assert stage["honesty_errors"] == []
+    report_path = _report_path(tmp_path, stage["report_ref"])
+    assert report_path.is_file()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["ok"] is False
+    rendered_report = json.dumps(report, sort_keys=True)
+    assert logical_path in rendered_report
+    assert "symlink" in rendered_report.lower()
 
 
 def test_identity_normalize_resolves_and_invokes_registered_translator(
@@ -431,6 +574,9 @@ def test_all_stages_execute_normalize_then_fail_closed_on_undeclared_replay(
     lane_payload["capture"]["strategy"] = "probe_argv"
     lane_payload["capture"]["argv"] = ["python", "capture.py", "--json-out=artifacts/capture.json"]
     (lane_def_dir / f"{lane_id}.yaml").write_text(json.dumps(lane_payload), encoding="utf-8")
+    lane_payload["replay"].pop("mode")
+    lane_payload["replay"].pop("artifacts")
+    monkeypatch.setattr(run_lane, "load_lane_defs", lambda _directory: {lane_id: lane_payload})
     _write_inventory(inventory_path, [{"lane_id": lane_id, "config_id": config_id}])
     monkeypatch.setattr(run_lane, "ROOT", tmp_path)
     calls = _patch_successful_subprocess(monkeypatch)

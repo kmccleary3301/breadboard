@@ -50,14 +50,14 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "sha256": "fbb7d1492c4f98ac8b38b2923d971b3faa51c921f70cee012d3903fcc29491ad",
     },
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v1.schema.json": {
-        "packet": "H2",
-        "sha256": "7dc69a05f574b291c73b44a18a502b0c1b1957119bbb734e6ae346a0060a66c1",
+        "packet": "H3",
+        "sha256": "bde8357bb29a8e25120385d6e7196607c3fb67745815b83aa3185d9f4d429dc6",
         "class": "plan_mandated_evolution",
         "ref": "plan §3 H2/H3 + AM17a/AM17b-r",
     },
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json": {
-        "packet": "H2",
-        "sha256": "8625f6902e1a511428abc9bfea0129254a409ebfdf7c6f709b8dedf9bfcc9d2f",
+        "packet": "H3",
+        "sha256": "0da3ccca218daaba4ff0f3964f7070ae146815a912ea2379cbfae88a5b5475aa",
         "class": "plan_mandated_evolution",
         "ref": "plan §3 H2/H3 + AM17a/AM17b-r",
     },

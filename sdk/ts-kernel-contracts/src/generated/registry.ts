@@ -6486,10 +6486,23 @@ export const GENERATED_SCHEMA_OBJECTS = {
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "mode",
+          "artifacts",
           "session",
           "comparator_class"
         ],
         "properties": {
+          "mode": {
+            "const": "stored"
+          },
+          "artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "session": {
             "type": [
               "string",
@@ -6791,10 +6804,23 @@ export const GENERATED_SCHEMA_OBJECTS = {
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "mode",
+          "artifacts",
           "session",
           "comparator_class"
         ],
         "properties": {
+          "mode": {
+            "const": "stored"
+          },
+          "artifacts": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
           "session": {
             "type": [
               "string",

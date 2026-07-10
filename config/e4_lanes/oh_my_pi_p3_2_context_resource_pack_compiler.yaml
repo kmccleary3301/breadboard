@@ -85,6 +85,10 @@
     }
   },
   "replay": {
+    "mode": "stored",
+    "artifacts": [
+      "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json"
+    ],
     "session": null,
     "comparator_class": "semantic"
   },
