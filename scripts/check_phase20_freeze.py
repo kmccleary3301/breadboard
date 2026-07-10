@@ -42,7 +42,12 @@ ALLOWED_SCHEMA_IDS = {
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
 # when the same commit pins the expected post-change content hash and owning packet.
-TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {}
+TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
+    "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json": {
+        "packet": "I2",
+        "sha256": "fbb7d1492c4f98ac8b38b2923d971b3faa51c921f70cee012d3903fcc29491ad",
+    },
+}
 
 # Phase 20 packet F4. These generated sources are known before the freeze begins.
 ALLOWED_LANE_SOURCE_PATHS = {
