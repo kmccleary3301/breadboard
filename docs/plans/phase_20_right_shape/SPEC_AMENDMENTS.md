@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **10 amendments** (below).
+Current state: **11 amendments** (below).
 
 ---
 
@@ -153,3 +153,16 @@ AM9's definition is completed as follows; the F4 helper implements EXACTLY this:
 **AM10 clarification (same date):** the no-regression comparison is over normalized failing-test IDENTITIES AND OUTCOMES, never counts: nodeid (absolute paths stripped) + outcome class (failed vs error/collection-error) + normalized exception type/message-head. The base tree is PINNED by SHA = the packet branch's merge-base with integration at verification time, recorded in the verifier report alongside both full failure sets. HEAD's set must equal or be a strict subset of base's; any new identity, changed outcome class, or changed exception identity = fail. Packet-specific and new suites remain fully green — the subset rule applies ONLY to the pre-existing `tests/compilation` baseline.
 
 **AM10 part 2 REVISED (same date; supersedes the governance paragraph above):** normalizing the policy prose down to current script behavior was the wrong fix — it silently weakened a written enforcement contract (exactly the words!=behavior failure mode this campaign targets). FREEZE_POLICY.md's original promise is RESTORED verbatim. The missing mechanism is reclassified **product_defect against the B-packet policy contract** and the promised mechanism WILL be implemented in the freeze gate: the baseline records per-schema content hashes; any content drift of an existing schema is red UNLESS `TIGHTENING_ALLOWLIST` in scripts/check_phase20_freeze.py carries `{schema_id: packet_id}` for it; negative tests cover unallowlisted drift (red), allowlisted drift (green), and addition detection unchanged. Owner: WsBFreeze (B2 follow-up commit), verified before merge; packet-evidence naming + red-gate tests from the superseded paragraph REMAIN as additional obligations on tightening packets. AM10 part 1 (I2 gate) is unchanged.
+
+---
+
+## Amendment 11 - 2026-07-10 - P6.6 source-freeze input pinned as tracked archive (spec_gap)
+
+The pilot's declared source-freeze directory `docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest` contains symlinks (`node_modules/.bin/*`), so the AM9/AM9a tree digest fails closed — correctly. The frozen directory is a historical artifact and MUST NOT be mutated. Resolution for the pilot manifest:
+
+- The manifest declares the existing tracked regular file `docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip` as the source-freeze input; the lock pins its ordinary file sha256/bytes.
+- The normalizer maps THAT EXACT archive ref to the legacy directory path string in the runtime lane dict only (documented, deterministic, pilot-exact, covered by a test) — the runtime adapter behavior is unchanged.
+- **Recorded limitation:** equivalence between the pinned zip (git-tracked subset of the freeze) and the legacy directory (which additionally contains untracked node_modules content) is NOT machine-verified; the lock's provenance claim covers the archive only. Post-normalization deep-equality parity still holds because the legacy dict receives the mapped directory string.
+- All other directory inputs (e.g. raw/, joined_sessions/, detached_sessions/) remain under AM9/AM9a tree digests; if any of them also fails closed, that is a NEW stop-and-report, not a silent extension of this exception.
+
+**Classification:** spec_gap. **Owner:** F4. **Recorded-by:** orchestrator.

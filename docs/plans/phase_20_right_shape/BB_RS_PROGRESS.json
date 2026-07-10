@@ -6,7 +6,7 @@
  "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:02:52Z",
+ "updated_at_utc": "2026-07-10T22:12:16Z",
  "items": [
   {
    "id": "A1",
@@ -1456,6 +1456,14 @@
    "classification": "gate_wrong",
    "what": "I2 gate -> guarding suites + schema-first suite + compilation no-regression (identity+outcome set, pinned base); part 2 REVISED: policy promise restored, tightening allowlist mechanism to be implemented in freeze gate (product_defect, owner WsBFreeze)",
    "owner": "I2 (gate); WsBFreeze (allowlist mechanism)",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM11",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "pilot source-freeze input = tracked zip (file digest); normalizer maps archive ref to legacy dir string; zip/dir equivalence recorded as unverified limitation; other dirs stay on tree digest",
+   "owner": "F4",
    "recorded_by": "orchestrator"
   }
  ],
