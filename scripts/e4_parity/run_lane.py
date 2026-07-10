@@ -14,12 +14,14 @@ try:
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
+    from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
+    from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -75,19 +77,31 @@ def _command_argv(command: Any) -> list[str] | None:
     return None
 
 
+def _claim_without_comparator_rerun(argv: list[str]) -> list[str]:
+    if any(Path(item).name == "validate_e4_c4_chain.py" for item in argv):
+        result = [
+            item
+            for item in argv
+            if item not in {"--rerun-comparators", "--no-rerun-comparators"}
+        ]
+        result.append("--no-rerun-comparators")
+        return result
+    return argv
+
+
 def _claim_argv(lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None) -> list[str] | None:
     argv = _command_argv(lane_def.get("reverify_command"))
     if argv is not None:
-        return argv
+        return _claim_without_comparator_rerun(argv)
     if inventory_lane is not None:
         argv = _command_argv(inventory_lane.get("reverify_command"))
         if argv is not None:
-            return argv
+            return _claim_without_comparator_rerun(argv)
         ct = inventory_lane.get("ct")
         if isinstance(ct, Mapping):
             argv = _command_argv(ct.get("command"))
             if argv is not None:
-                return argv
+                return _claim_without_comparator_rerun(argv)
     return None
 
 
@@ -105,7 +119,23 @@ def _json_out_location(argv: Sequence[str]) -> tuple[int, str, bool]:
 
 def _resolve_repo_path(path_text: str) -> Path:
     path = Path(path_text)
-    return path if path.is_absolute() else ROOT / path
+    if path.is_absolute():
+        return path
+    if path.parts and path.parts[0] in {"docs_tmp", ROOT.name}:
+        workspace = next(
+            (parent for parent in ROOT.parents if (parent / "docs_tmp").is_dir()),
+            ROOT.parent,
+        )
+        return workspace / path
+    return ROOT / path
+
+
+def _digest_input(path: Path) -> str:
+    if path.is_file():
+        return sha256_file(path)
+    if path.is_dir():
+        return digest_directory(path).digest
+    raise FileNotFoundError(path)
 
 
 def _retarget_json_out(argv: Sequence[str], out_dir: Path | None) -> tuple[list[str], Path, Path]:
@@ -153,6 +183,115 @@ def _comparator_entry(lane_def: Mapping[str, Any], registry_path: Path) -> Mappi
         )
     return matches[0]
 
+
+def _comparator_artifacts(
+    lane_def: Mapping[str, Any],
+    entry: Mapping[str, Any],
+) -> dict[str, Path]:
+    artifacts_root = lane_def.get("artifacts_root")
+    if not isinstance(artifacts_root, str) or not artifacts_root:
+        raise LaneRunError(f"lane {lane_def['lane_id']!r} requires artifacts_root")
+    names = {
+        "capture_ref": "raw_capture_manifest.json",
+        "replay_ref": "bb_replay_result.json",
+        "comparator_ref": "comparator_report.json",
+    }
+    input_roles = entry.get("input_roles")
+    if not isinstance(input_roles, list) or not all(isinstance(role, str) for role in input_roles):
+        raise LaneRunError("comparator registry input_roles must be a list of strings")
+    unknown = [role for role in input_roles if role not in names]
+    if unknown:
+        raise LaneRunError("unsupported comparator input_role(s): " + ", ".join(unknown))
+    root = _resolve_repo_path(artifacts_root)
+    artifacts = {role: root / names[role] for role in input_roles}
+    missing = [role for role, path in artifacts.items() if not path.is_file()]
+    if missing:
+        raise LaneRunError("missing comparator input_role artifact(s): " + ", ".join(missing))
+    return artifacts
+
+
+def _comparator_callable(entry: Mapping[str, Any]) -> Any:
+    entrypoint = entry.get("entrypoint")
+    if not isinstance(entrypoint, Mapping):
+        raise LaneRunError("comparator registry entrypoint must be a mapping")
+    module_name = entrypoint.get("module")
+    callable_name = entrypoint.get("callable")
+    if not isinstance(module_name, str) or not isinstance(callable_name, str):
+        raise LaneRunError("comparator registry entrypoint requires module and callable")
+    return getattr(importlib.import_module(module_name), callable_name)
+
+
+def _compare_output_path(lane_def: Mapping[str, Any], out_dir: Path | None) -> Path:
+    artifacts_root = Path(str(lane_def["artifacts_root"]))
+    root = out_dir if out_dir is not None else ROOT
+    return root / artifacts_root / "comparator_report.json"
+
+
+def _run_compare(
+    lane_def: Mapping[str, Any],
+    registry_path: Path,
+    out_dir: Path | None,
+) -> dict[str, Any]:
+    lane_id = str(lane_def["lane_id"])
+    output_path = _compare_output_path(lane_def, out_dir)
+    try:
+        entry = _comparator_entry(lane_def, registry_path)
+        artifacts = _comparator_artifacts(lane_def, entry)
+        claim = lane_def.get("claim")
+        scope = claim.get("scope") if isinstance(claim, Mapping) else None
+        if not isinstance(scope, Mapping):
+            raise LaneRunError("claim.scope must be a mapping")
+        payload = {
+            "capture": _load_json(artifacts["capture_ref"]),
+            "replay": _load_json(artifacts["replay_ref"]),
+            "scope": dict(scope),
+            "artifacts": artifacts,
+            "repo_root": ROOT,
+        }
+        report = _comparator_callable(entry)(payload)
+        expected_schema = entry.get("report_schema_version")
+        if (
+            expected_schema != "bb.e4.comparator_report.v1"
+            or not isinstance(report, Mapping)
+            or report.get("schema_version") != expected_schema
+        ):
+            raise LaneRunError(
+                "comparator must return bb.e4.comparator_report.v1"
+            )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(dict(report), indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return {
+            "stage": "compare",
+            "lane_id": lane_id,
+            "returncode": 0,
+            "output_path": _display_path(output_path),
+            "comparator_id": entry.get("comparator_id"),
+            "comparator_report": dict(report),
+        }
+    except Exception as exc:
+        failure_path = output_path.with_name("compare_failure_report.json")
+        failure_path.parent.mkdir(parents=True, exist_ok=True)
+        detail = f"compare execution failed: {exc}"
+        failure_path.write_text(
+            json.dumps(
+                {"ok": False, "lane_id": lane_id, "stage": "compare", "detail": detail},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return {
+            "stage": "compare",
+            "lane_id": lane_id,
+            "returncode": 1,
+            "output_path": _display_path(failure_path),
+            "detail": detail,
+        }
+
 def _capture_adapter_callable(lane_def: Mapping[str, Any]) -> Any | None:
     capture = lane_def.get("capture")
     if not isinstance(capture, Mapping) or capture.get("strategy") != "adapter":
@@ -177,6 +316,103 @@ def _capture_adapter_callable(lane_def: Mapping[str, Any]) -> Any | None:
     module_name, callable_name = impl.split(":", 1)
     module = importlib.import_module(module_name)
     return getattr(module, callable_name)
+
+
+def _translator_callable(lane_def: Mapping[str, Any]) -> tuple[str, Any]:
+    normalize = lane_def.get("normalize")
+    if not isinstance(normalize, Mapping):
+        raise LaneRunError(f"lane {lane_def['lane_id']!r} requires normalize declaration")
+    translator_id = normalize.get("translator")
+    if not isinstance(translator_id, str) or not translator_id:
+        raise LaneRunError(f"lane {lane_def['lane_id']!r} requires normalize.translator")
+    registry = load_registry("e4_adapters")
+    matches = [
+        entry
+        for entry in registry.get("entries", [])
+        if isinstance(entry, Mapping)
+        and entry.get("id") == translator_id
+        and entry.get("status") == "active"
+        and isinstance(entry.get("metadata"), Mapping)
+        and entry["metadata"].get("kind") == "translator"
+    ]
+    if len(matches) != 1:
+        raise LaneRunError(
+            f"lane {lane_def['lane_id']!r} normalize.translator {translator_id!r} "
+            "must name one active translator"
+        )
+    impl = matches[0]["metadata"].get("impl")
+    if not isinstance(impl, str) or ":" not in impl:
+        raise LaneRunError(f"normalize.translator {translator_id!r} has invalid impl {impl!r}")
+    module_name, callable_name = impl.split(":", 1)
+    module = importlib.import_module(module_name)
+    return translator_id, getattr(module, callable_name)
+
+
+def _normalize_report_path(lane_id: str, out_dir: Path | None) -> Path:
+    root = out_dir if out_dir is not None else ROOT / "tmp" / "e4_lane_runs"
+    return root / lane_id / "normalize_report.json"
+
+
+def _run_normalize(lane_def: Mapping[str, Any], out_dir: Path | None) -> dict[str, Any]:
+    lane_id = str(lane_def["lane_id"])
+    report_path = _normalize_report_path(lane_id, out_dir)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report: dict[str, Any] = {"ok": False, "lane_id": lane_id}
+    try:
+        normalize = lane_def.get("normalize")
+        if not isinstance(normalize, Mapping):
+            raise LaneRunError("normalize declaration is required")
+        mode = normalize.get("mode")
+        if not isinstance(mode, str) or not mode:
+            raise LaneRunError("normalize.mode is required explicitly")
+        translator_id, translator = _translator_callable(lane_def)
+        if mode not in {"identity", "translate"}:
+            raise LaneRunError(f"normalize.mode {mode!r} is unsupported")
+        if mode == "identity" and translator_id != "identity":
+            raise LaneRunError("normalize.mode 'identity' requires normalize.translator 'identity'")
+        capture = lane_def.get("capture")
+        inputs = capture.get("inputs") if isinstance(capture, Mapping) else None
+        if not isinstance(inputs, list) or not inputs or not all(isinstance(path, str) for path in inputs):
+            raise LaneRunError("normalize requires non-empty capture.inputs")
+        input_hashes: list[dict[str, str]] = []
+        for logical_path in inputs:
+            input_path = _resolve_repo_path(logical_path)
+            try:
+                digest = _digest_input(input_path)
+            except (OSError, ValueError) as exc:
+                raise LaneRunError(
+                    f"normalize input {logical_path!r} is not digestible: {exc}"
+                ) from exc
+            input_hashes.append({"path": logical_path, "sha256": digest})
+        config = normalize.get("config")
+        if config is not None and not isinstance(config, Mapping):
+            raise LaneRunError("normalize.config must be a mapping or null")
+        output = translator(list(inputs), config=config)
+        report.update(
+            ok=True,
+            mode=mode,
+            translator=translator_id,
+            input_hashes=input_hashes,
+            output=output,
+        )
+        returncode = 0
+        detail = "normalize executed successfully"
+    except Exception as exc:
+        report["detail"] = str(exc)
+        returncode = 1
+        detail = f"normalize execution failed: {exc}"
+    report_path.write_text(
+        json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "stage": "normalize",
+        "lane_id": lane_id,
+        "returncode": returncode,
+        "output_path": _display_path(report_path),
+        "detail": detail,
+        "normalize_report": report,
+    }
 
 
 def _command_stage_argv(stage_name: str, lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None) -> list[str] | None:
@@ -217,6 +453,7 @@ def _declared_non_execution(
     stage_name: str,
     lane_def: Mapping[str, Any],
     registry_path: Path,
+    out_dir: Path | None,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {"stage": stage_name, "lane_id": lane_def["lane_id"], "returncode": 0}
     kind = lane_def.get("kind")
@@ -277,8 +514,12 @@ def _declared_non_execution(
     elif stage_name == "replay" and isinstance(declaration, Mapping):
         if declaration.get("mode") == "stored":
             manifest_rule = "/replay/mode"
-            session = declaration.get("session")
-            reused_paths = [session] if isinstance(session, str) and session else []
+            artifacts = declaration.get("artifacts")
+            reused_paths = (
+                [path for path in artifacts if isinstance(path, str)]
+                if isinstance(artifacts, list)
+                else []
+            )
         result["comparator_class"] = declaration.get("comparator_class")
     elif stage_name == "normalize" and isinstance(declaration, Mapping):
         result["translator"] = declaration.get("translator")
@@ -289,14 +530,16 @@ def _declared_non_execution(
 
     if manifest_rule is not None:
         reused_inputs: list[dict[str, str]] = []
-        missing_paths: list[str] = []
+        digest_errors: list[str] = []
         for logical_path in reused_paths:
             artifact_path = _resolve_repo_path(logical_path)
-            if artifact_path.is_file():
-                reused_inputs.append({"path": logical_path, "sha256": sha256_file(artifact_path)})
-            else:
-                missing_paths.append(logical_path)
-        if reused_inputs and not missing_paths:
+            try:
+                digest = _digest_input(artifact_path)
+            except (OSError, ValueError) as exc:
+                digest_errors.append(f"{logical_path}: {exc}")
+                continue
+            reused_inputs.append({"path": logical_path, "sha256": digest})
+        if reused_inputs and not digest_errors:
             result.update(
                 outcome="reused_stored_result",
                 manifest_rule=manifest_rule,
@@ -308,17 +551,38 @@ def _declared_non_execution(
             return result
         detail = (
             f"{stage_name} declared stored reuse without reusable artifact provenance"
-            if not missing_paths
-            else f"{stage_name} declared stored reuse but artifacts are missing: {', '.join(missing_paths)}"
+            if not digest_errors
+            else f"{stage_name} declared stored reuse but artifacts are not digestible: "
+            + "; ".join(digest_errors)
         )
     else:
         detail = f"{stage_name} did not execute and has no author declaration allowing non-execution"
+    failure_report_ref: str | None = None
+    if manifest_rule is not None:
+        report_root = out_dir if out_dir is not None else ROOT / "tmp" / "e4_lane_runs"
+        report_path = report_root / str(lane_def["lane_id"]) / f"{stage_name}_failure_report.json"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(
+                {
+                    "ok": False,
+                    "lane_id": lane_def["lane_id"],
+                    "stage": stage_name,
+                    "detail": detail,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        failure_report_ref = _display_path(report_path)
     result.update(
         returncode=1,
         outcome="executed_fail",
         manifest_rule=None,
         reused_inputs=None,
-        report_ref=None,
+        report_ref=failure_report_ref,
         lock_sha256=None,
         detail=detail,
     )
@@ -343,7 +607,10 @@ def _finalize_stage_result(
             detail=(
                 f"{result['stage']} executed successfully"
                 if returncode == 0
-                else f"{result['stage']} execution failed with return code {returncode}"
+                else str(
+                    result.get("detail")
+                    or f"{result['stage']} execution failed with return code {returncode}"
+                )
             ),
         )
     errors = check_stage_report(result, lane_def)
@@ -573,6 +840,26 @@ def run_lane(
                 )
             )
             continue
+        if stage_name == "normalize":
+            normalize_result = _finalize_stage_result(
+                _run_normalize(lane_def, out_dir),
+                lane_def,
+                executed=True,
+            )
+            results.append(normalize_result)
+            if normalize_result["returncode"] != 0:
+                blocked_by = stage_name
+            continue
+        if stage_name == "compare":
+            compare_result = _finalize_stage_result(
+                _run_compare(lane_def, comparator_registry_path, out_dir),
+                lane_def,
+                executed=True,
+            )
+            results.append(compare_result)
+            if compare_result["returncode"] != 0:
+                blocked_by = stage_name
+            continue
         adapter_capture = _capture_adapter_callable(lane_def) if stage_name == "capture" else None
         if defer_derived_writes:
             isolated_result = _finalize_stage_result(
@@ -639,7 +926,7 @@ def run_lane(
             continue
         if argv is None:
             metadata_result = _finalize_stage_result(
-                _declared_non_execution(stage_name, lane_def, comparator_registry_path),
+                _declared_non_execution(stage_name, lane_def, comparator_registry_path, out_dir),
                 lane_def,
                 executed=False,
             )
@@ -652,7 +939,7 @@ def run_lane(
         except LaneRunError:
             if stage_name == "capture":
                 metadata_result = _finalize_stage_result(
-                    _declared_non_execution(stage_name, lane_def, comparator_registry_path),
+                    _declared_non_execution(stage_name, lane_def, comparator_registry_path, out_dir),
                     lane_def,
                     executed=False,
                 )

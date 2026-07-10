@@ -37,10 +37,16 @@ export interface E4LaneDefV1 {
     workspace_template?: string | null;
   };
   normalize: {
+    mode: "identity" | "translate";
     translator: string;
     config: FreeformObject;
   };
   replay: {
+    mode: "stored";
+    /**
+     * @minItems 1
+     */
+    artifacts: [string, ...string[]];
     session: string | null;
     comparator_class: "byte" | "semantic";
   };

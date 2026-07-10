@@ -41,6 +41,7 @@
   },
   "normalize": {
     "translator": "identity",
+    "mode": "identity",
     "config": {
       "record_builders": [
         {
@@ -95,6 +96,10 @@
     }
   },
   "replay": {
+    "mode": "stored",
+    "artifacts": [
+      "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/bb_replay_result.json"
+    ],
     "session": null,
     "comparator_class": "semantic"
   },

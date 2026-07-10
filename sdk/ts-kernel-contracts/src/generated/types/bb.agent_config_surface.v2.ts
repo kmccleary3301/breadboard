@@ -169,7 +169,10 @@ export interface AgentConfigSurfaceV2 {
     };
     verification?: {
       tiers?: {
-        commands: string[];
+        /**
+         * @minItems 1
+         */
+        commands: [string, ...string[]];
         hard_fail?: boolean;
         name?: string;
         timeout_seconds?: number;
@@ -185,13 +188,25 @@ export interface AgentConfigSurfaceV2 {
       };
     };
     plan_turn_limit?: number;
-    sequence: {
-      if?: string;
-      mode?: string;
-      then?: {
+    /**
+     * @minItems 1
+     */
+    sequence: [
+      {
+        if?: string;
         mode?: string;
-      };
-    }[];
+        then?: {
+          mode?: string;
+        };
+      },
+      ...{
+        if?: string;
+        mode?: string;
+        then?: {
+          mode?: string;
+        };
+      }[]
+    ];
     turn_strategy?: {
       allow_multiple_per_turn?: boolean;
       flow?: string;
@@ -295,19 +310,37 @@ export interface AgentConfigSurfaceV2 {
   };
   providers: {
     default_model: string;
-    models: {
-      adapter: string;
-      id: string;
-      params?: {
-        max_output_tokens?: number;
-        temperature?: number;
-        tool_use?: boolean;
-        top_p?: number;
-      };
-      routing?: {
-        fallback_models?: string[];
-      };
-    }[];
+    /**
+     * @minItems 1
+     */
+    models: [
+      {
+        adapter: string;
+        id: string;
+        params?: {
+          max_output_tokens?: number;
+          temperature?: number;
+          tool_use?: boolean;
+          top_p?: number;
+        };
+        routing?: {
+          fallback_models?: string[];
+        };
+      },
+      ...{
+        adapter: string;
+        id: string;
+        params?: {
+          max_output_tokens?: number;
+          temperature?: number;
+          tool_use?: boolean;
+          top_p?: number;
+        };
+        routing?: {
+          fallback_models?: string[];
+        };
+      }[]
+    ];
     routing?: {
       disable_native_tools_on_probe_failure?: boolean;
       disable_stream_on_probe_failure?: boolean;

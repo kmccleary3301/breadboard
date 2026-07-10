@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from scripts.e4_parity import run_lane
-from scripts.e4_parity.stage_contracts import check_stage_report
+from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
 
 
 _VALID_SHA256 = "sha256:" + "a" * 64
@@ -299,6 +299,25 @@ def test_check_stage_report_rejects_dishonest_outcomes(
     assert error_fragment in " ".join(errors), (case, errors)
 
 
+def test_non_target_accounting_requires_all_five_stages() -> None:
+    expected_stages = ("capture", "normalize", "replay", "compare", "claim")
+
+    assert STAGES_BY_KIND["non_target_accounting"] == expected_stages
+    for stage_name in expected_stages:
+        report = _report(
+            stage=stage_name,
+            outcome="not_applicable",
+            manifest_rule="/kind",
+            report_ref=None,
+        )
+        errors = check_stage_report(report, {"kind": "non_target_accounting"})
+
+        assert any(
+            error == f"{stage_name} is applicable to lane kind 'non_target_accounting'"
+            for error in errors
+        ), (stage_name, errors)
+
+
 @pytest.mark.parametrize(
     ("digest", "case"),
     [
@@ -364,7 +383,8 @@ def test_run_lane_reports_declared_stored_replay_with_input_provenance(
     lane_def = _legacy_normalized_lane(
         replay={
             "mode": "stored",
-            "session": "artifacts/stored-replay.json",
+            "artifacts": ["artifacts/stored-replay.json"],
+            "session": None,
             "comparator_class": "semantic",
         }
     )
@@ -422,6 +442,8 @@ def test_run_lane_fails_an_undeclared_metadata_skip_as_executed_failure(
     assert stage["stage"] == "normalize"
     assert stage["returncode"] != 0
     assert stage["outcome"] == "executed_fail"
-    assert stage["detail"]
-    assert stage["honesty_errors"]
-    assert any("report_ref" in error for error in stage["honesty_errors"])
+    assert "normalize.mode" in stage["detail"]
+    assert stage["honesty_errors"] == []
+    assert isinstance(stage["report_ref"], str) and stage["report_ref"]
+    report_path = tmp_path / stage["report_ref"]
+    assert report_path.is_file()

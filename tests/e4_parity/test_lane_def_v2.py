@@ -99,8 +99,13 @@ def _valid_v2_lane() -> dict[str, Any]:
             "inputs": ["config/e4_targets/claude_code/2.1.63"],
             "workspace_template": None,
         },
-        "normalize": {"translator": "identity", "config": {}},
-        "replay": {"session": None, "comparator_class": "semantic"},
+        "normalize": {"mode": "identity", "translator": "identity", "config": {}},
+        "replay": {
+            "mode": "stored",
+            "artifacts": ["docs/conformance/e4_target_support/lane_alpha/bb_replay_result.json"],
+            "session": None,
+            "comparator_class": "semantic",
+        },
         "compare": {
             "comparator": "north_star_stored_report_replay",
             "config": {
@@ -172,8 +177,13 @@ def _v1_lane() -> dict[str, Any]:
         "status": "accepted",
         "points": 100,
         "capture": {"strategy": "replay_dump", "argv": None, "inputs": ["config/e4_targets/claude_code/2.1.63"], "workspace_template": None},
-        "normalize": {"translator": "identity", "config": {}},
-        "replay": {"session": None, "comparator_class": "semantic"},
+        "normalize": {"mode": "identity", "translator": "identity", "config": {}},
+        "replay": {
+            "mode": "stored",
+            "artifacts": ["docs/conformance/e4_target_support/lane_alpha/bb_replay_result.json"],
+            "session": None,
+            "comparator_class": "semantic",
+        },
         "compare": {"comparator": "north_star_stored_report_replay", "config": {"assertions": [{"path": "ok", "equals": True}]}},
         "claim": {
             "scope": {"behaviors": ["bb.replay_session.v1"], "surfaces": ["exact-scope package capture"]},
@@ -212,6 +222,44 @@ def test_v2_lane_def_validates_through_loader(tmp_path: Path, lane_def_v2_valida
 
     assert loaded["schema_version"] == "bb.e4.lane_def.v2"
     assert loaded["acceptance"]["assertions"][0]["id"] == "target_config_present"
+
+
+
+@pytest.mark.parametrize("lane_factory", [_v1_lane, _valid_v2_lane], ids=["v1", "v2"])
+@pytest.mark.parametrize("missing_field", ["mode", "artifacts"])
+def test_loader_rejects_replay_without_explicit_stored_artifact_declaration(
+    tmp_path: Path,
+    lane_factory: Any,
+    missing_field: str,
+) -> None:
+    lane = lane_factory()
+    lane["replay"].pop(missing_field)
+    lane_path = tmp_path / f"missing_replay_{missing_field}.yaml"
+    _write_yaml(lane_path, lane)
+
+    with pytest.raises(LaneDefValidationError) as exc_info:
+        load_lane_def(lane_path)
+
+    assert f"'{missing_field}' is a required property" in str(exc_info.value)
+
+
+@pytest.mark.parametrize("lane_factory", [_v1_lane, _valid_v2_lane], ids=["v1", "v2"])
+def test_loader_rejects_executed_replay_with_pointerful_deferral(
+    tmp_path: Path,
+    lane_factory: Any,
+) -> None:
+    lane = lane_factory()
+    lane["replay"]["mode"] = "executed"
+    lane_path = tmp_path / "executed_replay.yaml"
+    _write_yaml(lane_path, lane)
+
+    with pytest.raises(LaneDefValidationError) as exc_info:
+        load_lane_def(lane_path)
+
+    message = str(exc_info.value)
+    assert "/replay/mode" in message
+    assert "executed replay" in message.lower()
+    assert "deferred" in message.lower()
 
 
 @pytest.mark.parametrize("status", ["accepted", "claimed"])

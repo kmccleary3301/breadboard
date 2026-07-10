@@ -18,8 +18,12 @@ capture:
   adapter: pi_p5_l2_capture
 normalize:
   translator: identity
+  mode: identity
   config: {}
 replay:
+  mode: stored
+  artifacts:
+    - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json
   session: null
   comparator_class: semantic
 compare:

@@ -212,3 +212,47 @@ def test_cli_metadata_check_reports_the_metadata_sentinel_helper_result(
         "status": "passed",
         "detail": "metadata sentinel passed for patched_metadata_sentinel",
     }
+
+
+@pytest.mark.parametrize(
+    ("field_path", "replacement", "expected_pointer"),
+    [
+        pytest.param(("capture",), None, "/capture", id="capture-block"),
+        pytest.param(("normalize",), None, "/normalize", id="normalize-block"),
+        pytest.param(("normalize", "mode"), None, "/normalize/mode", id="normalize-mode"),
+        pytest.param(("replay",), None, "/replay", id="replay-block"),
+        pytest.param(("replay", "mode"), None, "/replay/mode", id="replay-mode"),
+        pytest.param(("replay", "artifacts"), None, "/replay/artifacts", id="replay-artifacts"),
+        pytest.param(("replay", "artifacts"), [], "/replay/artifacts", id="empty-replay-artifacts"),
+        pytest.param(("compare",), None, "/compare", id="compare-block"),
+        pytest.param(("claim",), None, "/claim", id="claim-block"),
+    ],
+)
+def test_cli_rejects_implicit_or_empty_stage_declarations_with_field_pointer(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    field_path: tuple[str, ...],
+    replacement: Any,
+    expected_pointer: str,
+) -> None:
+    source = validator.ROOT / "config" / "e4_lanes" / f"{ACCEPTED_LANE_ID}.yaml"
+    payload = yaml.safe_load(source.read_text(encoding="utf-8"))
+    container = payload
+    for field in field_path[:-1]:
+        container = container[field]
+    if replacement is None:
+        container.pop(field_path[-1])
+    else:
+        container[field_path[-1]] = replacement
+    lane_path = tmp_path / f"invalid_{'_'.join(field_path)}.yaml"
+    lane_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    exit_code, report = _run_cli(str(lane_path), capsys)
+
+    _assert_report_shape(report)
+    checks = _checks_by_id(report)
+    assert exit_code == 1
+    assert report["ok"] is False
+    assert checks["lane_def_schema_valid"]["status"] == "failed"
+    assert expected_pointer in checks["lane_def_schema_valid"]["detail"]
+    assert all(checks[check_id]["status"] == "skipped" for check_id in EXPECTED_CHECK_IDS[1:-1])
