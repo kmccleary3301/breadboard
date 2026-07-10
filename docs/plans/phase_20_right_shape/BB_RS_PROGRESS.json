@@ -6,7 +6,7 @@
  "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:58:18Z",
+ "updated_at_utc": "2026-07-10T21:58:51Z",
  "items": [
   {
    "id": "A1",
@@ -1432,6 +1432,14 @@
    "classification": "spec_gap",
    "what": "manifest intent extension + acceptance shape for lossless P6.6 parity; mappings documented in compiler; machine-owned to lock/sidecar",
    "owner": "F4",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM9",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "canonical directory-tree digest (sorted canonical-JSON preimage of path/sha256/bytes); single F4-owned helper; H3 consumes",
+   "owner": "F4; H3",
    "recorded_by": "orchestrator"
   }
  ],

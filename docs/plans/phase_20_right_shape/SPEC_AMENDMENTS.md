@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **8 amendments** (below).
+Current state: **9 amendments** (below).
 
 ---
 
@@ -114,3 +114,15 @@ F4's pilot requires post-normalization deep equality with the legacy P6.6 normal
 **(iii) Machine-owned — never in the manifest:** `normalize.config.roles`→lock `artifact_roles`; `payload_templates`+`substitutions`→generated packet_constants sidecar (F3's sidecar stays exactly two keys); all digests/pins/hashes→lock `resolved_inputs`/`registry_pins`/`target_freeze` or generated sidecar.
 
 **Classification:** spec_gap. **Owner:** F4 (amended schema + compiler mappings + pilot parity test; F1 schema file and its tests updated in the F4 commit citing AM8). **Recorded-by:** orchestrator.
+
+---
+
+## Amendment 9 - 2026-07-10 - canonical directory-tree digest semantics (spec_gap; resolves AM5 gap 3)
+
+Directory inputs are legitimate adapter inputs (e.g. P6.6 `raw/`, `joined_sessions/`, `detached_sessions/`, source-freeze dir); replacing them with expanded file lists would hide compaction logic. Campaign-wide definition, used by every consumer (F4 lock `resolved_inputs`, H3 stored-replay reuse provenance):
+
+- **Tree digest**: `sha256:` over the canonical-JSON (sorted keys, no whitespace, UTF-8) preimage `{"files": [{"path": <repo-relative posix path>, "sha256": <file digest>, "bytes": <file size>}...]}` with entries sorted by `path` bytewise ascending. Only regular files participate; symlinks/dirs-as-entries are rejected fail-closed; empty directories digest the empty list.
+- **`bytes` for a directory input** = sum of member file bytes.
+- **Single implementation**: one shared helper module owned by **F4** (committed in the wsF3 packet; exact path declared in F4 evidence). **H3 MUST consume that helper, never reimplement** — if H3 needs it before WS-F3 merges, H3 cherry-picks the helper commit as a declared dependency (dep_commits in evidence), same pattern as G4/F3.
+
+**Classification:** spec_gap (completes AM5 gap 3). **Owner:** F4 (definition+helper); H3 (consumer). **Recorded-by:** orchestrator.
