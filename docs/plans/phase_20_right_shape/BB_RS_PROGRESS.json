@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T23:14:59Z",
+ "updated_at_utc": "2026-07-10T23:23:43Z",
  "items": [
   {
    "id": "A1",
@@ -1081,12 +1081,12 @@
    "ws": "H",
    "title": "normalize executes translator",
    "weight": 25,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "H1"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "final 815827a2 picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
    "verifiers": []
   },
   {
@@ -1094,12 +1094,12 @@
    "ws": "H",
    "title": "Replay honesty: replay.mode 'stored' declared explicitly in every lane source ('executed' deferred; loader rejects it with deferral error)",
    "weight": 20,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "H1"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "final 60357e42 picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
    "verifiers": []
   },
   {
@@ -1107,12 +1107,12 @@
    "ws": "H",
    "title": "compare invokes comparator; claim consumes report",
    "weight": 25,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "H1"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "final b08b6db2 picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
    "verifiers": []
   },
   {
@@ -1120,7 +1120,7 @@
    "ws": "H",
    "title": "21 lane sources declare stage modes; validate_lane enforces",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "H1",
     "H2",
@@ -1128,7 +1128,7 @@
     "H4"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "final 11ac780b picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
    "verifiers": []
   },
   {
@@ -1136,12 +1136,12 @@
    "ws": "H",
    "title": "verifier incl base-SHA silent-skip repro",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "H5"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "final 60a3862a picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
    "verifiers": []
   },
   {
