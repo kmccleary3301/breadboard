@@ -260,7 +260,11 @@ def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str
         current.get("schema_content_sha256"), "schema_content_sha256"
     )
     schema_content_drift = {
-        schema_id
+        (
+            f'{schema_id} (not in TIGHTENING_ALLOWLIST; add '
+            f'{{"{schema_id}": "<packet-id>"}} per FREEZE_POLICY/AM10, '
+            "or revert the change)"
+        )
         for schema_id, baseline_hash in baseline_hashes.items()
         if schema_id in current_hashes
         and current_hashes[schema_id] != baseline_hash
