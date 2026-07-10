@@ -16,6 +16,7 @@ SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 TIER_SCHEMA_PATH = SCHEMA_DIR / "bb.contract_tiers.v1.schema.json"
 TIER_REGISTRY_PATH = ROOT / "contracts" / "kernel" / "registries" / "contract_tiers.v1.json"
 PACKS_PATH = ROOT / "contracts" / "kernel" / "packs.v1.json"
+README_PATH = SCHEMA_DIR / "README.md"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -119,7 +120,27 @@ def test_kernel_pack_describes_minimality_as_a_tier_qualified_claim() -> None:
 
     assert "runtime_protocol" in description
     assert "contracts/kernel/registries/contract_tiers.v1.json" in description
-    assert "minimal expressive harness primitive language" not in description.lower()
+    assert "minimal expressive " + "harness primitive language" not in description.lower()
+
+
+def test_generated_readme_lists_every_registry_entry_with_its_tier() -> None:
+    """Generated schema documentation preserves the registry's complete tier assignment."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    data_rows = [line for line in readme.splitlines() if line.startswith("| `bb.")]
+    documented_tiers: dict[str, str] = {}
+    for row in data_rows:
+        cells = row.split(" | ")
+        schema_id = cells[0].removeprefix("| `").removesuffix("`")
+        tier = cells[-1].removeprefix("`").removesuffix("` |")
+        documented_tiers[schema_id] = tier
+
+    registry_tiers = {
+        schema_id: entry["tier"]
+        for schema_id, entry in _entries_by_schema_id().items()
+    }
+    assert len(data_rows) == len(registry_tiers)
+    assert documented_tiers == registry_tiers
+    assert "minimal expressive " + "harness primitive language" not in readme.lower()
 
 
 def test_contract_tier_registry_exactly_matches_generated_schema_census() -> None:

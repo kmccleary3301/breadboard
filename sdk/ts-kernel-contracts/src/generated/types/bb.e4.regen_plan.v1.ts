@@ -46,5 +46,9 @@ export interface Stage {
   writes: PathList;
   overwrites?: PathList;
   read_only: boolean;
-  [k: string]: unknown;
+  label?: string;
+  note?: string | null;
+  argv?: string[];
+  allowed_exit_codes?: number[];
+  blocker?: string | null;
 }

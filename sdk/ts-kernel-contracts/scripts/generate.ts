@@ -10,6 +10,12 @@ const GENERATED_ROOT = join(PACKAGE_ROOT, "src", "generated")
 const TYPES_DIR = join(GENERATED_ROOT, "types")
 const PACKS_MANIFEST = join(REPO_ROOT, "contracts", "kernel", "packs.v1.json")
 const SCHEMA_README = join(SCHEMA_DIR, "README.md")
+const CONTRACT_TIER_REGISTRY = join(REPO_ROOT, "contracts", "kernel", "registries", "contract_tiers.v1.json")
+const PHASE20_UNPACKED_SCHEMAS: Record<string, true> = {
+  "bb.contract_tiers.v1.schema.json": true,
+  "bb.e4.lane_lock.v1.schema.json": true,
+  "bb.e4.lane_manifest.v1.schema.json": true,
+}
 
 interface SchemaEntry {
   filename: string
@@ -32,6 +38,11 @@ interface SchemaPackEntry {
   metadata?: {
     schemas?: unknown
   }
+}
+
+interface ContractTierEntry {
+  schema_id?: unknown
+  tier?: unknown
 }
 
 function pascalCase(value: string): string {
@@ -110,12 +121,38 @@ function readPacks(entries: SchemaEntry[]): PackEntry[] {
     })
   }
 
-  const missing = [...schemaFilenames].filter((filename) => !assigned.has(filename)).sort((a, b) => a.localeCompare(b))
+  const missing = [...schemaFilenames]
+    .filter((filename) => !assigned.has(filename) && PHASE20_UNPACKED_SCHEMAS[filename] !== true)
+    .sort((a, b) => a.localeCompare(b))
   if (missing.length > 0) {
     throw new Error(`contracts/kernel/packs.v1.json does not assign schemas: ${missing.join(", ")}`)
   }
 
   return packs
+}
+
+
+function readContractTiers(entries: SchemaEntry[]): Map<string, string> {
+  const registry = JSON.parse(readFileSync(CONTRACT_TIER_REGISTRY, "utf8")) as { entries?: ContractTierEntry[] }
+  const tiers = new Map<string, string>()
+  for (const rawEntry of registry.entries ?? []) {
+    if (typeof rawEntry.schema_id !== "string" || typeof rawEntry.tier !== "string") {
+      throw new Error("contract_tiers.v1.json entries must declare string schema_id and tier values")
+    }
+    if (tiers.has(rawEntry.schema_id)) {
+      throw new Error(`contract_tiers.v1.json contains duplicate schema ${rawEntry.schema_id}`)
+    }
+    tiers.set(rawEntry.schema_id, rawEntry.tier)
+  }
+  const schemaIds = new Set(entries.map((entry) => basename(entry.filename, ".schema.json")))
+  const missing = [...schemaIds].filter((schemaId) => !tiers.has(schemaId)).sort((a, b) => a.localeCompare(b))
+  const stale = [...tiers.keys()].filter((schemaId) => !schemaIds.has(schemaId)).sort((a, b) => a.localeCompare(b))
+  if (missing.length > 0 || stale.length > 0) {
+    throw new Error(
+      `contract_tiers.v1.json must match generated schemas exactly; missing: ${missing.join(", ") || "none"}; stale: ${stale.join(", ") || "none"}`,
+    )
+  }
+  return tiers
 }
 
 function schemaIdsForPack(pack: PackEntry, entriesByFilename: Map<string, SchemaEntry>): string[] {
@@ -224,14 +261,14 @@ ${typeExports}
   )
 }
 
-function emitSchemaReadme(entries: SchemaEntry[], packs: PackEntry[]): void {
+function emitSchemaReadme(entries: SchemaEntry[], packs: PackEntry[], tiers: Map<string, string>): void {
   const entriesByFilename = new Map(entries.map((entry) => [entry.filename, entry]))
   const lines = [
     "# Kernel Schema Pack",
     "",
     "This directory contains machine-readable schemas for the shared BreadBoard kernel contract program.",
     "",
-    "Schemas are grouped by `contracts/kernel/packs.v1.json`; every `*.schema.json` file belongs to exactly one pack.",
+    "Schemas are grouped by `contracts/kernel/packs.v1.json`; the three Phase 20 governance schemas remain registry-only so pack membership does not change.",
     "",
     "A schema appearing here means:",
     "",
@@ -241,19 +278,59 @@ function emitSchemaReadme(entries: SchemaEntry[], packs: PackEntry[]): void {
     "",
     "A schema appearing here does **not** mean every detail of the associated semantics is complete.",
     "",
+    "Tiers are generated from `contracts/kernel/registries/contract_tiers.v1.json`. “Minimal” refers only to the `runtime_protocol` tier.",
+    "",
     "## Packs",
   ]
 
+  const appendTableRow = (entry: SchemaEntry): void => {
+    const schemaId = basename(entry.filename, ".schema.json")
+    const label = typeof entry.schema.title === "string" ? entry.schema.title : entry.schemaId.split("/").at(-1)
+    const tier = tiers.get(schemaId)
+    if (tier === undefined) {
+      throw new Error(`contract_tiers.v1.json is missing ${schemaId}`)
+    }
+    lines.push(`| \`${schemaId}\` | ${label} | \`${tier}\` |`)
+  }
+
   for (const pack of packs) {
-    lines.push("", `### ${pack.id}`, "", pack.description, "", `Status: \`${pack.status}\``, "")
+    lines.push(
+      "",
+      `### ${pack.id}`,
+      "",
+      pack.description,
+      "",
+      `Status: \`${pack.status}\``,
+      "",
+      "| Schema | Title | Tier |",
+      "| --- | --- | --- |",
+    )
     for (const filename of pack.schemaFilenames) {
       const entry = entriesByFilename.get(filename)
       if (entry === undefined) {
         throw new Error(`Pack ${pack.id} references missing generated schema ${filename}`)
       }
-      const label = typeof entry.schema.title === "string" ? entry.schema.title : entry.schemaId.split("/").at(-1)
-      lines.push(`- \`${basename(filename, ".schema.json")}\` — ${label}`)
+      appendTableRow(entry)
     }
+  }
+
+  lines.push(
+    "",
+    "### phase20_registry",
+    "",
+    "Phase 20 governance schemas are classified without changing pack membership.",
+    "",
+    "Status: `active`",
+    "",
+    "| Schema | Title | Tier |",
+    "| --- | --- | --- |",
+  )
+  for (const filename of Object.keys(PHASE20_UNPACKED_SCHEMAS).sort((a, b) => a.localeCompare(b))) {
+    const entry = entriesByFilename.get(filename)
+    if (entry === undefined) {
+      throw new Error(`Missing Phase 20 schema ${filename}`)
+    }
+    appendTableRow(entry)
   }
 
   writeFileSync(SCHEMA_README, `${lines.join("\n")}\n`, "utf8")
@@ -262,12 +339,13 @@ function emitSchemaReadme(entries: SchemaEntry[], packs: PackEntry[]): void {
 async function main(): Promise<void> {
   const entries = readSchemas()
   const packs = readPacks(entries)
+  const tiers = readContractTiers(entries)
   rmSync(GENERATED_ROOT, { recursive: true, force: true })
   mkdirSync(TYPES_DIR, { recursive: true })
   await emitTypes(entries)
   emitRegistry(entries)
   emitIndex(entries, packs)
-  emitSchemaReadme(entries, packs)
+  emitSchemaReadme(entries, packs, tiers)
   console.log(JSON.stringify({ generatedSchemas: entries.length, generatedPacks: packs.length, outputDir: relative(PACKAGE_ROOT, GENERATED_ROOT) }))
 }
 
