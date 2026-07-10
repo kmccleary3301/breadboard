@@ -6,7 +6,7 @@
  "points_done": 0,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T20:56:55Z",
+ "updated_at_utc": "2026-07-10T21:03:20Z",
  "items": [
   {
    "id": "A1",
@@ -863,6 +863,14 @@
    "classification": "spec_gap",
    "summary": "Packet worktrees may use shared immutable integration venv; requirements digest recorded",
    "ref": "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md#amendment-1"
+  },
+  {
+   "id": "AM2",
+   "at": "2026-07-10T21:03:20Z",
+   "rule": "WS-G G1 ACCEPT fresh-venv bootstrap",
+   "classification": "gate_wrong",
+   "summary": "Fresh-venv bootstrap pins pip>=21.3 (PEP 660 editable); system pip 21.2.4 fails",
+   "ref": "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md#amendment-2"
   }
  ],
  "notes": [
