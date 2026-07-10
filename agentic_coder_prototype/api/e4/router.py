@@ -10,9 +10,11 @@ from fastapi import APIRouter, Body, Query
 from fastapi.responses import JSONResponse
 
 from agentic_coder_prototype.conformance.c4_chain import validate_c4_chain
+from agentic_coder_prototype.conformance.catalog_binding import catalog_segments, catalog_segments_hash, stable_entries_hash
 
 from .models import (
     E4ApiError,
+    E4CatalogBindingSegment,
     E4CatalogBinding,
     E4CatalogPage,
     E4ClaimDetail,
@@ -223,12 +225,28 @@ def create_e4_router(
         lanes = inventory().get("lanes", [])
         return {str(lane.get("lane_id")): dict(lane) for lane in lanes if isinstance(lane, dict)}
 
-    def claim_by_id() -> dict[str, dict[str, Any]]:
-        result: dict[str, dict[str, Any]] = {}
+    def claim_by_id() -> dict[str, tuple[dict[str, Any], Path]]:
+        result: dict[str, tuple[dict[str, Any], Path]] = {}
         for path in sorted(claims_dir.glob("*_support_claim.json")):
             claim = _load_json_cached(path)
-            if isinstance(claim, dict) and isinstance(claim.get("claim_id"), str):
-                result[claim["claim_id"]] = claim
+            if not isinstance(claim, dict) or not isinstance(claim.get("claim_id"), str):
+                continue
+            claim_id = claim["claim_id"]
+            existing = result.get(claim_id)
+            if existing is not None:
+                raise E4ApiError(
+                    status_code=409,
+                    error="duplicate_claim_id",
+                    detail={
+                        "claim_id": claim_id,
+                        "paths": [
+                            _display_path(repo_root, existing[1]),
+                            _display_path(repo_root, path),
+                        ],
+                    },
+                    path=_display_path(repo_root, claims_dir),
+                )
+            result[claim_id] = (claim, path)
         return result
 
     @router.get("/health", response_model=E4Health, responses={503: {"model": E4Error}})
@@ -301,7 +319,7 @@ def create_e4_router(
         limit: int = Query(default=200, ge=1, le=1000),
     ) -> E4ClaimList:
         lanes = lane_by_id()
-        claims = [_claim_model(claim, lanes) for claim in claim_by_id().values()]
+        claims = [_claim_model(claim, lanes) for claim, _path in claim_by_id().values()]
         if accepted is not None:
             claims = [claim for claim in claims if claim.accepted is accepted]
         if target_family is not None:
@@ -314,9 +332,10 @@ def create_e4_router(
 
     @router.get("/claims/{claim_id}", response_model=E4ClaimDetail)
     def get_claim(claim_id: str) -> E4ClaimDetail:
-        claim = claim_by_id().get(claim_id)
-        if claim is None:
+        found = claim_by_id().get(claim_id)
+        if found is None:
             raise E4ApiError(status_code=404, error="claim_not_found", detail=claim_id, path=None)
+        claim, _source_path = found
         manifest_ref = claim.get("evidence_manifest_ref")
         if not isinstance(manifest_ref, str):
             evidence_manifest = {}
@@ -341,15 +360,67 @@ def create_e4_router(
     @router.get("/catalog/binding", response_model=E4CatalogBinding)
     def get_catalog_binding() -> E4CatalogBinding:
         cat = catalog()
+        schema_version = cat.get("schema_version")
+        if schema_version != "bb.e4.artifact_catalog.v2":
+            raise E4ApiError(
+                status_code=409,
+                error="catalog_binding_requires_v2",
+                detail=str(schema_version),
+                path=_display_path(repo_root, catalog_path),
+            )
+        stored_segments = cat.get("segments")
+        integrity = cat.get("integrity")
+        segments_valid = isinstance(stored_segments, list) and all(
+            isinstance(segment, dict)
+            and isinstance(segment.get("segment_id"), str)
+            and isinstance(segment.get("entry_count"), int)
+            and not isinstance(segment.get("entry_count"), bool)
+            and isinstance(segment.get("entries_hash"), str)
+            and isinstance(segment.get("stable_entries_hash"), str)
+            for segment in stored_segments
+        )
+        integrity_valid = (
+            isinstance(integrity, dict)
+            and isinstance(integrity.get("entry_count"), int)
+            and not isinstance(integrity.get("entry_count"), bool)
+            and isinstance(integrity.get("entries_hash"), str)
+            and isinstance(integrity.get("segments_hash"), str)
+            and isinstance(integrity.get("stable_entries_hash"), str)
+        )
+        if not segments_valid or not integrity_valid:
+            raise E4ApiError(
+                status_code=409,
+                error="catalog_binding_missing",
+                detail="v2 catalog has missing or malformed segments/integrity",
+                path=_display_path(repo_root, catalog_path),
+            )
         entries = _catalog_entries(cat)
-        segment_hash = _stable_json_hash(entries)
-        segments = [{"segment_id": "global", "stable_entries_hash": segment_hash}]
+        if (
+            catalog_segments(entries) != stored_segments
+            or catalog_segments_hash(entries) != integrity["segments_hash"]
+            or len(entries) != integrity["entry_count"]
+            or _stable_json_hash(entries) != integrity["entries_hash"]
+            or stable_entries_hash(entries) != integrity["stable_entries_hash"]
+        ):
+            raise E4ApiError(
+                status_code=409,
+                error="catalog_binding_drift",
+                detail="stored segments/integrity disagree with entries recomputation",
+                path=_display_path(repo_root, catalog_path),
+            )
         return E4CatalogBinding(
             catalog_path=catalog_path.relative_to(repo_root).as_posix(),
-            schema_version=str(cat.get("schema_version") or "bb.e4.artifact_catalog.v1"),
-            segments=segments,
-            segments_hash=_stable_json_hash(segments),
+            schema_version=str(schema_version),
+            segments=[
+                E4CatalogBindingSegment(
+                    segment_id=segment["segment_id"],
+                    stable_entries_hash=segment["stable_entries_hash"],
+                )
+                for segment in stored_segments
+            ],
+            segments_hash=str(integrity["segments_hash"]),
             generated_at_utc=_catalog_generated_at(cat),
+            stable_entries_hash=str(integrity["stable_entries_hash"]),
         )
 
     @router.get("/registries", response_model=RegistryList)
@@ -452,9 +523,10 @@ def create_e4_router(
 
     @router.post("/claims/{claim_id}/reverify", response_model=E4ReverifyResult, responses={404: {"model": E4Error}, 409: {"model": E4Error}})
     def reverify_claim(claim_id: str, payload: E4ReverifyRequest = Body(default_factory=E4ReverifyRequest)) -> E4ReverifyResult:
-        claim = claim_by_id().get(claim_id)
-        if claim is None:
+        found = claim_by_id().get(claim_id)
+        if found is None:
             raise E4ApiError(status_code=404, error="claim_not_found", detail=claim_id, path=None)
+        claim, source_path = found
         no_rerun_reason = None
         if payload.rerun_comparators is False:
             no_rerun_reason = (
@@ -467,7 +539,7 @@ def create_e4_router(
                 repo_root=repo_root,
                 freeze_manifest_path=freeze_manifest,
                 config_id=str(claim.get("config_id")),
-                support_claim_path=(claims_dir / f"{claim_id}.json").resolve(),
+                support_claim_path=source_path.resolve(),
                 evidence_manifest_path=_resolve_path(repo_root, str(claim.get("evidence_manifest_ref"))),
                 rerun_comparators=payload.rerun_comparators,
                 comparator_registry_path=comparator_registry,

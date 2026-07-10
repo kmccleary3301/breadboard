@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
@@ -19,22 +18,10 @@ from .models import SessionCreateRequest
 def primitive_emission_enabled() -> bool:
     return os.environ.get("BREADBOARD_EMIT_PRIMITIVES", "").strip().lower() in {"1", "true", "yes", "on"}
 
-_CONFIG_PLANE_DIALECT_FALLBACK_WARNED = False
 
 
 def config_plane_dialects() -> set[str]:
-    global _CONFIG_PLANE_DIALECT_FALLBACK_WARNED
-    value = os.environ.get("BREADBOARD_CONFIG_PLANE_DIALECT")
-    if value is None:
-        value = os.environ.get("BREADBOARD_PRIMITIVES_DIALECT")
-        if value is not None and not _CONFIG_PLANE_DIALECT_FALLBACK_WARNED:
-            print(
-                "BREADBOARD_PRIMITIVES_DIALECT is deprecated; use "
-                "BREADBOARD_CONFIG_PLANE_DIALECT for config-plane coordination records.",
-                file=sys.stderr,
-            )
-            _CONFIG_PLANE_DIALECT_FALLBACK_WARNED = True
-    value = (value or "v2").strip().lower()
+    value = (os.environ.get("BREADBOARD_CONFIG_PLANE_DIALECT") or "v2").strip().lower()
     if value == "both":
         return {"v2", "v3"}
     if value in {"v2", "v3"}:

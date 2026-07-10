@@ -108,9 +108,10 @@ def finalize_record(spec: PrimitiveSpec, record: Mapping[str, Any], *, validate:
     return result
 
 
-_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
+_CORE_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
     ("bb.effective_config_graph.v1", "graph_id", "graph_hash"),
     ("bb.config_mutation_record.v1", "mutation_id", None),
+    ("bb.config_explanation.v1", "explanation_id", None),
     ("bb.context_resource_pack.v1", "pack_id", None),
     ("bb.capability_registry.v1", "registry_id", None),
     ("bb.extension_hook_execution.v1", "execution_id", None),
@@ -120,20 +121,14 @@ _SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
     ("bb.external_protocol_session.v1", "session_id", None),
     ("bb.provider_route.v1", "route_id", None),
     ("bb.memory_compaction_plan.v1", "plan_id", None),
+    ("bb.transcript_continuation_patch.v1", "patch_id", None),
     ("bb.work_item.v1", "work_item_id", None),
     ("bb.side_effect_broker.v1", "broker_id", None),
     ("bb.projection_event.v1", "projection_event_id", None),
     ("bb.effective_operation_policy.v1", "policy_id", None),
     ("bb.effective_tool_surface.v1", "surface_id", "surface_hash"),
-    ("bb.e4.support_claim.v2", "claim_id", None),
-    ("bb.e4.support_claim.v3", "claim_id", None),
-    ("bb.e4.support_claim.v4", "claim_id", None),
-    ("bb.e4.lane_def.v1", "lane_id", None),
-    ("bb.e4.lane_def.v2", "lane_id", None),
     ("bb.coordination_slice.v2", "slice_id", None),
     ("bb.coordination_pack.v3", "pack_id", None),
-    ("bb.e4.lane_inventory.v2", "inventory_id", None),
-    ("bb.e4.target_coverage.v2", "target_family", None),
     ("bb.environment_selector.v2", "selector_id", None),
     ("bb.kernel_event.v2", "event_id", None),
     ("bb.tool_call.v2", "call_id", None),
@@ -141,21 +136,40 @@ _SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
     ("bb.tool_model_render.v2", "call_id", None),
     ("bb.tool_spec.v2", "name", None),
     ("bb.session_transcript.v2", "session_id", None),
+    ("bb.registry.v1", "registry_id", None),
+    ("bb.lane_validation_report.v1", "lane_id", None),
+)
+
+_E4_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
+    ("bb.e4.support_claim.v2", "claim_id", None),
+    ("bb.e4.support_claim.v3", "claim_id", None),
+    ("bb.e4.support_claim.v4", "claim_id", None),
+    ("bb.e4.lane_def.v1", "lane_id", None),
+    ("bb.e4.lane_def.v2", "lane_id", None),
+    ("bb.e4.lane_inventory.v2", "inventory_id", None),
+    ("bb.e4.target_coverage.v2", "target_family", None),
     ("bb.e4.artifact_catalog.v1", "catalog_id", None),
     ("bb.e4.artifact_catalog.v2", "catalog_id", None),
     ("bb.e4.lane_inventory.v1", "inventory_id", None),
-    ("bb.registry.v1", "registry_id", None),
 )
 
-SPEC_REGISTRY: dict[str, PrimitiveSpec] = {
-    schema_version: PrimitiveSpec(
-        schema_version=schema_version,
-        schema_path=_SCHEMAS_DIR / f"{schema_version}.schema.json",
-        id_field=id_field,
-        hash_field=hash_field,
-    )
-    for schema_version, id_field, hash_field in _SCHEMA_SPECS
-}
+_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = _CORE_SCHEMA_SPECS + _E4_SCHEMA_SPECS
+
+
+def _build_spec_registry(schema_specs: tuple[tuple[str, str, str | None], ...]) -> dict[str, PrimitiveSpec]:
+    return {
+        schema_version: PrimitiveSpec(
+            schema_version=schema_version,
+            schema_path=_SCHEMAS_DIR / f"{schema_version}.schema.json",
+            id_field=id_field,
+            hash_field=hash_field,
+        )
+        for schema_version, id_field, hash_field in schema_specs
+    }
+
+CORE_SPEC_REGISTRY: dict[str, PrimitiveSpec] = _build_spec_registry(_CORE_SCHEMA_SPECS)
+E4_SPEC_REGISTRY: dict[str, PrimitiveSpec] = _build_spec_registry(_E4_SCHEMA_SPECS)
+SPEC_REGISTRY: dict[str, PrimitiveSpec] = {**CORE_SPEC_REGISTRY, **E4_SPEC_REGISTRY}
 
 
 def get_spec(schema_version: str) -> PrimitiveSpec:
@@ -253,6 +267,8 @@ def _json_pointer(path: Any) -> str:
 __all__ = [
     "PrimitiveCompileError",
     "PrimitiveSpec",
+    "CORE_SPEC_REGISTRY",
+    "E4_SPEC_REGISTRY",
     "SPEC_REGISTRY",
     "canonical_record_bytes",
     "finalize_record",

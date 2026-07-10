@@ -127,6 +127,7 @@ class E4CatalogBinding(BaseModel):
     schema_version: str
     segments: list[E4CatalogBindingSegment]
     segments_hash: str
+    stable_entries_hash: str
     generated_at_utc: str | None = None
 
 

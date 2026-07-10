@@ -102,13 +102,33 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-@lru_cache(maxsize=1)
-def _agent_config_surface_validator() -> Draft202012Validator:
-    schema_path = _repo_root() / "contracts" / "kernel" / "schemas" / "bb.agent_config_surface.v1.schema.json"
+@lru_cache(maxsize=None)
+def _agent_config_surface_validator(schema_version: str = "bb.agent_config_surface.v1") -> Draft202012Validator:
+    schema_name = (
+        "bb.agent_config_surface.v2.schema.json"
+        if schema_version == "bb.agent_config_surface.v2"
+        else "bb.agent_config_surface.v1.schema.json"
+    )
+    schema_path = _repo_root() / "contracts" / "kernel" / "schemas" / schema_name
     with open(schema_path, "r", encoding="utf-8") as handle:
         schema = json.load(handle)
     Draft202012Validator.check_schema(schema)
     return Draft202012Validator(schema)
+
+
+def _surface_schema_version(doc: Mapping[str, Any]) -> str:
+    schema_version = doc.get("schema_version")
+    if schema_version is None:
+        return "bb.agent_config_surface.v1"
+    if schema_version == "bb.agent_config_surface.v2":
+        return "bb.agent_config_surface.v2"
+    raise ValueError(f"unsupported agent config surface schema_version: {schema_version}")
+
+def _has_agent_config_version_2(doc: Mapping[str, Any]) -> bool:
+    try:
+        return int(doc.get("version", 0)) == 2
+    except Exception:
+        return False
 
 
 def _json_pointer(parts: Any) -> str:
@@ -125,9 +145,10 @@ def _format_config_schema_error(error: Any) -> str:
     return f"agent config schema error at {_json_pointer(path)}: {error.message}"
 
 
-def _validate_agent_config_surface(doc: Dict[str, Any]) -> None:
+def _validate_agent_config_surface(doc: Dict[str, Any], schema_version: str | None = None) -> None:
+    selected_schema_version = schema_version or _surface_schema_version(doc)
     errors = sorted(
-        _agent_config_surface_validator().iter_errors(doc),
+        _agent_config_surface_validator(selected_schema_version).iter_errors(doc),
         key=lambda item: (tuple(str(part) for part in item.absolute_path), item.message),
     )
     if errors:
@@ -213,7 +234,7 @@ def _append_config_graph_layers(
         base_raw = _load_yaml(base_path)
         _append_config_graph_layers(base_raw, base_path, layers, _seen=(*_seen, resolved_path))
 
-    layer_values = {key: value for key, value in doc.items() if key != "extends"}
+    layer_values = {key: value for key, value in doc.items() if key not in {"extends", "dossier"}}
     order = len(layers)
     layers.append(
         {
@@ -254,6 +275,16 @@ def build_config_view(config_path_str: str) -> ConfigView:
     if not isinstance(raw, dict):
         raise ValueError("agent config must be a mapping")
 
+    effective_doc = _resolve_extends(raw, config_path) if raw.get("extends") else copy.deepcopy(raw)
+    surface_schema_version = _surface_schema_version(effective_doc)
+    if surface_schema_version == "bb.agent_config_surface.v2":
+        _validate_v2(effective_doc)
+        runtime_doc = _normalize_for_runtime(effective_doc)
+    else:
+        if _has_agent_config_version_2(effective_doc):
+            _validate_agent_config_surface(effective_doc, "bb.agent_config_surface.v1")
+        runtime_doc = effective_doc
+
     layers = _config_graph_layers(raw, config_path)
     graph = compile_effective_config_graph(
         graph_id=f"agent_config:{config_path.stem}",
@@ -267,11 +298,7 @@ def build_config_view(config_path_str: str) -> ConfigView:
             }
         ],
     )
-    effective_doc = _resolve_extends(raw, config_path) if raw.get("extends") else copy.deepcopy(raw)
-    if is_v2_config(effective_doc):
-        _validate_v2(effective_doc)
-        effective_doc = _normalize_for_runtime(effective_doc)
-    return ConfigView(effective_doc, graph=graph, config_path=config_path)
+    return ConfigView(runtime_doc, graph=graph, config_path=config_path)
 
 
 def load_agent_config_view(config_path_str: str) -> ConfigView:
@@ -313,7 +340,7 @@ def _log_config_divergence(
 
 
 def _validate_v2(doc: Dict[str, Any]) -> None:
-    _validate_agent_config_surface(doc)
+    _validate_agent_config_surface(doc, "bb.agent_config_surface.v2")
     required_top = ["version", "workspace", "providers", "modes", "loop"]
     for key in required_top:
         if key not in doc:
@@ -680,7 +707,7 @@ def _normalize_for_runtime(doc: Dict[str, Any]) -> Dict[str, Any]:
     Add compatibility fields expected by current runtime while keeping v2 structure.
     - tools.defs_dir: map from tools.registry.paths[0]
     """
-    out = dict(doc)
+    out = {key: value for key, value in doc.items() if key != "dossier"}
     tools = out.setdefault("tools", {}) or {}
     registry = tools.get("registry") or {}
     paths = registry.get("paths") or []
@@ -699,16 +726,13 @@ def _normalize_for_runtime(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def is_v2_config(doc: Dict[str, Any]) -> bool:
-    try:
-        return int(doc.get("version", 0)) == 2
-    except Exception:
-        return False
+    return doc.get("schema_version") == "bb.agent_config_surface.v2"
 
 
 def load_agent_config(config_path_str: str) -> Dict[str, Any]:
     """
-    Load agent config with v2 support (extends + validation + minimal normalization).
-    Env override: if AGENT_SCHEMA_V2_ENABLED=1, treat as v2 when version==2 or 'modes'+'loop' present.
+    Load agent config with v1/v2 support (extends + validation + minimal normalization).
+    V1 configs omit schema_version. V2 configs declare schema_version=bb.agent_config_surface.v2.
     BREADBOARD_CONFIG_AUTHORITY mirrors policy authority. Production default is config; CI or
     BREADBOARD_CONFIG_EFFECTIVE_DEFAULT=1 defaults to effective unless the authority is explicit.
     """
@@ -718,14 +742,13 @@ def load_agent_config(config_path_str: str) -> Dict[str, Any]:
     # Prefer resolving extends first (so child files inherit version/mode/loop)
     doc = _resolve_extends(raw, config_path) if (isinstance(raw, dict) and raw.get("extends")) else raw
 
-    # Gate on version and env
-    env_enabled = os.environ.get("AGENT_SCHEMA_V2_ENABLED", "0") == "1"
-    if is_v2_config(doc) or (env_enabled and ("modes" in doc or "loop" in doc)):
+    surface_schema_version = _surface_schema_version(doc)
+    if surface_schema_version == "bb.agent_config_surface.v2":
         _validate_v2(doc)
         legacy_doc = _normalize_for_runtime(doc)
     else:
-        # Fallback: legacy load path, return as-is under default authority.
-        legacy_doc = raw
+        # Schema-less legacy YAML without version remains raw under config authority; version:2 agent configs resolve like ConfigView.
+        legacy_doc = doc if _has_agent_config_version_2(doc) else raw
 
     authority = _default_config_authority()
     active_logger = logging.getLogger(__name__)
