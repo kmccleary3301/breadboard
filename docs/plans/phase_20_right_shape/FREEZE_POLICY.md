@@ -5,7 +5,8 @@ Effective from the commit introducing this file until the Phase 20 completion cr
 - New schema families under contracts/kernel/schemas/ — except bb.e4.lane_manifest.v1,
   bb.e4.lane_lock.v1, bb.contract_tiers.v1 (the three Phase 20 schemas). Constraint tightening of
   existing schemas is permitted when a plan packet requires it (each occurrence allowlisted in
-  scripts/check_phase20_freeze.py with the packet id).
+  scripts/check_phase20_freeze.py with the packet id and expected post-change content hash in the
+  same commit, per SPEC_AMENDMENTS.md AM10).
 - New SDK packages (sdk/*/package.json count is fixed).
 - New lane kinds and new lanes under config/e4_lanes/ (the flagship demo lane is allowlisted).
 - New ledgers, scorecards, campaign evidence snapshot forms (BB_RS_PROGRESS.json is the only

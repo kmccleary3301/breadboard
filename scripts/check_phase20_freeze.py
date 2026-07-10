@@ -41,10 +41,8 @@ ALLOWED_SCHEMA_IDS = {
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
-# when the occurrence is named here with its owning packet.
-TIGHTENING_ALLOWLIST = {
-    "bb.e4.lane_manifest.v1": "F4",
-}
+# when the same commit pins the expected post-change content hash and owning packet.
+TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {}
 
 # Phase 20 packet F4. These generated sources are known before the freeze begins.
 ALLOWED_LANE_SOURCE_PATHS = {
@@ -58,6 +56,10 @@ M_TRACK_GOVERNANCE_FILE = re.compile(
     r"^M(?:1)?[-_].*(?:ledger|scorecard)", re.IGNORECASE
 )
 GOVERNANCE_FILE = re.compile(r"(?:ledger|scorecard)", re.IGNORECASE)
+
+
+class AllowlistConfigError(ValueError):
+    """The tightening allowlist is malformed and cannot authorize drift."""
 
 
 class InventoryError(ValueError):
@@ -249,6 +251,29 @@ def _string_map(payload: Any, label: str) -> dict[str, str]:
     return dict(payload)
 
 
+def _validated_tightening_allowlist() -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    for schema_id, entry in TIGHTENING_ALLOWLIST.items():
+        if not isinstance(schema_id, str) or not schema_id:
+            raise AllowlistConfigError("schema IDs must be non-empty strings")
+        if not isinstance(entry, dict) or set(entry) != {"packet", "sha256"}:
+            raise AllowlistConfigError(
+                f"{schema_id}: expected exactly packet and sha256 fields"
+            )
+        packet = entry.get("packet")
+        content_hash = entry.get("sha256")
+        if not isinstance(packet, str) or not packet:
+            raise AllowlistConfigError(f"{schema_id}: packet must be a non-empty string")
+        if not isinstance(content_hash, str) or re.fullmatch(
+            r"[0-9a-f]{64}", content_hash
+        ) is None:
+            raise AllowlistConfigError(
+                f"{schema_id}: sha256 must be 64 lowercase hexadecimal characters"
+            )
+        hashes[schema_id] = content_hash
+    return hashes
+
+
 def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str, list[str]]:
     baseline_schema_ids = _string_set(baseline.get("schema_ids"), "schema_ids")
     current_schema_ids = _string_set(current.get("schema_ids"), "schema_ids")
@@ -259,17 +284,27 @@ def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str
     current_hashes = _string_map(
         current.get("schema_content_sha256"), "schema_content_sha256"
     )
-    schema_content_drift = {
-        (
-            f'{schema_id} (not in TIGHTENING_ALLOWLIST; add '
-            f'{{"{schema_id}": "<packet-id>"}} per FREEZE_POLICY/AM10, '
-            "or revert the change)"
+    tightening_hashes = _validated_tightening_allowlist()
+    schema_content_drift: set[str] = set()
+    for schema_id, baseline_hash in baseline_hashes.items():
+        current_hash = current_hashes.get(schema_id)
+        if current_hash is None or current_hash == baseline_hash:
+            continue
+        if tightening_hashes.get(schema_id) == current_hash:
+            continue
+        remedy = json.dumps(
+            {
+                schema_id: {
+                    "packet": "<packet-id>",
+                    "sha256": current_hash,
+                }
+            },
+            sort_keys=True,
         )
-        for schema_id, baseline_hash in baseline_hashes.items()
-        if schema_id in current_hashes
-        and current_hashes[schema_id] != baseline_hash
-        and schema_id not in TIGHTENING_ALLOWLIST
-    }
+        schema_content_drift.add(
+            f"{schema_id} (not authorized by TIGHTENING_ALLOWLIST; add/update "
+            f"{remedy} per FREEZE_POLICY/AM10 in the same commit, or revert the change)"
+        )
 
     package_additions = _package_set(current.get("sdk_packages"), "sdk_packages") - _package_set(
         baseline.get("sdk_packages"), "sdk_packages"
@@ -357,6 +392,9 @@ def main() -> int:
                 + "; ".join(contract_tier_errors)
             )
         additions = _added_values(baseline, build_inventory(tracked_files))
+    except AllowlistConfigError as exc:
+        print(f"phase20-freeze: allowlist config error: {exc}", file=sys.stderr)
+        return 2
     except InventoryError as exc:
         print(f"phase20-freeze: inventory error: {exc}", file=sys.stderr)
         return 2
