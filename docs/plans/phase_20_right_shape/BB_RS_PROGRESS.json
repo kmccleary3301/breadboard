@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 105,
+ "points_done": 85,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:09:21Z",
+ "updated_at_utc": "2026-07-10T21:11:29Z",
  "items": [
   {
    "id": "A1",
@@ -146,7 +146,7 @@
    "ws": "B",
    "title": "freeze gate script + CI wiring",
    "weight": 20,
-   "status": "done",
+   "status": "in_progress",
    "deps": [
     "B1"
    ],
@@ -162,7 +162,7 @@
      "sha": "de76cf2b"
     }
    ],
-   "notes": "Implementer ran all 4 negative tests red; verifier independently reproduced 2 (new $id, lane kind edit). AM3: 'wire into product-spine' clause owned by D1 (see SPEC_AMENDMENTS.md#amendment-3); D1's verifier must confirm the freeze step in ci.yml.",
+   "notes": "Implementer ran all 4 negative tests red; verifier independently reproduced 2 (new $id, lane kind edit). AM3: 'wire into product-spine' clause owned by D1 (see SPEC_AMENDMENTS.md#amendment-3); D1's verifier must confirm the freeze step in ci.yml. REOPENED: post-merge integration smoke @ 0d127901 exit=1 - script inventories untracked node_modules package.json files (product_defect); fix routed to implementer; tracked-files-only + new negative test required; re-verify pending.",
    "verifiers": [
     {
      "agent": "VerifyWsB(reviewer)",
