@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bb.e4.lane_lock.v1",
+  "title": "BreadBoard E4 lane lock (machine-owned deterministic resolution; never hand-edited)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "lock_format", "lane_id", "manifest_ref", "manifest_sha256", "target_freeze", "resolved_inputs", "artifact_roles", "packet_constants_ref", "registry_pins"],
+  "properties": {
+    "schema_version": { "const": "bb.e4.lane_lock.v1" },
+    "lock_format": { "const": "canonical-json-v1" },
+    "lane_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "manifest_ref": { "type": "string" },
+    "manifest_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "target_freeze": {
+      "type": "object", "additionalProperties": false, "required": ["config_id", "freeze_manifest_row_sha256"],
+      "properties": { "config_id": { "type": "string" },
+                      "freeze_manifest_row_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } }
+    },
+    "resolved_inputs": { "type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256", "bytes", "role"],
+      "properties": { "path": { "type": "string" }, "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+                      "bytes": { "type": "integer", "minimum": 0 }, "role": { "type": "string" } } } },
+    "artifact_roles": {
+      "type": "object",
+      "patternProperties": { "^[a-z0-9][a-z0-9_]*$": {
+        "type": "object", "additionalProperties": false, "required": ["path"],
+        "properties": { "path": { "type": "string" },
+                        "sha256": { "type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$" },
+                        "bytes": { "type": ["integer", "null"], "minimum": 0 } } } },
+      "additionalProperties": false
+    },
+    "packet_constants_ref": {
+      "type": ["object", "null"], "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": { "path": { "type": "string" }, "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } },
+      "$comment": "generated sidecar holding payload_templates/substitutions extracted from legacy lane defs; machine-owned"
+    },
+    "registry_pins": { "type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["registry", "entry_id", "entry_sha256"],
+      "properties": { "registry": { "type": "string" }, "entry_id": { "type": "string" },
+                      "entry_sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" } } } }
+  }
+}
