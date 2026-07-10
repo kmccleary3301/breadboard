@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **4 amendments** (below).
+Current state: **5 amendments** (below).
 
 ---
 
@@ -47,3 +47,13 @@ Corrected normative bootstrap (supersedes AM2's command only; AM2's pip>=21.3 ra
       && "<V>/bin/python" -m pip install -e "<repo-root>"
 
 All pip invocations use `python -m pip`. G6's fresh-checkout gate MUST execute this exact sequence. G1's existing verification remains valid (its gate exercised editable-install mechanics only; classification: gate_wrong in AM2, not a G1 defect).
+
+---
+
+## Amendment 5 - 2026-07-10 - three spec gaps surfaced by H1 (spec_gap; owners assigned)
+
+H1's honest-execution battery exposed plan-vs-repo mismatches. None are H1 defects; H1's fail-closed reds are the intended signal. Owners:
+
+1. **/replay/mode absent from all 21 normalized legacy lanes** (only /replay/session + /replay/comparator_class exist; session null). Rule 2's `replay.mode == "stored"` check cannot pass on any legacy lane until **H3** adds `mode` plus concrete stored-artifact refs. Until then, replay-reuse reds are expected and correct.
+2. **Undeclared lane kind**: legacy /kind values are `target_support` (12) and `non_target_accounting` (9); STAGES_BY_KIND declares `target_support`, `self_runtime`, `probe`. **WS-F** must either migrate the kind or amend the table with an authoritative tuple. Interim rule: H-packets treat `non_target_accounting` as legacy-undeclared and fail closed.
+3. **Directory reused-inputs lack digest semantics**: e.g. `config/e4_targets/claude_code/2.1.63` is a directory at /capture/inputs. **H3** must declare concrete stored artifact files or define canonical directory-tree digest semantics before stored-capture reuse can pass.
