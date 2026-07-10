@@ -4,8 +4,9 @@ Effective from the commit introducing this file until the Phase 20 completion cr
 (BB_RS_MASTER_PLAN.md §6), the following surfaces are FROZEN:
 - New schema families under contracts/kernel/schemas/ — except bb.e4.lane_manifest.v1,
   bb.e4.lane_lock.v1, bb.contract_tiers.v1 (the three Phase 20 schemas). Constraint tightening of
-  existing schemas is permitted when a plan packet requires it (each occurrence allowlisted in
-  scripts/check_phase20_freeze.py with the packet id).
+  existing schemas is permitted when a plan packet requires it; each occurrence is named in that
+  packet's ledger-item evidence with the packet id, covered by a red-gate test, and reviewed by the
+  packet's verifier (AM10; the central freeze script enforces semantic-ID additions only).
 - New SDK packages (sdk/*/package.json count is fixed).
 - New lane kinds and new lanes under config/e4_lanes/ (the flagship demo lane is allowlisted).
 - New ledgers, scorecards, campaign evidence snapshot forms (BB_RS_PROGRESS.json is the only

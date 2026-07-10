@@ -6,7 +6,7 @@
  "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:59:41Z",
+ "updated_at_utc": "2026-07-10T22:01:50Z",
  "items": [
   {
    "id": "A1",
@@ -1448,6 +1448,14 @@
    "classification": "spec_gap",
    "what": "tree-digest domain: root-relative paths, bytewise order, canonical JSON, fail-closed symlinks/special/undecodable, realpath confinement, no exclusions",
    "owner": "F4; H3",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM10",
+   "date": "2026-07-10",
+   "classification": "gate_wrong",
+   "what": "I2 gate -> guarding suites + schema-first suite + compilation no-regression (set-diff); tightening governance moved to packet evidence + red-gate tests",
+   "owner": "I2; orchestrator (policy text)",
    "recorded_by": "orchestrator"
   }
  ],

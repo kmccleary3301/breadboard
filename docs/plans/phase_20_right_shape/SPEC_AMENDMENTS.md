@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **9 amendments** (below).
+Current state: **10 amendments** (below).
 
 ---
 
@@ -140,3 +140,12 @@ AM9's definition is completed as follows; the F4 helper implements EXACTLY this:
 - **Fail-closed set**: symlinks (any, file or dir — never followed), FIFOs/sockets/devices, unreadable files, undecodable names. Additionally each entry's realpath MUST remain under the root's realpath (no escape), else fail closed.
 
 **Classification:** spec_gap (completes AM9). **Owner:** F4 (helper); H3 (consumer). **Recorded-by:** orchestrator.
+
+---
+
+## Amendment 10 - 2026-07-10 - I2 acceptance gate + freeze tightening governance (gate_wrong)
+
+1. **I2 gate.** I2's literal ACCEPT `pytest -q tests/compilation` is red at base 27deb570 for pre-existing product defects unrelated to consolidation (v2_loader `_config_metadata` injection, dossier hash drift, kernel emitter drift; 175 failures — the same set exec-verified during WS-D's pre-existence audit). Replaced by: (a) the four named guarding suites, UNMODIFIED by the packet, green; (b) the new schema-first suite green; (c) **no-regression clause**: the `tests/compilation` failure set (by test ID) at the packet head must be a subset-or-equal of the base failure set — verifiers rerun both trees and diff the sets. I2 is NOT required to fix pre-existing failures.
+2. **Freeze tightening governance.** FREEZE_POLICY.md promised per-occurrence allowlisting of existing-schema tightenings inside check_phase20_freeze.py; no such mechanism exists (the script inventories semantic-ID additions only — B2's verified scope). Corrected governance: constraint tightening of an existing schema is permitted when a plan packet requires it, and each occurrence MUST be (a) named in that packet's ledger-item evidence with the packet id, (b) covered by a red-gate test proving the tightened constraint rejects what it should, (c) reviewed by the packet's verifier. The central freeze script continues to enforce ID-level additions only. FREEZE_POLICY.md is corrected in the commit recording this amendment.
+
+**Classification:** gate_wrong (both parts). **Owner:** I2 (gate); freeze policy text: orchestrator bookkeeping. **Recorded-by:** orchestrator.
