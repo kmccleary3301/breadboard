@@ -13,11 +13,13 @@ from typing import Any, Mapping, Sequence
 try:
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
+    from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.validators.registries import load_registry
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
+    from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.validators.registries import load_registry
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -73,7 +75,7 @@ def _command_argv(command: Any) -> list[str] | None:
     return None
 
 
-def _claim_argv(lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None) -> list[str]:
+def _claim_argv(lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None) -> list[str] | None:
     argv = _command_argv(lane_def.get("reverify_command"))
     if argv is not None:
         return argv
@@ -86,7 +88,7 @@ def _claim_argv(lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] |
             argv = _command_argv(ct.get("command"))
             if argv is not None:
                 return argv
-    raise LaneRunError(f"lane {lane_def['lane_id']!r} has no claim/reverify argv in lane_def or inventory")
+    return None
 
 
 def _json_out_location(argv: Sequence[str]) -> tuple[int, str, bool]:
@@ -211,36 +213,144 @@ def _write_accepted_compatible_output(output_path: Path, accepted_path: Path) ->
     return True
 
 
-def _metadata_stage_result(stage_name: str, lane_def: Mapping[str, Any], registry_path: Path) -> dict[str, Any]:
+def _declared_non_execution(
+    stage_name: str,
+    lane_def: Mapping[str, Any],
+    registry_path: Path,
+) -> dict[str, Any]:
     result: dict[str, Any] = {"stage": stage_name, "lane_id": lane_def["lane_id"], "returncode": 0}
-    if stage_name == "capture":
-        capture = lane_def.get("capture")
-        result["strategy"] = capture.get("strategy") if isinstance(capture, Mapping) else None
-        result["inputs"] = list(capture.get("inputs", [])) if isinstance(capture, Mapping) else []
+    kind = lane_def.get("kind")
+    applicable_stages = STAGES_BY_KIND.get(kind) if isinstance(kind, str) else None
+    if applicable_stages is not None and stage_name not in applicable_stages:
+        result.update(
+            outcome="not_applicable",
+            manifest_rule="/kind",
+            reused_inputs=None,
+            report_ref=None,
+            lock_sha256=None,
+            detail=f"{stage_name} is not part of the {kind} lane stage table",
+        )
+        return result
+
+    declaration = lane_def.get(stage_name)
+    if declaration is False:
+        result.update(
+            outcome="disabled_by_manifest",
+            manifest_rule=f"/{stage_name}",
+            reused_inputs=None,
+            report_ref=None,
+            lock_sha256=None,
+            detail=f"{stage_name} is disabled by its manifest declaration",
+        )
+        return result
+    if isinstance(declaration, Mapping):
+        if declaration.get("enabled") is False:
+            result.update(
+                outcome="disabled_by_manifest",
+                manifest_rule=f"/{stage_name}/enabled",
+                reused_inputs=None,
+                report_ref=None,
+                lock_sha256=None,
+                detail=f"{stage_name} is disabled by its manifest declaration",
+            )
+            return result
+        if declaration.get("mode") == "off":
+            result.update(
+                outcome="disabled_by_manifest",
+                manifest_rule=f"/{stage_name}/mode",
+                reused_inputs=None,
+                report_ref=None,
+                lock_sha256=None,
+                detail=f"{stage_name} is disabled by its manifest declaration",
+            )
+            return result
+
+    reused_paths: list[str] = []
+    manifest_rule: str | None = None
+    if stage_name == "capture" and isinstance(declaration, Mapping):
+        if declaration.get("strategy") in {"replay_dump", "runtime_records"}:
+            manifest_rule = "/capture/strategy"
+            reused_paths = [path for path in declaration.get("inputs", []) if isinstance(path, str)]
+        result["strategy"] = declaration.get("strategy")
+        result["inputs"] = list(declaration.get("inputs", []))
         result["artifacts_root"] = lane_def.get("artifacts_root")
-        result["skipped"] = True
-        result["reason"] = "data-defined capture uses checked-in canonical artifacts; no lane-specific packet builder is executed"
-        return result
-    if stage_name == "normalize":
-        normalize = lane_def.get("normalize")
-        result["translator"] = normalize.get("translator") if isinstance(normalize, Mapping) else None
-        result["skipped"] = True
-        result["reason"] = "identity/data-only normalize stage has no artifact writer"
-        return result
-    if stage_name == "replay":
-        replay = lane_def.get("replay")
-        result["comparator_class"] = replay.get("comparator_class") if isinstance(replay, Mapping) else None
-        result["skipped"] = True
-        result["reason"] = "stored replay stage has no artifact writer"
-        return result
-    if stage_name == "compare":
+    elif stage_name == "replay" and isinstance(declaration, Mapping):
+        if declaration.get("mode") == "stored":
+            manifest_rule = "/replay/mode"
+            session = declaration.get("session")
+            reused_paths = [session] if isinstance(session, str) and session else []
+        result["comparator_class"] = declaration.get("comparator_class")
+    elif stage_name == "normalize" and isinstance(declaration, Mapping):
+        result["translator"] = declaration.get("translator")
+    elif stage_name == "compare" and isinstance(declaration, Mapping):
         entry = _comparator_entry(lane_def, registry_path)
         result["comparator_id"] = entry.get("comparator_id")
         result["entrypoint"] = entry.get("entrypoint")
-        result["skipped"] = True
-        result["reason"] = "comparator registry resolved; C4 claim stage performs rerun/diff"
-        return result
-    raise LaneRunError(f"unsupported metadata stage {stage_name!r}")
+
+    if manifest_rule is not None:
+        reused_inputs: list[dict[str, str]] = []
+        missing_paths: list[str] = []
+        for logical_path in reused_paths:
+            artifact_path = _resolve_repo_path(logical_path)
+            if artifact_path.is_file():
+                reused_inputs.append({"path": logical_path, "sha256": sha256_file(artifact_path)})
+            else:
+                missing_paths.append(logical_path)
+        if reused_inputs and not missing_paths:
+            result.update(
+                outcome="reused_stored_result",
+                manifest_rule=manifest_rule,
+                reused_inputs=reused_inputs,
+                report_ref=None,
+                lock_sha256=None,
+                detail=f"{stage_name} reused author-declared stored artifacts",
+            )
+            return result
+        detail = (
+            f"{stage_name} declared stored reuse without reusable artifact provenance"
+            if not missing_paths
+            else f"{stage_name} declared stored reuse but artifacts are missing: {', '.join(missing_paths)}"
+        )
+    else:
+        detail = f"{stage_name} did not execute and has no author declaration allowing non-execution"
+    result.update(
+        returncode=1,
+        outcome="executed_fail",
+        manifest_rule=None,
+        reused_inputs=None,
+        report_ref=None,
+        lock_sha256=None,
+        detail=detail,
+    )
+    return result
+
+
+def _finalize_stage_result(
+    result: dict[str, Any],
+    lane_def: Mapping[str, Any],
+    *,
+    executed: bool,
+) -> dict[str, Any]:
+    if executed:
+        returncode = int(result.get("returncode", 1))
+        report_ref = result.get("output_path")
+        result.update(
+            outcome="executed_pass" if returncode == 0 else "executed_fail",
+            manifest_rule=None,
+            reused_inputs=None,
+            report_ref=report_ref if isinstance(report_ref, str) and report_ref else None,
+            lock_sha256=None,
+            detail=(
+                f"{result['stage']} executed successfully"
+                if returncode == 0
+                else f"{result['stage']} execution failed with return code {returncode}"
+            ),
+        )
+    errors = check_stage_report(result, lane_def)
+    result["honesty_errors"] = errors
+    if errors or result.get("outcome") == "executed_fail":
+        result["returncode"] = int(result.get("returncode") or 1)
+    return result
 
 
 
@@ -442,13 +552,38 @@ def run_lane(
         )
 
     results: list[dict[str, Any]] = []
+    blocked_by: str | None = None
     for stage_name in stages:
+        if blocked_by is not None:
+            results.append(
+                _finalize_stage_result(
+                    {
+                        "stage": stage_name,
+                        "lane_id": lane_id,
+                        "returncode": 1,
+                        "outcome": "executed_fail",
+                        "manifest_rule": None,
+                        "reused_inputs": None,
+                        "report_ref": None,
+                        "lock_sha256": None,
+                        "detail": f"{stage_name} did not execute because {blocked_by} failed",
+                    },
+                    lane_def,
+                    executed=False,
+                )
+            )
+            continue
         adapter_capture = _capture_adapter_callable(lane_def) if stage_name == "capture" else None
         if defer_derived_writes:
-            isolated_result = _run_isolated_capture(lane_def, inventory_lane, adapter_capture)
+            isolated_result = _finalize_stage_result(
+                _run_isolated_capture(lane_def, inventory_lane, adapter_capture),
+                lane_def,
+                executed=True,
+            )
             results.append(isolated_result)
             if isolated_result["returncode"] != 0:
-                break
+                blocked_by = stage_name
+                continue
             continue
         if adapter_capture is not None:
             if not promote_accepted and out_dir is not None and not getattr(adapter_capture, "supports_scratch_out_dir", False):
@@ -457,7 +592,7 @@ def run_lane(
                 )
             row = adapter_capture(lane_def, inventory_lane, promote_accepted=promote_accepted, out_dir=out_dir)
             refresh_report = _refresh_promoted_bindings() if row.get("ok") and promote_accepted and not defer_promotion_refresh else {"skipped": True, "reason": "deferred by --defer-promotion-refresh"} if row.get("ok") and promote_accepted else None
-            results.append(
+            adapter_result = _finalize_stage_result(
                 {
                     "stage": stage_name,
                     "lane_id": lane_id,
@@ -466,10 +601,14 @@ def run_lane(
                     "output_path": row.get("node_gate"),
                     "promotion_refresh": refresh_report,
                     "packet_report": row,
-                }
+                },
+                lane_def,
+                executed=True,
             )
-            if not row.get("ok"):
-                break
+            results.append(adapter_result)
+            if adapter_result["returncode"] != 0:
+                blocked_by = stage_name
+                continue
             continue
         argv = _command_stage_argv(stage_name, lane_def, inventory_lane)
         if argv is None and stage_name == "capture" and promote_accepted:
@@ -480,7 +619,7 @@ def run_lane(
 
             row = build_lane_from_definition(lane_def, inventory_lane)
             refresh_report = _refresh_promoted_bindings() if row.get("ok") and not defer_promotion_refresh else {"skipped": True, "reason": "deferred by --defer-promotion-refresh"} if row.get("ok") else None
-            results.append(
+            builder_result = _finalize_stage_result(
                 {
                     "stage": stage_name,
                     "lane_id": lane_id,
@@ -489,27 +628,37 @@ def run_lane(
                     "output_path": row.get("node_gate"),
                     "promotion_refresh": refresh_report,
                     "packet_report": row,
-                }
+                },
+                lane_def,
+                executed=True,
             )
-            if not row.get("ok"):
-                break
+            results.append(builder_result)
+            if builder_result["returncode"] != 0:
+                blocked_by = stage_name
+                continue
             continue
         if argv is None:
-            results.append(_metadata_stage_result(stage_name, lane_def, comparator_registry_path))
+            metadata_result = _finalize_stage_result(
+                _declared_non_execution(stage_name, lane_def, comparator_registry_path),
+                lane_def,
+                executed=False,
+            )
+            results.append(metadata_result)
+            if metadata_result["returncode"] != 0:
+                blocked_by = stage_name
             continue
         try:
             command, accepted_path, output_path = _retarget_json_out(argv, out_dir)
         except LaneRunError:
             if stage_name == "capture":
-                results.append(
-                    {
-                        "stage": stage_name,
-                        "lane_id": lane_id,
-                        "returncode": 0,
-                        "skipped": True,
-                        "reason": "capture argv has no --json-out contract; unsafe to run through generic lane runner",
-                    }
+                metadata_result = _finalize_stage_result(
+                    _declared_non_execution(stage_name, lane_def, comparator_registry_path),
+                    lane_def,
+                    executed=False,
                 )
+                results.append(metadata_result)
+                if metadata_result["returncode"] != 0:
+                    blocked_by = stage_name
                 continue
             raise
         completed = subprocess.run(command, cwd=ROOT, text=True, capture_output=True, check=False)
@@ -531,9 +680,10 @@ def run_lane(
         if accepted_path.exists():
             result["accepted_sha256"] = sha256_file(accepted_path)
             result["byte_parity"] = output_path.exists() and output_path.read_bytes() == accepted_path.read_bytes()
-        results.append(result)
-        if completed.returncode != 0:
-            break
+        executed_result = _finalize_stage_result(result, lane_def, executed=True)
+        results.append(executed_result)
+        if executed_result["returncode"] != 0:
+            blocked_by = stage_name
     ok = all(item["returncode"] == 0 for item in results)
     return {"ok": ok, "lane_id": lane_id, "stages": results}
 
