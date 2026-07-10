@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **13 amendments** (below).
+Current state: **14 amendments** (below).
 
 ---
 
@@ -207,3 +207,16 @@ F5(a)'s end-to-end run reaches capture executed_pass but normalize fails at base
 **Resolution is SEQUENCING, not dependency-picks:** whole H packets must not be cherry-picked into wsF3 (packet verification boundaries stay intact; AM12 covers only single shared-artifact commits). Order: WS-H verifies + merges into integration first; wsF3 then rebases onto that head and completes F5(a)'s full-flow gate. F5's other sub-gates (regen/churn, lock_sha256 propagation in run reports — authorized, in-scope) proceed now. F5's ACCEPT is unchanged; only its prerequisite set is corrected.
 
 **Classification:** spec_gap. **Owner:** F5 (WsF3Compiler), sequencing by orchestrator. **Recorded-by:** orchestrator.
+
+---
+
+## Amendment 14 - 2026-07-10 - P6.6 sidecar source promotion (spec_gap; resolves F6 regeneration cycle)
+
+The pilot sidecar's `payload_templates`/`substitutions` blocks were migration-extracted from legacy YAML and are derivable from NO manifest-referenced input; once legacy retires (F5) the sidecar would be unregenerable, and reusing the sidecar as its own source is cyclic. Content underivable from declared inputs is AUTHOR INTENT by definition, so it moves to the intent layer — we do not invent a reverse-derivation generator:
+
+- **One-time promotion (F6 item commit):** extract the two blocks into a repo-tracked, author-owned source file at a plan-named path next to the pilot manifest (e.g. `config/e4_lanes/oh_my_pi_p6_0_l5_memory_compaction.payloads.yaml`); the manifest references it as an input; the lock pins its digest like any other resolved input.
+- **Compile derives the sidecar deterministically from that source** (normalization allowed; the machine never writes the source). `--check` verifies sidecar == f(source, manifest).
+- **Migration equivalence gate:** the sidecar compiled from the promoted source must be byte-identical to the currently accepted sidecar ONCE at migration time; that proof recorded in F6 evidence, then legacy retirement (F5) may proceed.
+- Compile mode purity is unchanged: no legacy reads in steady state; no machine-owned shadow sources; the promoted file is ordinary authored input from then on.
+
+**Classification:** spec_gap. **Owner:** F6 (WsF3Compiler). **Recorded-by:** orchestrator.

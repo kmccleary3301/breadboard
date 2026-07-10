@@ -6,7 +6,7 @@
  "points_done": 385,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:35:32Z",
+ "updated_at_utc": "2026-07-10T22:39:42Z",
  "items": [
   {
    "id": "A1",
@@ -1571,6 +1571,14 @@
    "classification": "spec_gap",
    "what": "F5(a) additionally depends on H2-H4; resolved by sequencing (WS-H merges first, wsF3 rebases), never whole-packet picks; lock_sha256 propagation authorized in F5 scope | helper 7462a803 landed as integration node (patch-id 648f71a0, scope 2 files, suite green) BEFORE H/F packets; both rebase onto it",
    "owner": "F5+orchestrator",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM14",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "P6.6 sidecar payload_templates/substitutions promoted one-time into a manifest-referenced authored source file; compile derives sidecar from it; byte-parity proof at migration; no reverse-derivation generator",
+   "owner": "F6",
    "recorded_by": "orchestrator"
   }
  ],
