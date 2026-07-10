@@ -57,6 +57,8 @@ Identifier sets that are expected to grow across harnesses live in `contracts/ke
 
 `bb.e4.common.v1` is the E4-pack shared definitions schema. It is not finalized as a record; E4 contracts reference its `$defs` for exact scope tuples, artifact references, catalog snapshot bindings, typed assertions, and captured-target provenance.
 
+`bb.e4.closure_report.v1` is the consolidated E4 closure gate report. It records the score-subledger and primitive-readiness sections under one fail-closed GateError envelope; the old score/readiness validator CLIs are deprecated wrappers for one tranche only.
+
 ### Contract migrations
 
 ### v1-to-v2 runtime records
