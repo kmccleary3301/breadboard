@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **3 amendments** (below).
+Current state: **4 amendments** (below).
 
 ---
 
@@ -32,3 +32,18 @@ Current state: **3 amendments** (below).
 **Resolution:** reading (b). B2's ACCEPT is its gate (plan-wide convention: ACCEPT defines done). The wiring obligation is OWNED by D1: D1's acceptance is amended to explicitly include "ci.yml product-spine job runs scripts/check_phase20_freeze.py, and its verifier confirms this step exists and passes." The WS-B child issue stays open until D1 lands (bd closure rule §1.6 already requires all-workstream-items done; B3 is also pending).
 **Effect on scoring:** B2's 20 points stand (gate met at verified head de76cf2b); no points attach to the wiring twice; D1 cannot pass without the wiring.
 **Classification:** spec_gap.
+
+---
+
+## Amendment 4 - 2026-07-10 - AM2 bootstrap must install requirements before editable package (gate_wrong)
+
+AM2's fresh-venv bootstrap (`venv -> upgrade pip -> pip install -e <root>`) is incomplete: the root `pyproject.toml` (G1) intentionally declares **no dependencies**, and pre-AM2 bootstrap provisioned `requirements.txt`. A fresh checkout following AM2 verbatim gets an editable package with none of its runtime/test dependencies.
+
+Corrected normative bootstrap (supersedes AM2's command only; AM2's pip>=21.3 rationale stands):
+
+    python3 -m venv "<V>" \
+      && "<V>/bin/python" -m pip install -U pip \
+      && "<V>/bin/python" -m pip install -r "<repo-root>/requirements.txt" \
+      && "<V>/bin/python" -m pip install -e "<repo-root>"
+
+All pip invocations use `python -m pip`. G6's fresh-checkout gate MUST execute this exact sequence. G1's existing verification remains valid (its gate exercised editable-install mechanics only; classification: gate_wrong in AM2, not a G1 defect).
