@@ -52,7 +52,7 @@ If you are new, start at the row that fits your situation and follow it forward.
 
 Tracked `docs/` is now split intentionally:
 
-- public durable docs live under `getting-started/`, `guides/`, `reference/`, and the existing stable subtrees such as `contracts/`, `conformance/`, `concepts/`, and `media/`
+- public durable docs live under `getting-started/`, `guides/`, `reference/`, `authoring/`, and the existing stable subtrees such as `contracts/`, `conformance/`, `concepts/`, and `media/`
 - maintainer-facing tracked material belongs under `internals/`
 - preserved tracked historical records belong under `archive/`
 - local planning, tranche notes, and research archaeology belong in `docs_tmp/` and are intentionally off the public docs path
@@ -76,6 +76,7 @@ Tracked `docs/` is now split intentionally:
 |-----|----------------|
 | [guides/OPERATOR_SCRIPT_SURFACE.md](guides/OPERATOR_SCRIPT_SURFACE.md) | How to choose the right canonical script family and entrypoint for setup, ops, release, migration, and parity work |
 | [reference/SCRIPTS_INDEX.md](reference/SCRIPTS_INDEX.md) | Stable categorized script taxonomy and machine-readable inventory entrypoint |
+| [authoring/AGENT_CONFIG_AUTHORING.md](authoring/AGENT_CONFIG_AUTHORING.md) | How to author a v2 agent config: layer model, generated operational-vs-dossier field table, template → explain → boot smoke → lane capture walkthrough |
 
 ### Contracts and surfaces
 
