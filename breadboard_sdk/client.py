@@ -109,37 +109,37 @@ class BreadboardClient:
             payload["max_steps"] = int(max_steps)
         if permission_mode:
             payload["permission_mode"] = permission_mode
-        return self._request("POST", "/sessions", body=payload)
+        return self._request("POST", "/v1/sessions", body=payload)
 
     def list_sessions(self) -> List[SessionSummary]:
-        return self._request("GET", "/sessions")
+        return self._request("GET", "/v1/sessions")
 
     def get_session(self, session_id: str) -> SessionSummary:
-        return self._request("GET", f"/sessions/{session_id}")
+        return self._request("GET", f"/v1/sessions/{session_id}")
 
     def delete_session(self, session_id: str) -> None:
-        self._request("DELETE", f"/sessions/{session_id}")
+        self._request("DELETE", f"/v1/sessions/{session_id}")
 
     def post_input(self, session_id: str, *, content: str, attachments: List[str] | None = None) -> None:
         payload: Dict[str, Any] = {"content": content}
         if attachments:
             payload["attachments"] = list(attachments)
-        self._request("POST", f"/sessions/{session_id}/input", body=payload)
+        self._request("POST", f"/v1/sessions/{session_id}/input", body=payload)
 
     def post_command(self, session_id: str, *, command: str, payload: Dict[str, Any] | None = None) -> None:
-        self._request("POST", f"/sessions/{session_id}/command", body={"command": command, "payload": payload or {}})
+        self._request("POST", f"/v1/sessions/{session_id}/command", body={"command": command, "payload": payload or {}})
 
     def get_models(self, *, config_path: str) -> ModelCatalogResponse:
-        return self._request("GET", "/models", query={"config_path": config_path})
+        return self._request("GET", "/v1/models", query={"config_path": config_path})
 
     def get_skills(self, session_id: str) -> SkillCatalogResponse:
-        return self._request("GET", f"/sessions/{session_id}/skills")
+        return self._request("GET", f"/v1/sessions/{session_id}/skills")
 
     def get_ctree_snapshot(self, session_id: str) -> CTreeSnapshotResponse:
-        return self._request("GET", f"/sessions/{session_id}/ctrees")
+        return self._request("GET", f"/v1/sessions/{session_id}/ctrees")
 
     def list_session_files(self, session_id: str, *, path_prefix: str | None = None) -> List[SessionFileInfo]:
-        return self._request("GET", f"/sessions/{session_id}/files", query={"path": path_prefix} if path_prefix else None)
+        return self._request("GET", f"/v1/sessions/{session_id}/files", query={"path": path_prefix} if path_prefix else None)
 
     def read_session_file(
         self,
@@ -158,10 +158,10 @@ class BreadboardClient:
             "tail_lines": tail_lines,
             "max_bytes": max_bytes,
         }
-        return self._request("GET", f"/sessions/{session_id}/files", query=query)
+        return self._request("GET", f"/v1/sessions/{session_id}/files/content", query=query)
 
     def download_artifact(self, session_id: str, *, artifact: str) -> str:
-        return str(self._request("GET", f"/sessions/{session_id}/download", query={"artifact": artifact}))
+        return str(self._request("GET", f"/v1/sessions/{session_id}/download", query={"artifact": artifact}))
 
     def upload_attachments(
         self,
@@ -170,7 +170,7 @@ class BreadboardClient:
         files: AttachmentFileIterable,
         metadata: Dict[str, Any] | None = None,
     ) -> AttachmentUploadResponse:
-        url = urljoin(self.base_url, f"/sessions/{session_id}/attachments".lstrip("/"))
+        url = urljoin(self.base_url, f"/v1/sessions/{session_id}/attachments".lstrip("/"))
         headers: Dict[str, str] = {}
         if self.auth_token:
             headers["Authorization"] = f"Bearer {self.auth_token}"
@@ -198,7 +198,7 @@ class BreadboardClient:
         last_event_id: str | None = None,
         query: Dict[str, Any] | None = None,
     ) -> Generator[SessionEvent, None, None]:
-        url = urljoin(self.base_url, f"/sessions/{session_id}/events".lstrip("/"))
+        url = urljoin(self.base_url, f"/v1/sessions/{session_id}/events".lstrip("/"))
         if query:
             url = f"{url}?{urlencode({k: v for k, v in query.items() if v is not None})}"
         headers: Dict[str, str] = {}
