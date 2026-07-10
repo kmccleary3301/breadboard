@@ -6,7 +6,7 @@
  "points_done": 205,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:21:16Z",
+ "updated_at_utc": "2026-07-10T21:22:09Z",
  "items": [
   {
    "id": "A1",
@@ -15,7 +15,18 @@
    "weight": 15,
    "status": "done",
    "deps": [],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A1/implementer.json",
+     "bound_sha": "2e583f20b210"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "2e583f20b210"
+    }
+   ],
    "notes": "",
    "verifiers": [
     {
@@ -41,7 +52,18 @@
    "deps": [
     "A1"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A2/implementer.json",
+     "bound_sha": "f5c6b80ab7ef"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "f5c6b80ab7ef"
+    }
+   ],
    "notes": "",
    "verifiers": [
     {
@@ -67,7 +89,18 @@
    "deps": [
     "A1"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A3/implementer.json",
+     "bound_sha": "f4a0628ae06f"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "f4a0628ae06f"
+    }
+   ],
    "notes": "",
    "verifiers": [
     {
@@ -91,7 +124,18 @@
    "weight": 15,
    "status": "done",
    "deps": [],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A4/implementer.json",
+     "bound_sha": "9700d1086d2c"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "9700d1086d2c"
+    }
+   ],
    "notes": "",
    "verifiers": [
     {
@@ -117,7 +161,18 @@
    "deps": [
     "A4"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A5/implementer.json",
+     "bound_sha": "11fa4e88e2f9"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "11fa4e88e2f9"
+    }
+   ],
    "notes": "",
    "verifiers": [
     {
@@ -683,7 +738,18 @@
    "weight": 30,
    "status": "done",
    "deps": [],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/H1/implementer.json",
+     "bound_sha": "182a57039c76"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "182a57039c76"
+    }
+   ],
    "notes": "Battery red is the intended fail-closed signal; root causes are the three AM5 spec gaps (owners: H3, WS-F, H3). Honesty rule machine-enforced via check_stage_report wired at run_lane per-stage path.",
    "verifiers": [
     {
@@ -851,7 +917,18 @@
    "deps": [
     "C1"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/J1/implementer.json",
+     "bound_sha": "2140039975d6"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "2140039975d6"
+    }
+   ],
    "notes": "",
    "verifiers": [
     {
@@ -1068,27 +1145,51 @@
  "amendments": [
   {
    "id": "AM1",
-   "at": "2026-07-10T20:56:55Z",
-   "rule": "\u00a71.1 interpreter rule",
+   "date": "2026-07-10",
    "classification": "spec_gap",
-   "summary": "Packet worktrees may use shared immutable integration venv; requirements digest recorded",
-   "ref": "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md#amendment-1"
+   "what": "shared immutable interpreter for packet worktrees",
+   "owner": "campaign-wide",
+   "recorded_by": "orchestrator"
   },
   {
    "id": "AM2",
-   "at": "2026-07-10T21:03:20Z",
-   "rule": "WS-G G1 ACCEPT fresh-venv bootstrap",
+   "date": "2026-07-10",
    "classification": "gate_wrong",
-   "summary": "Fresh-venv bootstrap pins pip>=21.3 (PEP 660 editable); system pip 21.2.4 fails",
-   "ref": "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md#amendment-2"
+   "what": "G1 fresh-venv bootstrap requires pip>=21.3",
+   "owner": "G-items",
+   "recorded_by": "orchestrator"
   },
   {
    "id": "AM3",
-   "at": "2026-07-10T21:09:21Z",
-   "rule": "WS-B B2 wiring clause",
+   "date": "2026-07-10",
    "classification": "spec_gap",
-   "summary": "B2 wiring clause owned by D1; B2 ACCEPT stands; D1 verifier must confirm freeze step in product-spine",
-   "ref": "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md#amendment-3"
+   "what": "B2 wiring clause owned by D1; D1 acceptance extended",
+   "owner": "D1",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM4",
+   "date": "2026-07-10",
+   "classification": "gate_wrong",
+   "what": "bootstrap installs requirements.txt before editable package",
+   "owner": "G6 gate + any fresh-venv gate",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM5",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "H1-surfaced gaps: replay mode (H3), lane kind table (WS-F), directory digests (H3)",
+   "owner": "H3, WS-F",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM6",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "minimal records-read op authorized in both SDKs for A7",
+   "owner": "A7",
+   "recorded_by": "orchestrator"
   }
  ],
  "notes": [
