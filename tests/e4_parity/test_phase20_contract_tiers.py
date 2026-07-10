@@ -16,6 +16,7 @@ SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 TIER_SCHEMA_PATH = SCHEMA_DIR / "bb.contract_tiers.v1.schema.json"
 TIER_REGISTRY_PATH = ROOT / "contracts" / "kernel" / "registries" / "contract_tiers.v1.json"
 PACKS_PATH = ROOT / "contracts" / "kernel" / "packs.v1.json"
+README_PATH = SCHEMA_DIR / "README.md"
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -24,16 +25,143 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def test_contract_tier_schema_and_checked_in_registry_validate() -> None:
-    """The checked-in tier registry conforms to a valid Draft 2020-12 registry schema."""
+def _entries_by_schema_id() -> dict[str, dict[str, Any]]:
+    registry = _load_json(TIER_REGISTRY_PATH)
+    return {entry["schema_id"]: entry for entry in registry["entries"]}
+
+
+def test_contract_tier_schema_and_product_spine_consumers_validate() -> None:
+    """Kept runtime/config contracts name consumers that are present in the tracked snapshot."""
     schema = _load_json(TIER_SCHEMA_PATH)
     Draft202012Validator.check_schema(schema)
+    kept_product_spine_tiers = {
+        entry["tier"]
+        for entry in _entries_by_schema_id().values()
+        if entry["disposition"] == "keep"
+        and entry["tier"] in {"runtime_protocol", "config_algebra"}
+    }
+    assert kept_product_spine_tiers == {"runtime_protocol", "config_algebra"}
 
     assert check_contract_tiers.validate_contract_tiers(
         registry_path=TIER_REGISTRY_PATH,
         schema_path=TIER_SCHEMA_PATH,
         packs_path=PACKS_PATH,
     ) == []
+
+
+@pytest.mark.parametrize(
+    ("schema_id", "tier", "consumer"),
+    [
+        (
+            "bb.run_context.v1",
+            "host_protocol",
+            {
+                "kind": "runtime_emission",
+                "path": "sdk/ts-kernel-core/src/contracts.ts",
+            },
+        ),
+        (
+            "bb.run_request.v1",
+            "host_protocol",
+            {
+                "kind": "runtime_emission",
+                "path": "sdk/ts-host-bridges/src/index.ts",
+            },
+        ),
+        (
+            "bb.tool_binding.v1",
+            "config_algebra",
+            {
+                "kind": "sdk",
+                "path": "sdk/ts-kernel-core/src/tool-surfaces.ts",
+            },
+        ),
+        (
+            "bb.task.v1",
+            "evidence",
+            {
+                "kind": "evidence_machinery",
+                "path": "scripts/build_python_reference_contract_fixtures.py",
+            },
+        ),
+    ],
+)
+def test_audited_contracts_name_their_actual_tier_and_consumer(
+    schema_id: str,
+    tier: str,
+    consumer: dict[str, str],
+) -> None:
+    """Audited contracts remain classified by their actual runtime or evidence use."""
+    entry = _entries_by_schema_id()[schema_id]
+
+    assert entry["tier"] == tier
+    assert consumer in entry["consumers"]
+
+
+@pytest.mark.parametrize(
+    "schema_id",
+    [
+        "bb.config_mutation_record.v1",
+        "bb.e4.lane_lock.v1",
+        "bb.environment_selector.v2",
+        "bb.registry.v1",
+        "bb.tool_spec.v2",
+    ],
+)
+def test_config_algebra_without_a_product_consumer_remains_frozen(
+    schema_id: str,
+) -> None:
+    """A descriptive config-algebra tier does not imply an unearned keep disposition."""
+    entry = _entries_by_schema_id()[schema_id]
+
+    assert entry["tier"] == "config_algebra"
+    assert entry["disposition"] == "freeze"
+    assert entry["consumers"] == []
+
+
+def test_frozen_legacy_contracts_are_never_marked_for_continued_use() -> None:
+    """A frozen-legacy classification always carries the freeze disposition."""
+    frozen_legacy = [
+        entry
+        for entry in _entries_by_schema_id().values()
+        if entry["tier"] == "frozen_legacy"
+    ]
+
+    assert frozen_legacy
+    assert {entry["disposition"] for entry in frozen_legacy} == {"freeze"}
+
+
+
+
+def test_kernel_pack_describes_minimality_as_a_tier_qualified_claim() -> None:
+    """Pack documentation limits “minimal” to runtime_protocol and points to its registry."""
+    packs = _load_json(PACKS_PATH)
+    kernel = next(entry for entry in packs["entries"] if entry["id"] == "kernel")
+    description = kernel["description"]
+
+    assert "runtime_protocol" in description
+    assert "contracts/kernel/registries/contract_tiers.v1.json" in description
+    assert "minimal expressive " + "harness primitive language" not in description.lower()
+
+
+def test_generated_readme_lists_every_registry_entry_with_its_tier() -> None:
+    """Generated schema documentation preserves the registry's complete tier assignment."""
+    readme = README_PATH.read_text(encoding="utf-8")
+    data_rows = [line for line in readme.splitlines() if line.startswith("| `bb.")]
+    documented_tiers: dict[str, str] = {}
+    for row in data_rows:
+        cells = row.split(" | ")
+        schema_id = cells[0].removeprefix("| `").removesuffix("`")
+        tier = cells[-1].removeprefix("`").removesuffix("` |")
+        documented_tiers[schema_id] = tier
+
+    registry_tiers = {
+        schema_id: entry["tier"]
+        for schema_id, entry in _entries_by_schema_id().items()
+    }
+    assert len(data_rows) == len(registry_tiers)
+    assert documented_tiers == registry_tiers
+    assert "minimal expressive " + "harness primitive language" not in readme.lower()
 
 
 def test_contract_tier_registry_exactly_matches_generated_schema_census() -> None:

@@ -3677,6 +3677,111 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     }
   },
+  "bb.contract_tiers.v1": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "bb.contract_tiers.v1",
+    "title": "Consumer-backed tier registry for the published contract estate",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "registry_id",
+      "baseline_sha",
+      "tiers",
+      "entries"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.contract_tiers.v1"
+      },
+      "registry_id": {
+        "const": "contract_tiers"
+      },
+      "baseline_sha": {
+        "type": "string",
+        "$comment": "repo commit the census was taken against"
+      },
+      "tiers": {
+        "const": [
+          "runtime_protocol",
+          "config_algebra",
+          "host_protocol",
+          "evidence",
+          "frozen_legacy"
+        ]
+      },
+      "entries": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "schema_id",
+            "tier",
+            "consumers",
+            "disposition"
+          ],
+          "properties": {
+            "schema_id": {
+              "type": "string",
+              "pattern": "^bb\\.[a-z0-9_.]+\\.v[0-9]+$"
+            },
+            "tier": {
+              "enum": [
+                "runtime_protocol",
+                "config_algebra",
+                "host_protocol",
+                "evidence",
+                "frozen_legacy"
+              ]
+            },
+            "consumers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "kind",
+                  "path"
+                ],
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "runtime_emission",
+                      "loader",
+                      "api",
+                      "sdk",
+                      "evidence_machinery",
+                      "tests"
+                    ]
+                  },
+                  "path": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "disposition": {
+              "enum": [
+                "keep",
+                "freeze",
+                "supersede"
+              ]
+            },
+            "superseded_by": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "notes": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json",
@@ -7408,6 +7513,566 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     }
   },
+  "bb.e4.lane_lock.v1": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "bb.e4.lane_lock.v1",
+    "title": "BreadBoard E4 lane lock (machine-owned deterministic resolution; never hand-edited)",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "lock_format",
+      "lane_id",
+      "manifest_ref",
+      "manifest_sha256",
+      "target_freeze",
+      "resolved_inputs",
+      "artifact_roles",
+      "packet_constants_ref",
+      "registry_pins"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.e4.lane_lock.v1"
+      },
+      "lock_format": {
+        "const": "canonical-json-v1"
+      },
+      "lane_id": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_-]*$"
+      },
+      "manifest_ref": {
+        "type": "string"
+      },
+      "manifest_sha256": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      },
+      "target_freeze": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "config_id",
+          "freeze_manifest_row_sha256"
+        ],
+        "properties": {
+          "config_id": {
+            "type": "string"
+          },
+          "freeze_manifest_row_sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      },
+      "resolved_inputs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "path",
+            "sha256",
+            "bytes",
+            "role"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "role": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "artifact_roles": {
+        "type": "object",
+        "patternProperties": {
+          "^[a-z0-9][a-z0-9_]*$": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "bytes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "packet_constants_ref": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        },
+        "$comment": "generated sidecar holding payload_templates/substitutions extracted from legacy lane defs; machine-owned"
+      },
+      "registry_pins": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "registry",
+            "entry_id",
+            "entry_sha256"
+          ],
+          "properties": {
+            "registry": {
+              "type": "string"
+            },
+            "entry_id": {
+              "type": "string"
+            },
+            "entry_sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      }
+    }
+  },
+  "bb.e4.lane_manifest.v1": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "bb.e4.lane_manifest.v1",
+    "title": "BreadBoard E4 lane manifest (author-owned conformance intent; digests live in bb.e4.lane_lock.v1)",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "lane_id",
+      "config_id",
+      "target",
+      "kind",
+      "capture",
+      "normalize",
+      "replay",
+      "compare",
+      "claim",
+      "artifacts_root"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.e4.lane_manifest.v1"
+      },
+      "lane_id": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_-]*$"
+      },
+      "config_id": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+      },
+      "title": {
+        "type": "string",
+        "maxLength": 200
+      },
+      "agent_config_ref": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "$comment": "repo-relative path to the bb.agent_config_surface.v2 document exercised by this lane, when the lane proves a BreadBoard-authored harness; null for external targets"
+      },
+      "kind": {
+        "enum": [
+          "target_support",
+          "self_runtime",
+          "probe"
+        ]
+      },
+      "status": {
+        "enum": [
+          "draft",
+          "candidate",
+          "accepted"
+        ]
+      },
+      "points": {
+        "type": "integer",
+        "minimum": 0
+      },
+      "target": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "family",
+          "version"
+        ],
+        "properties": {
+          "family": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9_-]*$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "package_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_freeze_ref": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "$comment": "repo-relative path only; its digest is resolved into the lock"
+          }
+        }
+      },
+      "capture": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "strategy"
+        ],
+        "properties": {
+          "strategy": {
+            "enum": [
+              "adapter",
+              "probe_argv",
+              "replay_dump",
+              "runtime_records"
+            ]
+          },
+          "adapter": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[a-z0-9][a-z0-9_]*$"
+          },
+          "argv": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "$comment": "repo-relative paths; digests resolved into lock.resolved_inputs"
+          },
+          "workspace_template": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "strategy": {
+                  "const": "adapter"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "adapter"
+              ],
+              "properties": {
+                "adapter": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "strategy": {
+                  "const": "probe_argv"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "argv"
+              ],
+              "properties": {
+                "argv": {
+                  "type": "array"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "normalize": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "enum": [
+              "identity",
+              "translate"
+            ]
+          },
+          "translator": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "record_builders": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "projection_constants": {
+            "type": "object"
+          },
+          "required_records": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "required_roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "mode": {
+                  "const": "translate"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "translator"
+              ]
+            }
+          }
+        ]
+      },
+      "replay": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "comparator_class"
+        ],
+        "properties": {
+          "mode": {
+            "enum": [
+              "stored"
+            ],
+            "$comment": "Phase 20 scope: stored replay ONLY. No executable replay provider exists in the tree (verified at plan time); adding an 'executed' mode is a post-campaign schema relaxation gated on a real provider + tests, via SPEC_AMENDMENTS.md."
+          },
+          "comparator_class": {
+            "type": "string"
+          }
+        }
+      },
+      "compare": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "comparator"
+        ],
+        "properties": {
+          "comparator": {
+            "type": "string"
+          },
+          "assertions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "assertion_id",
+                "kind",
+                "description"
+              ],
+              "properties": {
+                "assertion_id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "record_selector": {
+                  "type": "object"
+                },
+                "expect": {}
+              }
+            }
+          }
+        }
+      },
+      "claim": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scope",
+          "exclusions"
+        ],
+        "properties": {
+          "scope": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "behaviors"
+            ],
+            "properties": {
+              "behaviors": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "surfaces": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "exclusions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "reason"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "ct": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "acceptance": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "behavior_families": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      },
+      "reverify_command": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "argv"
+        ],
+        "properties": {
+          "argv": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "cwd": {
+            "type": "string"
+          }
+        }
+      },
+      "artifacts_root": {
+        "type": "string"
+      },
+      "notes": {
+        "type": "string"
+      }
+    }
+  },
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json",
@@ -7554,7 +8219,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
     "$defs": {
       "stage": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "required": [
           "stage_id",
           "phase",
@@ -7588,6 +8253,34 @@ export const GENERATED_SCHEMA_OBJECTS = {
           },
           "read_only": {
             "type": "boolean"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowed_exit_codes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "blocker": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -17496,6 +18189,7 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.config_explanation.v1.schema.json": ["bb.config_explanation.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.config_mutation_record.v1.schema.json": ["bb.config_mutation_record.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json": ["bb.context_resource_pack.v1.schema.json"],
+  "bb.contract_tiers.v1": ["bb.contract_tiers.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json": ["bb.coordination_delegated_verification_reference_slice.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_intervention_reference_slice.v1.schema.json": ["bb.coordination_intervention_reference_slice.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json": ["bb.coordination_longrun_reference_slice.v1.schema.json"],
@@ -17516,6 +18210,8 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json": ["bb.e4.lane_def.v2.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v1.schema.json": ["bb.e4.lane_inventory.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json": ["bb.e4.lane_inventory.v2.schema.json"],
+  "bb.e4.lane_lock.v1": ["bb.e4.lane_lock.v1.schema.json"],
+  "bb.e4.lane_manifest.v1": ["bb.e4.lane_manifest.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json": ["bb.e4.regen_failure_classification.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_plan.v1.schema.json": ["bb.e4.regen_plan.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v1.schema.json": ["bb.e4.support_claim.v1.schema.json"],

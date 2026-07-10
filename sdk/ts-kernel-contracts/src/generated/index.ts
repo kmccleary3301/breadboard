@@ -8,7 +8,7 @@ export const PACKS = {
   "kernel": {
     id: "kernel",
     status: "active",
-    description: "The minimal expressive harness primitive language. This is the published BreadBoard kernel.",
+    description: "Published BreadBoard kernel schemas span multiple contract tiers. \"Minimal\" refers only to the runtime_protocol tier; see contracts/kernel/registries/contract_tiers.v1.json.",
     schemas: [
       "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json",
@@ -244,6 +244,7 @@ export type { CheckpointMetadataV1 } from "./types/bb.checkpoint_metadata.v1.js"
 export type { ConfigExplanationV1 } from "./types/bb.config_explanation.v1.js"
 export type { ConfigMutationRecordV1 } from "./types/bb.config_mutation_record.v1.js"
 export type { ContextResourcePackV1 } from "./types/bb.context_resource_pack.v1.js"
+export type { ContractTiersV1 } from "./types/bb.contract_tiers.v1.js"
 export type { CoordinationDelegatedVerificationReferenceSliceV1 } from "./types/bb.coordination_delegated_verification_reference_slice.v1.js"
 export type { CoordinationInterventionReferenceSliceV1 } from "./types/bb.coordination_intervention_reference_slice.v1.js"
 export type { CoordinationLongrunReferenceSliceV1 } from "./types/bb.coordination_longrun_reference_slice.v1.js"
@@ -264,6 +265,8 @@ export type { E4LaneDefV1 } from "./types/bb.e4.lane_def.v1.js"
 export type { E4LaneDefV2 } from "./types/bb.e4.lane_def.v2.js"
 export type { E4LaneInventoryV1 } from "./types/bb.e4.lane_inventory.v1.js"
 export type { E4LaneInventoryV2 } from "./types/bb.e4.lane_inventory.v2.js"
+export type { E4LaneLockV1 } from "./types/bb.e4.lane_lock.v1.js"
+export type { E4LaneManifestV1 } from "./types/bb.e4.lane_manifest.v1.js"
 export type { E4RegenFailureClassificationV1 } from "./types/bb.e4.regen_failure_classification.v1.js"
 export type { E4RegenPlanV1 } from "./types/bb.e4.regen_plan.v1.js"
 export type { E4SupportClaimV1 } from "./types/bb.e4.support_claim.v1.js"
