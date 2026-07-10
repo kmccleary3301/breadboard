@@ -72,7 +72,7 @@ C4_FIXTURE_REFS: dict[str, list[str]] = {
         "freeze:config/e4_target_freeze_manifest.yaml#codex_cli_gpt55_e4_capture_probe_v1#sha256:ae98e65717d03a2d451e65db2b7c7693f77d9786686f8370b888ac52e41c6085",
         "capture:docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json#sha256:c22cddc606d25a4e4720d812bf8b162e802240b1859c9ab735fde872926b90eb",
         "replay:docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/bb_replay_result.json#sha256:457d9c20d86c4e071e537fb9eb2e492f92e5aeb4f0701971e1ffcc54e936658f",
-        "comparator:docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json#sha256:f903cfd7017a930b14f0b255750f32924fd47a766fdd31fbce238a691c48f73f",
+        "comparator:docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json#sha256:c408077792bcdc8cdd7277dc603e4bc800cd17239f7ddf8d6261157a8b941d29",
         "support_claim:docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
         "evidence_manifest:docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
         "parity_results:docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/parity_results.jsonl#sha256:a87a2ed2f94233db521b2b198cfd7fef6056161622d19750e643bf17ede8a6d1",
@@ -433,6 +433,51 @@ def build_ledger(index_path: Path = DEFAULT_INDEX_OUT) -> dict[str, Any]:
     }
 
 
+def _refresh_row_fixture_refs(row: dict[str, Any]) -> dict[str, Any]:
+    """Re-derive fixture pins for preserved lane rows from current disk state.
+
+    The legacy per-lane builders that owned these rows were retired in the
+    compiler-adapter cutover, leaving their literal ``#sha256:`` pins without a
+    refresh owner.  The seed step is the canonical ledger owner, so it re-pins
+    capture/replay/comparator refs (and freeze row hashes) the same way
+    ``_current_c4_fixture_refs`` derives them for seed-declared lanes.  Refs
+    whose paths do not resolve are left untouched for the validator to flag.
+    """
+
+    refs = row.get("fixture_refs")
+    if not isinstance(refs, list):
+        return row
+    freeze_manifest: dict[str, Any] | None = None
+    refreshed: list[Any] = []
+    for ref in refs:
+        if not isinstance(ref, str):
+            refreshed.append(ref)
+            continue
+        role, _, value = ref.partition(":")
+        bare = value.split("#", 1)[0]
+        if role == "freeze" and bare:
+            parts = value.split("#")
+            config_id = parts[1] if len(parts) >= 2 and parts[1] else None
+            manifest_path = REPO_ROOT / bare
+            if config_id and manifest_path.is_file():
+                if freeze_manifest is None:
+                    loaded = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+                    freeze_manifest = loaded if isinstance(loaded, dict) else {}
+                config_row = (freeze_manifest.get("e4_configs") or {}).get(config_id) if isinstance(freeze_manifest.get("e4_configs"), dict) else None
+                if isinstance(config_row, dict):
+                    refreshed.append(f"{role}:{bare}#{config_id}#{_row_hash(config_id, config_row)}")
+                    continue
+        elif role in {"capture", "replay", "comparator"} and bare:
+            path = (REPO_ROOT / bare).resolve()
+            if path.is_file():
+                refreshed.append(f"{role}:{bare}#{_hash_utils.sha256_path(path)}")
+                continue
+        refreshed.append(ref)
+    updated = dict(row)
+    updated["fixture_refs"] = refreshed
+    return updated
+
+
 def _merge_existing_non_seed_rows(payload: dict[str, Any], out_path: Path) -> dict[str, Any]:
     """Preserve lane-upserted rows so seed-only intermediates do not perturb stable catalog revisions.
 
@@ -456,7 +501,7 @@ def _merge_existing_non_seed_rows(payload: dict[str, Any], out_path: Path) -> di
     }
     existing = json.loads(out_path.read_text(encoding="utf-8"))
     preserved_rows = [
-        row
+        _refresh_row_fixture_refs(row)
         for row in existing.get("rows", [])
         if isinstance(row, dict) and row.get("feature_id") not in seed_feature_ids
     ]

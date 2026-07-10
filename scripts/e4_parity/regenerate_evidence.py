@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
 import json
+import fnmatch
+import os
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Sequence
 
 
 try:
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
-except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
-
-try:
+    from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS
     from scripts.e4_parity import build_e4_final_readiness_packet as final_readiness
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    import build_e4_final_readiness_packet as final_readiness
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS
+    from scripts.e4_parity import build_e4_final_readiness_packet as final_readiness
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
@@ -36,7 +38,9 @@ class Stage:
     label: str
     argv: tuple[str, ...]
     depends_on: tuple[str, ...] = ()
+    reads: tuple[str, ...] = ()
     writes: tuple[str, ...] = ()
+    read_only: bool = False
     note: str | None = None
     blocker: str | None = None
     allowed_exit_codes: tuple[int, ...] = ()
@@ -45,17 +49,75 @@ class Stage:
         return [python if part == PYTHON else part for part in self.argv]
 
 
-def _json_out_from_argv(argv: Sequence[str]) -> str | None:
+def _arg_value(argv: Sequence[str], flag: str) -> str | None:
     for index, arg in enumerate(argv):
-        if arg == "--json-out" and index + 1 < len(argv):
+        if arg == flag and index + 1 < len(argv):
             return argv[index + 1]
-        if arg.startswith("--json-out="):
+        if arg.startswith(f"{flag}="):
             return arg.split("=", 1)[1]
     return None
 
 
-def _lane_def_reverify_stages(*, depends_on: str) -> tuple[Stage, ...]:
-    lane_defs = load_lane_defs(DEFAULT_LANE_DEF_DIR)
+def _lane_def_reverify_writes(argv: Sequence[str]) -> tuple[str, ...]:
+    report_path = _arg_value(argv, "--json-out")
+    if report_path is None:
+        raise ValueError("lane_def reverify_command must declare --json-out")
+    return (report_path,)
+
+
+_LANE_SHARED_READ_ONLY_PATHS = LANE_SHARED_READ_ONLY_PATHS
+
+
+def _lane_def_output_paths(lane_def: dict[str, object], argv: Sequence[str]) -> tuple[str, ...]:
+    outputs: list[str] = []
+    artifacts_root = lane_def.get("artifacts_root")
+    if isinstance(artifacts_root, str):
+        outputs.append(artifacts_root)
+    capture = lane_def.get("capture")
+    inputs = capture.get("inputs") if isinstance(capture, dict) else None
+    declared_inputs = frozenset(item for item in inputs if isinstance(item, str)) if isinstance(inputs, list) else frozenset()
+    normalize = lane_def.get("normalize")
+    config = normalize.get("config") if isinstance(normalize, dict) else None
+    roles = config.get("roles") if isinstance(config, dict) else None
+    if isinstance(roles, dict):
+        outputs.extend(
+            value
+            for value in roles.values()
+            if isinstance(value, str)
+            and value not in _LANE_SHARED_READ_ONLY_PATHS
+            # Mirror run_lane._capture_owned_paths: role paths declared as
+            # capture inputs are preserved sources, not lane writes.
+            and value not in declared_inputs
+        )
+    for flag in ("--support-claim", "--evidence-manifest", "--json-out"):
+        value = _arg_value(argv, flag)
+        if value is not None:
+            outputs.append(value)
+    return tuple(dict.fromkeys(outputs))
+
+
+def _lane_def_reverify_reads(lane_def: dict[str, object], argv: Sequence[str]) -> tuple[str, ...]:
+    reads: list[str] = []
+    if len(argv) > 1:
+        reads.append(argv[1])
+    capture = lane_def.get("capture")
+    if isinstance(capture, dict):
+        inputs = capture.get("inputs")
+        if isinstance(inputs, list):
+            reads.extend(str(item) for item in inputs if isinstance(item, str))
+    artifacts_root = lane_def.get("artifacts_root")
+    if isinstance(artifacts_root, str):
+        reads.append(artifacts_root)
+    for flag in ("--support-claim", "--evidence-manifest"):
+        value = _arg_value(argv, flag)
+        if value is not None:
+            reads.append(value)
+    return tuple(dict.fromkeys(reads))
+
+
+def _lane_def_reverify_stages(
+    lane_defs: dict[str, dict[str, object]], *, depends_on: str
+) -> tuple[Stage, ...]:
     stages: list[Stage] = []
     previous = depends_on
     for lane_id in sorted(lane_defs):
@@ -64,21 +126,23 @@ def _lane_def_reverify_stages(*, depends_on: str) -> tuple[Stage, ...]:
         argv = command.get("argv") if isinstance(command, dict) else None
         if not (isinstance(argv, list) and all(isinstance(item, str) for item in argv)):
             continue
-        json_out = _json_out_from_argv(argv)
+        stage_argv = tuple(item for item in argv if item != "--check-only")
         stage = Stage(
             stage_id=f"lane_def_reverify_{lane_id}",
             phase="lane_def_reverify",
             label=f"Reverify lane_def-derived accepted lane {lane_id}.",
-            argv=tuple(argv),
+            argv=stage_argv,
             depends_on=(previous,),
-            writes=(json_out,) if json_out is not None else (),
-            note="Derived from config/e4_lanes/*.yaml reverify_command, not duplicated in regenerate_evidence.py.",
+            reads=_lane_def_reverify_reads(lane_def, stage_argv),
+            writes=_lane_def_reverify_writes(stage_argv),
+            note="Derived from config/e4_lanes/*.yaml reverify_command; --check-only is removed so the declared --json-out report is physically refreshed.",
         )
         stages.append(stage)
         previous = stage.stage_id
     return tuple(stages)
 
-LANE_DEF_REVERIFY_STAGES = _lane_def_reverify_stages(depends_on="catalog_full")
+LANE_DEFS = load_lane_defs(DEFAULT_LANE_DEF_DIR)
+LANE_DEF_REVERIFY_STAGES = _lane_def_reverify_stages(LANE_DEFS, depends_on="catalog_full")
 
 
 
@@ -102,102 +166,192 @@ STAGES: tuple[Stage, ...] = (
         stage_id="north_star_proof_packets",
         phase="claims_manifests_node_gates_ws_j",
         label="Regenerate WS-J north-star proof packets through the lane runner.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "north-star", "--stage", "all", "--promote-accepted", "--json"),
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "north-star", "--stage", "all", "--promote-accepted", "--defer-promotion-refresh", "--json"),
         depends_on=("ledger_seed",),
+        reads=("docs/conformance/e4_artifact_catalog.json",),
         writes=(
             "docs/conformance/support_claims/*north_star*_c4_support_claim.json",
             "docs/conformance/support_claims/*north_star*_c4_evidence_manifest.json",
             "artifacts/conformance/node_gate/ct_north_star_*_c4_chain.json",
             "docs/conformance/e4_target_support/*north_star*",
+            "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1",
+        ),
+    ),
+    Stage(
+        stage_id="scrub_absorbed_validator_refs",
+        phase="cleanup",
+        label="Remove deleted B3 validator wrapper refs from auxiliary E4 reports before cataloging.",
+        argv=(PYTHON, "scripts/e4_parity/scrub_absorbed_validator_refs.py", "--json"),
+        depends_on=("north_star_proof_packets",),
+        writes=(
+            "../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_REPORT.json",
+            "../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_HASH_MANIFEST.json",
         ),
     ),
     Stage(
         stage_id="catalog_stable_snapshot",
         phase="catalog_stable_snapshot",
         label="Build the stable artifact catalog snapshot before regenerated claim artifacts.",
-        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2"),
-        depends_on=("north_star_proof_packets",),
-        writes=("docs/conformance/e4_artifact_catalog.json",),
+        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2", "--output", "docs/conformance/e4_artifact_catalog_stable_snapshot.json"),
+        depends_on=("scrub_absorbed_validator_refs",),
+        writes=("docs/conformance/e4_artifact_catalog_stable_snapshot.json",),
         note="B2 freeze point: downstream claim generation binds against the stable snapshot before generated support-claim/manifest/node-gate churn is introduced.",
     ),
     Stage(
         stage_id="p3_1_effective_config_graph",
-        phase="claims_manifests_node_gates_legacy_v1",
-        label="Regenerate P3.1 effective-config-graph claim, manifest, ledger row, and node gate.",
-        argv=(PYTHON, "scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py", "--json"),
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate P3.1 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_1_effective_config_graph_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
         depends_on=("catalog_stable_snapshot",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
             "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_compiler_c4_chain.json",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_c4_chain.json",
         ),
     ),
     Stage(
-        stage_id="p3_remaining_helper_runtime",
-        phase="claims_manifests_node_gates_legacy_v1",
-        label="Regenerate P3.2-P3.8 helper/runtime claims, manifests, ledger rows, and node gates.",
-        argv=(PYTHON, "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py", "--json"),
+        stage_id="p3_2_context_resource_pack",
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate P3.2 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_2_context_resource_pack_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
         depends_on=("p3_1_effective_config_graph",),
-        writes=("docs/conformance/support_claims/*p3_*", "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p3*_c4_chain.json"),
+        writes=(
+            "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+            "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p32_context_resource_pack_c4_chain.json",
+        ),
+    ),
+    Stage(
+        stage_id="p3_3_capability_registry",
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate P3.3 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_3_capability_registry_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        depends_on=("p3_2_context_resource_pack",),
+        writes=(
+            "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
+            "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p33_capability_registry_c4_chain.json",
+        ),
+    ),
+    Stage(
+        stage_id="p3_4_extension_hook_execution",
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate P3.4 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_4_extension_hook_execution_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        depends_on=("p3_3_capability_registry",),
+        writes=(
+            "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
+            "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p34_extension_hook_c4_chain.json",
+        ),
+    ),
+    Stage(
+        stage_id="p3_5_resource_blob",
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate P3.5 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_5_resource_blob_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        depends_on=("p3_4_extension_hook_execution",),
+        writes=(
+            "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
+            "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p35_resource_blob_c4_chain.json",
+        ),
+    ),
+    Stage(
+        stage_id="p3_6_protocol_provider_policy",
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate P3.6 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_6_protocol_provider_policy_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        depends_on=("p3_5_resource_blob",),
+        writes=(
+            "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
+            "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p36_protocol_provider_policy_c4_chain.json",
+        ),
+    ),
+    Stage(
+        stage_id="p3_7_memory_work",
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate P3.7 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_7_memory_work_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        depends_on=("p3_6_protocol_provider_policy",),
+        writes=(
+            "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+            "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json",
+        ),
+    ),
+    Stage(
+        stage_id="p3_8_projection_broker",
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate P3.8 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_8_projection_broker_adapter", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        depends_on=("p3_7_memory_work",),
+        writes=(
+            "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
+            "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
+            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p38_projection_broker_c4_chain.json",
+        ),
     ),
     Stage(
         stage_id="pi_p5_cli_config_context_tool_surface",
-        phase="claims_manifests_node_gates_legacy_v1",
-        label="Regenerate Pi P5 L1 CLI/config/context/tool-surface claim, manifest, ledger row, and node gate.",
-        argv=(PYTHON, "scripts/e4_parity/build_pi_p5_cli_config_context_tool_surface.py", "--json"),
-        depends_on=("p3_remaining_helper_runtime",),
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate Pi P5 L1 CLI/config/context/tool-surface through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "pi_p5_l1_cli_config_context_tool_surface", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        depends_on=("p3_8_projection_broker",),
         writes=(
             "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
             "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_pi_p5_l1_cli_config_context_tool_surface_c4_chain.json",
+            "artifacts/conformance/node_gate/ct_p5_pi_l1_cli_config_context_tool_surface_c4_chain.json",
         ),
     ),
     Stage(
         stage_id="pi_p5_extension_session_residual",
-        phase="claims_manifests_node_gates_legacy_v1",
-        label="Regenerate Pi P5 residual extension/session claim, manifest, ledger row, and node gate.",
-        argv=(PYTHON, "scripts/e4_parity/build_pi_p5_extension_session_residual.py", "--json"),
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate Pi P5 residual extension/session through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "pi_p5_l2_extension_session_residual", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
         depends_on=("pi_p5_cli_config_context_tool_surface",),
         writes=(
             "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
             "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_pi_p5_l2_extension_session_residual_c4_chain.json",
+            "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json",
         ),
     ),
     Stage(
         stage_id="oh_my_pi_l5_memory_compaction",
-        phase="claims_manifests_node_gates_legacy_v1",
-        label="Regenerate Oh-My-Pi P6 L5 memory/compaction claim, manifest, ledger row, and node gate.",
-        argv=(PYTHON, "scripts/e4_parity/build_oh_my_pi_l5_memory_compaction.py", "--json"),
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate Oh-My-Pi P6 L5 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p6_0_l5_memory_compaction", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
         depends_on=("pi_p5_extension_session_residual",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
             "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_oh_my_pi_p6_0_l5_memory_compaction_c4_chain.json",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
         ),
     ),
     Stage(
         stage_id="oh_my_pi_l6_tui_projection",
-        phase="claims_manifests_node_gates_legacy_v1",
-        label="Regenerate Oh-My-Pi P6 L6 TUI/projection claim, manifest, ledger row, and node gate.",
-        argv=(PYTHON, "scripts/e4_parity/build_oh_my_pi_l6_tui_projection.py", "--json"),
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate Oh-My-Pi P6 L6 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p6_0_l6_tui_projection", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
         depends_on=("oh_my_pi_l5_memory_compaction",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
             "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_oh_my_pi_p6_0_l6_tui_projection_c4_chain.json",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
         ),
     ),
     Stage(
         stage_id="oh_my_pi_p66_task_job_subagent",
-        phase="claims_manifests_node_gates_legacy_v1",
-        label="Regenerate Oh-My-Pi P6.6 task/job/subagent claim, manifest, ledger row, and node gate from canonical captures.",
-        argv=(PYTHON, "scripts/e4_parity/build_oh_my_pi_p6_6_task_job_subagent.py", "--json"),
+        phase="claims_manifests_node_gates_lane_def_v2",
+        label="Regenerate Oh-My-Pi P6.6 through lane_def v2 capture adapter.",
+        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p6_6_task_job_subagent", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
         depends_on=("oh_my_pi_l6_tui_projection",),
         writes=(
+            "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent",
             "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
             "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_oh_my_pi_p6_6_task_job_subagent_c4_chain.json",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
         ),
     ),
     Stage(
@@ -206,29 +360,37 @@ STAGES: tuple[Stage, ...] = (
         label="Regenerate primitive projection artifacts backed by the current lane packet data.",
         argv=(PYTHON, "scripts/e4_parity/build_primitive_projection.py", "--json"),
         depends_on=("oh_my_pi_p66_task_job_subagent",),
-        writes=("docs/conformance/e4_primitive_projection/*",),
+        writes=("artifacts/conformance/e4_primitive_projection/*",),
+    ),
+    Stage(
+        stage_id="catalog_claim_binding_snapshot",
+        phase="catalog_stable_snapshot",
+        label="Rebuild the stable catalog snapshot after promoted lane packet refreshes and before support-claim binding.",
+        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2"),
+        depends_on=("primitive_projection",),
+        writes=("docs/conformance/e4_artifact_catalog.json",),
+        note="Lane promotion refreshes can rewrite catalog/support artifacts internally; claim generation must bind to the stable catalog snapshot that catalog_full will preserve once claim-derived churn is excluded.",
     ),
     Stage(
         stage_id="support_claim_generation",
         phase="support_claim_generation",
-        label="Generate support claims, manifests, and node gates in manifest-to-claim order.",
-        argv=(PYTHON, "scripts/e4_parity/generate_support_claims.py", "--json"),
-        depends_on=("primitive_projection",),
+        label="Generate support claims and manifests in manifest-to-claim order.",
+        argv=(PYTHON, "scripts/e4_parity/generate_support_claims.py", "--defer-node-gates", "--json"),
+        depends_on=("catalog_claim_binding_snapshot",),
         writes=(
             "docs/conformance/support_claims/*_support_claim.json",
             "docs/conformance/support_claims/v1_archive/*_support_claim.json",
             "docs/conformance/support_claims/*_evidence_manifest.json",
-            "artifacts/conformance/node_gate/*.json",
         ),
-        note="Replaces the old support_claim_v2_generation/support_claim_v2_rebinding pair; generate_support_claims.py owns the manifest -> claim -> node-gate ordering internally.",
+        note="Owns canonical support claims and manifests; the generated lane_def reverify stages own their --json-out node-gate reports.",
     ),
     Stage(
         stage_id="catalog_full",
         phase="catalog_full",
         label="Build the full artifact catalog after regenerated support claims, manifests, and node gates.",
-        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2"),
+        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2", "--output", "docs/conformance/e4_artifact_catalog_full_snapshot.json"),
         depends_on=("support_claim_generation",),
-        writes=("docs/conformance/e4_artifact_catalog.json",),
+        writes=("docs/conformance/e4_artifact_catalog_full_snapshot.json",),
     ),
     *LANE_DEF_REVERIFY_STAGES,
     Stage(
@@ -271,6 +433,7 @@ STAGES: tuple[Stage, ...] = (
             "artifacts/conformance/conformance_matrix_sync_summary_v1.md",
             "--generated-at-utc",
             PINNED_GENERATED_AT_UTC,
+            "--fail-on-summary-not-ok",
         ),
         depends_on=("ct_scenarios",),
         writes=(
@@ -278,7 +441,8 @@ STAGES: tuple[Stage, ...] = (
             "artifacts/conformance/conformance_matrix_sync_summary_v1.json",
             "artifacts/conformance/conformance_matrix_sync_summary_v1.md",
         ),
-        blocker="Matrix sync remains fail-closed while blocking_not_implemented_rows is nonzero.",
+        blocker="Matrix sync remains fail-closed while its generated summary has ok=false.",
+        allowed_exit_codes=(1,),
     ),
     Stage(
         stage_id="final_readiness_packet",
@@ -295,18 +459,19 @@ STAGES: tuple[Stage, ...] = (
         allowed_exit_codes=(1,),
     ),
     Stage(
-        stage_id="validate_score_subledger",
-        phase="validators",
-        label="Validate score subledger and accepted support-claim score rows.",
-        argv=(PYTHON, "scripts/e4_parity/validate_e4_score_subledger.py", "--json"),
+        stage_id="catalog_post_report_snapshot",
+        phase="catalog_full",
+        label="Refresh the full artifact catalog after report-generation stages update claim-layer report hashes.",
+        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2", "--output", "docs/conformance/e4_artifact_catalog_post_report_snapshot.json"),
         depends_on=("final_readiness_packet",),
+        writes=("docs/conformance/e4_artifact_catalog_post_report_snapshot.json",),
     ),
     Stage(
-        stage_id="validate_primitive_readiness",
+        stage_id="validate_e4_closure",
         phase="validators",
-        label="Validate primitive-family readiness without writing refreshed reports.",
-        argv=(PYTHON, "scripts/e4_parity/validate_e4_primitive_readiness.py", "--no-write"),
-        depends_on=("validate_score_subledger",),
+        label="Validate score subledger and primitive-family readiness through the consolidated closure gate.",
+        argv=(PYTHON, "scripts/e4_parity/validate_e4_closure.py", "--json"),
+        depends_on=("catalog_post_report_snapshot",),
     ),
     Stage(
         stage_id="validate_report_hash_freshness",
@@ -332,9 +497,237 @@ STAGES: tuple[Stage, ...] = (
             "--expected-claims",
             str(final_readiness._expected_target_support_claims()),
         ),
-        depends_on=("validate_primitive_readiness",),
+        depends_on=("validate_e4_closure",),
     ),
 )
+
+_CLAIM_OUTPUT_PREFIX = "docs/conformance/support_claims/"
+_NODE_GATE_OUTPUT_PREFIX = "artifacts/conformance/node_gate/"
+_PRIMITIVE_PROJECTION_OUTPUT_PREFIX = "artifacts/conformance/e4_primitive_projection/"
+
+
+def _reverify_argv(lane_def: dict[str, object]) -> tuple[str, ...]:
+    command = lane_def.get("reverify_command")
+    argv = command.get("argv") if isinstance(command, dict) else None
+    return tuple(argv) if isinstance(argv, list) and all(isinstance(item, str) for item in argv) else ()
+
+
+def _lane_defs_for_stage(stage: Stage) -> tuple[dict[str, object], ...]:
+    if stage.argv[1:2] != ("scripts/e4_parity/run_lane.py",):
+        return ()
+    stage_name = _arg_value(stage.argv, "--stage")
+    if stage_name not in {"capture", "all"}:
+        return ()
+    lane_id = _arg_value(stage.argv, "--lane")
+    if lane_id == "north-star":
+        return tuple(
+            lane_def
+            for lane_def in LANE_DEFS.values()
+            if isinstance(lane_def.get("compare"), dict)
+            and lane_def["compare"].get("comparator") == "north_star_stored_report_replay"
+        )
+    lane_def = LANE_DEFS.get(str(lane_id))
+    return (lane_def,) if lane_def is not None else ()
+
+
+def _isolated_capture_stage(stage: Stage) -> Stage:
+    if not _lane_defs_for_stage(stage):
+        return stage
+    argv = list(stage.argv)
+    stage_index = argv.index("--stage") + 1
+    argv[stage_index] = "capture"
+    if "--defer-derived-writes" not in argv:
+        argv.append("--defer-derived-writes")
+    return replace(stage, argv=tuple(argv))
+
+
+def _lane_capture_reads(stage: Stage) -> tuple[str, ...]:
+    lane_defs = _lane_defs_for_stage(stage)
+    if not lane_defs:
+        return ()
+    reads: list[str] = [
+        "docs/conformance/e4_lane_inventory.json",
+        "docs/conformance/e4_artifact_catalog.json",
+        "config/e4_target_freeze_manifest.yaml",
+        "docs/conformance/ct_scenarios_v1.json",
+        "../docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+    ]
+    for lane_def in lane_defs:
+        lane_id = lane_def.get("lane_id")
+        if isinstance(lane_id, str):
+            reads.append(f"config/e4_lanes/{lane_id}.yaml")
+        capture = lane_def.get("capture")
+        inputs = capture.get("inputs") if isinstance(capture, dict) else None
+        if isinstance(inputs, list):
+            reads.extend(value for value in inputs if isinstance(value, str))
+        artifacts_root = lane_def.get("artifacts_root")
+        if isinstance(artifacts_root, str):
+            reads.append(artifacts_root)
+        reverify_argv = _reverify_argv(lane_def)
+        for flag in ("--support-claim", "--evidence-manifest"):
+            value = _arg_value(reverify_argv, flag)
+            if value is not None:
+                reads.append(value)
+    return tuple(dict.fromkeys(reads))
+
+
+def _lane_capture_writes(stage: Stage) -> tuple[str, ...] | None:
+    lane_defs = _lane_defs_for_stage(stage)
+    if not lane_defs:
+        return None
+    writes: list[str] = []
+    writes.extend(
+        f"tmp/e4_regen_capture/{lane_def['lane_id']}"
+        for lane_def in lane_defs
+        if isinstance(lane_def.get("lane_id"), str)
+    )
+    for lane_def in lane_defs:
+        for output in _lane_def_output_paths(lane_def, _reverify_argv(lane_def)):
+            if output.startswith(
+                (_CLAIM_OUTPUT_PREFIX, _NODE_GATE_OUTPUT_PREFIX, _PRIMITIVE_PROJECTION_OUTPUT_PREFIX)
+            ):
+                continue
+            writes.append(output)
+    return tuple(dict.fromkeys(writes))
+
+
+def _declared_stage_writes(stage: Stage) -> tuple[str, ...]:
+    lane_writes = _lane_capture_writes(stage)
+    return stage.writes if lane_writes is None else lane_writes
+
+
+def _looks_like_path(value: str) -> bool:
+    return (
+        value.startswith("../")
+        or value.startswith("artifacts/")
+        or value.startswith("config/")
+        or value.startswith("docs/")
+        or value.startswith("scripts/")
+        or value.endswith((".csv", ".json", ".md", ".py", ".yaml", ".yml"))
+    )
+
+
+def _argv_declared_paths(argv: Sequence[str]) -> tuple[str, ...]:
+    values: list[str] = []
+    if len(argv) > 1 and _looks_like_path(argv[1]):
+        values.append(argv[1])
+    for value in argv[2:]:
+        if value.startswith("--"):
+            continue
+        if _looks_like_path(value):
+            values.append(value)
+    return tuple(dict.fromkeys(values))
+
+
+def _workspace_display_path(value: str) -> str:
+    return f"../{value}" if value.startswith("docs_tmp/") else value
+
+
+def _catalog_static_reads() -> tuple[str, ...]:
+    report_roles_path = ROOT / "docs" / "conformance" / "e4_report_roles.json"
+    reads = ["docs/conformance/e4_lane_inventory.json", "docs/conformance/e4_report_roles.json"]
+    try:
+        report_roles = json.loads(report_roles_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return tuple(reads)
+    roles = report_roles.get("static_artifact_roles", report_roles.get("roles", []))
+    if isinstance(roles, list):
+        for role in roles:
+            if isinstance(role, dict) and isinstance(role.get("path"), str):
+                reads.append(_workspace_display_path(role["path"]))
+    return tuple(dict.fromkeys(reads))
+
+
+def _stage_reads(stage: Stage, previous: dict[str, Stage]) -> tuple[str, ...]:
+    reads: list[str] = list(stage.reads)
+    reads.extend(value for value in _argv_declared_paths(stage.argv) if value not in stage.writes)
+    reads.extend(_lane_capture_reads(stage))
+    if stage.argv[1:2] == ("scripts/e4_parity/build_artifact_catalog.py",):
+        reads.extend(_catalog_static_reads())
+    if stage.stage_id == "support_claim_generation":
+        reads.extend(
+            (
+                "docs/conformance/e4_lane_inventory.json",
+                "docs/conformance/e4_target_support",
+                "docs/conformance/support_claims",
+            )
+        )
+    if stage.phase != "lane_def_reverify":
+        for dependency in stage.depends_on:
+            reads.extend(previous.get(dependency, Stage(dependency, "", "", ())).writes)
+    return tuple(dict.fromkeys(reads))
+
+
+def _with_declared_stage_io(stages: Sequence[Stage]) -> tuple[Stage, ...]:
+    declared: list[Stage] = []
+    by_id: dict[str, Stage] = {}
+    for raw_stage in stages:
+        stage = _isolated_capture_stage(raw_stage)
+        writes = _declared_stage_writes(stage)
+        read_only = stage.read_only or stage.phase == "validators"
+        with_writes = replace(stage, writes=writes, read_only=read_only)
+        updated = replace(with_writes, reads=_stage_reads(with_writes, by_id))
+        declared.append(updated)
+        by_id[stage.stage_id] = updated
+    return tuple(declared)
+
+
+STAGES = _with_declared_stage_io(STAGES)
+
+
+def _is_glob(value: str) -> bool:
+    return any(char in value for char in "*?[")
+
+
+def _display_write_path(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        try:
+            return "../" + resolved.relative_to(WORKSPACE.resolve()).as_posix()
+        except ValueError:
+            return resolved.as_posix()
+
+
+@lru_cache(maxsize=None)
+def _expanded_write_targets(value: str) -> frozenset[str]:
+    if value.startswith("../"):
+        base = WORKSPACE
+        relative = value[3:]
+    else:
+        base = ROOT
+        relative = value
+    if _is_glob(value):
+        expanded = frozenset(_display_write_path(path) for path in base.glob(relative))
+        return expanded or frozenset((value,))
+    path = base / relative
+    if path.is_dir():
+        return frozenset(
+            (value, *(_display_write_path(candidate) for candidate in path.rglob("*") if candidate.is_file()))
+        )
+    return frozenset((value,))
+
+
+def _write_patterns_overlap(left: str, right: str) -> bool:
+    left_targets = _expanded_write_targets(left)
+    right_targets = _expanded_write_targets(right)
+    if left_targets & right_targets:
+        return True
+    if not _is_glob(left) and not _is_glob(right):
+        return left == right
+    return fnmatch.fnmatchcase(left, right) or fnmatch.fnmatchcase(right, left)
+
+
+
+
+def _lane_capture_outputs(stages: Sequence[Stage]) -> tuple[tuple[str, str], ...]:
+    outputs: list[tuple[str, str]] = []
+    for stage in stages:
+        for lane_def in _lane_defs_for_stage(stage):
+            for output in _lane_def_output_paths(lane_def, _reverify_argv(lane_def)):
+                outputs.append((stage.stage_id, output))
+    return tuple(outputs)
 
 
 def validate_stage_graph(stages: Sequence[Stage] = STAGES) -> None:
@@ -346,23 +739,69 @@ def validate_stage_graph(stages: Sequence[Stage] = STAGES) -> None:
         if missing_or_late:
             raise ValueError(f"stage {stage.stage_id} depends on missing or later stages: {missing_or_late}")
         seen.add(stage.stage_id)
+    write_owners: list[tuple[str, str]] = []
+    for stage in stages:
+        if not stage.writes and not stage.read_only:
+            raise ValueError(f"stage {stage.stage_id} declares no writes but is not read_only")
+        if stage.read_only and stage.writes:
+            raise ValueError(f"read_only stage {stage.stage_id} must not declare writes")
+        for write in stage.writes:
+            for owner, owned_write in write_owners:
+                if owner != stage.stage_id and _write_patterns_overlap(write, owned_write):
+                    raise ValueError(f"write path {write} is declared by both {owner} and {stage.stage_id}")
+            write_owners.append((stage.stage_id, write))
     if stages is STAGES:
+        for capture_stage_id, output in _lane_capture_outputs(stages):
+            owners = {
+                stage.stage_id
+                for stage in stages
+                if any(_write_patterns_overlap(output, write) for write in stage.writes)
+            }
+            if len(owners) != 1:
+                raise ValueError(
+                    f"lane capture output {output} from {capture_stage_id} must have exactly one declared owner; "
+                    f"found {sorted(owners)}"
+                )
         catalog_stages = [stage for stage in stages if stage.argv[1:2] == ("scripts/e4_parity/build_artifact_catalog.py",)]
-        if [stage.stage_id for stage in catalog_stages] != ["catalog_stable_snapshot", "catalog_full"]:
-            raise ValueError("regeneration DAG must include exactly catalog_stable_snapshot then catalog_full catalog stages")
+        if [stage.stage_id for stage in catalog_stages] != ["catalog_stable_snapshot", "catalog_claim_binding_snapshot", "catalog_full", "catalog_post_report_snapshot"]:
+            raise ValueError("regeneration DAG must include stable, claim-binding, full, and post-report catalog stages")
         claim_stages = [stage for stage in stages if stage.argv[1:2] == ("scripts/e4_parity/generate_support_claims.py",)]
         if [stage.stage_id for stage in claim_stages] != ["support_claim_generation"]:
-            raise ValueError("regeneration DAG must include exactly one support_claim_generation stage")
+            raise ValueError("regeneration DAG must include support_claim_generation stage")
     phases = [stage.phase for stage in stages]
     if "validators" in phases and phases.index("validators") < phases.index("reports"):
         raise ValueError("validator stages must not precede report stages")
 
 
+def _generated_stage_count(stages: Sequence[Stage]) -> int:
+    return sum(1 for stage in stages if stage.stage_id.startswith("lane_def_reverify_"))
+
+
+def _plan_invariants() -> list[str]:
+    return [
+        "stage_ids_unique",
+        "dependencies_precede_consumers",
+        "non_read_only_stages_declare_writes",
+        "read_only_stages_declare_no_writes",
+        "write_paths_have_single_owner",
+        "lane_capture_outputs_have_declared_owner",
+        "catalog_has_one_canonical_claim_binding_owner",
+        "validators_follow_report_stages",
+    ]
+
+
 def plan_dict(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable) -> dict[str, object]:
+    generated_stage_count = _generated_stage_count(stages)
     return {
+        "schema_version": "bb.e4.regen_plan.v1",
+        "plan_id": "e4_regen_plan",
+        "generated_at_utc": PINNED_GENERATED_AT_UTC,
+        "explicit_stage_count": len(stages) - generated_stage_count,
+        "generated_stage_count": generated_stage_count,
+        "stage_count": len(stages),
+        "invariants": _plan_invariants(),
         "repo_root": str(ROOT),
         "workspace": str(WORKSPACE),
-        "stage_count": len(stages),
         "stages": [
             {
                 **asdict(stage),
@@ -375,14 +814,18 @@ def plan_dict(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable)
 
 def print_explain(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable) -> None:
     print("E4 evidence regeneration DAG")
-    print("Topological order: lane/source artifacts -> ledger -> catalog_stable_snapshot -> legacy generators -> support_claim_generation -> catalog_full -> lane reverify -> reports -> validators")
+    print("Topological order: lane/source artifacts -> ledger -> catalog_stable_snapshot -> legacy generators -> support_claim_generation -> catalog_full -> lane reverify -> reports -> catalog_post_report_snapshot -> validators")
     for index, stage in enumerate(stages, start=1):
         deps = ", ".join(stage.depends_on) if stage.depends_on else "<root>"
         print(f"{index:02d}. {stage.stage_id} [{stage.phase}]")
         print(f"    depends_on: {deps}")
         print(f"    argv: {' '.join(stage.expanded_argv(python))}")
+        if stage.reads:
+            print(f"    reads: {', '.join(stage.reads)}")
         if stage.writes:
             print(f"    writes: {', '.join(stage.writes)}")
+        if stage.read_only:
+            print("    read_only: true")
         if stage.note:
             print(f"    note: {stage.note}")
         if stage.blocker:
@@ -440,7 +883,10 @@ def run_pipeline(stages: Sequence[Stage] = STAGES, *, python: str = sys.executab
         argv = stage.expanded_argv(python)
         print(f"==> {stage.stage_id}: {' '.join(argv)}", flush=True)
         start = time.perf_counter()
-        completed = subprocess.run(argv, cwd=ROOT, text=True, capture_output=True)
+        env = dict(os.environ)
+        existing_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = str(ROOT) if not existing_pythonpath else f"{ROOT}{os.pathsep}{existing_pythonpath}"
+        completed = subprocess.run(argv, cwd=ROOT, text=True, capture_output=True, env=env)
         duration_seconds = round(time.perf_counter() - start, 6)
         result = StageResult(
             stage_id=stage.stage_id,
@@ -474,64 +920,14 @@ def run_pipeline(stages: Sequence[Stage] = STAGES, *, python: str = sys.executab
     return blocked_exit_code or 0, results
 
 
-def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Regenerate E4 evidence in explicit topological order.")
-    parser.add_argument("--explain", action="store_true", help="print the regeneration DAG and exit")
-    parser.add_argument("--dry-run", action="store_true", help="validate and print the DAG without executing any stage")
-    parser.add_argument("--check-plan", action="store_true", help="validate the stage graph without executing any stage")
-    parser.add_argument("--json", action="store_true", help="print machine-readable plan or run summary")
-    parser.add_argument("--python", default=sys.executable, help="Python executable used for stage commands")
-    return parser.parse_args(argv)
-
-
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parse_args(argv)
-    try:
-        validate_stage_graph(STAGES)
-    except ValueError as exc:
-        if args.json:
-            print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True))
-        else:
-            print(f"plan invalid: {exc}", file=sys.stderr)
-        return 2
-
-    if args.json and (args.explain or args.dry_run or args.check_plan):
-        payload = plan_dict(STAGES, python=args.python)
-        payload["ok"] = True
-        payload["dry_run"] = bool(args.dry_run)
-        print(json.dumps(payload, indent=2, sort_keys=True))
-        return 0
-
-    if args.explain:
-        print_explain(STAGES, python=args.python)
-        return 0
-
-    if args.dry_run:
-        print("DRY-RUN: no regeneration commands executed.")
-        print_explain(STAGES, python=args.python)
-        return 0
-
-    if args.check_plan:
-        print(f"plan ok: {len(STAGES)} stages")
-        return 0
-
-    code, results = run_pipeline(STAGES, python=args.python)
-    total_duration_seconds = round(sum(result.duration_seconds for result in results), 6)
-    if args.json:
-        print(
-            json.dumps(
-                {
-                    "ok": code == 0,
-                    "exit_code": code,
-                    "completed_stage_count": len(results),
-                    "total_duration_seconds": total_duration_seconds,
-                    "results": [asdict(result) for result in results],
-                },
-                indent=2,
-                sort_keys=True,
-            )
-        )
-    return code
+    _ = argv
+    print(
+        "regenerate_evidence.py is the importable regeneration DAG implementation, not an executable front door.\n"
+        "Use scripts/e4_parity/regen.py run, explain, fixed-point, or classify.",
+        file=sys.stderr,
+    )
+    return 2
 
 
 if __name__ == "__main__":
