@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 385,
+ "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:42:28Z",
+ "updated_at_utc": "2026-07-10T22:43:21Z",
  "items": [
   {
    "id": "A1",
@@ -1184,39 +1184,98 @@
    "ws": "I",
    "title": "schema-first constraint additions",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "I1"
    ],
-   "evidence": [],
-   "notes": "",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "a5ee24c9501d0818d2e170d42718f5e5fdd210ec"
+    },
+    {
+     "kind": "verifier",
+     "ref": "VerifyWsIStatic+VerifyWsIExec @ a80dcfcb17c60dbccdd0912a7b87ee18b8189c58",
+     "verdict": "pass"
+    },
+    {
+     "kind": "evidence_file",
+     "ref": "../docs_tmp/phase_20/evidence/I2/implementer.json",
+     "sha256": "45355bb39b7ba3dbaa8fc89ab4ec9af5f31160d6c2c614e9bfd875c4606ff38b"
+    }
+   ],
+   "notes": " | allowlist swap f3d48e02: hash-pinned {I2, fbb7d149...}; I4 evidence-only (empty diff by design), corpus parity rerun bound to a80dcfcb (base 27deb570), several cases strictly-better-typed pointers",
+   "verifiers": [
+    "VerifyWsIStatic",
+    "VerifyWsIExec"
+   ]
   },
   {
    "id": "I3",
    "ws": "I",
    "title": "consolidation; guarded tests green unmodified",
    "weight": 20,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "I2"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "c91aeaab1078b87494c00246d841267346037b1c"
+    },
+    {
+     "kind": "verifier",
+     "ref": "VerifyWsIStatic+VerifyWsIExec @ a80dcfcb17c60dbccdd0912a7b87ee18b8189c58",
+     "verdict": "pass"
+    },
+    {
+     "kind": "evidence_file",
+     "ref": "../docs_tmp/phase_20/evidence/I3/implementer.json",
+     "sha256": "62b3dc14cdd7499eaee86aa7e133d7e26d0567e5073a666b6a361d8ff0f4bbd1"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    "VerifyWsIStatic",
+    "VerifyWsIExec"
+   ]
   },
   {
    "id": "I4",
    "ws": "I",
    "title": "verifier fixture-corpus behavior diff",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "I3"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "ffb3d3945e167930deaa6ef7ad3fdd0f83e83a18"
+    },
+    {
+     "kind": "verifier",
+     "ref": "VerifyWsIStatic+VerifyWsIExec @ a80dcfcb17c60dbccdd0912a7b87ee18b8189c58",
+     "verdict": "pass"
+    },
+    {
+     "kind": "evidence_file",
+     "ref": "../docs_tmp/phase_20/evidence/I4/implementer.json",
+     "sha256": "baad0e41a25e1f2b6d3057e6f065212daa433fdcdc10c6698f5ef975984ec548"
+    },
+    {
+     "kind": "evidence_file",
+     "ref": "../docs_tmp/phase_20/evidence/I4/verifier.json",
+     "sha256": "9e23723ae0603003e6780e00f8f0750968221f8931be1f7698d2c8302c1e3cb4"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    "VerifyWsIStatic",
+    "VerifyWsIExec"
+   ]
   },
   {
    "id": "J1",
