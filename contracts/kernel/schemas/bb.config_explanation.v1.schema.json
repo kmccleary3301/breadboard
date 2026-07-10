@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.config_explanation.v1.schema.json",
+  "title": "BreadBoard config explanation V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "explanation_id",
+    "config_path",
+    "config_sha256",
+    "generated_at_utc",
+    "surface_schema_version",
+    "resolved_summary",
+    "fields",
+    "diagnostics",
+    "ok"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.config_explanation.v1"
+    },
+    "explanation_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "config_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "config_sha256": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "surface_schema_version": {
+      "enum": [
+        "bb.agent_config_surface.v1",
+        "bb.agent_config_surface.v2"
+      ]
+    },
+    "resolved_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_default_model",
+        "mode_ids",
+        "tool_count",
+        "prompt_files",
+        "extends_chain"
+      ],
+      "properties": {
+        "provider_default_model": {
+          "type": "string"
+        },
+        "mode_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "tool_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "prompt_files": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "extends_chain": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "source_layer",
+          "classification",
+          "consumer_ref"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_layer": {
+            "type": "string",
+            "minLength": 1
+          },
+          "classification": {
+            "enum": [
+              "operational",
+              "dossier_only",
+              "unknown"
+            ]
+          },
+          "consumer_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "class",
+          "path",
+          "message"
+        ],
+        "properties": {
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ]
+          },
+          "class": {
+            "enum": [
+              "dead_ref",
+              "unknown_tool",
+              "missing_prompt",
+              "unconsumed_field",
+              "schema_violation",
+              "registry_miss",
+              "other"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": true
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "then": {
+        "properties": {
+          "diagnostics": {
+            "not": {
+              "contains": {
+                "properties": {
+                  "severity": {
+                    "const": "error"
+                  }
+                },
+                "required": [
+                  "severity"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ok": {
+            "const": false
+          }
+        },
+        "required": [
+          "ok"
+        ]
+      },
+      "then": {
+        "properties": {
+          "diagnostics": {
+            "contains": {
+              "properties": {
+                "severity": {
+                  "const": "error"
+                }
+              },
+              "required": [
+                "severity"
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}
