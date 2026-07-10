@@ -46,6 +46,11 @@ Do not maintain a divergent literal family list in this README. Human-readable
 kernel doctrine and semantic docs may summarize the families, but additions,
 deprecations, and no-schema-yet reservations belong in the registry.
 
+`contracts/kernel/registries/e4_adapters.v1.json` is the registry for E4 lane
+definition adapter ids. It uses `bb.registry.v1`; `scripts/e4_parity/lane_definitions.py`
+adds the E4-specific check that `normalize.translator`, `compare.comparator`, and
+`capture.adapter` resolve to active rows with the expected `metadata.kind`.
+
 ---
 
 ## Change policy

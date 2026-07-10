@@ -1,0 +1,19 @@
+{
+  "schema_version": "bb.e4.regen_plan.v1",
+  "plan_id": "e4_regen_plan",
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "explicit_stage_count": 1,
+  "generated_stage_count": 0,
+  "stage_count": 1,
+  "stages": [
+    {
+      "stage_id": "source_index",
+      "phase": "source_index",
+      "depends_on": [],
+      "reads": ["scripts/e4_parity/build_source_index.py"],
+      "writes": ["../docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json"],
+      "read_only": false
+    }
+  ],
+  "invariants": ["stage_ids_unique"]
+}

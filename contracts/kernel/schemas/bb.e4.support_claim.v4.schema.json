@@ -59,48 +59,7 @@
       "minLength": 1
     },
     "scope": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "config_id",
-        "lane_id",
-        "run_id",
-        "target_family",
-        "target_version",
-        "provider_model",
-        "sandbox_mode"
-      ],
-      "properties": {
-        "config_id": {
-          "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
-        },
-        "lane_id": {
-          "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
-        },
-        "run_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "target_version": {
-          "type": "string",
-          "minLength": 1
-        },
-        "provider_model": {
-          "type": "string",
-          "minLength": 1
-        },
-        "sandbox_mode": {
-          "type": "string",
-          "minLength": 1
-        },
-        "extra": {
-          "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
-        },
-        "target_family": {
-          "type": "string",
-          "minLength": 1
-        }
-      }
+      "$ref": "bb.e4.common.v1.schema.json#/$defs/e4_scope"
     },
     "exclusions": {
       "type": "array",

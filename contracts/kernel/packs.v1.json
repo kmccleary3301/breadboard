@@ -7,9 +7,11 @@
       "metadata": {
         "schemas": [
           "bb.agent_config_surface.v1.schema.json",
+          "bb.agent_config_surface.v2.schema.json",
           "bb.blob_ref.v1.schema.json",
           "bb.capability_registry.v1.schema.json",
           "bb.checkpoint_metadata.v1.schema.json",
+          "bb.config_explanation.v1.schema.json",
           "bb.config_mutation_record.v1.schema.json",
           "bb.context_resource_pack.v1.schema.json",
           "bb.coordination_delegated_verification_reference_slice.v1.schema.json",
@@ -46,6 +48,7 @@
           "bb.run_request.v1.schema.json",
           "bb.sandbox_request.v1.schema.json",
           "bb.sandbox_result.v1.schema.json",
+          "bb.schema_lifecycle.v1.schema.json",
           "bb.session_transcript.v2.schema.json",
           "bb.side_effect_broker.v1.schema.json",
           "bb.signal.v1.schema.json",
@@ -74,12 +77,17 @@
       "metadata": {
         "schemas": [
           "bb.e4.artifact_catalog.v2.schema.json",
+          "bb.e4.closure_report.v1.schema.json",
           "bb.e4.common.v1.schema.json",
           "bb.e4.comparator_registry.v1.schema.json",
+          "bb.e4.fixed_point_report.v1.schema.json",
+          "bb.e4.regen_failure_classification.v1.schema.json",
           "bb.e4.lane_def.v2.schema.json",
           "bb.e4.lane_inventory.v2.schema.json",
+          "bb.e4.regen_plan.v1.schema.json",
           "bb.e4.support_claim.v4.schema.json",
           "bb.e4.target_coverage.v2.schema.json",
+          "bb.lane_validation_report.v1.schema.json",
           "bb.tool_support_claim.v1.schema.json"
         ]
       },

@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json",
+  "title": "BreadBoard E4 regeneration failure classification V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "ok",
+    "failure_class",
+    "failure_classes",
+    "log",
+    "stderr_tail"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.regen_failure_classification.v1"
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "failure_class": {
+      "$ref": "#/$defs/failure_class"
+    },
+    "failure_classes": {
+      "type": "array",
+      "prefixItems": [
+        {"const": "pin_stale"},
+        {"const": "semantic"},
+        {"const": "io_missing"},
+        {"const": "schema_invalid"},
+        {"const": "graph_invariant"},
+        {"const": "comparator_failure"},
+        {"const": "drift_unexplained"}
+      ],
+      "items": false,
+      "minItems": 7,
+      "maxItems": 7
+    },
+    "log": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stderr_tail": {
+      "type": "string"
+    },
+    "raw_stderr_tail": {
+      "type": "string"
+    }
+  },
+  "$defs": {
+    "failure_class": {
+      "enum": [
+        "pin_stale",
+        "semantic",
+        "io_missing",
+        "schema_invalid",
+        "graph_invariant",
+        "comparator_failure",
+        "drift_unexplained"
+      ]
+    }
+  }
+}

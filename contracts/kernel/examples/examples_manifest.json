@@ -6,6 +6,11 @@
       "schema_version": "bb.agent_config_surface.v1"
     },
     {
+      "example_path": "contracts/kernel/examples/agent_config_surface_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json",
+      "schema_version": "bb.agent_config_surface.v2"
+    },
+    {
       "example_path": "contracts/kernel/examples/atomic_feature_ledger_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.atomic_feature_ledger.v1.schema.json",
       "schema_version": "bb.atomic_feature_ledger.v1"
@@ -24,6 +29,11 @@
       "example_path": "contracts/kernel/examples/checkpoint_metadata_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.checkpoint_metadata.v1.schema.json",
       "schema_version": "bb.checkpoint_metadata.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/config_explanation_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.config_explanation.v1.schema.json",
+      "schema_version": "bb.config_explanation.v1"
     },
     {
       "example_path": "contracts/kernel/examples/config_mutation_record_minimal.json",
@@ -96,9 +106,24 @@
       "schema_version": "bb.e4.artifact_catalog.v2"
     },
     {
+      "example_path": "contracts/kernel/examples/e4_closure_report_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.closure_report.v1.schema.json",
+      "schema_version": "bb.e4.closure_report.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_common_usage.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.common.v1.schema.json",
+      "schema_version": "bb.e4.common.v1"
+    },
+    {
       "example_path": "contracts/kernel/examples/e4_comparator_registry_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.e4.comparator_registry.v1.schema.json",
       "schema_version": "bb.e4.comparator_registry.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_fixed_point_report_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json",
+      "schema_version": "bb.e4.fixed_point_report.v1"
     },
     {
       "example_path": "contracts/kernel/examples/e4_lane_def_minimal.json",
@@ -119,6 +144,16 @@
       "example_path": "contracts/kernel/examples/e4_lane_inventory_v2_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json",
       "schema_version": "bb.e4.lane_inventory.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_regen_failure_classification_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json",
+      "schema_version": "bb.e4.regen_failure_classification.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_regen_plan_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.regen_plan.v1.schema.json",
+      "schema_version": "bb.e4.regen_plan.v1"
     },
     {
       "example_path": "contracts/kernel/examples/e4_support_claim_v1_minimal.json",
@@ -201,11 +236,6 @@
       "schema_version": "bb.external_protocol_session.v1"
     },
     {
-      "example_path": "contracts/kernel/examples/e4_common_usage.json",
-      "schema_path": "contracts/kernel/schemas/bb.e4.common.v1.schema.json",
-      "schema_version": "bb.e4.common.v1"
-    },
-    {
       "example_path": "contracts/kernel/examples/kernel_common_usage.json",
       "schema_path": "contracts/kernel/schemas/bb.kernel.common.v1.schema.json",
       "schema_version": "bb.kernel.common.v1"
@@ -219,6 +249,11 @@
       "example_path": "contracts/kernel/examples/kernel_event_v2_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.kernel_event.v2.schema.json",
       "schema_version": "bb.kernel_event.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/lane_validation_report_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.lane_validation_report.v1.schema.json",
+      "schema_version": "bb.lane_validation_report.v1"
     },
     {
       "example_path": "contracts/kernel/examples/memory_compaction_plan_minimal.json",
@@ -289,6 +324,11 @@
       "example_path": "contracts/kernel/examples/sandbox_result_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.sandbox_result.v1.schema.json",
       "schema_version": "bb.sandbox_result.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/schema_lifecycle_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.schema_lifecycle.v1.schema.json",
+      "schema_version": "bb.schema_lifecycle.v1"
     },
     {
       "example_path": "contracts/kernel/examples/session_transcript_minimal.json",
