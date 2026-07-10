@@ -6,7 +6,7 @@
  "points_done": 0,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T00:00:00Z",
+ "updated_at_utc": "2026-07-10T20:56:55Z",
  "items": [
   {
    "id": "A1",
@@ -855,5 +855,24 @@
    "decision_ref": ""
   }
  ],
- "amendments": []
+ "amendments": [
+  {
+   "id": "AM1",
+   "at": "2026-07-10T20:56:55Z",
+   "rule": "\u00a71.1 interpreter rule",
+   "classification": "spec_gap",
+   "summary": "Packet worktrees may use shared immutable integration venv; requirements digest recorded",
+   "ref": "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md#amendment-1"
+  }
+ ],
+ "notes": [
+  {
+   "at": "2026-07-10T20:55:31Z",
+   "note": "Session bootstrap: branch e4/workspace-restore-20260708 @ 3b8d862f, tree clean. bd epic bb-c6n, children {\"A\": \"bb-c6n.1\", \"B\": \"bb-c6n.2\", \"C\": \"bb-c6n.3\", \"D\": \"bb-c6n.4\", \"E\": \"bb-c6n.5\", \"F\": \"bb-c6n.6\", \"G\": \"bb-c6n.7\", \"H\": \"bb-c6n.8\", \"I\": \"bb-c6n.9\", \"J\": \"bb-c6n.10\", \"K\": \"bb-c6n.11\", \"L\": \"bb-c6n.12\", \"M\": \"bb-c6n.13\"}. Wave 1 launched: A1-A5, B1-B2, C1+C3, G1, H1, I1."
+  },
+  {
+   "at": "2026-07-10T20:56:55Z",
+   "note": "AM1 recorded: shared interpreter /Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/.venv/bin/python, requirements sha256:9f19031842d0d2c2..., python: Python 3.11.15"
+  }
+ ]
 }
