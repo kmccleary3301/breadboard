@@ -87,14 +87,9 @@
       "tier": "config_algebra"
     },
     {
-      "consumers": [
-        {
-          "kind": "loader",
-          "path": "agentic_coder_prototype/compilation/primitive_records.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence high.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "E5 verifier found only generic schema registration, not a mutation-record producer or interpreter.",
       "schema_id": "bb.config_mutation_record.v1",
       "tier": "config_algebra"
     },
@@ -340,13 +335,9 @@
       "tier": "evidence"
     },
     {
-      "consumers": [
-        {
-          "kind": "evidence_machinery",
-          "path": "scripts/check_phase20_freeze.py"
-        }
-      ],
-      "disposition": "keep",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "E5 verifier found schema-shape governance only; unfreeze when the lane-lock compiler or loader lands.",
       "schema_id": "bb.e4.lane_lock.v1",
       "tier": "config_algebra"
     },
@@ -477,14 +468,9 @@
       "tier": "frozen_legacy"
     },
     {
-      "consumers": [
-        {
-          "kind": "loader",
-          "path": "agentic_coder_prototype/compilation/primitive_records.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence medium.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "E5 verifier found only generic schema registration; the live tool resolver consumes v1.",
       "schema_id": "bb.environment_selector.v2",
       "tier": "config_algebra"
     },
@@ -651,14 +637,9 @@
       "tier": "host_protocol"
     },
     {
-      "consumers": [
-        {
-          "kind": "loader",
-          "path": "agentic_coder_prototype/compilation/primitive_records.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence medium.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "E5 verifier found registry-shaped data but no direct bb.registry.v1 loader or interpreter.",
       "schema_id": "bb.registry.v1",
       "tier": "config_algebra"
     },
@@ -974,14 +955,9 @@
       "tier": "frozen_legacy"
     },
     {
-      "consumers": [
-        {
-          "kind": "loader",
-          "path": "agentic_coder_prototype/compilation/primitive_records.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence high.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "E5 verifier found only generic schema registration, not a v2 tool-spec producer or resolver.",
       "schema_id": "bb.tool_spec.v2",
       "tier": "config_algebra"
     },

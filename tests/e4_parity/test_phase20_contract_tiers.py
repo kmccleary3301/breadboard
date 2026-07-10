@@ -98,6 +98,27 @@ def test_audited_contracts_name_their_actual_tier_and_consumer(
     assert consumer in entry["consumers"]
 
 
+@pytest.mark.parametrize(
+    "schema_id",
+    [
+        "bb.config_mutation_record.v1",
+        "bb.e4.lane_lock.v1",
+        "bb.environment_selector.v2",
+        "bb.registry.v1",
+        "bb.tool_spec.v2",
+    ],
+)
+def test_config_algebra_without_a_product_consumer_remains_frozen(
+    schema_id: str,
+) -> None:
+    """A descriptive config-algebra tier does not imply an unearned keep disposition."""
+    entry = _entries_by_schema_id()[schema_id]
+
+    assert entry["tier"] == "config_algebra"
+    assert entry["disposition"] == "freeze"
+    assert entry["consumers"] == []
+
+
 def test_frozen_legacy_contracts_are_never_marked_for_continued_use() -> None:
     """A frozen-legacy classification always carries the freeze disposition."""
     frozen_legacy = [
