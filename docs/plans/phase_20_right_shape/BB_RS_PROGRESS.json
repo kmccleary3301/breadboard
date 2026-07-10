@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 205,
+ "points_done": 235,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:22:09Z",
+ "updated_at_utc": "2026-07-10T21:25:45Z",
  "items": [
   {
    "id": "A1",
@@ -194,7 +194,7 @@
    "ws": "A",
    "title": "SDK tests/fixtures assert exact /v1 URLs",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "A1",
     "A2",
@@ -202,22 +202,60 @@
     "A4",
     "A5"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A6/implementer.json",
+     "bound_sha": "d1de5acb2a6b"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "61c9716c88a8"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsA6",
+     "lens": "gates+anti_scope",
+     "verdict": "pass",
+     "sha": "61c9716c88a8",
+     "note": "evidence check amended PASS; patch-id binds original to cherry-picked tree"
+    }
+   ]
   },
   {
    "id": "A7",
    "ws": "A",
    "title": "default-server README-flow smoke (both SDKs)",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "A6"
    ],
-   "evidence": [],
-   "notes": "",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/A7/implementer.json",
+     "bound_sha": "a61b89823042"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "3ed7c0f27ed3"
+    }
+   ],
+   "notes": "AM6 widening: readSessionRecords/read_session_records only; verifier confirmed no other surface change.",
+   "verifiers": [
+    {
+     "agent": "VerifyWsA6",
+     "lens": "gates+anti_scope",
+     "verdict": "pass",
+     "sha": "3ed7c0f27ed3",
+     "note": "evidence check amended PASS; patch-id binds original to cherry-picked tree"
+    }
+   ]
   },
   {
    "id": "A8",
