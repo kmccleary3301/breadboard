@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:57:35Z",
+ "updated_at_utc": "2026-07-10T22:58:13Z",
  "items": [
   {
    "id": "A1",
@@ -1685,6 +1685,14 @@
    "date": "2026-07-10",
    "classification": "spec_gap",
    "what": "artifacts delta disposition: required/minItems/string by derivation necessity; uniqueItems + relative pattern convention-entailed (\u00a74.4 repo-relative refs); all explicitly authorized",
+   "owner": "WS-H",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM17b-r",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "withdraws AM17b convention clause: uniqueItems + relative pattern REVERTED from H packet, proposed as separate future packet; minItems/required/string stay by derivation necessity",
    "owner": "WS-H",
    "recorded_by": "orchestrator"
   }
