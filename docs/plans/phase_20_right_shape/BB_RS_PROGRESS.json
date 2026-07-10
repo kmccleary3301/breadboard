@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:43:21Z",
+ "updated_at_utc": "2026-07-10T22:44:05Z",
  "items": [
   {
    "id": "A1",
@@ -1204,7 +1204,7 @@
      "sha256": "45355bb39b7ba3dbaa8fc89ab4ec9af5f31160d6c2c614e9bfd875c4606ff38b"
     }
    ],
-   "notes": " | allowlist swap f3d48e02: hash-pinned {I2, fbb7d149...}; I4 evidence-only (empty diff by design), corpus parity rerun bound to a80dcfcb (base 27deb570), several cases strictly-better-typed pointers",
+   "notes": " | allowlist swap f3d48e02: hash-pinned {I2, fbb7d149...}; I4 evidence-only (empty diff by design), corpus parity rerun bound to a80dcfcb (base 27deb570), several cases strictly-better-typed pointers | exec checks 6-7 confirmed full-output: tests/compilation AM10 normalized delta base=175 head=175 sets_equal=true head_only=0; final status clean at a80dcfcb",
    "verifiers": [
     "VerifyWsIStatic",
     "VerifyWsIExec"
