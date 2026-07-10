@@ -278,6 +278,55 @@ def _lane_validate(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _lane_lock(args: argparse.Namespace) -> int:
+    from scripts.authoring.validate_lane import (
+        LaneDefValidationError,
+        load_lane_manifest,
+    )
+    from scripts.e4_parity.compile_lane_lock import main as compile_main
+
+    manifest_path = Path(args.PATH)
+    argv = ["compile", str(manifest_path)]
+    if args.out:
+        try:
+            lane_id = str(load_lane_manifest(manifest_path)["lane_id"])
+        except (OSError, LaneDefValidationError) as exc:
+            _print_error(str(exc))
+            return EXIT_VALIDATION_FAILURE
+        out_dir = Path(args.out)
+        argv.extend(
+            [
+                "--lock",
+                str(out_dir / f"{lane_id}.lock.json"),
+                "--sidecar",
+                str(out_dir / f"{lane_id}.packet_constants.v1.json"),
+            ]
+        )
+    if args.check:
+        argv.append("--check")
+    return compile_main(argv)
+
+
+def _lane_capture(args: argparse.Namespace) -> int:
+    from scripts.authoring.validate_lane import (
+        LaneDefValidationError,
+        load_lane_manifest,
+    )
+    from scripts.e4_parity.run_lane import main as run_lane_main
+
+    manifest_path = Path(args.MANIFEST)
+    try:
+        lane_id = str(load_lane_manifest(manifest_path)["lane_id"])
+    except (OSError, LaneDefValidationError) as exc:
+        _print_error(str(exc))
+        return EXIT_VALIDATION_FAILURE
+    out_dir = Path(args.out) if args.out else _repo_root() / "docs_tmp" / "bbh_capture" / lane_id
+    argv = ["--lane", lane_id, "--stage", "capture", "--out", str(out_dir)]
+    if args.json:
+        argv.append("--json")
+    return run_lane_main(argv)
+
+
 def _add_leaf(
     namespace: argparse._SubParsersAction[argparse.ArgumentParser],
     name: str,
@@ -387,6 +436,7 @@ def build_parser() -> argparse.ArgumentParser:
     lane_lock.add_argument("PATH")
     lane_lock.add_argument("--check", action="store_true")
     lane_lock.add_argument("--out", metavar="DIR")
+    lane_lock.set_defaults(handler=_lane_lock)
 
     lane_capture = _add_leaf(
         lane_commands,
@@ -397,6 +447,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     lane_capture.add_argument("MANIFEST")
     lane_capture.add_argument("--out", metavar="DIR")
+    lane_capture.set_defaults(handler=_lane_capture)
 
     return parser
 
