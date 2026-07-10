@@ -114,7 +114,7 @@ export const createBreadboardClient = (config: BreadboardClientConfig) => ({
       query: path ? { path } : undefined,
     }),
   readSessionFile: (sessionId: string, filePath: string, options?: ReadSessionFileOptions) =>
-    requestWithConfig<SessionFileContent>(config, `/v1/sessions/${sessionId}/files`, "GET", {
+    requestWithConfig<SessionFileContent>(config, `/v1/sessions/${sessionId}/files/content`, "GET", {
       query: {
         path: filePath,
         mode: options?.mode ?? "cat",
