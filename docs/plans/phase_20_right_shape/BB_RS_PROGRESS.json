@@ -3,71 +3,136 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 85,
+ "points_done": 135,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:11:29Z",
+ "updated_at_utc": "2026-07-10T21:11:47Z",
  "items": [
   {
    "id": "A1",
    "ws": "A",
    "title": "ts client /v1 prefix",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [],
    "evidence": [],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsA",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "2e583f20b210"
+    },
+    {
+     "agent": "VerifyWsAExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+    }
+   ]
   },
   {
    "id": "A2",
    "ws": "A",
    "title": "ts readSessionFile files/content",
    "weight": 5,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "A1"
    ],
    "evidence": [],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsA",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "f5c6b80ab7ef"
+    },
+    {
+     "agent": "VerifyWsAExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+    }
+   ]
   },
   {
    "id": "A3",
    "ws": "A",
    "title": "ts SSE URL /v1",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "A1"
    ],
    "evidence": [],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsA",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "f4a0628ae06f"
+    },
+    {
+     "agent": "VerifyWsAExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+    }
+   ]
   },
   {
    "id": "A4",
    "ws": "A",
    "title": "py client /v1 prefix incl multipart+stream",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [],
    "evidence": [],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsA",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "9700d1086d2c"
+    },
+    {
+     "agent": "VerifyWsAExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+    }
+   ]
   },
   {
    "id": "A5",
    "ws": "A",
    "title": "py read_session_file files/content",
    "weight": 5,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "A4"
    ],
    "evidence": [],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsA",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "11fa4e88e2f9"
+    },
+    {
+     "agent": "VerifyWsAExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "11fa4e88e2f9730d94a27a7b0b9d76871a0252d8"
+    }
+   ]
   },
   {
    "id": "A6",
