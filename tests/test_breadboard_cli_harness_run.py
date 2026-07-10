@@ -43,7 +43,18 @@ class _RunClient:
         raise AssertionError("the CLI must stop consuming events after completion")
 
 
-def test_harness_run_delegates_the_session_flow_and_reports_results(
+
+class _EofClient(_RunClient):
+    def stream_events(
+        self, session_id: str, *, query: dict[str, str]
+    ) -> Iterator[dict[str, Any]]:
+        assert session_id == "session-g3"
+        assert query == {"replay": "true"}
+        self.calls.append(("events", session_id))
+        yield {"type": "assistant_message", "payload": {"content": "still working"}}
+
+
+def test_harness_run_submits_task_once_and_reports_completed_session(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -69,11 +80,36 @@ def test_harness_run_delegates_the_session_flow_and_reports_results(
     assert "2" in captured.out
     assert _RunClient.calls == [
         ("connect", "https://breadboard.test/api"),
-        ("create", str(HARNESS_PATH), "repair the harness"),
+        ("create", str(HARNESS_PATH), ""),
         ("input", "session-g3", "repair the harness"),
         ("records", "session-g3"),
         ("events", "session-g3"),
     ]
+
+
+
+def test_harness_run_rejects_event_stream_eof_before_terminal_event(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _EofClient.calls = []
+    monkeypatch.setattr(breadboard_sdk, "BreadboardClient", _EofClient)
+
+    exit_code = breadboard_cli.main(
+        [
+            "harness",
+            "run",
+            str(HARNESS_PATH),
+            "--server",
+            "https://breadboard.test/api",
+            "--task",
+            "repair the harness",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 4
+    assert captured.out == ""
 
 
 def test_harness_run_maps_sdk_failures_to_runtime_exit(

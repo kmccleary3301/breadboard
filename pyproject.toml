@@ -11,4 +11,4 @@ description = "BreadBoard harness authoring front door"
 bbh = "scripts.breadboard_cli:main"
 
 [tool.setuptools]
-packages = ["scripts"]
+packages = ["scripts", "agentic_coder_prototype", "breadboard_sdk"]

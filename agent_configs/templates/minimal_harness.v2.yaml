@@ -22,8 +22,8 @@ prompts:
   packs:
     # Base pack consumed by the single mode.
     base:
-      # Repo-relative file used by @pack(base).system.
-      system: agent_configs/templates/prompts/minimal_system.md
+      # Config-relative file copied with every initialized harness bundle.
+      system: prompts/minimal_system.md
 # Optional tool registry. One registry path is enough for explain_agent_config to resolve tool names.
 tools:
   # The v2 loader maps the first registry path to the current runtime defs_dir.

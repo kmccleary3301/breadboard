@@ -67,7 +67,18 @@ def _harness_init(args: argparse.Namespace) -> int:
         ),
     )
     result = _copy_bundle(files)
-    if result == EXIT_OK and not args.quiet:
+    if result == EXIT_OK and args.json:
+        print(
+            json.dumps(
+                {
+                    "ok": True,
+                    "path": str(files[0][1]),
+                    "prompt_path": str(files[1][1]),
+                },
+                sort_keys=True,
+            )
+        )
+    elif result == EXIT_OK and not args.quiet:
         print(f"Created {files[0][1]}")
         print(f"Next: bbh harness validate {files[0][1]}")
     return result
@@ -78,7 +89,10 @@ def _harness_validate(args: argparse.Namespace) -> int:
 
     try:
         load_agent_config_view(args.PATH)
-    except (OSError, ValueError) as exc:
+    except OSError as exc:
+        _print_error(str(exc))
+        return EXIT_RESOLUTION_FAILURE
+    except ValueError as exc:
         _print_error(str(exc))
         return EXIT_VALIDATION_FAILURE
     if args.json:
@@ -164,17 +178,21 @@ def _run_session(base_url: str, args: argparse.Namespace) -> int:
 
     task = args.task or "List files"
     client = breadboard_sdk.BreadboardClient(base_url)
-    session = client.create_session(config_path=args.PATH, task=task)
+    session = client.create_session(config_path=args.PATH, task="")
     session_id = str(session["session_id"])
     client.post_input(session_id, content=task)
     records = _poll_records(client, session_id)
+    terminal_event = False
     for event in client.stream_events(session_id, query={"replay": "true"}):
         event_type = str(event.get("type") or "") if isinstance(event, dict) else ""
         if event_type == "error":
             payload = event.get("payload") if isinstance(event, dict) else None
             raise RuntimeError(f"session event stream failed: {payload}")
         if event_type in {"completion", "run_finished"}:
+            terminal_event = True
             break
+    if not terminal_event:
+        raise RuntimeError("session event stream ended before a terminal event")
     result = {"ok": True, "session_id": session_id, "record_count": _record_count(records)}
     if args.json:
         print(json.dumps(result, sort_keys=True))
@@ -249,7 +267,9 @@ def _lane_init(args: argparse.Namespace) -> int:
     except OSError as exc:
         _print_error(str(exc))
         return EXIT_RESOLUTION_FAILURE
-    if not args.quiet:
+    if args.json:
+        print(json.dumps({"ok": True, "path": str(manifest_path)}, sort_keys=True))
+    elif not args.quiet:
         print(f"Created {manifest_path}")
         print(f"Next: bbh lane validate {manifest_path}")
     return EXIT_OK
@@ -263,7 +283,10 @@ def _lane_validate(args: argparse.Namespace) -> int:
 
     try:
         manifest = load_lane_manifest(Path(args.PATH))
-    except (OSError, LaneDefValidationError) as exc:
+    except OSError as exc:
+        _print_error(str(exc))
+        return EXIT_RESOLUTION_FAILURE
+    except LaneDefValidationError as exc:
         _print_error(str(exc))
         return EXIT_VALIDATION_FAILURE
     if args.json:
@@ -290,7 +313,10 @@ def _lane_lock(args: argparse.Namespace) -> int:
     if args.out:
         try:
             lane_id = str(load_lane_manifest(manifest_path)["lane_id"])
-        except (OSError, LaneDefValidationError) as exc:
+        except OSError as exc:
+            _print_error(str(exc))
+            return EXIT_RESOLUTION_FAILURE
+        except LaneDefValidationError as exc:
             _print_error(str(exc))
             return EXIT_VALIDATION_FAILURE
         out_dir = Path(args.out)
@@ -317,11 +343,23 @@ def _lane_capture(args: argparse.Namespace) -> int:
     manifest_path = Path(args.MANIFEST)
     try:
         lane_id = str(load_lane_manifest(manifest_path)["lane_id"])
-    except (OSError, LaneDefValidationError) as exc:
+    except OSError as exc:
+        _print_error(str(exc))
+        return EXIT_RESOLUTION_FAILURE
+    except LaneDefValidationError as exc:
         _print_error(str(exc))
         return EXIT_VALIDATION_FAILURE
     out_dir = Path(args.out) if args.out else _repo_root() / "docs_tmp" / "bbh_capture" / lane_id
-    argv = ["--lane", lane_id, "--stage", "capture", "--out", str(out_dir)]
+    argv = [
+        "--lane",
+        lane_id,
+        "--stage",
+        "capture",
+        "--out",
+        str(out_dir),
+        "--lane-def-dir",
+        str(manifest_path.parent),
+    ]
     if args.json:
         argv.append("--json")
     return run_lane_main(argv)

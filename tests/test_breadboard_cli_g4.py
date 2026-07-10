@@ -102,11 +102,13 @@ def test_lane_lock_writes_to_out_and_check_reports_artifact_drift(
     assert sidecar_path.read_bytes() == tampered
 
 
-def test_lane_capture_delegates_manifest_lane_to_capture_stage_and_explicit_out(
+def test_lane_capture_delegates_exact_manifest_directory_to_capture_stage(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    manifest_path = _write_manifest(tmp_path)
+    supplied_manifest_dir = tmp_path / "supplied-lanes"
+    supplied_manifest_dir.mkdir()
+    manifest_path = _write_manifest(supplied_manifest_dir)
     out_dir = tmp_path / "capture"
     received: list[list[str]] = []
 
@@ -122,5 +124,28 @@ def test_lane_capture_delegates_manifest_lane_to_capture_stage_and_explicit_out(
 
     assert exit_code == 17
     assert received == [
-        ["--lane", LANE_ID, "--stage", "capture", "--out", str(out_dir)]
+        [
+            "--lane",
+            LANE_ID,
+            "--stage",
+            "capture",
+            "--out",
+            str(out_dir),
+            "--lane-def-dir",
+            str(supplied_manifest_dir),
+        ]
     ]
+
+
+def test_lane_capture_missing_manifest_returns_validation_exit(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    def fail_if_delegated(argv: list[str]) -> int:
+        raise AssertionError(f"run_lane must not receive a missing manifest: {argv}")
+
+    monkeypatch.setattr(run_lane, "main", fail_if_delegated)
+
+    assert breadboard_cli.main(
+        ["lane", "capture", str(tmp_path / "missing.manifest.yaml")]
+    ) == 3
