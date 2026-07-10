@@ -77,6 +77,7 @@ Tracked `docs/` is now split intentionally:
 | [guides/OPERATOR_SCRIPT_SURFACE.md](guides/OPERATOR_SCRIPT_SURFACE.md) | How to choose the right canonical script family and entrypoint for setup, ops, release, migration, and parity work |
 | [reference/SCRIPTS_INDEX.md](reference/SCRIPTS_INDEX.md) | Stable categorized script taxonomy and machine-readable inventory entrypoint |
 | [authoring/AGENT_CONFIG_AUTHORING.md](authoring/AGENT_CONFIG_AUTHORING.md) | How to author a v2 agent config: layer model, generated operational-vs-dossier field table, template → explain → boot smoke → lane capture walkthrough |
+| [DIRECTION_CHARTER.md](DIRECTION_CHARTER.md) | BreadBoard's durable product boundary, falsifiable thesis, contract tiers, layering, and change discipline |
 
 ### Contracts and surfaces
 

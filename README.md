@@ -3,6 +3,7 @@
 </p>
 
 <p align="center"><strong>Agent engine · harness emulator · TypeScript SDKs · multi-client coding stack.</strong></p>
+<p align="center"><a href="docs/DIRECTION_CHARTER.md">Direction charter</a></p>
 
 <p align="center">
   <a href="https://github.com/kmccleary3301/breadboard/actions/workflows/ci.yml">
