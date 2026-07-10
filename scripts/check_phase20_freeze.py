@@ -258,15 +258,30 @@ def _string_map(payload: Any, label: str) -> dict[str, str]:
 
 def _validated_tightening_allowlist() -> dict[str, str]:
     hashes: dict[str, str] = {}
+    required_fields = {"packet", "sha256"}
+    allowed_fields = required_fields | {"class", "ref"}
+    allowed_classes = {"tightening", "plan_mandated_evolution"}
     for schema_id, entry in TIGHTENING_ALLOWLIST.items():
         if not isinstance(schema_id, str) or not schema_id:
             raise AllowlistConfigError("schema IDs must be non-empty strings")
-        if not isinstance(entry, dict) or set(entry) != {"packet", "sha256"}:
+        if not isinstance(entry, dict):
             raise AllowlistConfigError(
-                f"{schema_id}: expected exactly packet and sha256 fields"
+                f"{schema_id}: expected an object with packet and sha256 fields"
             )
+        fields = set(entry)
+        missing = required_fields - fields
+        extra = fields - allowed_fields
+        if missing or extra:
+            details: list[str] = []
+            if missing:
+                details.append("missing " + ", ".join(sorted(missing)))
+            if extra:
+                details.append("unknown " + ", ".join(sorted(extra)))
+            raise AllowlistConfigError(f"{schema_id}: " + "; ".join(details))
         packet = entry.get("packet")
         content_hash = entry.get("sha256")
+        entry_class = entry.get("class", "tightening")
+        ref = entry.get("ref")
         if not isinstance(packet, str) or not packet:
             raise AllowlistConfigError(f"{schema_id}: packet must be a non-empty string")
         if not isinstance(content_hash, str) or re.fullmatch(
@@ -274,6 +289,16 @@ def _validated_tightening_allowlist() -> dict[str, str]:
         ) is None:
             raise AllowlistConfigError(
                 f"{schema_id}: sha256 must be 64 lowercase hexadecimal characters"
+            )
+        if entry_class not in allowed_classes:
+            raise AllowlistConfigError(
+                f"{schema_id}: class must be tightening or plan_mandated_evolution"
+            )
+        if ref is not None and (not isinstance(ref, str) or not ref):
+            raise AllowlistConfigError(f"{schema_id}: ref must be a non-empty string")
+        if entry_class == "plan_mandated_evolution" and ref is None:
+            raise AllowlistConfigError(
+                f"{schema_id}: ref is required for plan_mandated_evolution"
             )
         hashes[schema_id] = content_hash
     return hashes
@@ -300,6 +325,7 @@ def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str
         remedy = json.dumps(
             {
                 schema_id: {
+                    "class": "tightening",
                     "packet": "<packet-id>",
                     "sha256": current_hash,
                 }
@@ -308,7 +334,9 @@ def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str
         )
         schema_content_drift.add(
             f"{schema_id} (not authorized by TIGHTENING_ALLOWLIST; add/update "
-            f"{remedy} per FREEZE_POLICY/AM10 in the same commit, or revert the change)"
+            f"{remedy} per FREEZE_POLICY/AM10 in the same commit, or revert the change; "
+            'for AM17a plan-mandated mixed evolution use class '
+            '"plan_mandated_evolution" with a mandating-plan "ref")'
         )
 
     package_additions = _package_set(current.get("sdk_packages"), "sdk_packages") - _package_set(

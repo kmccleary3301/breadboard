@@ -141,6 +141,7 @@ def test_unallowlisted_schema_drift_reports_paste_ready_remedy_for_verbatim_id(
     remedy = json.dumps(
         {
             schema_id: {
+                "class": "tightening",
                 "packet": "<packet-id>",
                 "sha256": post_change_sha,
             }
@@ -152,6 +153,8 @@ def test_unallowlisted_schema_drift_reports_paste_ready_remedy_for_verbatim_id(
     assert f"schema_content_drift: {schema_id}" in captured.err
     assert f"add/update {remedy} per FREEZE_POLICY/AM10 in the same commit" in captured.err
     assert "or revert the change" in captured.err
+    assert '"plan_mandated_evolution"' in captured.err
+    assert '"ref"' in captured.err
 
 
 def test_allowlist_with_wrong_post_change_hash_does_not_authorize_drift(
@@ -192,6 +195,117 @@ def test_allowlist_with_exact_post_change_hash_authorizes_drift(
     assert captured.out == f"phase20-freeze: PASS (baseline {TEST_BASELINE_SHA})\n"
 
 
+def test_plan_mandated_evolution_with_exact_hash_authorizes_drift(
+    freeze_repository: FreezeRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    post_change_sha = freeze_repository.replace_schema(SHORT_SCHEMA_ID)
+    monkeypatch.setattr(
+        check_phase20_freeze,
+        "TIGHTENING_ALLOWLIST",
+        {
+            SHORT_SCHEMA_ID: {
+                "packet": "AM17a",
+                "sha256": post_change_sha,
+                "class": "plan_mandated_evolution",
+                "ref": "docs/plans/phase_20_right_shape/PLAN.md#am17a",
+            }
+        },
+    )
+
+    assert check_phase20_freeze.main() == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out == f"phase20-freeze: PASS (baseline {TEST_BASELINE_SHA})\n"
+
+
+def test_plan_mandated_evolution_without_ref_is_a_configuration_error(
+    freeze_repository: FreezeRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    post_change_sha = freeze_repository.replace_schema(SHORT_SCHEMA_ID)
+    monkeypatch.setattr(
+        check_phase20_freeze,
+        "TIGHTENING_ALLOWLIST",
+        {
+            SHORT_SCHEMA_ID: {
+                "packet": "AM17a",
+                "sha256": post_change_sha,
+                "class": "plan_mandated_evolution",
+            }
+        },
+    )
+
+    assert check_phase20_freeze.main() == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "phase20-freeze: allowlist config error:" in captured.err
+    assert (
+        f"{SHORT_SCHEMA_ID}: ref is required for plan_mandated_evolution"
+        in captured.err
+    )
+
+
+def test_unknown_allowlist_class_is_a_configuration_error(
+    freeze_repository: FreezeRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    post_change_sha = freeze_repository.replace_schema(SHORT_SCHEMA_ID)
+    monkeypatch.setattr(
+        check_phase20_freeze,
+        "TIGHTENING_ALLOWLIST",
+        {
+            SHORT_SCHEMA_ID: {
+                "packet": "AM17a",
+                "sha256": post_change_sha,
+                "class": "unreviewed_evolution",
+            }
+        },
+    )
+
+    assert check_phase20_freeze.main() == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "phase20-freeze: allowlist config error:" in captured.err
+    assert (
+        f"{SHORT_SCHEMA_ID}: class must be tightening or plan_mandated_evolution"
+        in captured.err
+    )
+
+
+def test_allowlist_entry_with_unknown_field_is_a_configuration_error(
+    freeze_repository: FreezeRepository,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    post_change_sha = freeze_repository.replace_schema(SHORT_SCHEMA_ID)
+    monkeypatch.setattr(
+        check_phase20_freeze,
+        "TIGHTENING_ALLOWLIST",
+        {
+            SHORT_SCHEMA_ID: {
+                "packet": "AM17a",
+                "sha256": post_change_sha,
+                "class": "tightening",
+                "approval": "informal",
+            }
+        },
+    )
+
+    assert check_phase20_freeze.main() == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "phase20-freeze: allowlist config error:" in captured.err
+    assert f"{SHORT_SCHEMA_ID}: unknown approval" in captured.err
+
+
 def test_bare_allowlist_hash_is_a_configuration_error(
     freeze_repository: FreezeRepository,
     monkeypatch: pytest.MonkeyPatch,
@@ -209,4 +323,7 @@ def test_bare_allowlist_hash_is_a_configuration_error(
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "phase20-freeze: allowlist config error:" in captured.err
-    assert f"{SHORT_SCHEMA_ID}: expected exactly packet and sha256 fields" in captured.err
+    assert (
+        f"{SHORT_SCHEMA_ID}: expected an object with packet and sha256 fields"
+        in captured.err
+    )
