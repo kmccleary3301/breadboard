@@ -168,7 +168,11 @@ def collect_support_claim_schema_errors(
     schema_path: Path | None = None,
 ) -> list[str]:
     schema_version = support_claim.get("schema_version")
-    selected_schema_path = schema_path or SUPPORT_CLAIM_SCHEMA_PATHS.get(str(schema_version), SUPPORT_CLAIM_SCHEMA_PATHS["bb.e4.support_claim.v1"])
+    selected_schema_path = schema_path
+    if selected_schema_path is None:
+        selected_schema_path = SUPPORT_CLAIM_SCHEMA_PATHS.get(str(schema_version))
+        if selected_schema_path is None:
+            return [f"schema_version: unsupported support claim schema {schema_version!r}"]
     schema = _load_json(selected_schema_path)
     common = _load_json(COMMON_SCHEMA_PATH)
     e4_common = _load_json(E4_COMMON_SCHEMA_PATH)
@@ -484,9 +488,12 @@ def _validate_segment_catalog_binding(repo_root: Path, support_claim: Mapping[st
     if schema_version == "bb.e4.artifact_catalog.v2":
         expected_segment_hash = _v2_catalog_segment_hash(catalog, str(segment_id), local_errors) if isinstance(segment_id, str) else None
         expected_shared_hash = _v2_catalog_segment_hash(catalog, "shared", local_errors)
-    else:
+    elif schema_version == "bb.e4.artifact_catalog.v1":
         expected_segment_hash = _v1_pseudo_segment_hash(catalog, str(segment_id), local_errors) if isinstance(segment_id, str) else None
         expected_shared_hash = _v1_pseudo_segment_hash(catalog, "shared", local_errors)
+    else:
+        errors.append(f"support_claim.catalog_binding.catalog_path: unsupported artifact catalog schema {schema_version!r}")
+        return
     errors.extend(local_errors)
     if expected_segment_hash and isinstance(segment_hash, str) and segment_hash != expected_segment_hash:
         errors.append(
@@ -1152,7 +1159,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", default=".", help="Implementation repository root")
     parser.add_argument("--freeze-manifest", default="config/e4_target_freeze_manifest.yaml", help="E4 target freeze manifest")
     parser.add_argument("--config-id", required=True, help="Selected e4_configs row id")
-    parser.add_argument("--support-claim", required=True, help="Lane-level bb.e4.support_claim.v1 JSON")
+    parser.add_argument("--support-claim", required=True, help="Lane-level bb.e4.support_claim.v4 JSON (legacy v1-v3 accepted evidence remains readable)")
     parser.add_argument("--evidence-manifest", default="", help="Lane-level bb.e4.evidence_manifest.v1 JSON; defaults to support claim ref")
     parser.add_argument("--allow-unaccepted", action="store_true", help="Validate shape/freshness before support_claim.accepted is flipped true")
     parser.add_argument("--rerun-comparators", dest="rerun_comparators", action="store_true", default=True, help="Rerun the lane comparator and diff against the stored report (default).")

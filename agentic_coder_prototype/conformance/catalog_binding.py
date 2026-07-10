@@ -94,13 +94,10 @@ DERIVED_STATIC_ROLE_IDS = frozenset(
         "e4_static:report/tooling_manifest_json",
         "e4_static:script/build_artifact_catalog",
         "e4_static:script/build_e4_final_readiness_packet",
-        "e4_static:script/build_oh_my_pi_l5_memory_compaction",
-        "e4_static:script/build_oh_my_pi_l6_tui_projection",
-        "e4_static:script/build_oh_my_pi_p3_1_effective_config_graph",
-        "e4_static:script/build_oh_my_pi_p3_remaining_helper_runtime",
-        "e4_static:script/build_oh_my_pi_p6_6_task_job_subagent",
-        "e4_static:script/build_pi_p5_cli_config_context_tool_surface",
-        "e4_static:script/build_pi_p5_extension_session_residual",
+        "e4_static:script/accepted_artifact_materialize_adapter",
+        "e4_static:script/oh_my_pi_compiler_capture_adapter",
+        "e4_static:script/pi_p5_l1_capture_adapter",
+        "e4_static:script/pi_p5_l2_capture_adapter",
         "e4_static:script/build_primitive_projection",
         "e4_static:script/build_source_index",
         "e4_static:script/refresh_e4_legacy_evidence_ledger_refs",
@@ -109,9 +106,7 @@ DERIVED_STATIC_ROLE_IDS = frozenset(
         "e4_static:script/scaffold_e4_target_lane",
         "e4_static:script/seed_atomic_feature_ledger",
         "e4_static:script/validate_atomic_feature_ledger",
-        "e4_static:script/validate_e4_primitive_readiness",
         "e4_static:script/validate_e4_report_hash_freshness",
-        "e4_static:script/validate_e4_score_subledger",
     }
 )
 
@@ -237,3 +232,33 @@ def catalog_stable_entries_hash(catalog: Mapping[str, Any]) -> str:
     if not isinstance(entries, list) or not all(isinstance(entry, Mapping) for entry in entries):
         raise ValueError("artifact catalog entries must be a list of objects")
     return stable_entries_hash(entries)
+
+
+def reusable_catalog_revision(
+    catalog: Mapping[str, Any],
+    prior_binding: Mapping[str, Any] | None,
+    binding_hashes: Mapping[str, str],
+    *,
+    minimum: int = 1,
+) -> int:
+    """Return a catalog revision for an informational claim binding.
+
+    The revision is not a content-addressed pin. If the claim's catalog hashes are
+    unchanged, reusing the prior revision keeps claim -> catalog -> claim
+    regeneration from churning only because the live catalog revision advanced.
+    """
+
+    live_revision = catalog.get("revision")
+    if isinstance(live_revision, bool) or not isinstance(live_revision, int) or live_revision < minimum:
+        raise ValueError(f"artifact catalog revision must be an int >= {minimum}")
+    if prior_binding is None:
+        return live_revision
+    prior_revision = prior_binding.get("catalog_revision")
+    if (
+        isinstance(prior_revision, int)
+        and not isinstance(prior_revision, bool)
+        and minimum <= prior_revision <= live_revision
+        and all(prior_binding.get(key) == value for key, value in binding_hashes.items())
+    ):
+        return prior_revision
+    return live_revision
