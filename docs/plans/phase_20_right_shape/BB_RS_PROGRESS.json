@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 185,
+ "points_done": 205,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:18:01Z",
+ "updated_at_utc": "2026-07-10T21:21:16Z",
  "items": [
   {
    "id": "A1",
@@ -847,13 +847,20 @@
    "ws": "J",
    "title": "FLAGSHIP_DEMO_PROTOCOL.md predeclared",
    "weight": 20,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "C1"
    ],
    "evidence": [],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsJ",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "2140039975d6bfc8b3c96331d35e6f0407cf94e1"
+    }
+   ]
   },
   {
    "id": "J2",
