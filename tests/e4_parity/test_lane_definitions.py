@@ -59,7 +59,6 @@ def test_lane_source_inventory_and_legacy_executable_stage_contracts() -> None:
         row["path"]: row["reason"] or "missing exclusion reason"
         for row in excluded_rows
     }
-
     source_lane_defs: dict[str, dict[str, Any]] = {}
     for row in source_inventory:
         if row["kind"] != "lane_def_legacy":

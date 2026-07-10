@@ -260,15 +260,13 @@ def test_pilot_lock_pins_every_dependency_and_keeps_the_three_layers_directional
     assert not ({"manifest_sha256", "resolved_inputs", "registry_pins", "target_freeze"} & collect_keys(manifest))
 
 
-def test_pilot_migration_is_byte_deterministic_and_committed_outputs_pass_check(tmp_path: Path) -> None:
-    """Repeated migration emits identical bytes, and check mode accepts the committed generated pair without writes."""
+def test_pilot_compile_is_byte_deterministic_and_committed_outputs_pass_check(tmp_path: Path) -> None:
+    """Repeated steady-state compilation emits identical bytes, and check accepts the committed pair without writes."""
     lock_path = tmp_path / f"{LANE_ID}.lock.json"
     sidecar_path = tmp_path / f"{LANE_ID}.packet_constants.v1.json"
     argv = [
-        "migrate",
+        "compile",
         str(MANIFEST_PATH),
-        "--legacy",
-        str(LEGACY_PATH),
         "--lock",
         str(lock_path),
         "--sidecar",
@@ -281,12 +279,7 @@ def test_pilot_migration_is_byte_deterministic_and_committed_outputs_pass_check(
     assert (lock_path.read_bytes(), sidecar_path.read_bytes()) == first
 
     committed_before = (LOCK_PATH.read_bytes(), SIDECAR_PATH.read_bytes())
-    assert (
-        compile_lane_lock.main(
-            ["migrate", str(MANIFEST_PATH), "--legacy", str(LEGACY_PATH), "--check"]
-        )
-        == 0
-    )
+    assert compile_lane_lock.main(["compile", str(MANIFEST_PATH), "--check"]) == 0
     assert (LOCK_PATH.read_bytes(), SIDECAR_PATH.read_bytes()) == committed_before
 
 
@@ -560,27 +553,13 @@ def test_promoted_payload_source_rejects_malformed_shapes(malformed: object) -> 
         _payload_source_module().validate_payload_source(malformed, source=PAYLOAD_SOURCE_PATH)
 
 
-def test_migrate_and_compile_emit_identical_sidecar_bytes_from_the_promoted_source(
+def test_compile_emits_canonical_sidecar_bytes_from_the_promoted_source(
     tmp_path: Path,
 ) -> None:
-    """One-time legacy migration and steady-state source compilation converge on identical payload bytes."""
-    migrate_lock = tmp_path / "migrate.lock.json"
-    migrate_sidecar = tmp_path / "migrate.packet_constants.v1.json"
+    """Steady-state compilation emits the promoted canonical source without consulting the retired legacy blocks."""
     compile_lock = tmp_path / "compile.lock.json"
     compile_sidecar = tmp_path / "compile.packet_constants.v1.json"
 
-    assert compile_lane_lock.main(
-        [
-            "migrate",
-            str(MANIFEST_PATH),
-            "--legacy",
-            str(LEGACY_PATH),
-            "--lock",
-            str(migrate_lock),
-            "--sidecar",
-            str(migrate_sidecar),
-        ]
-    ) == 0
     assert compile_lane_lock.main(
         [
             "compile",
@@ -593,10 +572,13 @@ def test_migrate_and_compile_emit_identical_sidecar_bytes_from_the_promoted_sour
     ) == 0
 
     expected = _payload_source_module().canonical_source_bytes(_load_yaml(PAYLOAD_SOURCE_PATH))
-    assert migrate_sidecar.read_bytes() == compile_sidecar.read_bytes() == expected
-    assert all(
-        row["role"] != "legacy_lane_descriptor"
-        for row in _load_json(migrate_lock)["resolved_inputs"]
+    assert compile_sidecar.read_bytes() == expected
+    resolved_inputs = _load_json(compile_lock)["resolved_inputs"]
+    assert all(row["role"] != "legacy_lane_descriptor" for row in resolved_inputs)
+    assert any(
+        row["path"] == PAYLOAD_SOURCE_PATH.relative_to(ROOT).as_posix()
+        and row["role"] == "payload_source"
+        for row in resolved_inputs
     )
 
 
@@ -635,12 +617,22 @@ def test_compile_and_check_recreate_disposable_extraction_without_legacy(
 
 
 def test_payload_extractor_check_is_reproducible_and_detects_drift(tmp_path: Path) -> None:
-    """Extractor check accepts exact canonical bytes and rejects a modified promoted source."""
+    """The committed extractor reproduces promoted bytes from a synthetic pre-retirement descriptor."""
     output = tmp_path / "promoted.payloads.yaml"
+    synthetic_legacy_path = tmp_path / "legacy-with-payload-blocks.yaml"
+    legacy_descriptor = _load_yaml(LEGACY_PATH)
+    promoted_payloads = _load_yaml(PAYLOAD_SOURCE_PATH)
+    packet_constants = legacy_descriptor["normalize"]["config"]["packet_constants"]
+    assert "payload_templates" not in packet_constants
+    assert "substitutions" not in packet_constants
+    packet_constants["payload_templates"] = promoted_payloads["payload_templates"]
+    packet_constants["substitutions"] = promoted_payloads["substitutions"]
+    _write_yaml(synthetic_legacy_path, legacy_descriptor)
+
     script = ROOT / "scripts" / "e4_parity" / "promote_lane_payload_source.py"
     command = [
         str(script),
-        str(LEGACY_PATH),
+        str(synthetic_legacy_path),
         str(output),
     ]
 
@@ -653,6 +645,7 @@ def test_payload_extractor_check_is_reproducible_and_detects_drift(tmp_path: Pat
     )
     assert created.returncode == 0, created.stderr
     exact = output.read_bytes()
+    assert exact == _payload_source_module().canonical_source_bytes(promoted_payloads)
     checked = subprocess.run(
         [sys.executable, *command, "--check"],
         cwd=ROOT,

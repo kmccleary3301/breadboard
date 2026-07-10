@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from agentic_coder_prototype.conformance import c4_chain
 from scripts.e4_parity import compile_lane_lock, lane_definitions
 from scripts.e4_parity.adapters import oh_my_pi_compiler_capture as adapter
 from scripts.e4_parity.lane_definitions import load_manifest_lane_def
@@ -104,3 +105,36 @@ def test_repo_reference_kinds_missing_from_checkout_do_not_resolve_from_ancestor
         assert reference in message
         assert str(checkout) in message
         assert "missing" in message.lower()
+
+
+def test_c4_chain_resolves_explicit_workspace_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    checkout = tmp_path / "checkout"
+    ledger_path = workspace / "docs_tmp" / "phase_15" / "ledger.json"
+    checkout.mkdir()
+    ledger_path.parent.mkdir(parents=True)
+    ledger_path.write_text('{"features":[]}\n', encoding="utf-8")
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
+
+    assert (
+        c4_chain._resolve_path(
+            checkout,
+            "docs_tmp/phase_15/ledger.json#feature-id#sha256:" + "a" * 64,
+        )
+        == ledger_path
+    )
+
+
+def test_c4_chain_fails_closed_without_workspace_provisioning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    monkeypatch.delenv("BB_WORKSPACE_ROOT", raising=False)
+
+    with pytest.raises(c4_chain.C4ChainValidationError, match="BB_WORKSPACE_ROOT is required"):
+        c4_chain._resolve_path(checkout, "docs_tmp/phase_15/ledger.json")

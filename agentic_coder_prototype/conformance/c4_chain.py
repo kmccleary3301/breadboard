@@ -10,6 +10,7 @@ from typing import Any, Mapping
 
 import yaml
 from jsonschema import Draft202012Validator, RefResolver
+from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
 from scripts.e4_parity.validators.gate_errors import BlameEntry, GateError, apply_gate_error_envelope, gate_error_to_dict, gate_exit_code
 from scripts.e4_parity.validators.registries import RegistryValidationError, assert_registered
 
@@ -86,41 +87,56 @@ def _ref_hash(ref: str) -> str | None:
     return None
 
 
-def _workspace_root(repo_root: Path) -> Path:
-    return repo_root.parent
-
 
 def _resolve_path(repo_root: Path, ref_or_path: str) -> Path:
     raw = _strip_ref_suffix(ref_or_path)
     path = Path(raw)
-    if path.is_absolute():
-        return path.resolve()
-    workspace = _workspace_root(repo_root)
-    if raw.startswith("docs_tmp/") or raw.startswith("breadboard_repo_integration_main_20260326/"):
-        return (workspace / raw).resolve()
-    return (repo_root / raw).resolve()
+    namespace = (
+        "workspace_evidence"
+        if path.is_absolute()
+        or (path.parts and path.parts[0] in {"docs_tmp", repo_root.resolve().name})
+        else "repo"
+    )
+    try:
+        return resolve_declared_reference(
+            raw,
+            checkout_root=repo_root,
+            namespace=namespace,
+            label="C4 chain reference",
+            must_exist=False,
+        )
+    except ReferenceResolutionError as exc:
+        raise C4ChainValidationError(str(exc)) from exc
 
 
 def _display_path(repo_root: Path, path: Path) -> str:
-    workspace = _workspace_root(repo_root).resolve()
+    checkout = repo_root.resolve()
     resolved = path.resolve()
     try:
-        return str(resolved.relative_to(workspace))
+        return str(Path(checkout.name) / resolved.relative_to(checkout))
     except ValueError:
-        return str(resolved)
+        pass
+    validated = _resolve_path(repo_root, str(resolved))
+    if "docs_tmp" in validated.parts:
+        docs_tmp_index = validated.parts.index("docs_tmp")
+        return str(Path(*validated.parts[docs_tmp_index:]))
+    return str(validated)
 
 
 def _canonicalish_path(repo_root: Path, path: Path) -> bool:
     resolved = path.resolve()
-    workspace = _workspace_root(repo_root).resolve()
-    roots = [
-        workspace / "docs_tmp" / "phase_15",
+    repo_roots = [
         repo_root / "docs" / "conformance",
         repo_root / "artifacts" / "conformance",
         repo_root / "config",
         repo_root / "agent_configs",
     ]
-    return any(resolved == root.resolve() or root.resolve() in resolved.parents for root in roots)
+    if any(resolved == root.resolve() or root.resolve() in resolved.parents for root in repo_roots):
+        return True
+    if resolved.is_relative_to(repo_root.resolve()):
+        return False
+    phase_15_root = _resolve_path(repo_root, "docs_tmp/phase_15")
+    return resolved == phase_15_root or phase_15_root in resolved.parents
 
 
 def _path_policy_errors(repo_root: Path, label: str, ref_or_path: str) -> list[str]:

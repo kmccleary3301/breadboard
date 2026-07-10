@@ -15,13 +15,22 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKSPACE = ROOT.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.e4_parity.e4_closure_readiness_section import build_primitive_readiness_report
 from scripts.e4_parity.e4_closure_score_section import collect_score_subledger_errors
 from scripts.e4_parity import lane_inventory_utils as lane_inventory
+from scripts.e4_parity.path_refs import (
+    ReferenceResolutionError,
+    resolve_declared_reference,
+    workspace_root_for_checkout,
+)
+
+try:
+    WORKSPACE = workspace_root_for_checkout(ROOT)
+except ReferenceResolutionError as exc:
+    raise RuntimeError(str(exc)) from exc
 
 GENERATED_AT_UTC = "2026-07-03T09:15:00Z"
 P8_SCORE_ROW_ID = "score_p8_final_readiness_blocked_ready_handoff"
@@ -103,14 +112,24 @@ def display(path: Path) -> str:
             return resolved.as_posix()
 
 
-def resolve_ref(ref: str) -> Path:
-    raw = ref.split("#", 1)[0]
-    path = Path(raw)
-    if path.is_absolute():
-        return path.resolve()
-    if raw.startswith("docs_tmp/") or raw.startswith(f"{ROOT.name}/"):
-        return (WORKSPACE / raw).resolve()
-    return (ROOT / raw).resolve()
+def _resolve_read_reference(reference: str, *, label: str = "final-readiness reference") -> Path:
+    raw = Path(reference.split("#", 1)[0])
+    namespace = (
+        "workspace_evidence"
+        if raw.is_absolute() or (raw.parts and raw.parts[0] in {"docs_tmp", ROOT.name})
+        else "repo"
+    )
+    try:
+        return resolve_declared_reference(
+            reference,
+            checkout_root=ROOT,
+            namespace=namespace,
+            label=label,
+            workspace_root=WORKSPACE if namespace == "workspace_evidence" else None,
+            must_exist=False,
+        )
+    except ReferenceResolutionError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def _inventory() -> dict[str, Any]:
@@ -143,15 +162,24 @@ def _lane_arg(lane: Mapping[str, Any], flag: str) -> str:
 
 
 def _lane_support_claim_path(lane: Mapping[str, Any]) -> Path:
-    return ROOT / _lane_arg(lane, "--support-claim")
+    return _resolve_read_reference(
+        _lane_arg(lane, "--support-claim"),
+        label=f"lane {lane.get('lane_id')!r} support claim",
+    )
 
 
 def _lane_evidence_manifest_path(lane: Mapping[str, Any]) -> Path:
-    return ROOT / _lane_arg(lane, "--evidence-manifest")
+    return _resolve_read_reference(
+        _lane_arg(lane, "--evidence-manifest"),
+        label=f"lane {lane.get('lane_id')!r} evidence manifest",
+    )
 
 
 def _lane_node_gate_path(lane: Mapping[str, Any]) -> Path:
-    return ROOT / _lane_arg(lane, "--json-out")
+    return _resolve_read_reference(
+        _lane_arg(lane, "--json-out"),
+        label=f"lane {lane.get('lane_id')!r} node gate",
+    )
 
 
 def _lane_score_row_id(lane: Mapping[str, Any]) -> str:
@@ -268,7 +296,7 @@ def _ledger_row_ref_from_existing(ref: str) -> str:
     if len(parts) < 2 or not parts[1]:
         return ref
     feature_id = parts[1]
-    payload = load_json(resolve_ref(ref))
+    payload = load_json(_resolve_read_reference(ref))
     for row in payload.get("rows", []):
         if isinstance(row, Mapping) and row.get("feature_id") == feature_id:
             return f"{parts[0]}#{feature_id}#{row_hash(feature_id, row)}"
@@ -290,15 +318,15 @@ def refresh_score_artifact_hashes() -> None:
         if not isinstance(row, dict):
             continue
         if row.get("support_claim_ref"):
-            row["support_claim_sha256"] = sha256_path(resolve_ref(str(row["support_claim_ref"])))
+            row["support_claim_sha256"] = sha256_path(_resolve_read_reference(str(row["support_claim_ref"])))
         if row.get("evidence_manifest_ref"):
-            row["evidence_manifest_sha256"] = sha256_path(resolve_ref(str(row["evidence_manifest_ref"])))
+            row["evidence_manifest_sha256"] = sha256_path(_resolve_read_reference(str(row["evidence_manifest_ref"])))
         if isinstance(row.get("ledger_row_refs"), list):
             row["ledger_row_refs"] = [_ledger_row_ref_from_existing(str(ref)) for ref in row["ledger_row_refs"]]
         if row.get("live_validator_ref"):
             row["live_validator_ref"] = _replace_ref_hash(
                 str(row["live_validator_ref"]),
-                sha256_path(resolve_ref(str(row["live_validator_ref"]))),
+                sha256_path(_resolve_read_reference(str(row["live_validator_ref"]))),
             )
 
     write_json(SCORE_SUBLEDGER_PATH, subledger)
@@ -351,15 +379,15 @@ def refresh_blocked_score_artifacts(errors: list[str]) -> None:
         if not isinstance(row, dict):
             continue
         if row.get("support_claim_ref"):
-            row["support_claim_sha256"] = sha256_path(resolve_ref(str(row["support_claim_ref"])))
+            row["support_claim_sha256"] = sha256_path(_resolve_read_reference(str(row["support_claim_ref"])))
         if row.get("evidence_manifest_ref"):
-            row["evidence_manifest_sha256"] = sha256_path(resolve_ref(str(row["evidence_manifest_ref"])))
+            row["evidence_manifest_sha256"] = sha256_path(_resolve_read_reference(str(row["evidence_manifest_ref"])))
         if isinstance(row.get("ledger_row_refs"), list):
             row["ledger_row_refs"] = [_ledger_row_ref_from_existing(str(ref)) for ref in row["ledger_row_refs"]]
         if row.get("live_validator_ref"):
             row["live_validator_ref"] = _replace_ref_hash(
                 str(row["live_validator_ref"]),
-                sha256_path(resolve_ref(str(row["live_validator_ref"]))),
+                sha256_path(_resolve_read_reference(str(row["live_validator_ref"]))),
             )
         if row.get("score_row_id") == P8_SCORE_ROW_ID:
             row["blocked_weighted_items_left_at_zero"] = [
@@ -648,7 +676,7 @@ def _support_claim_count(payload: Mapping[str, Any]) -> int | None:
 
 
 def _current_report_artifact_is_stale(path_ref: str) -> bool:
-    path = resolve_ref(path_ref)
+    path = _resolve_read_reference(path_ref)
     if not path.exists():
         return True
     if path.suffix != ".json":
@@ -749,7 +777,7 @@ def refresh_artifact_hashes(payload: dict[str, Any]) -> None:
         for item in values:
             if not isinstance(item, dict) or not isinstance(item.get("path"), str):
                 continue
-            path = resolve_ref(item["path"])
+            path = _resolve_read_reference(item["path"])
             item["exists"] = path.exists()
             if path.exists():
                 item["sha256"] = sha256_path(path)
@@ -864,7 +892,7 @@ def refresh_score_row_hashes(row: Mapping[str, Any]) -> dict[str, Any]:
     refreshed = dict(row)
     support_claim_ref = refreshed.get("support_claim_ref")
     if isinstance(support_claim_ref, str) and support_claim_ref:
-        support_claim_path = resolve_ref(support_claim_ref)
+        support_claim_path = _resolve_read_reference(support_claim_ref)
         refreshed["support_claim_ref"] = display(support_claim_path)
         refreshed["support_claim_sha256"] = sha256_path(support_claim_path)
         support_claim = load_json(support_claim_path)
@@ -881,13 +909,13 @@ def refresh_score_row_hashes(row: Mapping[str, Any]) -> dict[str, Any]:
 
     evidence_manifest_ref = refreshed.get("evidence_manifest_ref")
     if isinstance(evidence_manifest_ref, str) and evidence_manifest_ref:
-        evidence_manifest_path = resolve_ref(evidence_manifest_ref)
+        evidence_manifest_path = _resolve_read_reference(evidence_manifest_ref)
         refreshed["evidence_manifest_ref"] = display(evidence_manifest_path)
         refreshed["evidence_manifest_sha256"] = sha256_path(evidence_manifest_path)
 
     live_validator_ref = refreshed.get("live_validator_ref")
     if isinstance(live_validator_ref, str) and live_validator_ref:
-        refreshed["live_validator_ref"] = ref(resolve_ref(live_validator_ref))
+        refreshed["live_validator_ref"] = ref(_resolve_read_reference(live_validator_ref))
 
     return refreshed
 
@@ -924,7 +952,7 @@ def update_score_subledger() -> dict[str, Any]:
 
 
 def accepted_claim_from_score_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    claim_payload = load_json(resolve_ref(str(row["support_claim_ref"])))
+    claim_payload = load_json(_resolve_read_reference(str(row["support_claim_ref"])))
     return {
         "claim_ref": row["support_claim_ref"],
         "claim_sha256": row["support_claim_sha256"],
@@ -1146,11 +1174,11 @@ def update_validation_report() -> dict[str, Any]:
         support_ref = node_gate.get("support_claim") or refs_payload.get("support_claim")
         evidence_ref = node_gate.get("evidence_manifest") or refs_payload.get("evidence_manifest")
         if isinstance(support_ref, str):
-            add_check(f"{role}_support_claim_hash_current", hashes_payload.get("support_claim") == sha256_path(resolve_ref(support_ref)), path=support_ref)
+            add_check(f"{role}_support_claim_hash_current", hashes_payload.get("support_claim") == sha256_path(_resolve_read_reference(support_ref)), path=support_ref)
         else:
             add_check(f"{role}_support_claim_hash_current", False, path=support_ref)
         if isinstance(evidence_ref, str):
-            add_check(f"{role}_evidence_manifest_hash_current", hashes_payload.get("evidence_manifest") == sha256_path(resolve_ref(evidence_ref)), path=evidence_ref)
+            add_check(f"{role}_evidence_manifest_hash_current", hashes_payload.get("evidence_manifest") == sha256_path(_resolve_read_reference(evidence_ref)), path=evidence_ref)
         else:
             add_check(f"{role}_evidence_manifest_hash_current", False, path=evidence_ref)
     add_check("primitive_readiness_report_ok", bool(primitive_report.get("ok")), observed_errors=len(primitive_report.get("errors", [])))
@@ -1224,12 +1252,12 @@ def write_final_report() -> None:
             "## Verification commands recorded for this packet",
             "",
             "- Inventory-driven builders generated lane artifacts from `docs/conformance/e4_lane_inventory.json`.",
-            "- `.venv/bin/python scripts/run_ct_scenarios.py --json-out artifacts/conformance/ct_scenarios_result_e4_1000.json --rows-out artifacts/conformance/ct_scenarios_rows_e4_1000.json` -> writes CT rows and exits fail-closed when blocking commands are missing; current semantics report blocking gaps as `not_implemented`.",
-            "- `.venv/bin/python scripts/sync_conformance_matrix_status.py --rows-json artifacts/conformance/ct_scenarios_rows_e4_1000.json --out-csv artifacts/conformance/CONFORMANCE_TEST_MATRIX_V1.synced.csv --summary-json artifacts/conformance/conformance_matrix_sync_summary_v1.json --summary-md artifacts/conformance/conformance_matrix_sync_summary_v1.md --fail-on-summary-not-ok` -> writes generated status from CT rows and exits fail-closed when the generated summary has `ok: false`.",
-            "- `.venv/bin/python scripts/e4_parity/build_e4_final_readiness_packet.py --json` -> passed; score packet regenerated with `ok: true`.",
-            "- `.venv/bin/python scripts/e4_parity/validate_e4_closure.py --json` -> passed.",
-            "- `.venv/bin/python scripts/e4_parity/validate_e4_report_hash_freshness.py --scorecard ../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json --baseline ../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json --progress ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json --accepted-report ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json --accepted-validation ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json --terminal-manifest ../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json --expected-points 1000 --expected-claims 10` -> passed.",
-            "- `.venv/bin/python -m pytest tests/e4_parity -q` -> passed.",
+            "- `python scripts/run_ct_scenarios.py --json-out artifacts/conformance/ct_scenarios_result_e4_1000.json --rows-out artifacts/conformance/ct_scenarios_rows_e4_1000.json` -> writes CT rows and exits fail-closed when blocking commands are missing; current semantics report blocking gaps as `not_implemented`.",
+            "- `python scripts/sync_conformance_matrix_status.py --rows-json artifacts/conformance/ct_scenarios_rows_e4_1000.json --out-csv artifacts/conformance/CONFORMANCE_TEST_MATRIX_V1.synced.csv --summary-json artifacts/conformance/conformance_matrix_sync_summary_v1.json --summary-md artifacts/conformance/conformance_matrix_sync_summary_v1.md --fail-on-summary-not-ok` -> writes generated status from CT rows and exits fail-closed when the generated summary has `ok: false`.",
+            "- `python scripts/e4_parity/build_e4_final_readiness_packet.py --json` -> passed; score packet regenerated with `ok: true`.",
+            "- `python scripts/e4_parity/validate_e4_closure.py --json` -> passed.",
+            "- `python scripts/e4_parity/validate_e4_report_hash_freshness.py --scorecard ../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json --baseline ../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json --progress ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json --accepted-report ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json --accepted-validation ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json --terminal-manifest ../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json --expected-points 1000 --expected-claims 10` -> passed.",
+            "- `python -m pytest tests/e4_parity -q` -> passed.",
             "",
             "## Artifact hashes",
             "",
@@ -1351,7 +1379,7 @@ def update_scorecard() -> dict[str, Any]:
         and "validate_e4_report_hash_freshness.py" not in cmd["command"]
         and not any(marker in cmd["command"] for marker in ABSORBED_VALIDATOR_PATH_MARKERS)
     ]
-    freshness_command = ".venv/bin/python scripts/e4_parity/validate_e4_report_hash_freshness.py --scorecard ../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json --baseline ../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json --progress ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json --accepted-report ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json --accepted-validation ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json --terminal-manifest ../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json --expected-points 1000 --expected-claims 10"
+    freshness_command = "python scripts/e4_parity/validate_e4_report_hash_freshness.py --scorecard ../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json --baseline ../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json --progress ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json --accepted-report ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json --accepted-validation ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json --terminal-manifest ../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json --expected-points 1000 --expected-claims 10"
     if not any(cmd.get("command") == freshness_command for cmd in commands):
         commands.append({"command": freshness_command, "cwd": ROOT.name, "result": "closure gate; expected passed"})
     scorecard["validation_commands"] = commands

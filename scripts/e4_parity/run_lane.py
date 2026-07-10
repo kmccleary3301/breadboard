@@ -12,14 +12,14 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 try:
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, lane_lock_sha256, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, lane_lock_sha256, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
@@ -622,6 +622,7 @@ def _finalize_stage_result(
     *,
     executed: bool,
 ) -> dict[str, Any]:
+    result["lock_sha256"] = lane_def.get("_lock_sha256")
     if executed:
         returncode = int(result.get("returncode", 1))
         report_ref = result.get("output_path")
@@ -630,7 +631,6 @@ def _finalize_stage_result(
             manifest_rule=None,
             reused_inputs=None,
             report_ref=report_ref if isinstance(report_ref, str) and report_ref else None,
-            lock_sha256=None,
             detail=(
                 f"{result['stage']} executed successfully"
                 if returncode == 0
@@ -824,6 +824,8 @@ def run_lane(
         lane_def = lane_defs[lane_id]
     except KeyError as exc:
         raise LaneRunError(f"unknown lane {lane_id!r} in {lane_def_dir}") from exc
+    lane_def = dict(lane_def)
+    lane_def["_lock_sha256"] = lane_lock_sha256(lane_id, lane_def_dir)
     inventory_lane = _inventory_lane(lane_id, inventory_path)
     if inventory_lane is not None and inventory_lane.get("config_id") != lane_def.get("config_id"):
         raise LaneRunError(f"lane {lane_id!r} config_id differs between lane_def and inventory")
