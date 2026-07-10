@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **5 amendments** (below).
+Current state: **6 amendments** (below).
 
 ---
 
@@ -57,3 +57,15 @@ H1's honest-execution battery exposed plan-vs-repo mismatches. None are H1 defec
 1. **/replay/mode absent from all 21 normalized legacy lanes** (only /replay/session + /replay/comparator_class exist; session null). Rule 2's `replay.mode == "stored"` check cannot pass on any legacy lane until **H3** adds `mode` plus concrete stored-artifact refs. Until then, replay-reuse reds are expected and correct.
 2. **Undeclared lane kind**: legacy /kind values are `target_support` (12) and `non_target_accounting` (9); STAGES_BY_KIND declares `target_support`, `self_runtime`, `probe`. **WS-F** must either migrate the kind or amend the table with an authoritative tuple. Interim rule: H-packets treat `non_target_accounting` as legacy-undeclared and fail closed.
 3. **Directory reused-inputs lack digest semantics**: e.g. `config/e4_targets/claude_code/2.1.63` is a directory at /capture/inputs. **H3** must declare concrete stored artifact files or define canonical directory-tree digest semantics before stored-capture reuse can pass.
+
+---
+
+## Amendment 6 - 2026-07-10 - A7 records step: minimal SDK widening authorized (spec_gap)
+
+A7's item text requires the demo flow create -> send-input -> read-records -> stream-events "through BOTH SDKs", but the S1/§4.6 repair map contains no records operation and forbids widening. The canonical contract `docs/contracts/cli_bridge/openapi.json` DOES expose `GET /v1/sessions/{session_id}/records` (operationId `get_session_records_v1_sessions__session_id__records_get`; served by create_app at app.py:668-684), so this is a plan-internal conflict, not a missing server surface.
+
+Resolution: the §4.6 repair map is amended with EXACTLY ONE additional operation per SDK, mapped to that route:
+- TS `sdk/ts` client: `readSessionRecords(sessionId)` -> `GET /v1/sessions/${sessionId}/records` (naming follows `readSessionFile`).
+- Python `breadboard_sdk/client.py`: `read_session_records(session_id)` -> same route.
+
+No other widening is authorized. A7's ACCEPT stands as written (records through both SDKs). Freeze-baseline implications: none (no new package identity, schema ID, lane, or governance file; B2 inventories unaffected). Raw-HTTP substitution for the records leg is expressly rejected.
