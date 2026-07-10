@@ -77,19 +77,31 @@ def _command_argv(command: Any) -> list[str] | None:
     return None
 
 
+def _claim_without_comparator_rerun(argv: list[str]) -> list[str]:
+    if any(Path(item).name == "validate_e4_c4_chain.py" for item in argv):
+        result = [
+            item
+            for item in argv
+            if item not in {"--rerun-comparators", "--no-rerun-comparators"}
+        ]
+        result.append("--no-rerun-comparators")
+        return result
+    return argv
+
+
 def _claim_argv(lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None) -> list[str] | None:
     argv = _command_argv(lane_def.get("reverify_command"))
     if argv is not None:
-        return argv
+        return _claim_without_comparator_rerun(argv)
     if inventory_lane is not None:
         argv = _command_argv(inventory_lane.get("reverify_command"))
         if argv is not None:
-            return argv
+            return _claim_without_comparator_rerun(argv)
         ct = inventory_lane.get("ct")
         if isinstance(ct, Mapping):
             argv = _command_argv(ct.get("command"))
             if argv is not None:
-                return argv
+                return _claim_without_comparator_rerun(argv)
     return None
 
 
@@ -170,6 +182,115 @@ def _comparator_entry(lane_def: Mapping[str, Any], registry_path: Path) -> Mappi
             f"lane {lane_def['lane_id']!r} comparator {comparator_id!r} must have exactly one registry entry"
         )
     return matches[0]
+
+
+def _comparator_artifacts(
+    lane_def: Mapping[str, Any],
+    entry: Mapping[str, Any],
+) -> dict[str, Path]:
+    artifacts_root = lane_def.get("artifacts_root")
+    if not isinstance(artifacts_root, str) or not artifacts_root:
+        raise LaneRunError(f"lane {lane_def['lane_id']!r} requires artifacts_root")
+    names = {
+        "capture_ref": "raw_capture_manifest.json",
+        "replay_ref": "bb_replay_result.json",
+        "comparator_ref": "comparator_report.json",
+    }
+    input_roles = entry.get("input_roles")
+    if not isinstance(input_roles, list) or not all(isinstance(role, str) for role in input_roles):
+        raise LaneRunError("comparator registry input_roles must be a list of strings")
+    unknown = [role for role in input_roles if role not in names]
+    if unknown:
+        raise LaneRunError("unsupported comparator input_role(s): " + ", ".join(unknown))
+    root = _resolve_repo_path(artifacts_root)
+    artifacts = {role: root / names[role] for role in input_roles}
+    missing = [role for role, path in artifacts.items() if not path.is_file()]
+    if missing:
+        raise LaneRunError("missing comparator input_role artifact(s): " + ", ".join(missing))
+    return artifacts
+
+
+def _comparator_callable(entry: Mapping[str, Any]) -> Any:
+    entrypoint = entry.get("entrypoint")
+    if not isinstance(entrypoint, Mapping):
+        raise LaneRunError("comparator registry entrypoint must be a mapping")
+    module_name = entrypoint.get("module")
+    callable_name = entrypoint.get("callable")
+    if not isinstance(module_name, str) or not isinstance(callable_name, str):
+        raise LaneRunError("comparator registry entrypoint requires module and callable")
+    return getattr(importlib.import_module(module_name), callable_name)
+
+
+def _compare_output_path(lane_def: Mapping[str, Any], out_dir: Path | None) -> Path:
+    artifacts_root = Path(str(lane_def["artifacts_root"]))
+    root = out_dir if out_dir is not None else ROOT
+    return root / artifacts_root / "comparator_report.json"
+
+
+def _run_compare(
+    lane_def: Mapping[str, Any],
+    registry_path: Path,
+    out_dir: Path | None,
+) -> dict[str, Any]:
+    lane_id = str(lane_def["lane_id"])
+    output_path = _compare_output_path(lane_def, out_dir)
+    try:
+        entry = _comparator_entry(lane_def, registry_path)
+        artifacts = _comparator_artifacts(lane_def, entry)
+        claim = lane_def.get("claim")
+        scope = claim.get("scope") if isinstance(claim, Mapping) else None
+        if not isinstance(scope, Mapping):
+            raise LaneRunError("claim.scope must be a mapping")
+        payload = {
+            "capture": _load_json(artifacts["capture_ref"]),
+            "replay": _load_json(artifacts["replay_ref"]),
+            "scope": dict(scope),
+            "artifacts": artifacts,
+            "repo_root": ROOT,
+        }
+        report = _comparator_callable(entry)(payload)
+        expected_schema = entry.get("report_schema_version")
+        if (
+            expected_schema != "bb.e4.comparator_report.v1"
+            or not isinstance(report, Mapping)
+            or report.get("schema_version") != expected_schema
+        ):
+            raise LaneRunError(
+                "comparator must return bb.e4.comparator_report.v1"
+            )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(
+            json.dumps(dict(report), indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        return {
+            "stage": "compare",
+            "lane_id": lane_id,
+            "returncode": 0,
+            "output_path": _display_path(output_path),
+            "comparator_id": entry.get("comparator_id"),
+            "comparator_report": dict(report),
+        }
+    except Exception as exc:
+        failure_path = output_path.with_name("compare_failure_report.json")
+        failure_path.parent.mkdir(parents=True, exist_ok=True)
+        detail = f"compare execution failed: {exc}"
+        failure_path.write_text(
+            json.dumps(
+                {"ok": False, "lane_id": lane_id, "stage": "compare", "detail": detail},
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return {
+            "stage": "compare",
+            "lane_id": lane_id,
+            "returncode": 1,
+            "output_path": _display_path(failure_path),
+            "detail": detail,
+        }
 
 def _capture_adapter_callable(lane_def: Mapping[str, Any]) -> Any | None:
     capture = lane_def.get("capture")
@@ -727,6 +848,16 @@ def run_lane(
             )
             results.append(normalize_result)
             if normalize_result["returncode"] != 0:
+                blocked_by = stage_name
+            continue
+        if stage_name == "compare":
+            compare_result = _finalize_stage_result(
+                _run_compare(lane_def, comparator_registry_path, out_dir),
+                lane_def,
+                executed=True,
+            )
+            results.append(compare_result)
+            if compare_result["returncode"] != 0:
                 blocked_by = stage_name
             continue
         adapter_capture = _capture_adapter_callable(lane_def) if stage_name == "capture" else None
