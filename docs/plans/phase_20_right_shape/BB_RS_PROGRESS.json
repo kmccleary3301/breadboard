@@ -6,7 +6,7 @@
  "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:53:31Z",
+ "updated_at_utc": "2026-07-10T21:58:18Z",
  "items": [
   {
    "id": "A1",
@@ -1424,6 +1424,14 @@
    "classification": "spec_gap",
    "what": "validate_lane.py whole-doc sha256: rejection is normative; non_target_accounting five-stage tuple, H2 adds table row",
    "owner": "WS-F F1; H2",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM8",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "manifest intent extension + acceptance shape for lossless P6.6 parity; mappings documented in compiler; machine-owned to lock/sidecar",
+   "owner": "F4",
    "recorded_by": "orchestrator"
   }
  ],

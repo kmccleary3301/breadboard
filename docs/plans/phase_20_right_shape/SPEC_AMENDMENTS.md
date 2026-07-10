@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **7 amendments** (below).
+Current state: **8 amendments** (below).
 
 ---
 
@@ -93,3 +93,24 @@ Wave-2 derailment audit found four amendments lacking explicit owner/classificat
 - **AM2** (G1 fresh-venv bootstrap pip>=21.3): Classification: gate_wrong. Owner: G-items. Recorded-by: orchestrator.
 - **AM4** (bootstrap installs requirements.txt before editable package): Classification: gate_wrong (AM4 itself; the parenthetical in its body classifies the AM2 defect it corrects). Owner: G6 gate + any fresh-venv gate. Recorded-by: orchestrator.
 - **AM6** (minimal records-read op in both SDKs): Classification: spec_gap. Owner: A7. Recorded-by: orchestrator.
+
+---
+
+## Amendment 8 - 2026-07-10 - manifest intent extension for lossless P6.6 parity (spec_gap)
+
+F4's pilot requires post-normalization deep equality with the legacy P6.6 normalized lane; the verbatim §4.1 schema cannot express the needed author intent. Resolution in three classes; NO generic legacy blob is permitted.
+
+**(i) Author intent — `bb.e4.lane_manifest.v1` is EXTENDED (same schema ID; campaign-internal iteration). The amended schema JSON committed by F4 is authoritative over §4.1's verbatim block:**
+- `normalize.record_roles` object<string,string> — semantic record→artifact-role assignment (legacy /normalize/config/packet_constants/record_roles).
+- `normalize.record_envelopes` object<string,object> — authored grouping/envelope recipe.
+- `normalize.role_aliases` object<string,string> — authored semantic aliasing.
+- `normalize.auto_bind_role_refs` boolean — authored auto role-ref binding choice.
+- `normalize.scope_observation_labels` array<string> — authored observation labels projected into claim scope.
+- `ct.test_id` string|null — human-assigned CT identity.
+- `acceptance` REPLACED with the legacy v2 authored contract shape: `{behavior_family: string, semantic_key: string, target: string|null, assertions: [{id, description}]}` (§4.1's behavior_families/notes cannot express it and is not mechanically recoverable).
+
+**(ii) Deterministically derivable — stays OUT of the manifest; the compiler/normalizer documents each mapping and a pilot test covers it:** target field renames; status mapping (`accepted`↔`accepted` exact; `candidate`/`draft`→`captured`/`planned` one-way — parity is asserted ONLY for `accepted`); normalize.mode/translator assembly; required_records/required_roles passthrough; compare-assertion field rename/unwrap (`{assertion_id,kind,description,record_selector.path,expect}`→`{id,path,op,value,description}`); replay `mode=stored`→`session=null` + comparator_class copy; claim exclusion `{id,reason}`→string; metadata synthesized (non-normative); run derived from declared support-claim input scope; provenance derived from target freeze row. **`provenance.source_paths` ordering/filtering MUST be explicitly specified in the compiler (documented, deterministic, pilot-exact) and covered by a test — no ad hoc logic.**
+
+**(iii) Machine-owned — never in the manifest:** `normalize.config.roles`→lock `artifact_roles`; `payload_templates`+`substitutions`→generated packet_constants sidecar (F3's sidecar stays exactly two keys); all digests/pins/hashes→lock `resolved_inputs`/`registry_pins`/`target_freeze` or generated sidecar.
+
+**Classification:** spec_gap. **Owner:** F4 (amended schema + compiler mappings + pilot parity test; F1 schema file and its tests updated in the F4 commit citing AM8). **Recorded-by:** orchestrator.
