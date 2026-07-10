@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **6 amendments** (below).
+Current state: **7 amendments** (below).
 
 ---
 
@@ -69,3 +69,16 @@ Resolution: the §4.6 repair map is amended with EXACTLY ONE additional operatio
 - Python `breadboard_sdk/client.py`: `read_session_records(session_id)` -> same route.
 
 No other widening is authorized. A7's ACCEPT stands as written (records through both SDKs). Freeze-baseline implications: none (no new package identity, schema ID, lane, or governance file; B2 inventories unaffected). Raw-HTTP substitution for the records leg is expressly rejected.
+
+---
+
+## Amendment 7 - 2026-07-10 - F1 manifest digest enforcement and legacy lane-kind table (spec_gap)
+
+Two declaration gaps are resolved together because F1 introduces the manifest kind contract consumed by the H-stage table:
+
+1. **Manifest digest guards.** Section 4.1 says that per-field schema patterns guard against `sha256:`, but the authoritative verbatim schema contains no such patterns. The verbatim schema remains unchanged. `scripts/authoring/validate_lane.py` is the normative enforcement layer and MUST reject the literal `sha256:` substring anywhere in the source document before parsing or schema validation. This whole-document check covers arbitrary nested values and is stronger than an incomplete list of field patterns.
+2. **Legacy `non_target_accounting` kind.** Amendment 5 gap 2 is resolved without relabeling the 9 existing lane sources and without widening the new manifest schema. `non_target_accounting` remains a legacy lane-def-only kind. Its authoritative `STAGES_BY_KIND` tuple is `("capture", "normalize", "replay", "compare", "claim")`, matching all five declared sections present in each of those 9 sources. The next WS-H packet (H2) MUST add this row to the table with a covering test; until that lands, `non_target_accounting` continues to fail closed per Amendment 5's interim rule. New `bb.e4.lane_manifest.v1` documents remain limited to `target_support`, `self_runtime`, and `probe` exactly as section 4.1 specifies.
+
+**Classification:** spec_gap.
+**Owner:** WS-F F1 (enforcement layer); H2 (table row + test).
+**Recorded-by:** orchestrator.
