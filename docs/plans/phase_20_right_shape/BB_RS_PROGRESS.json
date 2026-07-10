@@ -6,7 +6,7 @@
  "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:01:50Z",
+ "updated_at_utc": "2026-07-10T22:02:52Z",
  "items": [
   {
    "id": "A1",
@@ -1454,8 +1454,8 @@
    "id": "AM10",
    "date": "2026-07-10",
    "classification": "gate_wrong",
-   "what": "I2 gate -> guarding suites + schema-first suite + compilation no-regression (set-diff); tightening governance moved to packet evidence + red-gate tests",
-   "owner": "I2; orchestrator (policy text)",
+   "what": "I2 gate -> guarding suites + schema-first suite + compilation no-regression (identity+outcome set, pinned base); part 2 REVISED: policy promise restored, tightening allowlist mechanism to be implemented in freeze gate (product_defect, owner WsBFreeze)",
+   "owner": "I2 (gate); WsBFreeze (allowlist mechanism)",
    "recorded_by": "orchestrator"
   }
  ],
