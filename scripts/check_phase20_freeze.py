@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -37,6 +38,12 @@ ALLOWED_SCHEMA_IDS = {
     "bb.e4.lane_manifest.v1",
     "bb.e4.lane_lock.v1",
     "bb.contract_tiers.v1",
+}
+
+# FREEZE_POLICY.md permits plan-required tightening of an existing schema only
+# when the occurrence is named here with its owning packet.
+TIGHTENING_ALLOWLIST = {
+    "bb.e4.lane_manifest.v1": "F4",
 }
 
 # Phase 20 packet F4. These generated sources are known before the freeze begins.
@@ -85,8 +92,9 @@ def _load_json_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def _schema_ids(tracked_files: set[Path]) -> set[str]:
+def _schema_inventory(tracked_files: set[Path]) -> tuple[set[str], dict[str, str]]:
     ids: set[str] = set()
+    hashes: dict[str, str] = {}
     owners: dict[str, str] = {}
     schema_paths = (
         path
@@ -95,7 +103,14 @@ def _schema_ids(tracked_files: set[Path]) -> set[str]:
         and any(path.is_relative_to(schema_root) for schema_root in SCHEMA_ROOTS)
     )
     for path in sorted(schema_paths):
-        schema_id = _load_json_object(path).get("$id")
+        try:
+            content = path.read_bytes()
+            value = json.loads(content)
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise InventoryError(f"{_relative(path)}: invalid JSON: {exc}") from exc
+        if not isinstance(value, dict):
+            raise InventoryError(f"{_relative(path)}: expected a JSON object")
+        schema_id = value.get("$id")
         if schema_id is None:
             continue
         if not isinstance(schema_id, str) or not schema_id:
@@ -107,7 +122,8 @@ def _schema_ids(tracked_files: set[Path]) -> set[str]:
             )
         owners[schema_id] = _relative(path)
         ids.add(schema_id)
-    return ids
+        hashes[schema_id] = hashlib.sha256(content).hexdigest()
+    return ids, hashes
 
 
 def _package_name(path: Path) -> str:
@@ -189,9 +205,11 @@ def _governance_files(tracked_files: set[Path]) -> set[str]:
 
 def build_inventory(tracked_files: set[Path] | None = None) -> dict[str, Any]:
     tracked_files = tracked_files if tracked_files is not None else _tracked_files()
+    schema_ids, schema_hashes = _schema_inventory(tracked_files)
     lane_ids, lane_kinds = _lane_inventory(tracked_files)
     return {
-        "schema_ids": sorted(_schema_ids(tracked_files)),
+        "schema_ids": sorted(schema_ids),
+        "schema_content_sha256": dict(sorted(schema_hashes.items())),
         "sdk_packages": [
             {"name": name, "path": path}
             for name, path in sorted(_sdk_packages(tracked_files))
@@ -222,10 +240,36 @@ def _string_set(payload: Any, label: str) -> set[str]:
     return set(payload)
 
 
+def _string_map(payload: Any, label: str) -> dict[str, str]:
+    if not isinstance(payload, dict) or not all(
+        isinstance(key, str) and isinstance(value, str)
+        for key, value in payload.items()
+    ):
+        raise InventoryError(f"{label} must be an object with string keys and values")
+    return dict(payload)
+
+
 def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str, list[str]]:
     baseline_schema_ids = _string_set(baseline.get("schema_ids"), "schema_ids")
     current_schema_ids = _string_set(current.get("schema_ids"), "schema_ids")
     schema_additions = current_schema_ids - baseline_schema_ids - ALLOWED_SCHEMA_IDS
+    baseline_hashes = _string_map(
+        baseline.get("schema_content_sha256"), "schema_content_sha256"
+    )
+    current_hashes = _string_map(
+        current.get("schema_content_sha256"), "schema_content_sha256"
+    )
+    schema_content_drift = {
+        (
+            f'{schema_id} (not in TIGHTENING_ALLOWLIST; add '
+            f'{{"{schema_id}": "<packet-id>"}} per FREEZE_POLICY/AM10, '
+            "or revert the change)"
+        )
+        for schema_id, baseline_hash in baseline_hashes.items()
+        if schema_id in current_hashes
+        and current_hashes[schema_id] != baseline_hash
+        and schema_id not in TIGHTENING_ALLOWLIST
+    }
 
     package_additions = _package_set(current.get("sdk_packages"), "sdk_packages") - _package_set(
         baseline.get("sdk_packages"), "sdk_packages"
@@ -249,6 +293,7 @@ def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str
 
     return {
         "schema_ids": sorted(schema_additions),
+        "schema_content_drift": sorted(schema_content_drift),
         "sdk_packages": sorted(f"{name} ({path})" for name, path in package_additions),
         "lane_ids": sorted(lane_id_additions),
         "lane_kinds": sorted(lane_kind_additions),
@@ -318,7 +363,7 @@ def main() -> int:
 
     violations = {name: values for name, values in additions.items() if values}
     if violations:
-        print("phase20-freeze: frozen semantic surface additions detected", file=sys.stderr)
+        print("phase20-freeze: frozen semantic surface violations detected", file=sys.stderr)
         for category, values in violations.items():
             for value in values:
                 print(f"  {category}: {value}", file=sys.stderr)
