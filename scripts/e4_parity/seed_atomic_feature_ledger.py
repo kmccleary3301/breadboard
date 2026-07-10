@@ -30,6 +30,13 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 SCHEMA_VERSION = "bb.atomic_feature_ledger.v1"
 LEDGER_FILENAME = "BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
 DEFAULT_OUT = PLAN_ROOT / LEDGER_FILENAME
+DEFAULT_LANE_EXTENSION_PATH = (
+    REPO_ROOT
+    / "config"
+    / "e4_lanes"
+    / "evidence_inputs"
+    / "e4_lane_ledger_seed_extensions.v1.json"
+)
 PLAN_REF = "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_MASTER_PLAN.md:317-323"
 
 
@@ -198,13 +205,25 @@ def _row_hash(row_id: str, row: dict[str, Any]) -> str:
     return "sha256:" + _hash_utils.sha256_hex(encoded)
 
 
-def _current_c4_fixture_refs(config_id: str) -> list[str]:
+def _refresh_c4_fixture_refs(config_id: str, fixture_refs: list[str]) -> list[str]:
     refs: list[str] = []
     freeze_manifest: dict[str, Any] | None = None
-    for ref in C4_FIXTURE_REFS[config_id]:
-        role, _, value = ref.partition(":")
-        if not value or "#sha256:" in value:
+    physical_roles = {
+        "capture",
+        "replay",
+        "comparator",
+        "parity_results",
+        "secret_scan_report",
+    }
+    for ref in fixture_refs:
+        role, separator, value = ref.partition(":")
+        if not separator or not value:
             refs.append(ref)
+            continue
+        value_without_hash = value.rsplit("#sha256:", 1)[0]
+        unpinned_ref = f"{role}:{value_without_hash}"
+        if role == "validator_output":
+            refs.append(unpinned_ref)
             continue
         if role == "freeze":
             if freeze_manifest is None:
@@ -212,15 +231,19 @@ def _current_c4_fixture_refs(config_id: str) -> list[str]:
                 freeze_manifest = loaded if isinstance(loaded, dict) else {}
             row = (freeze_manifest.get("e4_configs") or {}).get(config_id) if isinstance(freeze_manifest.get("e4_configs"), dict) else None
             if isinstance(row, dict):
-                refs.append(f"{ref}#{_row_hash(config_id, row)}")
+                refs.append(f"{unpinned_ref}#{_row_hash(config_id, row)}")
                 continue
-        elif role in {"capture", "replay", "comparator"}:
-            path = (REPO_ROOT / value.split("#", 1)[0]).resolve()
+        elif role in physical_roles:
+            path = (REPO_ROOT / value_without_hash.split("#", 1)[0]).resolve()
             if path.is_file():
-                refs.append(f"{ref}#{_hash_utils.sha256_path(path)}")
+                refs.append(f"{unpinned_ref}#{_hash_utils.sha256_path(path)}")
                 continue
         refs.append(ref)
     return refs
+
+
+def _current_c4_fixture_refs(config_id: str) -> list[str]:
+    return _refresh_c4_fixture_refs(config_id, C4_FIXTURE_REFS[config_id])
 
 
 
@@ -392,8 +415,34 @@ def _collect_validation_errors(rows: list[dict[str, Any]]) -> list[str]:
             errors.append(f"{row.get('feature_id')}: {error}")
     return errors
 
+def _load_lane_seed_extensions(
+    path: Path = DEFAULT_LANE_EXTENSION_PATH,
+) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read lane ledger seed extensions {path}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"lane ledger seed extensions must be an object: {path}")
+    if payload.get("schema_version") != "bb.e4.lane_ledger_seed_extensions.v1":
+        raise ValueError(f"unsupported lane ledger seed extension schema: {path}")
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        raise ValueError(f"lane ledger seed extensions rows must be a list: {path}")
+    result: list[dict[str, Any]] = []
+    for index, row in enumerate(rows):
+        if not isinstance(row, dict):
+            raise ValueError(f"lane ledger seed extension row {index} must be an object")
+        result.append(dict(row))
+    return result
 
-def build_ledger(index_path: Path = DEFAULT_INDEX_OUT) -> dict[str, Any]:
+
+
+
+def build_ledger(
+    index_path: Path = DEFAULT_INDEX_OUT,
+    extension_path: Path = DEFAULT_LANE_EXTENSION_PATH,
+) -> dict[str, Any]:
     index = _load_index(index_path)
     entries = list(index.get("entries") or [])
     rows = []
@@ -424,6 +473,31 @@ def build_ledger(index_path: Path = DEFAULT_INDEX_OUT) -> dict[str, Any]:
                 "promotion_state": spec.get("promotion_state", "draft"),
             }
         )
+    seen_feature_ids = {str(row["feature_id"]) for row in rows}
+    seen_dedupe_keys = {str(row["dedupe_key"]) for row in rows}
+    for raw_extension_row in _load_lane_seed_extensions(extension_path):
+        extension_row = dict(raw_extension_row)
+        feature_id = extension_row.get("feature_id")
+        dedupe_key = extension_row.get("dedupe_key")
+        if not isinstance(feature_id, str) or not feature_id:
+            raise ValueError("lane ledger seed extension row must have a feature_id")
+        if not isinstance(dedupe_key, str) or not dedupe_key:
+            raise ValueError(f"lane ledger seed extension {feature_id} must have a dedupe_key")
+        if feature_id in seen_feature_ids:
+            raise ValueError(f"duplicate lane ledger seed feature_id: {feature_id}")
+        if dedupe_key in seen_dedupe_keys:
+            raise ValueError(f"duplicate lane ledger seed dedupe_key: {dedupe_key}")
+        if extension_row.get("evidence_tier") == "C4":
+            config_id = extension_row.get("e4_row_ref")
+            fixture_refs = extension_row.get("fixture_refs")
+            if isinstance(config_id, str) and isinstance(fixture_refs, list):
+                extension_row["fixture_refs"] = _refresh_c4_fixture_refs(
+                    config_id,
+                    [str(ref) for ref in fixture_refs],
+                )
+        seen_feature_ids.add(feature_id)
+        seen_dedupe_keys.add(dedupe_key)
+        rows.append(extension_row)
     return {
         "schema_version": SCHEMA_VERSION,
         "source_index_ref": _display_path(index_path),
@@ -433,92 +507,19 @@ def build_ledger(index_path: Path = DEFAULT_INDEX_OUT) -> dict[str, Any]:
     }
 
 
-def _refresh_row_fixture_refs(row: dict[str, Any]) -> dict[str, Any]:
-    """Re-derive fixture pins for preserved lane rows from current disk state.
-
-    The legacy per-lane builders that owned these rows were retired in the
-    compiler-adapter cutover, leaving their literal ``#sha256:`` pins without a
-    refresh owner.  The seed step is the canonical ledger owner, so it re-pins
-    capture/replay/comparator refs (and freeze row hashes) the same way
-    ``_current_c4_fixture_refs`` derives them for seed-declared lanes.  Refs
-    whose paths do not resolve are left untouched for the validator to flag.
-    """
-
-    refs = row.get("fixture_refs")
-    if not isinstance(refs, list):
-        return row
-    freeze_manifest: dict[str, Any] | None = None
-    refreshed: list[Any] = []
-    for ref in refs:
-        if not isinstance(ref, str):
-            refreshed.append(ref)
-            continue
-        role, _, value = ref.partition(":")
-        bare = value.split("#", 1)[0]
-        if role == "freeze" and bare:
-            parts = value.split("#")
-            config_id = parts[1] if len(parts) >= 2 and parts[1] else None
-            manifest_path = REPO_ROOT / bare
-            if config_id and manifest_path.is_file():
-                if freeze_manifest is None:
-                    loaded = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-                    freeze_manifest = loaded if isinstance(loaded, dict) else {}
-                config_row = (freeze_manifest.get("e4_configs") or {}).get(config_id) if isinstance(freeze_manifest.get("e4_configs"), dict) else None
-                if isinstance(config_row, dict):
-                    refreshed.append(f"{role}:{bare}#{config_id}#{_row_hash(config_id, config_row)}")
-                    continue
-        elif role in {"capture", "replay", "comparator"} and bare:
-            path = (REPO_ROOT / bare).resolve()
-            if path.is_file():
-                refreshed.append(f"{role}:{bare}#{_hash_utils.sha256_path(path)}")
-                continue
-        refreshed.append(ref)
-    updated = dict(row)
-    updated["fixture_refs"] = refreshed
-    return updated
-
-
-def _merge_existing_non_seed_rows(payload: dict[str, Any], out_path: Path) -> dict[str, Any]:
-    """Preserve lane-upserted rows so seed-only intermediates do not perturb stable catalog revisions.
-
-    Lane builders upsert ledger rows by removing any existing row with the same
-    ``feature_id`` and appending the new row.  The seed step must mirror that
-    collision rule while keeping seed rows first: an existing row whose
-    ``feature_id`` collides with a seed row is replaced by the seed row, and
-    all other existing rows keep their current relative order after the seed
-    rows.  This prevents the historical 95->82->95 mid-DAG ledger flutter from
-    leaking into stable-classified catalog revision history.
-    """
-
-    if not out_path.exists():
-        return payload
-
-    seed_rows = list(payload["rows"])
-    seed_feature_ids = {
-        row.get("feature_id")
-        for row in seed_rows
-        if isinstance(row, dict)
-    }
-    existing = json.loads(out_path.read_text(encoding="utf-8"))
-    preserved_rows = [
-        _refresh_row_fixture_refs(row)
-        for row in existing.get("rows", [])
-        if isinstance(row, dict) and row.get("feature_id") not in seed_feature_ids
-    ]
-    merged = dict(payload)
-    merged["rows"] = seed_rows + preserved_rows
-    merged["row_count"] = len(merged["rows"])
-    return merged
 
 
 
 
-def write_ledger(out_path: Path = DEFAULT_OUT, index_path: Path = DEFAULT_INDEX_OUT) -> dict[str, Any]:
-    seed_payload = build_ledger(index_path)
-    errors = _collect_validation_errors(list(seed_payload["rows"]))
+def write_ledger(
+    out_path: Path = DEFAULT_OUT,
+    index_path: Path = DEFAULT_INDEX_OUT,
+    extension_path: Path = DEFAULT_LANE_EXTENSION_PATH,
+) -> dict[str, Any]:
+    payload = build_ledger(index_path, extension_path)
+    errors = _collect_validation_errors(list(payload["rows"]))
     if errors:
         raise ValueError("atomic feature ledger seed rows failed validation: " + "; ".join(errors))
-    payload = _merge_existing_non_seed_rows(seed_payload, out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return {"out_path": _display_path(out_path), "row_count": payload["row_count"]}
@@ -533,10 +534,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Seed deterministic P1 atomic feature ledger rows from source-index refs.")
     parser.add_argument("--source-index", default=str(DEFAULT_INDEX_OUT), help="Source index JSON path; generated if absent.")
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="Output ledger JSON path.")
+    parser.add_argument(
+        "--lane-extensions",
+        default=str(DEFAULT_LANE_EXTENSION_PATH),
+        help="Tracked promoted-lane seed extensions.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable summary.")
     args = parser.parse_args()
 
-    summary = write_ledger(_parse_path(args.out), _parse_path(args.source_index))
+    summary = write_ledger(
+        _parse_path(args.out),
+        _parse_path(args.source_index),
+        _parse_path(args.lane_extensions),
+    )
     if args.json:
         print(json.dumps(summary, indent=2, sort_keys=True))
     else:

@@ -1,0 +1,494 @@
+{
+  "rows": [
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/p3_1_effective_config_graph_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "config",
+      "feature_id": "feat_b3bcb7697f3ea258",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_1_effective_config_graph_compiler_v1#sha256:bce4ded7ac594c144b751cde193078b8b4db984389e7edc41adfa34243c205e7",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/raw_capture_manifest.json#sha256:f2337df471cdcc6c2e0eb1adc0e58c4fdee1dee3bac2d0c921d68220622781d2",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json#sha256:856a9f246f9521923a87b1aafb529bd7984223ebfe03501d59c64d5e694e9deb",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json#sha256:fb2919daf8c21854656c1a126034776be8ed1f8e3c5a7007ba1ab557362b0fea",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/parity_results.json#sha256:65d3ec051fc45895f11a15c11c272e775c0b55d03400aa2a824d8d84fe4e774e",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/secret_scan_report.json#sha256:aeac0490c01ebff2a6ccc224235479075dfa5f2ebe79d2829312c4bb0880c359",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json#sha256:6db84d52bd5ba5b48116a3b2383e01bc2fd59772f5cda89ecd64afa0ba16d874"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/effective_config_graph.py",
+        "source:tests/compilation/test_effective_config_graph.py",
+        "source:scripts/e4_parity/build_primitive_projection.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.provider_route.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_6_protocol_provider_policy_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "provider",
+      "feature_id": "feat_0234bfa2b266f538",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_6_protocol_provider_policy_compiler_v1#sha256:bc6accb385d0d8be769c2957ea73dc292cc333cfd43a0a42012d14b0a37cdefa",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/raw_capture_manifest.json#sha256:3c319b5c6307ab15b53260eecab67e86f33ae2c6d62d980b488fb9f2b5a130e2",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/bb_replay_result.json#sha256:e02024c641cad14e2bff6c72e59a7b795bcbaff039c185f781dc5853057c9dd7",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json#sha256:625cac6ad2a2550d1d930acedad035d7b2cea2ba3b8f413a630b23f95c23741b",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/parity_results.json#sha256:ed47e75fbbf49a6b51b43aa2c014a1922c24deb7362b78d220e75e0e9e1cabd5",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/secret_scan_report.json#sha256:46f7667669c1b6aa4935a84014781b80a93dd795950e46fcb68b9f01ae7618f7",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/prevalidation_report.json#sha256:f29ea64acc8b7dfad355bd7f1c829047fdf6fd689177c17c18163b3ab0c5ad68"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.capability_registry.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_3_capability_registry_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_3_capability_registry_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "capability",
+      "feature_id": "feat_5123d3276f9ca468",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_3_capability_registry_compiler_v1#sha256:ba2cbee50de9672220d2aea86cfe011bcf5bcf9df4fb484eee5e4a018a2b5d00",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json#sha256:a6571aac4acdd0833fda62f2c58c9888974b2d39689f2590454d7c39e41efe5a",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json#sha256:eb5ac608cbb27fcd40a47e7a1dbeec468dbd3c91180badc9723a2a545f35d3dd",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json#sha256:8c505e256a5ecf141ff54a569e50b4f99c5491ed3e98ba67ef5dcbabd38af5f0",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/parity_results.json#sha256:3f98988e78b6948670fe436175aa17faa278c900a0197074fe52e143702f6d2c",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/secret_scan_report.json#sha256:ab2c30f9a886b6252b57209e703233b5be5789fbeaad9e9c6ecc9295394a1d9d",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/prevalidation_report.json#sha256:f9eb88daee6a1da0eb36a4c0c349a9483c1ec0edecc3c3c7d3af0e2b2c302a94"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.side_effect_broker.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_8_projection_broker_adapter/c4",
+      "e4_row_ref": "oh_my_pi_p3_8_projection_broker_adapter_v1",
+      "evidence_tier": "C4",
+      "family": "side_effect",
+      "feature_id": "feat_a8c1754af302f290",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_8_projection_broker_adapter_v1#sha256:47986b7c5a0718fa8121263fc1ba090d9cf62987e79d0a42da6a21ba4c0ce210",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json#sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json#sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json#sha256:6019ccc0fea6c378b9bb17368041eba3daa403d7a14f361f518963771088bc17",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/secret_scan_report.json#sha256:db5d08564722e9f50ad031144f223ca248a08f46c923f6afdf64372d8e3d85da",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/prevalidation_report.json#sha256:d8fade10acd59cd7041327d4af8087a65856e4dd8675c1119182db9a195a3dc4"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_7_memory_work_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_7_memory_work_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "task",
+      "feature_id": "feat_b650fa627d57aa92",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:eb8e4807da21d37e88280deb188f533d5e789e66196246e7c7417347c486dac5",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json#sha256:b555a3ec55ff55e5b2dd0ce3636146535961aadcd68d64f94c723ff5756ccf03",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/secret_scan_report.json#sha256:2173d93d68a7a1d6348c3f99b44fdca88f67129d51da94942f3e36f2de04ba57",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/prevalidation_report.json#sha256:1eee90f7fc5558e828a0864f53795bfc2cd71c83a449298f92c6f3aa78d031f4"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.resource_access.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_5_resource_blob_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_5_resource_blob_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "resource",
+      "feature_id": "feat_bc11e30da175b4a9",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_5_resource_blob_compiler_v1#sha256:f52f66f627901b2346016eb31bc59a6923db9fe9fb5027de218dede954ed671e",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:cadae9c57e73639c5c858a99203403aacad2d51d45b630b6060aa3c1041ac9e4",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:9ae9735552e51660fd4216409844f2deb9889ac90ebbdfa700a09e9375878a3a",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:d67157252a9660a84c872d7b7090ce22a67a1bbfc90e27f46e52151870c74307",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json#sha256:cd1b55559023ea9c852dc5982c7014f546cbcd83f66dd18e1f8e09604c2cdf6e",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/secret_scan_report.json#sha256:d8e69f732d9350eabde879d14a2779f028a190c10becb5573ce732749f69d7af",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/prevalidation_report.json#sha256:545a5de5517dc64b8aabf5641048719b1f70e3414835bf482fda7b8f38b0d2f5"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_hook_execution.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_4_extension_hook_execution_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_4_extension_hook_execution_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "extension",
+      "feature_id": "feat_dcc5055b78969aba",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_4_extension_hook_execution_compiler_v1#sha256:6589db3e7a400dc23ca550d2f35fbf57e21ae5b7a4676299a72731383d0721e2",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:58d2385505e26f65ea5c4a2c2e839adeafb68bc150a8991ff1046adc2e1da51b",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json#sha256:9c9bd8648a4b57722632657414272e54ae1ef03349a63f945709bf52f9bda138",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:2cae5e176aad70f56514a9c1d6a613ae31827afd836db4e2335fc6307904037e",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json#sha256:3b8068b3c28612b649964f89bac982b1277c2a2c9398b22fcd7a3a15c3b4a5c1",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/secret_scan_report.json#sha256:04eb087e99a9fda3b4e77554041aff07e5985dd7097c1271d7d7d9cb45be8460",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/prevalidation_report.json#sha256:8967b53d8c8d867bab6a2ff96a8de776017872d66f9a90935978a91f7ac979e4"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.context_resource_pack.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_2_context_resource_pack_compiler/c4",
+      "e4_row_ref": "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
+      "evidence_tier": "C4",
+      "family": "context",
+      "feature_id": "feat_e9ae27a72149301b",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_2_context_resource_pack_compiler_v1#sha256:714a8588ed5968a1fb5499819674f4a6e3382d7fdc4e2f7761132ac33acdaba8",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:0c808af1ba7e021e869fd7825a20599510f884b5bd71cde7a84f777fcd48121f",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json#sha256:3f1664f39e845e895c2d3618838200c64fa5bb2bbd3894aa1b33f1f093a357e7",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/secret_scan_report.json#sha256:2b67f284c84f11e2d589be24b7ecf248a96a55588795ee985ca37e8ba4ee9b5c",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/prevalidation_report.json#sha256:71763ce363824a6203828cfc54117d996412b2fcf367ac354845af907aa93227"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
+        "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.memory_compaction_plan.v1",
+        "support": "supported",
+        "truth_scope": "target_projection"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/memory/oh_my_pi_p6_0_l5_memory_compaction/snapcompact/model_no/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+      "evidence_tier": "C4",
+      "family": "memory",
+      "feature_id": "feat_oh_my_pi_p6_0_l5_memory_compaction",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l5_memory_compaction_v1#sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json#sha256:b9f071bce9de37c6e4c5757f3bef9626cfbbf0604ad3e05b1accc81d28266744",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json#sha256:28bbf8b3a8568de2686d79eafcc9b9a19e62606b1e760c6b7303a7fcb70775a5",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json#sha256:f411b5aa07191977b030e5fca8bed218e376fa01aba713f74d346e30a36234d4",
+        "memory_compaction_plan:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:3fa381caa95d07c9933ae8b52c502ed6500c316a5ab224b7e7a5b925777340b5",
+        "transcript_continuation_patch:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:ea0db3ed825e805f800f6144d18288073b3c89ba034f2e3fee23ef5bf1e2d2b4",
+        "target_probe:docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:bcc10fc3fc6b2a24114f0b802b164e273071f7595f25992df591a2167259e396"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/docs/compaction.md",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/agent/src/compaction/compaction.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/snapcompact/src/snapcompact.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/memory-retain.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/memory-recall.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/memory-reflect.ts"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.projection_event.v1",
+        "support": "supported",
+        "truth_scope": "target_projection"
+      },
+      "claim_type": "host_projection",
+      "dedupe_key": "omp/projection/oh_my_pi_p6_0_l6_tui_projection_gallery_stdout/host_projection/model_no/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_0_l6_tui_projection_v1",
+      "evidence_tier": "C4",
+      "family": "projection",
+      "feature_id": "feat_55bf4adc8ee7717b",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l6_tui_projection_v1#sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json#sha256:c149862882958eee37afd2b5cb0019801e91cb341e93067cc092c4559fa23249",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json#sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json#sha256:60a7df3ae350c15cbd9f9eede2247ce78627634346465154c34781e625679ec1",
+        "projection_events:docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
+      ],
+      "gap_kind": "none",
+      "model_visible": false,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/cli/gallery-cli.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/modes/components/tool-execution.ts"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.work_item.v1",
+        "support": "supported",
+        "truth_scope": "target_projection"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "omp/task/oh_my_pi_p6_6_task_job_subagent/joined_detached_lifecycle/provider_authenticated/stateful_yes",
+      "e4_row_ref": "oh_my_pi_p6_6_task_job_subagent_v1",
+      "evidence_tier": "C4",
+      "family": "task",
+      "feature_id": "feat_397dab44f9f126c3",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_6_task_job_subagent_v1#sha256:3fb7286e5cecc187d1039eb7358155eaaea92e0d13779e46085af710ccf7252a",
+        "capture:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc",
+        "joined_subagent_target_capture:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+        "detached_subagent_target_capture:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+        "work_item_ref:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json#sha256:0f93c80969b6c9b1c586470b50bafc14e77d284c249e208e6050d8f54483fc7f",
+        "work_item_replay:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_item_replay.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551",
+        "replay:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551",
+        "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9",
+        "task_job_subagent_comparator:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9",
+        "support_claim:docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json#sha256:b361ad6d45bb7a1e977b6565cdf8600ec997a5dbd3e3f67b40889472179c0816",
+        "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json#sha256:66da20e9a02a36e84fe35a7a95c0d21ae11adcd3d4580ac007c3166e5b09f228",
+        "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json#sha256:85fb9f760f7d2d85f01d0cb7f26cc6312e244108603bf2ab2763b2540e8e642f",
+        "target_probe:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+        "target_setup_report:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json#sha256:0e056c9ac056b008a2123a6add336d7e77ddf5be0a5c63d5372c57f004db2364"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/async/job-manager.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/agent/task-tool.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/agent/subagent.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/task.ts",
+        "source:docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/tools/job.ts"
+      ],
+      "stateful": true,
+      "target": "omp"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.effective_config_graph.v1 + bb.context_resource_pack.v1 + bb.capability_registry.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "pi/p5/pi_p5_l1_cli_config_context_tool_surface/c4",
+      "e4_row_ref": "pi_p5_l1_cli_config_context_tool_surface_v1",
+      "evidence_tier": "C4",
+      "family": "config",
+      "feature_id": "feat_2f47f564bacc6202",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#pi_p5_l1_cli_config_context_tool_surface_v1#sha256:54a9d3ddd9e90fb341fbe412ab0656f366eba27ca3fe818ae6c7b0e6b346817b",
+        "capture:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb",
+        "replay:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json#sha256:6061c36783aadb6e5ccb5ec046050ad36c83165eb8da4ca9ab8d26a2e1442ae5",
+        "comparator:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json#sha256:05315be8132f8b17c123eb085f6a4274bdb291ed0a121e82999011e3e11f4131",
+        "support_claim:docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/parity_results.json#sha256:51f51f6f19b8b642d646b6537990b668762fe59a42ef8ca68670b3562ed238bb",
+        "secret_scan_report:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/secret_scan_report.json#sha256:3e0b2f97143bed23a8b459b51648638c96be15107dc69a47c8b04f5f52ad4432",
+        "validator_output:docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/prevalidation_report.json#sha256:183cd0cdbf0cc6944e4fb3dc47c60b186c9aff0e8763cb1b8a63e89a3e446d3b"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
+        "source:docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
+        "source:docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "pi"
+    },
+    {
+      "breadboard_mapping": {
+        "primitive": "bb.extension_hook_execution.v1 + bb.work_item.v1 + bb.memory_compaction_plan.v1 + bb.transcript_continuation_patch.v1",
+        "support": "supported",
+        "truth_scope": "kernel_truth"
+      },
+      "claim_type": "runtime_behavior",
+      "dedupe_key": "pi/p5/pi_p5_l2_extension_session_residual/c4",
+      "e4_row_ref": "pi_p5_l2_extension_session_residual_v1",
+      "evidence_tier": "C4",
+      "family": "extension",
+      "feature_id": "feat_38725eb172b28cb1",
+      "fixture_refs": [
+        "freeze:config/e4_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:34b38f0eb690e8940d6b8c6bd8cf623c795f9239fab75343f1aea3b46bdc1d6f",
+        "capture:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec",
+        "replay:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json#sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f",
+        "comparator:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json#sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043",
+        "support_claim:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+        "parity_results:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json#sha256:346b3bf965105867ecab099e0b154f8388cdc83c027853716e1b59c81dbd9e21",
+        "secret_scan_report:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json#sha256:f033e4e2b70364f8b0c178252c862a98d91aa7d9e08a4c56375e4ea448ac42d7",
+        "validator_output:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/prevalidation_report.json#sha256:049cbe20737a74146df0e5e0b0fad6be80daf2f6810a6d498c98dee08ee62ca9"
+      ],
+      "gap_kind": "none",
+      "model_visible": true,
+      "promotion_state": "ready",
+      "schema_version": "bb.atomic_feature_ledger.v1",
+      "source_refs": [
+        "source:docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
+        "source:docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
+        "source:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+        "source:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json"
+      ],
+      "stateful": true,
+      "target": "pi"
+    }
+  ],
+  "schema_version": "bb.e4.lane_ledger_seed_extensions.v1",
+  "source": "accepted lane rows promoted before the centralized E4 regeneration DAG"
+}
