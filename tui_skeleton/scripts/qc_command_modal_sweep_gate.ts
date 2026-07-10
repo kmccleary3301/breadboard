@@ -48,17 +48,17 @@ const main = async () => {
     }
   }
 
-  expectContains("models-open", "Select model", "model picker did not open")
+  expectContains("models-open", "Models", "model picker did not open")
   expectContains("skills-open", "Skills", "skills modal did not open")
   expectContains("tasks-open", "Background tasks", "tasks modal did not open")
   expectContains("todos-open", "Todos", "todos modal did not open")
   expectContains("usage-open", "Usage", "usage modal did not open")
   expectAnyContains(
     "file-picker-open",
-    ["src/", "Indexing…", "Indexing...", "Index truncated at"],
+    ["src/repl/components/LineEditor.tsx", "Indexing…", "Indexing...", "Index truncated at"],
     "file picker did not open with @ query",
   )
-  expectContains("after-close-all", "Try \"refactor <filepath>\"", "composer prompt missing after closing overlays")
+  expectContains("after-close-all", "enter send", "ready phase line missing after closing overlays")
 
   if (failures.length > 0) {
     throw new Error(`Command/modal sweep gate failed:\n${failures.join("\n")}`)

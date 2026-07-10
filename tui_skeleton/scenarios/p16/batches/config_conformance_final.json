@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "id": "p16_config_conformance_final",
+  "campaign": "p16-long-live-autonomy-performance-accessibility-config",
+  "scenarios": [
+    "scenarios/smoke/startup_history_prompt_smoke.json",
+    "scenarios/v6/smoke/v6_structural_scrollback_smoke.json",
+    "scenarios/v6/generated/scrollback/v6_scrollback_scrollback_01.json",
+    "scenarios/v6/generated/markdown/v6_markdown_markdown_01.json",
+    "scenarios/v6/generated/tool/v6_tool_tool_01.json",
+    "scenarios/v6/generated/modal/v6_modal_modal_01.json"
+  ]
+}

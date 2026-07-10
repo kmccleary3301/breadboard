@@ -1,0 +1,49 @@
+[
+  {
+    "seq": 1,
+    "type": "user.message",
+    "eventId": "user-a",
+    "messageId": "user-message-a",
+    "timestamp": 1,
+    "actor": { "kind": "user" },
+    "visibility": "transcript",
+    "textDelta": "Show me markdown."
+  },
+  {
+    "seq": 2,
+    "type": "assistant.message.delta",
+    "eventId": "assistant-a-start",
+    "messageId": "assistant-message-a",
+    "timestamp": 2,
+    "actor": { "kind": "assistant" },
+    "visibility": "transcript",
+    "textDelta": "Here is markdown."
+  },
+  {
+    "seq": 3,
+    "type": "assistant.message.end",
+    "eventId": "assistant-a-end",
+    "messageId": "assistant-message-a",
+    "timestamp": 3,
+    "actor": { "kind": "assistant" },
+    "visibility": "transcript"
+  },
+  {
+    "seq": 4,
+    "type": "log_link",
+    "eventId": "log-a",
+    "timestamp": 4,
+    "actor": { "kind": "system" },
+    "visibility": "host",
+    "textDelta": "Log link available."
+  },
+  {
+    "seq": 5,
+    "type": "log_link",
+    "eventId": "log-b",
+    "timestamp": 5,
+    "actor": { "kind": "system" },
+    "visibility": "host",
+    "textDelta": "Log link available."
+  }
+]

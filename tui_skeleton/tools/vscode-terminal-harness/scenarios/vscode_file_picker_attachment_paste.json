@@ -1,0 +1,182 @@
+{
+  "id": "vscode_file_picker_attachment_paste",
+  "terminal": {
+    "initialCols": 118,
+    "initialRows": 36
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_BETA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_BETA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "/files\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Listing files",
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "write",
+      "text": "@read README.md\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BreadBoard VSCode Harness Workspace",
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "paste",
+      "text": "\u001b[200~Draft paste marker check\nwith two lines\u001b[201~"
+    },
+    {
+      "kind": "sleep",
+      "ms": 500
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "Listing files"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "BreadBoard VSCode Harness Workspace"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "\u001b[200~"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "\u001b[201~"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "Type your request",
+          "count": 1
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "[ready]",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "Listing files"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "BreadBoard VSCode Harness Workspace"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "You are Codex"
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "\u001b[200~"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "\u001b[201~"
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "Type your request",
+      "count": 1
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "[ready]",
+      "count": 1
+    }
+  ]
+}

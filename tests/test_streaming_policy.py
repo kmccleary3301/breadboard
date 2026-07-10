@@ -51,7 +51,7 @@ class DummyMDWriter:
         return text
 
 
-def test_openrouter_tool_turn_disables_streaming() -> None:
+def test_openrouter_tool_turn_preserves_streaming_when_no_capability_failure() -> None:
     metrics = DummyMetrics()
     policy = StreamingPolicy(metrics)
     session = DummySession()
@@ -73,12 +73,12 @@ def test_openrouter_tool_turn_disables_streaming() -> None:
         md_writer=DummyMDWriter(),
     )
 
-    assert effective is False
-    assert policy_payload is not None
-    assert session.metadata["last_stream_policy"]["reason"] == "openrouter_tool_turn_policy"
-    assert metrics.overrides == [{"route": "route-openrouter", "reason": "openrouter_tool_turn_policy"}]
-    assert markdown_logger.messages, "System note should be emitted"
-    assert session.transcript, "Transcript should capture policy entry"
+    assert effective is True
+    assert policy_payload is None
+    assert session.metadata.get("last_stream_policy") is None
+    assert metrics.overrides == []
+    assert markdown_logger.messages == []
+    assert session.transcript == []
 
 
 def test_capability_failure_disables_streaming_and_logs_event() -> None:

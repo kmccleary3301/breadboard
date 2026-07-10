@@ -151,6 +151,16 @@ describe("mapRuntimePhaseLineState", () => {
     })
     expect(phase).toEqual({ id: "interrupted", label: "interrupted", tone: "error" })
   })
+
+  it("maps recovery-needed copy to an error-severity recovery phase", () => {
+    const phase = mapRuntimePhaseLineState({
+      disconnected: false,
+      pendingResponse: false,
+      status: "Recovery needed (session missing)",
+      runtimeStatusChip: null,
+    })
+    expect(phase).toEqual({ id: "recovery", label: "recovery needed", tone: "error" })
+  })
 })
 
 describe("mapActivityToRuntimeChip", () => {

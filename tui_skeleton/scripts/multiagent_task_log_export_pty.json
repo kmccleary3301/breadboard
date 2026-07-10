@@ -1,0 +1,127 @@
+[
+  {
+    "action": "log",
+    "message": "Multiagent task log export PTY harness start"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "type",
+    "text": "Delegate SMTP work to reviewer, implementer, and tester agents, then export the implementer task log.",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "waitFor",
+    "text": "Taskboard summary: reviewer done, implementer running, tester blocked.",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "press",
+    "key": "ctrl+b"
+  },
+  {
+    "action": "waitFor",
+    "text": "Background tasks",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "type",
+    "text": "g",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Group: lane",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "type",
+    "text": "l",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Lane: tester",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "type",
+    "text": "l",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Lane: implementer",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "waitFor",
+    "text": "Implement SMTP server core",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "type",
+    "text": "f",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Task Focus",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "waitFor",
+    "text": "O export",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "type",
+    "text": "o",
+    "typingDelayMs": 5
+  },
+  {
+    "action": "waitFor",
+    "text": "Task log saved to",
+    "timeoutMs": 8000
+  },
+  {
+    "action": "waitFor",
+    "text": "SMTP_FOCUS_TAIL_LINE_11 deterministic tail marker",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "task-focus-log-exported"
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "waitFor",
+    "text": "Background tasks",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "task-log-export-closed"
+  },
+  {
+    "action": "log",
+    "message": "Multiagent task log export PTY harness complete"
+  }
+]

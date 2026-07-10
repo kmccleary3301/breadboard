@@ -1,0 +1,8 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 20000, "mode": "frame" },
+  { "action": "type", "text": "Show me some markdown.", "typingDelayMs": 5 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Sample Markdown", "timeoutMs": 30000, "mode": "either" },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "snapshot", "label": "markdown-wrapper-final", "mode": "history", "maxLines": 400 }
+]

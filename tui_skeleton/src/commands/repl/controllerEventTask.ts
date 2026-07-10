@@ -25,6 +25,8 @@ type TaskEventController = {
   readonly runtimeFlags?: RuntimeBehaviorFlags
   readonly clock?: { readonly now?: () => number }
   readonly subagentToastLedger: Map<string, { status: string; at: number }>
+  readonly stopRequestedAt?: number | null
+  readonly pendingResponse?: boolean
   noteStopRequested(): void
   setActivityStatus?: (message: string, transition?: ActivityTransition) => void
   addTool(kind: string, text: string, status?: ToolStatus): void
@@ -41,7 +43,7 @@ type TaskEventController = {
 
 const clockNow = (controller: TaskEventController): number => controller.clock?.now?.() ?? Date.now()
 
-const normalizeSubagentStatus = (rawStatus: string): "running" | "completed" | "failed" | "blocked" | "cancelled" | "pending" => {
+export const normalizeSubagentStatus = (rawStatus: string): "running" | "completed" | "failed" | "blocked" | "cancelled" | "pending" => {
   const seed = rawStatus.trim().toLowerCase()
   if (!seed) return "pending"
   if (seed.includes("complete") || seed.includes("done") || seed.includes("success")) return "completed"
@@ -52,7 +54,7 @@ const normalizeSubagentStatus = (rawStatus: string): "running" | "completed" | "
   return "pending"
 }
 
-const resolveSubagentStatus = (payload: Record<string, unknown>, fallback?: string): string => {
+export const resolveSubagentStatus = (payload: Record<string, unknown>, fallback?: string): string => {
   const status = extractString(payload, ["status", "state", "kind", "event", "type"]) ?? fallback ?? "update"
   return status.trim() || "update"
 }
@@ -140,8 +142,9 @@ export function applyTaskEvent(this: TaskEventController, event: SessionEvent, n
   const line = lineParts.length > 0 ? lineParts.join(" · ") : JSON.stringify(payload)
   const isError = typeof payload.error === "string" && payload.error.trim().length > 0
   const isComplete = status.toLowerCase().includes("complete") || status.toLowerCase().includes("done")
+  const isStoppedAfterInterrupt = Boolean(this.stopRequestedAt && !this.pendingResponse)
   if (policy.routeTaskEventsToToolRail) {
-    this.addTool("status", `[task] ${line}`, isError ? "error" : isComplete ? "success" : "pending")
+    this.addTool("status", `[task] ${line}`, isError || isStoppedAfterInterrupt ? "error" : isComplete ? "success" : "pending")
   }
   this.handleTaskEvent(payload, {
     eventType: event.type,

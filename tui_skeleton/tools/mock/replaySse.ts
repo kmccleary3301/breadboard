@@ -1,4 +1,5 @@
 import http from "node:http"
+import type { Socket } from "node:net"
 import { randomUUID } from "node:crypto"
 import { promises as fs } from "node:fs"
 import path from "node:path"
@@ -31,6 +32,8 @@ export interface ReplayServerOptions {
   readonly host?: string
   readonly port?: number
   readonly loop?: boolean
+  readonly autoplayOnConnect?: boolean
+  readonly closeClientsOnFinish?: boolean
   readonly delayMultiplier?: number
   readonly latencyMs?: number
   readonly jitterMs?: number
@@ -77,6 +80,9 @@ const parseBoolEnv = (value: string | undefined, fallback: boolean): boolean => 
   return fallback
 }
 const AUTOPLAY_ON_TASK = parseBoolEnv(process.env.BREADBOARD_MOCK_AUTOPLAY_ON_TASK, true)
+const AUTOPLAY_ON_CONNECT = parseBoolEnv(process.env.BREADBOARD_MOCK_AUTOPLAY_ON_CONNECT, false)
+const CLOSE_CLIENTS_ON_FINISH = parseBoolEnv(process.env.BREADBOARD_MOCK_CLOSE_ON_FINISH, false)
+const SERVER_CLOSE_TIMEOUT_MS = Number(process.env.BREADBOARD_MOCK_CLOSE_TIMEOUT_MS ?? 2_000)
 const sleep = (ms: number) => (ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve())
 
 export const resolveScriptPath = (scriptPath: string) =>
@@ -138,10 +144,11 @@ export const loadReplayScript = async (scriptPath: string): Promise<ReplayScript
     return parsed.ctreeSnapshot as Record<string, unknown>
   })()
 
-  const steps = rawSteps.map((step) => {
-    if (!step || typeof step !== "object") {
+  const steps = rawSteps.map((rawStep) => {
+    if (!rawStep || typeof rawStep !== "object") {
       throw new Error("Every mock SSE step must be an object.")
     }
+    const step = rawStep as Record<string, unknown>
     if (step.awaitCommand === true) {
       const command = typeof step.command === "string" && step.command.trim().length > 0 ? step.command.trim() : undefined
       const timeoutMs = typeof step.timeoutMs === "number" && Number.isFinite(step.timeoutMs) ? step.timeoutMs : undefined
@@ -308,10 +315,12 @@ const startPlaybackLoop = async (
   } while (options.loop && state.playRequested)
   state.playing = false
   state.finished = true
-  for (const client of state.clients) {
-    client.end()
+  if (options.closeClientsOnFinish) {
+    for (const client of state.clients) {
+      client.end()
+    }
+    state.clients.clear()
   }
-  state.clients.clear()
   log?.(`[mock-sse] finished playback for session ${state.id}`)
 }
 
@@ -336,19 +345,40 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
     host,
     port,
     loop: options.loop ?? false,
+    autoplayOnConnect: options.autoplayOnConnect ?? AUTOPLAY_ON_CONNECT,
+    closeClientsOnFinish: options.closeClientsOnFinish ?? CLOSE_CLIENTS_ON_FINISH,
     delayMultiplier: options.delayMultiplier ?? 1,
     latencyMs: options.latencyMs ?? 0,
     jitterMs: options.jitterMs ?? 0,
     dropRate: options.dropRate ?? 0,
   }
   const sessions = new Map<string, SessionState>()
+  const sockets = new Set<Socket>()
   const log = options.log
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "", `http://${req.headers.host}`)
     if (req.method === "GET" && url.pathname === "/health") {
       res.writeHead(200, { "Content-Type": "application/json" })
-      res.end(JSON.stringify({ status: "ok", script: resolvedScript }))
+      res.end(JSON.stringify({ status: "ok", script: resolvedScript, pid: process.pid, protocol_version: DEFAULT_PROTOCOL_VERSION }))
+      return
+    }
+    if (req.method === "GET" && url.pathname === "/ready") {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ ready: true, script: resolvedScript, pid: process.pid }))
+      return
+    }
+    if (req.method === "GET" && url.pathname === "/status") {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(
+        JSON.stringify({
+          status: "ok",
+          pid: process.pid,
+          uptime_s: Math.round(process.uptime()),
+          protocol_version: DEFAULT_PROTOCOL_VERSION,
+          ray: { available: false, initialized: false },
+        }),
+      )
       return
     }
     if (req.method === "POST" && url.pathname === "/sessions") {
@@ -439,7 +469,7 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
           writeSseEvent(res, event)
         }
         state.clients.add(res)
-        if (!state.playRequested && !state.finished) {
+        if (!state.playRequested && !state.finished && normalized.autoplayOnConnect) {
           state.playRequested = true
         }
         req.on("close", () => {
@@ -455,7 +485,7 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
       })
       res.write("\n")
       state.clients.add(res)
-      if (!state.playRequested && !state.finished) {
+      if (!state.playRequested && !state.finished && normalized.autoplayOnConnect) {
         state.playRequested = true
       }
       req.on("close", () => {
@@ -542,6 +572,29 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
     res.end(JSON.stringify({ message: "unsupported path" }))
   })
 
+  server.on("connection", (socket) => {
+    sockets.add(socket)
+    socket.on("close", () => sockets.delete(socket))
+  })
+
+  const closeSessionTransports = () => {
+    for (const state of sessions.values()) {
+      for (const client of state.clients) {
+        try {
+          client.end()
+        } catch {
+          // Shutdown cleanup should not mask the original harness result.
+        }
+      }
+      state.clients.clear()
+      for (const waiter of state.commandWaiters) {
+        if (waiter.timeoutHandle) clearTimeout(waiter.timeoutHandle)
+        waiter.reject(new Error("Replay server closed."))
+      }
+      state.commandWaiters.length = 0
+    }
+  }
+
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error) => {
       server.off("listening", onListening)
@@ -558,17 +611,40 @@ export const startReplayServer = async (options: ReplayServerOptions): Promise<R
     })
   })
 
+  const boundAddress = server.address()
+  const boundPort =
+    boundAddress && typeof boundAddress === "object" && "port" in boundAddress ? boundAddress.port : port
+
   return {
-    url: `http://${host}:${port}`,
+    url: `http://${host}:${boundPort}`,
     scriptPath: resolvedScript,
     close: () =>
       new Promise<void>((resolve, reject) => {
-        server.close((error) => {
+        closeSessionTransports()
+        server.closeIdleConnections?.()
+        let settled = false
+        const finish = (error?: Error) => {
+          if (settled) return
+          settled = true
+          clearTimeout(forceTimer)
           if (error) {
             reject(error)
           } else {
             resolve()
           }
+        }
+        const forceTimer = setTimeout(() => {
+          server.closeAllConnections?.()
+          for (const socket of sockets) {
+            socket.destroy()
+          }
+        }, Math.max(1, SERVER_CLOSE_TIMEOUT_MS))
+        forceTimer.unref?.()
+        server.close((error) => {
+          for (const socket of sockets) {
+            socket.destroy()
+          }
+          finish(error ?? undefined)
         })
       }),
   }
@@ -580,6 +656,7 @@ export const runReplayCli = async (argv: string[]) => {
   let host = "127.0.0.1"
   let port = 9191
   let loop = false
+  let autoplayOnConnect = AUTOPLAY_ON_CONNECT
   let delayMultiplier = 1
   let latencyMs = 0
   let jitterMs = 0
@@ -598,6 +675,9 @@ export const runReplayCli = async (argv: string[]) => {
         break
       case "--loop":
         loop = true
+        break
+      case "--autoplay-on-connect":
+        autoplayOnConnect = true
         break
       case "--delay-multiplier":
         delayMultiplier = Number(args[++i])
@@ -624,6 +704,7 @@ export const runReplayCli = async (argv: string[]) => {
     host,
     port,
     loop,
+    autoplayOnConnect,
     delayMultiplier,
     latencyMs,
     jitterMs,

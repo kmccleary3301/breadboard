@@ -1,0 +1,116 @@
+{
+  "steps": [
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "turn_start",
+        "payload": { "summary": "multiagent task action command probe" },
+        "turn": 1
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "assistant_message",
+        "payload": {
+          "text": "Delegated one implementer task and waiting for task-control input.",
+          "message": {
+            "role": "assistant",
+            "content": "Delegated one implementer task and waiting for task-control input."
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "agent.spawn",
+        "id": "agent-spawn-implementer-action",
+        "payload": {
+          "task_id": "task-implementer-01",
+          "subagent_type": "implementer",
+          "lane_label": "implementer",
+          "summary": "Implement SMTP server core",
+          "mode": "async",
+          "timestamp": 1735689600300
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "task_event",
+        "id": "task-implementer-running-action",
+        "payload": {
+          "task_id": "task-implementer-01",
+          "status": "running",
+          "description": "Implement SMTP server core",
+          "subagent_type": "implementer",
+          "lane_label": "implementer",
+          "mode": "async",
+          "kind": "tool_call",
+          "tool": "write_file",
+          "call_id": "impl-action-step-1",
+          "detail": "writing smtp_server.c",
+          "artifact_path": ".breadboard/subagents/agent-task-implementer-01.jsonl",
+          "timestamp": 1735689600400
+        }
+      }
+    },
+    { "awaitCommand": true, "command": "task_action", "timeoutMs": 30000 },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "task_event",
+        "id": "task-implementer-cancelled-action",
+        "payload": {
+          "task_id": "task-implementer-01",
+          "status": "cancelled",
+          "description": "Implement SMTP server core",
+          "subagent_type": "implementer",
+          "lane_label": "implementer",
+          "mode": "async",
+          "kind": "control",
+          "call_id": "impl-action-cancel",
+          "output_excerpt": "TASK_ACTION_CANCEL_ACK deterministic marker",
+          "artifact_path": ".breadboard/subagents/agent-task-implementer-01.jsonl",
+          "timestamp": 1735689600900
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "assistant_message",
+        "payload": {
+          "text": "Task action applied: cancel task-implementer-01.",
+          "message": {
+            "role": "assistant",
+            "content": "Task action applied: cancel task-implementer-01."
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 80,
+      "event": {
+        "type": "completion",
+        "payload": {
+          "summary": {
+            "completed": true,
+            "reason": "task action command ack mock",
+            "total_tokens": 120,
+            "duration_ms": 1100
+          }
+        }
+      }
+    },
+    {
+      "delayMs": 0,
+      "event": {
+        "type": "run_finished",
+        "payload": { "eventCount": 8 }
+      }
+    }
+  ]
+}

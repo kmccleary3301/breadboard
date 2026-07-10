@@ -424,6 +424,16 @@ class SystemPromptCompiler:
         cfg = config or {}
         prompts_cfg = cfg.get("prompts") if isinstance(cfg, dict) and "prompts" in cfg else cfg
         prompts_cfg = prompts_cfg if isinstance(prompts_cfg, dict) else {}
+        config_meta = cfg.get("_config_metadata") if isinstance(cfg, dict) else {}
+        prompt_base_dirs: List[Path] = []
+        if isinstance(config_meta, dict):
+            for key in ("config_dir", "repo_root"):
+                raw_dir = config_meta.get(key)
+                if raw_dir:
+                    try:
+                        prompt_base_dirs.append(Path(str(raw_dir)))
+                    except Exception:
+                        pass
         packs_cfg = prompts_cfg.get("packs") or {}
         injection_cfg = prompts_cfg.get("injection") or {}
         dedupe_enabled = bool(prompts_cfg.get("dedupe", False))
@@ -442,6 +452,13 @@ class SystemPromptCompiler:
                             return path.read_text(encoding="utf-8", errors="replace")
                         except Exception:
                             return ""
+                    for base_dir in prompt_base_dirs:
+                        candidate = (base_dir / value).resolve()
+                        if candidate.exists():
+                            try:
+                                return candidate.read_text(encoding="utf-8", errors="replace")
+                            except Exception:
+                                return ""
                 except OSError:
                     return value
                 return value

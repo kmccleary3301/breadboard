@@ -7,13 +7,22 @@ import { formatBytes, formatCell } from "../utils/format.js"
 import { highlightFuzzyLabel } from "../utils/text.js"
 import { RuntimePreviewStack } from "./RuntimePreviewStack.js"
 import { FooterV2 } from "./FooterV2.js"
+import { buildComposerStateModel } from "./composerStateModel.js"
 
-// Intentionally broad while the controller continues to own most state.
+// Bottom-band ownership stays local and repaint-friendly even while the
+// controller still provides broad semantic state. This surface must remain the
+// most width-correct part of default inline mode.
 type ComposerPanelContext = Record<string, any>
+
+export const resolveComposerRuleWidth = (columnWidth: number, promptRule: string): number =>
+  Number.isFinite(columnWidth)
+    ? Math.max(1, Math.floor(columnWidth) - 1)
+    : Math.max(1, promptRule.length - 1)
 
 export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ context }) => {
   const {
     claudeChrome,
+    scrollbackMode,
     todosOpen,
     tasksOpen,
     todos,
@@ -29,6 +38,8 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     footerV2Enabled,
     keymap,
     pendingResponse,
+    mainFollowTail,
+    conversationLength,
     phaseLineState,
     disconnected,
     status,
@@ -39,6 +50,10 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     clockNowMs,
     tasks,
     stats,
+    sessionId,
+    transcriptViewerOpen,
+    transcriptSearchOpen,
+    scrollbackSuppressIdlePlaceholder,
     promptRule,
     composerPromptPrefix,
     composerPlaceholderClassic,
@@ -53,7 +68,9 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     inputMaxVisibleLines,
     handleLineEditGuarded,
     handleLineSubmit,
+    handleEditorKeys,
     handleAttachment,
+    queuedPrompt,
     overlayActive,
     filePickerActive,
     fileIndexMeta,
@@ -76,22 +93,58 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     buildSuggestionLines,
     suggestIndex,
     activeSlashQuery,
+    shortcutsOpen,
     hintNodes,
     shortcutHintNodes,
   } = context
 
   if (claudeChrome && modelMenu.status !== "hidden") return null
 
-  const ruleWidth = Number.isFinite(columnWidth)
-    ? Math.max(1, Math.floor(columnWidth) - (claudeChrome ? 0 : 1))
-    : Math.max(1, promptRule.length - (claudeChrome ? 0 : 1))
+  const ruleWidth = resolveComposerRuleWidth(columnWidth, promptRule)
   const promptRuleLine =
     promptRule.length >= ruleWidth ? promptRule.slice(0, ruleWidth) : promptRule.padEnd(ruleWidth, " ")
+  const composerState = buildComposerStateModel({
+    input,
+    attachmentsCount: attachments.length,
+    fileMentionsCount: fileMentions.length,
+    pendingResponse,
+    overlayActive,
+    shortcutsOpen: Boolean(shortcutsOpen),
+    filePickerActive,
+    suggestionsCount: suggestions.length,
+    activeSlashQuery,
+    phaseId: phaseLineState?.id ?? null,
+    inputLocked,
+  })
 
   const showClaudePlaceholder =
-    claudeChrome && input.length === 0 && attachments.length === 0 && fileMentions.length === 0
+    claudeChrome &&
+    !scrollbackSuppressIdlePlaceholder &&
+    composerState.placeholderEligible
   const showClaudeShortcutHints =
     !footerV2Enabled && claudeChrome && shortcutHintNodes.length > 0 && (!overlayActive || todosOpen || tasksOpen)
+  const scrollbackHasConversation = Number(conversationLength ?? 0) > 0
+  const hideEmptyScrollbackComposer =
+    scrollbackMode &&
+    input.length === 0 &&
+    !queuedPrompt &&
+    (pendingResponse || /disconnect|reconnect|recover/i.test(String(status ?? "")))
+  const showScrollbackClassicPlaceholder =
+    scrollbackMode &&
+    scrollbackHasConversation &&
+    composerState.placeholderEligible &&
+    input.length === 0 &&
+    !queuedPrompt
+  const showScrollbackComposerAnchor = false
+  const hidePromptPrefixForPickerQuery = Boolean(filePickerActive && scrollbackMode)
+  const compactFilePickerHints = Number.isFinite(columnWidth) && columnWidth < 80
+  const lineEditorVisibleLineCount = Math.max(1, String(input ?? "").split("\n").length)
+  const scrollbackStableInputRows =
+    scrollbackMode && !overlayActive && !filePickerActive && suggestions.length === 0 && input.length > 0
+      ? Math.max(3, Math.min(4, Math.floor(Number(inputMaxVisibleLines) || 3)))
+      : 1
+  const lineEditorMaxVisibleLines =
+    scrollbackStableInputRows > 1 ? scrollbackStableInputRows : inputMaxVisibleLines
 
   if (claudeChrome && todosOpen) {
     const scroll = Math.max(0, Math.min(todoScroll ?? 0, todoMaxScroll ?? 0))
@@ -142,7 +195,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
 
     return (
       <Box marginTop={0} flexDirection="column" width={ruleWidth}>
-        {composerShowTopRule ? (
+        {composerShowTopRule && !scrollbackMode ? (
           <Text color={COLORS.textMuted} wrap="truncate">
             {promptRuleLine}
           </Text>
@@ -159,7 +212,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
           hintLines={hintLines}
           rows={panelRows}
         />
-        {composerShowBottomRule ? (
+        {composerShowBottomRule && !scrollbackMode ? (
           <Text color={COLORS.textMuted} wrap="truncate">
             {promptRuleLine}
           </Text>
@@ -170,50 +223,67 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
   }
 
   return (
-    <Box marginTop={claudeChrome ? 0 : 1} flexDirection="column" width={ruleWidth}>
-      <RuntimePreviewStack
-        claudeChrome={claudeChrome}
-        overlayActive={overlayActive}
-        footerV2Enabled={Boolean(footerV2Enabled)}
-        pendingClaudeStatus={pendingClaudeStatus ?? null}
-        runtimeStatusChips={Array.isArray(runtimeStatusChips) ? runtimeStatusChips : []}
-        thinkingPreviewModel={thinkingPreviewModel ?? null}
-        todoPreviewModel={todoPreviewModel ?? null}
-        hintNodes={!overlayActive ? hintNodes : []}
-      />
+    <Box marginTop={scrollbackMode ? 0 : claudeChrome ? 0 : 1} flexDirection="column" width={ruleWidth}>
+      {!hideEmptyScrollbackComposer && (
+        <RuntimePreviewStack
+          claudeChrome={claudeChrome}
+          overlayActive={overlayActive}
+          footerV2Enabled={Boolean(footerV2Enabled)}
+          pendingClaudeStatus={pendingClaudeStatus ?? null}
+          runtimeStatusChips={Array.isArray(runtimeStatusChips) ? runtimeStatusChips : []}
+          thinkingPreviewModel={thinkingPreviewModel ?? null}
+          todoPreviewModel={todoPreviewModel ?? null}
+          hintNodes={!overlayActive ? hintNodes : []}
+        />
+      )}
       {claudeChrome && (
-        composerShowTopRule ? (
+        composerShowTopRule && !scrollbackMode ? (
           <Text color={COLORS.textMuted} wrap="truncate">
             {promptRuleLine}
           </Text>
         ) : null
       )}
-      <Box minHeight={1} width={ruleWidth} flexDirection="row">
-        <Text>
-          <Text color={claudeChrome ? COLORS.textBright : "cyan"}>{`${composerPromptPrefix || GLYPHS.chevron} `}</Text>
+      {showScrollbackComposerAnchor ? (
+        <Text color={COLORS.textMuted} wrap="truncate">
+          {`${DASH_GLYPH} input\u001b[K`}
         </Text>
+      ) : null}
+      <Box minHeight={hideEmptyScrollbackComposer ? 0 : 1} width={ruleWidth} flexDirection="row">
+        {!hideEmptyScrollbackComposer && !hidePromptPrefixForPickerQuery && (
+          <Text>
+            <Text color={claudeChrome ? COLORS.textBright : "cyan"}>{`${composerPromptPrefix || GLYPHS.chevron} `}</Text>
+          </Text>
+        )}
         <LineEditor
+          key={scrollbackMode ? `scrollback-line-editor-${lineEditorVisibleLineCount}` : "line-editor"}
           value={input}
           cursor={cursor}
           focus={!inputLocked}
           placeholder={
-            showClaudePlaceholder
+            hideEmptyScrollbackComposer
+              ? ""
+              : showClaudePlaceholder
               ? (composerPlaceholderClaude || 'Try "refactor <filepath>"')
+              : claudeChrome && showScrollbackClassicPlaceholder
+                ? (composerPlaceholderClassic || `Type your request${GLYPHS.ellipsis}`)
               : claudeChrome
                 ? ""
                 : (composerPlaceholderClassic || `Type your request${GLYPHS.ellipsis}`)
           }
           placeholderPad={!claudeChrome}
           hideCaretWhenPlaceholder={claudeChrome}
-          maxVisibleLines={inputMaxVisibleLines}
+          maxVisibleLines={lineEditorMaxVisibleLines}
+          minVisibleLines={scrollbackStableInputRows}
           onChange={handleLineEditGuarded}
           onSubmit={handleLineSubmit}
           submitOnEnter
           onPasteAttachment={handleAttachment}
+          onControlKey={handleEditorKeys}
+          hideWhenEmptyAndPlaceholderless={hideEmptyScrollbackComposer}
         />
       </Box>
       {claudeChrome && (
-        composerShowBottomRule ? (
+        composerShowBottomRule && !scrollbackMode ? (
           <Text color={COLORS.textMuted} wrap="truncate">
             {promptRuleLine}
           </Text>
@@ -245,7 +315,9 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
             })
             hintLines.push({
               text: uiText(
-                `${fileMenuMode === "fuzzy" ? "Fuzzy search • " : ""}Type to filter • ↑/↓ navigate • PgUp/PgDn page • Tab/Enter complete • Esc clear${fileMenuHasLarge ? " • * large file" : ""}`,
+                compactFilePickerHints
+                  ? `${fileMenuMode === "fuzzy" ? "Fuzzy • " : ""}↑/↓ nav • Pg page • Tab/Enter • Esc${fileMenuHasLarge ? " • * large" : ""}`
+                  : `${fileMenuMode === "fuzzy" ? "Fuzzy search • " : ""}Type to filter • ↑/↓ navigate • PgUp/PgDn page • Tab/Enter complete • Esc clear${fileMenuHasLarge ? " • * large file" : ""}`,
               ),
               color: "gray",
             })
@@ -274,7 +346,8 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
               rows.push({ kind: "empty", text: "(no matches)", color: "dim" })
             }
           } else {
-            const contentWidth = Math.max(10, columnWidth - 4)
+            const activeMarkerWidth = 2
+            const contentWidth = Math.max(10, columnWidth - 4 - activeMarkerWidth)
             const windowItems = fileMenuWindow.items
             const hiddenAbove = fileMenuWindow.hiddenAbove
             const hiddenBelow = fileMenuWindow.hiddenBelow
@@ -293,10 +366,11 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
             windowItems.forEach((row: any, index: number) => {
               const absoluteIndex = fileMenuWindow.start + index
               const selected = absoluteIndex === fileMenuIndex
+              const activePrefix = selected ? "› " : "  "
               if (row.kind === "resource") {
                 rows.push({
                   kind: "item",
-                  text: formatCell(row.resource.label, contentWidth, "left"),
+                  text: `${activePrefix}${formatCell(row.resource.label, contentWidth, "left")}`,
                   secondaryText: row.resource.detail ? `  ${row.resource.detail}` : undefined,
                   isActive: selected,
                   color: "white",
@@ -320,7 +394,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
               const label = sizeToken ? `${leftLabel}${rightLabel}` : leftLabel
               rows.push({
                 kind: "item",
-                text: label,
+                text: `${activePrefix}${label}`,
                 isActive: selected,
                 color: row.item.type === "directory" ? "cyan" : "white",
                 activeColor: COLORS.selectionFg,
@@ -423,6 +497,14 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
           <Text color="dim">Backspace removes the most recent attachment when the input is empty.</Text>
         </Box>
       )}
+      {!overlayActive && queuedPrompt ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text color={COLORS.warning}>Queued prompt</Text>
+          <Text color={COLORS.textMuted} wrap="truncate-end">
+            Sends after current response finishes: {String(queuedPrompt).replace(/\s+/g, " ").slice(0, 120)}
+          </Text>
+        </Box>
+      ) : null}
       {!overlayActive && fileMentions.length > 0 && (
         <Box marginTop={1} flexDirection="column">
           <Text color={COLORS.info}>Files queued ({fileMentions.length})</Text>
@@ -436,11 +518,15 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
           <Text color={COLORS.warning}>Files are attached as context on submit; oversized files are truncated.</Text>
         </Box>
       )}
-      {claudeChrome ? (
+      {(claudeChrome || footerV2Enabled) && (!hideEmptyScrollbackComposer || footerV2Enabled) ? (
         <FooterV2
           enabled={Boolean(footerV2Enabled)}
+          compactTopMargin={Boolean(scrollbackMode || scrollbackSuppressIdlePlaceholder)}
+          padLines={!scrollbackMode}
+          clearLineBeforeRender={Boolean(scrollbackMode)}
           input={{
             pendingResponse: Boolean(pendingResponse),
+            mainFollowTail: Boolean(mainFollowTail),
             overlayActive: Boolean(overlayActive),
             overlayLabel: overlayLabel != null ? String(overlayLabel) : null,
             keymap: String(keymap ?? "claude"),
@@ -459,7 +545,10 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
               usage: null,
               lastTurn: null,
             },
-            width: Math.max(24, Number(columnWidth) || 80),
+            sessionId: sessionId != null ? String(sessionId) : null,
+            transcriptViewerOpen: Boolean(transcriptViewerOpen),
+            transcriptSearchOpen: Boolean(transcriptSearchOpen),
+            width: Math.max(24, Number(scrollbackMode ? Math.min(columnWidth, 68) : columnWidth) || 80),
           }}
         />
       ) : null}

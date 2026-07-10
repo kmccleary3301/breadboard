@@ -10,6 +10,7 @@ import { loadUserConfigSync } from "../config/userConfig.js"
 import { resolveAuthToken } from "../config/authTokenProvider.js"
 import { CLI_PROTOCOL_VERSION, CLI_VERSION } from "../config/version.js"
 import { assertRuntimeIntegrity, resolveEngineRoot as resolveRuntimeEngineRoot } from "../config/runtimePaths.js"
+import { resolveEngineLifecycleMode, type ResolvedEngineLifecycleMode } from "./lifecycleMode.js"
 
 interface EngineLock {
   readonly pid: number
@@ -24,6 +25,13 @@ export interface EngineSupervisorResult {
   readonly baseUrl: string
   readonly started: boolean
   readonly pid?: number
+}
+
+export interface ActiveEngineLifecycleSnapshot extends ResolvedEngineLifecycleMode {
+  readonly baseUrl?: string
+  readonly pid?: number
+  readonly lockPath: string
+  readonly logPath: string
 }
 
 const ENGINE_DIR = path.join(homedir(), ".breadboard", "engine")
@@ -43,6 +51,7 @@ const HEALTH_TIMEOUT_MS = envInt("BREADBOARD_ENGINE_HEALTH_TIMEOUT_MS", 2_500)
 
 let activeChild: ChildProcess | null = null
 let activeBaseUrl: string | null = null
+let activeLifecycleMode: ResolvedEngineLifecycleMode | null = null
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -146,6 +155,22 @@ const fetchHealthResponse = async (
   return await fetch(url, { signal: controller.signal, headers })
 }
 
+export const shouldReuseLockedEngineBaseUrl = ({
+  isolated,
+  explicitBaseUrlConfigured,
+  configuredBaseUrl,
+  lockedBaseUrl,
+}: {
+  isolated: boolean
+  explicitBaseUrlConfigured: boolean
+  configuredBaseUrl: string
+  lockedBaseUrl: string
+}): boolean => {
+  if (isolated) return false
+  if (!explicitBaseUrlConfigured) return true
+  return configuredBaseUrl === lockedBaseUrl
+}
+
 const healthCheck = async (baseUrl: string, timeoutMs = HEALTH_TIMEOUT_MS): Promise<boolean> => {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
@@ -160,10 +185,41 @@ const healthCheck = async (baseUrl: string, timeoutMs = HEALTH_TIMEOUT_MS): Prom
   }
 }
 
+const readyCheck = async (baseUrl: string, timeoutMs = HEALTH_TIMEOUT_MS): Promise<boolean> => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const token = loadAppConfig().authToken
+    const headers: Record<string, string> = {}
+    if (token) headers.Authorization = `Bearer ${token}`
+    const response = await fetch(new URL("/ready", baseUrl), { signal: controller.signal, headers })
+    if (!response.ok) return false
+    const payload = (await response.json().catch(() => null)) as Record<string, any> | null
+    if (!payload || typeof payload !== "object") return false
+    return payload.ready === true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 const fetchHealth = async (
   baseUrl: string,
   timeoutMs = HEALTH_TIMEOUT_MS,
-): Promise<{ protocol_version?: string; version?: string } | null> => {
+): Promise<{
+  protocol_version?: string
+  version?: string
+  started_at?: string
+  started_at_unix?: number
+  pid?: number
+  served_revision?: {
+    repo_root?: string
+    commit?: string | null
+    branch?: string | null
+    dirty?: boolean | null
+  }
+} | null> => {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -174,6 +230,30 @@ const fetchHealth = async (
     return {
       protocol_version: typeof payload.protocol_version === "string" ? payload.protocol_version : undefined,
       version: typeof payload.version === "string" ? payload.version : undefined,
+      started_at: typeof payload.started_at === "string" ? payload.started_at : undefined,
+      started_at_unix: typeof payload.started_at_unix === "number" ? payload.started_at_unix : undefined,
+      pid: typeof payload.pid === "number" ? payload.pid : undefined,
+      served_revision:
+        payload.served_revision && typeof payload.served_revision === "object"
+          ? {
+              repo_root:
+                typeof (payload.served_revision as Record<string, unknown>).repo_root === "string"
+                  ? ((payload.served_revision as Record<string, unknown>).repo_root as string)
+                  : undefined,
+              commit:
+                typeof (payload.served_revision as Record<string, unknown>).commit === "string"
+                  ? ((payload.served_revision as Record<string, unknown>).commit as string)
+                  : null,
+              branch:
+                typeof (payload.served_revision as Record<string, unknown>).branch === "string"
+                  ? ((payload.served_revision as Record<string, unknown>).branch as string)
+                  : null,
+              dirty:
+                typeof (payload.served_revision as Record<string, unknown>).dirty === "boolean"
+                  ? ((payload.served_revision as Record<string, unknown>).dirty as boolean)
+                  : null,
+            }
+          : undefined,
     }
   } catch {
     return null
@@ -211,6 +291,15 @@ const waitForHealth = async (baseUrl: string, timeoutMs = STARTUP_TIMEOUT_MS): P
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     if (await healthCheck(baseUrl)) return true
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  return false
+}
+
+const waitForReady = async (baseUrl: string, timeoutMs = STARTUP_TIMEOUT_MS): Promise<boolean> => {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (await readyCheck(baseUrl)) return true
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   return false
@@ -294,9 +383,13 @@ const resolveEngineCommand = async (): Promise<{ command: string; args: string[]
   }
 }
 
-const registerCleanup = (child: ChildProcess) => {
+const registerCleanup = (child: ChildProcess, options: { keepAlive?: boolean } = {}) => {
   const shutdownSignal = process.platform === "win32" ? "SIGTERM" : "SIGINT"
+  const keepAlive = options.keepAlive === true
   const cleanup = () => {
+    if (keepAlive) {
+      return
+    }
     if (!child.killed) {
       child.kill(shutdownSignal)
     }
@@ -312,8 +405,14 @@ const registerCleanup = (child: ChildProcess) => {
   })
 }
 
-const shouldKeepAlive = () =>
-  process.env.BREADBOARD_ENGINE_KEEPALIVE === "1" || process.env.BREADBOARD_ENGINE_KEEPALIVE === "true"
+const shouldKeepAlive = (isolated = false) => {
+  if (isolated) return false
+  const raw = (process.env.BREADBOARD_ENGINE_KEEPALIVE ?? "").trim().toLowerCase()
+  if (!raw) return true
+  if (["1", "true", "yes", "on"].includes(raw)) return true
+  if (["0", "false", "no", "off"].includes(raw)) return false
+  return true
+}
 
 export const shutdownEngine = async (
   options: { timeoutMs?: number; force?: boolean } = {},
@@ -325,6 +424,7 @@ export const shutdownEngine = async (
   const child = activeChild
   activeChild = null
   activeBaseUrl = null
+  activeLifecycleMode = null
 
   if (child.exitCode !== null || child.killed) {
     await clearLock()
@@ -365,7 +465,55 @@ export const shutdownEngine = async (
   return true
 }
 
+const waitForProcessExit = async (pid: number, timeoutMs: number): Promise<boolean> => {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    if (!isProcessAlive(pid)) return true
+    await new Promise((resolve) => setTimeout(resolve, 50))
+  }
+  return !isProcessAlive(pid)
+}
+
+export const restartOwnedEngine = async (
+  options: { timeoutMs?: number; force?: boolean } = {},
+): Promise<EngineSupervisorResult> => {
+  const timeoutMs = options.timeoutMs ?? 1_500
+  const signal = options.force === false ? "SIGTERM" : "SIGKILL"
+  const lock = readLockSync()
+  const child = activeChild
+  const pid = child?.pid ?? lock?.pid
+
+  activeChild = null
+  activeBaseUrl = null
+  await clearLock()
+
+  if (typeof pid === "number" && Number.isFinite(pid) && isProcessAlive(pid)) {
+    try {
+      process.kill(pid, signal)
+    } catch {
+      // The process may have exited between the liveness check and kill.
+    }
+    await waitForProcessExit(pid, timeoutMs)
+  }
+
+  return ensureEngine({ allowSpawn: true, isolated: false })
+}
+
 export const getEngineLogPath = (): string => ENGINE_LOG_PATH
+
+export const getActiveEngineLifecycleMode = (): ResolvedEngineLifecycleMode | null => activeLifecycleMode
+
+export const getActiveEngineLifecycleSnapshot = (): ActiveEngineLifecycleSnapshot | null => {
+  if (!activeLifecycleMode) return null
+  const lock = readLockSync()
+  return {
+    ...activeLifecycleMode,
+    baseUrl: activeBaseUrl ?? lock?.baseUrl,
+    pid: activeChild?.pid ?? lock?.pid,
+    lockPath: ENGINE_LOCK_PATH,
+    logPath: ENGINE_LOG_PATH,
+  }
+}
 
 export const stopEngineFromLock = async (
   options: { timeoutMs?: number; force?: boolean } = {},
@@ -468,9 +616,13 @@ export const startEngineDetached = async ({
     command: [command, ...args].join(" "),
   })
 
-  const ready = await waitForHealth(resolvedBaseUrl, STARTUP_TIMEOUT_MS)
-  if (!ready) {
+  const healthy = await waitForHealth(resolvedBaseUrl, STARTUP_TIMEOUT_MS)
+  if (!healthy) {
     throw new Error(`Engine failed to become healthy at ${resolvedBaseUrl}. See logs: ${ENGINE_LOG_PATH}`)
+  }
+  const ready = await waitForReady(resolvedBaseUrl, STARTUP_TIMEOUT_MS)
+  if (!ready) {
+    throw new Error(`Engine failed to become ready at ${resolvedBaseUrl}. See logs: ${ENGINE_LOG_PATH}`)
   }
 
   await verifyProtocol(resolvedBaseUrl)
@@ -495,45 +647,71 @@ const pickEphemeralPort = (host: string): Promise<number> =>
 export const ensureEngine = async ({
   allowSpawn,
   isolated = false,
+  cliMode,
 }: {
   allowSpawn?: boolean
   isolated?: boolean
+  cliMode?: string | null
 } = {}): Promise<EngineSupervisorResult> => {
   assertRuntimeIntegrity({ includeSource: true })
   if (activeBaseUrl) {
-    return { baseUrl: activeBaseUrl, started: Boolean(activeChild?.pid), pid: activeChild?.pid }
-  }
-
-  const mode = process.env.BREADBOARD_ENGINE_MODE?.trim().toLowerCase()
-  // Old default behavior: if the engine is local and unreachable, auto-start it from source.
-  // Set BREADBOARD_ENGINE_MODE=external|remote|off to disable spawning.
-  const defaultAllowSpawn = mode ? mode === "auto" || mode === "spawn" || mode === "managed" : true
-  if (allowSpawn === undefined) {
-    allowSpawn = defaultAllowSpawn
-  }
-  if (mode === "external" || mode === "remote" || mode === "off") {
-    allowSpawn = false
+    const cachedBaseUrl = activeBaseUrl
+    const cachedPid = activeChild?.pid
+    const processAlive = cachedPid == null || isProcessAlive(cachedPid)
+    const healthy = processAlive ? await healthCheck(cachedBaseUrl) : false
+    if (healthy) {
+      return { baseUrl: cachedBaseUrl, started: Boolean(cachedPid), pid: cachedPid }
+    }
+    activeChild = null
+    activeBaseUrl = null
+    if (cachedPid != null && !processAlive) {
+      await clearLock()
+    }
   }
 
   const config = loadAppConfig()
+  const userConfig = loadUserConfigSync()
   const configUrl = resolveBaseUrl(config.baseUrl)
-  const explicitBaseUrl = process.env.BREADBOARD_API_URL?.trim() || loadUserConfigSync().baseUrl?.trim()
+  const explicitBaseUrl = process.env.BREADBOARD_API_URL?.trim() || userConfig.baseUrl?.trim()
   const explicitUrl = explicitBaseUrl ? resolveBaseUrl(explicitBaseUrl)?.toString().replace(/\/$/, "") : undefined
+  const explicitBaseUrlConfigured = Boolean(explicitBaseUrl)
   const baseHost = isolated ? DEFAULT_HOST : configUrl?.hostname ?? DEFAULT_HOST
   const baseUrl = isolated
     ? `http://${baseHost}:${DEFAULT_PORT}`
     : configUrl?.toString().replace(/\/$/, "") ?? `http://${DEFAULT_HOST}:${DEFAULT_PORT}`
+  const lifecycleMode = resolveEngineLifecycleMode({
+    cliMode,
+    configMode: userConfig.engineMode,
+    envMode: process.env.BREADBOARD_ENGINE_MODE,
+    baseUrl,
+    explicitBaseUrlConfigured,
+  })
+  activeLifecycleMode = lifecycleMode
+  if (allowSpawn === undefined) {
+    allowSpawn = lifecycleMode.allowSpawn
+  } else if (lifecycleMode.mode !== "local-owned" && lifecycleMode.modeSource !== "explicit-base-url") {
+    allowSpawn = false
+  }
 
   if (!isolated) {
     const lock = readLockSync()
     const lockBaseUrl = lock ? resolveBaseUrl(lock.baseUrl)?.toString().replace(/\/$/, "") : undefined
-    const lockMatchesRequestedUrl = !explicitUrl || explicitUrl === lockBaseUrl
     const lockAlive = lock ? isProcessAlive(lock.pid) : false
+    const lockMatchesRequestedUrl = lock
+      ? (!explicitUrl || explicitUrl === lockBaseUrl) &&
+        shouldReuseLockedEngineBaseUrl({
+          isolated,
+          explicitBaseUrlConfigured,
+          configuredBaseUrl: baseUrl,
+          lockedBaseUrl: lock.baseUrl,
+        })
+      : false
     if (lockMatchesRequestedUrl && lock && lockAlive) {
       const ok = await healthCheck(lock.baseUrl)
       if (ok) {
         activeBaseUrl = lock.baseUrl
         process.env.BREADBOARD_API_URL = lock.baseUrl
+        activeLifecycleMode = lifecycleMode
         await verifyProtocol(lock.baseUrl)
         return { baseUrl: lock.baseUrl, started: false, pid: lock.pid }
       }
@@ -547,6 +725,7 @@ export const ensureEngine = async ({
   if (hasHealthyEngine) {
     activeBaseUrl = baseUrl
     process.env.BREADBOARD_API_URL = baseUrl
+    activeLifecycleMode = lifecycleMode
     await verifyProtocol(baseUrl)
     return { baseUrl, started: false }
   }
@@ -566,6 +745,8 @@ export const ensureEngine = async ({
   const { command, args, cwd, shell } = await resolveEngineCommand()
   await fsp.mkdir(path.dirname(ENGINE_LOG_PATH), { recursive: true })
   const inheritEngineStdio = process.env.BREADBOARD_ENGINE_INHERIT_STDIO === "1"
+  const keepAliveManagedChild = shouldKeepAlive(isolated)
+  const canUnrefManagedChild = !inheritEngineStdio
   let logFd: number | null = null
   const stdio: StdioOptions = inheritEngineStdio
     ? "inherit"
@@ -581,6 +762,7 @@ export const ensureEngine = async ({
       BREADBOARD_CLI_PORT: String(port),
     },
     stdio,
+    detached: keepAliveManagedChild && canUnrefManagedChild,
     shell,
   })
   if (logFd != null) {
@@ -592,6 +774,7 @@ export const ensureEngine = async ({
   }
   activeChild = child
   activeBaseUrl = resolvedBaseUrl
+  activeLifecycleMode = lifecycleMode
   process.env.BREADBOARD_API_URL = resolvedBaseUrl
   process.env.BREADBOARD_ENGINE_MANAGED = "1"
 
@@ -606,15 +789,16 @@ export const ensureEngine = async ({
     })
   }
 
-  registerCleanup(child)
+  registerCleanup(child, { keepAlive: keepAliveManagedChild })
   child.once("exit", () => {
     activeChild = null
     activeBaseUrl = null
+    activeLifecycleMode = null
     clearLock().catch(() => undefined)
   })
 
-  const ready = await waitForHealth(resolvedBaseUrl)
-  if (!ready) {
+  const healthy = await waitForHealth(resolvedBaseUrl)
+  if (!healthy) {
     if (child.pid) {
       try {
         child.kill()
@@ -624,7 +808,23 @@ export const ensureEngine = async ({
     }
     throw new Error(`Engine failed to become healthy at ${resolvedBaseUrl}.`)
   }
+  const ready = await waitForReady(resolvedBaseUrl)
+  if (!ready) {
+    if (child.pid) {
+      try {
+        child.kill()
+      } catch {
+        // ignore
+      }
+    }
+    throw new Error(`Engine failed to become ready at ${resolvedBaseUrl}.`)
+  }
 
   await verifyProtocol(resolvedBaseUrl)
+  // Once the managed engine is healthy and ready, it should behave like the detached
+  // background daemon path and stop pinning short-lived CLI commands such as `bb ask`.
+  if (keepAliveManagedChild && canUnrefManagedChild) {
+    child.unref()
+  }
   return { baseUrl: resolvedBaseUrl, started: true, pid: child.pid }
 }

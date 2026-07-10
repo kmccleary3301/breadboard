@@ -1,0 +1,10 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 45000 },
+  { "action": "type", "text": "/permissions", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Permission status (read-only)", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "permissions-status", "mode": "frame", "maxLines": 120 },
+  { "action": "type", "text": "/", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "/resume", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "visible-root-suggestions", "mode": "frame", "maxLines": 120 }
+]

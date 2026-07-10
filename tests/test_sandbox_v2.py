@@ -55,6 +55,28 @@ def test_basic_run_and_stream(ray_cluster, tmp_path):
     assert "hello" in lines[0]
 
 
+def test_run_timeout_kills_child_process_group(ray_cluster, tmp_path):
+    ensure_image("python-dev:latest", "python-dev.Dockerfile")
+    ws = tmp_path / f"ws-{uuid.uuid4()}"
+    ws.mkdir(parents=True, exist_ok=True)
+    os.environ["RAY_USE_DOCKER_SANDBOX"] = "0"
+    sb = new_dev_sandbox_v2("python-dev:latest", str(ws), name=f"sb-{uuid.uuid4()}")
+
+    result = ray.get(
+        sb.run.remote(
+            "sh -c 'sleep 5; echo leaked > leaked.txt' & wait",
+            timeout=1,
+            stream=False,
+        )
+    )
+
+    assert result["exit"] == 124
+    import time
+
+    time.sleep(6)
+    assert not (ws / "leaked.txt").exists()
+
+
 def test_file_io_and_grep(ray_cluster, tmp_path):
     ensure_image("python-dev:latest", "python-dev.Dockerfile")
     ws = tmp_path / f"ws-{uuid.uuid4()}"

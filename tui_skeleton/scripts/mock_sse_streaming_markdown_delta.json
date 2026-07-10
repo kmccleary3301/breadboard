@@ -1,0 +1,47 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "streaming markdown" }, "turn": 1 }
+  },
+  {
+    "delayMs": 150,
+    "event": { "type": "assistant.message.start", "payload": {}, "turn": 1 }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "delta": "## Streaming\n- first" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "delta": "\n- second" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "delta": "\n\nFinal." },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": { "type": "assistant.message.end", "payload": {}, "turn": 1 }
+  },
+  {
+    "delayMs": 100,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "mock-stream-delta" } },
+      "turn": 1
+    }
+  },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 8 }, "turn": 1 } }
+]

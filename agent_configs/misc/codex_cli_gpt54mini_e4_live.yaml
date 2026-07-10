@@ -2,17 +2,33 @@ extends: base_v2.yaml
 
 profile: { name: codex-cli-gpt5.4-mini-e4-live }
 
+max_iterations: 24
+
 providers:
-  default_model: openai/gpt-5.4-mini
+  default_model: openrouter/openai/gpt-5.4-mini
   models:
-    - id: openai/gpt-5.4-mini
+    - id: openrouter/openai/gpt-5.4-mini
       adapter: openai
       params: { temperature: 0.2, top_p: 0.9 }
 
 provider_tools:
-  use_native: false
-  suppress_prompts: false
+  use_native: true
+  suppress_prompts: true
   api_variant: responses
+
+workspace:
+  shell_scope:
+    reject_parent_traversal: true
+
+workloop_guards:
+  implementation_write_receipts:
+    enabled: true
+    max_read_only_calls_before_write: 4
+    auto_verify_make_after_write_receipts: true
+
+loop:
+  turn_strategy:
+    flow: tool_role
 
 features:
   plan: false
@@ -22,14 +38,21 @@ features:
 prompts:
   packs:
     base:
-      system: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      plan: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      builder: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      compact: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      tools_catalog_full: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
-      tools_catalog_short: industry_coder_refs/codex/codex-rs/core/gpt_5_codex_prompt.md
+      system: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      plan: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      builder: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      compact: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      tools_catalog_full: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+      tools_catalog_short: ../../../other_harness_refs/codex/codex-rs/core/gpt_5_1_prompt.md
+    breadboard_workspace:
+      system: codex_workspace_scope_contract.md
   tool_prompt_synthesis:
     enabled: false
+  injection:
+    system_order:
+      - "@pack(base).system"
+      - "@pack(breadboard_workspace).system"
+    per_turn_order: []
 
 tools:
   registry:

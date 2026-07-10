@@ -93,10 +93,14 @@ const baseContext = () => ({
   setTaskCollapsedGroupKeys: vi.fn(),
   setTaskSearchQuery: vi.fn(),
   setTaskStatusFilter: vi.fn(),
+  taskboardInputQuarantineUntilRef: { current: 0 },
+  setTaskNotice: vi.fn(),
+  setTaskActionNotice: vi.fn(),
   selectedTaskIndex: 0,
   selectedTaskRow: { groupKey: "status:running", groupLabel: "Running", task: { laneId: "lane-a" } },
-  selectedTask: { laneId: "lane-a" },
+  selectedTask: { id: "task-1", laneId: "lane-a" },
   requestTaskTail: vi.fn(),
+  exportTaskLog: vi.fn(),
   rewindMenu: { status: "hidden", checkpoints: [] },
   rewindVisibleLimit: 5,
   rewindIndex: 0,
@@ -106,9 +110,191 @@ const baseContext = () => ({
   confirmState: { status: "hidden" },
   closeConfirm: vi.fn(),
   runConfirmAction: vi.fn(),
+  jumpTranscriptToLine: vi.fn(),
 })
 
 describe("handleListOverlayKeys task focus mode", () => {
+  it("refreshes and attaches from the recent-sessions overlay", () => {
+    const context = {
+      ...baseContext(),
+      tasksOpen: false,
+      recentSessionsOpen: true,
+      recentSessionsRows: [
+        { sessionId: "sess-a", status: "ready" },
+        { sessionId: "sess-b", status: "finished" },
+      ],
+      recentSessionsIndex: 1,
+      recentSessionsScroll: 0,
+      recentSessionsMaxScroll: 1,
+      recentSessionsViewportRows: 8,
+      setRecentSessionsOpen: vi.fn(),
+      setRecentSessionsIndex: vi.fn(),
+      setRecentSessionsScroll: vi.fn(),
+      refreshRecentSessions: vi.fn(),
+      attachRecentSession: vi.fn(),
+    }
+    expect(handleListOverlayKeys(context, makeInfo({ char: "r", lowerChar: "r" }))).toBe(true)
+    expect(context.refreshRecentSessions).toHaveBeenCalled()
+    expect(handleListOverlayKeys(context, makeInfo({ isReturnKey: true, key: { return: true } }))).toBe(true)
+    expect(context.attachRecentSession).toHaveBeenCalledWith("sess-b")
+  })
+
+  it("does not attach on the same return keypress that opened recent sessions", () => {
+    const context = {
+      ...baseContext(),
+      tasksOpen: false,
+      recentSessionsOpen: true,
+      recentSessionsOpenedAtRef: { current: Date.now() },
+      recentSessionsRows: [{ sessionId: "sess-a", status: "ready" }],
+      recentSessionsIndex: 0,
+      recentSessionsScroll: 0,
+      recentSessionsMaxScroll: 0,
+      recentSessionsViewportRows: 8,
+      setRecentSessionsOpen: vi.fn(),
+      setRecentSessionsIndex: vi.fn(),
+      setRecentSessionsScroll: vi.fn(),
+      refreshRecentSessions: vi.fn(),
+      attachRecentSession: vi.fn(),
+    }
+    expect(handleListOverlayKeys(context, makeInfo({ isReturnKey: true, key: { return: true } }))).toBe(true)
+    expect(context.attachRecentSession).not.toHaveBeenCalled()
+  })
+
+  it("closes the recent-sessions overlay on escape", () => {
+    const context = {
+      ...baseContext(),
+      tasksOpen: false,
+      recentSessionsOpen: true,
+      recentSessionsRows: [{ sessionId: "sess-a", status: "ready" }],
+      recentSessionsIndex: 0,
+      recentSessionsScroll: 0,
+      recentSessionsMaxScroll: 0,
+      recentSessionsViewportRows: 8,
+      setRecentSessionsOpen: vi.fn(),
+      setRecentSessionsIndex: vi.fn(),
+      setRecentSessionsScroll: vi.fn(),
+      refreshRecentSessions: vi.fn(),
+      attachRecentSession: vi.fn(),
+    }
+    expect(handleListOverlayKeys(context, makeInfo({ char: "\u001b", key: { escape: true } }))).toBe(true)
+    expect(context.setRecentSessionsOpen).toHaveBeenCalledWith(false)
+  })
+
+  it("scrolls and closes the collapsed-detail overlay", () => {
+    const context = {
+      ...baseContext(),
+      tasksOpen: false,
+      collapsedDetailOpen: true,
+      collapsedDetailScroll: 3,
+      collapsedDetailMaxScroll: 12,
+      collapsedDetailViewportRows: 5,
+      setCollapsedDetailOpen: vi.fn(),
+      setCollapsedDetailScroll: vi.fn(),
+    }
+    expect(handleListOverlayKeys(context, makeInfo({ key: { pageDown: true } }))).toBe(true)
+    expect(context.setCollapsedDetailScroll).toHaveBeenCalled()
+    expect(handleListOverlayKeys(context, makeInfo({ char: "\u001b", key: { escape: true } }))).toBe(true)
+    expect(context.setCollapsedDetailOpen).toHaveBeenCalledWith(false)
+  })
+
+  it("jumps back to transcript source from result detail", () => {
+    const context = {
+      ...baseContext(),
+      tasksOpen: false,
+      resultDetailOpen: true,
+      resultDetailScroll: 2,
+      resultDetailMaxScroll: 12,
+      resultDetailViewportRows: 5,
+      resultDetailArtifactPath: "artifacts/report.txt",
+      resultDetailSourceLine: 14,
+      setResultDetailOpen: vi.fn(),
+      setResultDetailScroll: vi.fn(),
+      openSelectedTranscriptArtifactPreview: vi.fn(() => true),
+      artifactPreviewOpen: false,
+      artifactPreviewScroll: 0,
+      artifactPreviewMaxScroll: 0,
+      artifactPreviewViewportRows: 5,
+      artifactPreviewSourceLine: 14,
+      setArtifactPreviewOpen: vi.fn(),
+      setArtifactPreviewScroll: vi.fn(),
+    }
+    expect(handleListOverlayKeys(context, makeInfo({ char: "j", lowerChar: "j" }))).toBe(true)
+    expect(context.setResultDetailOpen).toHaveBeenCalledWith(false)
+    expect(context.jumpTranscriptToLine).toHaveBeenCalledWith(14)
+  })
+
+  it("jumps back to transcript source from artifact preview", () => {
+    const context = {
+      ...baseContext(),
+      tasksOpen: false,
+      resultDetailOpen: true,
+      resultDetailScroll: 2,
+      resultDetailMaxScroll: 12,
+      resultDetailViewportRows: 5,
+      resultDetailArtifactPath: "artifacts/report.txt",
+      resultDetailSourceLine: 14,
+      setResultDetailOpen: vi.fn(),
+      setResultDetailScroll: vi.fn(),
+      openSelectedTranscriptArtifactPreview: vi.fn(() => true),
+      artifactPreviewOpen: true,
+      artifactPreviewScroll: 3,
+      artifactPreviewMaxScroll: 12,
+      artifactPreviewViewportRows: 5,
+      artifactPreviewSourceLine: 14,
+      setArtifactPreviewOpen: vi.fn(),
+      setArtifactPreviewScroll: vi.fn(),
+    }
+    expect(handleListOverlayKeys(context, makeInfo({ char: "j", lowerChar: "j" }))).toBe(true)
+    expect(context.setArtifactPreviewOpen).toHaveBeenCalledWith(false)
+    expect(context.setResultDetailOpen).toHaveBeenCalledWith(false)
+    expect(context.jumpTranscriptToLine).toHaveBeenCalledWith(14)
+  })
+
+  it("opens artifact preview from result detail and closes both overlays with escape", () => {
+    const context = {
+      ...baseContext(),
+      tasksOpen: false,
+      resultDetailOpen: true,
+      resultDetailScroll: 2,
+      resultDetailMaxScroll: 12,
+      resultDetailViewportRows: 5,
+      resultDetailArtifactPath: "artifacts/report.txt",
+      resultDetailSourceLine: 14,
+      setResultDetailOpen: vi.fn(),
+      setResultDetailScroll: vi.fn(),
+      openSelectedTranscriptArtifactPreview: vi.fn(() => true),
+      artifactPreviewOpen: false,
+      artifactPreviewScroll: 0,
+      artifactPreviewMaxScroll: 0,
+      artifactPreviewViewportRows: 5,
+      artifactPreviewSourceLine: 14,
+      setArtifactPreviewOpen: vi.fn(),
+      setArtifactPreviewScroll: vi.fn(),
+    }
+    expect(handleListOverlayKeys(context, makeInfo({ isReturnKey: true, key: { return: true } }))).toBe(true)
+    expect(context.openSelectedTranscriptArtifactPreview).toHaveBeenCalled()
+    expect(handleListOverlayKeys(context, makeInfo({ char: "\u001b", key: { escape: true } }))).toBe(true)
+    expect(context.setResultDetailOpen).toHaveBeenCalledWith(false)
+  })
+
+  it("scrolls and closes artifact preview overlay", () => {
+    const context = {
+      ...baseContext(),
+      tasksOpen: false,
+      resultDetailOpen: false,
+      artifactPreviewOpen: true,
+      artifactPreviewScroll: 3,
+      artifactPreviewMaxScroll: 12,
+      artifactPreviewViewportRows: 5,
+      setArtifactPreviewOpen: vi.fn(),
+      setArtifactPreviewScroll: vi.fn(),
+    }
+    expect(handleListOverlayKeys(context, makeInfo({ key: { pageDown: true } }))).toBe(true)
+    expect(context.setArtifactPreviewScroll).toHaveBeenCalled()
+    expect(handleListOverlayKeys(context, makeInfo({ char: "\u001b", key: { escape: true } }))).toBe(true)
+    expect(context.setArtifactPreviewOpen).toHaveBeenCalledWith(false)
+  })
+
   it("closes todos overlay from raw Ctrl+T control char in claude keymap", () => {
     const context = { ...baseContext(), todosOpen: true, tasksOpen: false, keymap: "claude" }
     const handled = handleListOverlayKeys(context, makeInfo({ char: "\u0014" }))
@@ -226,6 +412,32 @@ describe("handleListOverlayKeys task focus mode", () => {
     )
     expect(handled).toBe(true)
     expect(context.setTaskSearchQuery).toHaveBeenCalled()
+  })
+
+  it("consumes printable slash-command residue during taskboard open quarantine", () => {
+    const context = {
+      ...baseContext(),
+      taskboardInputQuarantineUntilRef: { current: Date.now() + 1000 },
+    }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ char: "a", lowerChar: "a" }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTaskSearchQuery).not.toHaveBeenCalled()
+  })
+
+  it("still lets escape close taskboard during taskboard open quarantine", () => {
+    const context = {
+      ...baseContext(),
+      taskboardInputQuarantineUntilRef: { current: Date.now() + 1000 },
+    }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ char: "\u001b", key: { escape: true } }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTasksOpen).toHaveBeenCalledWith(false)
   })
 
   it("toggles group mode with `g`", () => {
@@ -350,4 +562,64 @@ describe("handleListOverlayKeys task focus mode", () => {
     expect(handled).toBe(true)
     expect(context.requestTaskTail).toHaveBeenCalledWith({ raw: true, tailLines: 80 })
   })
+
+  it("exports the selected task log in focus mode with `o`", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a" }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ char: "o", lowerChar: "o" }),
+    )
+    expect(handled).toBe(true)
+    expect(context.exportTaskLog).toHaveBeenCalled()
+    expect(context.setTaskSearchQuery).not.toHaveBeenCalled()
+  })
+
+  it("renders an unavailable notice if task log export is not wired", () => {
+    const context = {
+      ...baseContext(),
+      taskFocusViewOpen: true,
+      taskFocusLaneId: "lane-a",
+      exportTaskLog: undefined,
+    }
+    const handled = handleListOverlayKeys(
+      context,
+      makeInfo({ char: "o", lowerChar: "o" }),
+    )
+    expect(handled).toBe(true)
+    expect(context.setTaskNotice).toHaveBeenCalledWith("Task log export unavailable.")
+  })
+
+  it("reports unavailable task mutation controls from focus mode", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a" }
+    expect(handleListOverlayKeys(context, makeInfo({ char: "x", lowerChar: "x" }))).toBe(true)
+    expect(context.setTaskActionNotice).toHaveBeenLastCalledWith(
+      "cancel unavailable for task-1.",
+    )
+    expect(handleListOverlayKeys(context, makeInfo({ char: "y", lowerChar: "y" }))).toBe(true)
+    expect(context.setTaskActionNotice).toHaveBeenLastCalledWith(
+      "retry unavailable for task-1.",
+    )
+    expect(handleListOverlayKeys(context, makeInfo({ char: "u", lowerChar: "u" }))).toBe(true)
+    expect(context.setTaskActionNotice).toHaveBeenLastCalledWith(
+      "pause/resume unavailable for task-1.",
+    )
+    expect(handleListOverlayKeys(context, makeInfo({ char: "m", lowerChar: "m" }))).toBe(true)
+    expect(context.setTaskActionNotice).toHaveBeenLastCalledWith(
+      "merge unavailable for task-1.",
+    )
+  })
+
+  it("dispatches task mutation controls from focus mode when wired", () => {
+    const context = { ...baseContext(), taskFocusViewOpen: true, taskFocusLaneId: "lane-a", runTaskAction: vi.fn() }
+    expect(handleListOverlayKeys(context, makeInfo({ char: "x", lowerChar: "x" }))).toBe(true)
+    expect(context.runTaskAction).toHaveBeenLastCalledWith("cancel")
+    expect(handleListOverlayKeys(context, makeInfo({ char: "y", lowerChar: "y" }))).toBe(true)
+    expect(context.runTaskAction).toHaveBeenLastCalledWith("retry")
+    expect(handleListOverlayKeys(context, makeInfo({ char: "u", lowerChar: "u" }))).toBe(true)
+    expect(context.runTaskAction).toHaveBeenLastCalledWith("pause_resume")
+    expect(handleListOverlayKeys(context, makeInfo({ char: "m", lowerChar: "m" }))).toBe(true)
+    expect(context.runTaskAction).toHaveBeenLastCalledWith("merge")
+    expect(context.setTaskActionNotice).not.toHaveBeenCalled()
+  })
+
 })

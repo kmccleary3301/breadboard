@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 import shlex
 from pathlib import Path
@@ -68,6 +69,15 @@ def normalize_patch_block(block_text: str) -> str:
     content = (block_text or "").strip()
     if not content:
         return ""
+    if content.startswith("{") and '"input"' in content:
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, dict):
+                nested = parsed.get("patch") or parsed.get("input")
+                if isinstance(nested, str) and nested.strip():
+                    content = nested.strip()
+        except Exception:
+            pass
     content = re.sub(
         r"(\*\*\* (?:Add|Update|Delete) File:[^\n]*?)\s*\*+\s*$",
         r"\1",
@@ -77,8 +87,30 @@ def normalize_patch_block(block_text: str) -> str:
     if "*** Begin Patch" in content:
         normalized = re.sub(r"\*\*\* Begin Patch[^\n]*", "*** Begin Patch", content, count=1)
         normalized = re.sub(r"\*\*\* End Patch[^\n]*", "*** End Patch", normalized, count=1)
+        normalized = _normalize_blank_hunk_lines(normalized)
         return normalized if normalized.endswith("\n") else normalized + "\n"
-    return f"*** Begin Patch\n{content}\n*** End Patch\n"
+    return _normalize_blank_hunk_lines(f"*** Begin Patch\n{content}\n*** End Patch\n")
+
+
+def _normalize_blank_hunk_lines(patch_text: str) -> str:
+    """Treat raw blank lines inside OpenCode/Codex hunks as context blank lines."""
+    lines = str(patch_text or "").splitlines()
+    normalized: List[str] = []
+    in_hunk = False
+    for line in lines:
+        if line.startswith("*** "):
+            in_hunk = False
+            normalized.append(line)
+            continue
+        if line.startswith("@@"):
+            in_hunk = True
+            normalized.append(line)
+            continue
+        if in_hunk and line == "":
+            normalized.append(" ")
+            continue
+        normalized.append(line)
+    return "\n".join(normalized) + ("\n" if patch_text.endswith("\n") else "")
 
 
 def normalize_workspace_path(conductor: Any, path_in: str) -> str:
@@ -173,6 +205,17 @@ def apply_patch_operations_direct(conductor: Any, patch_text: str) -> Optional[D
         return None
     applied_paths: List[str] = []
 
+    def _patch_failure(message: str, *, rel_path: str = "") -> Dict[str, Any]:
+        detail = f"{message} in {rel_path}" if rel_path else message
+        return {
+            "ok": False,
+            "action": "apply_patch",
+            "exit": 1,
+            "stdout": "",
+            "stderr": f"patch did not apply: {detail}",
+            "data": {"manual_fallback": True, "reason": detail},
+        }
+
     def _write_file(rel_path: str, content: str) -> bool:
         if not rel_path:
             return False
@@ -195,16 +238,6 @@ def apply_patch_operations_direct(conductor: Any, patch_text: str) -> Optional[D
         except Exception:
             return False
 
-    def _render_hunks_fallback(hunks: List[Any]) -> str:
-        lines: List[str] = []
-        for hunk in hunks:
-            for change in getattr(hunk, "changes", []) or []:
-                if getattr(change, "kind", None) in {"keep", "add"}:
-                    lines.append(getattr(change, "content", ""))
-        if not lines:
-            return ""
-        return "\n".join(lines) + "\n"
-
     try:
         operations = parse_opencode_patch(normalized)
     except PatchParseError:
@@ -217,33 +250,31 @@ def apply_patch_operations_direct(conductor: Any, patch_text: str) -> Optional[D
             for op in operations:
                 rel_path = str(getattr(op, "file_path", "")).strip()
                 if not rel_path:
-                    return None
+                    return _patch_failure("missing file path")
                 if op.kind == "add":
                     content = getattr(op, "content", "") or ""
                     if not _write_file(rel_path, content):
-                        return None
+                        return _patch_failure("write failed", rel_path=rel_path)
                     continue
                 if op.kind == "delete":
                     if not _delete_file(rel_path):
-                        return None
+                        return _patch_failure("delete failed", rel_path=rel_path)
                     continue
                 if op.kind == "update":
                     original = fetch_workspace_text(conductor, rel_path)
                     hunks = getattr(op, "hunks", None) or []
                     try:
                         updated = apply_update_hunks_codex(original, hunks, file_label=rel_path)
-                    except PatchParseError:
-                        updated = _render_hunks_fallback(hunks)
-                        if not updated:
-                            return None
+                    except PatchParseError as exc:
+                        return _patch_failure(str(exc), rel_path=rel_path)
                     target = str(getattr(op, "move_to", "") or rel_path).strip()
                     if not target:
-                        return None
+                        return _patch_failure("missing target path", rel_path=rel_path)
                     if not _write_file(target, updated):
-                        return None
+                        return _patch_failure("write failed", rel_path=target)
                     if target != rel_path:
                         if not _delete_file(rel_path):
-                            return None
+                            return _patch_failure("delete failed", rel_path=rel_path)
                     continue
 
     if not operations:
@@ -296,7 +327,7 @@ def apply_patch_operations_direct(conductor: Any, patch_text: str) -> Optional[D
         if diff_adds:
             for rel_path, content in diff_adds:
                 if not _write_file(rel_path, content):
-                    return None
+                    return _patch_failure("write failed", rel_path=rel_path)
 
     if not applied_paths:
         return None
@@ -340,7 +371,7 @@ def expand_multi_file_patches(
             continue
 
         args = getattr(call, "arguments", {}) or {}
-        patch_text = str(args.get("patch") or args.get("patchText") or "")
+        patch_text = str(args.get("patch") or args.get("input") or args.get("patchText") or "")
         chunks = split_patch_blocks(patch_text)
         if len(chunks) <= 1:
             expanded.append(call)
@@ -549,9 +580,9 @@ def record_diff_metrics(
         patch_text = ""
         try:
             if function == "patch":
-                patch_text = str(tool_call.arguments.get("patchText", ""))
+                patch_text = str(tool_call.arguments.get("patchText") or tool_call.arguments.get("input") or "")
             else:
-                patch_text = str(tool_call.arguments.get("patch", ""))
+                patch_text = str(tool_call.arguments.get("patch") or tool_call.arguments.get("input") or tool_call.arguments.get("patchText") or "")
         except Exception:
             patch_text = ""
         total_hunks = count_diff_hunks(patch_text)

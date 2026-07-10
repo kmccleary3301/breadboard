@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "id": "known_bad_task_raw_log_spam",
+  "title": "Known Bad Task Raw Log Spam Calibration",
+  "description": "Expected-red Phase C detector calibration rendered through production ReplView; not a natural live-host reproduction claim.",
+  "expectedOutcome": "fail",
+  "knownBadKind": "task-raw-log-spam",
+  "claimScope": "production-renderer-compositor",
+  "productionEquivalence": {
+    "required": true,
+    "renderer": "ReplView",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace",
+      "task"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-projection",
+      "composer-footer",
+      "modal-picker",
+      "taskboard-state",
+      "direct-cell-mutation"
+    ]
+  },
+  "surfaces": [
+    "multiagent",
+    "taskboard"
+  ],
+  "sizes": [
+    {
+      "cols": 40,
+      "rows": 18
+    },
+    {
+      "cols": 72,
+      "rows": 22
+    }
+  ],
+  "timeline": [
+    {
+      "kind": "user",
+      "text": "Open taskboard with noisy raw logs."
+    },
+    {
+      "kind": "task",
+      "text": "Noisy raw task log",
+      "role": "worker",
+      "status": "running",
+      "content": "RAW_TASK_LOG_START repeated stderr spam should be summarized, not dumped."
+    },
+    {
+      "kind": "open-surface",
+      "surface": "taskboard"
+    }
+  ],
+  "expectedMarkers": [
+    "Open taskboard with noisy raw logs"
+  ],
+  "forbiddenMarkers": [
+    "RAW_TASK_LOG_START"
+  ],
+  "invariants": [
+    "COMPOSITOR-PRODUCTION-RENDERER",
+    "COMPOSITOR-NO-FAKE-RENDERER",
+    "COMPOSITOR-ARTIFACT-PACKET-COMPLETE",
+    "COMPOSITOR-MARKERS-PRESENT",
+    "COMPOSITOR-FORBIDDEN-MARKERS-ABSENT",
+    "COMPOSITOR-WIDTH-SAFE",
+    "COMPOSITOR-COMPOSER-VISIBLE",
+    "COMPOSITOR-PROMPT-EXACTLY-ONCE"
+  ],
+  "artifacts": {
+    "required": [
+      "manifest.json",
+      "command.txt",
+      "git_status.txt",
+      "environment.json",
+      "scenario.json",
+      "raw.ansi",
+      "plain_final.txt",
+      "grid_frames.ndjson",
+      "state_snapshots.ndjson",
+      "input_events.ndjson",
+      "dimension_events.ndjson",
+      "anomalies.json",
+      "invariant_report.json",
+      "screenshots/contact_sheet.png",
+      "visual_qc_notes.md",
+      "claim_delta.json"
+    ]
+  },
+  "claimBoundary": "Phase C production-renderer expected-red calibration only; not real-host proof."
+}

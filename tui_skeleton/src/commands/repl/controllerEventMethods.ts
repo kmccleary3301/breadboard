@@ -29,10 +29,12 @@ import {
   finalizeThinkingArtifact,
   normalizeThinkingSignal,
 } from "./controllerActivityRuntime.js"
-import { applyTaskEvent, emitSubagentToast } from "./controllerEventTask.js"
+import { applyTaskEvent, emitSubagentToast, normalizeSubagentStatus, resolveSubagentStatus } from "./controllerEventTask.js"
+import { restartOwnedEngine } from "../../engine/engineSupervisor.js"
 import {
   DEBUG_EVENTS,
   MAX_RETRIES,
+  STREAM_STALL_TIMEOUT_MS,
   STOP_SOFT_TIMEOUT_MS,
   createSlotId,
   extractCtreeSnapshotSummary,
@@ -45,7 +47,8 @@ import {
   parseNumberish,
   sleep,
 } from "./controllerUtils.js"
-import { resolveSubagentUiPolicy } from "./subagentUiPolicy.js"
+import { isLifecycleNoiseHint } from "./hintPolicy.js"
+import { resolveSubagentUiPolicy, type SubagentUiPolicy } from "./subagentUiPolicy.js"
 type CompletionView = {
   completed: boolean
   status: string
@@ -53,6 +56,7 @@ type CompletionView = {
   hint?: string
   conversationLine?: string
   warningSlot?: { text: string; color?: string }
+  errorNotice?: { message: string; detail?: string[] }
 }
 
 const MAX_SEEN_EVENT_IDS = 2000
@@ -129,6 +133,112 @@ const takePendingDurationMs = (controller: { pendingStartedAt: number | null }):
   return null
 }
 
+const extractNestedRecord = (
+  source: Record<string, unknown>,
+  keys: ReadonlyArray<string>,
+): Record<string, unknown> | null => {
+  for (const key of keys) {
+    const value = source[key]
+    if (isRecord(value)) return value
+  }
+  return null
+}
+
+const extractPermissionScope = (
+  controller: { normalizeScope?: (value: unknown) => "session" | "project" | "global" },
+  payload: Record<string, unknown>,
+  action: Record<string, unknown> | null,
+): "session" | "project" | "global" => {
+  const scope =
+    payload.default_scope ??
+    payload.defaultScope ??
+    payload.scope ??
+    payload.effective_scope ??
+    payload.effectiveScope ??
+    action?.scope ??
+    action?.default_scope
+  return controller.normalizeScope?.(scope) ?? "project"
+}
+
+const extractPermissionString = (
+  payload: Record<string, unknown>,
+  action: Record<string, unknown> | null,
+  keys: ReadonlyArray<string>,
+): string | null => {
+  const keyList = [...keys]
+  const direct = extractString(payload, keyList)
+  if (direct) return direct
+  return action ? (extractString(action, keyList) ?? null) : null
+}
+
+const buildPermissionRequest = (
+  controller: any,
+  event: SessionEvent,
+  requestId: string,
+  payload: Record<string, unknown>,
+  action: Record<string, unknown> | null,
+  input: {
+    readonly tool: string
+    readonly kind: string
+    readonly summary: string
+    readonly diffText?: string | null
+    readonly ruleSuggestion?: string | null
+    readonly rewindable?: boolean
+  },
+): PermissionRequest => {
+  const actor = isRecord(event.actor) ? event.actor : extractNestedRecord(payload, ["actor", "agent", "agent_info"])
+  const task = extractNestedRecord(payload, ["task", "task_info", "work_item"]) ?? extractNestedRecord(action ?? {}, ["task", "task_info"])
+  const defaultScope = extractPermissionScope(controller, payload, action)
+  const effectiveScope =
+    extractPermissionString(payload, action, ["effective_scope", "effectiveScope", "scope", "approval_scope", "approvalScope"]) ??
+    defaultScope
+  const reason =
+    extractPermissionString(payload, action, ["reason", "why", "justification", "approval_reason", "approvalReason"]) ??
+    input.summary
+  const cwd = extractPermissionString(payload, action, ["cwd", "working_dir", "workingDirectory", "directory", "workspace"])
+  const launchPermissionMode =
+    extractPermissionString(payload, action, ["launch_permission_mode", "launchPermissionMode", "permission_mode", "permissionMode"]) ??
+    controller?.permissionMode ??
+    controller?.config?.permissionMode ??
+    null
+  const enginePermissionMode =
+    extractPermissionString(payload, action, ["engine_permission_mode", "enginePermissionMode", "engine_mode", "engineMode"]) ??
+    extractPermissionString(payload, null, ["policy_mode", "policyMode"]) ??
+    null
+  const agentId =
+    extractPermissionString(payload, action, ["agent_id", "agentId", "agent"]) ??
+    (actor ? extractString(actor, ["agent_id", "agentId", "id", "name"]) : null)
+  const agentLabel =
+    extractPermissionString(payload, action, ["agent_label", "agentLabel", "agent_name", "agentName"]) ??
+    (actor ? extractString(actor, ["label", "name", "agent_name", "role"]) : null)
+  const taskId =
+    extractPermissionString(payload, action, ["task_id", "taskId", "work_id", "workId"]) ??
+    (task ? extractString(task, ["task_id", "taskId", "work_id", "workId", "id"]) : null)
+  const taskLabel =
+    extractPermissionString(payload, action, ["task_label", "taskLabel", "task_name", "taskName", "title"]) ??
+    (task ? extractString(task, ["label", "title", "description", "name"]) : null)
+  return {
+    requestId,
+    tool: input.tool,
+    kind: input.kind,
+    rewindable: input.rewindable ?? (payload.rewindable === false ? false : true),
+    summary: input.summary,
+    diffText: input.diffText ?? null,
+    ruleSuggestion: input.ruleSuggestion ?? null,
+    defaultScope,
+    effectiveScope,
+    cwd,
+    reason,
+    launchPermissionMode,
+    enginePermissionMode,
+    agentId,
+    agentLabel,
+    taskId,
+    taskLabel,
+    createdAt: clockNow(controller),
+  }
+}
+
 const resolveThinkingMode = (controller: {
   viewPrefs?: { showReasoning?: boolean }
   runtimeFlags?: { allowFullThinking?: boolean; thinkingEnabled?: boolean }
@@ -176,6 +286,202 @@ const closeThinkingPreview = (controller: any, now = clockNow(controller)): void
   if (!current || current.lifecycle === "closed") return
   controller.thinkingPreview = closeThinkingPreviewState(current, now)
   controller.bumpRuntimeTelemetry?.("thinkingPreviewClosed")
+}
+
+const COMPLETION_SENTINEL = ">>>>>> END RESPONSE"
+
+const hasAssistantCompletionSentinel = (text: string): boolean => text.includes(COMPLETION_SENTINEL)
+
+const stripAssistantCompletionSentinel = (text: string): string => {
+  if (!hasAssistantCompletionSentinel(text)) return text
+  return text.replace(COMPLETION_SENTINEL, "").replace(/\s+$/g, "")
+}
+
+const settleFromAssistantCompletionSentinel = (controller: any, eventType: string): void => {
+  if (controller.completionSeen) return
+  controller.finalizeStreamingEntry()
+  controller.clearStopRequest?.()
+  controller.completionReached = true
+  controller.completionSeen = true
+  controller.activePromptOutcomeUnresolved = false
+  controller.lastCompletion = {
+    completed: true,
+    summary: {
+      completed: true,
+      method: "assistant_content",
+      reason: "explicit_completion_marker",
+      source: "assistant_content",
+    },
+  }
+  controller.pendingResponse = false
+  controller.pendingStartedAt = null
+  settlePendingToolLogEntries(controller, "success")
+  controller.thinkingInlineEntryId = null
+  closeThinkingPreview(controller, clockNow(controller))
+  if (controller.thinkingArtifact) {
+    controller.thinkingArtifact = finalizeThinkingArtifact(controller.thinkingArtifact, clockNow(controller))
+  }
+  controller.setActivityStatus?.("Finished", {
+    to: "completed",
+    eventType,
+    source: "runtime",
+  })
+}
+
+const settlePendingToolLogEntries = (controller: any, status: "success" | "error"): void => {
+  if (!Array.isArray(controller.toolEvents)) return
+  let changed = false
+  controller.toolEvents = controller.toolEvents.map((entry: any) => {
+    if (entry?.status !== "pending") return entry
+    changed = true
+    return { ...entry, status }
+  })
+  if (changed && !controller.eventsScheduled) controller.emitChange?.()
+}
+
+const surfaceTerminalError = (
+  controller: any,
+  message: string,
+  eventType: string,
+  detail?: string[] | null,
+  options?: { includeConversation?: boolean },
+): void => {
+  controller.finalizeStreamingEntry()
+  controller.pushHint(`[error] ${message}`)
+  if (options?.includeConversation) {
+    controller.addConversation("system", `[error] ${message}`)
+  }
+  controller.setGuardrailNotice?.(`Error: ${message}`, detail && detail.length > 0 ? detail.join("\n") : undefined)
+  controller.addTool(
+    "error",
+    `[error] ${message}`,
+    "error",
+    detail && detail.length > 0
+      ? {
+          display: {
+            title: "Runtime error",
+            summary: message,
+            detail,
+          },
+        }
+      : undefined,
+  )
+  controller.activePromptOutcomeUnresolved = false
+  controller.pendingResponse = false
+  controller.pendingStartedAt = null
+  settlePendingToolLogEntries(controller, "error")
+  controller.thinkingInlineEntryId = null
+  closeThinkingPreview(controller, clockNow(controller))
+  if (controller.thinkingArtifact) {
+    controller.thinkingArtifact = finalizeThinkingArtifact(controller.thinkingArtifact, clockNow(controller))
+  }
+  controller.setActivityStatus?.("Error received", { to: "error", eventType, source: "event" })
+}
+
+type CtreeTranscriptNotice =
+  | { severity: "warning"; message: string }
+  | { severity: "error"; message: string; detail?: string[] }
+
+const extractCtreeTranscriptNotice = (payload: Record<string, unknown>): CtreeTranscriptNotice | null => {
+  const node = isRecord(payload.node) ? payload.node : null
+  const nodePayload = node && isRecord(node.payload) ? node.payload : null
+  if (!nodePayload) return null
+  const transcript = isRecord(nodePayload.transcript) ? nodePayload.transcript : null
+  const source = transcript ?? nodePayload
+
+  const streamingDisabled = isRecord(source.streaming_disabled) ? source.streaming_disabled : null
+  if (streamingDisabled) {
+    const provider = extractString(streamingDisabled, ["provider"]) ?? "unknown"
+    const runtime = extractString(streamingDisabled, ["runtime"])
+    const reason = formatErrorPayload(streamingDisabled)
+    const providerLabel = runtime ? `Provider ${provider} (${runtime})` : `Provider ${provider}`
+    return {
+      severity: "warning",
+      message: `${providerLabel} rejected streaming: ${reason}. Falling back to non-streaming.`,
+    }
+  }
+
+  const providerRetry = isRecord(source.provider_retry) ? source.provider_retry : null
+  if (providerRetry) {
+    const route = extractString(providerRetry, ["route"]) ?? "unknown"
+    const attempt = parseNumberish(providerRetry.attempt)
+    const reason = formatErrorPayload(providerRetry)
+    const attemptLabel = attempt != null ? ` (attempt ${attempt})` : ""
+    return {
+      severity: "warning",
+      message: `Retrying provider route ${route}${attemptLabel}: ${reason}`,
+    }
+  }
+
+  const circuitOpen = isRecord(source.circuit_open) ? source.circuit_open : null
+  if (circuitOpen) {
+    const model = extractString(circuitOpen, ["model"]) ?? "unknown"
+    const notice = extractString(circuitOpen, ["notice", "message"]) ?? formatErrorPayload(circuitOpen)
+    return {
+      severity: "warning",
+      message: `Provider circuit open for ${model}: ${notice}`,
+    }
+  }
+
+  const runLoopException = isRecord(source.run_loop_exception) ? source.run_loop_exception : null
+  if (runLoopException) {
+    const message = formatErrorPayload(runLoopException)
+    const traceback = extractRawString(runLoopException, ["traceback"])
+    const detail = traceback
+      ? traceback.split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean).slice(0, 8)
+      : []
+    return {
+      severity: "error",
+      message,
+      detail,
+    }
+  }
+
+  return null
+}
+
+const noticeKey = (notice: CtreeTranscriptNotice): string =>
+  `${notice.severity}:${notice.message}`.replace(/\s+/g, " ").trim()
+
+const isStreamingFallbackTranscriptNotice = (notice: CtreeTranscriptNotice): boolean =>
+  notice.severity === "warning" &&
+  /rejected streaming|streaming_disabled|response\.keep_alive|response\.created|Falling back to non-streaming|You exceeded your current quota/i.test(notice.message)
+
+const shouldSurfaceTranscriptNotice = (controller: any, notice: CtreeTranscriptNotice): boolean => {
+  const key = noticeKey(notice)
+  const seen = controller.__breadboardSeenTranscriptNoticeKeys instanceof Set
+    ? controller.__breadboardSeenTranscriptNoticeKeys
+    : new Set<string>()
+  controller.__breadboardSeenTranscriptNoticeKeys = seen
+  if (seen.has(key)) return false
+  seen.add(key)
+  if (seen.size > 100) {
+    const first = seen.values().next().value
+    if (first) seen.delete(first)
+  }
+  return true
+}
+
+const userFacingTranscriptNotice = (notice: CtreeTranscriptNotice): string => {
+  if (isStreamingFallbackTranscriptNotice(notice)) {
+    return "Streaming fallback active; using non-streaming response for this turn."
+  }
+  return notice.message
+}
+
+const extractCompletionErrorNotice = (payload: unknown): { message: string; detail?: string[] } | null => {
+  const data = isRecord(payload) ? payload : null
+  if (!data) return null
+  const summary = isRecord(data.summary) ? data.summary : null
+  const error = isRecord(summary?.error) ? summary.error : isRecord(data.error) ? data.error : null
+  if (!error) return null
+  const message = formatErrorPayload(error).trim()
+  if (!message) return null
+  const traceback = extractRawString(error, ["traceback", "stack"])
+  const detail = traceback
+    ? traceback.split(/\r?\n/).map((line) => line.trimEnd()).filter(Boolean).slice(0, 8)
+    : []
+  return { message, detail: detail.length > 0 ? detail : undefined }
 }
 
 const markThinkingActive = (controller: any, eventType: string): void => {
@@ -292,16 +598,107 @@ const appendInlineThinkingBlock = (
   controller.thinkingInlineEntryId = entry.id
 }
 
+const hasEquivalentFinalAssistantEntry = (controller: any, text: string): boolean => {
+  const normalized = String(text ?? "").trim()
+  if (!normalized) return false
+  const conversation = Array.isArray(controller.conversation) ? controller.conversation : []
+  for (let index = conversation.length - 1; index >= 0; index -= 1) {
+    const entry = conversation[index]
+    if (!entry || entry.speaker !== "assistant" || entry.phase !== "final") continue
+    const previous = String(entry.text ?? "").trim()
+    if (!previous) continue
+    if (previous === normalized || previous.startsWith(normalized) || normalized.startsWith(previous)) {
+      return true
+    }
+    break
+  }
+  return false
+}
+
+const hasUnresolvedSubmittedPromptOutcome = (controller: any): boolean => {
+  if (controller.activePromptOutcomeUnresolved === true) return true
+  if (controller.completionSeen === true || controller.lastCompletion != null) return false
+  const conversation = Array.isArray(controller.conversation) ? controller.conversation : []
+  return conversation.some((entry: any) => entry?.speaker === "user" && String(entry?.text ?? "").trim().length > 0)
+}
+
+const normalizeRecoveryTaskStatus = (value: unknown): string => {
+  const raw = String(value ?? "").toLowerCase()
+  if (raw.includes("complete") || raw.includes("done") || raw.includes("success")) return "completed"
+  if (raw.includes("fail") || raw.includes("error")) return "failed"
+  if (raw.includes("block") || raw.includes("wait")) return "blocked"
+  if (raw.includes("cancel") || raw.includes("stop")) return "stopped"
+  if (raw.includes("run") || raw.includes("start") || raw.includes("progress")) return "running"
+  return raw || "unknown"
+}
+
+const maybeAddRecoveryTaskSummary = (controller: any): void => {
+  const tasks = Array.isArray(controller.tasks) ? controller.tasks : []
+  if (tasks.length === 0 || typeof controller.addTool !== "function") return
+  const counts = new Map<string, number>()
+  for (const task of tasks) {
+    const status = normalizeRecoveryTaskStatus(task?.status)
+    counts.set(status, (counts.get(status) ?? 0) + 1)
+  }
+  const count = (status: string) => counts.get(status) ?? 0
+  const taskIds = tasks
+    .map((task: any) => String(task?.id ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 4)
+    .join(", ")
+  const artifactRefs = tasks
+    .map((task: any) => String(task?.artifactPath ?? "").trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(", ")
+  const key = tasks
+    .map((task: any) => `${String(task?.id ?? "")}:${normalizeRecoveryTaskStatus(task?.status)}:${String(task?.artifactPath ?? "")}`)
+    .sort()
+    .join("|")
+  if (controller.recoveryTaskSummaryKey === key) return
+  controller.recoveryTaskSummaryKey = key
+  const lines = [
+    "[recovery tasks]",
+    `tasks=${tasks.length} running=${count("running")} blocked=${count("blocked")} failed=${count("failed")} completed=${count("completed")} stopped=${count("stopped")}`,
+    "state=preserved-local",
+    "next=/tasks to inspect preserved task summaries; /retry may resubmit the prior prompt; /resume starts a fresh owned session when available",
+  ]
+  if (taskIds) lines.push(`task_ids=${taskIds}`)
+  if (artifactRefs) lines.push(`artifact_refs=${artifactRefs}`)
+  controller.addTool("status", lines.join("\n"), "warning")
+}
+
+const eventVisibility = (event: SessionEvent): string | null =>
+  typeof event.visibility === "string" && event.visibility.trim().length > 0 ? event.visibility.trim() : null
+
+const isTranscriptVisibleEvent = (event: SessionEvent): boolean => {
+  const visibility = eventVisibility(event)
+  return visibility == null || visibility === "transcript"
+}
+
+const extractExplicitCompletionConversationLine = (data: Record<string, unknown>): string | undefined => {
+  const display = isRecord(data.display) ? data.display : isRecord(data.ui) ? data.ui : null
+  const visibility =
+    (display ? extractString(display, ["visibility", "surface"]) : undefined) ??
+    extractString(data, ["visibility", "surface"])
+  if (visibility !== "transcript") return undefined
+  return extractString(data, ["conversation", "final_message", "summary", "result", "output"])
+}
+
 const formatCompletion = (payload: unknown): CompletionView => {
   const data = isRecord(payload) ? payload : {}
   const completed = Boolean(
     data.completed ??
+      (isRecord(data.summary) ? data.summary.completed : undefined) ??
       data.complete ??
       data.success ??
       data.ok ??
       (typeof data.status === "string" && data.status.toLowerCase().includes("complete")),
   )
-  const reason = extractString(data, ["reason", "message", "detail", "status"]) ?? ""
+  const reason =
+    extractString(data, ["reason", "message", "detail", "status"]) ??
+    (isRecord(data.summary) ? extractString(data.summary, ["reason", "message", "detail", "status"]) : undefined) ??
+    ""
   const reasonText = reason.trim()
   const status = completed ? "Finished" : reasonText ? `Halted (${reasonText})` : "Halted"
   const toolLine = completed ? (reasonText ? `completed (${reasonText})` : "completed") : reasonText || "halted"
@@ -312,7 +709,8 @@ const formatCompletion = (payload: unknown): CompletionView => {
       ? "✻ Completed"
       : "✻ Halted"
   const conversationLine =
-    extractString(data, ["conversation", "final_message", "summary", "result", "output"]) ?? undefined
+    extractExplicitCompletionConversationLine(data) ??
+    (!completed && reasonText ? `[halted] ${reasonText}` : undefined)
   const warningSource = isRecord(data.warning) ? data.warning : isRecord(data.guardrail) ? data.guardrail : null
   const warningText =
     (warningSource ? extractString(warningSource, ["text", "summary", "message", "detail"]) : undefined) ??
@@ -321,7 +719,8 @@ const formatCompletion = (payload: unknown): CompletionView => {
   const warningSlot = warningText
     ? { text: warningText, color: warningColor ?? SEMANTIC_COLORS.warning }
     : undefined
-  return { completed, status, toolLine, hint, conversationLine, warningSlot }
+  const errorNotice = !completed ? extractCompletionErrorNotice(data) : null
+  return { completed, status, toolLine, hint, conversationLine, warningSlot, errorNotice: errorNotice ?? undefined }
 }
 
 const DEFAULT_TODO_SCOPE_KEY = "main"
@@ -639,7 +1038,8 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
   const resultWasError = this.isToolResultError(payload)
   const callId = callIdOverride ?? this.resolveToolCallId(payload)
   const callEntryId = callId ? this.toolLogEntryByCallId.get(callId) : null
-  const display = this.resolveToolDisplayPayload(payload)
+  const execOutput = callId ? this.toolExecOutputByCallId.get(callId) ?? null : null
+  const display = this.mergeToolExecOutputIntoDisplay(this.resolveToolDisplayPayload(payload), execOutput)
   const toolText = this.formatToolDisplayText(display ? { ...payload, display } : payload)
   const cleanedToolText = stripAnsi(toolText).trim()
   const shouldLog = Boolean(cleanedToolText && cleanedToolText !== "Tool")
@@ -714,16 +1114,78 @@ export function handleToolResult(this: any, payload: Record<string, unknown>, ca
 export async function streamLoop(this: any): Promise<void> {
   const appConfig = this.providers.args.config
   const retrySuffix = Number.isFinite(MAX_RETRIES) ? `/${MAX_RETRIES}` : ""
+  const streamStallTimeoutMs = Number.isFinite(STREAM_STALL_TIMEOUT_MS) && STREAM_STALL_TIMEOUT_MS > 0 ? STREAM_STALL_TIMEOUT_MS : 0
   while (!this.abortRequested) {
     this.abortController = new AbortController()
+    this.streamGeneration = Math.max(0, Number(this.streamGeneration ?? 0)) + 1
+    const streamGeneration = this.streamGeneration
+    let streamStallTriggered = false
+    let stallTimer: NodeJS.Timeout | null = null
+    const clearStreamStallTimer = () => {
+      if (stallTimer) {
+        clearTimeout(stallTimer)
+        stallTimer = null
+      }
+    }
+    const armStreamStallTimer = () => {
+      clearStreamStallTimer()
+      if (!(streamStallTimeoutMs > 0)) return
+      if (!this.pendingResponse || this.abortController.signal.aborted) return
+      stallTimer = setTimeout(() => {
+        if (!this.pendingResponse || this.abortController.signal.aborted) return
+        streamStallTriggered = true
+        try {
+          this.abortController.abort()
+        } catch {
+          // ignore abort races
+        }
+      }, streamStallTimeoutMs)
+    }
+const keepPendingDuringReconnect = () =>
+      Boolean(this.pendingResponse && !this.completionSeen && !this.abortRequested)
+    const attemptOwnedEngineRestart = async (eventType: string, message: string): Promise<boolean> => {
+      if (this.lifecycleSnapshot?.mode !== "local-owned") return false
+      this.lifecycleRestartCount = (this.lifecycleRestartCount ?? 0) + 1
+      this.pushHint(`Engine interrupted: ${message}. Restarting owned engine (attempt ${this.lifecycleRestartCount}).`)
+      maybeLifecycleToast(this, "Restarting engine", eventType)
+      this.setActivityStatus?.("Restarting engine", {
+        to: "reconnecting",
+        eventType,
+        source: "runtime",
+      })
+      this.emitChange?.()
+      try {
+        await restartOwnedEngine()
+        this.setActivityStatus?.("Reconnecting (engine restarted)", {
+          to: "reconnecting",
+          eventType: `${eventType}.restarted`,
+          source: "runtime",
+        })
+        this.emitChange?.()
+        return true
+      } catch (restartError) {
+        const detail = restartError instanceof Error ? restartError.message : String(restartError)
+        this.pushHint(`Owned engine restart failed: ${detail}`)
+        this.setActivityStatus?.("Recovery needed (engine restart failed)", {
+          to: "halted",
+          eventType: `${eventType}.restart_failed`,
+          source: "runtime",
+        })
+        this.disconnected = true
+        this.emitChange?.()
+        return false
+      }
+    }
     try {
       const resumeFrom = this.lastEventId ?? undefined
       const warnOnReconnect = this.hasStreamedOnce
       let warned = false
+      armStreamStallTimer()
       for await (const event of this.providers.sdk.stream(this.sessionId, {
         signal: this.abortController.signal,
         lastEventId: resumeFrom,
       })) {
+        clearStreamStallTimer()
         if (warnOnReconnect && !warned) {
           this.pushHint("Reconnected to stream; some history may be missing.")
           markTodoScopesStale(this)
@@ -733,37 +1195,81 @@ export async function streamLoop(this: any): Promise<void> {
         this.disconnected = false
         this.consecutiveFailures = 0
         this.stats.eventCount += 1
-        this.stats.lastTurn = event.turn ?? this.stats.lastTurn
+        if (
+          typeof event.turn === "number" &&
+          Number.isFinite(event.turn) &&
+          this.submissionHistory.length === 0 &&
+          this.stats.lastTurn == null
+        ) {
+          this.stats.lastTurn = Math.max(this.stats.lastTurn ?? 0, event.turn)
+        }
         const seqValue = typeof event.seq === "number" && Number.isFinite(event.seq) ? event.seq : null
         if (seqValue !== null) {
           this.lastEventId = String(seqValue)
         } else if (typeof event.id === "string" && /^[0-9]+$/.test(event.id.trim())) {
           this.lastEventId = event.id.trim()
         }
-        this.enqueueEvent(event)
+        if (!enqueueStreamEventForGeneration.call(this, event, streamGeneration)) {
+          break
+        }
+        if (event.type === "completion" || event.type === "run_finished") {
+          clearStreamStallTimer()
+        } else {
+          armStreamStallTimer()
+        }
+      }
+      clearStreamStallTimer()
+      if (this.abortRequested) {
+        this.pendingResponse = false
+        this.emitChange()
+        break
+      }
+      if (!this.pendingResponse && (this.completionSeen === true || this.lastCompletion != null)) {
+        this.consecutiveFailures = 0
+        await sleep(250)
+        continue
       }
       if (!this.awaitingRestart) {
-        this.pendingResponse = false
+        if (!keepPendingDuringReconnect()) {
+          this.pendingResponse = false
+        }
         this.consecutiveFailures += 1
-        const retriesExhausted =
-          Number.isFinite(MAX_RETRIES) && this.consecutiveFailures > MAX_RETRIES
+        const retriesExhausted = Number.isFinite(MAX_RETRIES) && this.consecutiveFailures > MAX_RETRIES
         if (retriesExhausted) {
-          this.pushHint("Stream ended unexpectedly and reconnection attempts exhausted.")
-          this.setActivityStatus?.("Disconnected", { to: "halted", eventType: "stream.end", source: "runtime" })
+          this.pendingResponse = false
+          if (streamStallTriggered) {
+            const stallDuration = formatDurationMs(streamStallTimeoutMs)
+            this.pushHint(`Stream stalled and reconnection attempts exhausted after ${stallDuration}.`)
+            this.setGuardrailNotice?.("Stream stalled and disconnected.", `No events arrived for ${stallDuration} while the run was still pending.`)
+            this.upsertLiveSlot?.("guardrail", "Stream stalled and disconnected.", SEMANTIC_COLORS.warning, "error")
+          } else {
+            this.pushHint("Stream ended unexpectedly and reconnection attempts exhausted.")
+          }
+          this.setActivityStatus?.("Disconnected", { to: "halted", eventType: streamStallTriggered ? "stream.stall" : "stream.end", source: "runtime" })
           this.disconnected = true
           this.emitChange()
           break
         }
         const retryDelay = Math.min(4000, 500 * 2 ** (this.consecutiveFailures - 1))
-        this.pushHint(
-          `Stream ended unexpectedly. Retrying in ${retryDelay}ms (attempt ${this.consecutiveFailures}${retrySuffix}).`,
-        )
-        maybeLifecycleToast(this, "Reconnecting", "stream.reconnect")
-        this.setActivityStatus?.(`Reconnecting (${this.consecutiveFailures}${retrySuffix})`, {
-          to: "reconnecting",
-          eventType: "stream.reconnect",
-          source: "runtime",
-        })
+        if (streamStallTriggered) {
+          const stallDuration = formatDurationMs(streamStallTimeoutMs)
+          this.pushHint(`Stream stalled after ${stallDuration}. Retrying in ${retryDelay}ms (attempt ${this.consecutiveFailures}${retrySuffix}).`)
+          this.upsertLiveSlot?.("guardrail", "Stream stalled. Reconnecting…", SEMANTIC_COLORS.warning, "warning")
+          maybeLifecycleToast(this, "Reconnecting", "stream.stall")
+          this.setActivityStatus?.(`Reconnecting (${this.consecutiveFailures}${retrySuffix})`, {
+            to: "reconnecting",
+            eventType: "stream.stall",
+            source: "runtime",
+          })
+        } else {
+          this.pushHint(`Stream ended unexpectedly. Retrying in ${retryDelay}ms (attempt ${this.consecutiveFailures}${retrySuffix}).`)
+          maybeLifecycleToast(this, "Reconnecting", "stream.reconnect")
+          this.setActivityStatus?.(`Reconnecting (${this.consecutiveFailures}${retrySuffix})`, {
+            to: "reconnecting",
+            eventType: "stream.reconnect",
+            source: "runtime",
+          })
+        }
         this.emitChange()
         await sleep(retryDelay)
         continue
@@ -775,8 +1281,11 @@ export async function streamLoop(this: any): Promise<void> {
       this.emitChange()
       await sleep(250)
     } catch (error) {
+      clearStreamStallTimer()
       if (error instanceof ApiError && error.status === 409) {
-        this.pendingResponse = false
+        if (!keepPendingDuringReconnect()) {
+          this.pendingResponse = false
+        }
         this.pushHint("Stream resume window exceeded; reconnecting without history.")
         markTodoScopesStale(this)
         if (this.ctreeTreeRequested && this.ctreeSource !== "disk") {
@@ -793,6 +1302,33 @@ export async function streamLoop(this: any): Promise<void> {
         this.emitChange()
         await sleep(250)
         continue
+      }
+      if (error instanceof ApiError && error.status === 404 && this.lifecycleSnapshot?.mode === "local-owned") {
+        const canRecoverCompletedLocalTranscript =
+          !this.pendingResponse && (this.completionSeen === true || this.lastCompletion != null)
+        if (!this.pendingResponse && (this.conversation?.length === 0 && this.toolEvents?.length === 0 || canRecoverCompletedLocalTranscript)) {
+          const recovered = await this.recoverIdleSessionAfterEngineRestart?.({
+            preserveLocalTranscript: canRecoverCompletedLocalTranscript,
+          })
+          if (recovered) {
+            await sleep(250)
+            continue
+          }
+        }
+        if (hasUnresolvedSubmittedPromptOutcome(this)) {
+          this.pushHint("Submitted prompt outcome is unknown after engine recovery; use /retry to resend if needed.")
+        }
+        maybeAddRecoveryTaskSummary(this)
+        this.pendingResponse = false
+        this.pushHint("Owned engine is reachable again, but the previous session is no longer available.")
+        this.setActivityStatus?.("Recovery needed (session missing)", {
+          to: "halted",
+          eventType: "stream.session.missing",
+          source: "runtime",
+        })
+        this.disconnected = true
+        this.emitChange()
+        break
       }
       if (this.abortController.signal.aborted) {
         if (this.abortRequested) {
@@ -814,31 +1350,67 @@ export async function streamLoop(this: any): Promise<void> {
       }
       this.consecutiveFailures += 1
       const delay = Math.min(4000, 500 * 2 ** (this.consecutiveFailures - 1))
-      const message = error instanceof Error ? error.message : String(error)
-      const retriesExhausted =
-        Number.isFinite(MAX_RETRIES) && this.consecutiveFailures > MAX_RETRIES
+      const message =
+        streamStallTriggered && streamStallTimeoutMs > 0
+          ? `No events arrived for ${formatDurationMs(streamStallTimeoutMs)}.`
+          : error instanceof Error
+            ? error.message
+            : String(error)
+      const retriesExhausted = Number.isFinite(MAX_RETRIES) && this.consecutiveFailures > MAX_RETRIES
+      if (!streamStallTriggered && this.lifecycleSnapshot?.mode === "local-owned" && this.consecutiveFailures === 1) {
+        const restarted = await attemptOwnedEngineRestart("engine.restart", message)
+        if (restarted) {
+          await sleep(250)
+          continue
+        }
+        break
+      }
       if (retriesExhausted) {
         this.pendingResponse = false
+        if (streamStallTriggered) {
+          this.setGuardrailNotice?.("Stream stalled and disconnected.", message)
+          this.upsertLiveSlot?.("guardrail", "Stream stalled and disconnected.", SEMANTIC_COLORS.warning, "error")
+        }
         this.pushHint(`Stream interruption: ${message}. Giving up after ${MAX_RETRIES} attempts.`)
-        this.setActivityStatus?.("Disconnected", { to: "halted", eventType: "stream.error", source: "runtime" })
+        this.setActivityStatus?.("Disconnected", { to: "halted", eventType: streamStallTriggered ? "stream.stall" : "stream.error", source: "runtime" })
         this.disconnected = true
         this.emitChange()
         break
       }
-      this.pendingResponse = false
-      this.pushHint(
-        `Stream interruption: ${message}. Retrying in ${delay}ms (attempt ${this.consecutiveFailures}${retrySuffix}).`,
-      )
-      maybeLifecycleToast(this, "Reconnecting", "stream.error")
+      if (!keepPendingDuringReconnect()) {
+        this.pendingResponse = false
+      }
+      if (streamStallTriggered) {
+        this.upsertLiveSlot?.("guardrail", "Stream stalled. Reconnecting…", SEMANTIC_COLORS.warning, "warning")
+        maybeLifecycleToast(this, "Reconnecting", "stream.stall")
+      } else {
+        maybeLifecycleToast(this, "Reconnecting", "stream.error")
+      }
+      this.pushHint(`Stream interruption: ${message}. Retrying in ${delay}ms (attempt ${this.consecutiveFailures}${retrySuffix}).`)
       this.setActivityStatus?.(`Reconnecting (${this.consecutiveFailures}${retrySuffix})`, {
         to: "reconnecting",
-        eventType: "stream.error",
+        eventType: streamStallTriggered ? "stream.stall" : "stream.error",
         source: "runtime",
       })
       this.emitChange()
       await sleep(delay)
+    } finally {
+      clearStreamStallTimer()
     }
   }
+}
+
+export function enqueueStreamEventForGeneration(this: any, event: SessionEvent, streamGeneration: number): boolean {
+  if (
+    typeof streamGeneration === "number" &&
+    Number.isFinite(streamGeneration) &&
+    typeof this.streamGeneration === "number" &&
+    this.streamGeneration !== streamGeneration
+  ) {
+    return false
+  }
+  this.enqueueEvent(event)
+  return true
 }
 
 export function enqueueEvent(this: any, event: SessionEvent): void {
@@ -868,6 +1440,10 @@ export function enqueueEvent(this: any, event: SessionEvent): void {
     ...this.runtimeTelemetry,
     eventMaxQueueDepth: Math.max(this.runtimeTelemetry.eventMaxQueueDepth ?? 0, this.pendingEvents.length),
   }
+  if (shouldFlushEventImmediately(event.type)) {
+    this.flushPendingEvents()
+    return
+  }
   const maxBatch = Math.max(1, Number(this.runtimeFlags?.eventCoalesceMaxBatch ?? 128))
   if (this.pendingEvents.length >= maxBatch) {
     this.flushPendingEvents()
@@ -887,6 +1463,20 @@ export function enqueueEvent(this: any, event: SessionEvent): void {
     this.flushPendingEvents()
   }, coalesceMs)
 }
+
+const IMMEDIATE_EVENT_TYPES = new Set<string>([
+  "assistant.message.delta",
+  "assistant_delta",
+  "assistant_message",
+  "assistant.reasoning.delta",
+  "assistant.thought_summary.delta",
+  "tool.exec.stdout.delta",
+  "tool.exec.stderr.delta",
+  "completion",
+  "error",
+])
+
+const shouldFlushEventImmediately = (eventType: string): boolean => IMMEDIATE_EVENT_TYPES.has(String(eventType || ""))
 
 export function flushPendingEvents(this: any): void {
   if (this.eventFlushTimer) {
@@ -1015,6 +1605,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "assistant.message.start": {
+      if (!isTranscriptVisibleEvent(event)) break
       this.finalizeStreamingEntry()
       markAssistantResponding(this, event.type)
       closeThinkingPreview(this, clockNow(this))
@@ -1022,6 +1613,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "assistant.message.delta": {
+      if (!isTranscriptVisibleEvent(event)) break
       markAssistantResponding(this, event.type)
       const payload = isRecord(event.payload) ? event.payload : {}
       const delta = extractRawString(payload, ["delta", "text"])
@@ -1031,24 +1623,32 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "assistant.message.end": {
-      this.finalizeStreamingEntry()
+      if (!isTranscriptVisibleEvent(event)) break
+      // Keep the hot assistant entry alive until a real turn boundary. Some providers
+      // emit a cumulative assistant_message after end but before completion.
       break
     }
     case "assistant_message": {
+      if (!isTranscriptVisibleEvent(event)) break
       markAssistantResponding(this, event.type)
       closeThinkingPreview(this, clockNow(this))
       const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
       const text = typeof raw === "string" ? raw : ""
+      const sentinelComplete = hasAssistantCompletionSentinel(text)
       const normalizedText = this.normalizeAssistantText(text)
       const trimmed = normalizedText.trim()
       if (!trimmed || trimmed.toLowerCase() === "none") break
-      this.addConversation("assistant", normalizedText, "streaming")
+      if (shouldIgnoreStaleCumulativeAssistantMessage(this, normalizedText)) break
+      rebindFinalAssistantEntryForCumulativeMessage(this, normalizedText)
+      this.setStreamingConversation("assistant", normalizedText)
       this.appendMarkdownChunk(normalizedText)
-      // Non-streaming assistant_message events can finalize immediately.
-      this.finalizeStreamingEntry()
+      if (sentinelComplete) {
+        settleFromAssistantCompletionSentinel(this, event.type)
+      }
       break
     }
     case "assistant_delta": {
+      if (!isTranscriptVisibleEvent(event)) break
       markAssistantResponding(this, event.type)
       const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
       const delta = typeof raw === "string" ? raw : ""
@@ -1080,7 +1680,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       if (signal) {
         appendInlineThinkingBlock(this, signal)
       }
-      if ((this.viewPrefs.showReasoning && this.runtimeFlags?.allowFullThinking === true) || DEBUG_EVENTS) {
+      if (DEBUG_EVENTS) {
         const rawPeekAllowed =
           this.runtimeFlags?.allowRawThinkingPeek === true || capabilities.rawThinkingPeek === true
         const peekText = signal?.kind === "summary" || rawPeekAllowed ? delta : ""
@@ -1094,10 +1694,20 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "user_message": {
+      if (!isTranscriptVisibleEvent(event)) break
       const raw = typeof event.payload?.text === "string" ? event.payload.text : JSON.stringify(event.payload)
-      const text = typeof raw === "string" ? raw : ""
+      const text = typeof raw === "string" ? this.normalizeUserEchoText(raw) : ""
       const normalized = text.trim()
       if (this.pendingUserEcho && normalized && this.pendingUserEcho === normalized) {
+        this.pendingUserEcho = null
+        break
+      }
+      const lastConversation = this.conversation.at(-1)
+      const lastUserText =
+        lastConversation?.speaker === "user"
+          ? this.normalizeUserEchoText(String(lastConversation.text ?? "")).trim()
+          : ""
+      if (this.pendingResponse && normalized && lastUserText === normalized) {
         this.pendingUserEcho = null
         break
       }
@@ -1105,11 +1715,21 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "user.message": {
+      if (!isTranscriptVisibleEvent(event)) break
       const payload = isRecord(event.payload) ? event.payload : {}
       const raw = extractString(payload, ["text", "content", "message"]) ?? JSON.stringify(event.payload)
-      const text = typeof raw === "string" ? raw : ""
+      const text = typeof raw === "string" ? this.normalizeUserEchoText(raw) : ""
       const normalized = text.trim()
       if (this.pendingUserEcho && normalized && this.pendingUserEcho === normalized) {
+        this.pendingUserEcho = null
+        break
+      }
+      const lastConversation = this.conversation.at(-1)
+      const lastUserText =
+        lastConversation?.speaker === "user"
+          ? this.normalizeUserEchoText(String(lastConversation.text ?? "")).trim()
+          : ""
+      if (this.pendingResponse && normalized && lastUserText === normalized) {
         this.pendingUserEcho = null
         break
       }
@@ -1117,6 +1737,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       break
     }
     case "user.command": {
+      if (!isTranscriptVisibleEvent(event)) break
       const payload = isRecord(event.payload) ? event.payload : {}
       const raw = extractString(payload, ["command", "text", "content"]) ?? JSON.stringify(event.payload)
       const command = typeof raw === "string" ? raw : ""
@@ -1150,18 +1771,14 @@ export function applyEvent(this: any, event: SessionEvent): void {
           : typeof payload.rule_suggestion === "string"
             ? payload.rule_suggestion
             : null
-      const defaultScope = this.normalizeScope(payload.default_scope)
-      const request: PermissionRequest = {
-        requestId,
+      const request = buildPermissionRequest(this, event, requestId, payload, null, {
         tool,
         kind,
         rewindable,
         summary,
         diffText,
         ruleSuggestion,
-        defaultScope,
-        createdAt: clockNow(this),
-      }
+      })
       if (this.permissionActive) {
         this.permissionQueue.push(request)
       } else {
@@ -1187,17 +1804,14 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const diffText =
         extractString(payload, ["diff", "diff_text"]) ??
         extractString(action, ["diff_summary"])
-      const request: PermissionRequest = {
-        requestId,
+      const request = buildPermissionRequest(this, event, requestId, payload, action, {
         tool,
         kind,
         rewindable: payload.rewindable === false ? false : true,
         summary,
         diffText: diffText ?? null,
         ruleSuggestion: extractString(payload, ["rule", "rule_suggestion"]) ?? null,
-        defaultScope: this.normalizeScope(payload.default_scope),
-        createdAt: clockNow(this),
-      }
+      })
       if (this.permissionActive) {
         this.permissionQueue.push(request)
       } else {
@@ -1214,30 +1828,43 @@ export function applyEvent(this: any, event: SessionEvent): void {
       const response =
         extractString(payload, ["response", "decision"]) ??
         (isRecord(payload.responses) && typeof payload.responses.default === "string" ? payload.responses.default : undefined)
-      const responseLabel = response ? response.replace(/[_-]+/g, " ") : "response received"
+      const status = extractString(payload, ["status", "state"]) ?? ""
+      const error = extractString(payload, ["error", "message", "detail"])
+      const retryable = payload.retryable === true || payload.can_retry === true
+      const responseLabel = response ? response.replace(/[_-]+/g, " ") : status ? status.replace(/[_-]+/g, " ") : "response received"
       const denied = Boolean(responseLabel.match(/\b(deny|denied|reject|rejected|block|blocked)\b/i))
-      this.addTool("status", `[permission] ${responseLabel}`, "success")
-      this.pushHint(`Permission ${responseLabel}.`)
+      const failed = Boolean(error) || Boolean(responseLabel.match(/\b(error|failed|failure|timeout)\b/i))
+      const retryText = retryable ? " • retryable" : ""
+      this.addTool("status", `[permission] ${responseLabel}${retryText}${error ? `: ${error}` : ""}`, failed ? "error" : "success")
+      this.pushHint(failed ? `Permission ${responseLabel}${retryText}.` : `Permission ${responseLabel}.`)
       this.setPermissionActive(null)
-      this.pendingResponse = !denied
-      this.setActivityStatus?.(denied ? "Permission denied" : "Permission response received", {
-        to: denied ? "halted" : "permission_resolved",
+      this.pendingResponse = !denied && !failed
+      this.setActivityStatus?.(
+        failed ? (retryable ? "Permission error (retryable)" : "Permission error") : denied ? "Permission denied" : "Permission response received",
+        {
+        to: denied || failed ? "halted" : "permission_resolved",
         eventType: event.type,
         source: "event",
-      })
+        },
+      )
       break
     }
     case "permission.decision": {
       const payload = isRecord(event.payload) ? event.payload : {}
       const response = extractString(payload, ["decision", "response"]) ?? "decision received"
+      const status = extractString(payload, ["status", "state"]) ?? ""
+      const error = extractString(payload, ["error", "message", "detail"])
+      const retryable = payload.retryable === true || payload.can_retry === true
       const responseLabel = response.replace(/[_-]+/g, " ")
       const denied = Boolean(responseLabel.match(/\b(deny|denied|reject|rejected|block|blocked)\b/i))
-      this.addTool("status", `[permission] ${responseLabel}`, "success")
-      this.pushHint(`Permission ${responseLabel}.`)
+      const failed = Boolean(error) || Boolean(status.match(/\b(error|failed|failure|timeout)\b/i))
+      const retryText = retryable ? " • retryable" : ""
+      this.addTool("status", `[permission] ${responseLabel}${retryText}${error ? `: ${error}` : ""}`, failed ? "error" : "success")
+      this.pushHint(failed ? `Permission ${responseLabel}${retryText}.` : `Permission ${responseLabel}.`)
       this.setPermissionActive(null)
-      this.pendingResponse = !denied
-      this.setActivityStatus?.(denied ? "Permission denied" : "Permission response received", {
-        to: denied ? "halted" : "permission_resolved",
+      this.pendingResponse = !denied && !failed
+      this.setActivityStatus?.(failed ? (retryable ? "Permission error (retryable)" : "Permission error") : denied ? "Permission denied" : "Permission response received", {
+        to: denied || failed ? "halted" : "permission_resolved",
         eventType: event.type,
         source: "event",
       })
@@ -1284,13 +1911,15 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.skillsSources = sources
       if (this.skillsMenu.status !== "hidden") {
         this.skillsMenu = { status: "ready", catalog, selection, sources }
+        this.pushHint("Skills catalog updated.")
       }
-      this.pushHint("Skills catalog updated.")
       break
     }
     case "skills_selection": {
       const payload = isRecord(event.payload) ? event.payload : {}
       const selection = (payload.selection ?? payload) as SkillSelection
+      const previousSelection = this.skillsSelection
+      const selectionChanged = JSON.stringify(previousSelection ?? null) !== JSON.stringify(selection ?? null)
       this.skillsSelection = selection
       if (this.skillsMenu.status === "ready") {
         this.skillsMenu = {
@@ -1299,8 +1928,10 @@ export function applyEvent(this: any, event: SessionEvent): void {
           selection,
           sources: this.skillsMenu.sources,
         }
+        if (selectionChanged) {
+          this.pushHint("Skills selection updated.")
+        }
       }
-      this.pushHint("Skills selection updated.")
       break
     }
     case "task_event": {
@@ -1312,13 +1943,19 @@ export function applyEvent(this: any, event: SessionEvent): void {
     case "agent.end": {
       const payload = isRecord(event.payload) ? event.payload : {}
       const policy = resolveSubagentUiPolicy(this.runtimeFlags ?? {}, process.env)
-      const status = event.type.split(".")[1] ?? "update"
+      const eventStatus = event.type.split(".")[1] ?? "update"
+      const status = resolveSubagentStatus(payload, eventStatus)
+      const normalizedStatus = normalizeSubagentStatus(status)
       const description = extractString(payload, ["summary", "description", "title"]) ?? "Subagent"
       const taskId = extractString(payload, ["task_id", "id"]) ?? undefined
       const lineParts = [status, description, taskId].filter(Boolean)
       const line = lineParts.length > 0 ? lineParts.join(" · ") : JSON.stringify(payload)
       if (policy.routeTaskEventsToToolRail) {
-        this.addTool("status", `[agent] ${line}`, status === "end" ? "success" : "pending")
+        this.addTool(
+          "status",
+          `[agent] ${line}`,
+          normalizedStatus === "completed" ? "success" : normalizedStatus === "failed" ? "error" : "pending",
+        )
       }
       this.handleTaskEvent({ ...payload, status }, {
         eventType: event.type,
@@ -1343,6 +1980,24 @@ export function applyEvent(this: any, event: SessionEvent): void {
           node: payload.node as unknown as CTreeNode,
           snapshot: payload.snapshot as unknown as CTreeSnapshotSummary,
         })
+      }
+      const transcriptNotice = extractCtreeTranscriptNotice(payload)
+      if (transcriptNotice?.severity === "warning") {
+        if (isStreamingFallbackTranscriptNotice(transcriptNotice)) {
+          shouldSurfaceTranscriptNotice(this, transcriptNotice)
+          this.scheduleCtreeRefresh()
+          break
+        }
+        if (!shouldSurfaceTranscriptNotice(this, transcriptNotice)) {
+          this.scheduleCtreeRefresh()
+          break
+        }
+        const message = userFacingTranscriptNotice(transcriptNotice)
+        this.finalizeStreamingEntry()
+        this.pushHint(`[warning] ${message}`)
+        this.addTool("status", `[warning] ${message}`, "error")
+      } else if (transcriptNotice?.severity === "error") {
+        surfaceTerminalError(this, transcriptNotice.message, event.type, transcriptNotice.detail, { includeConversation: true })
       }
       this.scheduleCtreeRefresh()
       break
@@ -1507,7 +2162,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
         this.toolExecSlotsById.delete(slotKey)
       }
       const outputKey = callId ?? execId
-      if (outputKey) {
+      if (outputKey && !callId) {
         this.takeToolExecOutput(outputKey)
       }
       if (execId) this.toolExecMetaById.delete(execId)
@@ -1550,10 +2205,6 @@ export function applyEvent(this: any, event: SessionEvent): void {
     }
     case "log_link": {
       this.finalizeStreamingEntry()
-      const payload = isRecord(event.payload) ? event.payload : {}
-      const link = extractString(payload, ["url", "href", "path"]) ?? JSON.stringify(payload)
-      this.addTool("status", `[log] ${link}`)
-      this.pushHint("Log link available.")
       break
     }
     case "usage.update": {
@@ -1581,7 +2232,9 @@ export function applyEvent(this: any, event: SessionEvent): void {
     case "cancel.acknowledged": {
       this.clearStopRequest()
       this.pendingResponse = false
+      this.activePromptOutcomeUnresolved = false
       this.pendingStartedAt = null
+      settlePendingToolLogEntries(this, "error")
       this.thinkingInlineEntryId = null
       closeThinkingPreview(this, clockNow(this))
       if (this.thinkingArtifact) {
@@ -1598,16 +2251,7 @@ export function applyEvent(this: any, event: SessionEvent): void {
       if (DEBUG_EVENTS && message !== raw) {
         console.error(`[repl error payload] ${raw}`)
       }
-      this.pushHint(`[error] ${message}`)
-      this.addTool("error", `[error] ${message}`, "error")
-      this.pendingResponse = false
-      this.pendingStartedAt = null
-      this.thinkingInlineEntryId = null
-      closeThinkingPreview(this, clockNow(this))
-      if (this.thinkingArtifact) {
-        this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, clockNow(this))
-      }
-      this.setActivityStatus?.("Error received", { to: "error", eventType: event.type, source: "event" })
+      surfaceTerminalError(this, message, event.type)
       break
     }
     case "completion": {
@@ -1628,11 +2272,13 @@ export function applyEvent(this: any, event: SessionEvent): void {
       }
       this.completionReached = view.completed
       this.completionSeen = true
+      this.activePromptOutcomeUnresolved = false
       this.lastCompletion = {
         completed: view.completed,
         summary: (event.payload && (event.payload.summary as Record<string, unknown> | undefined)) ?? null,
       }
       this.pendingResponse = false
+      settlePendingToolLogEntries(this, view.completed ? "success" : "error")
       this.thinkingInlineEntryId = null
       closeThinkingPreview(this, clockNow(this))
       this.setActivityStatus?.(view.status, {
@@ -1643,16 +2289,48 @@ export function applyEvent(this: any, event: SessionEvent): void {
       if (this.thinkingArtifact) {
         this.thinkingArtifact = finalizeThinkingArtifact(this.thinkingArtifact, clockNow(this))
       }
-      if (view.conversationLine) {
+      const completionErrorText = view.errorNotice ? `[error] ${view.errorNotice.message}` : null
+      if (view.conversationLine && !hasEquivalentFinalAssistantEntry(this, view.conversationLine)) {
         const lastEntry = this.conversation.length > 0 ? this.conversation[this.conversation.length - 1] : undefined
         if (!(lastEntry && lastEntry.speaker === "system" && lastEntry.text === view.conversationLine)) {
           this.addConversation("system", view.conversationLine)
         }
       }
-      if (cookedHint) this.pushHint(cookedHint)
+      if (completionErrorText) {
+        const lastEntry = this.conversation.length > 0 ? this.conversation[this.conversation.length - 1] : undefined
+        if (!(lastEntry && lastEntry.speaker === "system" && lastEntry.text === completionErrorText)) {
+          this.addConversation("system", completionErrorText)
+        }
+      }
+      if (cookedHint && !isLifecycleNoiseHint(cookedHint)) this.pushHint(cookedHint)
+      if (completionErrorText) {
+        this.pushHint(completionErrorText)
+        this.addTool(
+          "error",
+          completionErrorText,
+          "error",
+          view.errorNotice?.detail && view.errorNotice.detail.length > 0
+            ? {
+                display: {
+                  title: "Runtime error",
+                  summary: view.errorNotice.message,
+                  detail: view.errorNotice.detail,
+                },
+              }
+            : undefined,
+        )
+      }
       if (view.warningSlot) {
         this.upsertLiveSlot("guardrail", view.warningSlot.text, view.warningSlot.color, "error")
         this.setGuardrailNotice(view.warningSlot.text, cookedHint ?? view.conversationLine)
+      } else if (completionErrorText) {
+        this.upsertLiveSlot("guardrail", completionErrorText, SEMANTIC_COLORS.warning, "error")
+        this.setGuardrailNotice(
+          `Error: ${view.errorNotice?.message ?? "Request failed"}`,
+          view.errorNotice?.detail && view.errorNotice.detail.length > 0
+            ? view.errorNotice.detail.join("\n")
+            : cookedHint ?? view.conversationLine,
+        )
       } else {
         this.removeLiveSlot("guardrail")
         this.clearGuardrailNotice()
@@ -1668,9 +2346,10 @@ export function applyEvent(this: any, event: SessionEvent): void {
       this.clearStopRequest()
       const payload = isRecord(event.payload) ? event.payload : {}
       const completed = Boolean(payload.completed)
-      const reason = typeof payload.reason === "string" ? payload.reason : undefined
       this.pendingResponse = false
+      this.activePromptOutcomeUnresolved = false
       this.pendingStartedAt = null
+      settlePendingToolLogEntries(this, completed ? "success" : "error")
       this.thinkingInlineEntryId = null
       closeThinkingPreview(this, clockNow(this))
       this.setActivityStatus?.(completed ? "Finished" : "Halted", {
@@ -1685,8 +2364,6 @@ export function applyEvent(this: any, event: SessionEvent): void {
         this.completionSeen = true
         this.completionReached = completed
       }
-      const hint = reason ? `Run finished (${reason}).` : "Run finished."
-      this.pushHint(hint)
       break
     }
     case "run_finished": {
@@ -1696,9 +2373,10 @@ export function applyEvent(this: any, event: SessionEvent): void {
         this.stats.eventCount = event.payload.eventCount
       }
       const completed = Boolean(event.payload?.completed)
-      const reason = typeof event.payload?.reason === "string" ? event.payload.reason : undefined
       this.pendingResponse = false
+      this.activePromptOutcomeUnresolved = false
       this.pendingStartedAt = null
+      settlePendingToolLogEntries(this, completed ? "success" : "error")
       this.thinkingInlineEntryId = null
       closeThinkingPreview(this, clockNow(this))
       this.setActivityStatus?.(completed ? "Finished" : "Halted", {
@@ -1713,8 +2391,6 @@ export function applyEvent(this: any, event: SessionEvent): void {
         this.completionSeen = true
         this.completionReached = completed
       }
-      const hint = reason ? `Run finished (${reason}).` : "Run finished."
-      this.pushHint(hint)
       break
     }
     default:
@@ -1730,7 +2406,60 @@ export function normalizeAssistantText(this: any, text: string): string {
   if (trimmed.startsWith("<TOOL_CALL>") && trimmed.includes("mark_task_complete")) {
     return "No coding task detected. Describe a concrete change (e.g., \"Implement bubble sort in sorter.py\") or switch models with /model."
   }
-  return text
+  return stripAssistantCompletionSentinel(text)
+}
+
+const rebindFinalAssistantEntryForCumulativeMessage = (controller: any, normalizedText: string): boolean => {
+  if (controller.streamingEntryId) return false
+  const conversation = Array.isArray(controller.conversation) ? controller.conversation : []
+  const lastEntry = conversation.length > 0 ? conversation[conversation.length - 1] : null
+  if (!lastEntry || lastEntry.speaker !== "assistant" || lastEntry.phase !== "final") return false
+  const previousText = String(lastEntry.text ?? "")
+  if (!previousText.trim()) return false
+  const compatible =
+    normalizedText === previousText ||
+    normalizedText.startsWith(previousText) ||
+    previousText.startsWith(normalizedText)
+  if (!compatible) return false
+  controller.streamingEntryId = lastEntry.id
+  conversation[conversation.length - 1] = {
+    ...lastEntry,
+    text: normalizedText,
+    phase: "streaming",
+  }
+  return true
+}
+
+const isCompatibleCumulativeAssistantText = (previousText: string, nextText: string): boolean => {
+  const previous = String(previousText ?? "")
+  const next = String(nextText ?? "")
+  if (!previous.trim() || !next.trim()) return true
+  return next === previous || next.startsWith(previous) || previous.startsWith(next)
+}
+
+const shouldIgnoreStaleCumulativeAssistantMessage = (controller: any, normalizedText: string): boolean => {
+  if (!controller.streamingEntryId) return false
+  const conversation = Array.isArray(controller.conversation) ? controller.conversation : []
+  const active = conversation.find((entry: { id: string }) => entry.id === controller.streamingEntryId)
+  if (!active || active.speaker !== "assistant") return false
+  if (isCompatibleCumulativeAssistantText(String(active.text ?? ""), normalizedText)) return false
+  return hasEquivalentFinalAssistantEntry(controller, normalizedText)
+}
+
+export function normalizeUserEchoText(this: any, text: string): string {
+  const normalized = text.replace(/\r\n/g, "\n")
+  const promptSuffixMarkers = [
+    "\n\nindustry_coder_refs/",
+    "\n\n<TOOLS_AVAILABLE>",
+    "\n\n**PRIMARY FORMAT",
+    "\n\n# PRIMARY FORMAT",
+  ]
+  let cutoff = normalized.length
+  for (const marker of promptSuffixMarkers) {
+    const index = normalized.indexOf(marker)
+    if (index >= 0) cutoff = Math.min(cutoff, index)
+  }
+  return normalized.slice(0, cutoff).trimEnd()
 }
 
 export function appendAssistantDelta(this: any, delta: string): void {

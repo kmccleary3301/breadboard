@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "id": "replay_disconnect_render_autopsy_latekill_20260521-161632",
+  "title": "Generated replay for disconnect_render_autopsy_latekill_20260521-161632",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "prelaunchShellHistory": [
+      {
+        "id": "capture-pre",
+        "text": "BB_CAPTURE_replay_disconnect_render_autopsy_latekill_20260521-161632"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 90000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 100,
+      "rows": 30
+    },
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "sourceCapture": {
+    "captureId": "disconnect_render_autopsy_latekill_20260521-161632",
+    "artifactRoot": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_tui_runtime_20260409/docs_tmp/cli_phase_6/CODESIGN_p14/disconnect_render_autopsy_latekill_20260521-161632",
+    "conversionVersion": 1,
+    "droppedEvents": [],
+    "timingMode": "logical-checkpoint"
+  },
+  "timeline": [
+    {
+      "kind": "submit",
+      "text": "Replay captured session smoke."
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "Replay conversion placeholder completed."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "Replay conversion placeholder completed."
+      },
+      "timeoutMs": 30000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "replay-final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-DUPLICATE-PROMPT",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    }
+  ],
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "claimScope": "production-renderer-compositor",
+  "productionEquivalence": {
+    "required": true,
+    "renderer": "ReplView",
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-projection",
+      "composer-footer",
+      "modal-picker",
+      "taskboard-state",
+      "direct-cell-mutation"
+    ],
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace",
+      "task"
+    ]
+  },
+  "artifacts": {
+    "required": [
+      "manifest.json",
+      "command.txt",
+      "git_status.txt",
+      "environment.json",
+      "scenario.json",
+      "raw.ansi",
+      "plain_final.txt",
+      "grid_frames.ndjson",
+      "state_snapshots.ndjson",
+      "input_events.ndjson",
+      "dimension_events.ndjson",
+      "anomalies.json",
+      "invariant_report.json",
+      "screenshots/contact_sheet.png",
+      "visual_qc_notes.md",
+      "claim_delta.json"
+    ]
+  },
+  "claimBoundary": "Production ReplView/controller compositor evidence only; not real-host proof.",
+  "expectedOutcome": "pass",
+  "id": "model_picker_focus",
+  "title": "Model Picker Focus Surface",
+  "description": "Focused production model picker scene, separated from permission/taskboard stack precedence.",
+  "surfaces": [
+    "model-picker"
+  ],
+  "sizes": [
+    {
+      "cols": 40,
+      "rows": 18
+    },
+    {
+      "cols": 72,
+      "rows": 22
+    },
+    {
+      "cols": 100,
+      "rows": 28
+    }
+  ],
+  "timeline": [
+    {
+      "kind": "user",
+      "text": "Open the model picker and keep the current model visible."
+    },
+    {
+      "kind": "open-surface",
+      "surface": "model-picker"
+    }
+  ],
+  "expectedMarkers": [
+    "Open the model picker",
+    "gpt-5.4-mini",
+    "gpt-5.4"
+  ],
+  "markers": [
+    "model-picker",
+    "active-row"
+  ],
+  "invariants": [
+    "COMPOSITOR-PRODUCTION-RENDERER",
+    "COMPOSITOR-NO-FAKE-RENDERER",
+    "COMPOSITOR-ARTIFACT-PACKET-COMPLETE",
+    "COMPOSITOR-MARKERS-PRESENT",
+    "COMPOSITOR-WIDTH-SAFE",
+    "COMPOSITOR-COMPOSER-VISIBLE",
+    "COMPOSITOR-PROMPT-EXACTLY-ONCE",
+    "COMPOSITOR-ACTIVE-ROW-VISIBLE"
+  ]
+}

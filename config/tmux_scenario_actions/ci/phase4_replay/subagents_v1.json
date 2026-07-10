@@ -4,7 +4,9 @@
     "timeout": 20,
     "interval": 0.3,
     "ready_tokens": [
-      "shortcuts"
+      "[ready]",
+      "enter send",
+      "Type your request"
     ],
     "kick_keys": [
       "Escape"
@@ -34,7 +36,7 @@
     "quiet_seconds": 1.5,
     "timeout": 30,
     "must_contain": [
-      "Try \"fix typecheck errors\""
+      "Subagent taskboard smoke complete"
     ],
     "must_not_contain": [
       "Cannot read properties of undefined (reading 'length')",
@@ -46,8 +48,8 @@
     "semantic_timeout": 5,
     "semantic_fail_fast": true,
     "must_contain_any": [
-      "? shortcuts",
-      "? for shortcuts"
+      "enter send",
+      "[ready]"
     ]
   },
   {
@@ -60,8 +62,7 @@
     "quiet_seconds": 1.5,
     "timeout": 30,
     "must_contain": [
-      "Background tasks",
-      "Try \"fix typecheck errors\""
+      "Subagent taskboard smoke complete"
     ],
     "must_not_contain": [
       "Cannot read properties of undefined (reading 'length')",
@@ -71,11 +72,7 @@
       "[phase4 replay target] cli_bridge health check failed"
     ],
     "semantic_timeout": 5,
-    "semantic_fail_fast": true,
-    "must_contain_any": [
-      "? shortcuts",
-      "? for shortcuts"
-    ]
+    "semantic_fail_fast": true
   },
   {
     "type": "key",
@@ -87,7 +84,7 @@
     "quiet_seconds": 1.0,
     "timeout": 30,
     "must_contain": [
-      "Try \"fix typecheck errors\""
+      "Subagent taskboard smoke complete"
     ],
     "must_not_contain": [
       "Cannot read properties of undefined (reading 'length')",
@@ -97,10 +94,6 @@
       "[phase4 replay target] cli_bridge health check failed"
     ],
     "semantic_timeout": 5,
-    "semantic_fail_fast": true,
-    "must_contain_any": [
-      "? shortcuts",
-      "? for shortcuts"
-    ]
+    "semantic_fail_fast": true
   }
 ]

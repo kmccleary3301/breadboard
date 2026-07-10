@@ -1,0 +1,9 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "/sto", "typingDelayMs": 8 },
+  { "action": "waitFor", "text": "No run", "timeoutMs": 10000, "mode": "frame" },
+  { "action": "snapshot", "label": "disabled-stop-suggestion", "mode": "frame", "maxLines": 80 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 300 },
+  { "action": "snapshot", "label": "disabled-stop-after-enter", "mode": "frame", "maxLines": 80 }
+]

@@ -1,0 +1,32 @@
+[
+  { "action": "log", "message": "Collapsed detail inspection PTY start" },
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "/view collapse all" },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 250 },
+  { "action": "type", "text": "Show collapsed detail", "typingDelayMs": 10 },
+  { "action": "press", "key": "enter" },
+  {
+    "action": "waitForState",
+    "timeoutMs": 15000,
+    "fresh": true,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 2,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "Detail line 01"
+  },
+  { "action": "waitFor", "text": "o inspect", "timeoutMs": 5000, "mode": "frame", "fresh": true },
+  { "action": "snapshot", "label": "collapsed-summary" },
+  { "action": "type", "text": "]" },
+  { "action": "wait", "ms": 120 },
+  { "action": "type", "text": "o" },
+  { "action": "waitFor", "text": "Message detail", "timeoutMs": 5000 },
+  { "action": "snapshot", "label": "detail-open" },
+  { "action": "press", "key": "down", "repeat": 8, "delayMs": 20 },
+  { "action": "snapshot", "label": "detail-scrolled" },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 180 },
+  { "action": "snapshot", "label": "detail-close" },
+  { "action": "log", "message": "Collapsed detail inspection PTY end" }
+]

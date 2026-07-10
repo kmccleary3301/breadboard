@@ -1,0 +1,98 @@
+{
+  "id": "vscode_v5f_tool_completion_semantics",
+  "terminal": {
+    "initialCols": 118,
+    "initialRows": 36
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_V5F_TOOL_PRE\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_V5F_TOOL_PRE",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "In this disposable workspace, create a file named bb_v5f_result.txt containing exactly BBDEEPCREATEOK, then respond with Done. Use tools if needed.\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BBDEEPCREATEOK",
+      "timeoutMs": 180000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 1500,
+      "timeoutMs": 30000
+    },
+    {
+      "kind": "screenshot",
+      "label": "01-tool-turn-after-done"
+    },
+    {
+      "kind": "key",
+      "key": "ctrlt"
+    },
+    {
+      "kind": "waitForRegex",
+      "pattern": "(transcript viewer|assistant message|tool)",
+      "timeoutMs": 15000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 1000,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "screenshot",
+      "label": "02-transcript-open-after-tool-turn"
+    },
+    {
+      "kind": "exportBreadBoardState",
+      "label": "02-transcript-open-after-tool-turn"
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "BBDEEPCREATEOK"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        }
+      ]
+    },
+    {
+      "kind": "terminate"
+    }
+  ]
+}

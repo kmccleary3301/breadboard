@@ -46,6 +46,8 @@ from .tail_index import _TAIL_LINE_INDEX_CACHE
 from ...compilation.v2_loader import load_agent_config
 from ...compilation.effective_operation_policy import policy_pack_for_config_authority
 from .runtime_emission import default_runtime_record_root, emit_session_start_records, primitive_emission_enabled
+from ...provider import runtime_codex as runtime_codex_module
+from ...provider_routing import provider_router
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +97,7 @@ class SessionService:
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata)
         await self.registry.create(record)
         await self._ensure_dispatcher(record)
+        await self._maybe_prewarm_request_runtime(request, metadata)
         runner = SessionRunner(session=record, registry=self.registry, request=request)
         record.runner = runner
         await runner.start()
@@ -105,6 +108,47 @@ class SessionService:
             created_at=record.created_at,
             logging_dir=record.logging_dir,
         )
+
+    async def _maybe_prewarm_request_runtime(
+        self,
+        request: SessionCreateRequest,
+        metadata: Dict[str, Any],
+    ) -> None:
+        if not self._should_prewarm_request_runtime(metadata):
+            return
+        try:
+            await asyncio.to_thread(self._prewarm_request_runtime_sync, request, metadata)
+        except Exception as exc:
+            logger.debug("Codex prewarm skipped: %s", exc)
+
+    def _should_prewarm_request_runtime(self, metadata: Dict[str, Any]) -> bool:
+        session_kind = str(metadata.get("cli_session_kind") or "").strip().lower()
+        return bool(
+            metadata.get("non_interactive_cli_session")
+            or session_kind == "oneshot"
+            or session_kind == "interactive"
+            or session_kind == "repl"
+        )
+
+    def _prewarm_request_runtime_sync(self, request: SessionCreateRequest, metadata: Dict[str, Any]) -> None:
+        config = load_agent_config(request.config_path)
+        providers = config.get("providers", {}) if isinstance(config, dict) else {}
+        selected_model = (
+            metadata.get("model")
+            or (request.overrides or {}).get("providers.default_model")
+            or providers.get("default_model")
+            or (config.get("model") if isinstance(config, dict) else None)
+        )
+        if not selected_model:
+            return
+        model_ref = str(selected_model).strip()
+        if not model_ref:
+            return
+        descriptor, routed_model = provider_router.get_runtime_descriptor(model_ref)
+        if descriptor.runtime_id != "codex_app_server":
+            return
+        workspace = str(request.workspace or os.getcwd()).strip() or os.getcwd()
+        runtime_codex_module.prewarm_codex_app_server(model=routed_model, cwd=workspace)
 
     async def ensure_session(self, session_id: str) -> SessionRecord:
         record = await self.registry.get(session_id)

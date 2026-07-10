@@ -31,6 +31,8 @@ import {
 } from "../../repl/transcriptUtils.js"
 import { buildTranscript } from "../../repl/transcriptBuilder.js"
 import type { TranscriptItem, TranscriptSystemItem, TranscriptToolItem } from "../../repl/transcriptModel.js"
+import { isLogTranscriptArtifactToolEntry } from "../../repl/transcriptArtifactPolicy.js"
+import { filterReadableHints } from "./hintPolicy.js"
 
 export interface RenderTextOptions {
   readonly colors?: boolean
@@ -1360,6 +1362,7 @@ const formatTools = (
       )
       return lines.map(forceHeaderBright)
     }
+    if (isLogTranscriptArtifactToolEntry(entry)) return []
     const normalized = entry
     const lines = formatToolEntry(
       normalized,
@@ -1397,6 +1400,7 @@ const formatTranscriptItem = (
       createdAt: item.createdAt,
       richBlocks: item.richBlocks,
       markdownStreaming: item.markdownStreaming,
+      markdownFinalized: item.markdownFinalized,
       markdownError: item.markdownError ?? null,
     }
     return formatConversationEntry(
@@ -1472,7 +1476,7 @@ const formatLiveSlotLine = (slot: LiveSlotEntry, useColors: boolean, colorMode: 
 }
 
 const formatHints = (state: ReplState, useColors: boolean, colorMode: ColorMode, icons: ReturnType<typeof resolveIcons>): string[] => {
-  return state.hints.slice(-4).map((hint) => {
+  return filterReadableHints(state.hints).slice(-4).map((hint) => {
     const bulletRaw = icons.bullet
     const bullet = useColors ? applyColor(bulletRaw, BRAND_COLORS.duneOrange, useColors, colorMode) : "-"
     return `${bullet} ${hint}`
@@ -1617,15 +1621,15 @@ export const renderStateToText = (state: ReplState, options: RenderTextOptions =
   const virtualizationActive = transcriptCapacity < MAX_TRANSCRIPT_ENTRIES
   if (conversationWindow.truncated) {
     lines.push(
-      `${icons.ellipsis} ${conversationWindow.hiddenCount} earlier ${
-        conversationWindow.hiddenCount === 1 ? "entry" : "entries"
-      } hidden ${icons.ellipsis}`,
+      `↑ ${conversationWindow.hiddenCount} earlier ${
+        conversationWindow.hiddenCount === 1 ? "message" : "messages"
+      } · Ctrl+O Transcript`,
     )
   }
   if (virtualizationActive) {
     const hiddenText = conversationWindow.hiddenCount > 0 ? ` (${conversationWindow.hiddenCount} hidden)` : ""
     lines.push(
-      `Compact transcript mode active — window ${transcriptCapacity} rows, showing last ${conversationWindow.entries.length} entries${hiddenText}. Use /view scroll auto to expand.`,
+      `Live Shell compact view — window ${transcriptCapacity} rows, showing last ${conversationWindow.entries.length} entries${hiddenText}. Use Ctrl+O for transcript, or /view scroll auto to expand.`,
     )
   }
   const showHelpBanner =

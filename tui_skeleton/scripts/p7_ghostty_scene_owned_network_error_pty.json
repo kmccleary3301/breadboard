@@ -1,0 +1,8 @@
+[
+  { "action": "wait", "ms": 12000 },
+  { "action": "snapshot", "label": "startup" },
+  { "action": "wait", "ms": 6000 },
+  { "action": "snapshot", "label": "network-streaming" },
+  { "action": "wait", "ms": 9000 },
+  { "action": "snapshot", "label": "network-stalled" }
+]

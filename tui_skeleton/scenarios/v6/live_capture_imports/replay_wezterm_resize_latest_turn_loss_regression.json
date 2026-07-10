@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "id": "replay_20260529T213959Z_v6_resize_resize_01_wezterm",
+  "title": "Structured replay for v6_resize_resize_01 from 20260529T213959Z_v6_resize_resize_01_wezterm",
+  "family": "resize",
+  "campaign": "p14-v6-replay-live-capture",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# v6_resize_resize_01\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "pre",
+        "text": "BB_V6_RESIZE_RESIZE_01_PRE"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 64,
+      "rows": 20
+    },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "submit",
+      "text": "V6 resize prompt 1"
+    },
+    {
+      "kind": "engine",
+      "event": {
+        "kind": "turn_start",
+        "payload": {
+          "summary": "v6_resize_resize_01"
+        }
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "capture-s1",
+        "messageId": "capture-message-1",
+        "turn": 1
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "capture-s1",
+        "text": "V6 resize response 1 stayed stable after shrink and grow.",
+        "delayMs": 80,
+        "turn": 1
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "capture-s1",
+        "finishReason": "stop",
+        "turn": 1
+      }
+    },
+    {
+      "kind": "engine",
+      "event": {
+        "kind": "completion",
+        "payload": {
+          "summary": {
+            "completed": true,
+            "reason": "scenario"
+          }
+        }
+      }
+    },
+    {
+      "kind": "engine",
+      "event": {
+        "kind": "run_finished",
+        "payload": {
+          "eventCount": 1
+        }
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "V6 resize response 1 stayed stable after shrink and grow."
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "resize",
+      "cols": 52,
+      "rows": 17,
+      "settleMs": 200
+    },
+    {
+      "kind": "resize",
+      "cols": 64,
+      "rows": 20,
+      "settleMs": 200
+    },
+    {
+      "kind": "checkpoint",
+      "id": "capture-replay-final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    }
+  ],
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 7000000,
+    "maxFrames": 1500,
+    "maxStateDumps": 2500
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "not-required"
+  },
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  },
+  "sourceCapture": {
+    "captureId": "20260529T213959Z_v6_resize_resize_01_wezterm",
+    "artifactRoot": "/shared_folders/querylake_server/ray_testing/ray_SCE/breadboard_repo_tui_runtime_20260409/docs_tmp/cli_phase_6/CODESIGN_p14/implementation_validation_v6_scenario_stress/artifacts/terminal/20260529T213959Z_wezterm_resize_family/20260529T213959Z_v6_resize_resize_01_wezterm",
+    "conversionVersion": 2,
+    "droppedEvents": [],
+    "timingMode": "logical-checkpoint"
+  }
+}

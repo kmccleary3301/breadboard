@@ -1,0 +1,38 @@
+{
+  "id": "vscode_v6_transcript_focus_copy_clear",
+  "terminal": { "initialCols": 124, "initialRows": 38 },
+  "v6": {
+    "expectedFinalMode": "repl",
+    "maxProviderWarningCount": 0,
+    "minScreenshotCount": 5,
+    "requiresStableViewport": true
+  },
+  "steps": [
+    { "kind": "write", "text": "mkdir -p docs src && printf '# V6 transcript workspace\\n' > README.md\r" },
+    { "kind": "sleep", "ms": 500 },
+    { "kind": "write", "text": "bb\r" },
+    { "kind": "waitForText", "text": "Type your request", "timeoutMs": 20000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 700, "timeoutMs": 8000 },
+    { "kind": "screenshot", "label": "00-startup" },
+    { "kind": "write", "text": "/transcript\r" },
+    { "kind": "waitForText", "text": "transcript viewer", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 500, "timeoutMs": 8000 },
+    { "kind": "screenshot", "label": "01-transcript-open" },
+    { "kind": "key", "key": "escape" },
+    { "kind": "waitForText", "text": "Type your request", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "screenshot", "label": "02-after-transcript-escape" },
+    { "kind": "key", "key": "ctrlt" },
+    { "kind": "waitForText", "text": "transcript viewer", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 500, "timeoutMs": 8000 },
+    { "kind": "screenshot", "label": "03-ctrl-t-open" },
+    { "kind": "key", "key": "ctrlt" },
+    { "kind": "waitForText", "text": "Type your request", "scope": "viewport", "timeoutMs": 12000 },
+    { "kind": "write", "text": "/copy\r" },
+    { "kind": "sleep", "ms": 1000 },
+    { "kind": "screenshot", "label": "04-after-copy-from-repl" },
+    { "kind": "write", "text": "/clear\r" },
+    { "kind": "sleep", "ms": 1000 },
+    { "kind": "screenshot", "label": "05-after-clear-from-repl" },
+    { "kind": "terminate" }
+  ]
+}

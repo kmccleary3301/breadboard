@@ -1,0 +1,14 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "!pwd", "typingDelayMs": 8 },
+  { "action": "snapshot", "label": "shell-prefix-typed", "mode": "frame", "maxLines": 80 },
+  { "action": "press", "key": "enter" },
+  {
+    "action": "waitForState",
+    "timeoutMs": 15000,
+    "conversationCountAtLeast": 1,
+    "lastConversationSpeaker": "user",
+    "lastConversationPreviewIncludes": "Run this shell command"
+  },
+  { "action": "snapshot", "label": "shell-prefix-submitted", "mode": "history", "maxLines": 100 }
+]

@@ -1,0 +1,14 @@
+[
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  {
+    "action": "type",
+    "text": "You are in a standalone disposable git repo. Build a small but real SMTP server in C in this repo only. Requirements: create smtp_server.c, smtp_server.h if useful, Makefile, README.md updates, and a minimal smoke test script if useful. The server should listen on localhost, support HELO/EHLO, MAIL FROM, RCPT TO, DATA, RSET, NOOP, QUIT, write accepted messages to ./maildrop as .eml files, handle basic errors, compile with gcc or cc under C11, and avoid touching files outside this workspace. Use tools as needed. When finished, run make and a basic smoke test if possible, then summarize files changed and exact commands."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "turn1-after-submit", "mode": "frame" },
+  { "action": "waitForState", "timeoutMs": 300000, "fresh": true, "pendingResponse": true, "lastToolEventStatus": "success" },
+  { "action": "snapshot", "label": "turn1-first-success-tool", "mode": "history", "maxLines": 260 },
+  { "action": "waitForState", "timeoutMs": 900000, "fresh": true, "pendingResponse": false, "lastConversationSpeaker": "assistant", "lastConversationPhase": "final" },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "turn1-final-history", "mode": "history", "maxLines": 900 }
+]

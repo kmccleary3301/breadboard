@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_lifecycle_lifecycle_06",
+  "title": "Generated lifecycle scenario lifecycle_06",
+  "family": "lifecycle",
+  "campaign": "p14-v6-scenario-family-explosion",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# v6_lifecycle_lifecycle_06\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "pre",
+        "text": "BB_V6_LIFECYCLE_LIFECYCLE_06_PRE"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 108,
+      "rows": 34
+    },
+    "resizePolicy": "none",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "submit",
+      "text": "V6 lifecycle-shaped prompt 6"
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "V6 lifecycle-shaped response 6 completed without transcript pollution."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "V6 lifecycle-shaped response 6 completed without transcript pollution."
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-CONTROL-CHROME-BODY",
+      "severity": "blocker"
+    }
+  ],
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 7000000,
+    "maxFrames": 1500,
+    "maxStateDumps": 2500
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "not-required"
+  },
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  }
+}

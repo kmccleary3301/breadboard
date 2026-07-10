@@ -7,6 +7,7 @@ import { TOOL_EVENT_COLOR } from "../../../viewUtils.js"
 import { ASCII_ONLY, CHALK, COLORS, DASH_SEPARATOR, DELTA_GLYPH, GLYPHS } from "../theme.js"
 import { computeDiffPreview } from "../../../transcriptUtils.js"
 import { maybeHighlightCode } from "../../../shikiHighlighter.js"
+import { isLogTranscriptArtifactToolEntry } from "../../../transcriptArtifactPolicy.js"
 import { computeInlineDiffSpans, shiftSpans, type InlineSpan } from "../../../diff/inlineDiff.js"
 import { DEFAULT_DIFF_RENDER_STYLE, type DiffRenderStyle } from "./diffStyles.js"
 import { DEFAULT_TOOL_RENDERER_REGISTRY, type ToolRendererRegistry } from "./toolRendererRegistry.js"
@@ -296,13 +297,17 @@ const taskStatusSymbol = (normalized: ReturnType<typeof normalizeTaskStatusLabel
   return "☐"
 }
 
-const formatTaskStatusHeader = (line: string): string => {
+const formatTaskStatusHeader = (line: string, entryStatus?: ToolLogEntry["status"]): string => {
   const parts = line
     .split(" · ")
     .map((part) => part.trim())
     .filter((part) => part.length > 0)
   const hasTaskPrefix = (parts[0] ?? "").toLowerCase() === "task"
-  const rawStatus = hasTaskPrefix ? (parts[1] ?? "pending") : (parts[0] ?? "pending")
+  const rawStatusFromLine = hasTaskPrefix ? (parts[1] ?? "pending") : (parts[0] ?? "pending")
+  const rawStatus =
+    entryStatus === "error" && (!rawStatusFromLine || rawStatusFromLine.toLowerCase() === "update" || rawStatusFromLine.toLowerCase() === "pending")
+      ? "cancelled"
+      : rawStatusFromLine
   const normalized = normalizeTaskStatusLabel(rawStatus)
   const details = hasTaskPrefix ? parts.slice(2) : parts.slice(1)
   const glyphColor =
@@ -490,13 +495,14 @@ const countDisplayLines = (
   const summaryLines = toLineArray(display.summary)
   const detailLines = toLineArray(display.detail)
   const artifactRef = isRecord(display.detail_artifact) ? (display.detail_artifact as Record<string, unknown>) : null
+  const inlineDetailLines = artifactRef ? [] : detailLines
   const artifactPreviewLines = artifactRef && isRecord(artifactRef.preview) ? toLineArray(artifactRef.preview.lines) : []
   const truncated = isRecord(display.detail_truncated) ? (display.detail_truncated as Record<string, unknown>) : null
   const hidden = truncated && typeof truncated.hidden === "number" ? truncated.hidden : null
   const mode = truncated && typeof truncated.mode === "string" ? truncated.mode : null
   const tailCount = truncated && typeof truncated.tail === "number" ? truncated.tail : null
   const diffBlocks = Array.isArray(display.diff_blocks) ? (display.diff_blocks as Array<Record<string, unknown>>) : []
-  let outputCount = summaryLines.length + detailLines.length
+  let outputCount = summaryLines.length + inlineDetailLines.length
   if (artifactRef) {
     outputCount += 1 + artifactPreviewLines.length
   }
@@ -544,6 +550,15 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         chunks.push(text.slice(index, index + wrapWidth))
       }
       return chunks
+    },
+    [wrapWidth],
+  )
+
+  const clipToWidth = useCallback(
+    (text: string) => {
+      if (wrapWidth <= 0) return ""
+      if (text.length <= wrapWidth) return text
+      return wrapWidth === 1 ? GLYPHS.ellipsis : `${text.slice(0, wrapWidth - 1)}${GLYPHS.ellipsis}`
     },
     [wrapWidth],
   )
@@ -596,6 +611,7 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
 
   const renderToolEntryLegacy = useCallback(
     (entry: ToolLogEntry, key?: string) => {
+      if (isLogTranscriptArtifactToolEntry(entry)) return null
       const policy = resolveToolRenderPolicy(
         entry,
         {
@@ -611,7 +627,7 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         const { lines, tag } = formatStatusLines(entry.text)
         const safeLines = lines.length > 0 ? [...lines] : [entry.text]
         if (tag === "task" && safeLines.length > 0) {
-          safeLines[0] = formatTaskStatusHeader(safeLines[0])
+          safeLines[0] = formatTaskStatusHeader(safeLines[0], entry.status)
         }
         const statusTone =
           entry.status === "error"
@@ -680,7 +696,7 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         return CHALK.gray(line)
       }
       const renderLine = (line: string, index: number) => {
-        const segments = index === 0 ? splitToWidth(line) : [line]
+        const segments = index === 0 ? splitToWidth(line) : [clipToWidth(line)]
         return segments.map((segment, segmentIndex) => (
           <Text key={`${entry.id}-ln-${index}-${segmentIndex}`} wrap="truncate-end">
             {index === 0 && segmentIndex === 0 ? `${glyph} ` : "  "}
@@ -710,6 +726,7 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         let summaryLines = toLineArray(display.summary)
         const detailLines = toLineArray(display.detail)
         const artifactRef = isRecord(display.detail_artifact) ? (display.detail_artifact as Record<string, unknown>) : null
+        const inlineDetailLines = artifactRef ? [] : detailLines
         const truncated = isRecord(display.detail_truncated) ? (display.detail_truncated as Record<string, unknown>) : null
         const hidden = truncated && typeof truncated.hidden === "number" ? truncated.hidden : null
         const hint = truncated && typeof truncated.hint === "string" ? truncated.hint : null
@@ -718,7 +735,7 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         const debugId = typeof display.debug_rule_id === "string" ? display.debug_rule_id : null
         const debugSuffixRaw = debugId ? ` ⟪${debugId}⟫` : ""
         const debugSuffixColored = debugId ? CHALK.hex(COLORS.muted)(` ⟪${debugId}⟫`) : ""
-        const outputLines = summaryLines.length || detailLines.length ? [...summaryLines, ...detailLines] : []
+        const outputLines = summaryLines.length || inlineDetailLines.length ? [...summaryLines, ...inlineDetailLines] : []
         if (artifactRef) {
           const artifactPathRaw = typeof artifactRef.path === "string" ? artifactRef.path : ""
           const artifactPath = artifactPathRaw.trim()
@@ -765,18 +782,18 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
         if (isPatch && diffBlocks.length > 0) {
           summaryLines = []
           outputLines.length = 0
-          outputLines.push(...detailLines)
+          outputLines.push(...inlineDetailLines)
         }
         if (diffBlocks.length > 0) {
           diffBlocks.forEach((block) => {
             outputLines.push(...buildDiffBlockLines(block, diffLineNumbers === true, diffStyle))
           })
         }
-        if (diffBlocks.length === 0 && isWrite && detailLines.length > 0) {
+        if (diffBlocks.length === 0 && isWrite && inlineDetailLines.length > 0) {
           outputLines.length = 0
           outputLines.push(...summaryLines)
           outputLines.push(
-            ...buildWriteBlockLines(detailLines, diffLineNumbers === true, diffStyle, diffStyle.previewMaxLines, writeLanguage),
+            ...buildWriteBlockLines(inlineDetailLines, diffLineNumbers === true, diffStyle, diffStyle.previewMaxLines, writeLanguage),
           )
         }
         const derivedTitle =
@@ -940,6 +957,7 @@ export const useToolRenderer = (options: ToolRendererOptions) => {
       diffStyle,
       labelWidth,
       policyProvider,
+      clipToWidth,
       splitToWidth,
       verboseOutput,
     ],

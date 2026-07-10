@@ -4,7 +4,9 @@
     "timeout": 20,
     "interval": 0.3,
     "ready_tokens": [
-      "shortcuts"
+      "[ready]",
+      "enter send",
+      "Type your request"
     ],
     "kick_keys": [
       "Escape"

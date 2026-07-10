@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "target": "ES2022",
+    "lib": ["es2022", "dom"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noImplicitAny": false,
+    "allowImportingTsExtensions": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "tools/scenario-runtime/**/*.ts",
+    "tools/p16-compositor/**/*.ts",
+    "tools/p16-compositor/**/*.tsx",
+    "tests/scenarioRuntime*.test.ts",
+    "tests/p16Compositor*.test.ts"
+  ]
+}

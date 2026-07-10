@@ -7,6 +7,7 @@ Legacy callers may still import `breadboard.sandbox_v2` during migration.
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import uuid
 from pathlib import Path
@@ -298,41 +299,67 @@ class DevSandboxV2:
         shell: bool = True,
     ) -> Dict[str, Any]:
         cmd = command or ""
+        proc: Optional[subprocess.Popen[str]] = None
         try:
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 cmd,
                 cwd=self.workspace,
                 shell=bool(shell),
-                timeout=timeout,
+                # Coding models assume bash semantics (set -o pipefail, [[ ]],
+                # heredocs); /bin/sh is dash on Debian/Ubuntu and rejects them.
+                executable="/bin/bash" if shell else None,
                 env={**os.environ, **(env or {})},
-                input=stdin_data,
-                capture_output=True,
+                stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
+                start_new_session=True,
             )
-            stdout = result.stdout or ""
-            stderr = result.stderr or ""
-            payload = {"exit": result.returncode, "stdout": stdout, "stderr": stderr}
-            if not stream:
-                return payload
-
-            lines: List[Any] = [ADAPTIVE_PREFIX_ITERABLE]
-            for line in (stdout.splitlines() or []):
-                lines.append(line)
-            if not stdout and stderr:
-                for line in stderr.splitlines():
-                    lines.append(line)
-            lines.append(payload)
-            return lines  # type: ignore[return-value]
+            stdout, stderr = proc.communicate(input=stdin_data, timeout=timeout)
+            payload = {"exit": proc.returncode, "stdout": stdout or "", "stderr": stderr or ""}
         except subprocess.TimeoutExpired:
-            payload = {"exit": 124, "stdout": "", "stderr": "Command timed out"}
-            if not stream:
-                return payload
-            return [ADAPTIVE_PREFIX_ITERABLE, payload]  # type: ignore[return-value]
+            if proc is not None and proc.pid is not None:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                except Exception:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+                try:
+                    stdout, stderr = proc.communicate(timeout=2)
+                except Exception:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    except Exception:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                    stdout, stderr = proc.communicate()
+            else:
+                stdout, stderr = "", ""
+            payload = {"exit": 124, "stdout": stdout or "", "stderr": (stderr or "Command timed out")}
         except Exception as exc:
             payload = {"exit": 1, "stdout": "", "stderr": str(exc)}
-            if not stream:
-                return payload
-            return [ADAPTIVE_PREFIX_ITERABLE, payload]  # type: ignore[return-value]
+
+        if not stream:
+            return payload
+
+        lines: List[Any] = [ADAPTIVE_PREFIX_ITERABLE]
+        stdout = str(payload.get("stdout") or "")
+        stderr = str(payload.get("stderr") or "")
+        for line in (stdout.splitlines() or []):
+            lines.append(line)
+        if not stdout and stderr:
+            for line in stderr.splitlines():
+                lines.append(line)
+        lines.append(payload)
+        return lines  # type: ignore[return-value]
 
     def edit_replace(
         self,

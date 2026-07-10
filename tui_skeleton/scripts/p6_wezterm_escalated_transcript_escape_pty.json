@@ -1,0 +1,69 @@
+[
+  {
+    "action": "waitForState",
+    "timeoutMs": 15000,
+    "pendingResponse": false
+  },
+  {
+    "action": "snapshot",
+    "label": "startup"
+  },
+  {
+    "action": "type",
+    "text": "stream markdown"
+  },
+  {
+    "action": "press",
+    "key": "enter"
+  },
+  {
+    "action": "waitForState",
+    "timeoutMs": 10000,
+    "fresh": true,
+    "pendingResponse": true,
+    "conversationCountAtLeast": 2,
+    "lastConversationSpeaker": "assistant"
+  },
+  {
+    "action": "snapshot",
+    "label": "streaming-partial"
+  },
+  {
+    "action": "waitForState",
+    "timeoutMs": 15000,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 2,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final"
+  },
+  {
+    "action": "snapshot",
+    "label": "streaming-settled"
+  },
+  {
+    "action": "press",
+    "key": "ctrl+t"
+  },
+  {
+    "action": "waitFor",
+    "text": "follow tail",
+    "timeoutMs": 5000
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer-open"
+  },
+  {
+    "action": "press",
+    "key": "escape"
+  },
+  {
+    "action": "waitFor",
+    "text": "ctrl+t transcript",
+    "timeoutMs": 7000
+  },
+  {
+    "action": "snapshot",
+    "label": "viewer-back"
+  }
+]

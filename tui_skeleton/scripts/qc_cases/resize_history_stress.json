@@ -1,8 +1,8 @@
 [
-  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 20000 },
   { "action": "type", "text": "/models", "typingDelayMs": 8 },
   { "action": "press", "key": "enter" },
-  { "action": "waitFor", "text": "Select model", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "Models", "timeoutMs": 20000 },
   { "action": "press", "key": "escape" },
   { "action": "wait", "ms": 150 },
   { "action": "resize", "cols": 156, "rows": 46, "delayMs": 70 },

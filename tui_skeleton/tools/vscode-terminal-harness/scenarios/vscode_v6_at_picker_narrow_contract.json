@@ -1,0 +1,31 @@
+{
+  "id": "vscode_v6_at_picker_narrow_contract",
+  "terminal": { "initialCols": 120, "initialRows": 36 },
+  "v6": {
+    "expectedFinalMode": "repl",
+    "maxProviderWarningCount": 0,
+    "minScreenshotCount": 4,
+    "requiresStableViewport": true
+  },
+  "steps": [
+    { "kind": "write", "text": "mkdir -p docs src && printf '# V6 attach workspace\\n' > README.md && printf 'hello\\n' > docs/notes.md\r" },
+    { "kind": "sleep", "ms": 500 },
+    { "kind": "write", "text": "bb\r" },
+    { "kind": "waitForText", "text": "Type your request", "timeoutMs": 20000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 700, "timeoutMs": 8000 },
+    { "kind": "screenshot", "label": "00-startup" },
+    { "kind": "write", "text": "@docs" },
+    { "kind": "sleep", "ms": 1000 },
+    { "kind": "screenshot", "label": "01-at-docs-wide" },
+    { "kind": "resize", "cols": 68, "rows": 24 },
+    { "kind": "sleep", "ms": 900 },
+    { "kind": "screenshot", "label": "02-at-docs-narrow" },
+    { "kind": "key", "key": "escape" },
+    { "kind": "sleep", "ms": 500 },
+    { "kind": "key", "key": "escape" },
+    { "kind": "resize", "cols": 120, "rows": 36 },
+    { "kind": "sleep", "ms": 900 },
+    { "kind": "screenshot", "label": "03-after-at-clear" },
+    { "kind": "terminate" }
+  ]
+}

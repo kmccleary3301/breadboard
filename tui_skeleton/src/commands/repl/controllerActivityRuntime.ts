@@ -12,8 +12,8 @@ import { extractRawString, isRecord, parseNumberish } from "./controllerUtils.js
 import { parseBooleanEnv } from "../../utils/envBoolean.js"
 
 const DEFAULT_MIN_DISPLAY_MS = 200
-const DEFAULT_STATUS_UPDATE_MS = 120
-const DEFAULT_EVENT_COALESCE_MS = 80
+const DEFAULT_STATUS_UPDATE_MS = 60
+const DEFAULT_EVENT_COALESCE_MS = 40
 const DEFAULT_EVENT_COALESCE_MAX_BATCH = 128
 const DEFAULT_THINKING_MAX_CHARS = 600
 const DEFAULT_THINKING_MAX_LINES = 6
@@ -63,7 +63,7 @@ const PRIMARY_PRIORITY: Record<ActivityPrimary, number> = {
 }
 
 const LEGAL_TRANSITIONS: Record<ActivityPrimary, ReadonlyArray<ActivityPrimary>> = {
-  idle: ["idle", "session", "run", "thinking", "reconnecting", "compacting", "error"],
+  idle: ["idle", "session", "run", "thinking", "permission_required", "reconnecting", "compacting", "halted", "error"],
   session: [
     "session",
     "run",
@@ -203,7 +203,7 @@ export const resolveRuntimeBehaviorFlags = (env: NodeJS.ProcessEnv): RuntimeBeha
   allowRawThinkingPeek: parseBooleanEnv(env.BREADBOARD_THINKING_PEEK_RAW_ALLOWED, false),
   inlineThinkingBlockEnabled: parseBooleanEnv(env.BREADBOARD_THINKING_INLINE_COLLAPSIBLE, false),
   markdownCoalescingEnabled: parseBooleanEnv(env.BREADBOARD_MARKDOWN_COALESCING_ENABLED, true),
-  adaptiveMarkdownCadenceEnabled: parseBooleanEnv(env.BREADBOARD_MARKDOWN_ADAPTIVE_CADENCE, false),
+  adaptiveMarkdownCadenceEnabled: parseBooleanEnv(env.BREADBOARD_MARKDOWN_ADAPTIVE_CADENCE, true),
   transitionDebug: parseBooleanEnv(env.BREADBOARD_ACTIVITY_TRANSITION_DEBUG, false),
   minDisplayMs: parseBoundedIntEnv(env.BREADBOARD_ACTIVITY_MIN_DISPLAY_MS, DEFAULT_MIN_DISPLAY_MS, 0, 60_000),
   statusUpdateMs: parseBoundedIntEnv(env.BREADBOARD_STATUS_UPDATE_MS, DEFAULT_STATUS_UPDATE_MS, 0, 10_000),

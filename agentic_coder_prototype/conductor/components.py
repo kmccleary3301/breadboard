@@ -17,6 +17,8 @@ from ..execution.enhanced_executor import EnhancedToolExecutor
 from ..run_logging.workspace_manifest import build_workspace_manifest
 from ..provider.metrics import ProviderMetricsCollector
 from ..provider.ir import IRDeltaEvent
+from ..utils.safe_delete import is_disposable_workspace_path
+from ..utils.assistant_progress import assistant_is_progress_update
 from .streaming_policy import StreamingPolicy
 from ..guardrails import build_guardrail_manager
 from ..core.core import ToolDefinition, ToolParameter
@@ -837,10 +839,46 @@ def build_prompt_summary(conductor: Any) -> Optional[Dict[str, Any]]:
 def write_workspace_manifest(conductor: Any) -> None:
     if not getattr(conductor.logger_v2, "run_dir", None):
         return
+    workspace_root = getattr(conductor, "workspace", None)
+    if not workspace_root:
+        return
+    persist_requested = os.environ.get("BREADBOARD_WRITE_WORKSPACE_MANIFEST", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     try:
-        manifest = build_workspace_manifest(conductor.workspace)
+        logging_cfg = conductor.config.get("logging") if isinstance(getattr(conductor, "config", None), dict) else None
+        if isinstance(logging_cfg, dict) and "write_workspace_manifest" in logging_cfg:
+            persist_requested = bool(logging_cfg.get("write_workspace_manifest"))
+    except Exception:
+        pass
+    try:
+        disposable = is_disposable_workspace_path(workspace_root, repo_root=Path(__file__).resolve().parents[2])
+    except Exception:
+        disposable = False
+    if not persist_requested and not disposable:
+        manifest = {
+            "root": str(Path(workspace_root).resolve()),
+            "hash": "sha256",
+            "files": [],
+            "skipped": True,
+            "reason": "nondisposable_workspace_skipped",
+            "scope": "metadata_only",
+            "is_disposable_workspace": False,
+        }
+        try:
+            conductor.logger_v2.write_json("meta/workspace.manifest.json", manifest)
+        except Exception:
+            pass
+        return
+    try:
+        manifest = build_workspace_manifest(workspace_root)
     except Exception:
         return
+    manifest["skipped"] = False
+    manifest["is_disposable_workspace"] = bool(disposable)
     try:
         conductor.logger_v2.write_json("meta/workspace.manifest.json", manifest)
     except Exception:
@@ -941,6 +979,104 @@ def should_require_build_guard(conductor: Any, user_prompt: str) -> bool:
     ]
     prompt_text = (user_prompt or "").lower()
     return any(keyword in prompt_text for keyword in keywords)
+
+
+_DIRECT_TOOL_PATTERNS = [
+    re.compile(r"\b(run|execute)\b.{0,40}\b(pwd|ls|cat|grep|find|git|pytest|npm|pnpm|make|bash|shell)\b", re.IGNORECASE),
+    re.compile(r"\b(answer|return|show|give)\b.{0,40}\b(absolute path|current directory|cwd)\b", re.IGNORECASE),
+    re.compile(r"\b(read|open|show|list|inspect|search|grep|find)\b.{0,40}\b(file|files|repo|repository|workspace|directory|folder|path|paths)\b", re.IGNORECASE),
+    re.compile(r"\bwhat(?:'s| is)\b.{0,30}\b(current directory|cwd|path)\b", re.IGNORECASE),
+]
+
+_ASSISTANT_TOOL_CLAIM_PATTERNS = [
+    re.compile(r"\b(i(?:'|’)ll|i will|let me|running|i am running)\b.{0,40}\b(pwd|ls|cat|grep|find|git|pytest|npm|pnpm|make|bash|shell)\b", re.IGNORECASE),
+    re.compile(r"\b(return|reply with|answer with)\b.{0,20}\b(absolute path|current directory|cwd)\b", re.IGNORECASE),
+]
+
+
+def should_require_workspace_tool_usage(user_prompt: str) -> bool:
+    prompt_text = (user_prompt or "").strip()
+    if not prompt_text:
+        return False
+    prompt_lower = prompt_text.lower()
+    implementation_action = re.search(r"\b(build|create|implement|write|modify|edit|fix|add|update|generate)\b", prompt_lower)
+    implementation_artifact = re.search(r"\b(file|files|code|server|script|makefile|readme|test|smoke|compile|c11|smtp|workspace|repo)\b", prompt_lower)
+    if implementation_action and implementation_artifact:
+        return False
+    return any(pattern.search(prompt_text) is not None for pattern in _DIRECT_TOOL_PATTERNS)
+
+
+def assistant_claims_workspace_tool_usage(text: str) -> bool:
+    candidate = (text or "").strip()
+    if not candidate:
+        return False
+    return any(pattern.search(candidate) is not None for pattern in _ASSISTANT_TOOL_CLAIM_PATTERNS)
+
+
+def latest_real_user_prompt(session_state: Any) -> str:
+    """Return the latest non-validation user prompt from session state."""
+
+    def _strip_internal_blocks(text: str) -> str:
+        stripped = re.sub(
+            r"<(?:WORKSPACE_TOOL_REQUIRED|WORKSPACE_RECEIPT_REQUIRED|BREADBOARD_INTERNAL)>.*?</(?:WORKSPACE_TOOL_REQUIRED|WORKSPACE_RECEIPT_REQUIRED|BREADBOARD_INTERNAL)>",
+            "",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        ).strip()
+        return stripped
+
+    def _scan_message_list(candidate_messages: Any) -> str:
+        if not isinstance(candidate_messages, list):
+            return ""
+        for entry in reversed(candidate_messages):
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("role") != "user":
+                continue
+            content = entry.get("content")
+            if not isinstance(content, str):
+                continue
+            text = content.strip()
+            if not text:
+                continue
+            if text.startswith("<VALIDATION_ERROR>"):
+                continue
+            text = _strip_internal_blocks(text)
+            if text:
+                return text
+        return ""
+
+    try:
+        text = _scan_message_list(getattr(session_state, "messages", None))
+        if text:
+            return text
+    except Exception:
+        pass
+
+    try:
+        text = _scan_message_list(getattr(session_state, "provider_messages", None))
+        if text:
+            return text
+    except Exception:
+        pass
+
+    try:
+        initial_prompt = session_state.get_provider_metadata("initial_user_prompt")
+    except Exception:
+        initial_prompt = None
+    return str(initial_prompt or "").strip()
+
+
+def session_requires_workspace_tool_usage(session_state: Any) -> bool:
+    """Return whether the current turn should be forced to use real workspace tools."""
+
+    latest_prompt = latest_real_user_prompt(session_state)
+    required = should_require_workspace_tool_usage(latest_prompt)
+    try:
+        session_state.set_provider_metadata("require_workspace_tool_usage", required)
+    except Exception:
+        pass
+    return required
 
 
 def capture_turn_diagnostics(

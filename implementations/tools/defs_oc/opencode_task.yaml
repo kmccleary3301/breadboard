@@ -89,6 +89,13 @@ parameters:
   schema:
     description: Existing Task session to continue
     type: string
+- name: run_in_background
+  type: boolean
+  description: Run the delegated task asynchronously and return immediately with a task id when supported.
+  required: false
+  schema:
+    description: Run the delegated task asynchronously and return immediately with a task id when supported.
+    type: boolean
 - name: command
   type: string
   description: The command that triggered this task

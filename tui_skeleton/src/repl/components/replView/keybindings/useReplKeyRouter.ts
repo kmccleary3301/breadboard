@@ -5,7 +5,7 @@ import { getTopLayer as getOverlayTopLayer, type OverlayFlags } from "./overlayS
 interface ReplKeyRouterOptions {
   readonly overlayFlags: OverlayFlags
   readonly modal: KeyHandler
-  readonly editor: KeyHandler
+  readonly editor?: KeyHandler
   readonly palette: KeyHandler
   readonly global: KeyHandler
 }

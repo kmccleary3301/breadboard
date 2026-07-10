@@ -1,0 +1,55 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "follow pause resume" }, "turn": 1 }
+  },
+  {
+    "delayMs": 150,
+    "event": { "type": "assistant.message.start", "payload": {}, "turn": 1 }
+  },
+  {
+    "delayMs": 150,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "delta": "## Pause Follow\n- first" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 800,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "delta": "\n- second" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 800,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "delta": "\n- third" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 800,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "delta": "\n\nFinal." },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 150,
+    "event": { "type": "assistant.message.end", "payload": {}, "turn": 1 }
+  },
+  {
+    "delayMs": 100,
+    "event": {
+      "type": "completion",
+      "payload": { "summary": { "completed": true, "reason": "mock-follow-pause-resume" } },
+      "turn": 1
+    }
+  },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 9 }, "turn": 1 } }
+]

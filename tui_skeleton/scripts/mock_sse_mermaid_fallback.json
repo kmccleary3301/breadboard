@@ -1,0 +1,27 @@
+[
+  {
+    "delayMs": 0,
+    "event": { "type": "turn_start", "payload": { "summary": "mermaid fallback" }, "turn": 1 }
+  },
+  {
+    "delayMs": 100,
+    "event": { "type": "assistant.message.start", "payload": {}, "turn": 1 }
+  },
+  {
+    "delayMs": 100,
+    "event": {
+      "type": "assistant.message.delta",
+      "payload": { "delta": "```mermaid\ngraph TD\nA-->B\n```\n\n- done" },
+      "turn": 1
+    }
+  },
+  {
+    "delayMs": 100,
+    "event": { "type": "assistant.message.end", "payload": {}, "turn": 1 }
+  },
+  {
+    "delayMs": 50,
+    "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock-mermaid-fallback" } }, "turn": 1 }
+  },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 6 }, "turn": 1 } }
+]

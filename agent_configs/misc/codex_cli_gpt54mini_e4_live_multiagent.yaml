@@ -1,0 +1,57 @@
+extends: codex_cli_gpt54mini_e4_live.yaml
+
+profile: { name: codex-cli-gpt5.4-mini-e4-live-multiagent }
+
+tools:
+  registry:
+    paths:
+      - implementations/tools/defs
+      - implementations/tools/defs_oc
+      - implementations/tools/defs_cc
+    include:
+      - shell_command
+      - apply_patch
+      - update_plan
+      - task
+      - TaskOutput
+  aliases: {}
+
+multi_agent:
+  enabled: true
+  event_log_path: misc/multi_agent_runs/codex_cli_gpt54mini_live_multiagent_event_log.jsonl
+  team_config:
+    team:
+      id: codex_gpt54mini_live_multiagent
+      version: 1
+      agents:
+        main:
+          role: main
+          config_ref: agent_configs/misc/codex_cli_gpt54mini_e4_live_multiagent.yaml
+          entrypoint: true
+        repo-scanner:
+          role: repo-scanner
+          config_ref: agent_configs/misc/codex_subagent_readonly.yaml
+          entrypoint: false
+          capabilities:
+            read_only: true
+            allow_spawn: false
+      topology:
+        edges:
+          - { from: main, to: repo-scanner, mode: [sync] }
+      orchestration:
+        scheduler:
+          kind: deterministic_event_loop
+          max_concurrent_agents: 1
+        spawn_protocol:
+          tool_name: task
+          async:
+            enabled: true
+        join_policy:
+          default: block_until_complete
+      bus:
+        model_visible_topics: [tool_result, wakeup]
+        retention: { max_events: 2000, max_age_seconds: 86400 }
+      workspace:
+        sharing:
+          default: shared_readonly_subagents
+          write_lock: main_only

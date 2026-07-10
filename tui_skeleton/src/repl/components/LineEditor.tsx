@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react"
-import { Box, Text, useInput } from "ink"
+import { Box, Text, useInput, type Key } from "ink"
 import { enableBracketedPaste, disableBracketedPaste } from "../terminalControl.js"
 import {
   readClipboardContent,
@@ -206,11 +206,14 @@ export interface LineEditorProps {
   readonly placeholder?: string
   readonly placeholderPad?: boolean
   readonly hideCaretWhenPlaceholder?: boolean
+  readonly hideWhenEmptyAndPlaceholderless?: boolean
   readonly maxVisibleLines?: number
+  readonly minVisibleLines?: number
   readonly onChange: (value: string, cursor: number) => void
   readonly onSubmit: (value: string) => Promise<void> | void
   readonly submitOnEnter?: boolean
   readonly onPasteAttachment?: (attachment: ClipboardImage) => void
+  readonly onControlKey?: (input: string, key: Key) => boolean
 }
 
 const attachmentPlaceholder = (attachment: ClipboardImage) =>
@@ -223,11 +226,14 @@ export const LineEditor: React.FC<LineEditorProps> = ({
   placeholder,
   placeholderPad = true,
   hideCaretWhenPlaceholder = false,
+  hideWhenEmptyAndPlaceholderless = false,
   maxVisibleLines,
+  minVisibleLines,
   onChange,
   onSubmit,
   submitOnEnter = true,
   onPasteAttachment,
+  onControlKey,
 }) => {
   const pasteTracker = useRef(createPasteTracker())
   const clipboardJob = useRef<Promise<void> | null>(null)
@@ -238,6 +244,7 @@ export const LineEditor: React.FC<LineEditorProps> = ({
   const pasteStore = useRef(new HiddenPasteStore())
   const undoManager = useRef(new UndoManager())
   const pendingLocalValue = useRef<string | null>(null)
+  const pendingCsiEscapeAt = useRef<number | null>(null)
 
   useEffect(() => {
     valueRef.current = value
@@ -454,6 +461,14 @@ export const LineEditor: React.FC<LineEditorProps> = ({
     }
   }
 
+  const submitCurrentValue = () => {
+    const submitted = valueRef.current
+    if (submitOnEnter) {
+      applyChange("", 0)
+      void onSubmit(submitted)
+    }
+  }
+
   const pasteFromClipboard = () => {
     if (clipboardJob.current) return
     clipboardJob.current = readClipboardContent()
@@ -498,12 +513,28 @@ export const LineEditor: React.FC<LineEditorProps> = ({
         console.error(JSON.stringify({ input, key }))
       }
 
+      const controlHandled = onControlKey?.(input, key) === true
+      if (DEBUG_INPUT && (key.ctrl || input === "\u0012" || input === "\u0013")) {
+        console.error(JSON.stringify({ lineEditorControlHandled: controlHandled, input, key }))
+      }
+      if (controlHandled) {
+        pendingCsiEscapeAt.current = null
+        return
+      }
+
       const normalizedInput = input.length === 1 ? input.toLowerCase() : ""
       const keyExtras = key as typeof key & { home?: boolean; end?: boolean }
       const keyModifiers = { ctrl: key.ctrl, meta: key.meta }
+      const splitModifiedEnter =
+        pendingCsiEscapeAt.current !== null &&
+        Date.now() - pendingCsiEscapeAt.current < 500 &&
+        (/^\[13;\d+(?:u|~)$/.test(input) || /^\[27;\d+;13~$/.test(input))
+      const bareModifiedEnterResidue = /^\[13;\d+(?:u|~)$/.test(input) || /^\[27;\d+;13~$/.test(input)
       const isModifiedEnter = (() => {
         if (input.startsWith("\u001b[13;") && (input.endsWith("u") || input.endsWith("~"))) return true
         if (input.startsWith("\u001b[27;") && input.endsWith("~") && input.includes(";13")) return true
+        if (splitModifiedEnter) return true
+        if (bareModifiedEnterResidue) return true
         return false
       })()
 
@@ -514,6 +545,7 @@ export const LineEditor: React.FC<LineEditorProps> = ({
       }
 
       if (isModifiedEnter) {
+        pendingCsiEscapeAt.current = null
         insertText("\n")
         return
       }
@@ -524,15 +556,12 @@ export const LineEditor: React.FC<LineEditorProps> = ({
       }
 
       if (key.escape && input.length === 0) {
+        pendingCsiEscapeAt.current = Date.now()
         // Ink may surface a raw ESC byte as an escape key event (with empty input). Feed it to the
         // paste tracker so bracketed paste sequences can be reconstructed across chunk boundaries.
         processInputChunk("\u001b", pasteTracker.current, keyModifiers, {
           insertText,
-          submit: () => {
-            if (submitOnEnter) {
-              void onSubmit(valueRef.current)
-            }
-          },
+          submit: submitCurrentValue,
           deleteWordBackward,
           deleteBackward,
           handlePastePayload,
@@ -547,13 +576,12 @@ export const LineEditor: React.FC<LineEditorProps> = ({
 
       let handled = false
       if (!key.backspace && !key.delete) {
+        if (input.length > 0) {
+          pendingCsiEscapeAt.current = null
+        }
         handled = processInputChunk(input, pasteTracker.current, keyModifiers, {
           insertText,
-          submit: () => {
-            if (submitOnEnter) {
-              void onSubmit(valueRef.current)
-            }
-          },
+          submit: submitCurrentValue,
           deleteWordBackward,
           deleteBackward,
           handlePastePayload,
@@ -583,9 +611,7 @@ export const LineEditor: React.FC<LineEditorProps> = ({
       }
 
       if (key.return) {
-        if (submitOnEnter) {
-          void onSubmit(valueRef.current)
-        }
+        submitCurrentValue()
         return
       }
       if (key.ctrl && key.leftArrow) {
@@ -674,8 +700,25 @@ export const LineEditor: React.FC<LineEditorProps> = ({
     [renderState.text, renderState.chips],
   )
   const caretPosition = renderState.cursor
+  const stableVisibleLineCount = Math.max(
+    1,
+    Math.min(
+      Math.max(1, Math.floor(maxVisibleLines ?? Number.POSITIVE_INFINITY)),
+      Math.max(1, Math.floor(minVisibleLines ?? 1)),
+    ),
+  )
+
+  const padStableVisibleLines = (lines: React.ReactNode[]): React.ReactNode[] => {
+    if (stableVisibleLineCount <= lines.length) return lines
+    const padded = [...lines]
+    for (let index = lines.length; index < stableVisibleLineCount; index += 1) {
+      padded.push(<Text key={`stable-pad-${index}`}> </Text>)
+    }
+    return padded
+  }
 
   if (value.length === 0 && chips.length === 0) {
+    if (!placeholder && hideWhenEmptyAndPlaceholderless) return null
     if (placeholder && hideCaretWhenPlaceholder) {
       return <Text color="gray">{placeholder}</Text>
     }
@@ -740,6 +783,49 @@ export const LineEditor: React.FC<LineEditorProps> = ({
 
   if (!caretRendered) {
     renderCaret()
+  }
+
+  if (renderState.chips.length === 0 && renderState.text.includes("\n")) {
+    const lines = renderState.text.split("\n")
+    let cursorLine = 0
+    let cursorColumn = caretPosition
+    let remaining = caretPosition
+    for (let index = 0; index < lines.length; index += 1) {
+      const lineLength = lines[index]?.length ?? 0
+      if (remaining <= lineLength) {
+        cursorLine = index
+        cursorColumn = remaining
+        break
+      }
+      remaining -= lineLength + 1
+    }
+    const renderedLines = lines.map((line, index) => {
+          const active = index === cursorLine
+          if (!active) return <Text key={`line-${index}`}>{line || " "}</Text>
+          const before = line.slice(0, cursorColumn)
+          const caretChar = line[cursorColumn] ?? " "
+          const after = line.slice(cursorColumn + (line[cursorColumn] ? 1 : 0))
+          return (
+            <Text key={`line-${index}`}>
+              {before}
+              <Text inverse>{caretChar}</Text>
+              {after}
+            </Text>
+          )
+        })
+    return (
+      <Box flexDirection="column">
+        {padStableVisibleLines(renderedLines)}
+      </Box>
+    )
+  }
+
+  if (stableVisibleLineCount > 1) {
+    return (
+      <Box flexDirection="column">
+        {padStableVisibleLines([<Box key="line-0">{renderedSegments}</Box>])}
+      </Box>
+    )
   }
 
   return <Box>{renderedSegments}</Box>

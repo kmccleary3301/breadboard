@@ -1,0 +1,25 @@
+[
+  { "action": "log", "message": "Live multiagent repo-scan PTY harness start" },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  {
+    "action": "type",
+    "text": "This is a live multiagent verification run in a disposable repo. Use the task tool exactly once with subagent_type repo-scanner, description 'Scan workspace', prompt 'List the repository root and mention README.md plus package.json if present', and run_in_background true. Do not edit files. After launching it, wait for the task result if needed, then answer with the exact marker LIVE_MULTIAGENT_REPO_SCAN_DONE and a one-sentence summary."
+  },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "snapshot", "label": "live-multiagent-after-submit", "mode": "frame" },
+  { "action": "waitForState", "timeoutMs": 900000, "fresh": true, "pendingResponse": false },
+  { "action": "wait", "ms": 1500 },
+  { "action": "snapshot", "label": "live-multiagent-final-history", "mode": "history", "maxLines": 900 },
+  { "action": "type", "text": "/agents" },
+  { "action": "press", "key": "enter", "expectSubmit": true },
+  { "action": "waitFor", "text": "Background tasks", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "waitFor", "text": "repo-scanner", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "snapshot", "label": "live-multiagent-agents-taskboard", "mode": "frame" },
+  { "action": "resize", "cols": 88, "rows": 24 },
+  { "action": "wait", "ms": 700 },
+  { "action": "snapshot", "label": "live-multiagent-agents-taskboard-resized", "mode": "frame" },
+  { "action": "press", "key": "escape" },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 30000, "mode": "frame" },
+  { "action": "snapshot", "label": "live-multiagent-closed", "mode": "frame" },
+  { "action": "log", "message": "Live multiagent repo-scan PTY harness complete" }
+]

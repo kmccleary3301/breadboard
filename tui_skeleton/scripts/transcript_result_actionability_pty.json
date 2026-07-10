@@ -1,0 +1,29 @@
+[
+  { "action": "log", "message": "Transcript result actionability PTY start" },
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "snapshot", "label": "composer-ready" },
+  { "action": "type", "text": "Generate report artifact", "typingDelayMs": 10 },
+  { "action": "press", "key": "enter" },
+  {
+    "action": "waitForState",
+    "timeoutMs": 15000,
+    "fresh": true,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 2,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "Saved report.txt"
+  },
+  { "action": "press", "key": "ctrl+t" },
+  { "action": "waitFor", "text": "follow tail", "timeoutMs": 5000 },
+  { "action": "type", "text": "t" },
+  { "action": "wait", "ms": 150 },
+  { "action": "snapshot", "label": "tool-selected" },
+  { "action": "type", "text": "o" },
+  { "action": "waitFor", "text": "Result detail", "timeoutMs": 5000 },
+  { "action": "snapshot", "label": "result-detail-open" },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Artifact preview", "timeoutMs": 5000 },
+  { "action": "snapshot", "label": "artifact-preview-open" },
+  { "action": "log", "message": "Transcript result actionability PTY end" }
+]

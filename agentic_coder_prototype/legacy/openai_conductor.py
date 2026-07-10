@@ -485,7 +485,7 @@ class OpenAIConductor:
                 return ray.get(self.sandbox.write_text.remote(target, replace_text))
             return ray.get(self.sandbox.edit_replace.remote(target, search_text, replace_text, 1))
         if name == "apply_unified_patch":
-            patch_text = str(args.get("patch", ""))
+            patch_text = str(args.get("patch") or args.get("input") or args.get("patchText") or "")
             return self.vcs({
                 "action": "apply_patch",
                 "params": {

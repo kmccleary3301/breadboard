@@ -1,5 +1,5 @@
 [
-  { "action": "waitFor", "text": "Try \"refactor <filepath>\"", "timeoutMs": 20000 },
+  { "action": "waitFor", "text": "enter send", "timeoutMs": 20000 },
   { "action": "type", "text": "resize churn qc", "typingDelayMs": 10 },
   { "action": "press", "key": "enter" },
   { "action": "wait", "ms": 800 },
@@ -10,7 +10,6 @@
   { "action": "resize", "cols": 150, "rows": 42, "delayMs": 80 },
   { "action": "resize", "cols": 100, "rows": 28, "delayMs": 80 },
   { "action": "resize", "cols": 120, "rows": 36, "delayMs": 80 },
-  { "action": "wait", "ms": 500 },
-  { "action": "snapshot", "label": "resize-submit-churn-final" }
+  { "action": "waitFor", "text": "[ready]", "timeoutMs": 20000, "mode": "frame" },
+  { "action": "snapshot", "label": "resize-submit-churn-final", "mode": "history", "maxLines": 600 }
 ]
-

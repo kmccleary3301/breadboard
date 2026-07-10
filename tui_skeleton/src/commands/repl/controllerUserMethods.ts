@@ -1,10 +1,11 @@
 import type { ReadSessionFileOptions } from "../../api/client.js"
 import { ApiError } from "../../api/client.js"
-import type { SessionFileContent, SessionFileInfo } from "../../api/types.js"
+import type { SessionFileContent, SessionFileInfo, SessionSummary } from "../../api/types.js"
 import { promises as fs } from "node:fs"
 import path from "node:path"
 import { DEFAULT_MODEL_ID } from "../../config/appConfig.js"
 import { getModelCatalog } from "../../providers/modelCatalog.js"
+import { listCachedSessions, rememberSession } from "../../cache/sessionCache.js"
 import type {
   ModelMenuItem,
   SkillCatalog,
@@ -13,6 +14,21 @@ import type {
 } from "../../repl/types.js"
 import type { ReplState } from "./controller.js"
 import { DEBUG_WAIT, sleep } from "./controllerUtils.js"
+import { createEmptyCTreeModel } from "../../repl/ctrees/reducer.js"
+import { createEmptyTodoStore } from "../../repl/todos/todoStore.js"
+import { createActivitySnapshot, createRuntimeTelemetry } from "./controllerActivityRuntime.js"
+import { createWorkGraphState } from "./controllerWorkGraphRuntime.js"
+
+export interface RecentSessionRow {
+  readonly sessionId: string
+  readonly status: string
+  readonly createdAt: string
+  readonly lastActivityAt: string
+  readonly model?: string | null
+  readonly name?: string | null
+  readonly loggingDir?: string | null
+  readonly source: "backend" | "cache"
+}
 
 const workspaceRootFor = (context: any): string => {
   const configured = context?.config?.workspace
@@ -95,6 +111,19 @@ const applySnippet = (
   return { content: snippet, truncated: true }
 }
 
+const looksBinary = (buffer: Buffer): boolean => {
+  const sample = buffer.subarray(0, Math.min(buffer.length, 8192))
+  if (sample.includes(0)) return true
+  if (sample.length === 0) return false
+  let suspicious = 0
+  for (const byte of sample) {
+    if (byte === 9 || byte === 10 || byte === 13) continue
+    if (byte >= 32 && byte !== 127) continue
+    suspicious += 1
+  }
+  return suspicious / sample.length > 0.08
+}
+
 const localReadFile = async (
   context: any,
   targetPath: string,
@@ -105,7 +134,11 @@ const localReadFile = async (
   if (!stats.isFile()) {
     throw new Error(`Path is not a file: ${targetPath}`)
   }
-  const raw = await fs.readFile(resolved, "utf8")
+  const buffer = await fs.readFile(resolved)
+  if (looksBinary(buffer)) {
+    throw new Error(`Binary file cannot be attached as text context: ${targetPath}`)
+  }
+  const raw = buffer.toString("utf8")
   const snippet = applySnippet(raw, options)
   return {
     path: toSessionPath(root, resolved),
@@ -113,6 +146,168 @@ const localReadFile = async (
     truncated: snippet.truncated,
     total_bytes: stats.size,
   }
+}
+
+const mergeRecentSessions = async (backend: ReadonlyArray<SessionSummary>): Promise<RecentSessionRow[]> => {
+  if (backend.length > 0) {
+    await Promise.all(backend.map((summary) => rememberSession(summary)))
+  }
+  const rows: RecentSessionRow[] = []
+  const seen = new Set<string>()
+  for (const summary of backend) {
+    rows.push({
+      sessionId: summary.session_id,
+      status: summary.status,
+      createdAt: summary.created_at,
+      lastActivityAt: summary.last_activity_at,
+      model: summary.model ?? (summary.metadata?.model as string | undefined) ?? null,
+      name: (summary.metadata?.name as string | undefined) ?? null,
+      loggingDir: summary.logging_dir ?? null,
+      source: "backend",
+    })
+    seen.add(summary.session_id)
+  }
+  const cached = await listCachedSessions()
+  for (const entry of cached) {
+    if (seen.has(entry.sessionId)) continue
+    rows.push({
+      sessionId: entry.sessionId,
+      status: entry.status,
+      createdAt: entry.createdAt,
+      lastActivityAt: entry.lastActivityAt,
+      model: entry.model ?? null,
+      name: entry.name ?? null,
+      loggingDir: entry.loggingDir ?? null,
+      source: "cache",
+    })
+  }
+  return rows.sort((a, b) => (a.lastActivityAt > b.lastActivityAt ? -1 : 1))
+}
+
+export const clearSessionReplayState = (context: any): void => {
+  context.conversation.length = 0
+  context.toolEvents.length = 0
+  context.rawEvents.length = 0
+  context.hints.length = 0
+  context.liveSlots.clear()
+  for (const timer of context.liveSlotTimers.values()) {
+    clearTimeout(timer)
+  }
+  context.liveSlotTimers.clear()
+  context.guardrailNotice = null
+  context.toolSlotsByCallId.clear()
+  context.toolSlotFallback.length = 0
+  context.toolLogEntryByCallId.clear()
+  context.toolCallArgsById.clear()
+  context.toolExecOutputByCallId.clear()
+  context.toolExecSlotsById.clear()
+  context.toolExecMetaById.clear()
+  context.seenEventIds.clear()
+  context.seenEventIdQueue.length = 0
+  context.conversationSequence = 0
+  context.streamingEntryId = null
+  context.submissionHistory = []
+  context.status = "Attaching session…"
+  context.pendingResponse = false
+  context.mainFollowTail = true
+  context.pendingStartedAt = null
+  context.modelMenu = { status: "hidden" }
+  context.skillsMenu = { status: "hidden" }
+  context.inspectMenu = { status: "hidden" }
+  context.skillsCatalog = null
+  context.skillsSelection = null
+  context.skillsSources = null
+  context.ctreeSnapshot = null
+  context.ctreeTree = null
+  context.ctreeModel = createEmptyCTreeModel()
+  context.ctreeTreeStatus = "idle"
+  context.ctreeTreeError = null
+  context.ctreeStage = "FROZEN"
+  context.ctreeIncludePreviews = false
+  context.ctreeSource = "auto"
+  context.ctreeUpdatedAt = null
+  context.ctreeTreeRequested = false
+  context.ctreeRefreshPending = false
+  context.ctreeRefreshInFlight = false
+  if (context.ctreeRefreshTimer) {
+    clearTimeout(context.ctreeRefreshTimer)
+    context.ctreeRefreshTimer = null
+  }
+  context.completionReached = false
+  context.completionSeen = false
+  context.lastCompletion = null
+  context.disconnected = false
+  context.abortController = new AbortController()
+  context.consecutiveFailures = 0
+  context.awaitingRestart = false
+  context.abortRequested = false
+  context.streamTask = null
+  context.pendingEvents = []
+  context.eventsScheduled = false
+  if (context.eventFlushTimer) {
+    clearTimeout(context.eventFlushTimer)
+    context.eventFlushTimer = null
+  }
+  context.disposeAllMarkdown?.()
+  context.pendingUserEcho = null
+  context.markdownGloballyDisabled = false
+  context.viewClearAt = null
+  context.permissionActive = null
+  context.permissionError = null
+  context.permissionQueue = []
+  context.rewindMenu = { status: "hidden" }
+  context.todoStoresByScope = { main: createEmptyTodoStore() }
+  context.todoScopeOrder = ["main"]
+  context.activeTodoScopeKey = "main"
+  context.todoScopeLabelsByKey = { main: "main" }
+  context.todoScopeStaleByKey = { main: false }
+  context.todoSourceRevisionByScope = {}
+  context.todoStoresPendingByScope = {}
+  context.todoStoresPendingDirtyByScope = {}
+  context.todoStoresPendingClearStaleByScope = {}
+  context.todoStoresPendingHintByScope = {}
+  for (const timer of context.todoStoresCoalesceTimersByScope.values()) {
+    clearTimeout(timer)
+  }
+  context.todoStoresCoalesceTimersByScope.clear()
+  context.todoScopeLastUpdateKey = null
+  context.todoScopeLastUpdateAt = null
+  context.todoAutoFollowManualOverrideUntilAt = 0
+  context.todoAutoFollowLastSwitchAt = 0
+  context.tasks = []
+  context.lastEventId = null
+  context.eventClock = 0
+  context.currentEventSeq = null
+  context.hasStreamedOnce = false
+  context.stopRequestedAt = null
+  if (context.stopTimer) {
+    if (typeof context.stopTimer.dispose === "function") {
+      context.stopTimer.dispose()
+    } else {
+      clearTimeout(context.stopTimer as NodeJS.Timeout)
+    }
+    context.stopTimer = null
+  }
+  context.taskMap.clear()
+  context.workGraph = createWorkGraphState()
+  context.workGraphQueue = []
+  if (context.workGraphFlushTimer) {
+    clearTimeout(context.workGraphFlushTimer)
+    context.workGraphFlushTimer = null
+  }
+  context.runtimeTelemetry = createRuntimeTelemetry()
+  context.activity = createActivitySnapshot("session")
+  context.activityTransitionTrace = []
+  context.lastLifecycleToastAt = 0
+  context.lastLifecycleToastMessage = null
+  context.thinkingArtifact = null
+  context.thinkingPreview = null
+  context.thinkingInlineEntryId = null
+  context.lastThinkingPeekAt = 0
+  context.stats.eventCount = 0
+  context.stats.toolCount = 0
+  context.stats.lastTurn = null
+  context.stats.usage = undefined
 }
 
 export async function dispatchSlashCommand(
@@ -142,6 +337,55 @@ export async function listFiles(this: any, path?: string): Promise<SessionFileIn
       throw new Error(`File listing failed (${error.status}).`)
     }
     return await localListFiles(this, path)
+  }
+}
+
+export async function listRecentSessions(this: any): Promise<RecentSessionRow[]> {
+  const backend = await this.api().listSessions()
+  return await mergeRecentSessions(backend)
+}
+
+export async function attachExistingSession(this: any, sessionId: string): Promise<boolean> {
+  const target = String(sessionId ?? "").trim()
+  if (!target) {
+    this.pushHint("Session ID is empty.")
+    return false
+  }
+  if (target === this.sessionId) {
+    this.pushHint(`Already attached to ${target}.`)
+    return false
+  }
+  await this.stop()
+  clearSessionReplayState(this)
+  this.sessionId = target
+  try {
+    const summary = await this.api().getSession(target)
+    await rememberSession(summary)
+    this.stats.model =
+      summary.model ??
+      (summary.metadata?.model as string | undefined) ??
+      this.stats.model ??
+      DEFAULT_MODEL_ID
+    this.resolveProviderCapabilitiesSnapshot(this.stats.model)
+    if (summary.mode && typeof summary.mode === "string") {
+      this.mode = summary.mode
+    }
+    try {
+      const ctree = await this.api().getCtreeSnapshot(target)
+      this.ctreeSnapshot = (ctree ?? null) as unknown as any
+    } catch {
+      // ignore ctree bootstrap errors during reattach
+    }
+    this.status = `Attached to ${target}`
+    this.emitChange()
+    this.streamTask = this.streamLoop()
+    this.pushHint(`Attached to session ${target}.`)
+    return true
+  } catch (error) {
+    this.pushHint(`Failed to attach session: ${(error as Error).message}`)
+    this.status = "Attach failed"
+    this.emitChange()
+    return false
   }
 }
 
@@ -184,7 +428,6 @@ export async function openModelMenu(this: any): Promise<void> {
       this.status = "No models available"
     } else {
       this.modelMenu = { status: "ready", items }
-      this.pushHint("Use selectModel action or interactive picker to choose a model.")
       this.status = "Model picker ready"
     }
   } catch (error) {
@@ -377,7 +620,9 @@ export async function runSessionCommand(
         this.stats.model = value
       }
     }
-    this.addTool("command", `[command] ${command}${payload ? ` ${JSON.stringify(payload)}` : ""}`)
+    if (command !== "permission_decision" && command !== "task_action") {
+      this.addTool("command", `[command] ${command}${payload ? ` ${JSON.stringify(payload)}` : ""}`, "success")
+    }
     this.pushHint(successMessage ?? `Sent command \"${command}\".`)
     return true
   } catch (error) {
@@ -394,6 +639,20 @@ export async function loadModelMenuItems(this: any): Promise<ModelMenuItem[]> {
   const catalog = await getModelCatalog({ configPath: this.config.configPath })
   const models = catalog.models
   const defaultModel = catalog.defaultModel ?? DEFAULT_MODEL_ID
+  const configAliases = (() => {
+    const raw = [this.config?.configPath, this.config?.name, this.config?.label]
+      .map((value) => (typeof value === "string" ? value.toLowerCase() : ""))
+      .join(" ")
+    return raw.includes("codex") ? ["codex"] : []
+  })()
+  const aliasesFor = (modelId: string): string[] => {
+    const aliases = new Set<string>(configAliases)
+    if (modelId === defaultModel) aliases.add("default")
+    if (modelId === this.stats.model) aliases.add("current")
+    if (/gpt[-/_.]?5/i.test(modelId)) aliases.add("gpt-5")
+    if (/mini/i.test(modelId)) aliases.add("mini")
+    return [...aliases]
+  }
   if (models.length === 0) {
     const fallbackIds = Array.from(
       new Set(
@@ -417,6 +676,7 @@ export async function loadModelMenuItems(this: any): Promise<ModelMenuItem[]> {
         contextTokens: null,
         priceInPerM: null,
         priceOutPerM: null,
+        aliases: aliasesFor(modelId),
         isDefault: modelId === defaultModel,
         isCurrent: modelId === this.stats.model,
       }
@@ -452,6 +712,7 @@ export async function loadModelMenuItems(this: any): Promise<ModelMenuItem[]> {
       contextTokens,
       priceInPerM,
       priceOutPerM,
+      aliases: aliasesFor(model.id),
       isDefault: model.id === defaultModel,
       isCurrent: model.id === this.stats.model,
     }

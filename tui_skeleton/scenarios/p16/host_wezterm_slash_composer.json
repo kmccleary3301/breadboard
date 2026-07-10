@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "id": "p16_host_wezterm_slash_composer",
+  "title": "P16 representative WezTerm slash/composer host evidence",
+  "family": "core-ux",
+  "campaign": "p16-final-design-complete",
+  "claimScope": "real-terminal",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": ["workspace", "time"],
+    "forbiddenBypass": ["renderer", "transcript-store", "composer", "scrollback-feed", "slash-registry"]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# P16 host slash composer dummy workspace\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "pre-host-slash",
+        "text": "BB_P16_HOST_SLASH_COMPOSER_PRE_HISTORY"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": ["wezterm"],
+    "initial": {
+      "cols": 112,
+      "rows": 32
+    },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "type",
+      "text": "/",
+      "delayMs": 8
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "/resume"
+      },
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "slash-root-wide"
+    },
+    {
+      "kind": "resize",
+      "cols": 72,
+      "rows": 22,
+      "settleMs": 220
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "/resume"
+      },
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "slash-root-compact-resize"
+    },
+    {
+      "kind": "type",
+      "text": "mo",
+      "delayMs": 8
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "/models"
+      },
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "slash-filter-models"
+    },
+    {
+      "kind": "resize",
+      "cols": 96,
+      "rows": 28,
+      "settleMs": 220
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "/models"
+      },
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "checkpoint",
+      "id": "slash-filter-models-after-resize"
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "composerReady": true
+      },
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "type",
+      "text": "first line",
+      "delayMs": 8
+    },
+    {
+      "kind": "type",
+      "text": "\u001b[13;2u",
+      "delayMs": 0
+    },
+    {
+      "kind": "type",
+      "text": "second line with enough words to wrap in a compact terminal width",
+      "delayMs": 4
+    },
+    {
+      "kind": "resize",
+      "cols": 68,
+      "rows": 16,
+      "settleMs": 240
+    },
+    {
+      "kind": "checkpoint",
+      "id": "composer-multiline-compact-height"
+    },
+    {
+      "kind": "resize",
+      "cols": 118,
+      "rows": 34,
+      "settleMs": 220
+    },
+    {
+      "kind": "checkpoint",
+      "id": "composer-multiline-wide-after-resize"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-DUPLICATE-PROMPT",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    }
+  ],
+  "actionRequirements": {
+    "launchObserved": "required",
+    "sentinelObservedBeforeLaunch": "required",
+    "resizeRequested": "required",
+    "resizeObserved": "required",
+    "waitTargetsObserved": "required",
+    "artifactCaptureComplete": "required"
+  },
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 7000000,
+    "maxFrames": 1500,
+    "maxStateDumps": 2500
+  },
+  "artifacts": {
+    "required": ["manifest", "raw", "grid", "state", "invariant-report", "scrollback", "viewport", "frames", "input"]
+  }
+}

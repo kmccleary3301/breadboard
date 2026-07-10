@@ -1,0 +1,6 @@
+{
+  "id": "red_regressions",
+  "scenarios": [
+    "scenarios/deep/mixed_20_turn_tool_modal.json"
+  ]
+}

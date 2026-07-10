@@ -2,6 +2,7 @@ import type { Block } from "@stream-mdx/core/types"
 import { MarkdownStreamer } from "../../markdown/streamer.js"
 import { scanStableBoundary } from "../../repl/markdown/stableBoundaryScanner.js"
 import { parseBooleanEnv } from "../../utils/envBoolean.js"
+import { writeMarkdownMetricsDebugRecord } from "../../repl/components/replView/controller/qcDebugLog.js"
 import type {
   ConversationEntry,
   LiveSlotEntry,
@@ -11,8 +12,8 @@ import type {
 
 
 const STREAM_MARKDOWN = parseBooleanEnv(process.env.BREADBOARD_MARKDOWN_STREAM, true)
-const DEFAULT_MARKDOWN_MIN_CHUNK_CHARS = 24
-const DEFAULT_STABLE_TAIL_FLUSH_CHARS = 96
+const DEFAULT_MARKDOWN_MIN_CHUNK_CHARS = 12
+const DEFAULT_STABLE_TAIL_FLUSH_CHARS = 48
 const ENV_MARKDOWN_COALESCE_MS = Number(process.env.BREADBOARD_MARKDOWN_COALESCE_MS ?? "")
 const ENV_MARKDOWN_MIN_CHUNK = Number(process.env.BREADBOARD_MARKDOWN_MIN_CHUNK_CHARS ?? "")
 const ENV_STABLE_TAIL_FLUSH = Number(process.env.BREADBOARD_MARKDOWN_STABLE_TAIL_FLUSH_CHARS ?? "")
@@ -26,6 +27,27 @@ export function shouldStreamMarkdown(this: any): boolean {
 }
 
 const LIVE_TOKENIZATION = process.env.BREADBOARD_STREAM_MDX_LIVE_TOKENS === "1"
+
+const stableStringify = (value: unknown): string => {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => entryValue !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right))
+  return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`).join(",")}}`
+}
+
+const hashString = (value: string): string => {
+  let hash = 2166136261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0")
+}
+
+const hashMarkdownBlockPayload = (block: Block): string =>
+  hashString(stableStringify({ id: block.id, type: block.type, isFinalized: block.isFinalized, payload: block.payload }))
 
 const resolveCadence = (controller: any): { coalesceMs: number; minChunkChars: number } => {
   const fromFlags = Number(controller.runtimeFlags?.statusUpdateMs ?? 120)
@@ -192,7 +214,8 @@ export function appendMarkdownChunk(this: any, text: string): void {
   const entryId = this.streamingEntryId
   const state = this.ensureMarkdownStreamer(entryId)
   if (!state) return
-  const previous = state.lastText
+  const stable = this.markdownStableState.get(entryId)
+  const previous = typeof stable?.fullText === "string" ? stable.fullText : state.lastText
   const delta = text.startsWith(previous) ? text.slice(previous.length) : text
   this.appendMarkdownDelta(delta)
 }
@@ -308,10 +331,29 @@ export function applyMarkdownBlocks(
   const index = this.conversation.findIndex((entry: ConversationEntry) => entry.id === entryId)
   if (index === -1) return
   const existing = this.conversation[index]
+  const previousBlocks: ReadonlyArray<Block> = existing.richBlocks ?? []
+  const previousHashes = new Map(previousBlocks.map((block) => [block.id, hashMarkdownBlockPayload(block)]))
+  const changedBlockIds = blocks
+    .filter((block) => previousHashes.get(block.id) !== hashMarkdownBlockPayload(block))
+    .map((block) => block.id)
+  const finalizedBlockIds = blocks.filter((block) => block.isFinalized).map((block) => block.id)
+  writeMarkdownMetricsDebugRecord({
+    event: "markdown_document_update",
+    messageId: entryId,
+    speaker: existing.speaker,
+    phase: existing.phase,
+    blockCount: blocks.length,
+    changedBlockIds,
+    finalizedBlockIds,
+    finalized,
+    error: error ?? null,
+    blockTypes: blocks.map((block) => block.type),
+  })
   const next: ConversationEntry = {
     ...existing,
     richBlocks: [...blocks],
     markdownError: error,
+    markdownFinalized: finalized,
     markdownStreaming: existing.phase === "streaming" && !finalized,
   }
   this.conversation[index] = next
@@ -326,7 +368,7 @@ export function markEntryMarkdownStreaming(this: any, entryId: string, streaming
   if (index === -1) return
   const existing = this.conversation[index]
   if (existing.markdownStreaming === streaming) return
-  this.conversation[index] = { ...existing, markdownStreaming: streaming }
+  this.conversation[index] = { ...existing, markdownStreaming: streaming, markdownFinalized: streaming ? false : existing.markdownFinalized }
 }
 
 export function upsertLiveSlot(

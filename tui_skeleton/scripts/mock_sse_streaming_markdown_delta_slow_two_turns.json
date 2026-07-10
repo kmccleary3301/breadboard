@@ -1,0 +1,22 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "slow streaming markdown turn one" }, "turn": 1 } },
+  { "delayMs": 400, "event": { "type": "assistant.message.start", "payload": {}, "turn": 1 } },
+  { "delayMs": 700, "event": { "type": "assistant.message.delta", "payload": { "delta": "## Streaming\n" }, "turn": 1 } },
+  { "delayMs": 700, "event": { "type": "assistant.message.delta", "payload": { "delta": "- first item\n" }, "turn": 1 } },
+  { "delayMs": 700, "event": { "type": "assistant.message.delta", "payload": { "delta": "- second item\n" }, "turn": 1 } },
+  { "delayMs": 700, "event": { "type": "assistant.message.delta", "payload": { "delta": "- third item\n\n" }, "turn": 1 } },
+  { "delayMs": 700, "event": { "type": "assistant.message.delta", "payload": { "delta": "| key | value |\n| --- | --- |\n" }, "turn": 1 } },
+  { "delayMs": 700, "event": { "type": "assistant.message.delta", "payload": { "delta": "| mode | slow |\n| lane | ghostty |\n\n" }, "turn": 1 } },
+  { "delayMs": 700, "event": { "type": "assistant.message.delta", "payload": { "delta": "```ts\nconsole.log('ghostty')\n```" }, "turn": 1 } },
+  { "delayMs": 500, "event": { "type": "assistant.message.end", "payload": {}, "turn": 1 } },
+  { "delayMs": 150, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock-stream-delta-slow-turn-one" } }, "turn": 1 } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 12 }, "turn": 1 } },
+
+  { "delayMs": 26000, "event": { "type": "turn_start", "payload": { "summary": "slow streaming markdown turn two" }, "turn": 2 } },
+  { "delayMs": 300, "event": { "type": "assistant.message.start", "payload": {}, "turn": 2 } },
+  { "delayMs": 600, "event": { "type": "assistant.message.delta", "payload": { "delta": "## Second Turn\n" }, "turn": 2 } },
+  { "delayMs": 600, "event": { "type": "assistant.message.delta", "payload": { "delta": "- preserved landing\n- resized width\n- second answer\n" }, "turn": 2 } },
+  { "delayMs": 500, "event": { "type": "assistant.message.end", "payload": {}, "turn": 2 } },
+  { "delayMs": 150, "event": { "type": "completion", "payload": { "summary": { "completed": true, "reason": "mock-stream-delta-slow-turn-two" } }, "turn": 2 } },
+  { "delayMs": 0, "event": { "type": "run_finished", "payload": { "eventCount": 20 }, "turn": 2 } }
+]

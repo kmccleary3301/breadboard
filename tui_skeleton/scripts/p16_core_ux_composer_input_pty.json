@@ -1,0 +1,25 @@
+{
+  "steps": [
+    { "action": "waitForComposerReady", "timeoutMs": 20000 },
+    { "action": "resize", "cols": 96, "rows": 26, "delayMs": 100 },
+    { "action": "type", "text": "first line", "typingDelayMs": 8 },
+    { "action": "press", "key": "shift+enter", "delayMs": 80 },
+    { "action": "type", "text": "second line with enough words to wrap in a compact terminal width", "typingDelayMs": 4 },
+    { "action": "resize", "cols": 68, "rows": 16, "delayMs": 180 },
+    { "action": "snapshot", "label": "multiline-compact", "maxLines": 80 },
+    { "action": "resize", "cols": 118, "rows": 34, "delayMs": 180 },
+    { "action": "snapshot", "label": "multiline-wide-after-resize", "maxLines": 100 },
+    { "action": "press", "key": "ctrl+s", "delayMs": 120 },
+    { "action": "type", "text": "\u001b[200~pasted alpha\npasted beta\u001b[201~", "typingDelayMs": 0 },
+    { "action": "wait", "ms": 180 },
+    { "action": "snapshot", "label": "bracketed-paste", "maxLines": 80 },
+    { "action": "resize", "cols": 72, "rows": 18, "delayMs": 180 },
+    { "action": "snapshot", "label": "bracketed-paste-compact-resize", "maxLines": 80 },
+    { "action": "press", "key": "ctrl+backspace", "delayMs": 120 },
+    { "action": "type", "text": "history scratch", "typingDelayMs": 8 },
+    { "action": "press", "key": "ctrl+s", "delayMs": 120 },
+    { "action": "type", "text": "history", "typingDelayMs": 8 },
+    { "action": "press", "key": "ctrl+r", "delayMs": 120 },
+    { "action": "snapshot", "label": "history-recall", "maxLines": 100 }
+  ]
+}

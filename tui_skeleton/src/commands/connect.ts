@@ -1,10 +1,12 @@
 import { Args, Command, Options } from "@effect/cli"
-import { Console, Effect, Option } from "effect"
+import { Effect, Option } from "effect"
 import type { UserConfigFile } from "../config/userConfig.js"
 import { getUserConfigPath, loadUserConfigSync, writeUserConfig } from "../config/userConfig.js"
 import { normalizeBaseUrl } from "../config/baseUrl.js"
+import { printReportCommandResult } from "./commandApiPresenter.js"
 const tokenOption = Options.text("token").pipe(Options.optional)
 const clearTokenOption = Options.boolean("clear-token").pipe(Options.optional)
+const outputOption = Options.choice("output", ["json", "summary"] as const).pipe(Options.withDefault("summary"))
 
 const isBaseUrlChange = (existing: UserConfigFile, baseUrl: string): boolean => {
   if (!existing.baseUrl) return false
@@ -54,8 +56,9 @@ export const connectCommand = Command.make(
     url: Args.text({ name: "url" }),
     token: tokenOption,
     clearToken: clearTokenOption,
+    output: outputOption,
   },
-  ({ url, token, clearToken }) =>
+  ({ url, token, clearToken, output }) =>
     Effect.tryPromise(async () => {
       const normalized = normalizeBaseUrl(url)
       const existing = loadUserConfigSync()
@@ -76,6 +79,15 @@ export const connectCommand = Command.make(
           : next.authToken || next.authTokenRef
             ? "Token preserved."
             : "No token configured."
-      await Console.log(`Saved engine URL to ${configPath}\nBase URL: ${normalized}\n${tokenNote}`)
+      await printReportCommandResult({
+        mode: output,
+        title: "Engine connection updated",
+        jsonValue: {
+          configPath,
+          baseUrl: normalized,
+          tokenState: tokenValue ? "saved" : clearTokenValue ? "cleared" : existing.authToken ? "preserved" : "not-configured",
+        },
+        lines: [`Saved engine URL to ${configPath}`, `Base URL: ${normalized}`, tokenNote],
+      })
     }),
 )

@@ -2,9 +2,11 @@ import { Command, Args, Options } from "@effect/cli"
 import { Console, Effect, Option } from "effect"
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { ApiError } from "../api/client.js"
 import { formatFileList } from "./files.js"
-import { CliProviders } from "../providers/cliProviders.js"
+import { getCliApi, reportApiCommandError } from "./commandRuntime.js"
+import { normalizeTableJsonOutputMode } from "./commandOutput.js"
+import { renderSavedToLine } from "./commandListDetail.js"
+import { printCommandPresentation } from "./commandPresentation.js"
 
 const sessionArg = Args.text({ name: "session-id" })
 const artifactOption = Options.text("artifact").pipe(Options.withDefault("conversation"))
@@ -17,21 +19,11 @@ const listCommand = Command.make("list", { session: sessionArg, path: listOption
   Effect.tryPromise(async () => {
     try {
       const scope = Option.getOrNull(path) ?? "logging"
-      const files = await CliProviders.sdk.api().listSessionFiles(session, scope)
-      if (output === "json") {
-        await Console.log(JSON.stringify(files, null, 2))
-      } else {
-        await Console.log(formatFileList(files))
-      }
+      const files = await getCliApi().listSessionFiles(session, scope)
+      const mode = normalizeTableJsonOutputMode(output)
+      await printCommandPresentation({ mode, jsonValue: files, text: formatFileList(files) })
     } catch (error) {
-      if (error instanceof ApiError) {
-        await Console.error(`Failed to list artifacts (status ${error.status})`)
-        if (error.body) {
-          await Console.error(JSON.stringify(error.body))
-        }
-      } else {
-        await Console.error((error as Error).message)
-      }
+      await reportApiCommandError("list artifacts", error)
       throw error
     }
   }),
@@ -40,25 +32,18 @@ const listCommand = Command.make("list", { session: sessionArg, path: listOption
 const downloadCommand = Command.make("download", { session: sessionArg, artifact: artifactOption, out: outOption }, ({ session, artifact, out }) =>
   Effect.tryPromise(async () => {
     try {
-      const content = await CliProviders.sdk.api().downloadArtifact(session, artifact)
+      const content = await getCliApi().downloadArtifact(session, artifact)
       const outValue = Option.getOrNull(out)
       if (outValue && outValue.trim().length > 0) {
         const target = path.resolve(outValue)
         await fs.mkdir(path.dirname(target), { recursive: true })
         await fs.writeFile(target, content, "utf8")
-        await Console.log(`Artifact saved to ${target}`)
+        await Console.log(renderSavedToLine("Artifact", target))
       } else {
         await Console.log(content)
       }
     } catch (error) {
-      if (error instanceof ApiError) {
-        await Console.error(`Failed to download artifact (status ${error.status})`)
-        if (error.body) {
-          await Console.error(JSON.stringify(error.body))
-        }
-      } else {
-        await Console.error((error as Error).message)
-      }
+      await reportApiCommandError("download artifact", error)
       throw error
     }
   }),

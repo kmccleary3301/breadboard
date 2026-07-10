@@ -108,7 +108,7 @@ class OpenCodeAgent:
                     {
                         "action": "apply_patch",
                         "params": {
-                            "patch": args.get("patch", ""),
+                            "patch": args.get("patch") or args.get("input") or args.get("patchText") or "",
                             "three_way": bool(args.get("three_way", True)),
                             "index": bool(args.get("index", True)),
                             "whitespace": args.get("whitespace", "fix"),

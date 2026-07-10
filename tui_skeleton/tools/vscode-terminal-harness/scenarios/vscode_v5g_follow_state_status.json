@@ -1,0 +1,26 @@
+{
+  "id": "vscode_v5g_follow_state_status",
+  "terminal": {
+    "initialCols": 118,
+    "initialRows": 36
+  },
+  "steps": [
+    { "kind": "write", "text": "echo BB_V5G_FOLLOW_PRE_ALPHA\r" },
+    { "kind": "waitForText", "text": "BB_V5G_FOLLOW_PRE_ALPHA", "timeoutMs": 8000 },
+    { "kind": "write", "text": "bb\r" },
+    { "kind": "waitForText", "text": "Type your request", "timeoutMs": 20000 },
+    { "kind": "waitForStableFrame", "scope": "viewport", "stableMs": 700, "timeoutMs": 8000 },
+    { "kind": "write", "text": "/follow status\r" },
+    { "kind": "waitForText", "text": "Default behavior is live follow", "timeoutMs": 10000 },
+    { "kind": "screenshot", "label": "01-follow-status-idle" },
+    { "kind": "exportBreadBoardState", "label": "v5g-follow-state" },
+    { "kind": "assert", "assertions": [
+      { "kind": "contains", "scope": "raw", "text": "BB_V5G_FOLLOW_PRE_ALPHA" },
+      { "kind": "contains", "scope": "raw", "text": "Default behavior is live follow" },
+      { "kind": "contains", "scope": "viewport", "text": "Type your request" },
+      { "kind": "notContains", "scope": "raw", "text": "You are Codex" },
+      { "kind": "notContains", "scope": "buffer", "text": "file://logging/" }
+    ] },
+    { "kind": "terminate" }
+  ]
+}

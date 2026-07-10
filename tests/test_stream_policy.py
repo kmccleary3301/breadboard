@@ -21,7 +21,7 @@ def _make_conductor_instance():
     return inst
 
 
-def test_stream_policy_forces_stream_off_on_openrouter_tool_turn():
+def test_stream_policy_keeps_streaming_on_openrouter_tool_turn_without_capability_failure():
     conductor = _make_conductor_instance()
     session_state = SessionState(workspace=".", image="img")
     markdown_logger = _DummyMarkdownLogger()
@@ -40,14 +40,12 @@ def test_stream_policy_forces_stream_off_on_openrouter_tool_turn():
         turn_index=1,
     )
 
-    assert effective is False
-    assert policy is not None
-    assert policy["reason"] == "openrouter_tool_turn_policy"
-    assert session_state.transcript[-1]["stream_policy"] == policy
-    assert markdown_logger.messages
-    history = session_state.get_provider_metadata("stream_policy_history")
-    assert isinstance(history, list) and policy in history
-    assert session_state.get_provider_metadata("last_stream_policy") == policy
+    assert effective is True
+    assert policy is None
+    assert session_state.transcript == []
+    assert markdown_logger.messages == []
+    assert session_state.get_provider_metadata("stream_policy_history") is None
+    assert session_state.get_provider_metadata("last_stream_policy") is None
 
 
 def test_stream_policy_no_change_when_not_tool_turn():

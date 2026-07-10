@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import random
+import subprocess
 import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict
@@ -58,6 +59,9 @@ from breadboard.rl.phase3.service_live import LiveRLRunService
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
+ENGINE_STARTED_AT_ISO = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ENGINE_STARTED_AT))
+_OPENAI_AUTH_HEADERS_ENV = "BREADBOARD_OPENAI_AUTH_HEADERS_JSON"
+_OPENAI_AUTH_BASE_URL_ENV = "BREADBOARD_OPENAI_AUTH_BASE_URL"
 
 
 def _is_loopback_host(host: str | None) -> bool:
@@ -65,6 +69,26 @@ def _is_loopback_host(host: str | None) -> bool:
         return False
     host = str(host).strip().lower()
     return host in {"127.0.0.1", "localhost", "::1"}
+
+
+def _project_provider_auth_material_to_env(
+    provider_id: str,
+    *,
+    api_key: str | None,
+    headers: dict[str, str] | None,
+    base_url: str | None,
+) -> None:
+    if (provider_id or "").strip().lower() != "openai":
+        return
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+    if headers:
+        try:
+            os.environ[_OPENAI_AUTH_HEADERS_ENV] = json.dumps(headers)
+        except Exception:
+            pass
+    if base_url:
+        os.environ[_OPENAI_AUTH_BASE_URL_ENV] = base_url
 
 
 def _load_chaos_config() -> Dict[str, float] | None:
@@ -101,7 +125,8 @@ def _env_flag_default(name: str, *, default: bool) -> bool:
 
 
 def _drop_legacy_routes(app: FastAPI) -> None:
-    legacy_exact = {"/models", "/status", "/features"}
+    # "/status" stays first-class: main's engine metadata contract (tests/test_cli_bridge_ready.py) and the TUI doctor consume it.
+    legacy_exact = {"/models", "/features"}
     legacy_prefixes = ("/sessions", "/rl", "/atp", "/ext/evolake")
 
     def _route_path(route: Any) -> str:
@@ -120,6 +145,60 @@ def _drop_legacy_routes(app: FastAPI) -> None:
             or any(_route_path(route).startswith(prefix) for prefix in legacy_prefixes)
         )
     ]
+
+
+def _run_git_command(args: list[str], cwd: Path) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=str(cwd),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return None
+    if completed.returncode != 0:
+        return None
+    value = (completed.stdout or "").strip()
+    return value or None
+
+
+def _compute_engine_provenance(repo_root: Path) -> dict[str, Any]:
+    revision: dict[str, Any] = {
+        "repo_root": str(repo_root),
+        "commit": None,
+        "branch": None,
+        "dirty": None,
+    }
+    if (repo_root / ".git").exists() or _run_git_command(["rev-parse", "--show-toplevel"], repo_root):
+        commit = _run_git_command(["rev-parse", "HEAD"], repo_root)
+        branch = _run_git_command(["rev-parse", "--abbrev-ref", "HEAD"], repo_root)
+        status = _run_git_command(["status", "--porcelain"], repo_root)
+        revision.update(
+            {
+                "commit": commit,
+                "branch": branch,
+                "dirty": bool(status) if status is not None else None,
+            }
+        )
+    return revision
+
+
+ENGINE_PROVENANCE = _compute_engine_provenance(_REPO_ROOT)
+
+
+def _build_engine_identity(app: FastAPI) -> dict[str, Any]:
+    return {
+        "protocol_version": PROTOCOL_VERSION,
+        "version": app.version,
+        "engine_version": app.version,
+        "started_at": ENGINE_STARTED_AT_ISO,
+        "started_at_unix": ENGINE_STARTED_AT,
+        "pid": os.getpid(),
+        "served_revision": dict(ENGINE_PROVENANCE),
+    }
 
 
 def _configured_extension_enabled(config: Dict[str, Any] | None, ext_id: str) -> bool | None:
@@ -342,12 +421,31 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         )
 
     @app.get("/health")
-    async def health() -> dict[str, str]:
+    async def health() -> dict[str, Any]:
         return {
             "status": "ok",
-            "protocol_version": PROTOCOL_VERSION,
-            "version": app.version,
-            "engine_version": app.version,
+            **_build_engine_identity(app),
+        }
+
+    @app.get("/ready")
+    async def ready() -> dict[str, Any]:
+        try:
+            from ...provider import runtime_codex as _runtime_codex_module  # noqa: F401
+        except Exception:
+            pass
+        from ...provider.runtime import provider_registry
+
+        try:
+            runtime_classes = getattr(provider_registry, "_runtime_classes", {})
+            runtime_ids = sorted(runtime_classes.keys()) if isinstance(runtime_classes, dict) else []
+        except Exception:
+            runtime_ids = []
+        codex_ready = provider_registry.get_runtime_class("codex_app_server") is not None
+        return {
+            "status": "ok",
+            "ready": codex_ready,
+            **_build_engine_identity(app),
+            "provider_runtimes": runtime_ids,
         }
 
     @app.get("/v1/status")
@@ -365,11 +463,8 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             ray_initialized = False
         return {
             "status": "ok",
-            "pid": os.getpid(),
             "uptime_s": max(0.0, time.time() - ENGINE_STARTED_AT),
-            "protocol_version": PROTOCOL_VERSION,
-            "version": app.version,
-            "engine_version": app.version,
+            **_build_engine_identity(app),
             "ray": {
                 "available": ray_available,
                 "initialized": ray_initialized,
@@ -485,6 +580,12 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             material,
             ttl_seconds=payload.material.ttl_seconds,
             required_profile=required_profile,
+        )
+        _project_provider_auth_material_to_env(
+            material.provider_id,
+            api_key=material.api_key,
+            headers=material.headers or {},
+            base_url=material.base_url,
         )
         return ProviderAuthAttachResponse(ok=True, detail={"attached": True})
 

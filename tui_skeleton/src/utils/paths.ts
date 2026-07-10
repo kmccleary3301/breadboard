@@ -57,3 +57,9 @@ export const resolveBreadboardWorkspace = (value?: string | null): string | unde
   }
   return resolveBreadboardPath(value)
 }
+
+export const resolveBreadboardWorkspaceOrCwd = (value?: string | null, cwd: string = process.cwd()): string => {
+  const resolved = resolveBreadboardWorkspace(value)
+  if (resolved) return resolved
+  return resolveBreadboardPath(cwd)
+}

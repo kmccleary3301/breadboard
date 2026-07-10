@@ -11,7 +11,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Sequence, List
+from typing import Any, Callable, Dict, Optional, Sequence, List, Tuple
 
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
 from agentic_coder_prototype.compilation.effective_operation_policy import policy_pack_for_config_authority
@@ -68,6 +68,10 @@ BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES = {
     "assistant.message.end",
     "assistant.reasoning.delta",
     "assistant.thought_summary.delta",
+    "tool.exec.start",
+    "tool.exec.stdout.delta",
+    "tool.exec.stderr.delta",
+    "tool.exec.end",
     "assistant_delta",
 }
 
@@ -88,6 +92,52 @@ BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
     "error",
     "run_finished",
 }
+
+RuntimeEventContract = Dict[str, Optional[str]]
+TranslatedRuntimeEvent = Tuple[EventType, Dict[str, Any], Optional[int], RuntimeEventContract]
+
+
+def _pop_runtime_event_contract(payload: Dict[str, Any]) -> RuntimeEventContract:
+    raw = payload.pop("_bb_event_contract", None)
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "classification": str(raw.get("classification")) if raw.get("classification") is not None else None,
+        "family": str(raw.get("family")) if raw.get("family") is not None else None,
+        "actor": str(raw.get("actor")) if raw.get("actor") is not None else None,
+        "visibility": str(raw.get("visibility")) if raw.get("visibility") is not None else None,
+    }
+
+
+def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
+    event_name = str(event_type or "")
+    if event_name in {"assistant_message", "assistant_delta", "assistant.message.start", "assistant.message.delta", "assistant.message.end"}:
+        return {"classification": "bridge_stream", "family": "message.assistant", "actor": "engine", "visibility": "transcript"}
+    if event_name == "user_message":
+        return {"classification": "kernel", "family": "message.user", "actor": "human", "visibility": "transcript"}
+    if event_name in {"assistant.reasoning.delta", "assistant.thought_summary.delta"}:
+        return {"classification": "bridge_stream", "family": "reasoning.delta", "actor": "engine", "visibility": "diagnostic"}
+    if event_name.startswith("tool.") or event_name in {"tool_call", "tool_result", "tool.result", "todo_event"}:
+        return {"classification": "kernel", "family": "tool.event", "actor": "tool", "visibility": "tool"}
+    if event_name in {"ctree_node", "turn_start", "lifecycle_event", "guardrail_event"}:
+        return {"classification": "kernel", "family": f"audit.{event_name}", "actor": "service", "visibility": "audit"}
+    if event_name in BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES or event_name in {"permission_request", "permission_response", "task_event", "ctree_snapshot"}:
+        return {"classification": "bridge_host", "family": f"host.{event_name}", "actor": "service", "visibility": "host"}
+    return {"classification": "legacy_unclassified", "family": "legacy.unclassified", "actor": "engine", "visibility": "audit"}
+
+
+def _effective_runtime_event_contract(event_type: str, contract: RuntimeEventContract) -> RuntimeEventContract:
+    default = _default_runtime_event_contract(event_type)
+    if not contract:
+        return default
+    if contract.get("classification") == "legacy_unclassified" and contract.get("visibility") == "audit":
+        return default
+    return {
+        "classification": contract.get("classification") or default.get("classification"),
+        "family": contract.get("family") or default.get("family"),
+        "actor": contract.get("actor") or default.get("actor"),
+        "visibility": contract.get("visibility") or default.get("visibility"),
+    }
 
 
 class SessionRunner:
@@ -123,6 +173,8 @@ class SessionRunner:
         self._ctree_last_node: Optional[Dict[str, Any]] = None
         self._base_config_cache: Optional[Dict[str, Any]] = None
         self._todo_enabled: bool = False
+        self._active_bridge_timing_context: Optional[Dict[str, float]] = None
+        self._accepted_task_texts: List[str] = []
 
         # Live overrides updated via commands
         initial_metadata = dict(self.session.metadata or {})
@@ -130,6 +182,10 @@ class SessionRunner:
         self.session.metadata = initial_metadata
         self._model_override: Optional[str] = initial_metadata.get("model")
         self._mode: Optional[str] = initial_metadata.get("mode")
+        self._profile_timing_enabled: bool = bool(
+            os.environ.get("BREADBOARD_PROFILE_TIMING", "").strip().lower() in {"1", "true", "yes", "on"}
+            or initial_metadata.get("profile_timing")
+        )
 
     def _default_factory(
         self,
@@ -139,7 +195,14 @@ class SessionRunner:
     ) -> Any:
         from agentic_coder_prototype.agent import create_agent
 
-        return create_agent(config_path, workspace_dir=workspace_dir, overrides=overrides)
+        metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+        force_local_mode = bool(metadata.get("cli_force_local_mode", True))
+        return create_agent(
+            config_path,
+            workspace_dir=workspace_dir,
+            overrides=overrides,
+            force_local_mode=force_local_mode,
+        )
 
     async def start(self) -> None:
         if self._task:
@@ -161,6 +224,7 @@ class SessionRunner:
             raise RuntimeError("session is closed")
         if not content or not content.strip():
             raise ValueError("input content must not be empty")
+        content = self._sanitize_interactive_input_content(content)
         payload = {
             "content": content,
             "attachments": [
@@ -168,6 +232,39 @@ class SessionRunner:
             ],
         }
         await self._input_queue.put(payload)
+
+    def _sanitize_interactive_input_content(self, content: str) -> str:
+        """Drop exact stale editor prefixes while preserving legitimate new turns.
+
+        The TUI submits each prompt as an independent POST. A live E4 run exposed
+        a path where the editor payload arrived as previous_prompt + current_prompt
+        with no separator. That turns one user turn into a contradictory compound
+        prompt. If the new payload has an exact prior accepted prompt as a prefix,
+        the suffix is the only semantically new user input.
+        """
+        raw = str(content or "")
+        if not raw:
+            return raw
+        for prior in sorted(self._accepted_task_texts, key=len, reverse=True):
+            if not prior or not raw.startswith(prior) or len(raw) <= len(prior):
+                continue
+            suffix = raw[len(prior) :]
+            if not suffix.strip():
+                continue
+            logger.warning(
+                "session(%s) stripped stale prompt prefix from interactive input old_len=%s new_len=%s",
+                self.session.session_id,
+                len(prior),
+                len(suffix),
+            )
+            meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+            repairs = list(meta.get("input_boundary_repairs") or []) if isinstance(meta.get("input_boundary_repairs"), list) else []
+            repairs.append({"prior_len": len(prior), "raw_len": len(raw), "suffix_len": len(suffix)})
+            meta["input_boundary_repairs"] = repairs[-10:]
+            self.session.metadata = meta
+            self._persist_metadata_snapshot_threadsafe()
+            return suffix.lstrip()
+        return raw
 
     async def handle_command(self, command: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if self._closed:
@@ -543,10 +640,26 @@ class SessionRunner:
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
             return
+        overrides = dict(self.request.overrides or {})
+        try:
+            from agentic_coder_prototype.auth.store import DEFAULT_PROVIDER_AUTH_STORE
+
+            openai_auth = DEFAULT_PROVIDER_AUTH_STORE.get("openai")
+            if openai_auth is not None:
+                if openai_auth.api_key:
+                    overrides["provider_auth_runtime.openai.api_key"] = openai_auth.api_key
+                if openai_auth.base_url:
+                    overrides["provider_auth_runtime.openai.base_url"] = openai_auth.base_url
+                for header_key, header_value in dict(openai_auth.headers or {}).items():
+                    if not header_key or header_value is None:
+                        continue
+                    overrides[f"provider_auth_runtime.openai.headers.{header_key}"] = str(header_value)
+        except Exception:
+            pass
         self._agent = self.agent_factory(
             self.request.config_path,
             self.request.workspace,
-            self.request.overrides,
+            overrides or None,
         )
         await asyncio.to_thread(self._agent.initialize)
         workspace_dir = Path(self._agent.workspace_dir).resolve()
@@ -657,6 +770,7 @@ class SessionRunner:
         }
 
     async def _run(self) -> None:
+        session_started_at = time.monotonic()
         await self.registry.update_status(self.session.session_id, SessionStatus.RUNNING)
         try:
             # Safety: never auto-wipe an existing workspace when running interactive sessions
@@ -731,8 +845,10 @@ class SessionRunner:
 
             initial_task = (self.request.task or "").strip()
             if initial_task:
+                self._accepted_task_texts.append(initial_task)
                 self._input_queue.put_nowait({"content": initial_task, "attachments": []})
 
+            completed_one_shot = False
             while not self._stop_event.is_set():
                 try:
                     next_input = await self._input_queue.get()
@@ -743,6 +859,7 @@ class SessionRunner:
 
                 task_payload = dict(next_input)
                 task_text = str(task_payload.get("content", ""))
+                task_received_at = time.monotonic()
                 if self._parse_replay_path(task_text) is not None:
                     result = await self._execute_replay_task(task_text)
                     await self.registry.update_metadata(
@@ -758,9 +875,30 @@ class SessionRunner:
                 attachment_text = self._format_attachment_helper(attachment_ids)
                 if attachment_text:
                     task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
+                if task_text.strip():
+                    self._accepted_task_texts.append(task_text)
+                    self._accepted_task_texts = self._accepted_task_texts[-20:]
 
                 await self._ensure_agent_initialized()
+                after_agent_init_at = time.monotonic()
+                if self._profile_timing_enabled:
+                    self._active_bridge_timing_context = {
+                        "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
+                        "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
+                    }
                 result = await asyncio.to_thread(self._execute_task, task_text)
+                after_execute_task_at = time.monotonic()
+                if self._profile_timing_enabled and isinstance(result, dict):
+                    timing = result.setdefault("bridge_timing", {})
+                    if isinstance(timing, dict):
+                        timing.update(
+                            {
+                                "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
+                                "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
+                                "execute_task_wall_seconds": round(after_execute_task_at - after_agent_init_at, 6),
+                            }
+                        )
+                self._active_bridge_timing_context = None
                 await self.registry.update_metadata(
                     self.session.session_id,
                     completion_summary=result.get("completion_summary"),
@@ -768,9 +906,18 @@ class SessionRunner:
                     logging_dir=result.get("logging_dir"),
                     metadata=self.session.metadata,
                 )
+                after_registry_update_at = time.monotonic()
+                if self._profile_timing_enabled and isinstance(result, dict):
+                    timing = result.setdefault("bridge_timing", {})
+                    if isinstance(timing, dict):
+                        timing["post_execute_registry_update_seconds"] = round(after_registry_update_at - after_execute_task_at, 6)
                 self._input_queue.task_done()
+                metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+                if metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot":
+                    completed_one_shot = True
+                    break
 
-            final_status = SessionStatus.STOPPED if self._stop_event.is_set() else SessionStatus.COMPLETED
+            final_status = SessionStatus.STOPPED if self._stop_event.is_set() and not completed_one_shot else SessionStatus.COMPLETED
             await self.registry.update_status(self.session.session_id, final_status)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Session %s failed", self.session.session_id)
@@ -946,6 +1093,7 @@ class SessionRunner:
         if not self._agent:
             raise RuntimeError("agent missing")
 
+        execute_started_at = time.monotonic()
         emitted_flags = {"assistant": False}
         self._published_events = 0
         is_local_agent = bool(getattr(self._agent, "_local_mode", False))
@@ -979,10 +1127,24 @@ class SessionRunner:
             translated = self._translate_runtime_event(event_type, payload, turn)
             if not translated:
                 return
-            evt_type, evt_payload, evt_turn = translated
-            if evt_type is EventType.ASSISTANT_MESSAGE:
+            evt_type, evt_payload, evt_turn, evt_contract = translated
+            if evt_type in {
+                EventType.ASSISTANT_MESSAGE,
+                EventType.ASSISTANT_MESSAGE_START,
+                EventType.ASSISTANT_MESSAGE_DELTA,
+                EventType.ASSISTANT_MESSAGE_END,
+                EventType.ASSISTANT_DELTA,
+            }:
                 emitted_flags["assistant"] = True
-            self.publish_event(evt_type, evt_payload, turn=evt_turn)
+            self.publish_event(
+                evt_type,
+                evt_payload,
+                turn=evt_turn,
+                classification=evt_contract.get("classification"),
+                family=evt_contract.get("family"),
+                actor=evt_contract.get("actor"),
+                visibility=evt_contract.get("visibility"),
+            )
 
         remote_stream_enabled = bool(os.environ.get("BREADBOARD_ENABLE_REMOTE_STREAM", ""))
         if isinstance(self.request.metadata, dict) and "enable_remote_stream" in self.request.metadata:
@@ -1057,6 +1219,7 @@ class SessionRunner:
         self._control_queue = control_queue
 
         start_time = time.time()
+        run_task_started_at = time.monotonic()
         try:
             task_context = {}
             try:
@@ -1097,6 +1260,7 @@ class SessionRunner:
                 kernel_emitter_run_dir=str(kernel_emitter_run_dir) if kernel_emitter_run_dir else None,
                 kernel_emitter_mode=str(kernel_emitter_mode) if kernel_emitter_mode else None,
             )
+            run_task_completed_at = time.monotonic()
         finally:
             self._permission_queue = None
             self._control_queue = None
@@ -1113,9 +1277,11 @@ class SessionRunner:
                 self._drain_event_queue(event_queue, handle_runtime_event)
 
         elapsed_ms = int((time.time() - start_time) * 1000)
+        after_queue_drain_at = time.monotonic()
         completion = result.get("completion_summary") or {}
         reward = result.get("reward_metrics_payload") or {}
         messages = result.get("messages")
+        fallback_assistant_emitted = False
         if not emitted_flags["assistant"] and isinstance(messages, list):
             for entry in reversed(messages):
                 if isinstance(entry, dict) and entry.get("role") == "assistant":
@@ -1124,13 +1290,46 @@ class SessionRunner:
                         EventType.ASSISTANT_MESSAGE,
                         {"text": text, "message": entry, "source": "fallback"},
                     )
+                    fallback_assistant_emitted = True
                     break
+        if not emitted_flags["assistant"] and not fallback_assistant_emitted:
+            final_message = completion.get("final_message") if isinstance(completion, dict) else None
+            if isinstance(final_message, str) and final_message.strip():
+                self.publish_event(
+                    EventType.ASSISTANT_MESSAGE,
+                    {
+                        "text": final_message,
+                        "message": {"role": "assistant", "content": final_message, "source": "completion_summary"},
+                        "source": "completion_summary",
+                    },
+                    visibility="transcript",
+                )
+        after_fallback_emit_at = time.monotonic()
         logging_dir = result.get("logging_dir") or result.get("run_dir")
         usage_payload = self._extract_usage_metrics(result, logging_dir, elapsed_ms=elapsed_ms)
         completion_payload: Dict[str, Any] = {"summary": completion, "mode": self._mode}
+        if self._profile_timing_enabled:
+            provider_timing = None
+            candidate = result.get("provider_runtime_timing")
+            if isinstance(candidate, dict):
+                provider_timing = dict(candidate)
+            elif isinstance(result.get("provider_finish_meta"), dict):
+                nested = result["provider_finish_meta"].get("provider_runtime_timing")
+                if isinstance(nested, dict):
+                    provider_timing = dict(nested)
+            completion_payload["bridge_timing"] = {
+                "execute_task_total_seconds": round(time.monotonic() - execute_started_at, 6),
+                "run_task_seconds": round(run_task_completed_at - run_task_started_at, 6),
+                "post_run_task_queue_drain_seconds": round(after_queue_drain_at - run_task_completed_at, 6),
+                "post_queue_drain_to_completion_payload_seconds": round(after_fallback_emit_at - after_queue_drain_at, 6),
+                "published_event_count_before_completion": self._published_events,
+                "provider_runtime_timing": provider_timing,
+                **dict(self._active_bridge_timing_context or {}),
+            }
         if usage_payload:
             completion_payload["usage"] = usage_payload
         self.publish_event(EventType.COMPLETION, completion_payload)
+        after_completion_publish_at = time.monotonic()
         if reward:
             self.publish_event(EventType.REWARD_UPDATE, {"summary": reward})
         if logging_dir:
@@ -1150,12 +1349,20 @@ class SessionRunner:
         }
         if usage_payload:
             finish_payload["usage"] = usage_payload
+        if self._profile_timing_enabled:
+            finish_payload["bridge_timing"] = {
+                "completion_event_publish_seconds": round(after_completion_publish_at - after_fallback_emit_at, 6),
+                "post_completion_to_run_finished_seconds": round(time.monotonic() - after_completion_publish_at, 6),
+            }
         self.publish_event(EventType.RUN_FINISHED, finish_payload)
-        return {
+        result_payload = {
             "completion_summary": completion,
             "reward_metrics": reward or None,
             "logging_dir": logging_dir,
         }
+        if self._profile_timing_enabled:
+            result_payload["bridge_timing"] = dict(completion_payload.get("bridge_timing") or {})
+        return result_payload
 
     async def publish_event_async(
         self,
@@ -1163,6 +1370,10 @@ class SessionRunner:
         payload: Dict[str, Any],
         *,
         turn: Optional[int] = None,
+        classification: Optional[str] = None,
+        family: Optional[str] = None,
+        actor: Optional[str] = None,
+        visibility: Optional[str] = None,
     ) -> None:
         self._touch_last_activity()
         event = SessionEvent(
@@ -1170,16 +1381,34 @@ class SessionRunner:
             session_id=self.session.session_id,
             payload=payload,
             turn=turn,
+            classification=classification,
+            family=family,
+            actor=actor,
+            visibility=visibility,
         )
         await self._enqueue_event_async(event)
 
-    def publish_event(self, event_type: EventType, payload: Dict[str, Any], *, turn: Optional[int] = None) -> None:
+    def publish_event(
+        self,
+        event_type: EventType,
+        payload: Dict[str, Any],
+        *,
+        turn: Optional[int] = None,
+        classification: Optional[str] = None,
+        family: Optional[str] = None,
+        actor: Optional[str] = None,
+        visibility: Optional[str] = None,
+    ) -> None:
         self._touch_last_activity()
         event = SessionEvent(
             type=event_type,
             session_id=self.session.session_id,
             payload=payload,
             turn=turn,
+            classification=classification,
+            family=family,
+            actor=actor,
+            visibility=visibility,
         )
         loop = self._loop
         try:
@@ -1598,7 +1827,7 @@ class SessionRunner:
         event_type: str,
         payload: Dict[str, Any],
         turn: Optional[int],
-    ) -> Optional[tuple[EventType, Dict[str, Any], Optional[int]]]:
+    ) -> Optional[TranslatedRuntimeEvent]:
         mapping = {
             "turn_start": EventType.TURN_START,
             "stream.gap": EventType.STREAM_GAP,
@@ -1609,6 +1838,10 @@ class SessionRunner:
             "assistant.message.end": EventType.ASSISTANT_MESSAGE_END,
             "assistant.reasoning.delta": EventType.ASSISTANT_REASONING_DELTA,
             "assistant.thought_summary.delta": EventType.ASSISTANT_THOUGHT_SUMMARY_DELTA,
+            "tool.exec.start": EventType.TOOL_EXEC_START,
+            "tool.exec.stdout.delta": EventType.TOOL_EXEC_STDOUT_DELTA,
+            "tool.exec.stderr.delta": EventType.TOOL_EXEC_STDERR_DELTA,
+            "tool.exec.end": EventType.TOOL_EXEC_END,
             "assistant_message": EventType.ASSISTANT_MESSAGE,
             "assistant_delta": EventType.ASSISTANT_DELTA,
             "user_message": EventType.USER_MESSAGE,
@@ -1638,6 +1871,7 @@ class SessionRunner:
             return None
 
         normalized_payload: Dict[str, Any] = dict(payload or {})
+        event_contract = _effective_runtime_event_contract(event_type, _pop_runtime_event_contract(normalized_payload))
         if event_type == "todo_event":
             try:
                 todo_update = normalized_payload.get("todo")
@@ -1655,7 +1889,8 @@ class SessionRunner:
             if not isinstance(text, str):
                 text = ""
             if not text and isinstance(message, dict):
-                text = str(message.get("content", ""))
+                content = message.get("content")
+                text = content if isinstance(content, str) else ""
             normalized_payload = {"text": text, "message": message}
         elif evt is EventType.ASSISTANT_DELTA:
             text = normalized_payload.get("text")
@@ -1669,7 +1904,8 @@ class SessionRunner:
             if not isinstance(text, str):
                 text = ""
             if not text and isinstance(message, dict):
-                text = str(message.get("content", ""))
+                content = message.get("content")
+                text = content if isinstance(content, str) else ""
             normalized_payload = {"text": text, "message": message}
         elif evt is EventType.TOOL_CALL:
             normalized_payload = self._normalize_tool_call_payload(normalized_payload)
@@ -1681,7 +1917,7 @@ class SessionRunner:
             normalized_payload = self._normalize_permission_response(normalized_payload)
         elif evt is EventType.TASK_EVENT:
             normalized_payload = self._normalize_task_event(normalized_payload)
-        return evt, normalized_payload, turn
+        return evt, normalized_payload, turn, event_contract
 
     def _resolve_skill_catalog(self) -> Dict[str, Any]:
         config: Dict[str, Any]

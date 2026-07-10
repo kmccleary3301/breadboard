@@ -38,10 +38,27 @@ export type FlattenedGroupedTask<T extends GroupableTask> = {
 
 export type TaskStepLike = {
   readonly stepId?: string
+  readonly kind?: string
   readonly label?: string
   readonly status?: string
   readonly attempt?: number
   readonly detail?: string
+}
+
+export type TaskInspectorSummaryInput = {
+  readonly steps?: ReadonlyArray<TaskStepLike> | null
+  readonly artifactPath?: string | null
+  readonly artifactPaths?: ReadonlyArray<string | null | undefined> | null
+  readonly error?: string | null
+}
+
+export type TaskInspectorSummary = {
+  readonly tools: number
+  readonly diffs: number
+  readonly approvals: number
+  readonly artifacts: number
+  readonly attempts: number
+  readonly failures: number
 }
 
 export const normalizeTaskStatusGroup = (value: unknown): TaskStatusGroup => {
@@ -266,6 +283,61 @@ export const formatTaskModeBadge = (mode: unknown): string | null => {
   if (raw === "sync" || raw === "foreground" || raw === "fg") return "[fg]"
   if (raw === "async" || raw === "background" || raw === "bg") return "[bg]"
   return null
+}
+
+const includesAny = (seed: string, needles: ReadonlyArray<string>): boolean =>
+  needles.some((needle) => seed.includes(needle))
+
+export const summarizeTaskInspector = (task: TaskInspectorSummaryInput | null | undefined): TaskInspectorSummary => {
+  const steps = Array.isArray(task?.steps) ? task?.steps ?? [] : []
+  let tools = 0
+  let diffs = 0
+  let approvals = 0
+  let failures = task?.error ? 1 : 0
+  let attempts = 0
+
+  for (const step of steps) {
+    const kind = String(step.kind ?? "").trim().toLowerCase()
+    const label = String(step.label ?? "").trim().toLowerCase()
+    const detail = String(step.detail ?? "").trim().toLowerCase()
+    const seed = `${kind} ${label} ${detail}`
+    if (kind === "tool" || label.length > 0) tools += kind === "tool" || includesAny(seed, ["tool", "call"]) ? 1 : 0
+    if (includesAny(seed, ["diff", "patch", "hunk", "change set", "changeset"])) diffs += 1
+    if (includesAny(seed, ["approval", "permission", "approve", "deny"])) approvals += 1
+    if (normalizeTaskStatusGroup(step.status) === "failed") failures += 1
+    const attempt = Number(step.attempt)
+    if (Number.isFinite(attempt) && attempt > 0) attempts = Math.max(attempts, Math.floor(attempt))
+  }
+
+  const artifactCandidates = [
+    task?.artifactPath,
+    ...(Array.isArray(task?.artifactPaths) ? task?.artifactPaths ?? [] : []),
+  ]
+    .map((value) => (typeof value === "string" ? value.trim() : ""))
+    .filter((value) => value.length > 0)
+
+  return {
+    tools,
+    diffs,
+    approvals,
+    artifacts: new Set(artifactCandidates).size,
+    attempts: Math.max(attempts, steps.length > 0 ? 1 : 0),
+    failures,
+  }
+}
+
+export const formatTaskInspectorTabsLine = (
+  task: TaskInspectorSummaryInput | null | undefined,
+): string => {
+  const summary = summarizeTaskInspector(task)
+  return [
+    `Tools ${summary.tools}`,
+    `Diffs ${summary.diffs}`,
+    `Approvals ${summary.approvals}`,
+    `Artifacts ${summary.artifacts}`,
+    `Attempts ${summary.attempts}`,
+    `Failures ${summary.failures}`,
+  ].join(" | ")
 }
 
 const deriveStepTerminalReason = (step: TaskStepLike): string | null => {

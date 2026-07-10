@@ -592,9 +592,19 @@ export const useFilePickerController = (options: FilePickerControllerOptions) =>
     [fileMentionConfig.mode],
   )
 
+  const removeLastFileMention = useCallback(() => {
+    setFileMentions((prev) => prev.slice(0, Math.max(0, prev.length - 1)))
+  }, [])
+
+  const clearFileMentions = useCallback(() => {
+    setFileMentions([])
+  }, [])
+
   return {
     fileMentions,
     setFileMentions,
+    removeLastFileMention,
+    clearFileMentions,
     filePicker,
     setFilePicker,
     filePickerIndexRef,

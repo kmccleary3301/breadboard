@@ -1,3 +1,5 @@
+import { appendFileSync, promises as fs } from "node:fs"
+import path from "node:path"
 import { useCallback, useEffect, useMemo } from "react"
 import { buildSuggestions, SLASH_COMMANDS } from "../../../slashCommands.js"
 import { computeModelColumns, CONTEXT_COLUMN_WIDTH, PRICE_COLUMN_WIDTH } from "../../../modelMenu/layout.js"
@@ -26,14 +28,31 @@ import {
 import { loadTaskFocusTail } from "./taskFocusLoader.js"
 import { buildLaneDiagnosticsHeatmap } from "./diagnosticsHeatmap.js"
 import { todoStoreToList } from "../../../todos/todoStore.js"
+import { buildTranscriptViewerModel, type TranscriptAnchorKey } from "./transcriptViewerModel.js"
+import { buildTranscriptExportLines } from "../../../transcript/projection.js"
 
 type PanelsContext = Record<string, any>
+
+const traceTaskFocusTail = (event: Record<string, unknown>) => {
+  const target = process.env.BREADBOARD_TUI_KEY_TRACE_FILE
+  if (!target) return
+  try {
+    appendFileSync(target, `${JSON.stringify({ timestamp: Date.now(), source: "task-focus-tail", ...event })}\n`, "utf8")
+  } catch {
+    // Diagnostic only.
+  }
+}
 
 const parseBoundedInt = (raw: string | undefined, fallback: number, min: number, max: number): number => {
   if (raw == null) return fallback
   const parsed = Number(raw.trim())
   if (!Number.isFinite(parsed)) return fallback
   return Math.max(min, Math.min(max, Math.floor(parsed)))
+}
+
+const parseBoolEnv = (raw: string | undefined): boolean => {
+  const normalized = String(raw ?? "").trim().toLowerCase()
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on"
 }
 
 export const useReplViewPanels = (context: PanelsContext) => {
@@ -56,6 +75,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     paletteState,
     confirmState,
     shortcutsOpen,
+    shortcutsOpenedAtRef,
     usageOpen,
     permissionRequest,
     rewindMenu,
@@ -63,6 +83,11 @@ export const useReplViewPanels = (context: PanelsContext) => {
     tasksOpen,
     ctreeOpen,
     transcriptViewerOpen,
+    transcriptViewerRawMode,
+    recentSessionsOpen,
+    resultDetailOpen,
+    artifactPreviewOpen,
+    collapsedDetailOpen,
     claudeChrome,
     setShortcutsOpen,
     inputLocked: inputLockedOverride,
@@ -74,6 +99,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     keymap,
     transcriptSearchQuery,
     transcriptSearchIndex,
+    transcriptToolIndex,
     transcriptViewerScroll,
     transcriptViewerFollowTail,
     setTranscriptToolIndex,
@@ -97,9 +123,15 @@ export const useReplViewPanels = (context: PanelsContext) => {
     taskSearchQuery,
     taskStatusFilter,
     taskLaneFilter,
+    taskNotice,
+    taskActionNotice,
+    taskTailLines,
+    taskTailPath,
     setTaskNotice,
+    setTaskActionNotice,
     setTaskTailLines,
     setTaskTailPath,
+    onTaskAction,
     ctreeTree,
     ctreeCollapsedNodes,
     ctreeIndex,
@@ -112,6 +144,12 @@ export const useReplViewPanels = (context: PanelsContext) => {
   )
   const focusSnippetMaxBytes = useMemo(
     () => parseBoundedInt(process.env.BREADBOARD_SUBAGENTS_FOCUS_SNIPPET_MAX_BYTES, 40_000, 8_000, 500_000),
+    [],
+  )
+  const taskActionsEnabled = useMemo(
+    () =>
+      parseBoolEnv(process.env.BREADBOARD_SUBAGENTS_TASK_ACTIONS_ENABLED) ||
+      parseBoolEnv(process.env.BREADBOARD_TUI_SUBAGENTS_TASK_ACTIONS_ENABLED),
     [],
   )
 
@@ -136,7 +174,11 @@ export const useReplViewPanels = (context: PanelsContext) => {
     setInspectRawScroll((prev: number) => Math.max(0, Math.min(prev, inspectRawMaxScroll)))
   }, [inspectRawMaxScroll, setInspectRawScroll])
 
-  const PANEL_WIDTH = useMemo(() => Math.min(96, Math.max(60, Math.floor(columnWidth * 0.8))), [columnWidth])
+  const PANEL_WIDTH = useMemo(() => {
+    const safeColumnWidth = Math.max(20, Math.floor(columnWidth))
+    const preferred = Math.floor(safeColumnWidth * 0.8)
+    return Math.max(20, Math.min(96, preferred, safeColumnWidth - 2))
+  }, [columnWidth])
   const modelColumnLayout = useMemo(() => computeModelColumns(columnWidth), [columnWidth])
   const modelMenuCompact = useMemo(() => rowCount <= 20 || columnWidth <= 70, [columnWidth, rowCount])
   const modelMenuHeaderText = useMemo(() => {
@@ -162,10 +204,11 @@ export const useReplViewPanels = (context: PanelsContext) => {
   const CONTENT_PADDING = 6
   const MAX_VISIBLE_MODELS = 8
   const MODEL_VISIBLE_ROWS = useMemo(() => {
+    if (modelMenuCompact) return 4
     const base = Math.floor(rowCount * 0.45)
     const capped = Math.max(6, Math.min(14, base))
     return Math.max(4, Math.min(capped, rowCount - 10))
-  }, [rowCount])
+  }, [modelMenuCompact, rowCount])
   const SKILLS_VISIBLE_ROWS = useMemo(() => {
     const base = Math.floor(rowCount * 0.5)
     const capped = Math.max(8, Math.min(18, base))
@@ -191,6 +234,10 @@ export const useReplViewPanels = (context: PanelsContext) => {
       tasksOpen,
       ctreeOpen,
       transcriptViewerOpen,
+      recentSessionsOpen,
+      resultDetailOpen,
+      artifactPreviewOpen,
+      collapsedDetailOpen,
       claudeChrome,
     }),
     [
@@ -202,8 +249,12 @@ export const useReplViewPanels = (context: PanelsContext) => {
       paletteState.status,
       permissionRequest,
       rewindMenu.status,
+      recentSessionsOpen,
+      resultDetailOpen,
+      artifactPreviewOpen,
       shortcutsOpen,
       skillsMenu.status,
+      collapsedDetailOpen,
       tasksOpen,
       todosOpen,
       transcriptViewerOpen,
@@ -230,17 +281,19 @@ export const useReplViewPanels = (context: PanelsContext) => {
     handleLineEditGuarded,
     pushHistoryEntry,
     recallHistory,
+    searchHistory,
     moveCursorVertical,
   } = useComposerController({
     inputLocked,
     shortcutsOpen,
     setShortcutsOpen,
+    shortcutsOpenedAtRef,
   })
 
   const mergedSuppress = suppressSuggestions
   const suggestions = useMemo(
-    () => (mergedSuppress ? [] : buildSuggestions(input, MAX_SUGGESTIONS)),
-    [input, mergedSuppress],
+    () => (mergedSuppress ? [] : buildSuggestions(input, MAX_SUGGESTIONS, { pendingResponse })),
+    [input, mergedSuppress, pendingResponse],
   )
   const activeSlashQuery = useMemo(() => {
     if (!input.startsWith("/")) return ""
@@ -313,7 +366,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     return Math.min(Math.max(16, padded), maxAllowed)
   }, [claudeChrome, columnWidth, suggestions])
   const suggestionLayout = useMemo(() => {
-    const maxWidth = claudeChrome ? columnWidth - suggestionPrefix.length - 2 : Math.min(columnWidth - 4, 72)
+    const maxWidth = claudeChrome ? columnWidth - suggestionPrefix.length - 2 : Math.min(columnWidth - 4, 68)
     const totalWidth = Math.max(24, maxWidth)
     const baseCommandWidth = Math.max(14, Math.min(28, Math.floor(totalWidth * 0.35)))
     const commandWidth = claudeChrome && suggestionCommandWidth ? suggestionCommandWidth : baseCommandWidth
@@ -323,7 +376,8 @@ export const useReplViewPanels = (context: PanelsContext) => {
   const buildSuggestionLines = useCallback(
     (row: any, multiline: boolean): Array<{ label: string; summary: string }> => {
       const label = `${row.command}${row.usage ? ` ${row.usage}` : ""}`
-      const summaryText = row.shortcut ? uiText(`${row.summary} · ${row.shortcut}`) : row.summary
+      const baseSummary = row.disabledReason ? `${row.summary} — ${row.disabledReason}` : row.summary
+      const summaryText = row.shortcut ? uiText(`${baseSummary} · ${row.shortcut}`) : baseSummary
       if (!multiline) {
         return [{ label, summary: summaryText }]
       }
@@ -365,48 +419,23 @@ export const useReplViewPanels = (context: PanelsContext) => {
     return SLASH_COMMANDS.filter((command) => command.name.toLowerCase().includes(query))
   }, [paletteState])
 
-  const transcriptViewerLines = useMemo(() => {
-    const lines: string[] = []
-    const normalizeNewlines = (text: string) => text.replace(/\\r\\n?/g, "\\n")
+  const transcriptViewerItems = useMemo(() => {
+    const includeRawEvents = viewPrefs.rawStream === true || transcriptViewerRawMode === true
     const transcript = buildTranscript(
       { conversation, toolEvents, rawEvents },
-      { includeRawEvents: viewPrefs.rawStream === true, pendingToolsInTail: false },
+      { includeRawEvents, pendingToolsInTail: false },
     )
     const items: TranscriptItem[] = transcriptViewerOpen
       ? [...transcript.committed, ...transcript.tail]
       : transcript.committed
-
-    const renderLines = (prefix: string, text: string) => {
-      const entryLines = normalizeNewlines(text).split("\\n")
-      entryLines.forEach((line, idx) => {
-        lines.push(`${idx === 0 ? prefix : "  "}${line}`)
-      })
-    }
-
-    for (const item of items) {
-      if (item.kind === "message") {
-        const glyph = item.speaker === "user" ? "❯" : item.speaker === "assistant" ? GLYPHS.assistantDot : GLYPHS.systemDot
-        renderLines(`${glyph} `, item.text)
-      } else {
-        renderLines(`${GLYPHS.bullet} `, item.text)
-      }
-      lines.push("")
-    }
-    while (lines.length > 0 && lines[lines.length - 1] === "") {
-      lines.pop()
-    }
-    return lines
-  }, [conversation, rawEvents, toolEvents, transcriptViewerOpen, viewPrefs.rawStream])
-  const transcriptToolLines = useMemo(() => {
-    const indices: number[] = []
-    for (let line = 0; line < transcriptViewerLines.length; line += 1) {
-      const value = transcriptViewerLines[line] ?? ""
-      if (value.startsWith(`${GLYPHS.bullet} `)) {
-        indices.push(line)
-      }
-    }
-    return indices
-  }, [transcriptViewerLines])
+    return items
+  }, [conversation, rawEvents, toolEvents, transcriptViewerOpen, transcriptViewerRawMode, viewPrefs.rawStream])
+  const transcriptViewerModel = useMemo(() => buildTranscriptViewerModel(transcriptViewerItems), [transcriptViewerItems])
+  const transcriptViewerLines = transcriptViewerModel.lines
+  const transcriptViewerExportLines = useMemo(() => buildTranscriptExportLines(transcriptViewerItems), [transcriptViewerItems])
+  const transcriptToolLines = transcriptViewerModel.toolLines
+  const transcriptToolTargets = transcriptViewerModel.toolTargets
+  const transcriptViewerAnchors = transcriptViewerModel.anchors
   useEffect(() => {
     if (!transcriptViewerOpen) return
     setTranscriptToolIndex(0)
@@ -448,6 +477,12 @@ export const useReplViewPanels = (context: PanelsContext) => {
     return transcriptSearchMatches[transcriptSearchSafeIndex]?.line ?? null
   }, [transcriptSearchMatches, transcriptSearchSafeIndex])
 
+  const selectedTranscriptToolTarget = useMemo(() => {
+    if (transcriptToolTargets.length === 0) return null
+    const safeIndex = Math.max(0, Math.min(transcriptToolIndex, transcriptToolTargets.length - 1))
+    return transcriptToolTargets[safeIndex] ?? null
+  }, [transcriptToolIndex, transcriptToolTargets])
+
   const transcriptSearchLineMatches = useMemo(() => {
     if (transcriptSearchMatches.length === 0) return []
     const set = new Set<number>()
@@ -466,6 +501,32 @@ export const useReplViewPanels = (context: PanelsContext) => {
       setTranscriptViewerScroll(clamped)
     },
     [setTranscriptViewerFollowTail, setTranscriptViewerScroll, transcriptViewerBodyRows, transcriptViewerLines.length, transcriptViewerMaxScroll],
+  )
+
+  const jumpTranscriptToAnchor = useCallback(
+    (anchor: TranscriptAnchorKey | "top" | "tail"): boolean => {
+      if (anchor === "top") {
+        setTranscriptViewerFollowTail(false)
+        setTranscriptViewerScroll(0)
+        return true
+      }
+      if (anchor === "tail") {
+        setTranscriptViewerFollowTail(true)
+        setTranscriptViewerScroll(transcriptViewerMaxScroll)
+        return true
+      }
+      const line = transcriptViewerAnchors[anchor]
+      if (typeof line !== "number") return false
+      jumpTranscriptToLine(line)
+      return true
+    },
+    [
+      jumpTranscriptToLine,
+      setTranscriptViewerFollowTail,
+      setTranscriptViewerScroll,
+      transcriptViewerAnchors,
+      transcriptViewerMaxScroll,
+    ],
   )
 
   useEffect(() => {
@@ -488,7 +549,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
   const permissionDiffPreview = useMemo(() => {
     const diff = permissionRequest?.diffText
     if (!diff) return null
-    const lines = diff.replace(/\\r\\n?/g, "\\n").split("\\n")
+    const lines = diff.replace(/\r\n?/g, "\n").split("\n")
     return computeDiffPreview(lines)
   }, [permissionRequest?.diffText])
 
@@ -504,7 +565,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
 
   const permissionDiffLines = useMemo(() => {
     if (!permissionSelectedSection) return []
-    return renderCodeLines(permissionSelectedSection.lines.join("\\n"), "diff")
+    return renderCodeLines(permissionSelectedSection.lines.join("\n"), "diff")
   }, [permissionSelectedSection])
 
   const permissionViewportRows = useMemo(() => Math.max(8, Math.min(20, Math.floor(rowCount * 0.45))), [rowCount])
@@ -631,6 +692,10 @@ export const useReplViewPanels = (context: PanelsContext) => {
     }
     return labels
   }, [workGraph?.lanesById])
+  const taskLaneFilterLabel = useMemo(() => {
+    if (taskLaneFilter === "all") return "all"
+    return laneLabelById[taskLaneFilter] ?? taskLaneFilter
+  }, [laneLabelById, taskLaneFilter])
   const diagnosticsHeatmapRows = useMemo(
     () =>
       buildLaneDiagnosticsHeatmap(sortedTasks, {
@@ -656,7 +721,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
   )
   const mapTaskRow = useCallback((task: any, groupKey: string, groupLabel: string) => {
     const status = normalizeTaskStatusGroup(task.status)
-    const labelParts = []
+    const labelParts: string[] = []
     const description = task.description || task.kind || "task"
     labelParts.push(description)
     if (task.subagentType) {
@@ -761,8 +826,15 @@ export const useReplViewPanels = (context: PanelsContext) => {
   }, [])
 
   const requestTaskTail = useCallback(async (options?: { raw?: boolean; tailLines?: number; maxBytes?: number }) => {
+    traceTaskFocusTail({
+      phase: "start",
+      selectedTaskId: selectedTask?.id ?? null,
+      artifactPath: selectedTask?.artifactPath ?? null,
+      options: options ?? null,
+    })
     if (!selectedTask) {
       setTaskNotice("No task selected.")
+      traceTaskFocusTail({ phase: "no-task" })
       return
     }
     const rawMode = options?.raw === true
@@ -782,10 +854,97 @@ export const useReplViewPanels = (context: PanelsContext) => {
       setTaskTailLines(result.value?.lines ?? [])
       setTaskTailPath(result.value?.path ?? null)
       setTaskNotice(result.value?.notice ?? null)
+      traceTaskFocusTail({
+        phase: "success",
+        path: result.value?.path ?? null,
+        lineCount: result.value?.lines?.length ?? 0,
+        notice: result.value?.notice ?? null,
+      })
       return
     }
     setTaskNotice(result.failure?.error ?? "Unable to load task output.")
+    traceTaskFocusTail({ phase: "failure", error: result.failure?.error ?? "Unable to load task output." })
   }, [focusRawMaxBytes, focusSnippetMaxBytes, onReadFile, selectedTask, setTaskNotice, setTaskTailLines, setTaskTailPath])
+
+  const exportTaskLog = useCallback(async () => {
+    if (!selectedTask) {
+      setTaskNotice("No task selected.")
+      return
+    }
+    const result = await loadTaskFocusTail(
+      {
+        id: selectedTask.id,
+        artifactPath: selectedTask.artifactPath ?? null,
+      },
+      {
+        rawMode: true,
+        tailLines: 400,
+        maxBytes: focusRawMaxBytes,
+      },
+      onReadFile,
+    )
+    if (!result.ok) {
+      setTaskNotice(result.failure?.error ?? "Unable to export task log.")
+      return
+    }
+    try {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-")
+      const safeId = String(selectedTask.id ?? "task")
+        .replace(/[^a-zA-Z0-9._-]+/g, "-")
+        .slice(0, 80) || "task"
+      const dirPath = path.join(process.cwd(), "artifacts", "task-logs")
+      await fs.mkdir(dirPath, { recursive: true })
+      const filePath = path.join(dirPath, `task-log-${safeId}-${timestamp}.jsonl`)
+      await fs.writeFile(filePath, `${(result.value?.lines ?? []).join("\n")}\n`, "utf8")
+      setTaskTailLines(result.value?.lines ?? [])
+      setTaskTailPath(result.value?.path ?? null)
+      setTaskNotice(`Task log saved to ${filePath}`)
+      traceTaskFocusTail({
+        phase: "export-success",
+        path: result.value?.path ?? null,
+        exportPath: filePath,
+        lineCount: result.value?.lines?.length ?? 0,
+      })
+    } catch (error) {
+      const message = (error as Error).message || String(error)
+      setTaskNotice(`Task log export failed: ${message}`)
+      traceTaskFocusTail({ phase: "export-failure", error: message })
+    }
+  }, [focusRawMaxBytes, onReadFile, selectedTask, setTaskNotice, setTaskTailLines, setTaskTailPath])
+
+  const runTaskAction = useCallback(async (action: "cancel" | "retry" | "pause_resume" | "merge") => {
+    if (!selectedTask) {
+      setTaskNotice("No task selected.")
+      return false
+    }
+    const taskId = String(selectedTask.id ?? "").trim()
+    const label = action === "pause_resume" ? "pause/resume" : action
+    if (!taskId) {
+      setTaskNotice("Selected task has no stable id.")
+      return false
+    }
+    if (!taskActionsEnabled || typeof onTaskAction !== "function") {
+      const unavailable = `${label} unavailable for ${taskId}.`
+      if (typeof setTaskActionNotice === "function") {
+        setTaskActionNotice(unavailable)
+      }
+      return false
+    }
+    if (typeof setTaskActionNotice === "function") {
+      setTaskActionNotice(`Requesting ${label} for ${taskId}…`)
+    }
+    const ok = await onTaskAction(action, selectedTask)
+    if (typeof setTaskActionNotice === "function") {
+      setTaskActionNotice(
+        ok
+          ? `${label} requested for ${taskId}.`
+          : `${label} unavailable for ${taskId}.`,
+      )
+    } else {
+      setTaskNotice(ok ? `${label} requested for ${taskId}.` : `${label} unavailable for ${taskId}.`)
+    }
+    return ok
+  }, [onTaskAction, selectedTask, setTaskActionNotice, setTaskNotice, taskActionsEnabled])
 
   return {
     inspectRawLines,
@@ -820,6 +979,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     handleLineEditGuarded,
     pushHistoryEntry,
     recallHistory,
+    searchHistory,
     moveCursorVertical,
     suggestions,
     activeSlashQuery,
@@ -833,7 +993,10 @@ export const useReplViewPanels = (context: PanelsContext) => {
     suggestionWindow,
     paletteItems,
     transcriptViewerLines,
+    transcriptViewerExportLines,
     transcriptToolLines,
+    transcriptToolTargets,
+    selectedTranscriptToolTarget,
     transcriptViewerBodyRows,
     transcriptViewerMaxScroll,
     transcriptViewerEffectiveScroll,
@@ -842,6 +1005,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     transcriptSearchActiveLine,
     transcriptSearchLineMatches,
     jumpTranscriptToLine,
+    jumpTranscriptToAnchor,
     permissionDiffSections,
     permissionDiffPreview,
     permissionSelectedFileIndex,
@@ -862,9 +1026,15 @@ export const useReplViewPanels = (context: PanelsContext) => {
     taskGroupMode,
     taskCollapsedGroupKeys,
     taskLaneFilter,
+    taskLaneFilterLabel,
     taskLaneOrder,
     taskFocusLaneId,
     taskFocusLaneLabel,
+    taskActionsEnabled,
+    taskNotice,
+    taskActionNotice,
+    taskTailLines,
+    taskTailPath,
     taskViewportRows,
     taskMaxScroll,
     selectedTaskIndex,
@@ -880,5 +1050,7 @@ export const useReplViewPanels = (context: PanelsContext) => {
     formatCTreeNodePreview,
     formatCTreeNodeFlags,
     requestTaskTail,
+    exportTaskLog,
+    runTaskAction,
   }
 }

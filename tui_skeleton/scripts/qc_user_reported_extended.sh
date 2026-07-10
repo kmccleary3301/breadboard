@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "[qc][legacy] $(basename "$0") is a compatibility or narrow-repro lane." >&2
+echo "[qc][legacy] Prefer scripts/qc_profile_matrix.sh and qc:profile:* for canonical QC." >&2
+
 run_with_retry() {
   local script_name="$1"
   local attempts="${2:-2}"

@@ -8,16 +8,16 @@ const fail = (message: string): never => {
 
 const run = async () => {
   const raw = await fs.readFile(target, "utf8")
-  const hasSelectModel = raw.includes("Select model")
+  const hasResolvedPicker = raw.includes("Models") && raw.includes("Type to filter")
   const stillLoading = raw.includes("Loading model catalog")
   const hasCatalogFailure =
     raw.includes("Failed to load model catalog") || raw.includes("Model catalog unavailable")
   const hasFatalError = /\b(TypeError|Unhandled|Exception|Traceback)\b/i.test(raw)
 
-  if (!hasSelectModel && !hasCatalogFailure) {
-    fail('missing resolved model-picker state (expected "Select model" or explicit catalog failure)')
+  if (!hasResolvedPicker && !hasCatalogFailure) {
+    fail('missing resolved model-picker state (expected "Models" with filter affordance or explicit catalog failure)')
   }
-  if (stillLoading && !hasSelectModel && !hasCatalogFailure) fail("menu remained stuck in loading state")
+  if (stillLoading && !hasResolvedPicker && !hasCatalogFailure) fail("menu remained stuck in loading state")
   if (hasFatalError) fail("unexpected fatal error marker in snapshot")
 
   console.log("[qc:models-offline] passed")
@@ -27,4 +27,3 @@ run().catch((error) => {
   console.error((error as Error).message)
   process.exitCode = 1
 })
-

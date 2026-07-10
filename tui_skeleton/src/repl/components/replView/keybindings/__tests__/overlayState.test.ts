@@ -15,6 +15,10 @@ const baseFlags = (): OverlayFlags => ({
   tasksOpen: false,
   ctreeOpen: false,
   transcriptViewerOpen: false,
+  recentSessionsOpen: false,
+  resultDetailOpen: false,
+  artifactPreviewOpen: false,
+  collapsedDetailOpen: false,
   claudeChrome: false,
 })
 
@@ -37,6 +41,11 @@ describe("getOverlayFocusLabel", () => {
   it("maps task and todo overlays to human-readable labels", () => {
     expect(getOverlayFocusLabel({ ...baseFlags(), tasksOpen: true })).toBe("Tasks")
     expect(getOverlayFocusLabel({ ...baseFlags(), todosOpen: true })).toBe("Todos")
+  })
+
+  it("maps result and artifact overlays to human-readable labels", () => {
+    expect(getOverlayFocusLabel({ ...baseFlags(), resultDetailOpen: true })).toBe("Result detail")
+    expect(getOverlayFocusLabel({ ...baseFlags(), artifactPreviewOpen: true })).toBe("Artifact")
   })
 
   it("suppresses shortcuts label in claude chrome mode", () => {

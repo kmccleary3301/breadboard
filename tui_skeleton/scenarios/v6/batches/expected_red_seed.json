@@ -1,0 +1,10 @@
+{
+  "id": "v6_expected_red_seed",
+  "campaign": "p14-v6-red-mining",
+  "scenarios": [
+    {
+      "path": "scenarios/v6/red_calibration/v6_minimizer_impossible_wait_red.json",
+      "expectedRed": true
+    }
+  ]
+}

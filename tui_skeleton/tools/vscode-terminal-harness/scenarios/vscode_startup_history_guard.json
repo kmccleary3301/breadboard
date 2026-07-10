@@ -1,0 +1,182 @@
+{
+  "id": "vscode_startup_history_guard",
+  "terminal": {
+    "initialCols": 118,
+    "initialRows": 36
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_ALPHA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_ALPHA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "echo BB_VSCODE_PRE_BETA\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "BB_VSCODE_PRE_BETA",
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "write",
+      "text": "bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "snapshot",
+      "label": "startup"
+    },
+    {
+      "kind": "resize",
+      "cols": 86,
+      "rows": 28
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "assert",
+      "assertions": [
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "BB_VSCODE_PRE_ALPHA"
+        },
+        {
+          "kind": "contains",
+          "scope": "raw",
+          "text": "BB_VSCODE_PRE_BETA"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "Type your request"
+        },
+        {
+          "kind": "contains",
+          "scope": "viewport",
+          "text": "[ready]"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "BreadBoard v0.2.0",
+          "count": 1
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "You are Codex"
+        },
+        {
+          "kind": "notContains",
+          "scope": "buffer",
+          "text": "file://logging/"
+        },
+        {
+          "kind": "notContains",
+          "scope": "raw",
+          "text": "harness-resize-probe"
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "Type your request",
+          "count": 1
+        },
+        {
+          "kind": "countAtMost",
+          "scope": "viewport",
+          "text": "[ready]",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "kind": "resize",
+      "cols": 120,
+      "rows": 36
+    },
+    {
+      "kind": "waitForStableFrame",
+      "scope": "viewport",
+      "stableMs": 700,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "screenshot",
+      "label": "final"
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "BB_VSCODE_PRE_ALPHA"
+    },
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "BB_VSCODE_PRE_BETA"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Type your request"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "[ready]"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "You are Codex"
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    },
+    {
+      "kind": "notContains",
+      "scope": "raw",
+      "text": "harness-resize-probe"
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "Type your request",
+      "count": 1
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "[ready]",
+      "count": 1
+    }
+  ]
+}

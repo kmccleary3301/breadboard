@@ -1,11 +1,23 @@
 import { Args, Command, Options } from "@effect/cli"
-import { Console, Effect, Option } from "effect"
-import { ApiClient, ApiError } from "../api/client.js"
+import { Effect, Option } from "effect"
 import { loadAppConfig } from "../config/appConfig.js"
+import { loadUserConfigSync } from "../config/userConfig.js"
 import { ensureEngine, getEngineLogPath, startEngineDetached, stopEngineFromLock, shutdownEngine } from "../engine/engineSupervisor.js"
+import { resolveEngineLifecycleMode } from "../engine/lifecycleMode.js"
 import { CLI_PROTOCOL_VERSION } from "../config/version.js"
 import { spawn } from "node:child_process"
 import fs from "node:fs"
+import { formatApiFailure, getCliApi } from "./commandRuntime.js"
+import {
+  renderEngineLogsLine,
+  renderEngineServeLine,
+  renderEngineShutdownLine,
+  renderEngineStartedLine,
+  renderNoManagedEngineStoppedLine,
+  renderStoppedEngineLine,
+  renderPressCtrlCToStopLine,
+} from "./commandLifecycle.js"
+import { renderLabeledLine } from "./commandText.js"
 
 const hostOption = Options.text("host").pipe(Options.withDefault("127.0.0.1"))
 const portOption = Options.integer("port").pipe(Options.withDefault(9099))
@@ -18,40 +30,62 @@ const formatBool = (value: boolean | null | undefined): string =>
 const formatNumber = (value: number | null | undefined): string =>
   value === null || value === undefined || !Number.isFinite(value) ? "unknown" : String(value)
 
+const reportFailure = (label: string, error: unknown): void => {
+  for (const line of formatApiFailure(label, error)) {
+    console.error(line)
+  }
+}
+
 const statusCommand = Command.make("status", {}, () =>
   Effect.tryPromise(async () => {
+    const api = getCliApi()
     const appConfig = loadAppConfig()
-    await Console.log("Engine status")
-    await Console.log(`Base URL: ${appConfig.baseUrl}`)
+    const userConfig = loadUserConfigSync()
+    const lifecycle = resolveEngineLifecycleMode({
+      configMode: userConfig.engineMode,
+      envMode: process.env.BREADBOARD_ENGINE_MODE,
+      baseUrl: appConfig.baseUrl,
+      explicitBaseUrlConfigured: Boolean(process.env.BREADBOARD_API_URL?.trim() || userConfig.baseUrl?.trim()),
+    })
+    console.log(["Engine status", renderLabeledLine("Base URL", appConfig.baseUrl)].join("\n"))
+    console.log(renderLabeledLine("Lifecycle mode", `${lifecycle.mode} (${lifecycle.modeSource})`))
+    console.log(renderLabeledLine("Owned by TUI", lifecycle.owned ? "yes" : "no"))
+    console.log(renderLabeledLine("Restart policy", lifecycle.restartPolicy))
+    console.log(renderLabeledLine("Log path", getEngineLogPath()))
     try {
-      const health = await ApiClient.health()
-      await Console.log(
+      const health = await api.health()
+      console.log(
         `Health: ${health.status} (protocol ${health.protocol_version ?? "unknown"}, version ${health.version ?? "unknown"})`,
       )
-    } catch (error) {
-      if (error instanceof ApiError) {
-        await Console.error(`Health check failed (${error.status}).`)
-      } else {
-        await Console.error(`Health check failed: ${(error as Error).message}`)
+      if (health.served_revision?.commit) {
+        const dirtySuffix = health.served_revision.dirty ? " dirty" : ""
+        console.log(renderLabeledLine("Served revision", `${health.served_revision.commit}${dirtySuffix}`))
       }
+      if (health.served_revision?.repo_root) {
+        console.log(renderLabeledLine("Served root", health.served_revision.repo_root))
+      }
+      if (health.started_at) {
+        console.log(renderLabeledLine("Started at", health.started_at))
+      }
+    } catch (error) {
+      reportFailure("Health check failed", error)
       return
     }
 
     try {
-      const info = await ApiClient.engineStatus()
-      await Console.log(`PID: ${formatNumber(info.pid)}`)
-      await Console.log(`Uptime (s): ${formatNumber(info.uptime_s)}`)
-      await Console.log(`Ray available: ${formatBool(info.ray?.available)}`)
-      await Console.log(`Ray initialized: ${formatBool(info.ray?.initialized)}`)
+      const info = await api.engineStatus()
+      console.log(renderLabeledLine("PID", formatNumber(info.pid)))
+      console.log(renderLabeledLine("Uptime (s)", formatNumber(info.uptime_s)))
+      console.log(renderLabeledLine("Ray available", formatBool(info.ray?.available)))
+      console.log(renderLabeledLine("Ray initialized", formatBool(info.ray?.initialized)))
+      if (info.served_revision?.branch) {
+        console.log(renderLabeledLine("Branch", info.served_revision.branch))
+      }
       if (info.protocol_version && info.protocol_version !== CLI_PROTOCOL_VERSION) {
-        await Console.log(`Protocol mismatch: engine ${info.protocol_version} vs cli ${CLI_PROTOCOL_VERSION}`)
+        console.log(renderLabeledLine("Protocol mismatch", `engine ${info.protocol_version} vs cli ${CLI_PROTOCOL_VERSION}`))
       }
     } catch (error) {
-      if (error instanceof ApiError) {
-        await Console.error(`/status failed (${error.status}).`)
-      } else {
-        await Console.error(`/status failed: ${(error as Error).message}`)
-      }
+      reportFailure("/status failed", error)
     }
   }),
 )
@@ -68,8 +102,8 @@ const startCommand = Command.make(
       process.env.RAY_DISABLE_DASHBOARD ??= "1"
 
       const result = await startEngineDetached({ host, port })
-      await Console.log(`Engine started: ${result.baseUrl} (pid ${result.pid})`)
-      await Console.log(`Logs: ${result.logPath}`)
+      console.log(renderEngineStartedLine(result.baseUrl, result.pid))
+      console.log(renderEngineLogsLine(result.logPath))
     }),
 )
 
@@ -88,8 +122,8 @@ const serveCommand = Command.make(
       process.env.RAY_DISABLE_DASHBOARD ??= "1"
 
       const { baseUrl, pid, started } = await ensureEngine({ allowSpawn: true, isolated: false })
-      await Console.log(`Engine: ${baseUrl}${pid ? ` (pid ${pid})` : ""}${started ? " [started]" : ""}`)
-      await Console.log("Press Ctrl-C to stop.")
+      console.log(renderEngineServeLine(baseUrl, pid, started))
+      console.log(renderPressCtrlCToStopLine())
 
       await new Promise<void>((resolve) => {
         process.once("SIGINT", () => resolve())
@@ -98,7 +132,7 @@ const serveCommand = Command.make(
 
       process.env.BREADBOARD_ENGINE_KEEPALIVE = "0"
       const stopped = await shutdownEngine({ timeoutMs: 5_000, force: true }).catch(() => false)
-      await Console.log(stopped ? "Engine stopped." : "Engine stop requested.")
+      console.log(renderEngineShutdownLine(stopped))
     }),
 )
 
@@ -114,9 +148,9 @@ const logsCommand = Command.make(
       const followEnabled = Option.match(follow, { onNone: () => false, onSome: (value) => value })
       const lineCount = Number.isFinite(lines) && lines > 0 ? lines : 200
 
-      await Console.log(`Log path: ${logPath}`)
+      console.log(renderLabeledLine("Log path", logPath))
       if (!fs.existsSync(logPath)) {
-        await Console.log("No log file found yet.")
+        console.log("No log file found yet.")
         return
       }
 
@@ -138,10 +172,10 @@ const stopCommand = Command.make(
     Effect.tryPromise(async () => {
       const result = await stopEngineFromLock({ timeoutMs: 5_000, force: true })
       if (result.stopped) {
-        await Console.log(`Stopped engine${result.pid ? ` (pid ${result.pid})` : ""}.`)
+        console.log(renderStoppedEngineLine(result.pid))
         return
       }
-      await Console.log(`No managed engine stopped${result.pid ? ` (pid ${result.pid})` : ""}.`)
+      console.log(renderNoManagedEngineStoppedLine(result.pid))
     }),
 )
 

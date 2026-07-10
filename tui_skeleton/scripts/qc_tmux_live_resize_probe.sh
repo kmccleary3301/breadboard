@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "[qc][legacy] $(basename "$0") is a compatibility or narrow-repro lane." >&2
+echo "[qc][legacy] Prefer scripts/qc_profile_matrix.sh and qc:profile:* for canonical QC." >&2
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_PATH="${CONFIG_PATH:-$ROOT_DIR/../agent_configs/misc/opencode_openrouter_grok4fast_cli_default.yaml}"
 WORKSPACE="${WORKSPACE:-/shared_folders/querylake_server/ray_testing/ray_SCE}"
@@ -39,7 +42,7 @@ count_matches() {
 }
 
 tmux new-session -d -s "$SESSION" -x 132 -y 40 \
-  "cd '$ROOT_DIR' && BREADBOARD_REPL_CLEAR_SCREEN=1 BREADBOARD_SCROLLBACK_REPLAY_ON_RESIZE=1 BREADBOARD_TUI_SCROLLBACK_REPLAY_ON_RESIZE=1 node dist/main.js repl --tui classic --workspace '$WORKSPACE' --config '$CONFIG_PATH'"
+  "cd '$ROOT_DIR' && node dist/main.js repl --tui classic --workspace '$WORKSPACE' --config '$CONFIG_PATH'"
 
 sleep 2
 

@@ -63,6 +63,7 @@ from .run_logging.markdown_transcript import MarkdownTranscriptWriter
 from .run_logging.provider_native_logger import ProviderNativeLogger
 from .run_logging.request_recorder import StructuredRequestRecorder
 from .utils.local_ray import LocalActorProxy, identity_get
+from .utils.safe_delete import is_disposable_workspace_path
 from .provider.health import RouteHealthManager
 from .provider import normalize_provider_result
 from .provider.metrics import ProviderMetricsCollector
@@ -80,6 +81,7 @@ from .conductor.components import (
     initialize_guardrail_config,
     initialize_yaml_tools,
     log_routing_event,
+    should_require_workspace_tool_usage,
     write_env_fingerprint,
     write_workspace_manifest,
 )
@@ -193,9 +195,30 @@ class BackgroundTaskJob:
 def compute_tool_prompt_mode(tool_prompt_mode: str, will_use_native_tools: bool, config: Dict[str, Any]) -> str:
     """Pure helper for testing prompt mode adjustment (module-level)."""
     if will_use_native_tools:
+        if str(tool_prompt_mode or "").strip().lower() == "none":
+            return "none"
         suppress_prompts = bool((config or {}).get("provider_tools", {}).get("suppress_prompts", False))
         return "none" if suppress_prompts else "per_turn_append"
     return tool_prompt_mode
+
+
+def build_shell_timeout_diagnostic(command: str, exit_code: Any, stdout: str = "", stderr: str = "") -> str:
+    try:
+        exit_int = int(exit_code)
+    except Exception:
+        return stderr or ""
+    if exit_int != 124 or (stdout or "").strip() or (stderr or "").strip():
+        return stderr or ""
+    command_text = str(command or "")
+    message = "Command exited with 124, which usually means it hit a timeout."
+    if "smoke_test.sh" in command_text:
+        message += (
+            " For daemon-style smoke tests, inspect whether the script starts a long-running server "
+            "and then waits for it to exit naturally; the smoke script should terminate/cleanup the "
+            "background server after the client verification completes."
+        )
+    return message
+
 
 def _tools_schema() -> List[Dict[str, Any]]:
     return [
@@ -285,6 +308,7 @@ def _dump_tool_defs(tool_defs: List[ToolDefinition]) -> List[Dict[str, Any]]:
 class OpenAIConductor(OpenAIConductorFacadeMethods):
     def __init__(self, workspace: str, image: str = "python-dev:latest", config: Optional[Dict[str, Any]] = None, *, local_mode: bool = False) -> None:
         """Initialize conductor with workspace, image, and configuration."""
+        self._bootstrap_openai_env_from_runtime_config(config if isinstance(config, dict) else None)
         bootstrap_conductor(
             self,
             workspace=workspace,
@@ -592,6 +616,77 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except Exception:
             return None
         return None
+
+    @staticmethod
+    def _find_local_openai_bootstrap_token(value: Any, seen: Optional[set[int]] = None) -> Optional[str]:
+        if seen is None:
+            seen = set()
+        if value is None:
+            return None
+        marker = id(value)
+        if marker in seen:
+            return None
+        seen.add(marker)
+        if isinstance(value, dict):
+            for key in ("OPENAI_API_KEY", "codex_access_token", "access_token", "id_token", "token", "auth_token"):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    return candidate.strip()
+            for nested in value.values():
+                found = OpenAIConductor._find_local_openai_bootstrap_token(nested, seen)
+                if found:
+                    return found
+        elif isinstance(value, list):
+            for nested in value:
+                found = OpenAIConductor._find_local_openai_bootstrap_token(nested, seen)
+                if found:
+                    return found
+        return None
+
+    @staticmethod
+    def _bootstrap_local_openai_client_config(client_config: Dict[str, Any]) -> Dict[str, Any]:
+        if client_config.get("api_key"):
+            return client_config
+        try:
+            auth_path = Path.home() / ".codex" / "auth.json"
+            if not auth_path.exists():
+                return client_config
+            payload = json.loads(auth_path.read_text(encoding="utf-8"))
+            token = OpenAIConductor._find_local_openai_bootstrap_token(payload)
+            if not token:
+                return client_config
+            client_config["api_key"] = token
+            headers = dict(client_config.get("default_headers") or {})
+            headers.setdefault("Authorization", f"Bearer {token}")
+            client_config["default_headers"] = headers
+        except Exception:
+            return client_config
+        return client_config
+
+    @staticmethod
+    def _bootstrap_openai_env_from_runtime_config(config: Optional[Dict[str, Any]]) -> None:
+        if not isinstance(config, dict):
+            return
+        runtime_auth = config.get("provider_auth_runtime")
+        if not isinstance(runtime_auth, dict):
+            return
+        openai_auth = runtime_auth.get("openai")
+        if not isinstance(openai_auth, dict):
+            return
+        api_key = str(openai_auth.get("api_key") or "").strip()
+        if api_key:
+            os.environ["OPENAI_API_KEY"] = api_key
+        headers = openai_auth.get("headers")
+        if isinstance(headers, dict) and headers:
+            try:
+                os.environ["BREADBOARD_OPENAI_AUTH_HEADERS_JSON"] = json.dumps(
+                    {str(k): str(v) for k, v in headers.items() if k and v is not None}
+                )
+            except Exception:
+                pass
+        base_url = str(openai_auth.get("base_url") or "").strip()
+        if base_url:
+            os.environ["BREADBOARD_OPENAI_AUTH_BASE_URL"] = base_url
 
     @staticmethod
     def _extract_last_assistant_text(messages: Any) -> str:
@@ -949,10 +1044,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if not isinstance(expected_output, str):
                 return None
             for pattern in (
-                r"session_id:\\s*([a-zA-Z0-9_-]+)",
-                r"session ID [`'\\\"]?([a-zA-Z0-9_-]+)[`'\\\"]?",
-                r"<task_id>\\s*([a-zA-Z0-9_-]+)\\s*</task_id>",
-                r"task_id:\\s*([a-zA-Z0-9_-]+)",
+                r"session_id:\s*([a-zA-Z0-9_-]+)",
+                r"session ID [`'\"]?([a-zA-Z0-9_-]+)[`'\"]?",
+                r"<task_id>\s*([a-zA-Z0-9_-]+)\s*</task_id>",
+                r"task_id:\s*([a-zA-Z0-9_-]+)",
             ):
                 match = re.search(pattern, expected_output)
                 if match:
@@ -985,6 +1080,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         orchestrator = self._get_multi_agent_orchestrator()
         if orchestrator is not None:
             tool_name = str(tool_call.get("provider_name") or tool_call.get("function") or "")
+            is_task_tool = tool_name.strip().lower() == "task"
             agent_key = None
             if subagent_type in orchestrator.team_config.agents:
                 agent_key = subagent_type
@@ -1012,7 +1108,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 owner_agent="main",
                 agent_id=agent_key,
                 kind="agent",
-                async_mode=bool(run_in_background and tool_name == "Task"),
+                async_mode=bool(run_in_background and is_task_tool),
                 payload=spawn_payload,
             )
 
@@ -1027,7 +1123,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             except Exception:
                 max_steps = 24
 
-            if run_in_background and tool_name == "Task":
+            if run_in_background and is_task_tool:
                 self._ensure_async_jobs()
                 task_id = uuid.uuid4().hex[:7]
                 job = AsyncAgentJob(
@@ -1242,7 +1338,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 }
 
             task_id_sync = spawn.job.job_id
-            if tool_name == "Task":
+            if is_task_tool:
                 spawn_event = {
                     "kind": "subagent_spawned",
                     "task_id": task_id_sync,
@@ -1309,7 +1405,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             )
             self._persist_multi_agent_log()
 
-            if tool_name == "Task":
+            if is_task_tool:
                 finish_event = {
                     "kind": "subagent_completed" if status_value == "completed" else "subagent_failed",
                     "task_id": task_id_sync,
@@ -4186,6 +4282,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if not command:
             return False
         normalized = command.lower()
+        if re.search(r"(^|[;&|]\s*)(make)(\s|$)", normalized):
+            return True
+        if re.search(r"(^|[;&|]\s*)(?:timeout\s+\d+s?\s+)?(?:(?:bash|sh)\s+)?(?:\./)?smoke_test\.sh(?:\s|$)", normalized):
+            return True
         test_keywords = (
             "pytest",
             "npm test",
@@ -4280,14 +4380,30 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             except Exception:
                 return text
 
-        result = self._ray_get(self.sandbox.run.remote(command, timeout=timeout or 30, stream=True))
+        if not timeout:
+            # A hard 30s default silently kills long-running legitimate tools
+            # (builds, test suites, remote evals); profiles can raise it via
+            # tools.run_shell_timeout_s without models having to pass timeouts.
+            try:
+                timeout = int((self.config.get("tools") or {}).get("run_shell_timeout_s") or 30)
+            except Exception:
+                timeout = 30
+        result = self._ray_get(self.sandbox.run.remote(command, timeout=timeout, stream=True))
 
         # Newer sandbox implementations return a dict payload directly.
         if isinstance(result, dict):
             stdout = str(result.get("stdout") or "")
             stderr = str(result.get("stderr") or "")
             exit_code = result.get("exit")
-            mvi_text = stdout if stdout else stderr
+            stderr = build_shell_timeout_diagnostic(command, exit_code, stdout, stderr)
+            if stderr and (exit_code not in (0, "0", None) or not stdout):
+                parts = []
+                if stdout:
+                    parts.append(stdout)
+                parts.append(stderr)
+                mvi_text = "\n".join(parts)
+            else:
+                mvi_text = stdout if stdout else stderr
             mvi_text = _maybe_append_system_reminder(mvi_text)
             payload: Dict[str, Any] = {"stdout": stdout, "exit": exit_code, "__mvi_text_output": mvi_text}
             if stderr:
@@ -4309,6 +4425,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 continue
             lines.append(x)
         stdout = "\n".join(lines)
+        timeout_stderr = build_shell_timeout_diagnostic(command, exit_obj.get("exit"), stdout, "")
+        if timeout_stderr:
+            lines.append(timeout_stderr)
+            stdout = "\n".join(lines)
         mvi_text = _maybe_append_system_reminder(stdout)
         return {"stdout": stdout, "exit": exit_obj.get("exit"), "__mvi_text_output": mvi_text}
 
@@ -4332,7 +4452,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
         if normalized == "task":
             replay_expected = tool_call.get("expected_output") is not None or tool_call.get("expected_status") is not None
-            allow_task = replay_expected or self._get_multi_agent_orchestrator() is not None
+            args = tool_call.get("arguments") or {}
+            resume_requested = isinstance(args, dict) and bool(str(args.get("resume") or "").strip())
+            allow_task = replay_expected or resume_requested or self._get_multi_agent_orchestrator() is not None
             if not allow_task:
                 try:
                     allow_task = bool(self.config.get("task_tool")) if isinstance(getattr(self, "config", None), dict) else False
@@ -4422,9 +4544,31 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             command = str(args.get("command") or args.get("input") or "")
             if not command:
                 return {"error": "missing shell command"}
+            if re.search(r"(^|[;&|]\s*)apply_patch\s*<<", command):
+                msg = (
+                    "shell command rejected: use the native apply_patch tool for patches; "
+                    "do not invoke apply_patch through shell_command"
+                )
+                return {"error": msg, "exit": 126, "__mvi_text_output": msg}
             workdir = str(args.get("workdir") or "").strip()
             if workdir:
-                command = f"cd {shlex.quote(workdir)} && {command}"
+                scoped_workdir = self._normalize_workspace_path(workdir)
+                command = f"cd {shlex.quote(scoped_workdir)} && {command}"
+            shell_scope_cfg = {}
+            try:
+                workspace_cfg = (self.config.get("workspace", {}) or {}) if isinstance(getattr(self, "config", None), dict) else {}
+                shell_scope_cfg = (workspace_cfg.get("shell_scope", {}) or {}) if isinstance(workspace_cfg, dict) else {}
+            except Exception:
+                shell_scope_cfg = {}
+            if isinstance(shell_scope_cfg, dict) and bool(shell_scope_cfg.get("reject_parent_traversal")):
+                parent_traversal = re.search(r"(^|[;&|]\s*|\s)(?:find|rg|grep|ls|cat|sed)\s+\.\.(?:\s|/|$)", command)
+                cd_parent = re.search(r"(^|[;&|]\s*)cd\s+\.\.(?:\s|/|$)", command)
+                if parent_traversal or cd_parent:
+                    return {
+                        "error": "shell command rejected: parent-directory traversal is disabled for this workspace",
+                        "exit": 126,
+                        "__mvi_text_output": "shell command rejected: parent-directory traversal is disabled for this workspace",
+                    }
             timeout = args.get("timeout")
             if timeout is None:
                 timeout_ms = args.get("timeout_ms")
@@ -4465,7 +4609,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     "three_way": True,
                     "index": True,
                     "whitespace": "fix",
-                    "keep_rejects": True,
                 },
             })
             if not result.get("ok"):
@@ -4517,6 +4660,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if name in {"run_shell", "Bash"}:
             command = args.get("command") or args.get("input")
             timeout = args.get("timeout")
+            if not timeout:
+                try:
+                    timeout = int((self.config.get("tools") or {}).get("run_shell_timeout_s") or 30)
+                except Exception:
+                    timeout = 30
             return self._ray_get(self.sandbox.run_shell.remote(command, timeout=timeout))
         return {"error": f"unknown tool {name}"}
 
@@ -4674,6 +4822,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             "requires_build_guard",
             self._should_require_build_guard(user_prompt or ""),
         )
+        session_state.set_provider_metadata(
+            "require_workspace_tool_usage",
+            should_require_workspace_tool_usage(user_prompt or ""),
+        )
         session_state.set_provider_metadata("workspace_context_initialized", False)
         session_state.set_provider_metadata("workspace_context_required", False)
         session_state.set_provider_metadata("workspace_pending_todo_update_allowed", False)
@@ -4764,6 +4916,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         provider_config, resolved_model, supports_native_tools_for_model = provider_router.get_provider_config(requested_route_id)
         runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(requested_route_id)
         client_config = provider_router.create_client_config(requested_route_id)
+        if runtime_descriptor.provider_id == "openai" and not client_config.get("api_key"):
+            client_config = self._bootstrap_local_openai_client_config(dict(client_config))
 
         # Fix for client_config usage in replay mode
         if runtime_descriptor.provider_id == "replay":
@@ -5153,6 +5307,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except Exception:
             per_turn_prompt = per_turn_prompt or ""
 
+        if str(tool_prompt_mode or "").strip().lower() == "none":
+            per_turn_prompt = ""
+
         system_prompt = self._append_environment_prompt(system_prompt)
         # Persist compiled system prompt after environment + skills
         try:
@@ -5167,7 +5324,24 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             pass
 
         enhanced_system_msg = {"role": "system", "content": system_prompt}
-        initial_user_content = user_prompt if not per_turn_prompt else (user_prompt + "\n\n" + per_turn_prompt)
+        require_workspace_tool_usage = bool(session_state.get_provider_metadata("require_workspace_tool_usage"))
+        workspace_tool_requirement_block = ""
+        if require_workspace_tool_usage:
+            workspace_tool_requirement_block = (
+                "<WORKSPACE_TOOL_REQUIRED>\n"
+                "This turn requires real workspace interaction.\n"
+                "Use the available tools and answer from the observed result.\n"
+                "Do not reply with a promise such as \"I'll run ...\" or \"Running ...\".\n"
+                "Emit the actual tool call instead.\n"
+                "If no real tool result is observed, the turn will be rejected.\n"
+                "</WORKSPACE_TOOL_REQUIRED>"
+            )
+        initial_user_parts = [user_prompt]
+        if per_turn_prompt:
+            initial_user_parts.append(per_turn_prompt)
+        if workspace_tool_requirement_block:
+            initial_user_parts.append(workspace_tool_requirement_block)
+        initial_user_content = "\n\n".join(part for part in initial_user_parts if isinstance(part, str) and part.strip())
         enhanced_user_msg = {"role": "user", "content": initial_user_content}
         resume_snapshot = self._load_resume_snapshot()
         resume_has_system = False
@@ -5186,6 +5360,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if isinstance(meta, dict):
                 session_state.provider_metadata.update(meta)
             session_state.set_provider_metadata("resume_snapshot_applied", True)
+        # Resume metadata is session-scoped, but these fields are turn-scoped.
+        # Carrying them into a fresh user request makes the conductor believe the
+        # new turn has already satisfied its required workspace-tool contract.
+        session_state.set_provider_metadata("recent_tool_activity", False)
+        session_state.set_provider_metadata("post_required_tool_extra_call_blocks", 0)
         if not resume_has_system:
             session_state.add_message(enhanced_system_msg)
         session_state.add_message(enhanced_user_msg)
@@ -5424,6 +5603,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             usage_payload = {}
         finish_reason = "stop" if run_result.get("completed") else "error"
         finish_meta = session_state.get_provider_metadata("raw_finish_meta")
+        if isinstance(run_result, dict) and isinstance(finish_meta, dict):
+            run_result.setdefault("provider_finish_meta", copy.deepcopy(finish_meta))
+            runtime_timing = finish_meta.get("provider_runtime_timing")
+            if isinstance(runtime_timing, dict):
+                run_result.setdefault("provider_runtime_timing", copy.deepcopy(runtime_timing))
         agent_summary = copy.deepcopy(session_state.completion_summary or {})
         session_state.set_ir_finish(
             IRFinish(
@@ -5473,10 +5657,55 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if not workspace_path.exists() or not workspace_path.is_dir():
             return
         dest = Path(run_dir) / "final_container_dir"
+        capture_meta: Dict[str, Any] = {
+            "workspace_path": str(workspace_path),
+        }
+        persist_requested = os.environ.get("BREADBOARD_PERSIST_FINAL_WORKSPACE", "").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        try:
+            logging_cfg = self.config.get("logging") if isinstance(getattr(self, "config", None), dict) else None
+            if isinstance(logging_cfg, dict) and "persist_final_workspace" in logging_cfg:
+                persist_requested = bool(logging_cfg.get("persist_final_workspace"))
+        except Exception:
+            pass
+        is_disposable = False
+        try:
+            is_disposable = is_disposable_workspace_path(workspace_path, repo_root=Path(__file__).resolve().parents[1])
+        except Exception:
+            is_disposable = False
+        capture_meta["is_disposable_workspace"] = bool(is_disposable)
+        if not persist_requested and not is_disposable:
+            capture_meta.update(
+                {
+                    "persisted": False,
+                    "reason": "nondisposable_workspace_skipped",
+                    "strategy": "metadata_only",
+                }
+            )
+            try:
+                self.logger_v2.write_json("meta/final_workspace_capture.json", capture_meta)
+            except Exception:
+                pass
+            return
         try:
             workspace_resolved = workspace_path.resolve()
             dest_resolved = dest.resolve(strict=False)
             if str(dest_resolved).startswith(str(workspace_resolved)):
+                capture_meta.update(
+                    {
+                        "persisted": False,
+                        "reason": "destination_within_workspace",
+                        "strategy": "metadata_only",
+                    }
+                )
+                try:
+                    self.logger_v2.write_json("meta/final_workspace_capture.json", capture_meta)
+                except Exception:
+                    pass
                 return
         except Exception:
             pass
@@ -5484,6 +5713,25 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.copytree(workspace_path, dest)
+            capture_meta.update(
+                {
+                    "persisted": True,
+                    "reason": "copied",
+                    "strategy": "copytree",
+                    "destination": str(dest),
+                }
+            )
+        except Exception:
+            capture_meta.update(
+                {
+                    "persisted": False,
+                    "reason": "copy_failed",
+                    "strategy": "copytree",
+                    "destination": str(dest),
+                }
+            )
+        try:
+            self.logger_v2.write_json("meta/final_workspace_capture.json", capture_meta)
         except Exception:
             pass
 

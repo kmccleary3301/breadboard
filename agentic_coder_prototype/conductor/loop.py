@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -170,7 +171,11 @@ def run_main_loop(
     completed = False
     step_index = -1
     policy = PolicyPack.from_config(getattr(self, "config", None))
-    policy = PolicyPack.from_config(getattr(self, "config", None))
+    # Transient empty provider responses are retried with backoff instead of
+    # terminating the session; only consecutive empties past the cap are fatal.
+    loop_cfg = ((getattr(self, "config", None) or {}).get("loop") or {})
+    max_empty_response_retries = int(loop_cfg.get("empty_response_retries", 2) or 0)
+    consecutive_empty_responses = 0
 
     def poll_control_stop() -> bool:
         """Non-blocking check for a stop/interrupt signal from the CLI bridge."""
@@ -219,6 +224,9 @@ def run_main_loop(
         summary["exit_kind"] = exit_kind_value
         summary["steps_taken"] = steps_taken
         summary["max_steps"] = max_steps
+        usage_totals = session_state.get_provider_metadata("usage_totals")
+        if usage_totals:
+            summary["usage_totals"] = usage_totals
         session_state.completion_summary = summary
         session_state.set_provider_metadata("final_state", summary)
         session_state.set_provider_metadata("exit_kind", exit_kind_value)
@@ -714,6 +722,23 @@ def run_main_loop(
                 stream_responses = False
             if provider_result.usage:
                 session_state.set_provider_metadata("usage", provider_result.usage)
+                # Accumulate session-level usage so callers get token
+                # provenance in the final summary (Responses and Chat key names).
+                try:
+                    u = provider_result.usage
+                    get = (lambda k: u.get(k)) if isinstance(u, dict) else (lambda k: getattr(u, k, None))
+                    details = get("output_tokens_details") or {}
+                    dget = (lambda k: details.get(k)) if isinstance(details, dict) else (lambda k: getattr(details, k, None))
+                    totals = session_state.get_provider_metadata("usage_totals") or {
+                        "calls": 0, "input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0,
+                    }
+                    totals["calls"] += 1
+                    totals["input_tokens"] += int(get("input_tokens") or get("prompt_tokens") or 0)
+                    totals["output_tokens"] += int(get("output_tokens") or get("completion_tokens") or 0)
+                    totals["reasoning_tokens"] += int(dget("reasoning_tokens") or 0)
+                    session_state.set_provider_metadata("usage_totals", totals)
+                except Exception:
+                    pass
 
             if provider_result.encrypted_reasoning:
                 for payload in provider_result.encrypted_reasoning:
@@ -727,12 +752,38 @@ def run_main_loop(
                 for meta_key, meta_value in provider_result.metadata.items():
                     session_state.set_provider_metadata(meta_key, meta_value)
 
-            if not provider_result.messages:
+            non_empty_messages = [
+                m for m in provider_result.messages
+                if getattr(m, "tool_calls", None) or (getattr(m, "content", None) or "")
+            ]
+            if not non_empty_messages:
                 session_state.add_transcript_entry({"provider_response": "empty"})
-                empty_choice = SimpleNamespace(finish_reason=None, index=None)
+                first_message = provider_result.messages[0] if provider_result.messages else None
+                empty_choice = SimpleNamespace(
+                    finish_reason=getattr(first_message, "finish_reason", None),
+                    index=getattr(first_message, "index", None),
+                )
                 session_state.add_transcript_entry(
                     error_handler.handle_empty_response(empty_choice)
                 )
+                consecutive_empty_responses += 1
+                if consecutive_empty_responses <= max_empty_response_retries:
+                    backoff_s = min(2.0 ** consecutive_empty_responses, 8.0)
+                    session_state.add_transcript_entry({
+                        "empty_response_retry": {
+                            "attempt": consecutive_empty_responses,
+                            "max_retries": max_empty_response_retries,
+                            "backoff_s": backoff_s,
+                        }
+                    })
+                    if stream_responses:
+                        print(
+                            f"[retry] empty provider response "
+                            f"({consecutive_empty_responses}/{max_empty_response_retries}), "
+                            f"backoff {backoff_s}s"
+                        )
+                    time.sleep(backoff_s)
+                    continue
                 if not getattr(session_state, "completion_summary", None):
                     session_state.completion_summary = {
                         "completed": False,
@@ -742,6 +793,7 @@ def run_main_loop(
                 if stream_responses:
                     print("[stop] reason=empty-response")
                 break
+            consecutive_empty_responses = 0
 
             for provider_message in provider_result.messages:
                 if getattr(self, "_stop_requested", False) or poll_control_stop():
@@ -766,7 +818,9 @@ def run_main_loop(
                 except Exception:
                     pass
 
-                # Handle empty responses per message
+                # Skip empty messages; non-empty siblings still process. A fully
+                # empty response was already handled (retry/terminate) above, so
+                # an empty message here must not poison completion_summary.
                 if not provider_message.tool_calls and not (provider_message.content or ""):
                     empty_choice = SimpleNamespace(
                         finish_reason=provider_message.finish_reason,
@@ -775,16 +829,7 @@ def run_main_loop(
                     session_state.add_transcript_entry(
                         error_handler.handle_empty_response(empty_choice)
                     )
-                    if not getattr(session_state, "completion_summary", None):
-                        session_state.completion_summary = {
-                            "completed": False,
-                            "reason": "empty_response",
-                            "method": "provider_empty",
-                        }
-                    if stream_responses:
-                        print("[stop] reason=empty-response")
-                    completed = False
-                    break
+                    continue
 
                 # Process tool calls or content
                 completion_detected = self._process_model_output(
@@ -810,7 +855,64 @@ def run_main_loop(
                     else:
                         session_state.completion_summary.setdefault("completed", True)
                     break
+
+            provider_turn_completed = bool(
+                getattr(provider_result, "metadata", {}).get("provider_turn_completed", False)
+            )
+            if provider_turn_completed:
+                guard_ok, guard_reason = self.guardrail_orchestrator.completion_guard_check(session_state)
+                if not guard_ok and guard_reason:
+                    validation_message = f"<VALIDATION_ERROR>\n{guard_reason}\n</VALIDATION_ERROR>"
+                    try:
+                        session_state.add_message({"role": "user", "content": validation_message}, to_provider=True)
+                    except Exception:
+                        pass
+                    try:
+                        markdown_logger.log_user_message(validation_message)
+                    except Exception:
+                        pass
+                    completed = False
+                else:
+                    completed = True
+                    completion_summary = dict(getattr(session_state, "completion_summary", None) or {})
+                    completion_summary.setdefault("completed", True)
+                    completion_summary.setdefault(
+                        "method",
+                        str(
+                            getattr(provider_result, "metadata", {}).get(
+                                "provider_turn_completion_method",
+                                "provider_turn_completed",
+                            )
+                        ),
+                    )
+                    completion_summary.setdefault(
+                        "reason",
+                        str(
+                            getattr(provider_result, "metadata", {}).get(
+                                "provider_turn_completion_reason",
+                                "provider_turn_completed",
+                            )
+                        ),
+                    )
+                    session_state.completion_summary = completion_summary
             self._capture_turn_diagnostics(session_state, provider_result, turn_allowed_tool_names)
+            if not completed:
+                try:
+                    from .execution import _force_post_receipt_final_answer, _implementation_receipts_satisfied
+
+                    if _implementation_receipts_satisfied(self, session_state):
+                        completed = _force_post_receipt_final_answer(
+                            session_state,
+                            reason="loop_post_receipt_terminal_state",
+                        )
+                except Exception as exc:
+                    try:
+                        session_state.record_guardrail_event(
+                            "implementation_post_receipt_terminal_state_error",
+                            {"error": str(exc), "turn": turn_index},
+                        )
+                    except Exception:
+                        pass
             # Delegate loop detection guardrail emission
             try:
                 self.guardrail_orchestrator.handle_loop_detection(
@@ -883,6 +985,10 @@ def run_main_loop(
                         stream_responses=stream_responses,
                     )
                     if abort:
+                        existing_summary = getattr(session_state, "completion_summary", None)
+                        if isinstance(existing_summary, dict) and existing_summary.get("completed"):
+                            completed = True
+                            break
                         session_state.completion_summary = {
                             "completed": False,
                             "reason": "no_tool_activity",

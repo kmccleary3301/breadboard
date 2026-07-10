@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "claimScope": "production-renderer-compositor",
+  "productionEquivalence": {
+    "required": true,
+    "renderer": "ReplView",
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-projection",
+      "composer-footer",
+      "modal-picker",
+      "taskboard-state",
+      "direct-cell-mutation"
+    ],
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace",
+      "task"
+    ]
+  },
+  "artifacts": {
+    "required": [
+      "manifest.json",
+      "command.txt",
+      "git_status.txt",
+      "environment.json",
+      "scenario.json",
+      "raw.ansi",
+      "plain_final.txt",
+      "grid_frames.ndjson",
+      "state_snapshots.ndjson",
+      "input_events.ndjson",
+      "dimension_events.ndjson",
+      "anomalies.json",
+      "invariant_report.json",
+      "screenshots/contact_sheet.png",
+      "visual_qc_notes.md",
+      "claim_delta.json"
+    ]
+  },
+  "claimBoundary": "Production ReplView/controller compositor evidence only; not real-host proof.",
+  "expectedOutcome": "pass",
+  "id": "taskboard_focus",
+  "title": "Taskboard Focus Surface",
+  "description": "Focused production taskboard scene, separated from permission modal precedence.",
+  "surfaces": [
+    "multiagent",
+    "taskboard"
+  ],
+  "sizes": [
+    {
+      "cols": 40,
+      "rows": 18
+    },
+    {
+      "cols": 72,
+      "rows": 22
+    },
+    {
+      "cols": 100,
+      "rows": 28
+    }
+  ],
+  "timeline": [
+    {
+      "kind": "user",
+      "text": "Open the taskboard and inspect subagent progress."
+    },
+    {
+      "kind": "task",
+      "text": "Reviewer scans SMTP edge cases",
+      "role": "reviewer",
+      "status": "completed",
+      "content": "Found invalid recipient gap."
+    },
+    {
+      "kind": "task",
+      "text": "Implementer applies focused guard",
+      "role": "implementer",
+      "status": "running",
+      "content": "Editing smtp_server.c."
+    },
+    {
+      "kind": "task",
+      "text": "QA validates transcript density",
+      "role": "qa",
+      "status": "blocked",
+      "content": "Waiting on resize replay."
+    },
+    {
+      "kind": "open-surface",
+      "surface": "taskboard"
+    }
+  ],
+  "expectedMarkers": [
+    "Open the taskboard",
+    "Reviewer scans SMTP",
+    "Implementer applies",
+    "QA validates"
+  ],
+  "markers": [
+    "taskboard",
+    "multiagent",
+    "active-row"
+  ],
+  "invariants": [
+    "COMPOSITOR-PRODUCTION-RENDERER",
+    "COMPOSITOR-NO-FAKE-RENDERER",
+    "COMPOSITOR-ARTIFACT-PACKET-COMPLETE",
+    "COMPOSITOR-MARKERS-PRESENT",
+    "COMPOSITOR-WIDTH-SAFE",
+    "COMPOSITOR-COMPOSER-VISIBLE",
+    "COMPOSITOR-PROMPT-EXACTLY-ONCE",
+    "COMPOSITOR-ACTIVE-ROW-VISIBLE"
+  ]
+}

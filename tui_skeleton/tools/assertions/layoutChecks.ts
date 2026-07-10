@@ -54,7 +54,14 @@ export const runLayoutAssertionsOnLines = (lines: string[]): LayoutAnomaly[] => 
 
   const composerCandidate = lines.findIndex((line) => {
     const trimmed = line.trim()
-    return trimmed.startsWith("›") || trimmed.startsWith(">") || containsCaseInsensitive(trimmed, "type your request")
+    return (
+      trimmed.startsWith("❯") ||
+      trimmed.startsWith("›") ||
+      trimmed.startsWith(">") ||
+      trimmed.includes("[ready]") ||
+      containsCaseInsensitive(trimmed, "enter send") ||
+      containsCaseInsensitive(trimmed, "type your request")
+    )
   })
   if (!transcriptViewerActive && !modalActive && composerCandidate === -1) {
     anomalies.push({ id: "composer-missing", message: "Could not find composer prompt" })

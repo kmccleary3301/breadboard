@@ -1,0 +1,238 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_fuzz_modal_51",
+  "title": "V6 fuzz seed 51 (modal)",
+  "family": "fuzz",
+  "campaign": "p14-v6-fuzz-minimization",
+  "claimScope": "fuzz",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# v6_fuzz_modal_51\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "fuzz-pre",
+        "text": "BB_V6_FUZZ_PRE_MODAL_51"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 180000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 63,
+      "rows": 25
+    },
+    "resizePolicy": "fuzzed",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "open",
+      "surface": "shortcuts"
+    },
+    {
+      "kind": "wait",
+      "ms": 160
+    },
+    {
+      "kind": "key",
+      "key": "escape"
+    },
+    {
+      "kind": "wait",
+      "ms": 120
+    },
+    {
+      "kind": "submit",
+      "text": "Run V6 fuzz seed 51 with modal stress."
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "markdown-fixture",
+        "streamId": "s1",
+        "fixture": "long-list",
+        "chunking": {
+          "mode": "random",
+          "seed": 51
+        }
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "V6 fuzz seed 51 profile modal complete."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "V6 fuzz seed 51 profile modal complete."
+      },
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "resize",
+      "cols": 50,
+      "rows": 22,
+      "settleMs": 60
+    },
+    {
+      "kind": "resize",
+      "cols": 51,
+      "rows": 24,
+      "settleMs": 40
+    },
+    {
+      "kind": "checkpoint",
+      "id": "fuzz-final"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DESTRUCTIVE-CLEAR",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-DUPLICATE-ASSISTANT-TAIL",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-COMPOSER-PROMPT-REPLAY",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-COMPOSER-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "GLOBAL-NO-RAW-ANSI",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-ACTION-OBSERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "MD-FINAL-TEXT-COMPLETE",
+      "severity": "blocker"
+    },
+    {
+      "id": "MODAL-OPEN-CONFIRMED",
+      "severity": "blocker"
+    },
+    {
+      "id": "MODAL-FOCUS-RETURNS-TO-COMPOSER",
+      "severity": "blocker"
+    }
+  ],
+  "actionRequirements": {
+    "waitTargetsObserved": "required",
+    "resizeObserved": "required"
+  },
+  "performanceBudget": {
+    "maxDurationMs": 180000,
+    "maxRawBytes": 8000000,
+    "maxFrames": 1800,
+    "maxStateDumps": 3000
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once",
+    "toolCardinality": "not-required"
+  },
+  "mutationProfile": {
+    "seed": 51,
+    "dimensions": [
+      "modal",
+      "cols:63",
+      "rows:25",
+      "chunk:random",
+      "fixture:long-list"
+    ]
+  },
+  "minimization": {
+    "enabled": true,
+    "preserveSteps": [
+      "launch",
+      "checkpoint:fuzz-final",
+      "seed:51"
+    ]
+  },
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  }
+}

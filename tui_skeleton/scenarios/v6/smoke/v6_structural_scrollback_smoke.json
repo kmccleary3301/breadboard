@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "id": "v6_structural_scrollback_smoke",
+  "title": "V6 structural scrollback smoke",
+  "claimScope": "pty",
+  "productionEquivalence": {
+    "required": true,
+    "claimTier": "S2",
+    "allowedSyntheticLayers": [
+      "model",
+      "workspace",
+      "time"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-store",
+      "composer",
+      "scrollback-feed",
+      "state-dump"
+    ]
+  },
+  "environment": {
+    "dummyWorkspace": {
+      "gitInit": true,
+      "files": [
+        {
+          "path": "README.md",
+          "content": "# Scenario Smoke\n"
+        }
+      ]
+    },
+    "prelaunchShellHistory": [
+      {
+        "id": "pre-alpha",
+        "text": "BB_V5_PRE_ALPHA"
+      },
+      {
+        "id": "pre-beta",
+        "text": "BB_V5_PRE_BETA"
+      }
+    ]
+  },
+  "launch": {
+    "mode": "classic",
+    "engineMode": "test-owned",
+    "startupWait": {
+      "composerReady": true,
+      "timeoutMs": 20000
+    },
+    "timeoutMs": 90000
+  },
+  "terminal": {
+    "lanes": [
+      "pty"
+    ],
+    "initial": {
+      "cols": 100,
+      "rows": 30
+    },
+    "resizePolicy": "scripted",
+    "captureGrid": true,
+    "captureScrollback": true
+  },
+  "timeline": [
+    {
+      "kind": "checkpoint",
+      "id": "startup"
+    },
+    {
+      "kind": "submit",
+      "text": "Say hello in one sentence."
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "start",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "delta",
+        "streamId": "s1",
+        "text": "Hello from BreadBoard scenario runtime."
+      }
+    },
+    {
+      "kind": "assistant",
+      "event": {
+        "kind": "complete",
+        "streamId": "s1"
+      }
+    },
+    {
+      "kind": "waitFor",
+      "target": {
+        "text": "Hello from BreadBoard scenario runtime."
+      },
+      "timeoutMs": 30000,
+      "stableMs": 250
+    },
+    {
+      "kind": "resize",
+      "cols": 82,
+      "rows": 24,
+      "settleMs": 150
+    },
+    {
+      "kind": "checkpoint",
+      "id": "settled-after-resize"
+    }
+  ],
+  "invariants": [
+    {
+      "id": "GLOBAL-HOST-HISTORY-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-HOST-HISTORY-PREFIX-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-NO-ALTERNATE-SCREEN-HIJACK",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-LANDING-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-PROMPT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ASSISTANT-CARDINALITY",
+      "severity": "blocker"
+    },
+    {
+      "id": "SCROLL-ORDER-PRESERVED",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-COMPOSER-ALWAYS-VISIBLE",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-FOOTER-TRUTHFUL",
+      "severity": "blocker"
+    },
+    {
+      "id": "RESIZE-NO-DUPLICATE-STATIC-BLOCK",
+      "severity": "blocker"
+    },
+    {
+      "id": "PERF-RAW-BYTE-BUDGET",
+      "severity": "blocker"
+    },
+    {
+      "id": "PERF-FRAME-COUNT-BUDGET",
+      "severity": "blocker"
+    },
+    {
+      "id": "PERF-STATE-DUMP-BUDGET",
+      "severity": "blocker"
+    }
+  ],
+  "artifacts": {
+    "required": [
+      "manifest",
+      "raw",
+      "grid",
+      "state",
+      "invariant-report"
+    ]
+  },
+  "family": "scrollback",
+  "campaign": "p14-v6-invariant-expansion",
+  "performanceBudget": {
+    "maxDurationMs": 60000,
+    "maxRawBytes": 1000000,
+    "maxFrames": 500,
+    "maxStateDumps": 500
+  },
+  "transcriptExpectation": {
+    "promptCardinality": "exactly-once",
+    "assistantCardinality": "at-least-once"
+  }
+}

@@ -1,6 +1,7 @@
 import type { SessionEvent } from "../api/types.js"
 import { rememberSession } from "../cache/sessionCache.js"
-import { CliProviders } from "../providers/cliProviders.js"
+import { getCliSdk } from "./commandRuntime.js"
+import { collectSessionStream } from "./sessionStream.js"
 
 export interface ResumeOptions {
   readonly sessionId: string
@@ -16,18 +17,9 @@ export const runResume = async (
   options: ResumeOptions,
   onEvent?: (event: SessionEvent) => Promise<void> | void,
 ): Promise<ResumeResult> => {
-  const sdk = CliProviders.sdk
+  const sdk = getCliSdk()
   const summary = await sdk.api().getSession(options.sessionId)
   await rememberSession(summary)
-  const events: SessionEvent[] = []
-  let completion: unknown = undefined
-  for await (const event of sdk.stream(options.sessionId, { signal: undefined })) {
-    events.push(event)
-    await onEvent?.(event)
-    if (event.type === "completion") {
-      completion = event.payload?.summary ?? event.payload
-      break
-    }
-  }
+  const { events, completion } = await collectSessionStream(sdk.stream(options.sessionId, { signal: undefined }), onEvent)
   return { sessionId: options.sessionId, events, completion }
 }

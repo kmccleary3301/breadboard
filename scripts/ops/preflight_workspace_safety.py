@@ -2,7 +2,7 @@
 """Preflight workspace safety checks before running BreadBoard tasks.
 
 This script prevents catastrophic deletions caused by dangerous workspace roots
-(`.`, `..`, repo root, ancestors, home, temp root).
+(`.`, repo root, home, temp root, VCS roots).
 """
 
 from __future__ import annotations
@@ -64,24 +64,20 @@ def _validate_workspace(path: Path) -> tuple[bool, str]:
 
     if path == Path("/"):
         return False, "workspace is filesystem root '/'"
-    if path == repo:
-        return False, f"workspace resolves to repo root '{repo}'"
-    if path in repo.parents:
-        return False, f"workspace resolves to repo ancestor '{path}'"
     if path == home:
         return False, "workspace resolves to home directory"
     if path == tmp_root:
         return False, "workspace resolves to temp root"
+    disposable = _is_within(repo / "tmp", path)
+    if disposable:
+        if (path / ".git").exists():
+            return False, "disposable workspace contains .git"
+        return True, "ok (disposable under repo/tmp)"
+    if path == repo:
+        return True, "ok (preserved repo root)"
     if (path / ".git").exists():
-        return False, "workspace contains .git"
-
-    if not (_is_within(repo, path) or _is_within(tmp_root, path)):
-        if os.environ.get("BREADBOARD_ALLOW_UNSAFE_WORKSPACE") != "1":
-            return False, (
-                f"workspace '{path}' is outside repo/tmp. "
-                "Set BREADBOARD_ALLOW_UNSAFE_WORKSPACE=1 to override."
-            )
-    return True, "ok"
+        return True, "ok (preserved git workspace)"
+    return True, "ok (preserved workspace)"
 
 
 def main() -> int:

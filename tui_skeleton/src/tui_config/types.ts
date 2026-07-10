@@ -9,7 +9,7 @@ export type TuiPresetId =
   | "opencode_like_subagents"
   | "claude_like_subagents_swap"
   | "codex_like_subagents_dense"
-export type LandingVariant = "auto" | "board" | "split" | "compact"
+export type LandingVariant = "auto" | "hero" | "board" | "split" | "compact" | "micro" | "suppressed"
 export type LandingBorderStyle = "round" | "single"
 export type StatusLinePosition = "above_input" | "below_input"
 export type StatusLineAlign = "left" | "right"

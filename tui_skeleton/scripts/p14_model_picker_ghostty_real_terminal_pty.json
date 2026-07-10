@@ -1,0 +1,19 @@
+[
+  { "action": "wait", "ms": 14000 },
+  { "action": "snapshot", "label": "startup" },
+  { "action": "press", "key": "ctrl+k" },
+  { "action": "wait", "ms": 800 },
+  { "action": "snapshot", "label": "model-picker-open" },
+  { "action": "type", "text": "gpt" },
+  { "action": "wait", "ms": 700 },
+  { "action": "snapshot", "label": "model-picker-filtered" },
+  { "action": "resize", "cols": 88, "rows": 30, "delayMs": 700 },
+  { "action": "snapshot", "label": "model-picker-resized-88" },
+  { "action": "resize", "cols": 132, "rows": 36, "delayMs": 700 },
+  { "action": "snapshot", "label": "model-picker-resized-132" },
+  { "action": "press", "key": "escape" },
+  { "action": "wait", "ms": 900 },
+  { "action": "type", "text": "picker-close-probe" },
+  { "action": "wait", "ms": 500 },
+  { "action": "snapshot", "label": "model-picker-closed" }
+]

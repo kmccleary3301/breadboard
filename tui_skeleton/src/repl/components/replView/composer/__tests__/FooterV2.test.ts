@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest"
 import { buildFooterV2Model } from "../FooterV2.js"
 
+const shortcutPrefix = () => (process.env.BREADBOARD_TUI_SHORTCUT_PLATFORM === "darwin" || process.platform === "darwin" ? "cmd" : "ctrl")
+const transcriptShortcut = () => `${shortcutPrefix()}+o transcript`
+const modelShortcut = () => `${shortcutPrefix()}+k model`
+const tasksShortcut = () => `${shortcutPrefix()}+b tasks`
+const todosShortcut = () => `${shortcutPrefix()}+t todos`
+
 describe("buildFooterV2Model", () => {
   it("includes elapsed + interrupt cues while pending", () => {
     const model = buildFooterV2Model({
       pendingResponse: true,
+      mainFollowTail: true,
       overlayActive: false,
       overlayLabel: null,
       keymap: "claude",
@@ -22,15 +29,17 @@ describe("buildFooterV2Model", () => {
         remote: false,
         model: "gpt-5-codex",
       },
-      width: 128,
+      width: 176,
     })
 
     expect(model.phaseLine).toContain("thinking")
     expect(model.phaseLine).toContain("elapsed")
     expect(model.phaseLine).toContain("esc interrupt")
-    expect(model.summaryLine).toContain("ctrl+b tasks")
-    expect(model.summaryLine).toContain("ctrl+t todos")
+    expect(model.summaryLine).toContain(transcriptShortcut())
+    expect(model.summaryLine).toContain(tasksShortcut())
+    expect(model.summaryLine).toContain(todosShortcut())
     expect(model.summaryLine).toContain("mdl gpt-5-codex")
+    expect(model.summaryLine).toContain("turn 2")
     expect(model.summaryLine).toContain("net local")
     expect(model.summaryLine).toContain("todo 1/1")
     expect(model.summaryLine).toContain("ops r1/f0/e42")
@@ -39,6 +48,7 @@ describe("buildFooterV2Model", () => {
   it("surfaces disconnected state with overlay controls", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
+      mainFollowTail: true,
       overlayActive: true,
       overlayLabel: "Todos",
       keymap: "codex",
@@ -69,6 +79,7 @@ describe("buildFooterV2Model", () => {
   it("keeps overlay focus cues visible under narrow widths", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
+      mainFollowTail: true,
       overlayActive: true,
       overlayLabel: "Tasks",
       keymap: "codex",
@@ -96,6 +107,7 @@ describe("buildFooterV2Model", () => {
   it("normalizes startup/fallback phase labels to canonical values", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
+      mainFollowTail: true,
       overlayActive: false,
       overlayLabel: null,
       keymap: "claude",
@@ -123,6 +135,7 @@ describe("buildFooterV2Model", () => {
   it("prefers canonical chip-id labels over freeform chip label text", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
+      mainFollowTail: true,
       overlayActive: false,
       overlayLabel: null,
       keymap: "claude",
@@ -150,6 +163,7 @@ describe("buildFooterV2Model", () => {
   it("uses overlay close copy in phase line when overlay is open even if pending", () => {
     const model = buildFooterV2Model({
       pendingResponse: true,
+      mainFollowTail: true,
       overlayActive: true,
       overlayLabel: "Tasks",
       keymap: "claude",
@@ -178,6 +192,7 @@ describe("buildFooterV2Model", () => {
   it("keeps command rail ordering deterministic in idle mode", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
+      mainFollowTail: true,
       overlayActive: false,
       overlayLabel: null,
       keymap: "claude",
@@ -197,7 +212,7 @@ describe("buildFooterV2Model", () => {
       },
       width: 220,
     })
-    const order = ["/ commands", "@ files", "ctrl+b tasks", "ctrl+t todos", "ctrl+k model", "? shortcuts"]
+    const order = ["/sessions recent", "@ attach", transcriptShortcut(), modelShortcut(), "? shortcuts"]
     let cursor = -1
     for (const token of order) {
       const index = model.summaryLine.indexOf(token)
@@ -212,6 +227,7 @@ describe("buildFooterV2Model", () => {
     try {
       const model = buildFooterV2Model({
         pendingResponse: false,
+      mainFollowTail: true,
         overlayActive: false,
         overlayLabel: null,
         keymap: "claude",
@@ -229,10 +245,11 @@ describe("buildFooterV2Model", () => {
           remote: false,
           model: "gpt-5-codex",
         },
-        width: 120,
+        width: 176,
       })
-      expect(model.summaryLine).toContain("cmd+b tasks")
-      expect(model.summaryLine).toContain("cmd+t todos")
+      expect(model.summaryLine).toContain("/sessions recent")
+      expect(model.summaryLine).toContain("@ attach")
+      expect(model.summaryLine).toContain("cmd+o transcript")
       expect(model.summaryLine).toContain("cmd+k model")
     } finally {
       if (previous == null) delete process.env.BREADBOARD_TUI_SHORTCUT_PLATFORM
@@ -243,6 +260,7 @@ describe("buildFooterV2Model", () => {
   it("collapses non-critical idle hints under narrow widths", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
+      mainFollowTail: true,
       overlayActive: false,
       overlayLabel: null,
       keymap: "claude",
@@ -262,17 +280,108 @@ describe("buildFooterV2Model", () => {
       },
       width: 90,
     })
-    expect(model.summaryLine).toContain("ctrl+b tasks")
-    expect(model.summaryLine).toContain("ctrl+t todos")
-    expect(model.summaryLine).toContain("ctrl+k model")
-    expect(model.summaryLine).toContain("?")
-    expect(model.summaryLine).not.toContain("/ commands")
-    expect(model.summaryLine).not.toContain("@ files")
+    expect(model.summaryLine).toContain("/sessions recent")
+    expect(model.summaryLine).toContain(transcriptShortcut())
+    expect(model.summaryLine).toContain("@ attach")
+    expect(model.summaryLine).not.toContain(todosShortcut())
+    expect(model.summaryLine).not.toContain(tasksShortcut())
+    expect(model.summaryLine).not.toContain(modelShortcut())
+  })
+
+  it("preserves turn continuity when active-session stats are compacted", () => {
+    const model = buildFooterV2Model({
+      pendingResponse: false,
+      mainFollowTail: true,
+      overlayActive: false,
+      overlayLabel: null,
+      keymap: "claude",
+      phaseLineState: { id: "ready", label: "ready", tone: "muted" },
+      spinner: "*",
+      pendingStartedAtMs: null,
+      lastDurationMs: 900,
+      nowMs: 2_000,
+      todos: [],
+      tasks: [],
+      stats: {
+        eventCount: 66,
+        toolCount: 9,
+        lastTurn: 1,
+        remote: false,
+        model: "dev",
+      },
+      sessionId: "session-abcdef12",
+      width: 90,
+    })
+
+    expect(model.summaryLine).toContain("mdl dev")
+    expect(model.summaryLine).toContain("turn 1")
+  })
+
+  it("promotes continuation cues once a session is active", () => {
+    const model = buildFooterV2Model({
+      pendingResponse: false,
+      mainFollowTail: true,
+      overlayActive: false,
+      overlayLabel: null,
+      keymap: "claude",
+      phaseLineState: { id: "ready", label: "ready", tone: "muted" },
+      spinner: "*",
+      pendingStartedAtMs: null,
+      lastDurationMs: 900,
+      nowMs: 2_000,
+      todos: [],
+      tasks: [],
+      stats: {
+        eventCount: 5,
+        toolCount: 0,
+        lastTurn: 4,
+        remote: false,
+        model: "gpt-5-codex",
+      },
+      sessionId: "session-abcdef12",
+      width: 176,
+    })
+
+    expect(model.summaryLine).toContain("resume /sessions")
+    expect(model.summaryLine).toContain("@ attach")
+    expect(model.summaryLine).toContain(transcriptShortcut())
+    expect(model.summaryLine).toContain(modelShortcut())
+  })
+
+  it("surfaces transcript and session continuity in idle mode", () => {
+    const model = buildFooterV2Model({
+      pendingResponse: false,
+      mainFollowTail: true,
+      overlayActive: false,
+      overlayLabel: null,
+      keymap: "claude",
+      phaseLineState: { id: "ready", label: "ready", tone: "muted" },
+      spinner: "*",
+      pendingStartedAtMs: null,
+      lastDurationMs: 900,
+      nowMs: 2_000,
+      todos: [],
+      tasks: [],
+      stats: {
+        eventCount: 5,
+        toolCount: 0,
+        lastTurn: 4,
+        remote: false,
+        model: "gpt-5-codex",
+      },
+      sessionId: "session-abcdef12",
+      width: 160,
+    })
+
+    expect(model.summaryLine).toContain(transcriptShortcut())
+    expect(model.summaryLine).toContain("turn 4")
+    expect(model.summaryLine).toContain("sess abcdef12")
   })
 
   it("drops overlay focus hints after overlay closes", () => {
     const openModel = buildFooterV2Model({
       pendingResponse: false,
+      mainFollowTail: true,
       overlayActive: true,
       overlayLabel: "Tasks",
       keymap: "claude",
@@ -294,6 +403,7 @@ describe("buildFooterV2Model", () => {
     })
     const closedModel = buildFooterV2Model({
       pendingResponse: false,
+      mainFollowTail: true,
       overlayActive: false,
       overlayLabel: "Tasks",
       keymap: "claude",
@@ -323,6 +433,7 @@ describe("buildFooterV2Model", () => {
   it("renders interrupted phase as error-severity runtime state", () => {
     const model = buildFooterV2Model({
       pendingResponse: false,
+      mainFollowTail: true,
       overlayActive: false,
       overlayLabel: null,
       keymap: "claude",
@@ -346,4 +457,32 @@ describe("buildFooterV2Model", () => {
     expect(model.phaseLine).toContain("[interrupted]")
     expect(model.phaseLine).toContain("last 2s")
   })
+  it("shows paused follow state while a run is frozen", () => {
+    const model = buildFooterV2Model({
+      pendingResponse: true,
+      mainFollowTail: false,
+      overlayActive: false,
+      overlayLabel: null,
+      keymap: "claude",
+      phaseLineState: { id: "thinking", label: "thinking", tone: "info" },
+      spinner: "*",
+      pendingStartedAtMs: 1_000,
+      lastDurationMs: null,
+      nowMs: 2_000,
+      todos: [],
+      tasks: [],
+      stats: {
+        eventCount: 5,
+        toolCount: 0,
+        lastTurn: null,
+        remote: false,
+        model: "gpt-5-codex",
+      },
+      width: 120,
+    })
+
+    expect(model.phaseLine).toContain("follow paused")
+    expect(model.summaryLine).toContain("/follow resume")
+  })
+
 })

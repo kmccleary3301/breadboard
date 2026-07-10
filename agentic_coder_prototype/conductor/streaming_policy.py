@@ -31,33 +31,6 @@ class StreamingPolicy:
         effective_stream = stream_requested
         policy: Optional[Dict[str, Any]] = None
 
-        if stream_requested and tools_schema and provider_id == "openrouter":
-            effective_stream = False
-            policy = {
-                "turn_index": turn_index,
-                "model": model,
-                "provider": provider_id,
-                "runtime": runtime_id,
-                "reason": "openrouter_tool_turn_policy",
-                "stream_requested": True,
-                "stream_effective": False,
-            }
-            self.provider_metrics.add_stream_override(
-                route=route_id,
-                reason="openrouter_tool_turn_policy",
-            )
-            self._record_stream_policy_metadata(session_state, policy)
-            self._emit_policy_transcript(session_state, policy)
-            self._log_system_note(
-                note=(
-                    "[stream-policy] Forcing stream=false for OpenRouter tool turn "
-                    f"(turn={turn_index}, model={model})."
-                ),
-                markdown_logger=markdown_logger,
-                logger_v2=logger_v2,
-                md_writer=md_writer,
-            )
-
         disable_stream = (
             capability
             and capability.get("attempted")

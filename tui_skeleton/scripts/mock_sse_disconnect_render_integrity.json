@@ -1,0 +1,9 @@
+[
+  { "delayMs": 0, "event": { "type": "turn_start", "payload": { "summary": "disconnect render integrity repro" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "user_message", "payload": { "text": "Show me some markdown." }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "tool_call", "payload": { "call_id": "call_md", "tool_name": "shell_command", "display": { "title": "shell_command" } }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "tool.exec.start", "payload": { "call_id": "call_md", "exec_id": "exec_md", "command": "printf markdown", "tool_name": "shell_command" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "tool.exec.stdout.delta", "payload": { "call_id": "call_md", "exec_id": "exec_md", "delta": "# Markdown Example\n- Item 1\n- Item 2\n## Subheading\nThis is **bold** and this is *italic*.\n`inline code` and a [link](https://example.com).\n" }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "tool.exec.end", "payload": { "call_id": "call_md", "exec_id": "exec_md", "exit_code": 0 }, "turn": 1 } },
+  { "delayMs": 120, "event": { "type": "tool_result", "payload": { "call_id": "call_md", "tool_name": "shell_command", "success": true }, "turn": 1 } }
+]

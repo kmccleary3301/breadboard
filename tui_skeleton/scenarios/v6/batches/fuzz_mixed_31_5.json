@@ -1,0 +1,11 @@
+{
+  "id": "v6_fuzz_mixed_31_5",
+  "campaign": "p14-v6-fuzz-minimization",
+  "scenarios": [
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_31.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_32.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_33.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_34.json",
+    "scenarios/v6/fuzz/minimized/v6_fuzz_mixed_35.json"
+  ]
+}

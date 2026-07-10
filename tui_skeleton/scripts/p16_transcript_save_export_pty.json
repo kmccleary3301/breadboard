@@ -1,0 +1,30 @@
+[
+  { "action": "log", "message": "P16 transcript save/export PTY harness start" },
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "Hello viewer", "typingDelayMs": 12 },
+  { "action": "press", "key": "enter" },
+  {
+    "action": "waitForState",
+    "timeoutMs": 30000,
+    "fresh": true,
+    "pendingResponse": false,
+    "conversationCountAtLeast": 2,
+    "lastConversationSpeaker": "assistant",
+    "lastConversationPhase": "final",
+    "lastConversationPreviewIncludes": "Implementation receipts"
+  },
+  { "action": "type", "text": "/transcript", "typingDelayMs": 5 },
+  { "action": "press", "key": "enter" },
+  { "action": "wait", "ms": 500 },
+  { "action": "waitFor", "text": "breadboard transcript viewer", "timeoutMs": 30000, "mode": "either" },
+  { "action": "waitFor", "text": "Hello viewer", "timeoutMs": 30000, "mode": "either" },
+  { "action": "waitFor", "text": "Implementation receipts", "timeoutMs": 30000, "mode": "either" },
+  { "action": "snapshot", "label": "p16-transcript-viewer", "mode": "frame", "maxLines": 120 },
+  { "action": "type", "text": "s" },
+  { "action": "waitFor", "text": "Saved to", "timeoutMs": 30000, "mode": "either" },
+  { "action": "snapshot", "label": "p16-save-feedback", "mode": "frame", "maxLines": 120 },
+  { "action": "press", "key": "escape" },
+  { "action": "waitForComposerReady", "timeoutMs": 10000 },
+  { "action": "snapshot", "label": "p16-after-transcript-return", "mode": "frame", "maxLines": 80 },
+  { "action": "log", "message": "P16 transcript save/export PTY harness complete" }
+]

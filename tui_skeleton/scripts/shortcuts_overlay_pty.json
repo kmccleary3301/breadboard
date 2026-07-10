@@ -1,10 +1,34 @@
 [
-  { "action": "waitFor", "text": "Try edit <file> to...", "timeoutMs": 15000 },
-  { "action": "press", "key": "escape" },
-  { "action": "wait", "ms": 120 },
-  { "action": "press", "key": "escape" },
-  { "action": "wait", "ms": 120 },
-  { "action": "type", "text": "?" },
-  { "action": "waitFor", "text": "ctrl + o for transcript", "timeoutMs": 2000 },
-  { "action": "snapshot", "label": "shortcuts" }
+  {
+    "action": "waitForComposerReady",
+    "timeoutMs": 15000
+  },
+  {
+    "action": "type",
+    "text": "?"
+  },
+  {
+    "action": "waitFor",
+    "text": "Shortcuts",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "Ctrl+O",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "waitFor",
+    "text": "Toggle shortcuts",
+    "timeoutMs": 5000,
+    "mode": "frame"
+  },
+  {
+    "action": "snapshot",
+    "label": "shortcuts",
+    "mode": "frame",
+    "maxLines": 120
+  }
 ]

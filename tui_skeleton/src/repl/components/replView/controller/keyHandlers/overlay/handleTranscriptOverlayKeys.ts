@@ -10,6 +10,7 @@ export const handleTranscriptOverlayKeys = (
     transcriptSearchMatches,
     setTranscriptSearchIndex,
     jumpTranscriptToLine,
+    jumpTranscriptToAnchor,
     stdout,
     transcriptViewerFollowTail,
     transcriptViewerMaxScroll,
@@ -23,12 +24,39 @@ export const handleTranscriptOverlayKeys = (
     setTranscriptToolIndex,
     transcriptViewerBodyRows,
     transcriptViewerEffectiveScroll,
+    resultDetailOpen,
+    artifactPreviewOpen,
+    selectedTranscriptToolTarget,
+    activeTranscriptToolTarget,
+    openSelectedTranscriptResultDetail,
+    openSelectedTranscriptArtifactPreview,
+    transcriptViewerInputQuarantineUntilRef,
   } = context
   const { char, key, lowerChar, isReturnKey, isTabKey, isShiftTab } = info
+  const normalizedChar = typeof char === "string" && char.length === 1 ? char.toLowerCase() : undefined
+  const effectiveLowerChar = lowerChar ?? normalizedChar
 
   if (!transcriptViewerOpen) return undefined
+  if (resultDetailOpen || artifactPreviewOpen) return undefined
 
+  if (transcriptSearchOpen && (key.escape || char === "\u001b")) {
+    setTranscriptSearchOpen(false)
+    return true
+  }
   if (key.escape || char === "\u001b") {
+    exitTranscriptViewer()
+    return true
+  }
+  const quarantineUntil = Number(transcriptViewerInputQuarantineUntilRef?.current ?? 0)
+  const isViewerOpenResidue =
+    effectiveLowerChar === "/" ||
+    effectiveLowerChar === "r" ||
+    isReturnKey ||
+    isTabKey
+  if (quarantineUntil > Date.now() && isViewerOpenResidue && !key.ctrl && !key.meta) {
+    return true
+  }
+  if ((key.ctrl && (effectiveLowerChar === "o" || effectiveLowerChar === "t")) || char === "\u000f" || char === "\u0014") {
     exitTranscriptViewer()
     return true
   }
@@ -61,6 +89,10 @@ export const handleTranscriptOverlayKeys = (
     }
   }
   if (transcriptSearchOpen) {
+    if (effectiveLowerChar === "/") {
+      setTranscriptSearchOpen(false)
+      return true
+    }
     if (isReturnKey || isTabKey) {
       if (transcriptSearchMatches.length > 0) {
         const direction = isShiftTab ? -1 : 1
@@ -95,7 +127,7 @@ export const handleTranscriptOverlayKeys = (
       setTranscriptSearchQuery((prev: string) => prev.slice(0, -1))
       return true
     }
-    if (key.ctrl && lowerChar === "u") {
+    if (key.ctrl && effectiveLowerChar === "u") {
       setTranscriptSearchQuery("")
       setTranscriptSearchIndex(0)
       return true
@@ -105,19 +137,19 @@ export const handleTranscriptOverlayKeys = (
       return true
     }
   }
-  if (!transcriptSearchOpen && lowerChar === "s" && !key.ctrl && !key.meta) {
+  if (!transcriptSearchOpen && effectiveLowerChar === "s" && !key.ctrl && !key.meta) {
     void saveTranscriptExport()
     return true
   }
-  if (lowerChar === "n") {
+  if (effectiveLowerChar === "n") {
     cycleTranscriptMatch(1)
     return true
   }
-  if (lowerChar === "p") {
+  if (effectiveLowerChar === "p") {
     cycleTranscriptMatch(-1)
     return true
   }
-  if (lowerChar === "t" && !key.ctrl && !key.meta) {
+  if (effectiveLowerChar === "t" && !key.ctrl && !key.meta) {
     if (transcriptToolLines.length > 0) {
       const direction = key.shift ? -1 : 1
       setTranscriptToolIndex((prev: number) => {
@@ -132,7 +164,26 @@ export const handleTranscriptOverlayKeys = (
     }
     return true
   }
-  if (lowerChar === "/") {
+  if (effectiveLowerChar === "o" && !key.ctrl && !key.meta) {
+    return openSelectedTranscriptResultDetail()
+  }
+  const transcriptToolTarget = activeTranscriptToolTarget ?? selectedTranscriptToolTarget
+  if (isReturnKey && transcriptToolTarget?.artifactPath) {
+    return openSelectedTranscriptArtifactPreview()
+  }
+  if (effectiveLowerChar === "a" && !key.ctrl && !key.meta) {
+    return jumpTranscriptToAnchor("assistant")
+  }
+  if (effectiveLowerChar === "u" && !key.ctrl && !key.meta) {
+    return jumpTranscriptToAnchor("user")
+  }
+  if (effectiveLowerChar === "e" && !key.ctrl && !key.meta) {
+    return jumpTranscriptToAnchor("error")
+  }
+  if (effectiveLowerChar === "w" && !key.ctrl && !key.meta) {
+    return jumpTranscriptToAnchor("warning")
+  }
+  if (effectiveLowerChar === "/") {
     setTranscriptSearchOpen((prev: boolean) => !prev)
     return true
   }
@@ -143,11 +194,11 @@ export const handleTranscriptOverlayKeys = (
       return Math.max(0, Math.min(transcriptViewerMaxScroll, base + delta))
     })
   }
-  if (key.pageUp || (key.ctrl && lowerChar === "b")) {
+  if (key.pageUp || (key.ctrl && effectiveLowerChar === "b")) {
     scrollBy(-transcriptViewerBodyRows)
     return true
   }
-  if (key.pageDown || (key.ctrl && lowerChar === "f")) {
+  if (key.pageDown || (key.ctrl && effectiveLowerChar === "f")) {
     scrollBy(transcriptViewerBodyRows)
     return true
   }
@@ -166,12 +217,12 @@ export const handleTranscriptOverlayKeys = (
     }
     return true
   }
-  if (lowerChar === "g" && key.shift) {
+  if (effectiveLowerChar === "g" && (key.shift || char === "G")) {
     setTranscriptViewerFollowTail(true)
     setTranscriptViewerScroll(transcriptViewerMaxScroll)
     return true
   }
-  if (lowerChar === "g") {
+  if (effectiveLowerChar === "g") {
     setTranscriptViewerFollowTail(false)
     setTranscriptViewerScroll(0)
     return true

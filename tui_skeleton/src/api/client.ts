@@ -1,4 +1,7 @@
-import { loadAppConfig, type AppConfig } from "../config/appConfig.js"
+import fs from "node:fs"
+import { homedir } from "node:os"
+import path from "node:path"
+import { loadAppConfig, type AppConfig, DEFAULT_CONFIG_PATH } from "../config/appConfig.js"
 import { resolveAuthToken } from "../config/authTokenProvider.js"
 import type {
   AttachmentHandle,
@@ -177,6 +180,10 @@ const applyAuthHeader = async (
   if (authToken) headers.Authorization = `Bearer ${authToken}`
 }
 
+const CODEX_AUTH_PATH = path.join(homedir(), ".codex", "auth.json")
+const OPENAI_PROVIDER_ID = "openai"
+const OPENROUTER_PROVIDER_ID = "openrouter"
+
 const buildUrl = (baseUrl: string, path: string, query?: RequestOptions["query"]): URL => {
   const url = new URL(path.replace(/^\/+/, ""), baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`)
   if (query) {
@@ -248,6 +255,116 @@ const toApiConfig = (config: AppConfig): ApiClientConfig => ({
   authToken: config.authToken,
   requestTimeoutMs: config.requestTimeoutMs,
 })
+
+const isLocalBaseUrl = (value: string): boolean => {
+  try {
+    const url = new URL(value)
+    const host = url.hostname.toLowerCase()
+    return host === "localhost" || host === "127.0.0.1" || host === "::1"
+  } catch {
+    return false
+  }
+}
+
+const findCodexToken = (value: unknown, seen = new Set<unknown>()): string | null => {
+  if (!value || typeof value !== "object") return null
+  if (seen.has(value)) return null
+  seen.add(value)
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = findCodexToken(item, seen)
+      if (nested) return nested
+    }
+    return null
+  }
+  const record = value as Record<string, unknown>
+  for (const key of ["codex_access_token", "access_token", "id_token", "token", "auth_token"]) {
+    const candidate = record[key]
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim()
+    }
+  }
+  for (const nested of Object.values(record)) {
+    const candidate = findCodexToken(nested, seen)
+    if (candidate) return candidate
+  }
+  return null
+}
+
+const readLocalProviderAuthMaterial = (
+  providerId: typeof OPENAI_PROVIDER_ID | typeof OPENROUTER_PROVIDER_ID,
+): { token: string; isSubscriptionPlan: boolean } | null => {
+  const envKey =
+    providerId === OPENROUTER_PROVIDER_ID
+      ? process.env.OPENROUTER_API_KEY?.trim()
+      : process.env.OPENAI_API_KEY?.trim()
+  if (envKey) {
+    return { token: envKey, isSubscriptionPlan: false }
+  }
+  if (providerId === OPENROUTER_PROVIDER_ID) {
+    return null
+  }
+  try {
+    if (!fs.existsSync(CODEX_AUTH_PATH)) return null
+    const parsed = JSON.parse(fs.readFileSync(CODEX_AUTH_PATH, "utf8")) as unknown
+    if (!parsed || typeof parsed !== "object") return null
+    const record = parsed as Record<string, unknown>
+    const authFileApiKey = typeof record.OPENAI_API_KEY === "string" ? record.OPENAI_API_KEY.trim() : ""
+    if (authFileApiKey) {
+      return { token: authFileApiKey, isSubscriptionPlan: false }
+    }
+    const codexToken = findCodexToken(parsed)
+    if (codexToken) {
+      return { token: codexToken, isSubscriptionPlan: true }
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+const ensureLocalProviderAuth = async (configPath?: string): Promise<void> => {
+  const appConfig = loadAppConfig()
+  if (!isLocalBaseUrl(appConfig.baseUrl)) return
+  const apiConfig: ApiClientConfig = {
+    ...toApiConfig(appConfig),
+    authToken: () => resolveAuthToken(appConfig.baseUrl),
+  }
+  let status: ProviderAuthStatusResponse | null = null
+  try {
+    status = await requestWithConfig<ProviderAuthStatusResponse>(apiConfig, "/v1/provider-auth/status", "GET")
+  } catch {
+    return
+  }
+  const attached = status?.attached ?? []
+  const attachIfMissing = async (
+    providerId: typeof OPENAI_PROVIDER_ID | typeof OPENROUTER_PROVIDER_ID,
+  ): Promise<void> => {
+    if (attached.some((row) => row.provider_id === providerId)) {
+      return
+    }
+    const material = readLocalProviderAuthMaterial(providerId)
+    if (!material) return
+    try {
+      await requestWithConfig<ProviderAuthAttachResponse>(apiConfig, "/v1/provider-auth/attach", "POST", {
+        body: {
+          material: {
+            provider_id: providerId,
+            api_key: material.token,
+            headers: { Authorization: `Bearer ${material.token}` },
+            is_subscription_plan: providerId === OPENAI_PROVIDER_ID ? material.isSubscriptionPlan : false,
+          },
+          config_path: configPath ?? DEFAULT_CONFIG_PATH,
+        },
+      })
+    } catch {
+      // Best-effort bootstrap only. Surface the real provider error later if attach fails.
+    }
+  }
+
+  await attachIfMissing(OPENROUTER_PROVIDER_ID)
+  await attachIfMissing(OPENAI_PROVIDER_ID)
+}
 
 export const createApiClient = (config: ApiClientConfig): ApiClientInstance => ({
   health: () => requestWithConfig<HealthResponse>(config, "/health", "GET"),
@@ -459,7 +576,10 @@ const buildApiClient = (): ApiClientInstance => {
 export const ApiClient: ApiClientInstance = {
   health: (...args) => buildApiClient().health(...args),
   engineStatus: (...args) => buildApiClient().engineStatus(...args),
-  createSession: (...args) => buildApiClient().createSession(...args),
+  createSession: async (...args) => {
+    await ensureLocalProviderAuth(args[0]?.config_path)
+    return buildApiClient().createSession(...args)
+  },
   listSessions: (...args) => buildApiClient().listSessions(...args),
   getSession: (...args) => buildApiClient().getSession(...args),
   listSessionRecords: (...args) => buildApiClient().listSessionRecords(...args),
@@ -468,7 +588,10 @@ export const ApiClient: ApiClientInstance = {
   deleteSession: (...args) => buildApiClient().deleteSession(...args),
   listSessionFiles: (...args) => buildApiClient().listSessionFiles(...args),
   readSessionFile: (...args) => buildApiClient().readSessionFile(...args),
-  getModelCatalog: (...args) => buildApiClient().getModelCatalog(...args),
+  getModelCatalog: async (...args) => {
+    await ensureLocalProviderAuth(args[0])
+    return buildApiClient().getModelCatalog(...args)
+  },
   getSkillsCatalog: (...args) => buildApiClient().getSkillsCatalog(...args),
   getCtreeSnapshot: (...args) => buildApiClient().getCtreeSnapshot(...args),
   getCtreeTree: (...args) => buildApiClient().getCtreeTree(...args),

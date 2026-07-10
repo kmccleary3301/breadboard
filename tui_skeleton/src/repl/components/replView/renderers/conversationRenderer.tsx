@@ -9,10 +9,111 @@ import {
   stripInlineThinkingMarker,
   shouldAutoCollapseEntry,
 } from "../../../transcriptUtils.js"
-import { blocksToLines, renderMarkdownFallbackLines } from "./markdown/streamMdxAdapter.js"
+import { blocksToLinesWithRawFallback, renderMarkdownFallbackLines } from "./markdown/streamMdxAdapter.js"
 import type { MarkdownRenderOptions } from "./markdown/streamMdxAdapter.js"
+import { cachedBlocksToLines, TerminalLineChunkCache } from "./markdown/terminalLineChunkCache.js"
 import { stripAnsiCodes, stringWidth } from "../utils/ansi.js"
 import { CHALK, COLORS, DASH_SEPARATOR, DELTA_GLYPH, GLYPHS, HOLLOW_DOT, STAR_GLYPH } from "../theme.js"
+
+const MARKDOWN_BLOCK_CACHE_ENABLED = process.env.BREADBOARD_MARKDOWN_BLOCK_CACHE === "1"
+const markdownLineChunkCache = new TerminalLineChunkCache()
+
+const padVisibleEnd = (value: string, width: number): string => {
+  const safeWidth = Math.max(1, Math.floor(width))
+  const visibleLength = stringWidth(stripAnsiCodes(value))
+  return visibleLength >= safeWidth ? value : `${value}${" ".repeat(safeWidth - visibleLength)}`
+}
+
+const renderRichMarkdownLines = (
+  entry: ConversationEntry,
+  options: MarkdownRenderOptions,
+): string[] => {
+  const blocks = entry.richBlocks ?? []
+  if (!MARKDOWN_BLOCK_CACHE_ENABLED) return blocksToLinesWithRawFallback(blocks, entry.text, options)
+  const cached = cachedBlocksToLines(markdownLineChunkCache, blocks, options, { messageId: entry.id })
+  const fallback = blocksToLinesWithRawFallback(blocks, entry.text, options)
+  return fallback.length > cached.length ? fallback : cached
+}
+
+const trimTrailingBlankLines = (lines: readonly string[]): string[] => {
+  let end = lines.length
+  while (end > 0 && stripAnsiCodes(lines[end - 1] ?? "").trim().length === 0) {
+    end -= 1
+  }
+  return lines.slice(0, end)
+}
+
+const trimOuterBlankLines = (lines: readonly string[]): string[] => {
+  const trailingTrimmed = trimTrailingBlankLines(lines)
+  let start = 0
+  while (start < trailingTrimmed.length && stripAnsiCodes(trailingTrimmed[start] ?? "").trim().length === 0) {
+    start += 1
+  }
+  return trailingTrimmed.slice(start)
+}
+
+const buildAssistantActivePreviewLines = (
+  text: string,
+  maxLines: number,
+  markdownWidth: number,
+  label: string,
+): string[] => {
+  const meaningful = text
+    .split(/\r?\n/)
+    .map((line) => stripAnsiCodes(line).trim())
+    .filter(Boolean)
+  const selected = meaningful.find((line) => /^Verification:/i.test(line)) ?? meaningful[meaningful.length - 1] ?? ""
+  const suffix = selected.length > 0 ? ` ${selected.slice(0, Math.max(12, markdownWidth - 24))}` : ""
+  return [CHALK.dim(`${label}${suffix}`)].slice(0, Math.max(1, maxLines))
+}
+
+const tailRenderLines = (lines: readonly string[], maxLines: number): string[] => {
+  const trimmed = trimOuterBlankLines(lines)
+  const budget = Math.max(1, Math.floor(maxLines))
+  if (trimmed.length <= budget) return trimmed
+  return trimmed.slice(-budget)
+}
+
+export const resolveConversationEntryDisplayLines = (
+  entry: ConversationEntry,
+  options: {
+    readonly viewPrefs: TranscriptPreferences
+    readonly markdownWidth: number
+    readonly markdownRenderOptions?: Omit<MarkdownRenderOptions, "width">
+    readonly streamingAssistantPreviewLines?: number
+  },
+): string[] => {
+  const { viewPrefs, markdownWidth, markdownRenderOptions, streamingAssistantPreviewLines } = options
+  const hasRichBlocks = Boolean(entry.richBlocks && entry.richBlocks.length > 0)
+  const useRich = viewPrefs.richMarkdown && hasRichBlocks && !entry.markdownError
+  const normalizedText = stripInlineThinkingMarker(entry.text)
+  const activePreviewLines =
+    entry.speaker === "assistant" &&
+    typeof entry.activePreviewLines === "number" &&
+    entry.activePreviewLines > 0
+  const streamingPreview =
+    entry.speaker === "assistant" &&
+    entry.phase === "streaming" &&
+    typeof streamingAssistantPreviewLines === "number"
+  const fallback = viewPrefs.richMarkdown
+    ? renderMarkdownFallbackLines(normalizedText, { ...markdownRenderOptions, width: markdownWidth })
+    : normalizedText.split(/\r?\n/)
+  if (streamingPreview) {
+    return useRich
+      ? trimOuterBlankLines(renderRichMarkdownLines(entry, { ...markdownRenderOptions, width: markdownWidth }))
+      : buildAssistantActivePreviewLines(normalizedText, Math.max(1, streamingAssistantPreviewLines), markdownWidth, "Assistant streaming…")
+  }
+  if (activePreviewLines) {
+    const budget = Math.max(1, entry.activePreviewLines ?? 1)
+    return tailRenderLines(useRich
+      ? renderRichMarkdownLines(entry, { ...markdownRenderOptions, width: markdownWidth })
+      : fallback,
+    budget)
+  }
+  return trimOuterBlankLines(useRich
+    ? renderRichMarkdownLines(entry, { ...markdownRenderOptions, width: markdownWidth })
+    : fallback)
+}
 
 interface ConversationMeasureOptions {
   readonly viewPrefs: TranscriptPreferences
@@ -22,6 +123,7 @@ interface ConversationMeasureOptions {
   /** Inner content width (excludes outer padding), in terminal columns. */
   readonly contentWidth: number
   readonly markdownRenderOptions?: Omit<MarkdownRenderOptions, "width">
+  readonly streamingAssistantPreviewLines?: number
 }
 
 interface ConversationRenderOptions {
@@ -35,6 +137,8 @@ interface ConversationRenderOptions {
   readonly contentWidth: number
   readonly isEntryCollapsible: (entry: ConversationEntry) => boolean
   readonly markdownRenderOptions?: Omit<MarkdownRenderOptions, "width">
+  readonly padLineEnds?: boolean
+  readonly streamingAssistantPreviewLines?: number
 }
 
 const splitTokenByWidth = (token: string, maxWidth: number): string[] => {
@@ -108,7 +212,7 @@ const countWrappedTerminalLines = (value: string, maxWidth: number): number => {
 }
 
 export const useConversationMeasure = (options: ConversationMeasureOptions) => {
-  const { viewPrefs, verboseOutput, collapsedEntriesRef, collapsedVersion, contentWidth, markdownRenderOptions } = options
+  const { viewPrefs, verboseOutput, collapsedEntriesRef, collapsedVersion, contentWidth, markdownRenderOptions, streamingAssistantPreviewLines } = options
 
   const isEntryCollapsible = useCallback(
     (entry: ConversationEntry) => {
@@ -125,25 +229,23 @@ export const useConversationMeasure = (options: ConversationMeasureOptions) => {
 
   const measureConversationEntryLines = useCallback(
     (entry: ConversationEntry): number => {
-      const hasRichBlocks = Boolean(entry.richBlocks && entry.richBlocks.length > 0)
-      const useRich = viewPrefs.richMarkdown && hasRichBlocks && !entry.markdownError
-      const normalizedText = stripInlineThinkingMarker(entry.text)
-      const fallback = viewPrefs.richMarkdown
-        ? renderMarkdownFallbackLines(normalizedText, { ...markdownRenderOptions, width: markdownWidth })
-        : normalizedText.split(/\r?\n/)
-      const lines = (useRich
-        ? blocksToLines(entry.richBlocks, { ...markdownRenderOptions, width: markdownWidth })
-        : fallback) as string[]
+      if (entry.speaker === "system") return 0
+      const lines = resolveConversationEntryDisplayLines(entry, {
+        viewPrefs,
+        markdownWidth,
+        markdownRenderOptions,
+        streamingAssistantPreviewLines,
+      })
       const plainLines = lines.map(stripAnsiCodes)
 
       const speakerGlyph =
         entry.speaker === "user"
           ? GLYPHS.chevron
           : entry.speaker === "assistant"
-            ? GLYPHS.assistantDot
+            ? ""
             : GLYPHS.systemDot
       const label = speakerGlyph
-      const padLabel = "  "
+      const padLabel = entry.speaker === "assistant" ? "" : "  "
 
       let rowCount = 0
 
@@ -166,6 +268,7 @@ export const useConversationMeasure = (options: ConversationMeasureOptions) => {
         } else {
           lines.forEach((line, idx) => countRenderedLine(line, idx))
         }
+        if (entry.speaker === "user") rowCount += 1
         return Math.max(1, rowCount)
       }
       const head = lines.slice(0, ENTRY_COLLAPSE_HEAD)
@@ -182,7 +285,7 @@ export const useConversationMeasure = (options: ConversationMeasureOptions) => {
           diffPreview ? `${DELTA_GLYPH} +${diffPreview.additions}/-${diffPreview.deletions}${filesPart}` : null,
         ].filter(Boolean)
         const summary = summaryParts.join(` ${GLYPHS.bullet} `)
-        const instruction = "use [ / ] to target, then press e"
+        const instruction = "use [ / ] to target, then press e expand / o inspect"
         const summaryLine = `${padLabel} ${GLYPHS.bullet} ${summary}${DASH_SEPARATOR}${instruction}`
         rowCount += countWrappedTerminalLines(summaryLine, contentWidth)
       }
@@ -206,12 +309,17 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
     contentWidth,
     isEntryCollapsible,
     markdownRenderOptions,
+    padLineEnds = true,
+    streamingAssistantPreviewLines,
   } = options
 
   const markdownWidth = Math.max(1, Math.floor(contentWidth - 2))
 
   const renderConversationEntry = useCallback(
     (entry: ConversationEntry, key?: string) => {
+      if (entry.speaker === "system") {
+        return null
+      }
       const hasRichBlocks = Boolean(entry.richBlocks && entry.richBlocks.length > 0)
       const useRich = viewPrefs.richMarkdown && hasRichBlocks && !entry.markdownError
       const normalizedText = stripInlineThinkingMarker(entry.text)
@@ -223,10 +331,10 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
         entry.speaker === "user"
           ? GLYPHS.chevron
           : entry.speaker === "assistant"
-            ? GLYPHS.assistantDot
+            ? ""
             : GLYPHS.systemDot
-      const label = CHALK.hex(speakerColor(entry.speaker))(speakerGlyph)
-      const padLabel = "  "
+      const label = speakerGlyph ? CHALK.hex(speakerColor(entry.speaker))(speakerGlyph) : ""
+      const padLabel = entry.speaker === "assistant" ? "" : "  "
       const errorLine =
         entry.markdownError && entry.speaker === "assistant"
           ? (
@@ -244,19 +352,22 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
             if (line.startsWith("+") && !line.startsWith("+++")) return CHALK.hex(COLORS.success)(line)
             if (line.startsWith("-") && !line.startsWith("---")) return CHALK.hex(COLORS.error)(line)
             return line
-          }
-      const renderLine = (line: string, index: number) => (
-        <Text key={`${entry.id}-ln-${index}`}>
-          {index === 0 ? `${label} ` : padLabel}
-          {colorizeContent(line)}
-        </Text>
-      )
-      const fallback = viewPrefs.richMarkdown
-        ? renderMarkdownFallbackLines(normalizedText, { ...markdownRenderOptions, width: markdownWidth })
-        : normalizedText.split(/\r?\n/)
-      const lines = (useRich
-        ? blocksToLines(entry.richBlocks, { ...markdownRenderOptions, width: markdownWidth })
-        : fallback) as string[]
+      }
+      const renderLine = (line: string, index: number) => {
+        const prefix = index === 0 ? (label ? `${label} ` : "") : padLabel
+        const renderedLine = `${prefix}${colorizeContent(line)}`
+        return (
+          <Text key={`${entry.id}-ln-${index}`} wrap="truncate-end">
+            {padLineEnds ? padVisibleEnd(renderedLine, contentWidth) : renderedLine}
+          </Text>
+        )
+      }
+      const lines = resolveConversationEntryDisplayLines(entry, {
+        viewPrefs,
+        markdownWidth,
+        markdownRenderOptions,
+        streamingAssistantPreviewLines,
+      })
       const plainLines = useRich ? lines.map(stripAnsiCodes) : lines.map(stripAnsiCodes)
       const collapsible = isEntryCollapsible(entry)
       const collapsed = collapsible ? collapsedEntriesRef.current.get(entry.id) !== false : false
@@ -265,6 +376,7 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
           <Box key={key ?? entry.id} flexDirection="column">
             {errorLine}
             {lines.map((line, idx) => renderLine(line, idx))}
+            {entry.speaker === "user" ? <Text key={`${entry.id}-after-user`}> </Text> : null}
           </Box>
         )
       }
@@ -282,7 +394,7 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
         diffPreview ? `${DELTA_GLYPH} +${diffPreview.additions}/-${diffPreview.deletions}${filesPart}` : null,
       ].filter(Boolean)
       const summary = summaryParts.join(` ${GLYPHS.bullet} `)
-      const instruction = isSelected ? "press e to expand/collapse" : "use [ / ] to target, then press e"
+      const instruction = isSelected ? "press e to expand/collapse, o inspect" : "use [ / ] to target, then press e expand / o inspect"
       return (
         <Box key={key ?? entry.id} flexDirection="column">
           {errorLine}
@@ -304,6 +416,8 @@ export const useConversationRenderer = (options: ConversationRenderOptions) => {
       markdownRenderOptions,
       markdownWidth,
       selectedCollapsibleEntryId,
+      streamingAssistantPreviewLines,
+      padLineEnds,
       viewPrefs.richMarkdown,
     ],
   )

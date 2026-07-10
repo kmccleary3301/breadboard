@@ -1,0 +1,56 @@
+{
+  "id": "vscode_resume_lifecycle_hygiene",
+  "terminal": {
+    "initialCols": 118,
+    "initialRows": 36
+  },
+  "steps": [
+    {
+      "kind": "write",
+      "text": "echo BB_V5_RESUME_PRE && bb\r"
+    },
+    {
+      "kind": "waitForText",
+      "text": "Type your request",
+      "timeoutMs": 25000
+    },
+    {
+      "kind": "write",
+      "text": "/resume\r"
+    },
+    {
+      "kind": "sleep",
+      "ms": 1500
+    },
+    {
+      "kind": "screenshot",
+      "label": "00-resume"
+    },
+    {
+      "kind": "terminate"
+    }
+  ],
+  "assertions": [
+    {
+      "kind": "contains",
+      "scope": "raw",
+      "text": "BB_V5_RESUME_PRE"
+    },
+    {
+      "kind": "contains",
+      "scope": "viewport",
+      "text": "Recent sessions"
+    },
+    {
+      "kind": "countAtMost",
+      "scope": "viewport",
+      "text": "— running",
+      "count": 3
+    },
+    {
+      "kind": "notContains",
+      "scope": "buffer",
+      "text": "file://logging/"
+    }
+  ]
+}

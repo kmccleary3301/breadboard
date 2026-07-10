@@ -1,0 +1,8 @@
+[
+  { "action": "wait", "ms": 16000 },
+  { "action": "snapshot", "label": "turn1-settled" },
+  { "action": "resize", "cols": 88, "rows": 26, "delayMs": 2200 },
+  { "action": "snapshot", "label": "after-width-shrink" },
+  { "action": "wait", "ms": 14000 },
+  { "action": "snapshot", "label": "turn2-settled" }
+]

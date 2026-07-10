@@ -4,7 +4,9 @@
     "timeout": 20,
     "interval": 0.3,
     "ready_tokens": [
-      "shortcuts"
+      "[ready]",
+      "enter send",
+      "Type your request"
     ],
     "kick_keys": [
       "Escape"
@@ -21,7 +23,7 @@
   {
     "type": "wait_until",
     "contains": [
-      "TODOs:"
+      "Todos updated"
     ],
     "absent": [
       "Cannot read properties of undefined (reading 'length')",
@@ -34,7 +36,7 @@
     "quiet_seconds": 1.5,
     "timeout": 30,
     "must_contain": [
-      "Try \"fix typecheck errors\""
+      "todo 8/8"
     ],
     "must_not_contain": [
       "Cannot read properties of undefined (reading 'length')",
@@ -46,8 +48,8 @@
     "semantic_timeout": 5,
     "semantic_fail_fast": true,
     "must_contain_any": [
-      "? shortcuts",
-      "? for shortcuts"
+      "enter send",
+      "[ready]"
     ]
   },
   {
@@ -60,8 +62,7 @@
     "quiet_seconds": 1.5,
     "timeout": 30,
     "must_contain": [
-      "Todos",
-      "Try \"fix typecheck errors\""
+      "todo 8/8"
     ],
     "must_not_contain": [
       "Cannot read properties of undefined (reading 'length')",
@@ -73,8 +74,8 @@
     "semantic_timeout": 5,
     "semantic_fail_fast": true,
     "must_contain_any": [
-      "? shortcuts",
-      "? for shortcuts"
+      "enter send",
+      "[ready]"
     ]
   },
   {
@@ -87,7 +88,7 @@
     "quiet_seconds": 1.0,
     "timeout": 30,
     "must_contain": [
-      "Try \"fix typecheck errors\""
+      "todo 8/8"
     ],
     "must_not_contain": [
       "Cannot read properties of undefined (reading 'length')",
@@ -99,8 +100,8 @@
     "semantic_timeout": 5,
     "semantic_fail_fast": true,
     "must_contain_any": [
-      "? shortcuts",
-      "? for shortcuts"
+      "enter send",
+      "[ready]"
     ]
   }
 ]

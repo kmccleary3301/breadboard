@@ -1,0 +1,8 @@
+[
+  { "action": "waitForComposerReady", "timeoutMs": 15000 },
+  { "action": "type", "text": "/diff", "typingDelayMs": 8 },
+  { "action": "press", "key": "enter" },
+  { "action": "waitFor", "text": "Working-tree diff (read-only)", "timeoutMs": 10000, "mode": "history" },
+  { "action": "waitFor", "text": "nested.c", "timeoutMs": 10000, "mode": "history" },
+  { "action": "snapshot", "label": "diff-review-nested-root", "mode": "history", "maxLines": 180 }
+]

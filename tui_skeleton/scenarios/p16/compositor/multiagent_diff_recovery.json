@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "id": "multiagent_diff_recovery",
+  "title": "Multiagent Diff Recovery Production Renderer",
+  "expectedOutcome": "pass",
+  "claimScope": "production-renderer-compositor",
+  "productionEquivalence": {
+    "required": true,
+    "renderer": "ReplView",
+    "allowedSyntheticLayers": [
+      "model",
+      "tool",
+      "fault",
+      "time",
+      "workspace",
+      "task"
+    ],
+    "forbiddenBypass": [
+      "renderer",
+      "transcript-projection",
+      "composer-footer",
+      "modal-picker",
+      "taskboard-state",
+      "direct-cell-mutation"
+    ],
+    "controllerPathsRequired": [
+      "taskboard ctrl+b path",
+      "permission tab path"
+    ]
+  },
+  "surfaces": [
+    "diff-approval",
+    "permission",
+    "recovery"
+  ],
+  "sizes": [
+    {
+      "cols": 40,
+      "rows": 18
+    },
+    {
+      "cols": 72,
+      "rows": 22
+    },
+    {
+      "cols": 100,
+      "rows": 30
+    },
+    {
+      "cols": 140,
+      "rows": 40
+    }
+  ],
+  "timeline": [
+    {
+      "kind": "user",
+      "text": "Coordinate subagents, show the diff, then survive a disconnect."
+    },
+    {
+      "kind": "diff",
+      "filePath": "smtp_server.c",
+      "text": "diff --git a/smtp_server.c b/smtp_server.c\n+if (!is_valid_mailbox(arg)) return smtp_reply(s, 553, \"invalid recipient\");"
+    },
+    {
+      "kind": "permission",
+      "text": "diff --git a/smtp_server.c b/smtp_server.c\n+if (!is_valid_mailbox(arg)) return smtp_reply(s, 553, \"invalid recipient\");"
+    },
+    {
+      "kind": "disconnect",
+      "status": "Disconnected"
+    }
+  ],
+  "expectedMarkers": [
+    "Coordinate subagents",
+    "smtp_server.c",
+    "Permission required",
+    "Disconnected",
+    "Lost connection"
+  ],
+  "invariants": [
+    "COMPOSITOR-PRODUCTION-RENDERER",
+    "COMPOSITOR-NO-FAKE-RENDERER",
+    "COMPOSITOR-ARTIFACT-PACKET-COMPLETE",
+    "COMPOSITOR-MARKERS-PRESENT",
+    "COMPOSITOR-WIDTH-SAFE",
+    "COMPOSITOR-COMPOSER-VISIBLE",
+    "COMPOSITOR-PROMPT-EXACTLY-ONCE",
+    "COMPOSITOR-ACTIVE-ROW-VISIBLE",
+    "COMPOSITOR-NO-READY-LIE",
+    "COMPOSITOR-RECOVERY-ACTIONABLE"
+  ],
+  "artifacts": {
+    "required": [
+      "manifest.json",
+      "command.txt",
+      "git_status.txt",
+      "environment.json",
+      "scenario.json",
+      "raw.ansi",
+      "plain_final.txt",
+      "grid_frames.ndjson",
+      "state_snapshots.ndjson",
+      "input_events.ndjson",
+      "dimension_events.ndjson",
+      "anomalies.json",
+      "invariant_report.json",
+      "screenshots/contact_sheet.png",
+      "visual_qc_notes.md",
+      "claim_delta.json"
+    ]
+  },
+  "claimBoundary": "Phase C production ReplView/controller compositor evidence only; synthetic external events are allowed, but this is not real-host proof."
+}

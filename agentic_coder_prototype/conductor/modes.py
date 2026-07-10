@@ -676,6 +676,8 @@ def setup_native_tools(conductor: Any, model: str, use_native_tools: bool) -> bo
 
 def adjust_tool_prompt_mode(conductor: Any, tool_prompt_mode: str, will_use_native_tools: bool) -> str:
     if will_use_native_tools:
+        if str(tool_prompt_mode or "").strip().lower() == "none":
+            return "none"
         provider_cfg = getattr(conductor, "_provider_tools_effective", None) or (conductor.config.get("provider_tools") or {})
         suppress_prompts = bool(provider_cfg.get("suppress_prompts", False))
         if suppress_prompts:
