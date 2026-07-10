@@ -6,7 +6,7 @@
  "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:48:34Z",
+ "updated_at_utc": "2026-07-10T21:49:31Z",
  "items": [
   {
    "id": "A1",
@@ -1435,6 +1435,14 @@
   {
    "at": "2026-07-10T20:56:55Z",
    "note": "AM1 recorded: shared interpreter /Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/.venv/bin/python, requirements sha256:9f19031842d0d2c2..., python: Python 3.11.15"
+  }
+ ],
+ "wave_boundaries": [
+  {
+   "wave": 2,
+   "closed_at_utc": "2026-07-10T21:49:31Z",
+   "head": "27deb570b7d7ac11a872dca90e628cfbe28c71b1",
+   "semantics": "packet implementations verified+merged only. NOT acceptance-complete: D1/D2 green run URLs pending integration (push at this boundary starts PR runs), D3 required-check activation blocked on admin credentials. Acceptance closure owned by D5 (activation/waiver) and K1 (gate decisions). No points awarded for D1-D3."
   }
  ]
 }
