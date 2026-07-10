@@ -187,8 +187,8 @@ def _governance_files(tracked_files: set[Path]) -> set[str]:
     }
 
 
-def build_inventory() -> dict[str, Any]:
-    tracked_files = _tracked_files()
+def build_inventory(tracked_files: set[Path] | None = None) -> dict[str, Any]:
+    tracked_files = tracked_files if tracked_files is not None else _tracked_files()
     lane_ids, lane_kinds = _lane_inventory(tracked_files)
     return {
         "schema_ids": sorted(_schema_ids(tracked_files)),
@@ -288,6 +288,7 @@ def validate_lane_lock_schema(schema: Mapping[str, Any]) -> list[str]:
 
 def main() -> int:
     try:
+        tracked_files = _tracked_files()
         baseline_payload = _load_json_object(BASELINE_PATH)
         if baseline_payload.get("baseline_sha") != BASELINE_SHA:
             raise InventoryError(
@@ -304,13 +305,13 @@ def main() -> int:
                 "lane lock schema contains volatile fields: "
                 + ", ".join(volatile_fields)
             )
-        contract_tier_errors = validate_contract_tiers()
+        contract_tier_errors = validate_contract_tiers(tracked_files=tracked_files)
         if contract_tier_errors:
             raise InventoryError(
                 "contract tier registry invalid: "
                 + "; ".join(contract_tier_errors)
             )
-        additions = _added_values(baseline, build_inventory())
+        additions = _added_values(baseline, build_inventory(tracked_files))
     except InventoryError as exc:
         print(f"phase20-freeze: inventory error: {exc}", file=sys.stderr)
         return 2

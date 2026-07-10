@@ -5,10 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import AbstractSet, Any
 
 from jsonschema import Draft202012Validator
 
@@ -23,6 +24,24 @@ PHASE20_SCHEMA_IDS = frozenset(
         "bb.contract_tiers.v1",
     }
 )
+
+
+def _tracked_files() -> frozenset[Path]:
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ValueError(f"cannot enumerate git-tracked files: {exc}") from exc
+    return frozenset(
+        (ROOT / path).resolve()
+        for path in result.stdout.split("\0")
+        if path
+    )
 
 
 def _load_object(path: Path) -> dict[str, Any]:
@@ -72,8 +91,23 @@ def validate_contract_tiers(
     registry_path: Path = DEFAULT_REGISTRY_PATH,
     schema_path: Path = DEFAULT_SCHEMA_PATH,
     packs_path: Path = DEFAULT_PACKS_PATH,
+    tracked_files: AbstractSet[Path] | None = None,
 ) -> list[str]:
     errors: list[str] = []
+    try:
+        tracked = frozenset(
+            path.resolve()
+            for path in (tracked_files if tracked_files is not None else _tracked_files())
+        )
+    except (OSError, ValueError) as exc:
+        return [str(exc)]
+    for label, path in (
+        ("registry", registry_path),
+        ("schema", schema_path),
+        ("packs", packs_path),
+    ):
+        if path.resolve() not in tracked:
+            errors.append(f"{label} input is not tracked: {path}")
     try:
         schema = _load_object(schema_path)
         registry = _load_object(registry_path)
@@ -119,8 +153,10 @@ def validate_contract_tiers(
                 if not isinstance(consumer, dict) or not isinstance(consumer.get("path"), str):
                     continue
                 consumer_path = Path(consumer["path"])
-                if consumer_path.is_absolute() or not (ROOT / consumer_path).exists():
-                    errors.append(f"{schema_id}: consumer path does not exist in repo: {consumer_path}")
+                if consumer_path.is_absolute():
+                    errors.append(f"{schema_id}: consumer path must be repo-relative: {consumer_path}")
+                elif (ROOT / consumer_path).resolve() not in tracked:
+                    errors.append(f"{schema_id}: consumer path is not tracked: {consumer_path}")
     return errors
 
 

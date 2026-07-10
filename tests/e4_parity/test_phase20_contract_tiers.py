@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from jsonschema import Draft202012Validator
 
 from scripts import check_contract_tiers
@@ -57,3 +59,32 @@ def test_contract_tier_checker_rejects_keep_entry_without_a_consumer(tmp_path: P
     )
 
     assert any(keep_entry["schema_id"] in error and "consumer" in error for error in errors)
+
+
+def test_contract_tier_checker_rejects_existing_consumer_absent_from_tracked_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A consumer must belong to the freeze snapshot; filesystem existence alone is insufficient."""
+    registry = _load_json(TIER_REGISTRY_PATH)
+    keep_entry = next(entry for entry in registry["entries"] if entry["disposition"] == "keep")
+    consumer_path = Path("existing-but-untracked.py")
+    keep_entry["consumers"][0]["path"] = consumer_path.as_posix()
+    (tmp_path / consumer_path).write_text("# intentionally untracked\n", encoding="utf-8")
+    mutated_path = tmp_path / "contract_tiers.v1.json"
+    mutated_path.write_text(json.dumps(registry), encoding="utf-8")
+    monkeypatch.setattr(check_contract_tiers, "ROOT", tmp_path)
+
+    errors = check_contract_tiers.validate_contract_tiers(
+        registry_path=mutated_path,
+        schema_path=TIER_SCHEMA_PATH,
+        packs_path=PACKS_PATH,
+        tracked_files=frozenset({tmp_path / "tracked-control.py"}),
+    )
+
+    assert any(
+        keep_entry["schema_id"] in error
+        and consumer_path.as_posix() in error
+        and "not tracked" in error
+        for error in errors
+    )
