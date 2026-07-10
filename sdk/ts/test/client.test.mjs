@@ -28,6 +28,7 @@ test("session, file, catalog, and health calls use their exact public URLs", asy
   await client.postInput("session-123", { content: "continue" })
   await client.postCommand("session-123", { command: "stop" })
   await client.deleteSession("session-123")
+  await client.readSessionRecords("session-123")
   await client.listSessionFiles("session-123", "logs")
   await client.readSessionFile("session-123", "logs/run.txt")
   await client.getModelCatalog("configs/team model.yaml")
@@ -44,6 +45,7 @@ test("session, file, catalog, and health calls use their exact public URLs", asy
       ["POST", "http://breadboard.test:9099/v1/sessions/session-123/input"],
       ["POST", "http://breadboard.test:9099/v1/sessions/session-123/command"],
       ["DELETE", "http://breadboard.test:9099/v1/sessions/session-123"],
+      ["GET", "http://breadboard.test:9099/v1/sessions/session-123/records"],
       ["GET", "http://breadboard.test:9099/v1/sessions/session-123/files?path=logs"],
       [
         "GET",

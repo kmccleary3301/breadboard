@@ -47,6 +47,11 @@ class _JsonResponse:
             id="delete-session",
         ),
         pytest.param(
+            lambda client: client.read_session_records("session-123"),
+            "https://breadboard.test/v1/sessions/session-123/records",
+            id="read-session-records",
+        ),
+        pytest.param(
             lambda client: client.post_input("session-123", content="continue"),
             "https://breadboard.test/v1/sessions/session-123/input",
             id="post-input",

@@ -120,6 +120,10 @@ class BreadboardClient:
     def delete_session(self, session_id: str) -> None:
         self._request("DELETE", f"/v1/sessions/{session_id}")
 
+    def read_session_records(self, session_id: str) -> Dict[str, Any]:
+        return self._request("GET", f"/v1/sessions/{session_id}/records")
+
+
     def post_input(self, session_id: str, *, content: str, attachments: List[str] | None = None) -> None:
         payload: Dict[str, Any] = {"content": content}
         if attachments:
