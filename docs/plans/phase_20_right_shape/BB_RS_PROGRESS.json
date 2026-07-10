@@ -6,7 +6,7 @@
  "points_done": 105,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:08:15Z",
+ "updated_at_utc": "2026-07-10T21:09:21Z",
  "items": [
   {
    "id": "A1",
@@ -162,7 +162,7 @@
      "sha": "de76cf2b"
     }
    ],
-   "notes": "Implementer ran all 4 negative tests red; verifier independently reproduced 2 (new $id, lane kind edit).",
+   "notes": "Implementer ran all 4 negative tests red; verifier independently reproduced 2 (new $id, lane kind edit). AM3: 'wire into product-spine' clause owned by D1 (see SPEC_AMENDMENTS.md#amendment-3); D1's verifier must confirm the freeze step in ci.yml.",
    "verifiers": [
     {
      "agent": "VerifyWsB(reviewer)",
@@ -283,7 +283,7 @@
    "status": "todo",
    "deps": [],
    "evidence": [],
-   "notes": "",
+   "notes": "AM3: D1 ACCEPT explicitly includes ci.yml product-spine running scripts/check_phase20_freeze.py; verifier confirms the step exists and passes.",
    "verifiers": []
   },
   {
@@ -990,6 +990,14 @@
    "classification": "gate_wrong",
    "summary": "Fresh-venv bootstrap pins pip>=21.3 (PEP 660 editable); system pip 21.2.4 fails",
    "ref": "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md#amendment-2"
+  },
+  {
+   "id": "AM3",
+   "at": "2026-07-10T21:09:21Z",
+   "rule": "WS-B B2 wiring clause",
+   "classification": "spec_gap",
+   "summary": "B2 wiring clause owned by D1; B2 ACCEPT stands; D1 verifier must confirm freeze step in product-spine",
+   "ref": "docs/plans/phase_20_right_shape/SPEC_AMENDMENTS.md#amendment-3"
   }
  ],
  "notes": [
