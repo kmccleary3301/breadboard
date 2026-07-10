@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 315,
+ "points_done": 385,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:15:44Z",
+ "updated_at_utc": "2026-07-10T22:22:49Z",
  "items": [
   {
    "id": "A1",
@@ -648,53 +648,105 @@
    "ws": "E",
    "title": "adversarial consumer audit",
    "weight": 30,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "E1"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "84a71cd1b11018d482a4a22145b3d78d28dc2288"
+    },
+    {
+     "kind": "verifier",
+     "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
+     "verdict": "pass"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    "VerifyWsE2Static",
+    "VerifyWsE2Exec"
+   ]
   },
   {
    "id": "E3",
    "ws": "E",
    "title": "packs.v1.json language fix",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "E1"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "3ed77584974be8f2566f45e060383f11166fcc54"
+    },
+    {
+     "kind": "verifier",
+     "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
+     "verdict": "pass"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    "VerifyWsE2Static",
+    "VerifyWsE2Exec"
+   ]
   },
   {
    "id": "E4",
    "ws": "E",
    "title": "schemas README tier column",
    "weight": 5,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "E3"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "599549591bf91b5e071583719fa48986b2ceb157"
+    },
+    {
+     "kind": "verifier",
+     "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
+     "verdict": "pass"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    "VerifyWsE2Static",
+    "VerifyWsE2Exec"
+   ]
   },
   {
    "id": "E5",
    "ws": "E",
    "title": "consumer links verified 100% spine tiers",
    "weight": 20,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "E1",
     "E2"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "4b2467d3ce48db602d5fafb1be0219cee674742b"
+    },
+    {
+     "kind": "verifier",
+     "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
+     "verdict": "pass"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    "VerifyWsE2Static",
+    "VerifyWsE2Exec"
+   ]
   },
   {
    "id": "E6",
