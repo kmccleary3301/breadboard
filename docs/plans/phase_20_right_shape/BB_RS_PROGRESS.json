@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 70,
+ "points_done": 105,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:07:41Z",
+ "updated_at_utc": "2026-07-10T21:08:15Z",
  "items": [
   {
    "id": "A1",
@@ -117,24 +117,60 @@
    "ws": "B",
    "title": "commit FREEZE_POLICY.md verbatim",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "p20/verify-wsB B1",
+     "sha": "d0e60df3"
+    },
+    {
+     "kind": "doc",
+     "ref": "../docs_tmp/phase_20/evidence/B1/implementer.json",
+     "sha": "de76cf2b"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsB(reviewer)",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "verdict bound to de76cf2b4c003535bc5e4a7b7e96df1a7e86b235; 4.10 byte-identical; clean gate 0; 2 negatives reproduced red; baseline exact (148 schema ids, 14 sdk pkgs, 21 lanes, 2 kinds)"
+    }
+   ]
   },
   {
    "id": "B2",
    "ws": "B",
    "title": "freeze gate script + CI wiring",
    "weight": 20,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "B1"
    ],
-   "evidence": [],
-   "notes": "",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "p20/verify-wsB B2",
+     "sha": "de76cf2b"
+    },
+    {
+     "kind": "doc",
+     "ref": "../docs_tmp/phase_20/evidence/B2/implementer.json",
+     "sha": "de76cf2b"
+    }
+   ],
+   "notes": "Implementer ran all 4 negative tests red; verifier independently reproduced 2 (new $id, lane kind edit).",
+   "verifiers": [
+    {
+     "agent": "VerifyWsB(reviewer)",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "verdict bound to de76cf2b4c003535bc5e4a7b7e96df1a7e86b235; 4.10 byte-identical; clean gate 0; 2 negatives reproduced red; baseline exact (148 schema ids, 14 sdk pkgs, 21 lanes, 2 kinds)"
+    }
+   ]
   },
   {
    "id": "B3",
