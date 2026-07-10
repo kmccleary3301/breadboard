@@ -6,7 +6,7 @@
  "points_done": 385,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:33:39Z",
+ "updated_at_utc": "2026-07-10T22:34:28Z",
  "items": [
   {
    "id": "A1",
@@ -318,6 +318,12 @@
      "kind": "doc",
      "ref": "../docs_tmp/phase_20/evidence/B2/implementer.json",
      "sha": "de76cf2b"
+    },
+    {
+     "kind": "verifier_verdict",
+     "ref": "irc msg 152ad7d3ddd473de",
+     "verdict": "pass",
+     "detail": "VerifyWsB2b extension PASS bound to 006df3742155d99a1f706e36300fcaf6a0fefeff: scope=test file only; patch-id d281f91f vs HEAD match 966d31fbbdb444e135b6072d9a2e95516733fc18; venv pytest 6 passed hermetic (tmp_path git repos); status empty pre/post; clean gate PASS. Post-merge @ 9508beee: touched-path diff EMPTY, freeze gate rerun exit 0, gate suite rerun 6 passed."
     }
    ],
    "notes": "Implementer ran all 4 negative tests red; verifier independently reproduced 2 (new $id, lane kind edit). AM3: 'wire into product-spine' clause owned by D1 (see SPEC_AMENDMENTS.md#amendment-3); D1's verifier must confirm the freeze step in ci.yml. REOPENED: post-merge integration smoke @ 0d127901 exit=1 - script inventories untracked node_modules package.json files (product_defect); fix routed to implementer; tracked-files-only + new negative test required; re-verify pending. FIXED+re-verified: inventories tracked-files-only from single git ls-files snapshot; baseline unchanged; integration smoke green post-merge. | B2a follow-up (AM10 part-2 revised): per-occurrence tightening allowlist implemented + remedy diagnostic; verified pass @ 6d0e63af by VerifyWsB2a (strict FAIL->fix->targeted reverify PASS); no point change | B2b: allowlist entries hash-pinned {packet, sha256}, malformed=exit 2, empty by default; hermetic regression suite committed (6 tests); verified pass @ 006df374 by VerifyWsB2b",
