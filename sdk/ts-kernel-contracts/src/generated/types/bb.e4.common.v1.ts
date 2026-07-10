@@ -9,6 +9,52 @@
 export type TypedAssertion = {
   [k: string]: unknown;
 };
+/**
+ * Pinned upstream identity of a captured target. Git captures name a real commit; archive captures name the archive path/hash/package without pretending the archive hash is a Git commit.
+ *
+ * This interface was referenced by `E4CommonV1`'s JSON-Schema
+ * via the `definition` "provenance".
+ */
+export type Provenance =
+  | {
+      provenance_kind?: "git_commit";
+      upstream_repo: string;
+      upstream_commit: string;
+      /**
+       * RFC 3339 UTC timestamp. The only wall-clock form for new contracts.
+       */
+      upstream_commit_date: string;
+      upstream_release_label: string;
+      /**
+       * @minItems 1
+       */
+      source_paths: [string, ...string[]];
+    }
+  | {
+      provenance_kind: "archive_snapshot_without_git_dir";
+      upstream_repo: string;
+      upstream_ref: string;
+      upstream_release_label: string;
+      /**
+       * @minItems 1
+       */
+      source_paths: [string, ...string[]];
+      source_archive: {
+        path: string;
+        /**
+         * Lowercase hex sha256 with mandatory 'sha256:' prefix. The only digest string form for new contracts.
+         */
+        sha256: string;
+        bytes?: number;
+      };
+      package: {
+        name: string;
+        version: string;
+        package_json_path?: string;
+      };
+      source_freeze_ref?: string;
+      note?: string;
+    };
 
 /**
  * Shared $defs for E4 evidence-pack contracts. Defines no record type; referenced via $ref. E4-pack analog of bb.kernel.common.v1.
@@ -82,23 +128,4 @@ export interface CatalogSnapshotRef {
    * Lowercase hex sha256 with mandatory 'sha256:' prefix. The only digest string form for new contracts.
    */
   shared_segment_hash: string;
-}
-/**
- * Pinned upstream identity of a captured target. Replaces the schema-invisible metadata.acceptance_packet provenance fields.
- *
- * This interface was referenced by `E4CommonV1`'s JSON-Schema
- * via the `definition` "provenance".
- */
-export interface Provenance {
-  upstream_repo: string;
-  upstream_commit: string;
-  /**
-   * RFC 3339 UTC timestamp. The only wall-clock form for new contracts.
-   */
-  upstream_commit_date: string;
-  upstream_release_label: string;
-  /**
-   * @minItems 1
-   */
-  source_paths: [string, ...string[]];
 }

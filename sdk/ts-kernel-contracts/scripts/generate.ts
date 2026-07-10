@@ -202,7 +202,9 @@ ${schemas}
     .join(",\n")
   writeFileSync(
     join(GENERATED_ROOT, "index.ts"),
-    `${generatedHeader("contracts/kernel/schemas/*.schema.json and contracts/kernel/packs.v1.json")}export { GENERATED_SCHEMAS, GENERATED_SCHEMA_OBJECTS } from "./registry.js"
+    `${generatedHeader("contracts/kernel/schemas/*.schema.json and contracts/kernel/packs.v1.json")}import { GENERATED_SCHEMAS, GENERATED_SCHEMA_OBJECTS } from "./registry.js"
+
+export { GENERATED_SCHEMAS, GENERATED_SCHEMA_OBJECTS }
 
 export const PACKS = {
 ${packObjects}

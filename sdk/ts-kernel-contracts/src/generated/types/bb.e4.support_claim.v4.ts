@@ -17,22 +17,7 @@ export type E4SupportClaimV4 = {
    */
   phase_label?: string;
   target_family_other?: string;
-  scope: {
-    /**
-     * Lowercase machine identifier.
-     */
-    config_id: string;
-    /**
-     * Lowercase machine identifier.
-     */
-    lane_id: string;
-    run_id: string;
-    target_version: string;
-    provider_model: string;
-    sandbox_mode: string;
-    extra?: Metadata;
-    target_family: string;
-  };
+  scope: E4Scope;
   /**
    * @minItems 1
    */
@@ -150,6 +135,25 @@ export type E4SupportClaimV4 = {
   metadata?: Metadata;
 };
 
+/**
+ * The exact-scope tuple every E4 claim/lane names ONCE. Root-level duplication of these fields is prohibited in v4+ contracts.
+ */
+export interface E4Scope {
+  /**
+   * Lowercase machine identifier.
+   */
+  config_id: string;
+  /**
+   * Lowercase machine identifier.
+   */
+  lane_id: string;
+  run_id: string;
+  target_family: string;
+  target_version: string;
+  provider_model: string;
+  sandbox_mode: string;
+  extra?: Metadata;
+}
 /**
  * The ONLY open extension point on closed records. Consumers MUST ignore unknown keys. Producers MUST NOT place normative data here.
  */
