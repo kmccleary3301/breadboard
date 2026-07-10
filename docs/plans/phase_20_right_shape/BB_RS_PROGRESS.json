@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 135,
+ "points_done": 165,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:11:47Z",
+ "updated_at_utc": "2026-07-10T21:15:44Z",
  "items": [
   {
    "id": "A1",
@@ -675,11 +675,24 @@
    "ws": "H",
    "title": "StageReport + check_stage_report in run_lane",
    "weight": 30,
-   "status": "todo",
+   "status": "done",
    "deps": [],
    "evidence": [],
-   "notes": "",
-   "verifiers": []
+   "notes": "Battery red is the intended fail-closed signal; root causes are the three AM5 spec gaps (owners: H3, WS-F, H3). Honesty rule machine-enforced via check_stage_report wired at run_lane per-stage path.",
+   "verifiers": [
+    {
+     "agent": "VerifyWsHExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "182a57039c768ddd612911e33c535d38e03f27cc"
+    },
+    {
+     "agent": "VerifyWsHStatic",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "182a57039c768ddd612911e33c535d38e03f27cc"
+    }
+   ]
   },
   {
    "id": "H2",
