@@ -126,3 +126,17 @@ Directory inputs are legitimate adapter inputs (e.g. P6.6 `raw/`, `joined_sessio
 - **Single implementation**: one shared helper module owned by **F4** (committed in the wsF3 packet; exact path declared in F4 evidence). **H3 MUST consume that helper, never reimplement** — if H3 needs it before WS-F3 merges, H3 cherry-picks the helper commit as a declared dependency (dep_commits in evidence), same pattern as G4/F3.
 
 **Classification:** spec_gap (completes AM5 gap 3). **Owner:** F4 (definition+helper); H3 (consumer). **Recorded-by:** orchestrator.
+
+---
+
+## Amendment 9a - 2026-07-10 - tree-digest domain completion (addendum to AM9; recorded before any consumer implementation)
+
+AM9's definition is completed as follows; the F4 helper implements EXACTLY this:
+
+- **Root & paths**: entries are all regular files recursively under the digested directory root. `path` = path RELATIVE TO THAT ROOT (content-addressed; the input's own repo location is recorded separately by the consumer, e.g. lock `resolved_inputs[].path`). POSIX `/` separators; path components are the raw on-disk bytes decoded as strict UTF-8 — undecodable names fail closed. No unicode renormalization (NFC/NFD as stored).
+- **Ordering**: entries sorted bytewise ascending over the UTF-8 encoding of `path`.
+- **Canonical JSON preimage**: UTF-8; object keys sorted; separators `,` and `:` (no whitespace); `bytes` as JSON integer; `sha256` as bare lowercase 64-hex; no trailing newline. Digest output format: `sha256:<lowercase hex>` over that preimage.
+- **Membership**: every regular file participates — including dotfiles; NO exclusion policy (determinism over convenience; frozen artifact dirs). Hard links hash as regular files. Empty directories contribute nothing; an empty root digests `{"files":[]}`.
+- **Fail-closed set**: symlinks (any, file or dir — never followed), FIFOs/sockets/devices, unreadable files, undecodable names. Additionally each entry's realpath MUST remain under the root's realpath (no escape), else fail closed.
+
+**Classification:** spec_gap (completes AM9). **Owner:** F4 (helper); H3 (consumer). **Recorded-by:** orchestrator.

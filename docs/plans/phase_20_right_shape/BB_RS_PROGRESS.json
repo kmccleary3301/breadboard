@@ -6,7 +6,7 @@
  "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:58:51Z",
+ "updated_at_utc": "2026-07-10T21:59:41Z",
  "items": [
   {
    "id": "A1",
@@ -1439,6 +1439,14 @@
    "date": "2026-07-10",
    "classification": "spec_gap",
    "what": "canonical directory-tree digest (sorted canonical-JSON preimage of path/sha256/bytes); single F4-owned helper; H3 consumes",
+   "owner": "F4; H3",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM9a",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "tree-digest domain: root-relative paths, bytewise order, canonical JSON, fail-closed symlinks/special/undecodable, realpath confinement, no exclusions",
    "owner": "F4; H3",
    "recorded_by": "orchestrator"
   }
