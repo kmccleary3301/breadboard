@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T23:23:43Z",
+ "updated_at_utc": "2026-07-10T23:25:19Z",
  "items": [
   {
    "id": "A1",
@@ -909,7 +909,7 @@
     "F3"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "RED @ verify-wsF2 3f8e3faf (VerifyWsF2Static): declared zip input under gitignored docs_tmp/ + outside-worktree resolution climb violates AM15/AM11a; fix routed to WsF3Compiler2 (track zip at config/e4_lanes/source_freezes/, repin lock, remove climb fallback + negative test)",
    "verifiers": []
   },
   {
