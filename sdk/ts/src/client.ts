@@ -101,20 +101,20 @@ const requestWithConfig = async <T>(
 export const createBreadboardClient = (config: BreadboardClientConfig) => ({
   health: () => requestWithConfig<HealthResponse>(config, "/health", "GET"),
   createSession: (payload: SessionCreateRequest) =>
-    requestWithConfig<SessionCreateResponse>(config, "/sessions", "POST", { body: payload }),
-  listSessions: () => requestWithConfig<SessionSummary[]>(config, "/sessions", "GET"),
-  getSession: (sessionId: string) => requestWithConfig<SessionSummary>(config, `/sessions/${sessionId}`, "GET"),
+    requestWithConfig<SessionCreateResponse>(config, "/v1/sessions", "POST", { body: payload }),
+  listSessions: () => requestWithConfig<SessionSummary[]>(config, "/v1/sessions", "GET"),
+  getSession: (sessionId: string) => requestWithConfig<SessionSummary>(config, `/v1/sessions/${sessionId}`, "GET"),
   postInput: (sessionId: string, body: { content: string; attachments?: ReadonlyArray<string> }) =>
-    requestWithConfig<void>(config, `/sessions/${sessionId}/input`, "POST", { body }),
+    requestWithConfig<void>(config, `/v1/sessions/${sessionId}/input`, "POST", { body }),
   postCommand: (sessionId: string, body: Record<string, unknown>) =>
-    requestWithConfig<void>(config, `/sessions/${sessionId}/command`, "POST", { body }),
-  deleteSession: (sessionId: string) => requestWithConfig<void>(config, `/sessions/${sessionId}`, "DELETE"),
+    requestWithConfig<void>(config, `/v1/sessions/${sessionId}/command`, "POST", { body }),
+  deleteSession: (sessionId: string) => requestWithConfig<void>(config, `/v1/sessions/${sessionId}`, "DELETE"),
   listSessionFiles: (sessionId: string, path?: string) =>
-    requestWithConfig<SessionFileInfo[]>(config, `/sessions/${sessionId}/files`, "GET", {
+    requestWithConfig<SessionFileInfo[]>(config, `/v1/sessions/${sessionId}/files`, "GET", {
       query: path ? { path } : undefined,
     }),
   readSessionFile: (sessionId: string, filePath: string, options?: ReadSessionFileOptions) =>
-    requestWithConfig<SessionFileContent>(config, `/sessions/${sessionId}/files`, "GET", {
+    requestWithConfig<SessionFileContent>(config, `/v1/sessions/${sessionId}/files`, "GET", {
       query: {
         path: filePath,
         mode: options?.mode ?? "cat",
@@ -124,8 +124,8 @@ export const createBreadboardClient = (config: BreadboardClientConfig) => ({
       },
     }),
   getModelCatalog: (configPath: string) =>
-    requestWithConfig<ModelCatalogResponse>(config, "/models", "GET", { query: { config_path: configPath } }),
-  getSkillsCatalog: (sessionId: string) => requestWithConfig<SkillCatalogResponse>(config, `/sessions/${sessionId}/skills`, "GET"),
-  getCtreeSnapshot: (sessionId: string) => requestWithConfig<CTreeSnapshotResponse>(config, `/sessions/${sessionId}/ctrees`, "GET"),
+    requestWithConfig<ModelCatalogResponse>(config, "/v1/models", "GET", { query: { config_path: configPath } }),
+  getSkillsCatalog: (sessionId: string) => requestWithConfig<SkillCatalogResponse>(config, `/v1/sessions/${sessionId}/skills`, "GET"),
+  getCtreeSnapshot: (sessionId: string) => requestWithConfig<CTreeSnapshotResponse>(config, `/v1/sessions/${sessionId}/ctrees`, "GET"),
 })
 
