@@ -181,3 +181,5 @@ AM11's "equivalence not machine-verified" clause is WITHDRAWN: the lock must nev
 - Other directory inputs remain under AM9/AM9a tree digests; a new fail-closed occurrence is a stop-and-report.
 
 **Classification:** spec_gap (revision). **Owner:** F4. **Recorded-by:** orchestrator.
+
+**AM11a clarification (same date):** the tracked zip is the SOLE prerequisite — a clean checkout with a valid lock must work: both compile and `--check` MUST materialize the extraction themselves when absent (and re-digest when present), never assume it exists. Canonical safe extraction is normative: reject archive entries with absolute paths, `..` components, symlink/special-file entries, or undecodable names (fail closed); extraction writes regular files only, permissions normalized. Tests MUST cover extraction-from-clean-state (derived dir deleted, then compile/--check green) in addition to the fail-closed set.
