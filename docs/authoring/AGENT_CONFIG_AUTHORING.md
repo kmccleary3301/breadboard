@@ -32,64 +32,62 @@ The template uses:
 
 Every template line has an inline comment explaining why it exists. Keep those comments when you copy the template; delete them only after the variant has its own evidence packet.
 
-## Validate a config
+## Start and validate a config
 
-Run the explainer in strict mode before attempting an E4 lane:
-
-```bash
-.venv/bin/python scripts/authoring/explain_agent_config.py   --config agent_configs/templates/minimal_harness.v2.yaml   --strict   --json docs_tmp/phase_19/scratch/minimal_harness_explanation.json
-```
-
-`--strict` returns non-zero for warnings. Fix missing prompt files, unknown tools, and schema errors before moving on.
-
-## Smoke-boot a reference session
-
-Use the CLI bridge with the mock provider and a short task. Keep the transcript or API response in `docs_tmp/phase_19/scratch/` for review.
+Create a working copy of the minimal config and its prompt:
 
 ```bash
-BREADBOARD_ENABLE_E4_API=1 BREADBOARD_LEGACY_ROUTES=0 .venv/bin/python - <<'PY'
-import asyncio
-from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest
-from agentic_coder_prototype.api.cli_bridge.service import SessionService
-
-async def main():
-    service = SessionService()
-    response = await service.create_session(SessionCreateRequest(
-        config_path="agent_configs/templates/minimal_harness.v2.yaml",
-        task="Read README.md if it exists, then report one verification command.",
-        stream=False,
-    ))
-    print(response.model_dump_json())
-
-asyncio.run(main())
-PY
+bbh harness init --out docs_tmp/phase_20/scratch/minimal_harness
 ```
 
-For B6 fresh-eyes evidence, the operator may use an equivalent API request if it captures the session id, config path, task, final status, and transcript path.
-
-## Capture an E4 lane
-
-After the config explains cleanly and the smoke boot works, scaffold a lane packet:
+Validate the config, then inspect the resolved fields and references:
 
 ```bash
-.venv/bin/python scripts/e4_parity/scaffold_e4_target_lane.py   --lane-id minimal_harness_probe   --config-id minimal_harness_v2   --target-family agent_config   --target-version v2   --provider-model reference-mock   --sandbox-mode fixture_only   --emit-inventory-row   --emit-lane-def
+bbh harness validate docs_tmp/phase_20/scratch/minimal_harness/minimal_harness.v2.yaml
+bbh harness explain docs_tmp/phase_20/scratch/minimal_harness/minimal_harness.v2.yaml --strict
 ```
 
-Then validate the generated lane definition:
+Strict explanation returns a nonzero exit when warnings remain. Fix missing prompt files, unknown tools, and schema errors before creating an E4 lane.
+
+## Run a reference session
+
+Run the config locally with the offline mock provider:
 
 ```bash
-.venv/bin/python scripts/authoring/validate_lane.py   --lane docs_tmp/phase_15/lane_scaffolds/minimal_harness_probe/config/e4_lane_def.scaffold.yaml   --json docs_tmp/phase_19/scratch/minimal_harness_lane_validation.json
+bbh harness run agent_configs/templates/minimal_harness.v2.yaml --local --task "List files"
 ```
 
-Do not promote scaffold output into `docs/conformance/` until the lane has accepted artifacts and fresh hashes.
+The command starts the CLI bridge in-process, creates a session through the Python SDK, posts the task, reads the session records, and consumes the replayed event stream. It prints the session ID and record count before exiting.
 
-## Field registry table
+## Author and capture an E4 lane
 
-This table is generated from `contracts/kernel/registries/config_surface_fields.v1.json`:
+Create a lane-manifest skeleton:
 
 ```bash
-.venv/bin/python scripts/authoring/render_field_table.py
+bbh lane init --out docs_tmp/phase_20/scratch/minimal_harness_lane
+bbh lane validate docs_tmp/phase_20/scratch/minimal_harness_lane/lane.manifest.yaml
 ```
+
+Fill in the target, capture inputs, assertions, claim scope, and source-freeze reference before compiling a lock. The migrated P6.6 pilot shows the complete manifest-to-capture flow:
+
+```bash
+bbh lane validate config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml
+bbh lane lock config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml --check
+bbh lane capture config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml --out docs_tmp/phase_20/scratch/p6_6_capture
+```
+
+Keep capture output under `docs_tmp/`. Promotion into `docs/conformance/` still requires accepted artifacts and fresh hashes.
+
+## Maintainer script entrypoints
+
+`bbh` is the authoring front door. These scripts remain available for maintenance and debugging:
+
+- `scripts/authoring/explain_agent_config.py` backs `bbh harness explain`.
+- `scripts/authoring/validate_lane.py` backs `bbh lane validate`.
+- `scripts/e4_parity/compile_lane_lock.py` backs `bbh lane lock`.
+- `scripts/e4_parity/run_lane.py` backs `bbh lane capture`.
+- `scripts/e4_parity/scaffold_e4_target_lane.py` creates the older full lane-def scaffold.
+- `scripts/authoring/render_field_table.py` regenerates the field registry table below.
 
 | Field | Class | Runtime consumer | Public dossiers using it |
 |---|---|---|---:|
