@@ -6,7 +6,7 @@
  "points_done": 385,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:41:24Z",
+ "updated_at_utc": "2026-07-10T22:42:28Z",
  "items": [
   {
    "id": "A1",
@@ -1569,7 +1569,7 @@
    "id": "AM13",
    "date": "2026-07-10",
    "classification": "spec_gap",
-   "what": "F5(a) additionally depends on H2-H4; resolved by sequencing (WS-H merges first, wsF3 rebases), never whole-packet picks; lock_sha256 propagation authorized in F5 scope | helper 7462a803 landed as integration node (patch-id 648f71a0, scope 2 files, suite green) BEFORE H/F packets; both rebase onto it",
+   "what": "F5(a) additionally depends on H2-H4; resolved by sequencing (WS-H merges first, wsF3 rebases), never whole-packet picks; lock_sha256 propagation authorized in F5 scope | helper 7462a803 landed as integration node (patch-id 648f71a0, scope 2 files, suite green) BEFORE H/F packets; both rebase onto it | helper node independently verified PASS by VerifyHelperNode @ d18dc1a6 (patch-id 648f71a0; 12 adversarial AM9/AM9a cases incl. symlink/FIFO/socket/device/unreadable/undecodable/escape all fail closed; byte-identity at b7251d23 proven)",
    "owner": "F5+orchestrator",
    "recorded_by": "orchestrator"
   },
