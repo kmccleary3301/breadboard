@@ -6,7 +6,7 @@
  "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:12:16Z",
+ "updated_at_utc": "2026-07-10T22:13:47Z",
  "items": [
   {
    "id": "A1",
@@ -1463,6 +1463,14 @@
    "date": "2026-07-10",
    "classification": "spec_gap",
    "what": "pilot source-freeze input = tracked zip (file digest); normalizer maps archive ref to legacy dir string; zip/dir equivalence recorded as unverified limitation; other dirs stay on tree digest",
+   "owner": "F4",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM11a",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "supersedes AM11 limitation: runtime consumes deterministic extraction of pinned zip; lock records zip sha256 + extraction tree digest; --check re-verifies; legacy dir string used only as declared parity mapping",
    "owner": "F4",
    "recorded_by": "orchestrator"
   }

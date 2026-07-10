@@ -166,3 +166,18 @@ The pilot's declared source-freeze directory `docs_tmp/phase_15/source_freezes/o
 - All other directory inputs (e.g. raw/, joined_sessions/, detached_sessions/) remain under AM9/AM9a tree digests; if any of them also fails closed, that is a NEW stop-and-report, not a silent extension of this exception.
 
 **Classification:** spec_gap. **Owner:** F4. **Recorded-by:** orchestrator.
+
+---
+
+## Amendment 11a - 2026-07-10 - AM11 revision: extraction equivalence MUST be machine-verified (supersedes AM11's "recorded limitation")
+
+AM11's "equivalence not machine-verified" clause is WITHDRAWN: the lock must never attest to bytes the runtime does not consume. Revised contract for the pilot source-freeze input:
+
+- **Source of truth:** the tracked archive `docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip`; the lock pins its file sha256.
+- **Deterministic extraction:** the compiler extracts the pinned archive to a derived, plan-named path (`docs_tmp/phase_20/derived/oh_my_pi_main_5356713e_extracted/`), fails closed if the extraction contains any symlink/special file or undecodable name, computes the AM9/AM9a tree digest of the extraction, and records BOTH digests (archive sha256 + extraction tree digest) in the lock's resolved input entry.
+- **Runtime consumes the extraction:** the normalized runtime lane dict references the extraction path — the runtime input IS the content the lock attests, via the recorded digest chain (zip sha256 -> deterministic extraction -> tree digest).
+- **Parity mapping:** for post-normalization deep-equality against the legacy lane dict ONLY, the declared mapping substitutes the legacy directory string for this one input (documented, pilot-exact, tested). The legacy frozen directory itself stays untouched and is consumed by nothing in the new flow.
+- **Re-verification:** `--check` mode re-extracts (or re-digests the existing extraction) and fails on any digest mismatch; the derived extraction is disposable/reproducible, never hand-edited.
+- Other directory inputs remain under AM9/AM9a tree digests; a new fail-closed occurrence is a stop-and-report.
+
+**Classification:** spec_gap (revision). **Owner:** F4. **Recorded-by:** orchestrator.
