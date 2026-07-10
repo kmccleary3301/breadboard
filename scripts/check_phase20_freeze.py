@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -52,6 +53,20 @@ def _relative(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
 
+def _tracked_files() -> set[Path]:
+    try:
+        result = subprocess.run(
+            ["git", "ls-files", "-z"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise InventoryError(f"cannot enumerate git-tracked files: {exc}") from exc
+    return {ROOT / path for path in result.stdout.split("\0") if path}
+
+
 def _load_json_object(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -62,23 +77,28 @@ def _load_json_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def _schema_ids() -> set[str]:
+def _schema_ids(tracked_files: set[Path]) -> set[str]:
     ids: set[str] = set()
     owners: dict[str, str] = {}
-    for schema_root in SCHEMA_ROOTS:
-        for path in sorted(schema_root.rglob("*.json")):
-            schema_id = _load_json_object(path).get("$id")
-            if schema_id is None:
-                continue
-            if not isinstance(schema_id, str) or not schema_id:
-                raise InventoryError(f"{_relative(path)}: $id must be a non-empty string")
-            previous = owners.get(schema_id)
-            if previous is not None:
-                raise InventoryError(
-                    f"duplicate schema $id {schema_id!r}: {previous}, {_relative(path)}"
-                )
-            owners[schema_id] = _relative(path)
-            ids.add(schema_id)
+    schema_paths = (
+        path
+        for path in tracked_files
+        if path.suffix == ".json"
+        and any(path.is_relative_to(schema_root) for schema_root in SCHEMA_ROOTS)
+    )
+    for path in sorted(schema_paths):
+        schema_id = _load_json_object(path).get("$id")
+        if schema_id is None:
+            continue
+        if not isinstance(schema_id, str) or not schema_id:
+            raise InventoryError(f"{_relative(path)}: $id must be a non-empty string")
+        previous = owners.get(schema_id)
+        if previous is not None:
+            raise InventoryError(
+                f"duplicate schema $id {schema_id!r}: {previous}, {_relative(path)}"
+            )
+        owners[schema_id] = _relative(path)
+        ids.add(schema_id)
     return ids
 
 
@@ -100,15 +120,16 @@ def _package_name(path: Path) -> str:
     return name
 
 
-def _sdk_packages() -> set[tuple[str, str]]:
+def _sdk_packages(tracked_files: set[Path]) -> set[tuple[str, str]]:
     packages: set[tuple[str, str]] = set()
-    for sdk_root in SDK_ROOTS:
-        if not sdk_root.exists():
-            continue
-        paths = set(sdk_root.rglob("package.json"))
-        paths.update(sdk_root.rglob("pyproject.toml"))
-        for path in sorted(paths):
-            packages.add((_package_name(path), _relative(path)))
+    paths = (
+        path
+        for path in tracked_files
+        if path.name in {"package.json", "pyproject.toml"}
+        and any(path.is_relative_to(sdk_root) for sdk_root in SDK_ROOTS)
+    )
+    for path in sorted(paths):
+        packages.add((_package_name(path), _relative(path)))
     return packages
 
 
@@ -125,12 +146,15 @@ def _lane_document(path: Path) -> dict[str, Any] | None:
     return value
 
 
-def _lane_inventory() -> tuple[set[str], set[str]]:
+def _lane_inventory(tracked_files: set[Path]) -> tuple[set[str], set[str]]:
     lane_ids: set[str] = set()
     lane_kinds: set[str] = set()
-    for path in sorted(LANE_ROOT.iterdir()):
-        if not path.is_file() or path.suffix not in {".json", ".yaml", ".yml"}:
-            continue
+    lane_paths = (
+        path
+        for path in tracked_files
+        if path.parent == LANE_ROOT and path.suffix in {".json", ".yaml", ".yml"}
+    )
+    for path in sorted(lane_paths):
         document = _lane_document(path)
         if document is None:
             continue
@@ -147,24 +171,26 @@ def _lane_inventory() -> tuple[set[str], set[str]]:
     return lane_ids, lane_kinds
 
 
-def _governance_files() -> set[str]:
+def _governance_files(tracked_files: set[Path]) -> set[str]:
     return {
         path.name
-        for path in ROOT.iterdir()
-        if path.is_file() and GOVERNANCE_FILE.search(path.name)
+        for path in tracked_files
+        if path.parent == ROOT and GOVERNANCE_FILE.search(path.name)
     }
 
 
 def build_inventory() -> dict[str, Any]:
-    lane_ids, lane_kinds = _lane_inventory()
+    tracked_files = _tracked_files()
+    lane_ids, lane_kinds = _lane_inventory(tracked_files)
     return {
-        "schema_ids": sorted(_schema_ids()),
+        "schema_ids": sorted(_schema_ids(tracked_files)),
         "sdk_packages": [
-            {"name": name, "path": path} for name, path in sorted(_sdk_packages())
+            {"name": name, "path": path}
+            for name, path in sorted(_sdk_packages(tracked_files))
         ],
         "lane_ids": sorted(lane_ids),
         "lane_kinds": sorted(lane_kinds),
-        "top_level_governance_files": sorted(_governance_files()),
+        "top_level_governance_files": sorted(_governance_files(tracked_files)),
     }
 
 
