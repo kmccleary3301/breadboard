@@ -6,7 +6,7 @@
  "points_done": 250,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:31:40Z",
+ "updated_at_utc": "2026-07-10T21:37:49Z",
  "items": [
   {
    "id": "A1",
@@ -604,12 +604,12 @@
    "ws": "E",
    "title": "tier registry schema+file committed",
    "weight": 25,
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "B1"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "RED @ 2f54eea1 (verify): tier invariant runs outside git ls-files snapshot; consumer check uses Path.exists() \u2014 untracked consumer satisfies invariant (product_defect); fix routed.",
    "verifiers": []
   },
   {
@@ -687,13 +687,13 @@
    "ws": "F",
    "title": "lane_manifest schema committed verbatim",
    "weight": 20,
-   "status": "todo",
+   "status": "in_progress",
    "deps": [
     "B1",
     "C1"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "RED @ acef713e (verify): AM7 digest rejection in load_lane_manifest() but validate_lane() entry calls load_lane_def() \u2014 schema error masks digest rejection (product_defect); fix routed.",
    "verifiers": []
   },
   {
@@ -706,7 +706,7 @@
     "F1"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "Exec lens PASS @ d494b90e; merge blocked pending F1/E1 fixes (same packet).",
    "verifiers": []
   },
   {
