@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
+try:
+    from scripts.check_contract_tiers import validate_contract_tiers
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from check_contract_tiers import validate_contract_tiers
+
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -298,6 +303,12 @@ def main() -> int:
             raise InventoryError(
                 "lane lock schema contains volatile fields: "
                 + ", ".join(volatile_fields)
+            )
+        contract_tier_errors = validate_contract_tiers()
+        if contract_tier_errors:
+            raise InventoryError(
+                "contract tier registry invalid: "
+                + "; ".join(contract_tier_errors)
             )
         additions = _added_values(baseline, build_inventory())
     except InventoryError as exc:
