@@ -6,15 +6,34 @@ import argparse
 import hashlib
 import json
 import sys
+import shutil
+import stat
+import zipfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import yaml
 from jsonschema import Draft202012Validator
+try:
+    from scripts.e4_parity.path_refs import (
+        ReferenceResolutionError,
+        resolve_declared_reference,
+    )
+    from scripts.e4_parity.tree_digest import TreeDigest, TreeDigestError, digest_directory
+except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    from path_refs import ReferenceResolutionError, resolve_declared_reference
+    from tree_digest import TreeDigest, TreeDigestError, digest_directory
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 ROOT = SOURCE_ROOT
+SOURCE_FREEZE_ARCHIVE_REF = (
+    "config/e4_lanes/source_freezes/"
+    "oh_my_pi_main_5356713e_git_tracked.zip"
+)
+SOURCE_FREEZE_EXTRACTION_REF = (
+    "docs_tmp/phase_20/derived/oh_my_pi_main_5356713e_extracted"
+)
 
 
 class ManifestError(ValueError):
@@ -34,15 +53,23 @@ def digest_bytes(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
-def _repo_path(value: str | Path, *, source: Path | None = None) -> Path:
-    path = Path(value)
-    if path.is_absolute():
-        return path
-    rooted = ROOT / path
-    if rooted.exists() or source is None:
-        return rooted
-    sibling = source.parent / path
-    return sibling if sibling.exists() else rooted
+def _repo_path(
+    value: str | Path,
+    *,
+    source: Path | None = None,
+    checkout_root: Path | None = None,
+) -> Path:
+    label = f"declared input from {_display(source)}" if source is not None else "declared input"
+    try:
+        return resolve_declared_reference(
+            value,
+            checkout_root=checkout_root or ROOT,
+            namespace="repo",
+            label=label,
+            must_exist=False,
+        )
+    except ReferenceResolutionError as exc:
+        raise ReferenceError(str(exc)) from exc
 
 
 def _display(path: Path) -> str:
@@ -76,7 +103,11 @@ def _load_manifest(path: Path) -> dict[str, Any]:
         raise ManifestError(f"manifest is not valid YAML: {exc}") from exc
     if not isinstance(value, dict):
         raise ManifestError("manifest must contain an object")
-    schema = json.loads((SOURCE_ROOT / "contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json").read_text(encoding="utf-8"))
+    schema_path = _repo_path(
+        "contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
+        checkout_root=SOURCE_ROOT,
+    )
+    schema = _load_mapping(schema_path)
     errors = sorted(Draft202012Validator(schema).iter_errors(value), key=lambda error: list(error.absolute_path))
     if errors:
         error = errors[0]
@@ -85,11 +116,88 @@ def _load_manifest(path: Path) -> dict[str, Any]:
     return value
 
 
-def _input_row(path: Path, role: str) -> dict[str, Any]:
+def _input_row(path: Path, role: str, *, logical_path: str | None = None) -> dict[str, Any]:
+    display = logical_path or _display(path)
+    if path.is_dir():
+        try:
+            tree = digest_directory(path)
+        except TreeDigestError as exc:
+            raise ReferenceError(f"invalid declared input directory {display}: {exc}") from exc
+        return {"path": display, "sha256": tree.digest, "bytes": tree.bytes, "role": role}
     if not path.is_file():
-        raise ReferenceError(f"declared input is not a file: {_display(path)}")
-    data = path.read_bytes()
-    return {"path": _display(path), "sha256": digest_bytes(data), "bytes": len(data), "role": role}
+        raise ReferenceError(f"declared input is not a regular file or directory: {display}")
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise ReferenceError(f"cannot read declared input {display}: {exc}") from exc
+    return {"path": display, "sha256": digest_bytes(data), "bytes": len(data), "role": role}
+
+def extract_source_archive(archive_path: Path, extraction_path: Path) -> TreeDigest:
+    """Safely materialize a canonical regular-file-only ZIP extraction."""
+    archive_path = Path(archive_path)
+    extraction_path = Path(extraction_path)
+    temporary = extraction_path.with_name(extraction_path.name + ".tmp")
+    if temporary.exists():
+        shutil.rmtree(temporary)
+    temporary.mkdir(parents=True)
+    try:
+        try:
+            archive = zipfile.ZipFile(archive_path)
+        except (OSError, UnicodeError, zipfile.BadZipFile) as exc:
+            raise ReferenceError(f"invalid source-freeze archive {archive_path}: {exc}") from exc
+        with archive:
+            seen: set[str] = set()
+            for info in archive.infolist():
+                try:
+                    info.filename.encode("utf-8", errors="strict")
+                except UnicodeEncodeError as exc:
+                    raise ReferenceError("source-freeze archive member name is not strict UTF-8") from exc
+                name = info.filename
+                if not name or name.startswith(("/", "\\")) or "\\" in name:
+                    raise ReferenceError(f"unsafe source-freeze archive member path: {name!r}")
+                parts = Path(name).parts
+                if any(part in ("", ".", "..") for part in parts):
+                    raise ReferenceError(f"unsafe source-freeze archive member path: {name!r}")
+                normalized = "/".join(parts)
+                if normalized in seen:
+                    raise ReferenceError(f"duplicate source-freeze archive member: {name!r}")
+                seen.add(normalized)
+                mode = info.external_attr >> 16
+                entry_type = stat.S_IFMT(mode)
+                if info.is_dir():
+                    if entry_type not in (0, stat.S_IFDIR):
+                        raise ReferenceError(f"non-directory archive metadata for {name!r}")
+                    target_dir = temporary.joinpath(*parts)
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    target_dir.chmod(0o755)
+                    continue
+                if entry_type not in (0, stat.S_IFREG):
+                    raise ReferenceError(f"non-regular source-freeze archive member: {name!r}")
+                target = temporary.joinpath(*parts)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    data = archive.read(info)
+                except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+                    raise ReferenceError(f"cannot read source-freeze archive member {name!r}: {exc}") from exc
+                target.write_bytes(data)
+                target.chmod(0o644)
+        for directory in sorted(
+            (path for path in temporary.rglob("*") if path.is_dir()),
+            key=lambda path: len(path.parts),
+            reverse=True,
+        ):
+            directory.chmod(0o755)
+        tree = digest_directory(temporary)
+        if extraction_path.exists():
+            shutil.rmtree(extraction_path)
+        extraction_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary.replace(extraction_path)
+        return tree
+    except (OSError, TreeDigestError) as exc:
+        raise ReferenceError(f"cannot materialize source-freeze extraction: {exc}") from exc
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary)
 
 
 def _freeze_row(manifest: Mapping[str, Any], manifest_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -106,11 +214,11 @@ def _freeze_row(manifest: Mapping[str, Any], manifest_path: Path) -> tuple[dict[
         raise ReferenceError(f"freeze manifest {_display(path)} has no e4_configs row {config_id!r}")
     preimage = canonical_bytes({"row_id": config_id, "row": row}, newline=False)
     target_freeze = {"config_id": config_id, "freeze_manifest_row_sha256": digest_bytes(preimage)}
-    return target_freeze, _input_row(path, "target_freeze_manifest")
+    return target_freeze, _input_row(path, "target_freeze_manifest", logical_path=reference)
 
 
 def _registry_pins(manifest: Mapping[str, Any]) -> list[dict[str, str]]:
-    registry_path = ROOT / "contracts/kernel/registries/e4_adapters.v1.json"
+    registry_path = _repo_path("contracts/kernel/registries/e4_adapters.v1.json")
     registry = _load_mapping(registry_path)
     entries = registry.get("entries")
     if not isinstance(entries, list):
@@ -152,14 +260,53 @@ def _merge_generated(target: dict[str, Any], source: Any, *, field: str, input_p
     target.update((str(key), value) for key, value in source.items())
 
 
+def _derived_reference_path(reference: str) -> Path:
+    try:
+        return resolve_declared_reference(
+            reference,
+            checkout_root=ROOT,
+            namespace="repo",
+            label="derived extraction",
+            must_exist=False,
+        )
+    except ReferenceResolutionError as exc:
+        raise ReferenceError(str(exc)) from exc
+
+
+def _resolved_input_rows(reference: str, manifest_path: Path) -> list[dict[str, Any]]:
+    path = _repo_path(reference, source=manifest_path)
+    if reference != SOURCE_FREEZE_ARCHIVE_REF:
+        return [_input_row(path, "capture_input", logical_path=reference)]
+    archive_row = _input_row(path, "source_freeze_archive", logical_path=reference)
+    extraction_path = _derived_reference_path(SOURCE_FREEZE_EXTRACTION_REF)
+    tree = extract_source_archive(path, extraction_path)
+    extraction_row = {
+        "path": SOURCE_FREEZE_EXTRACTION_REF,
+        "sha256": tree.digest,
+        "bytes": tree.bytes,
+        "role": "source_freeze_extraction",
+    }
+    return [archive_row, extraction_row]
+
+
+def materialize_manifest_inputs(manifest_path: Path) -> None:
+    """Materialize clean-checkout runtime inputs declared by a lane manifest."""
+    manifest = _load_manifest(manifest_path)
+    for value in manifest["capture"].get("inputs", []):
+        reference = str(value)
+        if reference == SOURCE_FREEZE_ARCHIVE_REF:
+            _resolved_input_rows(reference, manifest_path)
+
+
 def _compile_sidecar(manifest: Mapping[str, Any], manifest_path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     payload_templates: dict[str, Any] = {}
     substitutions: dict[str, Any] = {}
     rows: list[dict[str, Any]] = []
-    for reference in manifest["capture"].get("inputs", []):
-        path = _repo_path(str(reference), source=manifest_path)
-        rows.append(_input_row(path, "capture_input"))
-        if path.suffix.lower() not in {".json", ".yaml", ".yml"}:
+    for reference_value in manifest["capture"].get("inputs", []):
+        reference = str(reference_value)
+        path = _repo_path(reference, source=manifest_path)
+        rows.extend(_resolved_input_rows(reference, manifest_path))
+        if reference == SOURCE_FREEZE_ARCHIVE_REF or path.suffix.lower() not in {".json", ".yaml", ".yml"}:
             continue
         constants = _packet_constants(_load_mapping(path))
         if constants is None:
@@ -204,6 +351,8 @@ def build_outputs(
         if legacy_path is None:
             raise ManifestError("migrate mode requires --legacy")
         sidecar, artifact_roles, input_rows = _migrate_sidecar(legacy_path)
+        for reference_value in manifest["capture"].get("inputs", []):
+            input_rows.extend(_resolved_input_rows(str(reference_value), manifest_path))
     elif mode == "compile":
         if legacy_path is not None:
             raise ManifestError("compile mode never accepts or reads --legacy")
@@ -226,7 +375,11 @@ def build_outputs(
         "packet_constants_ref": {"path": _display(sidecar_path), "sha256": digest_bytes(sidecar_data)},
         "registry_pins": _registry_pins(manifest),
     }
-    lock_schema = json.loads((SOURCE_ROOT / "contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json").read_text(encoding="utf-8"))
+    lock_schema_path = _repo_path(
+        "contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
+        checkout_root=SOURCE_ROOT,
+    )
+    lock_schema = _load_mapping(lock_schema_path)
     errors = list(Draft202012Validator(lock_schema).iter_errors(lock))
     if errors:
         raise ManifestError(f"generated lock violates schema: {errors[0].message}")
