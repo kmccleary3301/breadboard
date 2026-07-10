@@ -111,6 +111,17 @@ def test_frozen_legacy_contracts_are_never_marked_for_continued_use() -> None:
 
 
 
+def test_kernel_pack_describes_minimality_as_a_tier_qualified_claim() -> None:
+    """Pack documentation limits “minimal” to runtime_protocol and points to its registry."""
+    packs = _load_json(PACKS_PATH)
+    kernel = next(entry for entry in packs["entries"] if entry["id"] == "kernel")
+    description = kernel["description"]
+
+    assert "runtime_protocol" in description
+    assert "contracts/kernel/registries/contract_tiers.v1.json" in description
+    assert "minimal expressive harness primitive language" not in description.lower()
+
+
 def test_contract_tier_registry_exactly_matches_generated_schema_census() -> None:
     """Every packed or Phase 20 schema is classified once, with no missing or stale registry rows."""
     registry = _load_json(TIER_REGISTRY_PATH)

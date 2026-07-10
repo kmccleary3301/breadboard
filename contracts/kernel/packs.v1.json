@@ -2,7 +2,7 @@
   "description": "Assigns every contracts/kernel/schemas/*.schema.json file to exactly one pack. Consumers use packs to distinguish the kernel primitive language from evidence/program records. Enforced total by lint_contract_conventions rule 'pack_totality'.",
   "entries": [
     {
-      "description": "The minimal expressive harness primitive language. This is the published BreadBoard kernel.",
+      "description": "Published BreadBoard kernel schemas span multiple contract tiers. \"Minimal\" refers only to the runtime_protocol tier; see contracts/kernel/registries/contract_tiers.v1.json.",
       "id": "kernel",
       "metadata": {
         "schemas": [
