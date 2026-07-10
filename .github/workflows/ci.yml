@@ -1767,7 +1767,7 @@ jobs:
 
       - name: Verify exported CLI bridge contracts are up-to-date
         run: |
-          python scripts/export_cli_bridge_contracts.py
+          python scripts/release/export_cli_bridge_contracts.py
           git diff --exit-code docs/contracts/cli_bridge
 
       - name: Check targeted test prerequisites
