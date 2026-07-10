@@ -383,7 +383,8 @@ def test_run_lane_reports_declared_stored_replay_with_input_provenance(
     lane_def = _legacy_normalized_lane(
         replay={
             "mode": "stored",
-            "session": "artifacts/stored-replay.json",
+            "artifacts": ["artifacts/stored-replay.json"],
+            "session": None,
             "comparator_class": "semantic",
         }
     )
