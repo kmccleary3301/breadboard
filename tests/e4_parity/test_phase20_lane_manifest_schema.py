@@ -102,6 +102,30 @@ def test_manifest_loader_rejects_digest_substring_recursively(
         validate_lane.load_lane_manifest(manifest_path)
 
 
+def test_validate_lane_rejects_digest_before_schema_validation(tmp_path: Path) -> None:
+    """The public validator reports forbidden digests before an invalid schema version."""
+    manifest_path = tmp_path / "untracked-lane.yaml"
+    manifest_path.write_text(
+        "schema_version: bb.e4.lane_manifest.invalid\n"
+        "metadata:\n"
+        "  provenance:\n"
+        "    digest: sha256:deadbeef\n",
+        encoding="utf-8",
+    )
+
+    report = validate_lane.validate_lane(str(manifest_path))
+
+    schema_check = next(
+        check for check in report["checks"] if check["check_id"] == "lane_def_schema_valid"
+    )
+    assert schema_check["status"] == "failed"
+    detail = schema_check["detail"]
+    assert "forbidden" in detail
+    assert "sha256:" in detail
+    assert "unknown schema_version" not in detail
+    assert "schema validation" not in detail.lower()
+
+
 def test_manifest_schema_is_draft_2020_12_and_accepts_minimal_manifest() -> None:
     """The published manifest schema is itself valid and accepts the smallest complete intent document."""
     schema = _load_json(MANIFEST_SCHEMA_PATH)

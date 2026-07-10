@@ -161,6 +161,18 @@ def load_lane_manifest(path: Path) -> dict[str, Any]:
     return payload
 
 
+def _load_lane_source_for_validation(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    is_manifest = path.name.endswith((".manifest.yaml", ".manifest.yml")) or any(
+        line.lstrip().startswith("schema_version:")
+        and "bb.e4.lane_manifest." in line
+        for line in text.splitlines()
+    )
+    if is_manifest:
+        return load_lane_manifest(path)
+    return load_lane_def(path)
+
+
 def _repo_rel(path: Path) -> str:
     resolved = path.resolve()
     try:
@@ -433,7 +445,7 @@ def validate_lane(lane_arg: str) -> dict[str, Any]:
         checks.append(_metadata_check())
     else:
         try:
-            lane_def = load_lane_def(lane_path)
+            lane_def = _load_lane_source_for_validation(lane_path)
             lane_id = str(lane_def["lane_id"])
             checks.append(_pass("lane_def_schema_valid", "lane definition schema is valid"))
         except LaneDefValidationError as exc:
