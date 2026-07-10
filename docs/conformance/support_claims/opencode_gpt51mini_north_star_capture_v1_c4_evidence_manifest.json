@@ -41,16 +41,16 @@
       ],
       "path": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:a1bf2d54a221b0f833d834c1c11310067111da8ef70b6c81c75aae0614eada11"
+      "sha256": "sha256:9aded3709ef92939872aba48221191e69e3e3130f14799287924bf7859fd10b3"
     },
     {
       "path": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:4b60f6ab1144aa81cdd8943559376dc4c08e6c61fa93234b5d1d19b9161c64e0"
+      "sha256": "sha256:83803e89544b716ee8f86a42b6d8e87effb6683fa23580324c8265e014c39dc8"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/opencode_north_star_capture_v1/comparator_report.json#sha256:a1bf2d54a221b0f833d834c1c11310067111da8ef70b6c81c75aae0614eada11"
+        "docs/conformance/e4_target_support/opencode_north_star_capture_v1/comparator_report.json#sha256:9aded3709ef92939872aba48221191e69e3e3130f14799287924bf7859fd10b3"
       ],
       "path": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/parity_results.json",
       "role": "parity_results",
@@ -67,11 +67,11 @@
       "sha256": "sha256:f1dcea7648456c1ef3357c2a9e6561a0f7c364d2f7e526f0c04e713469e4ec30"
     },
     {
-      "bytes": 124899,
+      "bytes": 124871,
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:5e4e5eca69deb70174194c075e1958bc62fe5f04ab154eec482f788dda14b3b4"
+      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
     }
   ],
   "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",

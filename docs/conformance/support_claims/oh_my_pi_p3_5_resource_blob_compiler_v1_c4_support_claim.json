@@ -3,9 +3,11 @@
   "accepted": true,
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:cadae9c57e73639c5c858a99203403aacad2d51d45b630b6060aa3c1041ac9e4",
   "catalog_binding": {
-    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 288
+    "catalog_revision": 7,
+    "segment_hash": "sha256:af68b7d994779cdf786a5115be7267602c19eb8ba9ca546e5665d83400e28b90",
+    "segment_id": "oh_my_pi_p3_5_resource_blob_compiler",
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -53,8 +55,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:b4cd12b54830119bd1b124c25a9f6c2f767e4aaf82b3e9ab7ed02b0709f1bbbd",
-  "config_id": "oh_my_pi_p3_5_resource_blob_compiler_v1",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:d67157252a9660a84c872d7b7090ce22a67a1bbfc90e27f46e52151870c74307",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -81,21 +82,19 @@
   "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_5_resource_blob_compiler_v1#sha256:f52f66f627901b2346016eb31bc59a6923db9fe9fb5027de218dede954ed671e",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "non_target_accounting",
-  "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_bc11e30da175b4a9#sha256:59b9c16c8d23f09b89b9fa60895d055a913a56f6ea8d4621ee014183c0c0f57c"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_bc11e30da175b4a9#sha256:b74f084df20c96f02004b3f06f35ca61ea658c714675cc25bd05336aa8c175cc"
   ],
   "metadata": {
-    "generated_from_schema_version": "bb.e4.support_claim.v1",
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
     "legacy_scope": {
       "p3_item": "P3.5",
       "phase": "P3"
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json#sha256:cd1b55559023ea9c852dc5982c7014f546cbcd83f66dd18e1f8e09604c2cdf6e",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json#sha256:0fbac34c8be6914121ef3d5581cb87c2b16feab82f1f0575313d671029e22e23",
   "phase_label": "P3",
-  "provider_model": "no-provider",
   "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:9ae9735552e51660fd4216409844f2deb9889ac90ebbdfa700a09e9375878a3a",
   "reverify_command": {
     "argv": [
@@ -113,22 +112,19 @@
     ],
     "cwd": "."
   },
-  "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
-  "sandbox_mode": "read-only",
-  "schema_version": "bb.e4.support_claim.v2",
+  "schema_version": "bb.e4.support_claim.v4",
   "scope": {
     "config_id": "oh_my_pi_p3_5_resource_blob_compiler_v1",
     "lane_id": "oh_my_pi_p3_5_resource_blob_compiler",
     "provider_model": "no-provider",
     "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
     "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
     "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/secret_scan_report.json#sha256:d8e69f732d9350eabde879d14a2779f028a190c10becb5573ce732749f69d7af",
   "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
   "summary": "BreadBoard P3.5 resource/blob compiler support is accepted only for local resource ref, access, blob, truncation, redaction, approval, and containment records in the named helper/runtime fixture.",
-  "target_family": "oh_my_pi",
-  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
   "validation_refs": [
     "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/prevalidation_report.json#sha256:545a5de5517dc64b8aabf5641048719b1f70e3414835bf482fda7b8f38b0d2f5"
   ]

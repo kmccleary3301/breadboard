@@ -4,9 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/raw_capture_manifest.json#sha256:87dc1d20a9f2e7383a3bb7704355db752a752b778cdfd9d3750fbb67faaa4e2d",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "segment_hash": "sha256:f85bcf3e8881125be117c97749ced09fc29b68c72516481193cccea44118c3aa",
+    "catalog_revision": 7,
+    "segment_hash": "sha256:f4c067044c138434a6788902166f273b8bf314dc2c94fb0a664ec7728379d5f4",
     "segment_id": "claude_code_north_star_capture_v1",
-    "shared_segment_hash": "sha256:51a9973aaf723738443d2d12ceb94b41d642106179d7e7f06d028f95e0db1d6c"
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "claude_code_haiku45_north_star_capture_v1_c4_support_claim",
   "claim_semantics": {
@@ -47,8 +48,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/comparator_report.json#sha256:51c2dd832dac00adc761312a74a992c7e5bd759d74b762eb263ffbd1e8f21746",
-  "config_id": "claude_code_haiku45_north_star_capture_v1",
+  "comparator_ref": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/comparator_report.json#sha256:3d7a34380586b99aa284d1b83ff52e6ca759ca9b6a7847af66aeb9df2bb1689b",
   "evidence_manifest_ref": "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -74,16 +74,14 @@
   "freeze_ref": "config/e4_target_freeze_manifest.yaml#claude_code_haiku45_north_star_capture_v1#sha256:a73b7e12fcadadd15ad5e61af3ee0533adc9b95260c3f44181ca07bf8634a233",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
-  "lane_id": "claude_code_north_star_capture_v1",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_d5be8aa4451edbac#sha256:ae9a493362b7e20dcdc57cb2e4ebb32eb0a077c9fb35364173754324b5bf75b5"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_d5be8aa4451edbac#sha256:85a06d217ad352991259ad893f5ec1eea05647f86e62cd1a1eb584cb13c23420"
   ],
   "metadata": {
-    "generated_from_schema_version": "bb.e4.support_claim.v3"
+    "generated_from_schema_version": "bb.e4.support_claim.v4"
   },
   "parity_results_ref": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/parity_results.json#sha256:97525394b25fc97eb7a0b119e01bdc6d622980f86e2dec130e9004b9fe6f7462",
   "phase_label": "WS-J",
-  "provider_model": "anthropic/claude-haiku-4-5-20251001",
   "replay_ref": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/bb_replay_result.json#sha256:2da5c0f256288aef689c180d5fa8350871bda124b453a99908157ff7468e41b8",
   "reverify_command": {
     "argv": [
@@ -101,21 +99,18 @@
     ],
     "cwd": "."
   },
-  "run_id": "20260707_north_star_claude_code_capture",
-  "sandbox_mode": "read-only static package capture",
-  "schema_version": "bb.e4.support_claim.v3",
+  "schema_version": "bb.e4.support_claim.v4",
   "scope": {
     "config_id": "claude_code_haiku45_north_star_capture_v1",
     "lane_id": "claude_code_north_star_capture_v1",
     "provider_model": "anthropic/claude-haiku-4-5-20251001",
     "run_id": "20260707_north_star_claude_code_capture",
     "sandbox_mode": "read-only static package capture",
+    "target_family": "claude_code",
     "target_version": "claude-code 2.1.63"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/secret_scan_report.json#sha256:8b4dfe64c864959db90b1072e8be112aa918b5811625f3d23b38b8b7c0d06d06",
   "summary": "claude-code 2.1.63 north-star exact-scope evidence packet is accepted for claude_code_north_star_capture_v1 only.",
-  "target_family": "claude_code",
-  "target_version": "claude-code 2.1.63",
   "validation_refs": [
     "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/prevalidation_report.json#sha256:0a3e38ef97069d3044ca9fe8a19d45031e423e295b941036fabb079716ed0acd"
   ]

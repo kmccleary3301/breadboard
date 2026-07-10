@@ -1,12 +1,13 @@
 {
   "acceptance_rationale": "The packet binds freeze row, capture, replay, comparator, secret-scan, parity, ledger row, and prevalidation artifacts under canonical roots; comparator rerun is deterministic over current input hashes.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:d1f5e0dfd117157d33e9f650dfdda4496320d1d81778941c095633b71950f4a9",
+  "capture_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:b14bf1e26700a242e1d950c711f205dbb37c463e39fb0bfeba7e1dee3b89417e",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "segment_hash": "sha256:1463ce349ff75195d886f483cbe5243957a0523909c9660c1cdcdf8f6afd4fb6",
+    "catalog_revision": 7,
+    "segment_hash": "sha256:0ea147c0c6d804aad831e66108f494fcc486529262cccd6512bedf76d0ee0f5c",
     "segment_id": "breadboard_self_runtime_records_v1",
-    "shared_segment_hash": "sha256:51a9973aaf723738443d2d12ceb94b41d642106179d7e7f06d028f95e0db1d6c"
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "breadboard_self_runtime_records_v1_c4_support_claim",
   "claim_semantics": {
@@ -61,8 +62,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json#sha256:5f94522012299c42d2484435be6b150fa382bb6a527ef06dfdb4bb1c2e51a421",
-  "config_id": "breadboard_self_runtime_records_v1",
+  "comparator_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json#sha256:438e7a851655bac3f350657aaf5ae94806ae285e1dd1883f5d0303b30dda15f7",
   "evidence_manifest_ref": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -88,17 +88,15 @@
   "freeze_ref": "config/e4_target_freeze_manifest.yaml#breadboard_self_runtime_records_v1#sha256:0012ab5d22f6d66e293487126246d97207fd0f47759c78d4a7b58df4ae8c3987",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "non_target_accounting",
-  "lane_id": "breadboard_self_runtime_records_v1",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_e7bfda921c4e30ed#sha256:e7db9c0c146315a4616a4aeec46b3b400aaf0d98dde02d478a53e02f4b7eae50"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_e7bfda921c4e30ed#sha256:6a37e776d9256447b1c947fdfab958fecdad6c4f3912d51c0f1c1968b09e6fae"
   ],
   "metadata": {
-    "generated_from_schema_version": "bb.e4.support_claim.v3"
+    "generated_from_schema_version": "bb.e4.support_claim.v4"
   },
   "parity_results_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/parity_results.json#sha256:3d3ed4eae27ec1a3b4dc76bf6ad884e8f6c7f5169c1879ecb409cd2e08c5a2b4",
   "phase_label": "WS-J",
-  "provider_model": "no-provider",
-  "replay_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json#sha256:492bd638b7bf5448c8a8953c18398eef38a32e98dcbbb32699b5e3f24f322143",
+  "replay_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json#sha256:df30b0fae0d54321ae1ee60847c52f4ee7ed234b5cea2f037fa8345fdd880d15",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",
@@ -115,21 +113,18 @@
     ],
     "cwd": "."
   },
-  "run_id": "20260707_north_star_breadboard_self_capture",
-  "sandbox_mode": "strict runtime_records self-capture",
-  "schema_version": "bb.e4.support_claim.v3",
+  "schema_version": "bb.e4.support_claim.v4",
   "scope": {
     "config_id": "breadboard_self_runtime_records_v1",
     "lane_id": "breadboard_self_runtime_records_v1",
     "provider_model": "no-provider",
     "run_id": "20260707_north_star_breadboard_self_capture",
     "sandbox_mode": "strict runtime_records self-capture",
+    "target_family": "breadboard",
     "target_version": "breadboard runtime_records strict kernel emission"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/secret_scan_report.json#sha256:51dadeeef93af475d55d4572c6ecd2410caef277c5a49779fe8313b343b58728",
   "summary": "breadboard runtime_records strict kernel emission north-star exact-scope evidence packet is accepted for breadboard_self_runtime_records_v1 only.",
-  "target_family": "breadboard",
-  "target_version": "breadboard runtime_records strict kernel emission",
   "validation_refs": [
     "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/prevalidation_report.json#sha256:4cc5c38059adbadd0df9f6408612f252e1b1ed771c4a01e3a4c95530f659978c"
   ]

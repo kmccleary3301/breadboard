@@ -3,9 +3,11 @@
   "accepted": true,
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json#sha256:bddbcf8b317dd599b55c3d84f9c6fea16c1443c366fa74e3ce26e150122f22a5",
   "catalog_binding": {
-    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 288
+    "catalog_revision": 7,
+    "segment_hash": "sha256:0cadfab8a3abb4354cf8c0d033bb5102084114adf41969a882e7a4ee44e7dabf",
+    "segment_id": "oh_my_pi_p6_0_l3_command_network_hook",
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim",
   "claim_semantics": {
@@ -47,7 +49,6 @@
     ]
   },
   "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json#sha256:954f4ef6112d537917384c257a6cb146266409f1c285c2606c5ef1698528ca54",
-  "config_id": "oh_my_pi_p6_0_l3_command_network_hook_v1",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -79,17 +80,15 @@
   "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l3_command_network_hook_v1#sha256:174e576085fc185b2c8e78b3f934a9aa6469bd96c011e892cf654cfb559853e7",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
-  "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
   "ledger_row_refs": [
     "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_33a6210bdc129f5b#sha256:d00867c7dbe06f090e980a7fd1ffd2f6266b21e34ebce8d6375c84c1cac54286"
   ],
   "metadata": {
-    "generated_from_schema_version": "bb.e4.support_claim.v2",
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json"
   },
   "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/parity_results.json#sha256:9cbc75f9be478221d3c9ca8db9d67ab60c95eb47335dd0dee2e038ceb2a63b67",
   "phase_label": "P6",
-  "provider_model": "no-provider",
   "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/bb_replay_result.json#sha256:edb29da6dfc858a72b8acd3faf86ae20366d2c1385db885e3e81899fe5789800",
   "reverify_command": {
     "argv": [
@@ -107,22 +106,19 @@
     ],
     "cwd": "."
   },
-  "run_id": "20260701_oh_my_pi_p6_0_l3_capture",
-  "sandbox_mode": "read-only",
-  "schema_version": "bb.e4.support_claim.v2",
+  "schema_version": "bb.e4.support_claim.v4",
   "scope": {
     "config_id": "oh_my_pi_p6_0_l3_command_network_hook_v1",
     "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
     "provider_model": "no-provider",
     "run_id": "20260701_oh_my_pi_p6_0_l3_capture",
     "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
     "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/secret_scan_report.json#sha256:77db9c0c1d61b7837f9b188b25114fd2cb17ffae317aadd57097d7de9a2f1e15",
   "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
   "summary": "Oh-My-Pi 16.2.13 provider-free local command execution, custom command execution, hook loading, hook command execution, and hook-gated network-shaped bash blocking are accepted only for the named P6.0-L3 lane, run, config, target version, and read-only sandbox scope.",
-  "target_family": "oh_my_pi",
-  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
   "validation_refs": [
     "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/prevalidation_report.json#sha256:936143afb98bb1b5a21481d3fa46f4c3393a5b3dfe8106aadf668f4043991559"
   ]

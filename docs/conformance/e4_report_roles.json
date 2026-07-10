@@ -1598,7 +1598,7 @@
     {
       "artifact_kind": "report",
       "derived_from": [],
-      "generated_by": "scripts/e4_parity/validate_e4_primitive_readiness.py",
+      "generated_by": "scripts/e4_parity/validate_e4_closure.py",
       "lane_id": null,
       "media_type": "application/json",
       "path": "docs_tmp/phase_15/BB_E4_PRIMITIVE_FAMILY_READINESS_REPORT.json",
@@ -1634,7 +1634,7 @@
     {
       "artifact_kind": "report",
       "derived_from": [],
-      "generated_by": "scripts/e4_parity/validate_e4_score_subledger.py",
+      "generated_by": "scripts/e4_parity/validate_e4_closure.py",
       "lane_id": null,
       "media_type": "application/json",
       "path": "docs_tmp/phase_15/BB_E4_SCORE_SUBLEDGER.json",
@@ -1779,10 +1779,19 @@
       "artifact_kind": "script",
       "derived_from": [],
       "generated_by": "manual",
-      "lane_id": null,
+      "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
       "media_type": "text/x-python",
-      "path": "scripts/e4_parity/build_oh_my_pi_l5_memory_compaction.py",
-      "role_id": "e4_static:script/build_oh_my_pi_l5_memory_compaction"
+      "path": "scripts/e4_parity/adapters/pi_p5_l1_capture.py",
+      "role_id": "e4_static:script/pi_p5_l1_capture_adapter"
+    },
+    {
+      "artifact_kind": "script",
+      "derived_from": [],
+      "generated_by": "manual",
+      "lane_id": "pi_p5_l2_extension_session_residual",
+      "media_type": "text/x-python",
+      "path": "scripts/e4_parity/adapters/pi_p5_l2_capture.py",
+      "role_id": "e4_static:script/pi_p5_l2_capture_adapter"
     },
     {
       "artifact_kind": "script",
@@ -1790,53 +1799,17 @@
       "generated_by": "manual",
       "lane_id": null,
       "media_type": "text/x-python",
-      "path": "scripts/e4_parity/build_oh_my_pi_l6_tui_projection.py",
-      "role_id": "e4_static:script/build_oh_my_pi_l6_tui_projection"
+      "path": "scripts/e4_parity/adapters/accepted_artifact_materialize.py",
+      "role_id": "e4_static:script/accepted_artifact_materialize_adapter"
     },
     {
       "artifact_kind": "script",
       "derived_from": [],
       "generated_by": "manual",
-      "lane_id": null,
+      "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
       "media_type": "text/x-python",
-      "path": "scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py",
-      "role_id": "e4_static:script/build_oh_my_pi_p3_1_effective_config_graph"
-    },
-    {
-      "artifact_kind": "script",
-      "derived_from": [],
-      "generated_by": "manual",
-      "lane_id": null,
-      "media_type": "text/x-python",
-      "path": "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py",
-      "role_id": "e4_static:script/build_oh_my_pi_p3_remaining_helper_runtime"
-    },
-    {
-      "artifact_kind": "script",
-      "derived_from": [],
-      "generated_by": "manual",
-      "lane_id": null,
-      "media_type": "text/x-python",
-      "path": "scripts/e4_parity/build_oh_my_pi_p6_6_task_job_subagent.py",
-      "role_id": "e4_static:script/build_oh_my_pi_p6_6_task_job_subagent"
-    },
-    {
-      "artifact_kind": "script",
-      "derived_from": [],
-      "generated_by": "manual",
-      "lane_id": null,
-      "media_type": "text/x-python",
-      "path": "scripts/e4_parity/build_pi_p5_cli_config_context_tool_surface.py",
-      "role_id": "e4_static:script/build_pi_p5_cli_config_context_tool_surface"
-    },
-    {
-      "artifact_kind": "script",
-      "derived_from": [],
-      "generated_by": "manual",
-      "lane_id": null,
-      "media_type": "text/x-python",
-      "path": "scripts/e4_parity/build_pi_p5_extension_session_residual.py",
-      "role_id": "e4_static:script/build_pi_p5_extension_session_residual"
+      "path": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+      "role_id": "e4_static:script/oh_my_pi_compiler_capture_adapter"
     },
     {
       "artifact_kind": "script",
@@ -1907,26 +1880,8 @@
       "generated_by": "manual",
       "lane_id": null,
       "media_type": "text/x-python",
-      "path": "scripts/e4_parity/validate_e4_primitive_readiness.py",
-      "role_id": "e4_static:script/validate_e4_primitive_readiness"
-    },
-    {
-      "artifact_kind": "script",
-      "derived_from": [],
-      "generated_by": "manual",
-      "lane_id": null,
-      "media_type": "text/x-python",
       "path": "scripts/e4_parity/validate_e4_report_hash_freshness.py",
       "role_id": "e4_static:script/validate_e4_report_hash_freshness"
-    },
-    {
-      "artifact_kind": "script",
-      "derived_from": [],
-      "generated_by": "manual",
-      "lane_id": null,
-      "media_type": "text/x-python",
-      "path": "scripts/e4_parity/validate_e4_score_subledger.py",
-      "role_id": "e4_static:script/validate_e4_score_subledger"
     }
   ]
 }

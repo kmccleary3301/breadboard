@@ -27,20 +27,20 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:bef2dea2badd286500c4f82e7abaa28bc42e2284a555ab7c84ec269b3da558db"
+      "sha256": "sha256:625cac6ad2a2550d1d930acedad035d7b2cea2ba3b8f413a630b23f95c23741b"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:0fbcdbf54320d1c89a23570e8f44b0dbd7d923e45ffc0bd889589f8e49cf1b59"
+      "sha256": "sha256:932e1a448b7f09c7b49e5f71092df591a4ee77e8a0a23d8b6c3b2ff40003fa97"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json#sha256:bef2dea2badd286500c4f82e7abaa28bc42e2284a555ab7c84ec269b3da558db"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json#sha256:625cac6ad2a2550d1d930acedad035d7b2cea2ba3b8f413a630b23f95c23741b"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:ed47e75fbbf49a6b51b43aa2c014a1922c24deb7362b78d220e75e0e9e1cabd5"
+      "sha256": "sha256:a7509379d9e9bea0ce554cf4f663cca6c1fe2a9fe6dc6bafa3e58d91e75f9c6c"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/secret_scan_report.json",

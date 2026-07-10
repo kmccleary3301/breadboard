@@ -3,41 +3,41 @@
     {
       "path": "config/e4_target_freeze_manifest.yaml",
       "role": "freeze_manifest",
-      "sha256": "sha256:bce8fbcec756c4ca1713151df21c08aceb2789a06b3f312bc1c230a84315fd87"
+      "sha256": "sha256:34b38f0eb690e8940d6b8c6bd8cf623c795f9239fab75343f1aea3b46bdc1d6f"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:ba52dbe1e87ffc79e6fd6eeb83e8895f76507cde24e899936eec4462e2818459"
+      "sha256": "sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:ba52dbe1e87ffc79e6fd6eeb83e8895f76507cde24e899936eec4462e2818459",
-        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json#sha256:f0f713c53b9d159708097ef5f2e0ddd82035dcd49ce668993386fa1f48ed28ad"
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec",
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json#sha256:96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde"
       ],
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:32b41b3cefbcf56613db6ec6aaf893813a83a116eee52437510717064ced6506"
+      "sha256": "sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:ba52dbe1e87ffc79e6fd6eeb83e8895f76507cde24e899936eec4462e2818459",
-        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json#sha256:32b41b3cefbcf56613db6ec6aaf893813a83a116eee52437510717064ced6506",
-        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json#sha256:f0f713c53b9d159708097ef5f2e0ddd82035dcd49ce668993386fa1f48ed28ad"
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec",
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json#sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f",
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json#sha256:96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde"
       ],
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:02e7a2420af066d8d97961f18891057b838332f77df21f739df4a320c8e71d0a"
+      "sha256": "sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043"
     },
     {
       "path": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:f39a0272e102ef52692828a1a069e0644c8ddadc454b4127800eb85954b19612"
+      "sha256": "sha256:b9f38957a05fcfef489cd72dffaea1c8cb3b7bd2e9071ac53a3162e69a5d2f09"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:d19ed41388024e94849cf9087d2ff89d2e37513faa2565d4cfb62f354716304e"
+      "sha256": "sha256:346b3bf965105867ecab099e0b154f8388cdc83c027853716e1b59c81dbd9e21"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json",
@@ -52,12 +52,12 @@
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json",
       "role": "target_setup_report",
-      "sha256": "sha256:d11e1155d75b5bb80f2bc21754c836056734ed7c6861cb9d5931fd7709ee1057"
+      "sha256": "sha256:185b925ae0bbfa60e43eb3394b11c58e063541b8591f8b475f94ab10896646a0"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json",
       "role": "target_probe_output",
-      "sha256": "sha256:f0f713c53b9d159708097ef5f2e0ddd82035dcd49ce668993386fa1f48ed28ad"
+      "sha256": "sha256:96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs",

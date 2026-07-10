@@ -34,12 +34,12 @@
       ],
       "path": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:f903cfd7017a930b14f0b255750f32924fd47a766fdd31fbce238a691c48f73f"
+      "sha256": "sha256:c408077792bcdc8cdd7277dc603e4bc800cd17239f7ddf8d6261157a8b941d29"
     },
     {
       "path": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:8bf0492a5e58bb563682651345b8522b56b501e3d91cbc114bcc13e422bae54b"
+      "sha256": "sha256:6c27034f76990533fbc381edd238102bc1798223664c85d4544f28e26e398338"
     },
     {
       "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json",
@@ -57,11 +57,11 @@
       "sha256": "sha256:8e794527c8d964c138ea80e93bdf5d230f7bc66863f0a39a37e38dfec014398c"
     },
     {
-      "bytes": 124899,
+      "bytes": 124871,
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:5e4e5eca69deb70174194c075e1958bc62fe5f04ab154eec482f788dda14b3b4"
+      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
     }
   ],
   "claim_id": "codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim",

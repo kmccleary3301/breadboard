@@ -75,7 +75,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2089,
+      "bytes": 2257,
       "derived_from": [
         "breadboard_self_runtime_records_v1:evidence_manifest"
       ],
@@ -85,7 +85,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_north_star_breadboard_self_runtime_records_c4_chain.json",
       "role_id": "breadboard_self_runtime_records_v1:node_gate",
-      "sha256": "sha256:0db46809ee29ef78aed4dc01e5cd141358bab3841db11a3f30a0fd7de4d63266"
+      "sha256": "sha256:69ada39e588f8b5d61251a1d81eda8e2c7b01f8bb6f862c6d52f052dd78661ad"
     },
     {
       "artifact_kind": "parity_results",
@@ -283,7 +283,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2117,
+      "bytes": 2285,
       "derived_from": [
         "claude_code_north_star_capture_v1:evidence_manifest"
       ],
@@ -293,7 +293,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_north_star_claude_code_capture_c4_chain.json",
       "role_id": "claude_code_north_star_capture_v1:node_gate",
-      "sha256": "sha256:23d1c585f13033c6f62b3246700791a1381ee6a01a786639e15c814a63fffd1e"
+      "sha256": "sha256:5f99f337e382ec53229ed464e7781b76ed8e5e9e3544ad45d00bc5b7f91b7438"
     },
     {
       "artifact_kind": "parity_results",
@@ -453,7 +453,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2010,
+      "bytes": 2178,
       "derived_from": [
         "codex_cli_e4_capture_probe_v1:evidence_manifest"
       ],
@@ -463,7 +463,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p7_codex_gpt55_c4_chain.json",
       "role_id": "codex_cli_e4_capture_probe_v1:node_gate",
-      "sha256": "sha256:b015d7dd6e1ab1a70b30cb2c6f5f14b3bfe7d2dcbdb468a39e2fab3ac662277b"
+      "sha256": "sha256:f0af130bf41618b7d8efeba000398e458bf6702cbc2a955b447b9d408c822f19"
     },
     {
       "artifact_kind": "parity_results",
@@ -804,7 +804,7 @@
       "media_type": "application/json",
       "path": "docs_tmp/phase_15/BB_E4_SCORE_SUBLEDGER.json",
       "role_id": "e4_static:report/bb_e4_score_subledger_json",
-      "sha256": "sha256:281e96e86434f5ff1f07b8c91941c0405d1d2a34e43939005d36cc5db662da52"
+      "sha256": "sha256:0f73aff0bd3db4a427662be8843a1964c41ec243f99e479a408fd25114d46f05"
     },
     {
       "artifact_kind": "report",
@@ -840,7 +840,7 @@
       "media_type": "application/json",
       "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json",
       "role_id": "e4_static:report/bb_e4_target_support_accepted_claim_report_json",
-      "sha256": "sha256:ab7792dccde4203ed424fb7117861920427e0827cb3ef27a3499079a28117236"
+      "sha256": "sha256:21554a4daa6825d642e4cb4cd73ac35784a29447b3b3b74e2f3006321322a679"
     },
     {
       "artifact_kind": "report",
@@ -1237,7 +1237,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2171,
+      "bytes": 2339,
       "derived_from": [
         "oh_my_pi_p3_1_effective_config_graph_compiler:evidence_manifest"
       ],
@@ -1247,7 +1247,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_c4_chain.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:node_gate",
-      "sha256": "sha256:8b87e3fca8fe40769697e3c2732dd2b08a045695816b42372ed36b6a8c4801d4"
+      "sha256": "sha256:f0124276ec1a1050e6613f7a9b38c32b8a41c5575f8f6d5b97ff3d41965f1850"
     },
     {
       "artifact_kind": "parity_results",
@@ -1418,7 +1418,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2163,
+      "bytes": 2331,
       "derived_from": [
         "oh_my_pi_p3_2_context_resource_pack_compiler:evidence_manifest"
       ],
@@ -1428,7 +1428,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p32_context_resource_pack_c4_chain.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:node_gate",
-      "sha256": "sha256:ba23844aad0162d09b1942ceb3c9b11cb51aa21ae4ef3ccf5632ab998c197fcd"
+      "sha256": "sha256:5755f12828df12e425050406fe89abee04edfb9843e0f0e8f952d8d8f84635c7"
     },
     {
       "artifact_kind": "parity_results",
@@ -1599,7 +1599,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2149,
+      "bytes": 2317,
       "derived_from": [
         "oh_my_pi_p3_3_capability_registry_compiler:evidence_manifest"
       ],
@@ -1609,7 +1609,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p33_capability_registry_c4_chain.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:node_gate",
-      "sha256": "sha256:e8863943ee2ed7d7d6e2efa1af680e47a59bea04b4bb64d1dce30dd8a8afb567"
+      "sha256": "sha256:303af50186499b9b4042d9da96310b185733c916381cf8e3f128479482d32790"
     },
     {
       "artifact_kind": "parity_results",
@@ -1780,7 +1780,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2184,
+      "bytes": 2352,
       "derived_from": [
         "oh_my_pi_p3_4_extension_hook_execution_compiler:evidence_manifest"
       ],
@@ -1790,7 +1790,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p34_extension_hook_c4_chain.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:node_gate",
-      "sha256": "sha256:be77c0d15b0c8f2806e52f05a8a4a12a5fa85038b68014bfa00743f18608da44"
+      "sha256": "sha256:189b11e4986fd6c333b522c73d5dd59d964b70329191c8a74c2148adf15ada02"
     },
     {
       "artifact_kind": "parity_results",
@@ -1961,7 +1961,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2107,
+      "bytes": 2275,
       "derived_from": [
         "oh_my_pi_p3_5_resource_blob_compiler:evidence_manifest"
       ],
@@ -1971,7 +1971,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p35_resource_blob_c4_chain.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:node_gate",
-      "sha256": "sha256:11b9d1d4fbf13be85a545634c805640581d203ac8f793c7c83576d6243114d71"
+      "sha256": "sha256:a99c8d53642dbdfa28351dab18ad0a871bf406bece944eae0884918480375d35"
     },
     {
       "artifact_kind": "parity_results",
@@ -2142,7 +2142,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2184,
+      "bytes": 2352,
       "derived_from": [
         "oh_my_pi_p3_6_protocol_provider_policy_compiler:evidence_manifest"
       ],
@@ -2152,7 +2152,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p36_protocol_provider_policy_c4_chain.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:node_gate",
-      "sha256": "sha256:9de2ad3d136a4d86e024569de5780b4c56fe451b19957533bd4a97a5737f13f1"
+      "sha256": "sha256:ddb050be8abc194ab0f36524caa1990bb6a9cfc5d73ef3e082ddaa6052353aa1"
     },
     {
       "artifact_kind": "parity_results",
@@ -2323,7 +2323,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2093,
+      "bytes": 2261,
       "derived_from": [
         "oh_my_pi_p3_7_memory_work_compiler:evidence_manifest"
       ],
@@ -2333,7 +2333,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json",
       "role_id": "oh_my_pi_p3_7_memory_work_compiler:node_gate",
-      "sha256": "sha256:19c7948c441f0570f0649e524260ce5d77178132be6b7cff5c192513cb207c6a"
+      "sha256": "sha256:941f45b8b50c5252e5113d0b1c11604cae334979ad02dd633a3618d95b2385a6"
     },
     {
       "artifact_kind": "parity_results",
@@ -2504,7 +2504,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2128,
+      "bytes": 2296,
       "derived_from": [
         "oh_my_pi_p3_8_projection_broker_adapter:evidence_manifest"
       ],
@@ -2514,7 +2514,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p38_projection_broker_c4_chain.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:node_gate",
-      "sha256": "sha256:c077a2bdcd89d07ce431b390b93937c706dc775a9fba61efa15eab094f23872f"
+      "sha256": "sha256:5c16e88910f9d35730050fc9a24b1b98938d5ec03a615b2b25ef2cdc3ccee8fc"
     },
     {
       "artifact_kind": "parity_results",
@@ -2672,7 +2672,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2121,
+      "bytes": 2289,
       "derived_from": [
         "oh_my_pi_p6_0_l1_config_context_tool_surface:evidence_manifest"
       ],
@@ -2682,7 +2682,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:node_gate",
-      "sha256": "sha256:81a02c708149d182b74b6db76c14d3693cec3bd6d02dec2155be9bf6e14b95ef"
+      "sha256": "sha256:8cfe39b85f4b2cb6603e4c18851e5890f25be42772b907f7ac3a78c221de62b4"
     },
     {
       "artifact_kind": "parity_results",
@@ -2815,7 +2815,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2030,
+      "bytes": 2198,
       "derived_from": [
         "oh_my_pi_p6_0_l2_tool_execution:evidence_manifest"
       ],
@@ -2825,7 +2825,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l2_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:node_gate",
-      "sha256": "sha256:f3e5c17e6ae18e6a6fa854a3a6096b2f4754b30fe1a591d8ac9571399997ee8c"
+      "sha256": "sha256:45cddc0e639db7ebee8dc31e7b291ffb0d9f5576e49b0832bb51c12233e06059"
     },
     {
       "artifact_kind": "parity_results",
@@ -2958,7 +2958,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2072,
+      "bytes": 2240,
       "derived_from": [
         "oh_my_pi_p6_0_l3_command_network_hook:evidence_manifest"
       ],
@@ -2968,7 +2968,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l3_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:node_gate",
-      "sha256": "sha256:7cc9ae3537c9dea5fbccd48c9ffd2294a20a6d95c316b0d6b003ca146a447048"
+      "sha256": "sha256:896a36273d0db10bf98e058dfbd9539e258e607a88964151e01d293dde9da904"
     },
     {
       "artifact_kind": "parity_results",
@@ -3101,7 +3101,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2072,
+      "bytes": 2240,
       "derived_from": [
         "oh_my_pi_p6_0_l4_mcp_browser_resource:evidence_manifest"
       ],
@@ -3111,7 +3111,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l4_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:node_gate",
-      "sha256": "sha256:26de0024992b1588a716ea6baaa5dc322bfd26a8252399c8fea68b98a1ce0af4"
+      "sha256": "sha256:f610d2cbd4c66a09ae10ced065c0d98fcf8a06f85f199be5e4bf0d34871a411a"
     },
     {
       "artifact_kind": "parity_results",
@@ -3258,7 +3258,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2325,
+      "bytes": 2493,
       "derived_from": [
         "oh_my_pi_p6_0_l5_memory_compaction:evidence_manifest"
       ],
@@ -3268,7 +3268,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:node_gate",
-      "sha256": "sha256:c8feda2f65cf152aa3fea2c6db98ab5ecb19b21064cce3456ced8625001b3807"
+      "sha256": "sha256:1d855d88abe2cbc893d10f964797cb46f8bd3d804ef589c0ca1b741583bd3fe3"
     },
     {
       "artifact_kind": "parity_results",
@@ -3428,7 +3428,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2155,
+      "bytes": 2323,
       "derived_from": [
         "oh_my_pi_p6_0_l6_tui_projection:evidence_manifest"
       ],
@@ -3438,7 +3438,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:node_gate",
-      "sha256": "sha256:9906f55ad6200a4c962e5318e21e2d2fbe1fb7daab2dcb2195fa28b3851202c8"
+      "sha256": "sha256:73ddabbcf6a5d3ababcfea69f9566d73b40d42302714032365c12c9160f246e9"
     },
     {
       "artifact_kind": "parity_results",
@@ -3608,7 +3608,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2436,
+      "bytes": 2604,
       "derived_from": [
         "oh_my_pi_p6_6_task_job_subagent:evidence_manifest"
       ],
@@ -3618,7 +3618,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:node_gate",
-      "sha256": "sha256:b8ff0a93e0a40eb499d500fe4af6b42b444a87c17f199cd2b4f1e7b804d6a165"
+      "sha256": "sha256:b1e9e3a0b08e9f4c4c74d170d7ce3a7111f578b0121c406bfaf844cb83a4d09d"
     },
     {
       "artifact_kind": "parity_results",
@@ -3839,7 +3839,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2089,
+      "bytes": 2257,
       "derived_from": [
         "opencode_north_star_capture_v1:evidence_manifest"
       ],
@@ -3849,7 +3849,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_north_star_opencode_capture_c4_chain.json",
       "role_id": "opencode_north_star_capture_v1:node_gate",
-      "sha256": "sha256:3edc261613f279d92e149b8937913cb3830a3c100ca293003922f9dac1b72032"
+      "sha256": "sha256:3e75aed1ae8df83035f16845773fd7be52d521afda923200dad18b156d0caefd"
     },
     {
       "artifact_kind": "parity_results",
@@ -4008,7 +4008,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2260,
+      "bytes": 2428,
       "derived_from": [
         "pi_p5_l1_cli_config_context_tool_surface:evidence_manifest"
       ],
@@ -4018,7 +4018,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p5_pi_l1_cli_config_context_tool_surface_c4_chain.json",
       "role_id": "pi_p5_l1_cli_config_context_tool_surface:node_gate",
-      "sha256": "sha256:977f217308b5d24599f6cbee2cf416efdc6114577fb91c720b57a0669bd7edd4"
+      "sha256": "sha256:93ae6199450fd576b3aa759494d7ba3637732537da1a36be0ee9b694557a381d"
     },
     {
       "artifact_kind": "parity_results",
@@ -4213,7 +4213,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2196,
+      "bytes": 2364,
       "derived_from": [
         "pi_p5_l2_extension_session_residual:evidence_manifest"
       ],
@@ -4223,7 +4223,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json",
       "role_id": "pi_p5_l2_extension_session_residual:node_gate",
-      "sha256": "sha256:50571de681a236bbc8eab0d18b581ee35c3037782d31491e48efcc3640815f97"
+      "sha256": "sha256:b285fb3c53cc0d01fdb3fed6b17b7b0d637a55c40d5cfdf6cc79b85aeefc31c5"
     },
     {
       "artifact_kind": "parity_results",
@@ -4351,142 +4351,142 @@
   ],
   "generated_at_utc": "2026-07-03T00:00:00Z",
   "integrity": {
-    "entries_hash": "sha256:b3ebee3f665b90b05ab3ca357866d4cc55d9333265d3a0e01fac933e803fd6e4",
+    "entries_hash": "sha256:505a9bc03120e6aef9b8a07ee05fbad35e60f3aa20afbba5b4152463aaa03679",
     "entry_count": 337,
-    "segments_hash": "sha256:838970684698e8149db79cd0ee8ba51ada5591a1c2d90c950c4f7fb6663e8a03",
+    "segments_hash": "sha256:9cc33a98262688fd955566bfb09922689f54820f6e0875f1dde20805f89cc1e5",
     "stable_entries_hash": "sha256:a6686171e93a6303d78bc7279acbf4eeb25e5ae416839b54685f390227362e7a"
   },
-  "revision": 7,
+  "revision": 8,
   "schema_version": "bb.e4.artifact_catalog.v2",
   "segments": [
     {
-      "entries_hash": "sha256:07336e3131ce5dea55a5ec2213272510cabac06b07d0c6de987e6e9315adb070",
+      "entries_hash": "sha256:9cd6032eaa7469da98e9310653aa55e9a7f11592cb0bdf66a64d42450402ded9",
       "entry_count": 16,
       "segment_id": "breadboard_self_runtime_records_v1",
       "stable_entries_hash": "sha256:0ea147c0c6d804aad831e66108f494fcc486529262cccd6512bedf76d0ee0f5c"
     },
     {
-      "entries_hash": "sha256:efe3c392ef0beda5cb623171134052358f9de3f5eeb645e2e3ab405d9ab9eab9",
+      "entries_hash": "sha256:5afd700382cf3d1c7b646d663bc49171acb9d25a3526a350f0d0afd22fc2b805",
       "entry_count": 13,
       "segment_id": "claude_code_north_star_capture_v1",
       "stable_entries_hash": "sha256:f4c067044c138434a6788902166f273b8bf314dc2c94fb0a664ec7728379d5f4"
     },
     {
-      "entries_hash": "sha256:41fa2970c816f966c501dbbda1e1a9acec039fbb7438c1ef2082ac9fe8e1cf6f",
+      "entries_hash": "sha256:943f80ae2b22530dad5d95e2bb10b81dda2ea664800be726cd155b91a882dfbc",
       "entry_count": 17,
       "segment_id": "codex_cli_e4_capture_probe_v1",
       "stable_entries_hash": "sha256:ada92e45606a776b773cc9a8b30b637867faeb16a569b7f1f665909e555a569d"
     },
     {
-      "entries_hash": "sha256:337287af2a8847a4ceddb9c6724a268231d33e0dbaf4885ffc7e0e32a19ae990",
+      "entries_hash": "sha256:273a83b5c6608f2ceae40a3ec667dc7a32892d5704aca1261e41a77f6e235926",
       "entry_count": 15,
       "segment_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
       "stable_entries_hash": "sha256:dba20b081c58b6db1b2a2fd923a12415a823a8a2b0e9f1eecab7b1c9956a2d81"
     },
     {
-      "entries_hash": "sha256:537c81617cb11814822c93a28f59b5144b45cf81a2e64f28de5dfd68e19e0bd0",
+      "entries_hash": "sha256:1cb6f6b3270238a8edd5975ee84e22d497148b33a972b852c2904b2b05b571a0",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
       "stable_entries_hash": "sha256:2c7ee2ce521dce66a894f2f1a2e595c53648165801f64055ffc24343c73090b5"
     },
     {
-      "entries_hash": "sha256:056c77bd7faa38901c3dafc095a78659f6f8478c342e977c8e166b9030f74805",
+      "entries_hash": "sha256:17c1c9a9e5c7dfc9c13d2fe26bc05bc320213a941ec2f2987572e559dcf520ab",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_3_capability_registry_compiler",
       "stable_entries_hash": "sha256:875db4242dfbfbb5b84e85c1f5f2f5ad36b232ec3c973846e9ec877c070fa0a3"
     },
     {
-      "entries_hash": "sha256:cf19056c0deb8bfbb93cb2453787bfc1b8ff3df1fe456f11ed2e03cec679861b",
+      "entries_hash": "sha256:570974636e80a5ad90e3e654ef4b4e26b697a8874a06ceb63d08fedae1eed7f2",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
       "stable_entries_hash": "sha256:e88fcb45cdacaad5b72af01348cf6fe2162d841c674fa2092098a653c5a80920"
     },
     {
-      "entries_hash": "sha256:ffb0d2ee50eeccb428b60f831aec6b518664e2a47340fae7c9a6d75f73bb4cf1",
+      "entries_hash": "sha256:f8dd4ba5ea6c2288d4239220fc3b8d4f84836d91c71cb11d8cd3b6e0e67f10bc",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_5_resource_blob_compiler",
       "stable_entries_hash": "sha256:af68b7d994779cdf786a5115be7267602c19eb8ba9ca546e5665d83400e28b90"
     },
     {
-      "entries_hash": "sha256:9eb1001ed4d2fefedbdf56335b269736d4ec209ffb43c98ac4bd67fbdf31f8a0",
+      "entries_hash": "sha256:2f160f2c20a3fae7f310b66f32fd665bfacd9ca92815cb8707442039fa7f2a42",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
       "stable_entries_hash": "sha256:2e43bb4f1971b76d0e03bb4c3c2ed290fd342b9677c884a9e922ef4b9a3205fe"
     },
     {
-      "entries_hash": "sha256:5f8b48b9ce938c5af6aecd85c4bce0d503c5506a48813b56de8b40dac623c0cb",
+      "entries_hash": "sha256:892a0ef841364d357c6f9aa81c51918e9c5db1f73a87f6f8237801c6a6e078d0",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_7_memory_work_compiler",
       "stable_entries_hash": "sha256:5123526b9018df862e0afc6400d8c60b9a7a60e78be5a18862201fbde881e6ec"
     },
     {
-      "entries_hash": "sha256:6b2c30fee501b9bfd830260de28fdd79ba4687ee78c19816e1c1abdb9b8549dc",
+      "entries_hash": "sha256:fb79a5626106056d1148fd743a1f8d738b01998bf52d40866c14bda32ef1c5ee",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_8_projection_broker_adapter",
       "stable_entries_hash": "sha256:66644252c6d19807e2f0619cb701ded1c092b2a6527c97ba9b33c798d676e218"
     },
     {
-      "entries_hash": "sha256:23e6e024108f21228e34d4aa243d00f70f8f6e8d8f9f276e6dc3e154abd312dc",
+      "entries_hash": "sha256:43bd176f3771dc6fc919e5fa80803b89fc188362a703c81f819eef1d63ffd6bb",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
       "stable_entries_hash": "sha256:8fa068428a1bc10789f91142501a21c2f8bf571fe262af174b8f19f25eb99edb"
     },
     {
-      "entries_hash": "sha256:f36b6eea69baaf000a8e57bd254d1b49e3ffc19295a56d11120ec04cae63cd50",
+      "entries_hash": "sha256:41a8d4897492d4ed2cf96de1de31200292e041fb9e1a2abf8e362f6f610ef1cb",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l2_tool_execution",
       "stable_entries_hash": "sha256:13920f33e3ed7be7b62be450cd03e134f32ff038217653dd58b569676989c9a5"
     },
     {
-      "entries_hash": "sha256:e132b58411830373db2673240137218f7896897b55f08aed210447f8456a0434",
+      "entries_hash": "sha256:78b6f2afb3fd378a6b20c87db63e74d6084aa0531e03bf7df9a2d39b2c86d97a",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l3_command_network_hook",
       "stable_entries_hash": "sha256:0cadfab8a3abb4354cf8c0d033bb5102084114adf41969a882e7a4ee44e7dabf"
     },
     {
-      "entries_hash": "sha256:6cea6f04373860f04f9c26968be8b8e0e7a7a8c39b1f17321533bf1a51b51136",
+      "entries_hash": "sha256:95de688103704385182806c2d9455d04a0efc51aeb45d540ac704ae5ee693fac",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
       "stable_entries_hash": "sha256:3e4e18ca68a9e40022f9cb421f0a0ba1a2acce534aa5ec33222acf7f6be6f172"
     },
     {
-      "entries_hash": "sha256:8ac4b67956026afeae159e60de52aadbdc4f0f4598f26a1d3f74cb3a1ce6175b",
+      "entries_hash": "sha256:498223724f2052d8eeabe31aa87018c2638c4eee4d345b1d5f159ce1a76255ee",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p6_0_l5_memory_compaction",
       "stable_entries_hash": "sha256:90344a9796b26b3751c1dd2f8ccccecd6f612588d4556817f5ab18502692c3e5"
     },
     {
-      "entries_hash": "sha256:eeb684950fbcf26f66a04d741b65beac619914eb125c8bf99c78bf91315e2dad",
+      "entries_hash": "sha256:62146e287f9701885bf9f0c4e5a637cfcc453d0f41a878368b3733ebe3c00903",
       "entry_count": 12,
       "segment_id": "oh_my_pi_p6_0_l6_tui_projection",
       "stable_entries_hash": "sha256:aa80b45af59b1e499db877673173f312a6c56531bf6ca03bd7ed9ac320abb191"
     },
     {
-      "entries_hash": "sha256:2f70852fbf577910e73583330d6856e800c5dbee466e0eb74a97a35166fbf597",
+      "entries_hash": "sha256:b401df1f9f387145e1c843003dba806a34946a9009ef864a708cc198255206b5",
       "entry_count": 19,
       "segment_id": "oh_my_pi_p6_6_task_job_subagent",
       "stable_entries_hash": "sha256:f80979f3bcafa36f17a36671bbdb08b6b9ad28b71f0460a620a1e062d85b6a4b"
     },
     {
-      "entries_hash": "sha256:f088a15dbf5fd548eabb2b5bf5fdb5316a25e55a3b0b386b033872eee8c0efdb",
+      "entries_hash": "sha256:fbaaff9e4d0c9f95761d146a6c6633cc1f25548bfc832e74cd2d8c2496a0a387",
       "entry_count": 13,
       "segment_id": "opencode_north_star_capture_v1",
       "stable_entries_hash": "sha256:16b13c3a6dd86415e5e2aeb69655138ac75ef9264bc2cb78418a374cbd3d4f7b"
     },
     {
-      "entries_hash": "sha256:28883240f379c7a471a9adaedc9d8b3884fe183de0c922d15051957fd5e8aecf",
+      "entries_hash": "sha256:669ed75cf8888dac5e1e09e6b99d97517a6ddc521a6dc97ebf4b9364cd51c6c3",
       "entry_count": 17,
       "segment_id": "pi_p5_l1_cli_config_context_tool_surface",
       "stable_entries_hash": "sha256:2dfae6e0b5983a74880d298c3c0e5728f02e35e664adbcfec657d2fa9d8bd5bb"
     },
     {
-      "entries_hash": "sha256:5378aea51d578c8e9240caa39d620e8505906a98f8c5ae9a5c8db5fd0e9b63a2",
+      "entries_hash": "sha256:a1b42419083d3fd53d3ad8e492cc171c4eff29134d46b8d2bcf2abab821d5843",
       "entry_count": 17,
       "segment_id": "pi_p5_l2_extension_session_residual",
       "stable_entries_hash": "sha256:dcb1e4e7d101ecefa74be59b0198e55f24a26f7cd1820b4621132d237a54b3d7"
     },
     {
-      "entries_hash": "sha256:8439dcfa6cb0292d0771c37c399d2c570c4a918b3d4a3602fd338914767894da",
+      "entries_hash": "sha256:3b8a4a61e7c724965a1e724a328b3e79edfab4789bf02cbd697259d92b80e218",
       "entry_count": 42,
       "segment_id": "shared",
       "stable_entries_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"

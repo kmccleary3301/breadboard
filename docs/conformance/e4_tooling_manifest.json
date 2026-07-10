@@ -3,58 +3,22 @@
   "schema_version": "bb.e4.tooling_manifest.v1",
   "scripts": [
     {
-      "bytes": 33408,
+      "bytes": 4642,
+      "path": "scripts/e4_parity/adapters/accepted_artifact_materialize.py",
+      "role_id": "e4_static:script/accepted_artifact_materialize_adapter",
+      "sha256": "sha256:1e08cc4b20e3f9f861488b240ebc2e482ef5fa8162d3d2cbe4c242378f8a26bf"
+    },
+    {
+      "bytes": 33133,
       "path": "scripts/e4_parity/build_artifact_catalog.py",
       "role_id": "e4_static:script/build_artifact_catalog",
-      "sha256": "sha256:d23b1c63f50b3763c2dcaa510f96ca26cfeb003a5d8dff055824ca1301471d49"
+      "sha256": "sha256:d0c404cc6a6d2a591cbbb4c267f36fa2767ae08c8c24d7d271951bf4d6a80c20"
     },
     {
-      "bytes": 64297,
+      "bytes": 68993,
       "path": "scripts/e4_parity/build_e4_final_readiness_packet.py",
       "role_id": "e4_static:script/build_e4_final_readiness_packet",
-      "sha256": "sha256:3e2166432b414d60aa29b1de1b01f6938fc7217de69bbf26a1a86533400c531d"
-    },
-    {
-      "bytes": 67338,
-      "path": "scripts/e4_parity/build_oh_my_pi_l5_memory_compaction.py",
-      "role_id": "e4_static:script/build_oh_my_pi_l5_memory_compaction",
-      "sha256": "sha256:9e55de157fa60158fec32ed6b15989e98b511f2493cc9b2078bb0c52601469e4"
-    },
-    {
-      "bytes": 53969,
-      "path": "scripts/e4_parity/build_oh_my_pi_l6_tui_projection.py",
-      "role_id": "e4_static:script/build_oh_my_pi_l6_tui_projection",
-      "sha256": "sha256:afc3969f2ecc9efc67462eeacdd79abba74830930c45c192348d9b3470eb2f60"
-    },
-    {
-      "bytes": 25160,
-      "path": "scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py",
-      "role_id": "e4_static:script/build_oh_my_pi_p3_1_effective_config_graph",
-      "sha256": "sha256:bcabda1f5de24c1c93e6c384182226ac5ca57d1541c0641d403cfc668710b040"
-    },
-    {
-      "bytes": 40189,
-      "path": "scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py",
-      "role_id": "e4_static:script/build_oh_my_pi_p3_remaining_helper_runtime",
-      "sha256": "sha256:339ee6f0c65c29e28307d82340b9f55aa9366fb25a481ce23b8054267721602d"
-    },
-    {
-      "bytes": 69588,
-      "path": "scripts/e4_parity/build_oh_my_pi_p6_6_task_job_subagent.py",
-      "role_id": "e4_static:script/build_oh_my_pi_p6_6_task_job_subagent",
-      "sha256": "sha256:8a0ae0700518f5126a01af364af16f1c456b617c12afd7d5e1a103711fa5646d"
-    },
-    {
-      "bytes": 47004,
-      "path": "scripts/e4_parity/build_pi_p5_cli_config_context_tool_surface.py",
-      "role_id": "e4_static:script/build_pi_p5_cli_config_context_tool_surface",
-      "sha256": "sha256:a036c1d54f996c7552c45ef01026cc66e16b602b890176aa41dd095cd651ab3a"
-    },
-    {
-      "bytes": 57491,
-      "path": "scripts/e4_parity/build_pi_p5_extension_session_residual.py",
-      "role_id": "e4_static:script/build_pi_p5_extension_session_residual",
-      "sha256": "sha256:8bff2ac19ee1b04f81f17c94c2fa8dd21805d942e6629ea5602234f6fba14855"
+      "sha256": "sha256:5658286a5ffb47e79b451d5155000d90fabb26ec01ba7cb75a0916a7c99e8611"
     },
     {
       "bytes": 32206,
@@ -69,10 +33,28 @@
       "sha256": "sha256:eb33c3931c808123eb88e9a61ff74e21d7c65edd9a3efe1868a948bac410cb1c"
     },
     {
-      "bytes": 24967,
+      "bytes": 51698,
+      "path": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+      "role_id": "e4_static:script/oh_my_pi_compiler_capture_adapter",
+      "sha256": "sha256:f0a1d2462de75acbd354d9259200902a7e249fb7b0e73cb4aa75ca731de1f798"
+    },
+    {
+      "bytes": 52852,
+      "path": "scripts/e4_parity/adapters/pi_p5_l1_capture.py",
+      "role_id": "e4_static:script/pi_p5_l1_capture_adapter",
+      "sha256": "sha256:83ba2212147904d5ab25a2f096610b01d274ca9eaec795d933ae043e3530e25c"
+    },
+    {
+      "bytes": 63533,
+      "path": "scripts/e4_parity/adapters/pi_p5_l2_capture.py",
+      "role_id": "e4_static:script/pi_p5_l2_capture_adapter",
+      "sha256": "sha256:a258ee8b9258130a32dbe1bb4787592ed27ea16904102eb83325e5956af6cb1a"
+    },
+    {
+      "bytes": 44146,
       "path": "scripts/e4_parity/regenerate_evidence.py",
       "role_id": "e4_static:script/regenerate_evidence",
-      "sha256": "sha256:c9846a13ee33545b17871f3f9d761d7e2eea7455159926ebfd53e73215138311"
+      "sha256": "sha256:15d0f98890820fb1eebb5c9df0d48c38ec8ec40e6c94d229dc454fab4398630b"
     },
     {
       "bytes": 7594,
@@ -81,16 +63,16 @@
       "sha256": "sha256:e59540b1d2e3dfd6cab3531d84c9b76c3d37f5f5444dcdc5b1c1c1fb24a6440c"
     },
     {
-      "bytes": 29863,
+      "bytes": 30877,
       "path": "scripts/e4_parity/scaffold_e4_target_lane.py",
       "role_id": "e4_static:script/scaffold_e4_target_lane",
-      "sha256": "sha256:7b97ce77620a1f4d8a221c78b7c313140370e3bfc76e5f190d9d2653274493a6"
+      "sha256": "sha256:ba664d480c6d2385e68592bee5c95c933a8d00107535fa7c0a469a9897059170"
     },
     {
-      "bytes": 49226,
+      "bytes": 51397,
       "path": "scripts/e4_parity/seed_atomic_feature_ledger.py",
       "role_id": "e4_static:script/seed_atomic_feature_ledger",
-      "sha256": "sha256:2cf1746831e3e74c9df2f9211bc0124899d78c1aaa82837bcf381b1afdc2cef4"
+      "sha256": "sha256:2a5f35a422e26f8bc152fec1d3d3aafb963ac578cd8242d52e101361136e9ab4"
     },
     {
       "bytes": 8199,
@@ -99,22 +81,10 @@
       "sha256": "sha256:e02a7e5dbbf07859436220cb3be50452109ef04cfbc7a815e794903fafb4a3e1"
     },
     {
-      "bytes": 14571,
-      "path": "scripts/e4_parity/validate_e4_primitive_readiness.py",
-      "role_id": "e4_static:script/validate_e4_primitive_readiness",
-      "sha256": "sha256:42dc623ab00692941ae7af6a0a891a4703a0a5fb6c0a0958006714bf32e500ce"
-    },
-    {
       "bytes": 37201,
       "path": "scripts/e4_parity/validate_e4_report_hash_freshness.py",
       "role_id": "e4_static:script/validate_e4_report_hash_freshness",
       "sha256": "sha256:111e1a869434ad08931efb6b498f54ffe8db4c15c243c09ef42a4e4fff3f6423"
-    },
-    {
-      "bytes": 18193,
-      "path": "scripts/e4_parity/validate_e4_score_subledger.py",
-      "role_id": "e4_static:script/validate_e4_score_subledger",
-      "sha256": "sha256:01499665b179c400e7338c30c783fbfdea2110383cb6f4049e675d3c30f58bea"
     }
   ]
 }

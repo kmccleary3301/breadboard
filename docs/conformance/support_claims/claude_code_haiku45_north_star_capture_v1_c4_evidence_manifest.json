@@ -41,16 +41,16 @@
       ],
       "path": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:51c2dd832dac00adc761312a74a992c7e5bd759d74b762eb263ffbd1e8f21746"
+      "sha256": "sha256:3d7a34380586b99aa284d1b83ff52e6ca759ca9b6a7847af66aeb9df2bb1689b"
     },
     {
       "path": "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:9301b944fbbdfb6342b93134d7678272a1029cc8c68ef88710ed5d0a155bb39c"
+      "sha256": "sha256:c864ae231f28efacdb9aa5f7113345934acacbdb848fe3240aaeb495559319d2"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/comparator_report.json#sha256:51c2dd832dac00adc761312a74a992c7e5bd759d74b762eb263ffbd1e8f21746"
+        "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/comparator_report.json#sha256:3d7a34380586b99aa284d1b83ff52e6ca759ca9b6a7847af66aeb9df2bb1689b"
       ],
       "path": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/parity_results.json",
       "role": "parity_results",
@@ -67,11 +67,11 @@
       "sha256": "sha256:0a3e38ef97069d3044ca9fe8a19d45031e423e295b941036fabb079716ed0acd"
     },
     {
-      "bytes": 124899,
+      "bytes": 124871,
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:5e4e5eca69deb70174194c075e1958bc62fe5f04ab154eec482f788dda14b3b4"
+      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
     }
   ],
   "claim_id": "claude_code_haiku45_north_star_capture_v1_c4_support_claim",

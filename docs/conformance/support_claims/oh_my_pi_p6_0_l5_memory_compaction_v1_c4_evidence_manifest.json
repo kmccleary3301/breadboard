@@ -8,56 +8,58 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:33d375c2839e9b4887977f251ad481d037aed13cc1dd27a708b1a9cb6e29a317"
+      "sha256": "sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:33d375c2839e9b4887977f251ad481d037aed13cc1dd27a708b1a9cb6e29a317",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
         "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
         "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:df6b5872e8a576a19a936dbb6ee9f107cb12073c46a2d2a17317f1d6b65b4fc7"
+      "sha256": "sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:33d375c2839e9b4887977f251ad481d037aed13cc1dd27a708b1a9cb6e29a317",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:df6b5872e8a576a19a936dbb6ee9f107cb12073c46a2d2a17317f1d6b65b4fc7",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a",
         "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
         "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:134ae2c64de8dec8c22f925ecfc9ba32a364cab3a31904de8bed15eb5c9fc02b"
+      "sha256": "sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:134ae2c64de8dec8c22f925ecfc9ba32a364cab3a31904de8bed15eb5c9fc02b"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:9e234e597af56fe80e46caf78c7a833f0e205019fd21c99e46d8c61608782039"
+      "sha256": "sha256:9766c59f5fdc954b37e6048e40e0dde8f38eeec81aa77e0d7dad618a59ae209c"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json",
       "role": "secret_scan_report",
-      "sha256": "sha256:985ac6e8a7beec7a2de4e24c2bd518c64f3af1fb96cbb500c67f826b58b94f3e"
+      "sha256": "sha256:28bbf8b3a8568de2686d79eafcc9b9a19e62606b1e760c6b7303a7fcb70775a5"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json",
       "role": "validator_output",
-      "sha256": "sha256:cc7516ff0e31076d47df147516aa036e9e617c8d7318f423272e9b2443d3fedd"
+      "sha256": "sha256:d63d77e69a664d05bddf88d39d08dc201d77db373161a05e8f051262bbedf00f"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:ca8fdb2c919e65e79bbbd892bcc289899a4ad3efc6ad702a5e9ae4651a18f2d1"
+      "sha256": "sha256:ac213d1f0b61956d70dc88fb3fed87aacaaa526e7ebd4c5394bc8d91953e8841"
     },
     {
+      "bytes": 124871,
+      "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:5e4e5eca69deb70174194c075e1958bc62fe5f04ab154eec482f788dda14b3b4"
+      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",

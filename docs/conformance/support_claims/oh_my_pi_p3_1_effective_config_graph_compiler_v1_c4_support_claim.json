@@ -3,9 +3,11 @@
   "accepted": true,
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/raw_capture_manifest.json#sha256:f2337df471cdcc6c2e0eb1adc0e58c4fdee1dee3bac2d0c921d68220622781d2",
   "catalog_binding": {
-    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 288
+    "catalog_revision": 7,
+    "segment_hash": "sha256:dba20b081c58b6db1b2a2fd923a12415a823a8a2b0e9f1eecab7b1c9956a2d81",
+    "segment_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -95,8 +97,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json#sha256:107bae3ae1da7949c961ba561c96b2b69237f06da72025d844cfe86d85144f08",
-  "config_id": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json#sha256:fb2919daf8c21854656c1a126034776be8ed1f8e3c5a7007ba1ab557362b0fea",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -124,21 +125,19 @@
   "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_1_effective_config_graph_compiler_v1#sha256:bce4ded7ac594c144b751cde193078b8b4db984389e7edc41adfa34243c205e7",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "non_target_accounting",
-  "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_b3bcb7697f3ea258#sha256:1cdd6e0db73f54591887b8c0a3f1271e1cf74acc934d36cc7797b49c82d9a5bc"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_b3bcb7697f3ea258#sha256:d5d6a0ee8d866e245605cb58bcbf6c5710ac7c1428703ca107c51b8514a87c1e"
   ],
   "metadata": {
-    "generated_from_schema_version": "bb.e4.support_claim.v1",
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
     "legacy_scope": {
       "p3_item": "P3.1",
       "phase": "P3"
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/parity_results.json#sha256:65d3ec051fc45895f11a15c11c272e775c0b55d03400aa2a824d8d84fe4e774e",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/parity_results.json#sha256:1bbaf3b43a6fd706812c3e1891cd5ed07de3b31f5532539723f43bcedda99dcd",
   "phase_label": "P3",
-  "provider_model": "no-provider",
   "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json#sha256:856a9f246f9521923a87b1aafb529bd7984223ebfe03501d59c64d5e694e9deb",
   "reverify_command": {
     "argv": [
@@ -156,23 +155,20 @@
     ],
     "cwd": "."
   },
-  "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
-  "sandbox_mode": "read-only",
-  "schema_version": "bb.e4.support_claim.v2",
+  "schema_version": "bb.e4.support_claim.v4",
   "scope": {
     "config_id": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
     "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
     "provider_model": "no-provider",
     "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
     "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
     "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/secret_scan_report.json#sha256:aeac0490c01ebff2a6ccc224235479075dfa5f2ebe79d2829312c4bb0880c359",
   "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
   "summary": "BreadBoard P3.1 effective config graph compiler support is accepted for the named Oh-My-Pi target capture and generated bb.effective_config_graph.v1 record only.",
-  "target_family": "oh_my_pi",
-  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
   "validation_refs": [
-    "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json#sha256:6db84d52bd5ba5b48116a3b2383e01bc2fd59772f5cda89ecd64afa0ba16d874"
+    "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json#sha256:5d037ec0ad98e133705a31c23c8214db2ff1bfa63041f16f69b9c5adb75972f1"
   ]
 }

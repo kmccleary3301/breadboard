@@ -3,44 +3,44 @@
     {
       "path": "config/e4_target_freeze_manifest.yaml",
       "role": "freeze_manifest",
-      "sha256": "sha256:6eb1a6ec54942a0db703d6b4e96b78c653b3571c6532a86fbfc42503a6e4ec94"
+      "sha256": "sha256:54a9d3ddd9e90fb341fbe412ab0656f366eba27ca3fe818ae6c7b0e6b346817b"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:1e126bf248ecf25b129810e39bac5bafc6f3914649775e1d7ac6720e11549ac4"
+      "sha256": "sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:1e126bf248ecf25b129810e39bac5bafc6f3914649775e1d7ac6720e11549ac4",
-        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json#sha256:a57a6e4df30966c1157c63f05e3a414f0adb06ee07ea6d1141bd2f5c8d8e8b61"
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb",
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json#sha256:f7eb1c6a7a409bc724a1a34d6adfd69157e1c827095f8ffbb4f935c49a8ad261"
       ],
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:4e90dcfc98a75fb36955c124cc314824d13e02f4b78fc89f5d9df179c19beed3"
+      "sha256": "sha256:6061c36783aadb6e5ccb5ec046050ad36c83165eb8da4ca9ab8d26a2e1442ae5"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:1e126bf248ecf25b129810e39bac5bafc6f3914649775e1d7ac6720e11549ac4",
-        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json#sha256:4e90dcfc98a75fb36955c124cc314824d13e02f4b78fc89f5d9df179c19beed3",
-        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json#sha256:a57a6e4df30966c1157c63f05e3a414f0adb06ee07ea6d1141bd2f5c8d8e8b61"
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb",
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json#sha256:6061c36783aadb6e5ccb5ec046050ad36c83165eb8da4ca9ab8d26a2e1442ae5",
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json#sha256:f7eb1c6a7a409bc724a1a34d6adfd69157e1c827095f8ffbb4f935c49a8ad261"
       ],
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:7084b7ce4f0aaf25665f2dc0e75743faf8d7e191f2ba8d7dc6b79e97b9e9bc96"
+      "sha256": "sha256:05315be8132f8b17c123eb085f6a4274bdb291ed0a121e82999011e3e11f4131"
     },
     {
       "path": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:e909dc1ef1b73dbaa729651f2f3c6b7af16db9e99608d920b752a6f7cf0e2789"
+      "sha256": "sha256:1cab658a5adffb2793d9d211d2d99f7b1facb58d5b2131647bf0ba45ba29d78c"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json#sha256:7084b7ce4f0aaf25665f2dc0e75743faf8d7e191f2ba8d7dc6b79e97b9e9bc96"
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json#sha256:05315be8132f8b17c123eb085f6a4274bdb291ed0a121e82999011e3e11f4131"
       ],
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:4db27614326e6c629dc19a9646baee0568988382e1b4b078d7d0a5cb763c5fc1"
+      "sha256": "sha256:51f51f6f19b8b642d646b6537990b668762fe59a42ef8ca68670b3562ed238bb"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/secret_scan_report.json",
@@ -55,12 +55,12 @@
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_setup_and_capture_report.json",
       "role": "target_setup_report",
-      "sha256": "sha256:16101f604b4f0a5a231fc248864383430be1b5491b673e4e9bc7b259713c172f"
+      "sha256": "sha256:158fc96b623da590f0c0a57220808d360b82d18540978decc2b6bce78cf5982f"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json",
       "role": "target_probe_output",
-      "sha256": "sha256:a57a6e4df30966c1157c63f05e3a414f0adb06ee07ea6d1141bd2f5c8d8e8b61"
+      "sha256": "sha256:f7eb1c6a7a409bc724a1a34d6adfd69157e1c827095f8ffbb4f935c49a8ad261"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/pi_p5_target_probe.mjs",

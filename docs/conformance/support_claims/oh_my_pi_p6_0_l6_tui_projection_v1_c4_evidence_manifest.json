@@ -8,59 +8,61 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:e63c844aba1015ac8342bf8fdee158998e93f433dcb88bafe86aa3a991ee49ed"
+      "sha256": "sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e63c844aba1015ac8342bf8fdee158998e93f433dcb88bafe86aa3a991ee49ed",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:30cd98a820847b435c9d5c55a6aa32223400523dd50517a06cef579b5902481f"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:bec0bf7df9488aa569ea0c542c7af9d70f3d7f91c8acc83482b298add1bb158e"
+      "sha256": "sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e63c844aba1015ac8342bf8fdee158998e93f433dcb88bafe86aa3a991ee49ed",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:bec0bf7df9488aa569ea0c542c7af9d70f3d7f91c8acc83482b298add1bb158e",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:30cd98a820847b435c9d5c55a6aa32223400523dd50517a06cef579b5902481f"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:8039c799c92c48e4480b8b408ce1875f6efb9a75be23343ac858ed0837b8bb0f"
+      "sha256": "sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:8039c799c92c48e4480b8b408ce1875f6efb9a75be23343ac858ed0837b8bb0f"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:d1e9441253c356b849372993151e0a63e9c9b6700cb0b825b61c858a9206929e"
+      "sha256": "sha256:af9038e2ba67a051180f0dd2279567e6434ffb3a789ad05032314b6b318be5a8"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json",
       "role": "secret_scan_report",
-      "sha256": "sha256:119454623291a5a74d08b7c4a66b6c274ad2f1788abbdafc2028f555b4c1e8c1"
+      "sha256": "sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json",
       "role": "validator_output",
-      "sha256": "sha256:39aa37fd86adfe5cf47621721c2b4ce259976bd7325a5404d27037fb63d6eccb"
+      "sha256": "sha256:00458fae1e0b58c2a399b3fa06e834be5d60ba08734934615c3d98d4193bc566"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:d19766373ce9de1f817531faa283bc1209029275539ad15125a651f124ee7b13"
+      "sha256": "sha256:6e3cf1624a00c3ce7f3c3231665e3216c812c22f10b85e70a25e16b17a9f2346"
     },
     {
+      "bytes": 124871,
+      "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:5e4e5eca69deb70174194c075e1958bc62fe5f04ab154eec482f788dda14b3b4"
+      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",
       "role": "projection_events",
-      "sha256": "sha256:30cd98a820847b435c9d5c55a6aa32223400523dd50517a06cef579b5902481f"
+      "sha256": "sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
     }
   ],
   "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",

@@ -1,11 +1,13 @@
 {
   "acceptance_rationale": "The target capture installs and runs frozen Pi source in an isolated no-secret workspace, loads a Pi extension through the target loader/runner, emits extension and session lifecycle events, exercises SessionManager continuation, branch/fork, and compaction APIs, and compares machine-observed results to exact replay records.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:ba52dbe1e87ffc79e6fd6eeb83e8895f76507cde24e899936eec4462e2818459",
+  "capture_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec",
   "catalog_binding": {
-    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 288
+    "catalog_revision": 7,
+    "segment_hash": "sha256:dcb1e4e7d101ecefa74be59b0198e55f24a26f7cd1820b4621132d237a54b3d7",
+    "segment_id": "pi_p5_l2_extension_session_residual",
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "pi_p5_l2_extension_session_residual_v1_c4_support_claim",
   "claim_semantics": {
@@ -179,8 +181,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json#sha256:02e7a2420af066d8d97961f18891057b838332f77df21f739df4a320c8e71d0a",
-  "config_id": "pi_p5_l2_extension_session_residual_v1",
+  "comparator_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json#sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043",
   "evidence_manifest_ref": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -199,15 +200,14 @@
     "No target behavior outside the observed extension loader/runner and SessionManager residual APIs is claimed.",
     "No broad Pi customization parity beyond extension-discovered resources, registered tool/command/flag surface, and session lifecycle hooks is claimed."
   ],
-  "freeze_ref": "config/e4_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:bce8fbcec756c4ca1713151df21c08aceb2789a06b3f312bc1c230a84315fd87",
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:34b38f0eb690e8940d6b8c6bd8cf623c795f9239fab75343f1aea3b46bdc1d6f",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
-  "lane_id": "pi_p5_l2_extension_session_residual",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_38725eb172b28cb1#sha256:1aaa9ac60cb0a734293272047639509110bfa15288b1cdc5623fa160f04abde3"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_38725eb172b28cb1#sha256:080dea42d884060dc15454f1cf1ea9c912b76e3a66ec8ef8bc0ad08e7de079b1"
   ],
   "metadata": {
-    "generated_from_schema_version": "bb.e4.support_claim.v1",
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
     "legacy_scope": {
       "p5_items": [
         "P5.2-residual",
@@ -219,10 +219,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json#sha256:d19ed41388024e94849cf9087d2ff89d2e37513faa2565d4cfb62f354716304e",
+  "parity_results_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json#sha256:346b3bf965105867ecab099e0b154f8388cdc83c027853716e1b59c81dbd9e21",
   "phase_label": "P5",
-  "provider_model": "no-provider",
-  "replay_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json#sha256:32b41b3cefbcf56613db6ec6aaf893813a83a116eee52437510717064ced6506",
+  "replay_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json#sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",
@@ -239,22 +238,19 @@
     ],
     "cwd": "."
   },
-  "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
-  "sandbox_mode": "read-only-no-secret",
-  "schema_version": "bb.e4.support_claim.v2",
+  "schema_version": "bb.e4.support_claim.v4",
   "scope": {
     "config_id": "pi_p5_l2_extension_session_residual_v1",
     "lane_id": "pi_p5_l2_extension_session_residual",
     "provider_model": "no-provider",
     "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
     "sandbox_mode": "read-only-no-secret",
+    "target_family": "pi",
     "target_version": "@mariozechner/pi-coding-agent@0.57.1"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json#sha256:f033e4e2b70364f8b0c178252c862a98d91aa7d9e08a4c56375e4ea448ac42d7",
   "source_freeze_ref": "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json#sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602",
   "summary": "Pi P5 residual no-secret extension/session support is accepted only for observed extension hook execution plus SessionManager resume/fork/tree/compaction behavior from the frozen Pi 0.57.1 source.",
-  "target_family": "pi",
-  "target_version": "@mariozechner/pi-coding-agent@0.57.1",
   "validation_refs": [
     "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/prevalidation_report.json#sha256:049cbe20737a74146df0e5e0b0fad6be80daf2f6810a6d498c98dee08ee62ca9"
   ]

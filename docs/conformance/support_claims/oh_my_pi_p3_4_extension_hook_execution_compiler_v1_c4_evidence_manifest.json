@@ -27,20 +27,20 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:e09c987065aa12808ad72203864c9a39ba904de234922ef3088a4af0923d74e6"
+      "sha256": "sha256:2cae5e176aad70f56514a9c1d6a613ae31827afd836db4e2335fc6307904037e"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:c02492e22d629965acc98420af73d88b93a13ca0d14fa896846ee4ea706a2f5e"
+      "sha256": "sha256:ef70ad4a1f946dedddc7553c9b38015af818338caecf90910b5d834c8fc3821a"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:e09c987065aa12808ad72203864c9a39ba904de234922ef3088a4af0923d74e6"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:2cae5e176aad70f56514a9c1d6a613ae31827afd836db4e2335fc6307904037e"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:3b8068b3c28612b649964f89bac982b1277c2a2c9398b22fcd7a3a15c3b4a5c1"
+      "sha256": "sha256:ef2919aa56ce490407dc06ed48ad1b131d59a7fc6cb7ef2eacef61bb52df9bfb"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/secret_scan_report.json",

@@ -27,20 +27,20 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:d0f2f7555bd9683c38df531ef0247b3f3c188da05df9098ac4908135b72105cb"
+      "sha256": "sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:3ecadcbf77d5417df8edae51cc91bc11f7f8ebd7f5fbfb7f9e65b76db0fa7ba2"
+      "sha256": "sha256:db2811da6acff95dcc2409a61889cfbfb1065483c7af19362c5a02bc8ec2c5d7"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:d0f2f7555bd9683c38df531ef0247b3f3c188da05df9098ac4908135b72105cb"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:3f1664f39e845e895c2d3618838200c64fa5bb2bbd3894aa1b33f1f093a357e7"
+      "sha256": "sha256:45ec480971434a3bea865bae377b918c686a47ec7107a41082b10d93dd95f5b7"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/secret_scan_report.json",

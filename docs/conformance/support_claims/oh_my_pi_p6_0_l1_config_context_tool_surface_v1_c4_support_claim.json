@@ -3,9 +3,11 @@
   "accepted": true,
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json#sha256:a5819fd983019702e0c5808e018a716fe98f51766e2b95cd3a986df5e5906b98",
   "catalog_binding": {
-    "catalog_hash": "sha256:c59a5346d384d8c436edb8c0641fd69b46b3323463dc58a6c66a6369f50b63c1",
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 288
+    "catalog_revision": 7,
+    "segment_hash": "sha256:8fa068428a1bc10789f91142501a21c2f8bf571fe262af174b8f19f25eb99edb",
+    "segment_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim",
   "claim_semantics": {
@@ -47,7 +49,6 @@
     ]
   },
   "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/comparator_report.json#sha256:fc4e84e687838b9b6eb15d9feb2ba3dce8bb25285a9e14ce584df0f9c7e8fefd",
-  "config_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -74,17 +75,15 @@
   "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l1_config_context_tool_surface_v1#sha256:c6d96da67797f42b274f51fd6eb0cb7ad09ef06873083316667dee09a860c50d",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
-  "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
   "ledger_row_refs": [
     "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_24c075bc2a24cae0#sha256:cb362fa0e5e2bafc605ad34d3ea29c66169bf167b593416635264b74cb112a2c"
   ],
   "metadata": {
-    "generated_from_schema_version": "bb.e4.support_claim.v2",
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json"
   },
   "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/parity_results.json#sha256:0c6dc5fcb57543c9cc2b17eae5ef9f5f32773a97ea23c63314691f63f84fe6a4",
   "phase_label": "P6",
-  "provider_model": "no-provider",
   "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/bb_replay_result.json#sha256:3f3291decc890f0e96f1515f9a43faf14eb9d94cd03b5ddffa405a7456289ef2",
   "reverify_command": {
     "argv": [
@@ -102,22 +101,19 @@
     ],
     "cwd": "."
   },
-  "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
-  "sandbox_mode": "read-only",
-  "schema_version": "bb.e4.support_claim.v2",
+  "schema_version": "bb.e4.support_claim.v4",
   "scope": {
     "config_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
     "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
     "provider_model": "no-provider",
     "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
     "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
     "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/secret_scan_report.json#sha256:d1e73455492a1c6d2eab8557116c84e325022b56b2f56d996202d665e96d00b6",
   "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
   "summary": "Oh-My-Pi 16.2.13 provider-free CLI config/context/tool-surface support is accepted only for the named P6.0-L1 lane, run, config, target version, and read-only sandbox scope.",
-  "target_family": "oh_my_pi",
-  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
   "validation_refs": [
     "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/prevalidation_report.json#sha256:dbb62cbb5af25c575ae189ed7239751497831aa28af75d5917a381e8fb2d5a2f"
   ]

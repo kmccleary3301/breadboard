@@ -30,7 +30,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:03b426fe14938c02852a2e525aeaaf6fa17aa31bf4c4fea23460e8234aa14331"
+      "sha256": "sha256:fe7056b78ccf07b09562c901db51b7bf75e0bcd908681554612a48598cfdeaff"
     },
     {
       "derived_from": [
@@ -51,11 +51,11 @@
       "sha256": "sha256:dbb62cbb5af25c575ae189ed7239751497831aa28af75d5917a381e8fb2d5a2f"
     },
     {
-      "bytes": 124899,
+      "bytes": 124871,
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:5e4e5eca69deb70174194c075e1958bc62fe5f04ab154eec482f788dda14b3b4"
+      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
     }
   ],
   "claim_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim",

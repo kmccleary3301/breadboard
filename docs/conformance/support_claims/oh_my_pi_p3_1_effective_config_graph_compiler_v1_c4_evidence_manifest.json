@@ -27,20 +27,20 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:107bae3ae1da7949c961ba561c96b2b69237f06da72025d844cfe86d85144f08"
+      "sha256": "sha256:fb2919daf8c21854656c1a126034776be8ed1f8e3c5a7007ba1ab557362b0fea"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:d4a1031b3d4e129b616046a580f41c5882b74d39100eb66e00ff73cb21510cf8"
+      "sha256": "sha256:9987a3052dd61ccdf6980cbd309b0aa95068caad9b5b80b8c271e3826864ca4e"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json#sha256:107bae3ae1da7949c961ba561c96b2b69237f06da72025d844cfe86d85144f08"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json#sha256:fb2919daf8c21854656c1a126034776be8ed1f8e3c5a7007ba1ab557362b0fea"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:65d3ec051fc45895f11a15c11c272e775c0b55d03400aa2a824d8d84fe4e774e"
+      "sha256": "sha256:1bbaf3b43a6fd706812c3e1891cd5ed07de3b31f5532539723f43bcedda99dcd"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/secret_scan_report.json",
@@ -50,7 +50,7 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json",
       "role": "validator_output",
-      "sha256": "sha256:6db84d52bd5ba5b48116a3b2383e01bc2fd59772f5cda89ecd64afa0ba16d874"
+      "sha256": "sha256:5d037ec0ad98e133705a31c23c8214db2ff1bfa63041f16f69b9c5adb75972f1"
     },
     {
       "path": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/effective_config_graph.v1.json",

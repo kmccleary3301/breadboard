@@ -8,72 +8,72 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:5b27d787d4365382b31bcbbbe4ac5e09438f05c14f376d4e9e58344f4dea319f"
+      "sha256": "sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json",
       "role": "joined_subagent_target_capture",
-      "sha256": "sha256:75cfd24e100d775b7e34fbf0375eb25aa878f176ebb44527125318ff896a12c0"
+      "sha256": "sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json",
       "role": "detached_subagent_target_capture",
-      "sha256": "sha256:db215a1d315ff8c229102151dd7b269bdc4d9f184f053c48f2f24b6caab9a6a9"
+      "sha256": "sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:75cfd24e100d775b7e34fbf0375eb25aa878f176ebb44527125318ff896a12c0",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:db215a1d315ff8c229102151dd7b269bdc4d9f184f053c48f2f24b6caab9a6a9",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:c163b9e72ab65429dd8366571387917ed67bc21c23a606b6a9405db2899d1966"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json",
       "role": "work_item_ref",
-      "sha256": "sha256:aea14403e7fe64c0e6b74b2f413bd604306b6e59c97bb37cfc9281389566005a"
+      "sha256": "sha256:0f93c80969b6c9b1c586470b50bafc14e77d284c249e208e6050d8f54483fc7f"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:75cfd24e100d775b7e34fbf0375eb25aa878f176ebb44527125318ff896a12c0",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:db215a1d315ff8c229102151dd7b269bdc4d9f184f053c48f2f24b6caab9a6a9",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json#sha256:aea14403e7fe64c0e6b74b2f413bd604306b6e59c97bb37cfc9281389566005a"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json#sha256:0f93c80969b6c9b1c586470b50bafc14e77d284c249e208e6050d8f54483fc7f"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_item_replay.json",
       "role": "work_item_replay",
-      "sha256": "sha256:559698a82fbb4ca5b082bccd30adf9642a43366b74df17aa3bc7bf4a2d6963c6"
+      "sha256": "sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json#sha256:aea14403e7fe64c0e6b74b2f413bd604306b6e59c97bb37cfc9281389566005a",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:c163b9e72ab65429dd8366571387917ed67bc21c23a606b6a9405db2899d1966"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json#sha256:0f93c80969b6c9b1c586470b50bafc14e77d284c249e208e6050d8f54483fc7f",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:559698a82fbb4ca5b082bccd30adf9642a43366b74df17aa3bc7bf4a2d6963c6"
+      "sha256": "sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:5b27d787d4365382b31bcbbbe4ac5e09438f05c14f376d4e9e58344f4dea319f",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:559698a82fbb4ca5b082bccd30adf9642a43366b74df17aa3bc7bf4a2d6963c6"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
       "role": "task_job_subagent_comparator",
-      "sha256": "sha256:729cfc49caf5cf2714a0b9fa4115c0426618119f37297c57a50d0d8050243795"
+      "sha256": "sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:5b27d787d4365382b31bcbbbe4ac5e09438f05c14f376d4e9e58344f4dea319f",
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:559698a82fbb4ca5b082bccd30adf9642a43366b74df17aa3bc7bf4a2d6963c6"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:729cfc49caf5cf2714a0b9fa4115c0426618119f37297c57a50d0d8050243795"
+      "sha256": "sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:729cfc49caf5cf2714a0b9fa4115c0426618119f37297c57a50d0d8050243795"
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:4841267ce838a22b7216b3f88a8e509741716f268a3bdbc90366af0249366f44"
+      "sha256": "sha256:b361ad6d45bb7a1e977b6565cdf8600ec997a5dbd3e3f67b40889472179c0816"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json",
@@ -83,22 +83,24 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json",
       "role": "validator_output",
-      "sha256": "sha256:766703f7b060761a9bc7219c774186924d26a8b3cbd789d98fb9b50efd8d70c4"
+      "sha256": "sha256:199514225cd36cfb2d8ae20fa9dd203c9c710c2baf2f7e1792241255d997edef"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:3c1be5e9f28c1fae9665762caccb2f2da1c73c5b6bb387bff93974cd334aa6cc"
+      "sha256": "sha256:07f4952ad2666f0bf46607c05a9c0384c2dbadaa780e0abcc431647d037e65c5"
     },
     {
+      "bytes": 124871,
+      "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:5e4e5eca69deb70174194c075e1958bc62fe5f04ab154eec482f788dda14b3b4"
+      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json",
       "role": "target_probe_output",
-      "sha256": "sha256:c163b9e72ab65429dd8366571387917ed67bc21c23a606b6a9405db2899d1966"
+      "sha256": "sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json",

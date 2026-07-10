@@ -4,9 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/raw_capture_manifest.json#sha256:08eb9b4cef8fac675dfea16ca3bdb48a01851bd9ec830feb8dd278ca1ca71f43",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "segment_hash": "sha256:102f2567633de63277174cf0e93487536877fbee3ce6ac3d344e57fe0c5bb4a1",
+    "catalog_revision": 7,
+    "segment_hash": "sha256:16b13c3a6dd86415e5e2aeb69655138ac75ef9264bc2cb78418a374cbd3d4f7b",
     "segment_id": "opencode_north_star_capture_v1",
-    "shared_segment_hash": "sha256:51a9973aaf723738443d2d12ceb94b41d642106179d7e7f06d028f95e0db1d6c"
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
   "claim_semantics": {
@@ -47,8 +48,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/comparator_report.json#sha256:a1bf2d54a221b0f833d834c1c11310067111da8ef70b6c81c75aae0614eada11",
-  "config_id": "opencode_gpt51mini_north_star_capture_v1",
+  "comparator_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/comparator_report.json#sha256:9aded3709ef92939872aba48221191e69e3e3130f14799287924bf7859fd10b3",
   "evidence_manifest_ref": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -74,16 +74,14 @@
   "freeze_ref": "config/e4_target_freeze_manifest.yaml#opencode_gpt51mini_north_star_capture_v1#sha256:01983e5e42c4effb785306c0361812d96d0a91761f9f82a9f35165fb930607c9",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
-  "lane_id": "opencode_north_star_capture_v1",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_48d391c67faf0adf#sha256:b3c02fb48db410d0258908a94831d5999670ae861c5d97016bc49284355a57c8"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_48d391c67faf0adf#sha256:77af07ee20f81c39524f0177b326861b6315ca3a8910dcc2b84d4b0aae3d7c66"
   ],
   "metadata": {
-    "generated_from_schema_version": "bb.e4.support_claim.v3"
+    "generated_from_schema_version": "bb.e4.support_claim.v4"
   },
   "parity_results_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/parity_results.json#sha256:b424503963be649e190cd1a7f528fd69278b13b5ae7ed3e7eee03f2bba9373a6",
   "phase_label": "WS-J",
-  "provider_model": "openai/gpt-5.1-codex-mini",
   "replay_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/bb_replay_result.json#sha256:45e63bc3acca7379178003b17fd4ac4fafec703130164c044f06c27aeb7bc121",
   "reverify_command": {
     "argv": [
@@ -101,21 +99,18 @@
     ],
     "cwd": "."
   },
-  "run_id": "20260707_north_star_opencode_capture",
-  "sandbox_mode": "read-only static package capture",
-  "schema_version": "bb.e4.support_claim.v3",
+  "schema_version": "bb.e4.support_claim.v4",
   "scope": {
     "config_id": "opencode_gpt51mini_north_star_capture_v1",
     "lane_id": "opencode_north_star_capture_v1",
     "provider_model": "openai/gpt-5.1-codex-mini",
     "run_id": "20260707_north_star_opencode_capture",
     "sandbox_mode": "read-only static package capture",
+    "target_family": "opencode",
     "target_version": "opencode 1.2.17"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/secret_scan_report.json#sha256:0b494d085ac516eb663f84f9cb579a1b938bb6aa8ad3ade6cd289df24ee20f01",
   "summary": "opencode 1.2.17 north-star exact-scope evidence packet is accepted for opencode_north_star_capture_v1 only.",
-  "target_family": "opencode",
-  "target_version": "opencode 1.2.17",
   "validation_refs": [
     "docs/conformance/e4_target_support/opencode_north_star_capture_v1/prevalidation_report.json#sha256:f1dcea7648456c1ef3357c2a9e6561a0f7c364d2f7e526f0c04e713469e4ec30"
   ]

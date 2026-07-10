@@ -4954,7 +4954,7 @@
         "artifacts/conformance/node_gate/ct_north_star_breadboard_self_runtime_records_c4_chain.json"
       ],
       "description": "breadboard_self_runtime_records_v1: north_star_stored_report_replay over runtime_records capture",
-      "gate_level": "WS-J-support",
+      "gate_level": "P0-support",
       "test_id": "CT-NORTH-STAR-BREADBOARD-SELF-RUNTIME-RECORDS-C4",
       "timeout_seconds": 180
     },
@@ -4987,7 +4987,7 @@
         "artifacts/conformance/node_gate/ct_north_star_claude_code_capture_c4_chain.json"
       ],
       "description": "claude_code_north_star_capture_v1: north_star_stored_report_replay over replay_dump capture",
-      "gate_level": "WS-J-support",
+      "gate_level": "P0-support",
       "test_id": "CT-NORTH-STAR-CLAUDE-CODE-CAPTURE-C4",
       "timeout_seconds": 180
     },
@@ -5020,7 +5020,7 @@
         "artifacts/conformance/node_gate/ct_north_star_opencode_capture_c4_chain.json"
       ],
       "description": "opencode_north_star_capture_v1: north_star_stored_report_replay over replay_dump capture",
-      "gate_level": "WS-J-support",
+      "gate_level": "P0-support",
       "test_id": "CT-NORTH-STAR-OPENCODE-CAPTURE-C4",
       "timeout_seconds": 180
     },
@@ -5030,36 +5030,60 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "comparator report has no errors",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed config id matches lane",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p3_1_effective_config_graph_compiler_v1"
               },
               {
-                "equals": "oh_my_pi_p3_1_effective_config_graph_compiler",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed lane id matches lane",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p3_1_effective_config_graph_compiler"
               },
               {
-                "equals": "P3",
-                "path": "claimed_scope.phase"
+                "description": "claimed phase is P3",
+                "id": "phase_matches",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P3"
               },
               {
-                "equals": "P3.1",
-                "path": "claimed_scope.p3_item"
+                "description": "claimed item is P3.1",
+                "id": "p3_item_matches",
+                "op": "equals",
+                "path": "claimed_scope.p3_item",
+                "value": "P3.1"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed provider model remains provider-free",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed sandbox mode remains read-only",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_c4_chain.json"
@@ -5089,36 +5113,60 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors has expected length",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id matches expected value",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p3_2_context_resource_pack_compiler_v1"
               },
               {
-                "equals": "oh_my_pi_p3_2_context_resource_pack_compiler",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id matches expected value",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p3_2_context_resource_pack_compiler"
               },
               {
-                "equals": "P3",
-                "path": "claimed_scope.phase"
+                "description": "claimed_scope.phase matches expected value",
+                "id": "phase_matches",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P3"
               },
               {
-                "equals": "P3.2",
-                "path": "claimed_scope.p3_item"
+                "description": "claimed_scope.p3_item matches expected value",
+                "id": "p3_item_matches",
+                "op": "equals",
+                "path": "claimed_scope.p3_item",
+                "value": "P3.2"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model matches expected value",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode matches expected value",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p32_context_resource_pack_c4_chain.json"
@@ -5148,36 +5196,60 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors has expected length",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p3_3_capability_registry_compiler_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id matches expected value",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p3_3_capability_registry_compiler_v1"
               },
               {
-                "equals": "oh_my_pi_p3_3_capability_registry_compiler",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id matches expected value",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p3_3_capability_registry_compiler"
               },
               {
-                "equals": "P3",
-                "path": "claimed_scope.phase"
+                "description": "claimed_scope.phase matches expected value",
+                "id": "phase_matches",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P3"
               },
               {
-                "equals": "P3.3",
-                "path": "claimed_scope.p3_item"
+                "description": "claimed_scope.p3_item matches expected value",
+                "id": "p3_item_matches",
+                "op": "equals",
+                "path": "claimed_scope.p3_item",
+                "value": "P3.3"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model matches expected value",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode matches expected value",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p33_capability_registry_c4_chain.json"
@@ -5207,36 +5279,60 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors has expected length",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p3_4_extension_hook_execution_compiler_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id matches expected value",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p3_4_extension_hook_execution_compiler_v1"
               },
               {
-                "equals": "oh_my_pi_p3_4_extension_hook_execution_compiler",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id matches expected value",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p3_4_extension_hook_execution_compiler"
               },
               {
-                "equals": "P3",
-                "path": "claimed_scope.phase"
+                "description": "claimed_scope.phase matches expected value",
+                "id": "phase_matches",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P3"
               },
               {
-                "equals": "P3.4",
-                "path": "claimed_scope.p3_item"
+                "description": "claimed_scope.p3_item matches expected value",
+                "id": "p3_item_matches",
+                "op": "equals",
+                "path": "claimed_scope.p3_item",
+                "value": "P3.4"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model matches expected value",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode matches expected value",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p34_extension_hook_c4_chain.json"
@@ -5266,36 +5362,60 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors has expected length",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p3_5_resource_blob_compiler_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id matches expected value",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p3_5_resource_blob_compiler_v1"
               },
               {
-                "equals": "oh_my_pi_p3_5_resource_blob_compiler",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id matches expected value",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p3_5_resource_blob_compiler"
               },
               {
-                "equals": "P3",
-                "path": "claimed_scope.phase"
+                "description": "claimed_scope.phase matches expected value",
+                "id": "phase_matches",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P3"
               },
               {
-                "equals": "P3.5",
-                "path": "claimed_scope.p3_item"
+                "description": "claimed_scope.p3_item matches expected value",
+                "id": "p3_item_matches",
+                "op": "equals",
+                "path": "claimed_scope.p3_item",
+                "value": "P3.5"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model matches expected value",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode matches expected value",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p35_resource_blob_c4_chain.json"
@@ -5325,36 +5445,60 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors has expected length",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id matches expected value",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1"
               },
               {
-                "equals": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id matches expected value",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p3_6_protocol_provider_policy_compiler"
               },
               {
-                "equals": "P3",
-                "path": "claimed_scope.phase"
+                "description": "claimed_scope.phase matches expected value",
+                "id": "phase_matches",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P3"
               },
               {
-                "equals": "P3.6",
-                "path": "claimed_scope.p3_item"
+                "description": "claimed_scope.p3_item matches expected value",
+                "id": "p3_item_matches",
+                "op": "equals",
+                "path": "claimed_scope.p3_item",
+                "value": "P3.6"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model matches expected value",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode matches expected value",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p36_protocol_provider_policy_c4_chain.json"
@@ -5384,36 +5528,60 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors has expected length",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p3_7_memory_work_compiler_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id matches expected value",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p3_7_memory_work_compiler_v1"
               },
               {
-                "equals": "oh_my_pi_p3_7_memory_work_compiler",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id matches expected value",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p3_7_memory_work_compiler"
               },
               {
-                "equals": "P3",
-                "path": "claimed_scope.phase"
+                "description": "claimed_scope.phase matches expected value",
+                "id": "phase_matches",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P3"
               },
               {
-                "equals": "P3.7",
-                "path": "claimed_scope.p3_item"
+                "description": "claimed_scope.p3_item matches expected value",
+                "id": "p3_item_matches",
+                "op": "equals",
+                "path": "claimed_scope.p3_item",
+                "value": "P3.7"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model matches expected value",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode matches expected value",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json"
@@ -5443,36 +5611,60 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors has expected length",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p3_8_projection_broker_adapter_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id matches expected value",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p3_8_projection_broker_adapter_v1"
               },
               {
-                "equals": "oh_my_pi_p3_8_projection_broker_adapter",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id matches expected value",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p3_8_projection_broker_adapter"
               },
               {
-                "equals": "P3",
-                "path": "claimed_scope.phase"
+                "description": "claimed_scope.phase matches expected value",
+                "id": "phase_matches",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P3"
               },
               {
-                "equals": "P3.8",
-                "path": "claimed_scope.p3_item"
+                "description": "claimed_scope.p3_item matches expected value",
+                "id": "p3_item_matches",
+                "op": "equals",
+                "path": "claimed_scope.p3_item",
+                "value": "P3.8"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model matches expected value",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode matches expected value",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p38_projection_broker_c4_chain.json"
@@ -5502,32 +5694,53 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "comparator report has no errors",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "pi_p5_l1_cli_config_context_tool_surface_v1",
-                "path": "claimed_scope.config_id"
+                "description": "exact config id is claimed",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "pi_p5_l1_cli_config_context_tool_surface_v1"
               },
               {
-                "equals": "pi_p5_l1_cli_config_context_tool_surface",
-                "path": "claimed_scope.lane_id"
+                "description": "exact lane id is claimed",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "pi_p5_l1_cli_config_context_tool_surface"
               },
               {
-                "equals": "P5",
-                "path": "claimed_scope.phase"
+                "description": "P5 phase scope is claimed",
+                "id": "phase_p5",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P5"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "no-provider scope is claimed",
+                "id": "provider_no_provider",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only-no-secret",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "read-only no-secret sandbox is claimed",
+                "id": "sandbox_read_only_no_secret",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only-no-secret"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p5_pi_l1_cli_config_context_tool_surface_c4_chain.json"
@@ -5557,32 +5770,53 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "comparator report has no errors",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "pi_p5_l2_extension_session_residual_v1",
-                "path": "claimed_scope.config_id"
+                "description": "exact config id is claimed",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "pi_p5_l2_extension_session_residual_v1"
               },
               {
-                "equals": "pi_p5_l2_extension_session_residual",
-                "path": "claimed_scope.lane_id"
+                "description": "exact lane id is claimed",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "pi_p5_l2_extension_session_residual"
               },
               {
-                "equals": "P5",
-                "path": "claimed_scope.phase"
+                "description": "P5 phase scope is claimed",
+                "id": "phase_p5",
+                "op": "equals",
+                "path": "claimed_scope.phase",
+                "value": "P5"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "no-provider scope is claimed",
+                "id": "provider_no_provider",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only-no-secret",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "read-only no-secret sandbox is claimed",
+                "id": "sandbox_read_only_no_secret",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only-no-secret"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json"
@@ -5612,28 +5846,46 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "ok assertion",
+                "id": "ok",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "equals": true,
-                "path": "accepted"
+                "description": "accepted assertion",
+                "id": "accepted",
+                "op": "equals",
+                "path": "accepted",
+                "value": true
               },
               {
-                "equals": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1",
-                "path": "config_id"
+                "description": "config_id assertion",
+                "id": "config_id",
+                "op": "equals",
+                "path": "config_id",
+                "value": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model assertion",
+                "id": "claimed_scope_provider_model",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "@oh-my-pi/pi-coding-agent@16.2.13",
-                "path": "claimed_scope.target_version"
+                "description": "claimed_scope.target_version assertion",
+                "id": "claimed_scope_target_version",
+                "op": "equals",
+                "path": "claimed_scope.target_version",
+                "value": "@oh-my-pi/pi-coding-agent@16.2.13"
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors assertion",
+                "id": "errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_c4_chain.json"
@@ -5663,28 +5915,46 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "ok assertion",
+                "id": "ok",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors assertion",
+                "id": "errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p6_0_l2_tool_execution_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id assertion",
+                "id": "claimed_scope_config_id",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p6_0_l2_tool_execution_v1"
               },
               {
-                "equals": "oh_my_pi_p6_0_l2_tool_execution",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id assertion",
+                "id": "claimed_scope_lane_id",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p6_0_l2_tool_execution"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model assertion",
+                "id": "claimed_scope_provider_model",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode assertion",
+                "id": "claimed_scope_sandbox_mode",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l2_c4_chain.json"
@@ -5714,28 +5984,46 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "ok assertion",
+                "id": "ok",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors assertion",
+                "id": "errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p6_0_l3_command_network_hook_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id assertion",
+                "id": "claimed_scope_config_id",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p6_0_l3_command_network_hook_v1"
               },
               {
-                "equals": "oh_my_pi_p6_0_l3_command_network_hook",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id assertion",
+                "id": "claimed_scope_lane_id",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p6_0_l3_command_network_hook"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model assertion",
+                "id": "claimed_scope_provider_model",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode assertion",
+                "id": "claimed_scope_sandbox_mode",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l3_c4_chain.json"
@@ -5765,28 +6053,46 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "ok assertion",
+                "id": "ok",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "errors assertion",
+                "id": "errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p6_0_l4_mcp_browser_resource_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed_scope.config_id assertion",
+                "id": "claimed_scope_config_id",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p6_0_l4_mcp_browser_resource_v1"
               },
               {
-                "equals": "oh_my_pi_p6_0_l4_mcp_browser_resource",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed_scope.lane_id assertion",
+                "id": "claimed_scope_lane_id",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p6_0_l4_mcp_browser_resource"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed_scope.provider_model assertion",
+                "id": "claimed_scope_provider_model",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed_scope.sandbox_mode assertion",
+                "id": "claimed_scope_sandbox_mode",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l4_c4_chain.json"
@@ -5816,28 +6122,46 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "comparator report has no errors",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p6_0_l5_memory_compaction_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed scope config id matches",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p6_0_l5_memory_compaction_v1"
               },
               {
-                "equals": "oh_my_pi_p6_0_l5_memory_compaction",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed scope lane id matches",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p6_0_l5_memory_compaction"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed scope provider model matches",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed scope sandbox mode matches",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json"
@@ -5867,28 +6191,46 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "comparator report has no errors",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p6_0_l6_tui_projection_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed scope config id matches",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p6_0_l6_tui_projection_v1"
               },
               {
-                "equals": "oh_my_pi_p6_0_l6_tui_projection",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed scope lane id matches",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p6_0_l6_tui_projection"
               },
               {
-                "equals": "no-provider",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed scope provider model matches",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "no-provider"
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed scope sandbox mode matches",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json"
@@ -5918,36 +6260,60 @@
           {
             "checks": [
               {
-                "equals": true,
-                "path": "ok"
+                "description": "comparator report is ok",
+                "id": "ok_true",
+                "op": "equals",
+                "path": "ok",
+                "value": true
               },
               {
-                "length_equals": 0,
-                "path": "errors"
+                "description": "comparator report has no errors",
+                "id": "no_errors",
+                "op": "length_equals",
+                "path": "errors",
+                "value": 0
               },
               {
-                "equals": "oh_my_pi_p6_6_task_job_subagent_v1",
-                "path": "claimed_scope.config_id"
+                "description": "claimed scope config id matches",
+                "id": "config_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.config_id",
+                "value": "oh_my_pi_p6_6_task_job_subagent_v1"
               },
               {
-                "equals": "oh_my_pi_p6_6_task_job_subagent",
-                "path": "claimed_scope.lane_id"
+                "description": "claimed scope lane id matches",
+                "id": "lane_id_matches",
+                "op": "equals",
+                "path": "claimed_scope.lane_id",
+                "value": "oh_my_pi_p6_6_task_job_subagent"
               },
               {
-                "equals": "anthropic/claude-haiku-4-5",
-                "path": "claimed_scope.provider_model"
+                "description": "claimed scope provider model matches",
+                "id": "provider_model_matches",
+                "op": "equals",
+                "path": "claimed_scope.provider_model",
+                "value": "anthropic/claude-haiku-4-5"
               },
               {
-                "equals": true,
-                "path": "claimed_scope.provider_authenticated_capture"
+                "description": "provider authenticated capture is recorded",
+                "id": "provider_authenticated_capture",
+                "op": "equals",
+                "path": "claimed_scope.provider_authenticated_capture",
+                "value": true
               },
               {
-                "equals": false,
-                "path": "claimed_scope.provider_parity_claimed"
+                "description": "provider parity is not claimed",
+                "id": "provider_parity_not_claimed",
+                "op": "equals",
+                "path": "claimed_scope.provider_parity_claimed",
+                "value": false
               },
               {
-                "equals": "read-only",
-                "path": "claimed_scope.sandbox_mode"
+                "description": "claimed scope sandbox mode matches",
+                "id": "sandbox_mode_matches",
+                "op": "equals",
+                "path": "claimed_scope.sandbox_mode",
+                "value": "read-only"
               }
             ],
             "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json"
