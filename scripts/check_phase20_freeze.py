@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import yaml
 
@@ -23,6 +23,9 @@ SCHEMA_ROOTS = (
 )
 SDK_ROOTS = (ROOT / "sdk", ROOT / "breadboard_sdk")
 LANE_ROOT = ROOT / "config/e4_lanes"
+LANE_LOCK_SCHEMA_PATH = (
+    ROOT / "contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json"
+)
 
 # Phase 20 plan §4, packets F1/F2/E1.
 ALLOWED_SCHEMA_IDS = {
@@ -248,6 +251,36 @@ def _added_values(baseline: dict[str, Any], current: dict[str, Any]) -> dict[str
     }
 
 
+def _is_volatile_lock_field(name: str) -> bool:
+    if name.endswith("_at_utc"):
+        return True
+    parts = name.split("_")
+    return "duration" in parts or "elapsed" in parts
+
+
+def validate_lane_lock_schema(schema: Mapping[str, Any]) -> list[str]:
+    """Return schema pointers for lock properties that encode volatile run data."""
+
+    violations: list[str] = []
+
+    def walk(value: Any, pointer: str) -> None:
+        if isinstance(value, Mapping):
+            properties = value.get("properties")
+            if isinstance(properties, Mapping):
+                for name in sorted(properties):
+                    if isinstance(name, str) and _is_volatile_lock_field(name):
+                        violations.append(f"{pointer}/properties/{name}")
+            for key, child in value.items():
+                escaped = str(key).replace("~", "~0").replace("/", "~1")
+                walk(child, f"{pointer}/{escaped}")
+        elif isinstance(value, list):
+            for index, child in enumerate(value):
+                walk(child, f"{pointer}/{index}")
+
+    walk(schema, "")
+    return violations
+
+
 def main() -> int:
     try:
         baseline_payload = _load_json_object(BASELINE_PATH)
@@ -258,6 +291,14 @@ def main() -> int:
         baseline = baseline_payload.get("inventory")
         if not isinstance(baseline, dict):
             raise InventoryError(f"{_relative(BASELINE_PATH)}: inventory must be an object")
+        volatile_fields = validate_lane_lock_schema(
+            _load_json_object(LANE_LOCK_SCHEMA_PATH)
+        )
+        if volatile_fields:
+            raise InventoryError(
+                "lane lock schema contains volatile fields: "
+                + ", ".join(volatile_fields)
+            )
         additions = _added_values(baseline, build_inventory())
     except InventoryError as exc:
         print(f"phase20-freeze: inventory error: {exc}", file=sys.stderr)
