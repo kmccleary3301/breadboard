@@ -6,7 +6,7 @@
  "points_done": 250,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:31:12Z",
+ "updated_at_utc": "2026-07-10T21:31:40Z",
  "items": [
   {
    "id": "A1",
@@ -1323,6 +1323,14 @@
    "classification": "spec_gap",
    "what": "minimal records-read op authorized in both SDKs for A7",
    "owner": "A7",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM7",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "validate_lane.py whole-doc sha256: rejection is normative; non_target_accounting five-stage tuple, H2 adds table row",
+   "owner": "WS-F F1; H2",
    "recorded_by": "orchestrator"
   }
  ],
