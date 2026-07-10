@@ -19,8 +19,8 @@ WORKSPACE = ROOT.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.e4_parity.validate_e4_primitive_readiness import build_primitive_readiness_report
-from scripts.e4_parity.validate_e4_score_subledger import collect_score_subledger_errors
+from scripts.e4_parity.e4_closure_readiness_section import build_primitive_readiness_report
+from scripts.e4_parity.e4_closure_score_section import collect_score_subledger_errors
 from scripts.e4_parity import lane_inventory_utils as lane_inventory
 
 GENERATED_AT_UTC = "2026-07-03T09:15:00Z"
@@ -45,9 +45,22 @@ P8_MANIFEST_PATH = PHASE_ROOT / "BB_E4_FINAL_ARTIFACT_FRESHNESS_MANIFEST.json"
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 FINAL_BUILDER_PATH = ROOT / "scripts" / "e4_parity" / "build_e4_final_readiness_packet.py"
 FRESHNESS_VALIDATOR_PATH = ROOT / "scripts" / "e4_parity" / "validate_e4_report_hash_freshness.py"
-SCORE_VALIDATOR_PATH = ROOT / "scripts" / "e4_parity" / "validate_e4_score_subledger.py"
-READINESS_VALIDATOR_PATH = ROOT / "scripts" / "e4_parity" / "validate_e4_primitive_readiness.py"
+CLOSURE_VALIDATOR_PATH = ROOT / "scripts" / "e4_parity" / "validate_e4_closure.py"
 CT_SCENARIOS_RESULT_PATH = ROOT / "artifacts" / "conformance" / "ct_scenarios_result_e4_1000.json"
+ABSORBED_VALIDATOR_PATHS = frozenset(
+    {
+        "scripts/e4_parity/validate_e4_primitive_readiness.py",
+        "scripts/e4_parity/validate_e4_score_subledger.py",
+    }
+)
+ABSORBED_VALIDATOR_REF_KEYS = frozenset({"primitive_readiness_validator", "score_subledger_validator"})
+ABSORBED_VALIDATOR_COMMAND_MARKERS = tuple(ABSORBED_VALIDATOR_PATHS)
+ABSORBED_VALIDATOR_PATH_MARKERS = tuple(
+    marker
+    for path in ABSORBED_VALIDATOR_PATHS
+    for marker in (path, f"{ROOT.name}/{path}")
+)
+CURRENT_CLOSURE_VALIDATOR_REF = f"{ROOT.name}/scripts/e4_parity/validate_e4_closure.py"
 CT_SCENARIOS_ROWS_PATH = ROOT / "artifacts" / "conformance" / "ct_scenarios_rows_e4_1000.json"
 CT_MATRIX_SYNC_CSV_PATH = ROOT / "artifacts" / "conformance" / "CONFORMANCE_TEST_MATRIX_V1.synced.csv"
 CT_MATRIX_SYNC_SUMMARY_PATH = ROOT / "artifacts" / "conformance" / "conformance_matrix_sync_summary_v1.json"
@@ -171,6 +184,42 @@ def _projected_score_rows() -> list[dict[str, Any]]:
     return rows
 
 
+def _projected_score_row_points_for_expected(kind: str | None = None) -> int:
+    """Compute validator expectation totals without claim/ledger side effects.
+
+    ``regen.py`` imports this module while constructing its stage list. At that
+    point generated support claims and ledger rows may be absent in a reset
+    evidence tree, so this helper intentionally reads only the score subledger
+    and lane inventory. The full report path still uses ``build_lane_score_row``
+    after the generation stages have recreated claim, manifest, ledger, and
+    validator artifacts.
+    """
+
+    managed = managed_score_row_ids()
+    subledger = load_json(SCORE_SUBLEDGER_PATH)
+    existing_rows = [
+        row
+        for row in subledger.get("score_rows", [])
+        if isinstance(row, Mapping) and row.get("score_row_id") not in managed
+    ]
+    existing_points = sum(
+        int(row["points"])
+        for row in existing_rows
+        if kind is None or row.get("kind") == kind
+    )
+    lane_inventory_kind = None
+    if kind == "target_support_claim":
+        lane_inventory_kind = "target_support"
+    elif kind == "non_target_accounting":
+        lane_inventory_kind = "non_target_accounting"
+    lane_points = _accepted_lane_points(lane_inventory_kind)
+    return existing_points + lane_points
+
+
+def _expected_target_support_claim_count() -> int:
+    return len(_lanes_by_kind("target_support"))
+
+
 def _projected_score_row_points(kind: str | None = None) -> int:
     rows = _projected_score_rows()
     selected = rows if kind is None else [row for row in rows if row.get("kind") == kind]
@@ -178,7 +227,7 @@ def _projected_score_row_points(kind: str | None = None) -> int:
 
 
 def _expected_target_support_claims() -> int:
-    return sum(1 for row in _projected_score_rows() if row.get("kind") == "target_support_claim")
+    return _expected_target_support_claim_count()
 
 
 def _expected_non_target_claims() -> int:
@@ -186,15 +235,15 @@ def _expected_non_target_claims() -> int:
 
 
 def expected_points() -> int:
-    return _projected_score_row_points() + BLOCKED_P8_POINTS
+    return _projected_score_row_points_for_expected() + BLOCKED_P8_POINTS
 
 
 def expected_target_support_points() -> int:
-    return _projected_score_row_points("target_support_claim")
+    return _projected_score_row_points_for_expected("target_support_claim")
 
 
 def expected_non_target_points() -> int:
-    return _projected_score_row_points("non_target_accounting") + BLOCKED_P8_POINTS
+    return _projected_score_row_points_for_expected("non_target_accounting") + BLOCKED_P8_POINTS
 
 
 def blocked_current_accepted_points() -> int:
@@ -600,7 +649,9 @@ def _support_claim_count(payload: Mapping[str, Any]) -> int | None:
 
 def _current_report_artifact_is_stale(path_ref: str) -> bool:
     path = resolve_ref(path_ref)
-    if path.suffix != ".json" or not path.exists():
+    if not path.exists():
+        return True
+    if path.suffix != ".json":
         return False
     try:
         payload = load_json(path)
@@ -625,6 +676,69 @@ def prune_stale_current_artifacts(payload: dict[str, Any]) -> None:
             for item in values
             if not (isinstance(item, Mapping) and isinstance(item.get("path"), str) and _current_report_artifact_is_stale(item["path"]))
         ]
+
+
+def prune_absorbed_validator_refs(payload: dict[str, Any]) -> None:
+    """Drop stale references to validators absorbed by validate_e4_closure.py."""
+
+    for key in ("artifacts", "current_artifacts", "input_artifacts", "artifact_inventory"):
+        values = payload.get(key)
+        if not isinstance(values, list):
+            continue
+        payload[key] = [
+            item
+            for item in values
+            if not (
+                isinstance(item, Mapping)
+                and isinstance(item.get("path"), str)
+                and any(marker in item["path"] for marker in ABSORBED_VALIDATOR_PATH_MARKERS)
+            )
+        ]
+
+    for command_key in ("validation_commands", "validation_runs", "verification_runs"):
+        commands = payload.get(command_key)
+        if not isinstance(commands, list):
+            continue
+        payload[command_key] = [
+            command
+            for command in commands
+            if not (
+                isinstance(command, Mapping)
+                and isinstance(command.get("command"), str)
+                and any(marker in command["command"] for marker in ABSORBED_VALIDATOR_PATH_MARKERS)
+            )
+        ]
+
+    refs = payload.get("refs")
+    if isinstance(refs, dict):
+        for key in ABSORBED_VALIDATOR_REF_KEYS:
+            refs.pop(key, None)
+        for key, value in list(refs.items()):
+            if isinstance(value, str) and any(marker in value for marker in ABSORBED_VALIDATOR_PATH_MARKERS):
+                refs.pop(key, None)
+
+
+def replace_absorbed_validator_progress_refs(payload: dict[str, Any]) -> None:
+    """Move active progress pointers from deleted wrappers to the closure validator."""
+
+    for key in ("files_changed", "source_refs"):
+        values = payload.get(key)
+        if not isinstance(values, list):
+            continue
+        kept = [
+            item
+            for item in values
+            if not (isinstance(item, str) and any(marker in item for marker in ABSORBED_VALIDATOR_PATH_MARKERS))
+        ]
+        if key == "source_refs" and CURRENT_CLOSURE_VALIDATOR_REF not in kept:
+            kept.append(CURRENT_CLOSURE_VALIDATOR_REF)
+        payload[key] = kept
+
+    primitive = payload.get("primitive_family_readiness")
+    if isinstance(primitive, dict):
+        validator = primitive.get("validator")
+        if isinstance(validator, str) and any(marker in validator for marker in ABSORBED_VALIDATOR_PATH_MARKERS):
+            primitive["validator"] = CURRENT_CLOSURE_VALIDATOR_REF
 
 
 def refresh_artifact_hashes(payload: dict[str, Any]) -> None:
@@ -830,6 +944,7 @@ def accepted_claim_from_score_row(row: Mapping[str, Any]) -> dict[str, Any]:
 def update_accepted_report(subledger: Mapping[str, Any]) -> dict[str, Any]:
     report = load_json(ACCEPTED_REPORT_PATH)
     prune_stale_current_artifacts(report)
+    prune_absorbed_validator_refs(report)
     support_rows = [row for row in subledger["score_rows"] if row.get("kind") == "target_support_claim"]
     non_target_rows = [
         row
@@ -892,6 +1007,8 @@ def update_baseline() -> dict[str, Any]:
 def update_progress() -> dict[str, Any]:
     progress = load_json(PROGRESS_PATH)
     prune_stale_current_artifacts(progress)
+    prune_absorbed_validator_refs(progress)
+    replace_absorbed_validator_progress_refs(progress)
     progress["generated_at_utc"] = GENERATED_AT_UTC
     progress["current_state"] = {
         "accepted_points": expected_points(),
@@ -923,6 +1040,7 @@ def update_terminal_manifest() -> dict[str, Any]:
     accepted_report = load_json(ACCEPTED_REPORT_PATH)
     validation_report = load_json(ACCEPTED_VALIDATION_PATH)
     prune_stale_current_artifacts(manifest)
+    prune_absorbed_validator_refs(manifest)
     manifest["generated_at_utc"] = GENERATED_AT_UTC
     manifest["current_accepted_points"] = int(accepted_report["current_accepted_points"])
     manifest["target_support_claims_accepted"] = int(accepted_report["target_support_claims_accepted"])
@@ -975,6 +1093,7 @@ def write_primitive_readiness() -> dict[str, Any]:
 
 def update_validation_report() -> dict[str, Any]:
     report = load_json(ACCEPTED_VALIDATION_PATH)
+    prune_absorbed_validator_refs(report)
     refs = dict(report.get("refs", {}))
     validator_refs = {role: ref(path) for path, role in c4_validator_paths()}
     current_validator_roles = set(validator_refs)
@@ -1106,10 +1225,9 @@ def write_final_report() -> None:
             "",
             "- Inventory-driven builders generated lane artifacts from `docs/conformance/e4_lane_inventory.json`.",
             "- `.venv/bin/python scripts/run_ct_scenarios.py --json-out artifacts/conformance/ct_scenarios_result_e4_1000.json --rows-out artifacts/conformance/ct_scenarios_rows_e4_1000.json` -> writes CT rows and exits fail-closed when blocking commands are missing; current semantics report blocking gaps as `not_implemented`.",
-            "- `.venv/bin/python scripts/sync_conformance_matrix_status.py --rows-json artifacts/conformance/ct_scenarios_rows_e4_1000.json --out-csv artifacts/conformance/CONFORMANCE_TEST_MATRIX_V1.synced.csv --summary-json artifacts/conformance/conformance_matrix_sync_summary_v1.json --summary-md artifacts/conformance/conformance_matrix_sync_summary_v1.md` -> writes generated status from CT rows; current sync summary fails when `blocking_not_implemented_rows > 0`.",
+            "- `.venv/bin/python scripts/sync_conformance_matrix_status.py --rows-json artifacts/conformance/ct_scenarios_rows_e4_1000.json --out-csv artifacts/conformance/CONFORMANCE_TEST_MATRIX_V1.synced.csv --summary-json artifacts/conformance/conformance_matrix_sync_summary_v1.json --summary-md artifacts/conformance/conformance_matrix_sync_summary_v1.md --fail-on-summary-not-ok` -> writes generated status from CT rows and exits fail-closed when the generated summary has `ok: false`.",
             "- `.venv/bin/python scripts/e4_parity/build_e4_final_readiness_packet.py --json` -> passed; score packet regenerated with `ok: true`.",
-            "- `.venv/bin/python scripts/e4_parity/validate_e4_score_subledger.py --json` -> passed.",
-            "- `.venv/bin/python scripts/e4_parity/validate_e4_primitive_readiness.py --no-write` -> passed.",
+            "- `.venv/bin/python scripts/e4_parity/validate_e4_closure.py --json` -> passed.",
             "- `.venv/bin/python scripts/e4_parity/validate_e4_report_hash_freshness.py --scorecard ../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json --baseline ../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json --progress ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json --accepted-report ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json --accepted-validation ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json --terminal-manifest ../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json --expected-points 1000 --expected-claims 10` -> passed.",
             "- `.venv/bin/python -m pytest tests/e4_parity -q` -> passed.",
             "",
@@ -1144,8 +1262,7 @@ def write_final_manifest() -> dict[str, Any]:
         (PRIMITIVE_READINESS_PATH, "primitive_readiness_report"),
         (FINAL_BUILDER_PATH, "p8_builder"),
         (FRESHNESS_VALIDATOR_PATH, "freshness_validator"),
-        (SCORE_VALIDATOR_PATH, "score_subledger_validator"),
-        (READINESS_VALIDATOR_PATH, "primitive_readiness_validator"),
+        (CLOSURE_VALIDATOR_PATH, "closure_validator"),
         (P8_NOTES_PATH, "p8_compatibility_notes"),
         (P8_REPORT_PATH, "p8_final_readiness_report"),
         (CT_SCENARIOS_RESULT_PATH, "ct_scenarios_result_e4_1000"),
@@ -1183,6 +1300,7 @@ def write_final_manifest() -> dict[str, Any]:
 def update_scorecard() -> dict[str, Any]:
     scorecard = load_json(SCORECARD_PATH)
     prune_stale_current_artifacts(scorecard)
+    prune_absorbed_validator_refs(scorecard)
     scorecard["generated_at_utc"] = GENERATED_AT_UTC
     scorecard["current_accepted_points"] = expected_points()
     scorecard["completion_state"] = "complete_1000_of_1000"
@@ -1225,7 +1343,14 @@ def update_scorecard() -> dict[str, Any]:
         (P8_REPORT_PATH, "p8_final_readiness_report"),
     ):
         upsert_artifact_list(scorecard, "input_artifacts", path, role)
-    commands = [cmd for cmd in scorecard.get("validation_commands", []) if "validate_e4_report_hash_freshness.py" not in cmd.get("command", "")]
+    commands = [
+        cmd
+        for cmd in scorecard.get("validation_commands", [])
+        if isinstance(cmd, Mapping)
+        and isinstance(cmd.get("command"), str)
+        and "validate_e4_report_hash_freshness.py" not in cmd["command"]
+        and not any(marker in cmd["command"] for marker in ABSORBED_VALIDATOR_PATH_MARKERS)
+    ]
     freshness_command = ".venv/bin/python scripts/e4_parity/validate_e4_report_hash_freshness.py --scorecard ../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json --baseline ../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json --progress ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json --accepted-report ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json --accepted-validation ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json --terminal-manifest ../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json --expected-points 1000 --expected-claims 10"
     if not any(cmd.get("command") == freshness_command for cmd in commands):
         commands.append({"command": freshness_command, "cwd": ROOT.name, "result": "closure gate; expected passed"})

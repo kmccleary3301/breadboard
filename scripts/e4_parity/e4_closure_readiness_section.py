@@ -271,10 +271,12 @@ def build_primitive_readiness_report(
     repo_root: Path | str = ROOT,
     ledger_path: Path | str = DEFAULT_LEDGER,
     accepted_report_path: Path | str = DEFAULT_ACCEPTED_REPORT,
+    ledger_data: Any | None = None,
+    accepted_report_data: Any | None = None,
 ) -> dict[str, Any]:
     repo = Path(repo_root).resolve()
-    ledger = _load_json(ledger_path)
-    accepted = _load_json(accepted_report_path)
+    ledger = _load_json(ledger_path) if ledger_data is None else ledger_data
+    accepted = _load_json(accepted_report_path) if accepted_report_data is None else accepted_report_data
     errors: list[str] = []
     if not isinstance(ledger, Mapping):
         return {"schema_version": SCHEMA_VERSION, "ok": False, "errors": ["ledger must be an object"], "rows": []}
@@ -310,31 +312,3 @@ def collect_primitive_readiness_errors(**kwargs: Any) -> list[str]:
     return list(build_primitive_readiness_report(**kwargs).get("errors", []))
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Validate primitive-family readiness for accepted E4 C4 ledger rows.")
-    parser.add_argument("--repo-root", default=str(ROOT))
-    parser.add_argument("--ledger", default=str(DEFAULT_LEDGER))
-    parser.add_argument("--accepted-report", default=str(DEFAULT_ACCEPTED_REPORT))
-    parser.add_argument("--json-out", default=str(DEFAULT_REPORT))
-    parser.add_argument("--no-write", action="store_true")
-    args = parser.parse_args(argv)
-
-    report = build_primitive_readiness_report(
-        repo_root=args.repo_root,
-        ledger_path=args.ledger,
-        accepted_report_path=args.accepted_report,
-    )
-    if not args.no_write:
-        out = Path(args.json_out)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    if report["ok"]:
-        print("ok")
-    else:
-        for error in report["errors"]:
-            print(error, file=sys.stderr)
-    return gate_exit_code(report)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

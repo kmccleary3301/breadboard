@@ -279,14 +279,24 @@ def collect_score_subledger_errors(
     subledger_path: Path | str = DEFAULT_SUBLEDGER,
     accepted_report_path: Path | str = DEFAULT_ACCEPTED_REPORT,
     repo_root: Path | str = ROOT,
+    subledger_data: Any | None = None,
+    accepted_report_data: Any | None = None,
 ) -> list[str]:
     repo = Path(repo_root).resolve()
     subledger_file = Path(subledger_path).resolve()
     accepted_file = Path(accepted_report_path).resolve()
     errors: list[str] = []
 
-    subledger = _as_mapping(_load_json(subledger_file), "subledger", errors)
-    accepted_report = _as_mapping(_load_json(accepted_file), "accepted_report", errors)
+    subledger = _as_mapping(
+        _load_json(subledger_file) if subledger_data is None else subledger_data,
+        "subledger",
+        errors,
+    )
+    accepted_report = _as_mapping(
+        _load_json(accepted_file) if accepted_report_data is None else accepted_report_data,
+        "accepted_report",
+        errors,
+    )
     if not subledger or not accepted_report:
         return errors
 
@@ -415,28 +425,3 @@ def validate_score_subledger(**kwargs: Any) -> dict[str, Any]:
     return apply_gate_error_envelope(report, "score_subledger")
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Validate E4 score subledger and accepted support-claim score rows.")
-    parser.add_argument("--subledger", default=str(DEFAULT_SUBLEDGER))
-    parser.add_argument("--accepted-report", default=str(DEFAULT_ACCEPTED_REPORT))
-    parser.add_argument("--repo-root", default=str(ROOT))
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(argv)
-
-    report = validate_score_subledger(
-        subledger_path=args.subledger,
-        accepted_report_path=args.accepted_report,
-        repo_root=args.repo_root,
-    )
-    if args.json:
-        print(json.dumps(report, indent=2, sort_keys=True))
-    elif report["ok"]:
-        print("ok")
-    else:
-        for error in report["errors"]:
-            print(error, file=sys.stderr)
-    return gate_exit_code(report)
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
