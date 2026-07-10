@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 45,
+ "points_done": 70,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:05:45Z",
+ "updated_at_utc": "2026-07-10T21:07:41Z",
  "items": [
   {
    "id": "A1",
@@ -653,11 +653,35 @@
    "ws": "I",
    "title": "VALIDATION_GAP_MATRIX.md committed",
    "weight": 25,
-   "status": "in_progress",
+   "status": "done",
    "deps": [],
-   "evidence": [],
-   "notes": "RED verdict recorded: VerifyWsI fail @ e5a66bcf (L21 brace-shorthand pointer, not RFC 6901). product_defect routed to implementer for follow-up commit; re-verify pending.",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "p20/verify-wsI I1 + L21 fix",
+     "sha": "83686333"
+    },
+    {
+     "kind": "doc",
+     "ref": "../docs_tmp/phase_20/evidence/I1/implementer.json",
+     "sha": "83686333"
+    }
+   ],
+   "notes": "First verdict RED (product_defect: L21 pointer format); fixed by implementer follow-up commit; re-verified PASS.",
+   "verifiers": [
+    {
+     "agent": "VerifyWsI(reviewer)",
+     "lens": "correctness",
+     "verdict": "fail",
+     "verdict_ref": "RED @ e5a66bcf: L21 brace shorthand not RFC 6901 (recorded honestly)"
+    },
+    {
+     "agent": "ReverifyWsI(reviewer)",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "verdict bound to 8368633323f0f24631a9a2aebe7427fc2dbb20c3; 9 pointers resolve; rows 25+8; anti-scope clean"
+    }
+   ]
   },
   {
    "id": "I2",
