@@ -6,7 +6,7 @@
  "points_done": 385,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:22:49Z",
+ "updated_at_utc": "2026-07-10T22:24:21Z",
  "items": [
   {
    "id": "A1",
@@ -661,9 +661,14 @@
      "kind": "verifier",
      "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
      "verdict": "pass"
+    },
+    {
+     "kind": "evidence_file",
+     "ref": "../docs_tmp/phase_20/evidence/E2/implementer.json",
+     "sha256": "4ca441a744902ddee09ee219f6abd2a35ead2f15681d38ca4f0747fff7b2a41e"
     }
    ],
-   "notes": "",
+   "notes": " | plan-text grounding: \u00a71.4 L79 defines evidence dir as ../docs_tmp/phase_20/evidence/ with final refs copied into ledger; audit transcript verified there by VerifyWsE2Static (amended verdict), bound to source commit 84a71cd1 whose patch-id matches pick 26f3ffba",
    "verifiers": [
     "VerifyWsE2Static",
     "VerifyWsE2Exec"
@@ -687,6 +692,11 @@
      "kind": "verifier",
      "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
      "verdict": "pass"
+    },
+    {
+     "kind": "evidence_file",
+     "ref": "../docs_tmp/phase_20/evidence/E3/implementer.json",
+     "sha256": "42cc6615f798535be9985b33ad8405ee34bfe1fc4dcee0acdafdb3d469e7eb68"
     }
    ],
    "notes": "",
@@ -713,6 +723,11 @@
      "kind": "verifier",
      "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
      "verdict": "pass"
+    },
+    {
+     "kind": "evidence_file",
+     "ref": "../docs_tmp/phase_20/evidence/E4/implementer.json",
+     "sha256": "cbdd886ab67f77639674e46800546a8d882f66811ea06774048fd3fe3f1a36c4"
     }
    ],
    "notes": "",
@@ -740,6 +755,16 @@
      "kind": "verifier",
      "ref": "VerifyWsE2Static+VerifyWsE2Exec @ 5a5d22edf6018cdf3524dbe5f772599976b28389",
      "verdict": "pass"
+    },
+    {
+     "kind": "evidence_file",
+     "ref": "../docs_tmp/phase_20/evidence/E5/implementer.json",
+     "sha256": "f6cbf63c882c588827b4719572e5aff6a983517d80cf4b715ee718a9a1dec90a"
+    },
+    {
+     "kind": "evidence_file",
+     "ref": "../docs_tmp/phase_20/evidence/E5/verifier.json",
+     "sha256": "6f39c01924bd7f17ad87588f1edd88d0343af353ef9c59ab035b67913bb4e3cf"
     }
    ],
    "notes": "",
