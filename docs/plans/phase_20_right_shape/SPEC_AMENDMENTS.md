@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **11 amendments** (below).
+Current state: **12 amendments** (below).
 
 ---
 
@@ -183,3 +183,17 @@ AM11's "equivalence not machine-verified" clause is WITHDRAWN: the lock must nev
 **Classification:** spec_gap (revision). **Owner:** F4. **Recorded-by:** orchestrator.
 
 **AM11a clarification (same date):** the tracked zip is the SOLE prerequisite — a clean checkout with a valid lock must work: both compile and `--check` MUST materialize the extraction themselves when absent (and re-digest when present), never assume it exists. Canonical safe extraction is normative: reject archive entries with absolute paths, `..` components, symlink/special-file entries, or undecodable names (fail closed); extraction writes regular files only, permissions normalized. Tests MUST cover extraction-from-clean-state (derived dir deleted, then compile/--check green) in addition to the fail-closed set.
+
+---
+
+## Amendment 12 - 2026-07-10 - shared dependency commits (spec_gap; generalizes the F3->G4 pick)
+
+The one-commit-per-item rule governs ITEM commits. A **shared dependency node** is a distinct commit class, permitted when two packets need the same artifact (AM9 tree_digest helper: F4 authors, H3 consumes):
+
+- The owning workstream lands the artifact + its focused tests as ONE standalone commit touching ONLY the shared artifact paths; it is not the owner's item commit.
+- The owner's later item commit MUST NOT re-modify the shared artifact files (they are excluded from its diff).
+- Consumers cherry-pick the EXACT dependency commit (never reimplement, never re-derive); evidence records it as `declared_dependency: <sha>`.
+- At integration, the merger verifies patch-id equivalence and tree identity on the shared paths across every branch that carries the commit; divergence is a red gate.
+- Applies retroactively to F3 54147aaa -> G4 pick 04b11cb5 (same shape, already patch-id-bound).
+
+**Classification:** spec_gap. **Owner:** orchestrator (rule), WsF3Compiler (tree_digest node). **Recorded-by:** orchestrator.

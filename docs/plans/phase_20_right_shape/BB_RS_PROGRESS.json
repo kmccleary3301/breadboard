@@ -6,7 +6,7 @@
  "points_done": 385,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:24:21Z",
+ "updated_at_utc": "2026-07-10T22:25:20Z",
  "items": [
   {
    "id": "A1",
@@ -1549,6 +1549,14 @@
    "classification": "spec_gap",
    "what": "supersedes AM11 limitation: runtime consumes deterministic extraction of pinned zip; lock records zip sha256 + extraction tree digest; --check re-verifies; legacy dir string used only as declared parity mapping",
    "owner": "F4",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM12",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "shared dependency commit class: standalone artifact commit, owner item commit excludes those paths, consumers pick exact SHA, integration verifies patch-id/tree identity on shared paths",
+   "owner": "orchestrator+WsF3Compiler",
    "recorded_by": "orchestrator"
   }
  ],
