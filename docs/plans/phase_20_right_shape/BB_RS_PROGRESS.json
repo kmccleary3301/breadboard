@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:54:09Z",
+ "updated_at_utc": "2026-07-10T22:55:37Z",
  "items": [
   {
    "id": "A1",
@@ -1670,6 +1670,14 @@
    "classification": "spec_gap",
    "what": "lane_def v1/v2 mode/artifacts stage-honesty evolution authorized as tightening-with-extension; same-commit allowlist pins required; full lane census must validate; pure widenings stay unauthorized",
    "owner": "WS-H",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM17a",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "supersedes AM17 mechanism: class-tagged allowlist entries (B2c) with ref for plan_mandated_evolution; necessity grounded in verbatim H2/H3/\u00a74.1 plan text; migration matrix + full census required",
+   "owner": "WsBFreeze(B2c)+WS-H",
    "recorded_by": "orchestrator"
   }
  ],
