@@ -13,6 +13,11 @@ from typing import Any, Mapping
 from jsonschema import Draft202012Validator
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.e4_parity.validators.registries import schema_generation_default  # noqa: E402
+
 WORKSPACE_ROOT = REPO_ROOT.parent
 DEFAULT_OUTPUT_BASE = WORKSPACE_ROOT / "docs_tmp" / "phase_15" / "lane_scaffolds"
 PROBE_SCHEMA_VERSION = "bb.e4.target_probe_report.v1"
@@ -21,10 +26,10 @@ PROBE_SCHEMA_REF = "docs/conformance/schemas/bb.e4.target_probe_report.v1.schema
 SCAFFOLD_SCHEMA_REF = "docs/conformance/schemas/bb.e4.lane_scaffold_manifest.v1.schema.json"
 PROBE_SCHEMA_PATH = REPO_ROOT / PROBE_SCHEMA_REF
 SCAFFOLD_SCHEMA_PATH = REPO_ROOT / SCAFFOLD_SCHEMA_REF
-INVENTORY_SCHEMA_VERSION = "bb.e4.lane_inventory.v1"
-INVENTORY_SCHEMA_REF = "contracts/kernel/schemas/bb.e4.lane_inventory.v1.schema.json"
-LANE_DEF_SCHEMA_VERSION = "bb.e4.lane_def.v1"
-LANE_DEF_SCHEMA_REF = "contracts/kernel/schemas/bb.e4.lane_def.v1.schema.json"
+INVENTORY_SCHEMA_VERSION = schema_generation_default("e4_lane_inventory")
+LANE_DEF_SCHEMA_VERSION = schema_generation_default("e4_lane_definition")
+INVENTORY_SCHEMA_REF = f"contracts/kernel/schemas/{INVENTORY_SCHEMA_VERSION}.schema.json"
+LANE_DEF_SCHEMA_REF = f"contracts/kernel/schemas/{LANE_DEF_SCHEMA_VERSION}.schema.json"
 COMPARATOR_PROTOCOL_REF = "conformance/comparators/protocol.py"
 BUILDER_SKELETON_REF = "scripts/e4_parity/<lane-builder>.py"
 DEFAULT_PROVIDER_MODEL = "no-provider"
@@ -342,7 +347,7 @@ def build_inventory_row(inputs: ScaffoldInputs) -> dict[str, Any]:
             "argv": ["python", f"docs_tmp/phase_15/lane_scaffolds/{inputs.lane_id}/builder/build_scaffold_lane.py"],
             "cwd": ".",
         },
-        "comparator_id": f"{inputs.lane_id}_comparator",
+        "comparator_id": "north_star_stored_report_replay",
         "ct": {
             "test_id": f"CT-SCAFFOLD-{inputs.lane_id.upper().replace('_', '-')}",
             "gate_level": "C4",
@@ -381,19 +386,31 @@ def build_lane_def_draft(inputs: ScaffoldInputs) -> dict[str, Any]:
         "status": "scaffolded",
         "points": 0,
         "capture": {
-            "strategy": "legacy_builder",
+            "strategy": "probe_argv",
             "argv": ["python", f"docs_tmp/phase_15/lane_scaffolds/{inputs.lane_id}/builder/build_scaffold_lane.py"],
-            "inputs": [],
+            "inputs": [f"docs_tmp/phase_15/lane_scaffolds/{inputs.lane_id}/builder/build_scaffold_lane.py"],
             "workspace_template": None,
         },
         "normalize": {"translator": "identity", "config": {}},
         "replay": {"session": None, "comparator_class": "semantic"},
         "compare": {
-            "comparator": f"{inputs.lane_id}_comparator",
+            "comparator": "north_star_stored_report_replay",
             "config": {
                 "assertions": [
-                    {"equals": inputs.config_id, "path": "config_id"},
-                    {"equals": "scaffold_only", "path": "promotion_state"},
+                    {
+                        "id": "config_id",
+                        "description": "Scaffold report identifies the requested lane configuration.",
+                        "path": "config_id",
+                        "op": "equals",
+                        "value": inputs.config_id,
+                    },
+                    {
+                        "id": "promotion_state",
+                        "description": "Scaffold report remains explicitly outside accepted evidence.",
+                        "path": "promotion_state",
+                        "op": "equals",
+                        "value": "scaffold_only",
+                    },
                 ],
             },
         },
@@ -410,6 +427,11 @@ def build_lane_def_draft(inputs: ScaffoldInputs) -> dict[str, Any]:
         },
         "artifacts_root": f"docs_tmp/phase_15/lane_scaffolds/{inputs.lane_id}",
         "reverify_command": None,
+        "run": {
+            "run_id": inputs.normalized_run_id(),
+            "provider_model": inputs.provider_model,
+            "sandbox_mode": inputs.sandbox_mode,
+        },
         "metadata": {
             "scaffold_source": "scripts/e4_parity/scaffold_e4_target_lane.py",
             "promotion_state": "scaffold_only",

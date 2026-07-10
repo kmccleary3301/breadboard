@@ -14,6 +14,19 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
 JsonStyle = Literal["default", "compact"]
 
 
+LANE_SHARED_READ_ONLY_PATHS = frozenset(
+    {
+        "docs/conformance/e4_artifact_catalog.json",
+        "docs/conformance/e4_lane_inventory.json",
+        "config/e4_target_freeze_manifest.yaml",
+        "docs/conformance/ct_scenarios_v1.json",
+        "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+        "../docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+    }
+)
+"""Shared governed inputs that lanes may declare as read-only roles but never own or write."""
+
+
 def canonical_json(value: Any, *, separators_style: JsonStyle = "default") -> str:
     """Return canonical JSON text extracted from P3.1 and P3 remaining helper runtime builders."""
 

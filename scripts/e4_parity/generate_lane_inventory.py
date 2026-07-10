@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+import sys
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -9,11 +11,93 @@ try:
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
     from scripts.e4_parity.lane_inventory_utils import DEFAULT_INVENTORY_PATH, load_inventory
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
-    from lane_inventory_utils import DEFAULT_INVENTORY_PATH, load_inventory
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    from scripts.e4_parity.lane_inventory_utils import DEFAULT_INVENTORY_PATH, load_inventory
 
 ROOT = Path(__file__).resolve().parents[2]
+WORKSPACE = ROOT.parent
+SCORE_SUBLEDGER_PATH = WORKSPACE / "docs_tmp" / "phase_15" / "BB_E4_SCORE_SUBLEDGER.json"
+_SCORE_SUBLEDGER_CACHE: dict[str, Any] | None = None
 GENERATED_AT_UTC = "2026-07-07T00:25:00Z"
+
+_MANIFEST_ROLE_TO_INVENTORY_KEY = {
+    "capture_ref": "capture",
+    "comparator_ref": "comparator",
+    "replay_ref": "replay",
+    "support_claim_ref": "support_claim",
+    "work_item_ref": "work_item",
+}
+
+
+def _flag_value(argv: Sequence[Any], flag: str) -> str | None:
+    for index, item in enumerate(argv[:-1]):
+        if item == flag and isinstance(argv[index + 1], str):
+            return str(argv[index + 1])
+    return None
+
+
+def _artifact_roles(lane_id: str, reverify: Mapping[str, Any]) -> dict[str, str]:
+    argv = reverify.get("argv")
+    manifest_path = _flag_value(argv, "--evidence-manifest") if isinstance(argv, Sequence) else None
+    role_keys = {"evidence_manifest", "node_gate"}
+    if manifest_path and (ROOT / manifest_path).exists():
+        manifest_file = ROOT / manifest_path
+        manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+        artifacts = manifest.get("artifacts", []) if isinstance(manifest, Mapping) else []
+        if isinstance(artifacts, list):
+            for artifact in artifacts:
+                role = artifact.get("role") if isinstance(artifact, Mapping) else None
+                if isinstance(role, str) and role:
+                    role_keys.add(_MANIFEST_ROLE_TO_INVENTORY_KEY.get(role, role))
+    return {role_key: f"{lane_id}:{role_key}" for role_key in sorted(role_keys)}
+
+def _load_score_subledger() -> Mapping[str, Any]:
+    global _SCORE_SUBLEDGER_CACHE
+    if _SCORE_SUBLEDGER_CACHE is None:
+        _SCORE_SUBLEDGER_CACHE = json.loads(SCORE_SUBLEDGER_PATH.read_text(encoding="utf-8"))
+    return _SCORE_SUBLEDGER_CACHE
+
+
+def _support_claim_path(reverify: Mapping[str, Any]) -> str | None:
+    argv = reverify.get("argv")
+    return _flag_value(argv, "--support-claim") if isinstance(argv, Sequence) else None
+
+
+def _support_claim(reverify: Mapping[str, Any]) -> Mapping[str, Any]:
+    path = _support_claim_path(reverify)
+    if path is None:
+        return {}
+    if not (ROOT / path).exists():
+        return {}
+    payload = json.loads((ROOT / path).read_text(encoding="utf-8"))
+    return payload if isinstance(payload, Mapping) else {}
+
+
+def _score_row_for_support_claim(support_claim_path: str | None) -> Mapping[str, Any]:
+    if support_claim_path is None:
+        return {}
+    rows = _load_score_subledger().get("score_rows", [])
+    if not isinstance(rows, list):
+        return {}
+    for row in rows:
+        if isinstance(row, Mapping) and row.get("support_claim_ref") == support_claim_path:
+            return row
+    return {}
+
+
+def _feature_ids_from_refs(refs: Any) -> list[str]:
+    if not isinstance(refs, list):
+        return []
+    feature_ids: list[str] = []
+    for ref in refs:
+        if not isinstance(ref, str):
+            continue
+        parts = ref.split("#")
+        if len(parts) >= 2 and parts[1]:
+            feature_ids.append(parts[1])
+    return sorted(dict.fromkeys(feature_ids))
+
 
 
 def _ct_test_id(lane_id: str, lane_def: Mapping[str, Any]) -> str:
@@ -21,6 +105,18 @@ def _ct_test_id(lane_id: str, lane_def: Mapping[str, Any]) -> str:
     if isinstance(ct, Mapping) and isinstance(ct.get("test_id"), str):
         return str(ct["test_id"])
     return f"CT-{lane_id.upper().replace('_', '-')}-C4"
+
+def _phase(lane_id: str, lane_def: Mapping[str, Any]) -> str:
+    ct = lane_def.get("ct")
+    if isinstance(ct, Mapping) and isinstance(ct.get("test_id"), str):
+        match = re.search(r"\bP([0-9]+)\b", str(ct["test_id"]))
+        if match:
+            return f"P{match.group(1)}"
+    match = re.search(r"(?:^|_)p([0-9]+)(?:_|$)", lane_id)
+    if match:
+        return f"P{match.group(1)}"
+    return "P0"
+
 
 
 def _run_field(lane_def: Mapping[str, Any], field: str, default: str) -> str:
@@ -74,11 +170,15 @@ def lane_inventory_row(lane_def: Mapping[str, Any]) -> dict[str, Any]:
     config_id = str(lane_def["config_id"])
     reverify = _reverify_command(lane_def)
     ct_argv = [item for item in reverify["argv"] if item != "--check-only"]
+    support_claim_path = _support_claim_path(reverify)
+    support_claim = _support_claim(reverify)
+    score_row = _score_row_for_support_claim(support_claim_path)
+    ledger_feature_ids = _feature_ids_from_refs(score_row.get("ledger_row_refs")) or _feature_ids_from_refs(support_claim.get("ledger_row_refs"))
     return {
         "lane_id": lane_id,
         "config_id": config_id,
         "claim_id": _claim_id(lane_def),
-        "phase": lane_id.split("_p", 1)[1].split("_", 1)[0].upper() if "_p" in lane_id else "P0",
+        "phase": _phase(lane_id, lane_def),
         "kind": lane_def["kind"],
         "status": lane_def["status"],
         "points": lane_def["points"],
@@ -96,6 +196,9 @@ def lane_inventory_row(lane_def: Mapping[str, Any]) -> dict[str, Any]:
             "command": {"argv": ct_argv, "cwd": reverify["cwd"]},
         },
         "reverify_command": reverify,
+        "artifact_roles": _artifact_roles(lane_id, reverify),
+        "ledger_feature_ids": ledger_feature_ids,
+        "score_row_id": score_row.get("score_row_id", ""),
         "artifacts_root": lane_def.get("artifacts_root"),
     }
 
@@ -103,8 +206,8 @@ def lane_inventory_row(lane_def: Mapping[str, Any]) -> dict[str, Any]:
 def build_inventory(lane_defs: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
     rows = [lane_inventory_row(lane_defs[lane_id]) for lane_id in sorted(lane_defs)]
     return {
-        "schema_version": "bb.e4.lane_inventory.v1",
-        "inventory_id": "e4_lane_inventory_from_lane_defs_v1",
+        "schema_version": "bb.e4.lane_inventory.v2",
+        "inventory_id": "e4_lane_inventory_from_lane_defs_v2",
         "generated_at_utc": GENERATED_AT_UTC,
         "revision": 1,
         "lanes": rows,
@@ -114,7 +217,7 @@ def build_inventory(lane_defs: Mapping[str, Mapping[str, Any]]) -> dict[str, Any
 def compare_with_canonical(generated: Mapping[str, Any], canonical: Mapping[str, Any]) -> dict[str, Any]:
     generated_rows = {row["lane_id"]: row for row in generated.get("lanes", []) if isinstance(row, Mapping)}
     canonical_rows = {row["lane_id"]: row for row in canonical.get("lanes", []) if isinstance(row, Mapping)}
-    required_fields = ("config_id", "claim_id", "kind", "status", "points", "target_family", "target_version", "builder", "ct", "reverify_command")
+    required_fields = ("config_id", "claim_id", "kind", "status", "points", "target_family", "target_version", "run_id", "provider_model", "sandbox_mode", "builder", "ct", "reverify_command", "artifact_roles", "ledger_feature_ids", "score_row_id")
     errors: list[str] = []
     for lane_id, generated_row in sorted(generated_rows.items()):
         canonical_row = canonical_rows.get(lane_id)

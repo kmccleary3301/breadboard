@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 import yaml
 from jsonschema import Draft202012Validator, RefResolver
+from scripts.e4_parity.validators.registries import RegistryValidationError, assert_registered
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LANE_DEF_DIR = ROOT / "config" / "e4_lanes"
@@ -130,6 +131,31 @@ def _normalize_v2_lane(lane_def: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _validate_v2_adapter_references(lane_def: Mapping[str, Any], *, source: Path | None = None) -> None:
+    checks: list[tuple[str, str, str]] = []
+    normalize = lane_def.get("normalize")
+    if isinstance(normalize, Mapping):
+        translator = normalize.get("translator")
+        if isinstance(translator, str):
+            checks.append(("normalize.translator", translator, "translator"))
+    compare = lane_def.get("compare")
+    if isinstance(compare, Mapping):
+        comparator = compare.get("comparator")
+        if isinstance(comparator, str):
+            checks.append(("compare.comparator", comparator, "comparator"))
+    capture = lane_def.get("capture")
+    if isinstance(capture, Mapping):
+        adapter = capture.get("adapter")
+        if isinstance(adapter, str):
+            checks.append(("capture.adapter", adapter, "capture_adapter"))
+    for field, value, expected_kind in checks:
+        try:
+            assert_registered("e4_adapters", value, expected_kind=expected_kind)
+        except RegistryValidationError as exc:
+            prefix = f"{source}: " if source is not None else ""
+            raise LaneDefValidationError(f"{prefix}{field}: {exc}") from exc
+
+
 def validate_lane_def(payload: Mapping[str, Any], *, source: Path | None = None) -> dict[str, Any]:
     schema_version = _schema_version(payload, source=source)
     lane_def = dict(payload)
@@ -139,6 +165,7 @@ def validate_lane_def(payload: Mapping[str, Any], *, source: Path | None = None)
         raise LaneDefValidationError(prefix + "; ".join(errors))
     if schema_version == SCHEMA_VERSION_V1:
         return _normalize_v1_lane(lane_def)
+    _validate_v2_adapter_references(lane_def, source=source)
     return _normalize_v2_lane(lane_def)
 
 

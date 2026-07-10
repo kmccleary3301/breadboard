@@ -3,17 +3,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import importlib
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 try:
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
-    from scripts.e4_parity.lane_runtime import sha256_file
+    from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
+    from scripts.e4_parity.validators.registries import load_registry
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
-    from lane_runtime import sha256_file
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
+    from scripts.e4_parity.validators.registries import load_registry
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
@@ -26,6 +31,12 @@ NORTH_STAR_LANE_IDS = (
 )
 
 ALL_STAGES = ("capture", "normalize", "replay", "compare", "claim")
+_DERIVED_OUTPUT_PREFIXES = (
+    "docs/conformance/support_claims/",
+    "artifacts/conformance/node_gate/",
+    "artifacts/conformance/e4_primitive_projection/",
+)
+_REGEN_SCRATCH_ROOT = ROOT / "tmp" / "e4_regen_capture"
 
 
 class LaneRunError(ValueError):
@@ -139,6 +150,31 @@ def _comparator_entry(lane_def: Mapping[str, Any], registry_path: Path) -> Mappi
             f"lane {lane_def['lane_id']!r} comparator {comparator_id!r} must have exactly one registry entry"
         )
     return matches[0]
+
+def _capture_adapter_callable(lane_def: Mapping[str, Any]) -> Any | None:
+    capture = lane_def.get("capture")
+    if not isinstance(capture, Mapping) or capture.get("strategy") != "adapter":
+        return None
+    adapter_id = capture.get("adapter")
+    if not isinstance(adapter_id, str) or not adapter_id:
+        raise LaneRunError(f"lane {lane_def['lane_id']!r} adapter capture requires capture.adapter")
+    registry = load_registry("e4_adapters")
+    matches = [
+        entry
+        for entry in registry.get("entries", [])
+        if isinstance(entry, Mapping)
+        and entry.get("id") == adapter_id
+        and isinstance(entry.get("metadata"), Mapping)
+        and entry["metadata"].get("kind") == "capture_adapter"
+    ]
+    if len(matches) != 1:
+        raise LaneRunError(f"lane {lane_def['lane_id']!r} capture.adapter {adapter_id!r} must name one active capture_adapter")
+    impl = matches[0]["metadata"].get("impl")
+    if not isinstance(impl, str) or ":" not in impl:
+        raise LaneRunError(f"capture.adapter {adapter_id!r} has invalid impl {impl!r}")
+    module_name, callable_name = impl.split(":", 1)
+    module = importlib.import_module(module_name)
+    return getattr(module, callable_name)
 
 
 def _command_stage_argv(stage_name: str, lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None) -> list[str] | None:
@@ -268,6 +304,105 @@ def _refresh_promoted_bindings() -> dict[str, Any]:
         "preflight_blocked": accepted_report.get("preflight_blocked"),
     }
 
+def _capture_owned_paths(lane_def: Mapping[str, Any]) -> tuple[str, ...]:
+    outputs: list[str] = []
+    artifacts_root = lane_def.get("artifacts_root")
+    if isinstance(artifacts_root, str):
+        outputs.append(artifacts_root)
+    capture = lane_def.get("capture")
+    inputs = capture.get("inputs") if isinstance(capture, Mapping) else None
+    declared_inputs = frozenset(item for item in inputs if isinstance(item, str)) if isinstance(inputs, list) else frozenset()
+    normalize = lane_def.get("normalize")
+    config = normalize.get("config") if isinstance(normalize, Mapping) else None
+    roles = config.get("roles") if isinstance(config, Mapping) else None
+    if isinstance(roles, Mapping):
+        for value in roles.values():
+            if (
+                isinstance(value, str)
+                and not value.startswith(_DERIVED_OUTPUT_PREFIXES)
+                and value not in LANE_SHARED_READ_ONLY_PATHS
+                # Role paths declared as capture inputs are preserved sources
+                # (probe scripts, raw session captures, static agent configs),
+                # never capture-owned outputs.
+                and value not in declared_inputs
+            ):
+                outputs.append(value)
+    return tuple(dict.fromkeys(outputs))
+
+
+def _scratch_path(scratch_root: Path, logical_path: str) -> Path:
+    resolved = _resolve_repo_path(logical_path)
+    try:
+        return scratch_root / resolved.resolve().relative_to(ROOT.resolve())
+    except ValueError:
+        return scratch_root / resolved.name
+
+
+def _promote_capture_outputs(lane_def: Mapping[str, Any], scratch_root: Path) -> list[str]:
+    promoted: list[str] = []
+    covered_directories: list[Path] = []
+    for logical_path in _capture_owned_paths(lane_def):
+        destination = _resolve_repo_path(logical_path)
+        if any(destination == directory or directory in destination.parents for directory in covered_directories):
+            continue
+        source = _scratch_path(scratch_root, logical_path)
+        if source.is_dir():
+            # Overlay merge: scratch owns regenerated files, but preserved raw
+            # evidence absent from scratch (target probes, raw run outputs,
+            # session captures) MUST survive promotion.
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, destination, dirs_exist_ok=True)
+            covered_directories.append(destination)
+        elif source.is_file():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        else:
+            raise LaneRunError(f"capture scratch output missing: {source}")
+        promoted.append(logical_path)
+    return promoted
+
+
+def _run_isolated_capture(
+    lane_def: Mapping[str, Any],
+    inventory_lane: Mapping[str, Any] | None,
+    adapter_capture: Any | None,
+) -> dict[str, Any]:
+    lane_id = str(lane_def["lane_id"])
+    scratch_root = _REGEN_SCRATCH_ROOT / lane_id
+    if scratch_root.exists():
+        shutil.rmtree(scratch_root)
+    scratch_root.mkdir(parents=True, exist_ok=True)
+    if adapter_capture is not None:
+        if not getattr(adapter_capture, "supports_scratch_out_dir", False):
+            raise LaneRunError(
+                f"lane {lane_id!r} capture adapter does not support isolated regeneration writes"
+            )
+        row = adapter_capture(
+            lane_def,
+            inventory_lane,
+            promote_accepted=False,
+            out_dir=scratch_root,
+        )
+    else:
+        try:
+            from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
+        except ModuleNotFoundError:  # pragma: no cover - direct script execution
+            from lane_acceptance_artifacts import build_lane_from_definition
+        row = build_lane_from_definition(lane_def, inventory_lane, output_root=scratch_root)
+    promoted = _promote_capture_outputs(lane_def, scratch_root) if row.get("ok") else []
+    return {
+        "stage": "capture",
+        "lane_id": lane_id,
+        "returncode": 0 if row.get("ok") else 1,
+        "artifact_writer": str(lane_def.get("capture", {}).get("adapter") or "run_lane"),
+        "output_path": row.get("node_gate"),
+        "promotion_refresh": {"skipped": True, "reason": "derived writes deferred to canonical DAG owners"},
+        "packet_report": row,
+        "promoted_paths": promoted,
+        "scratch_root": _display_path(scratch_root),
+    }
+
+
 def run_lane(
     lane_id: str,
     *,
@@ -277,7 +412,9 @@ def run_lane(
     inventory_path: Path = DEFAULT_INVENTORY,
     comparator_registry_path: Path = DEFAULT_COMPARATOR_REGISTRY,
     promote_accepted: bool = False,
-) -> dict[str, Any]:
+    defer_promotion_refresh: bool = False,
+    defer_derived_writes: bool = False,
+):
     lane_defs = load_lane_defs(lane_def_dir)
     try:
         lane_def = lane_defs[lane_id]
@@ -293,9 +430,47 @@ def run_lane(
         raise LaneRunError("unsupported stage(s): " + ", ".join(unsupported))
     if lane_def.get("status") == "accepted" and out_dir is None and not promote_accepted:
         raise LaneRunError("accepted lanes require --out unless --promote-accepted is set")
+    if defer_derived_writes and (
+        stage != "capture"
+        or not promote_accepted
+        or not defer_promotion_refresh
+        or out_dir is not None
+    ):
+        raise LaneRunError(
+            "--defer-derived-writes requires --stage capture --promote-accepted "
+            "--defer-promotion-refresh and no --out"
+        )
 
     results: list[dict[str, Any]] = []
     for stage_name in stages:
+        adapter_capture = _capture_adapter_callable(lane_def) if stage_name == "capture" else None
+        if defer_derived_writes:
+            isolated_result = _run_isolated_capture(lane_def, inventory_lane, adapter_capture)
+            results.append(isolated_result)
+            if isolated_result["returncode"] != 0:
+                break
+            continue
+        if adapter_capture is not None:
+            if not promote_accepted and out_dir is not None and not getattr(adapter_capture, "supports_scratch_out_dir", False):
+                raise LaneRunError(
+                    f"lane {lane_id!r} capture.adapter {lane_def.get('capture', {}).get('adapter')!r} does not declare scratch out_dir support"
+                )
+            row = adapter_capture(lane_def, inventory_lane, promote_accepted=promote_accepted, out_dir=out_dir)
+            refresh_report = _refresh_promoted_bindings() if row.get("ok") and promote_accepted and not defer_promotion_refresh else {"skipped": True, "reason": "deferred by --defer-promotion-refresh"} if row.get("ok") and promote_accepted else None
+            results.append(
+                {
+                    "stage": stage_name,
+                    "lane_id": lane_id,
+                    "returncode": 0 if row.get("ok") else 1,
+                    "artifact_writer": str(lane_def.get("capture", {}).get("adapter")),
+                    "output_path": row.get("node_gate"),
+                    "promotion_refresh": refresh_report,
+                    "packet_report": row,
+                }
+            )
+            if not row.get("ok"):
+                break
+            continue
         argv = _command_stage_argv(stage_name, lane_def, inventory_lane)
         if argv is None and stage_name == "capture" and promote_accepted:
             try:
@@ -304,7 +479,7 @@ def run_lane(
                 from lane_acceptance_artifacts import build_lane_from_definition
 
             row = build_lane_from_definition(lane_def, inventory_lane)
-            refresh_report = _refresh_promoted_bindings() if row.get("ok") else None
+            refresh_report = _refresh_promoted_bindings() if row.get("ok") and not defer_promotion_refresh else {"skipped": True, "reason": "deferred by --defer-promotion-refresh"} if row.get("ok") else None
             results.append(
                 {
                     "stage": stage_name,
@@ -369,6 +544,12 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--stage", choices=[*ALL_STAGES, "all"], default="all")
     parser.add_argument("--out", type=Path, default=None, help="scratch output root for all artifact writes")
     parser.add_argument("--promote-accepted", action="store_true", help="allow accepted-root artifact writes for promotion regeneration")
+    parser.add_argument("--defer-promotion-refresh", action="store_true", help="skip immediate promoted-binding refresh; use only inside orchestrators that run explicit catalog/support refresh stages later")
+    parser.add_argument(
+        "--defer-derived-writes",
+        action="store_true",
+        help="isolate capture-derived claims/manifests/node gates and promote only lane-owned outputs",
+    )
     parser.add_argument("--json", action="store_true", help="emit JSON result")
     parser.add_argument("--lane-def-dir", type=Path, default=DEFAULT_LANE_DEF_DIR)
     parser.add_argument("--inventory", type=Path, default=DEFAULT_INVENTORY)
@@ -391,6 +572,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 inventory_path=args.inventory,
                 comparator_registry_path=args.comparator_registry,
                 promote_accepted=args.promote_accepted,
+                defer_promotion_refresh=args.defer_promotion_refresh,
+                defer_derived_writes=args.defer_derived_writes,
             )
         except LaneRunError as exc:
             payload = {"ok": False, "lane_id": lane_id, "error": str(exc)}

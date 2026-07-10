@@ -11,7 +11,8 @@ from typing import Any, Mapping, Sequence
 try:
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"

@@ -18,9 +18,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from agentic_coder_prototype.conformance.c4_chain import validate_c4_chain  # noqa: E402
+from agentic_coder_prototype.conformance.catalog_binding import catalog_segment_hash, reusable_catalog_revision  # noqa: E402
 from agentic_coder_prototype.compilation.primitive_records import canonical_record_bytes, sha256_ref  # noqa: E402
 from scripts.e4_parity.self_capture_determinism import deterministic_self_capture_context  # noqa: E402
 from scripts.e4_parity.lane_runtime import sha256_file  # noqa: E402
+from scripts.e4_parity.validators.registries import schema_generation_default  # noqa: E402
 from scripts.replay_session_from_records import replay_session_from_records  # noqa: E402
 
 GENERATED_AT = "2026-07-07T03:00:00Z"
@@ -126,15 +128,22 @@ def ledger_row_ref(spec: Mapping[str, Any]) -> str:
     raise KeyError(f"ledger row not found for {wanted}; run seed_atomic_feature_ledger after updating C4 specs")
 
 
-def catalog_binding() -> dict[str, Any]:
-    if not CATALOG_PATH.exists():
-        return {"catalog_path": "docs/conformance/e4_artifact_catalog.json", "catalog_revision": 1, "catalog_hash": "sha256:" + "0" * 64}
+def catalog_binding(lane_id: str, prior_binding: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    if not CATALOG_PATH.is_file():
+        raise FileNotFoundError(f"artifact catalog is required for support-claim binding: {CATALOG_PATH}")
     catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
-    stable = catalog.get("integrity", {}).get("stable_entries_hash") if isinstance(catalog.get("integrity"), dict) else None
+    schema_version = catalog.get("schema_version") if isinstance(catalog, Mapping) else None
+    if schema_version != "bb.e4.artifact_catalog.v2":
+        raise ValueError(f"support-claim binding requires bb.e4.artifact_catalog.v2, got {schema_version!r}")
+    binding_hashes = {
+        "segment_hash": catalog_segment_hash(catalog, lane_id),
+        "shared_segment_hash": catalog_segment_hash(catalog, "shared"),
+    }
     return {
         "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-        "catalog_revision": int(catalog.get("revision") or 1),
-        "catalog_hash": stable if isinstance(stable, str) else "sha256:" + "0" * 64,
+        "catalog_revision": reusable_catalog_revision(catalog, prior_binding, binding_hashes),
+        "segment_id": lane_id,
+        **binding_hashes,
     }
 
 
@@ -384,7 +393,7 @@ def build_lane(spec: Mapping[str, Any]) -> dict[str, Any]:
         "comparator_id": "north_star_stored_report_replay",
         "lane_id": spec["lane_id"],
         "config_id": spec["config_id"],
-        "scope": scope,
+        "scope": {**scope, "target_family": spec["target_family"]},
         "assertions": assertions,
         "details": [{"name": item["name"], "passed": True, "detail": item["observed"]} for item in assertions],
         "passed": len(assertions),
@@ -404,22 +413,17 @@ def build_lane(spec: Mapping[str, Any]) -> dict[str, Any]:
         "No claim is made for any other target family or any surface outside the named config, run, target version, provider model, and sandbox mode.",
     ]
     excluded_families = sorted({"all_other_families", "pi", "oh_my_pi", "claude_code", "codex", "opencode", "oh_my_opencode", "breadboard"} - {spec["target_family"]})
+    existing_claim = json.loads(support_path.read_text(encoding="utf-8")) if support_path.exists() else {}
+    prior_binding = existing_claim.get("catalog_binding") if isinstance(existing_claim, Mapping) and isinstance(existing_claim.get("catalog_binding"), Mapping) else None
     support_claim = {
-        "schema_version": "bb.e4.support_claim.v2",
+        "schema_version": schema_generation_default("support_claim"),
         "claim_id": spec["claim_id"],
-        "config_id": spec["config_id"],
-        "lane_id": spec["lane_id"],
         "kind": "target_support" if spec["target_family"] != "breadboard" else "non_target_accounting",
         "accepted": True,
         "summary": f"{spec['target_version']} north-star exact-scope evidence packet is accepted for {spec['lane_id']} only.",
         "acceptance_rationale": "The packet binds freeze row, capture, replay, comparator, secret-scan, parity, ledger row, and prevalidation artifacts under canonical roots; comparator rerun is deterministic over current input hashes.",
         "phase_label": "WS-J",
-        "target_family": spec["target_family"],
-        "target_version": spec["target_version"],
-        "run_id": spec["run_id"],
-        "provider_model": spec["provider_model"],
-        "sandbox_mode": spec["sandbox_mode"],
-        "scope": scope,
+        "scope": {**scope, "target_family": spec["target_family"]},
         "exclusions": exclusions,
         "exclusion_facets": {"excluded_families": excluded_families, "excluded_behavior_classes": ["broad_target_parity", "browser", "danger_full_access", "final_readiness", "model_inference", "network", "provider_authenticated", "ui_parity", "write_enabled"]},
         "claim_semantics": {
@@ -436,7 +440,7 @@ def build_lane(spec: Mapping[str, Any]) -> dict[str, Any]:
         "evidence_manifest_ref": display(manifest_path),
         "ledger_row_refs": [ledger_ref],
         "validation_refs": [ref(prevalidation_path)],
-        "catalog_binding": catalog_binding(),
+        "catalog_binding": catalog_binding(str(spec["lane_id"]), prior_binding),
         "reverify_command": {"argv": [".venv/bin/python", "scripts/validate_e4_c4_chain.py", "--config-id", spec["config_id"], "--support-claim", display(support_path), "--evidence-manifest", display(manifest_path), "--json-out", display(node_gate_path), "--check-only"], "cwd": "."},
         "parity_results_ref": ref(parity_path),
         "secret_scan_ref": ref(secret_path),
