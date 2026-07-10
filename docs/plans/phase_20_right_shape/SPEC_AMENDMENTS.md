@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **16 amendments** (below).
+Current state: **17 amendments** (below).
 
 ---
 
@@ -250,3 +250,15 @@ F4's deeper defect: the pilot manifest references downstream run/evidence artifa
 - `--check` semantics unchanged: recompute EVERY digest from clean-checkout state; missing input = red exit 3.
 
 **Classification:** spec_gap. **Owner:** F4/F6 (WsF3Compiler). **Recorded-by:** orchestrator.
+
+---
+
+## Amendment 17 - 2026-07-10 - lane_def v1/v2 stage-honesty schema evolution (WS-H; classification + freeze authorization)
+
+WS-H's stage-vocabulary work adds to `bb.e4.lane_def.v1` + `.v2`: required `mode` on normalize (`identity|translate`) and replay (`const "stored"`), plus required declared `artifacts` (non-empty, unique, relative-path pattern) on replay. Precise classification: **tightening-with-extension** — a new constrained property is admitted AND made required, so pre-existing documents without the declarations are rejected. This is the plan's stage-honesty mandate (stages either execute or are explicitly declared stored/data-defined; zero silent skips) expressed at the schema layer, and is AUTHORIZED, subject to:
+
+1. **Freeze mechanism compliance (B2b, same-commit rule):** every schema-touching commit carries/updates the hash-pinned `TIGHTENING_ALLOWLIST` entries for both files; the freeze gate is green at each such commit and at the packet head.
+2. **Consumer proof:** every lane definition under config/e4_lanes/ validates at the packet head (full lane census, not a filtered subset), or the packet is red.
+3. The freeze-policy term "tightening" is READ to include this tightening-with-extension shape only when the added property is required+constrained (pure widenings — optional new fields, enum growth — remain UNAUTHORIZED without a dedicated amendment).
+
+**Classification:** spec_gap (schema-evolution class undefined) + process finding (H2/H3 landed drift without allowlist entries; caught by static verifier + freeze gate red at verify head — the dual-lens design worked). **Owner:** WS-H (WsH2Stages2). **Recorded-by:** orchestrator.
