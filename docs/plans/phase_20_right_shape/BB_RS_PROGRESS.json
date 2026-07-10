@@ -6,7 +6,7 @@
  "points_done": 25,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:03:48Z",
+ "updated_at_utc": "2026-07-10T21:04:53Z",
  "items": [
   {
    "id": "A1",
@@ -630,10 +630,10 @@
    "ws": "I",
    "title": "VALIDATION_GAP_MATRIX.md committed",
    "weight": 25,
-   "status": "todo",
+   "status": "in_progress",
    "deps": [],
    "evidence": [],
-   "notes": "",
+   "notes": "RED verdict recorded: VerifyWsI fail @ e5a66bcf (L21 brace-shorthand pointer, not RFC 6901). product_defect routed to implementer for follow-up commit; re-verify pending.",
    "verifiers": []
   },
   {
