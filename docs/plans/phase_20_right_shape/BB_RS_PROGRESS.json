@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 0,
+ "points_done": 25,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:03:20Z",
+ "updated_at_utc": "2026-07-10T21:03:48Z",
  "items": [
   {
    "id": "A1",
@@ -154,11 +154,29 @@
    "ws": "C",
    "title": "commit DIRECTION_CHARTER.md verbatim",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "p20/verify-wsC C1",
+     "sha": "971cc0d9"
+    },
+    {
+     "kind": "doc",
+     "ref": "../docs_tmp/phase_20/evidence/C1/implementer.json",
+     "sha": "b2f143ac"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsC(reviewer)",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "verdict bound to b2f143ac6d3d4ab08901134c65cc57daa1944fa0; anti-scope clean"
+    }
+   ]
   },
   {
    "id": "C2",
@@ -179,13 +197,31 @@
    "ws": "C",
    "title": "INDEX.md + README links",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "C1"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "commit",
+     "ref": "p20/verify-wsC C3",
+     "sha": "b2f143ac"
+    },
+    {
+     "kind": "doc",
+     "ref": "../docs_tmp/phase_20/evidence/C3/implementer.json",
+     "sha": "b2f143ac"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsC(reviewer)",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "verdict bound to b2f143ac6d3d4ab08901134c65cc57daa1944fa0; anti-scope clean"
+    }
+   ]
   },
   {
    "id": "C4",
