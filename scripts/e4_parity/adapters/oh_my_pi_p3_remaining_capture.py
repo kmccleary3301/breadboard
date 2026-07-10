@@ -9,10 +9,14 @@ from scripts.e4_parity.adapters import oh_my_pi_p3_packet as p3_packet
 from scripts.e4_parity.adapters import oh_my_pi_p3_remaining_projections as p3_projections
 from scripts.e4_parity import lane_inventory_utils as lane_inventory
 from scripts.e4_parity import lane_runtime
+from scripts.e4_parity.path_refs import (
+    ReferenceResolutionError,
+    resolve_declared_reference,
+)
 from scripts.validate_e4_c4_chain import validate_c4_chain
 
 ROOT = Path(__file__).resolve().parents[3]
-WORKSPACE = ROOT.parent
+WORKSPACE = ROOT
 GENERATED_AT_UTC = p3_packet.GENERATED_AT_UTC
 PHASE = "P3"
 FREEZE_MANIFEST_PATH = p3_packet.FREEZE_MANIFEST_PATH
@@ -145,6 +149,20 @@ def _tool_id(builders: tuple[Mapping[str, Any], ...]) -> str:
     return next(iter(compiler_ids))
 
 def _resolve_input(path_text: str) -> Path:
+    namespace = "repo"
+    try:
+        return resolve_declared_reference(
+            path_text,
+            checkout_root=ROOT,
+            namespace=namespace,
+            label="capture input",
+            must_exist=False,
+        )
+    except ReferenceResolutionError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def _resolve_role_output(path_text: str) -> Path:
     raw = Path(path_text)
     if raw.is_absolute():
         return raw
@@ -195,7 +213,7 @@ def _validate_capture_inputs(lane_def: Mapping[str, Any], spec: Mapping[str, Any
 def _role_path(role_value: Any, role_name: str) -> Path:
     if not isinstance(role_value, str) or not role_value:
         raise ValueError(f"normalize.config.roles.{role_name} must be a non-empty path")
-    resolved = _resolve_input(role_value)
+    resolved = _resolve_role_output(role_value)
     try:
         resolved.relative_to(ROOT)
     except ValueError as exc:

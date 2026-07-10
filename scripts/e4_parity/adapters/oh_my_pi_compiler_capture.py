@@ -15,6 +15,10 @@ from agentic_coder_prototype.conformance.catalog_binding import catalog_segment_
 from scripts.e4_parity import build_primitive_projection as primitive_projection
 from scripts.e4_parity import lane_inventory_utils as lane_inventory
 from scripts.e4_parity import lane_runtime
+from scripts.e4_parity.path_refs import (
+    ReferenceResolutionError,
+    resolve_declared_reference,
+)
 from scripts.e4_parity.adapters.oh_my_pi_p3_remaining_capture import capture_p3_remaining
 from scripts.e4_parity.adapters.oh_my_pi_l5_projection import PROJECTIONS as L5_PROJECTIONS
 from scripts.e4_parity.adapters.oh_my_pi_l6_projection import PROJECTIONS as L6_PROJECTIONS
@@ -35,7 +39,7 @@ from scripts.e4_parity.validators import hash_utils
 from scripts.e4_parity.validators.registries import schema_generation_default
 
 ROOT = Path(__file__).resolve().parents[3]
-WORKSPACE = ROOT.parent
+WORKSPACE = ROOT
 
 GENERATED_AT_UTC = "2026-07-03T07:30:00Z"
 SUPPORT_CLAIM_GENERATED_AT_UTC = "2026-07-04T00:00:00Z"
@@ -127,14 +131,17 @@ def _display(path: Path, *, logical_root: Path | None = None) -> str:
 
 
 def _resolve_display(path: str) -> Path:
-    raw = Path(path.split("#", 1)[0])
-    if raw.is_absolute():
-        return raw
-    if raw.parts and raw.parts[0] == "docs_tmp":
-        return WORKSPACE / raw
-    if raw.parts and raw.parts[0] == ROOT.name:
-        return WORKSPACE / raw
-    return ROOT / raw
+    namespace = "repo"
+    try:
+        return resolve_declared_reference(
+            path,
+            checkout_root=ROOT,
+            namespace=namespace,
+            label="capture input",
+            must_exist=False,
+        )
+    except ReferenceResolutionError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 def _normalize_config(lane_def: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -155,6 +162,13 @@ def _record_builders(lane_def: Mapping[str, Any]) -> tuple[Mapping[str, Any], ..
     if not isinstance(capture_inputs, list) or not all(isinstance(item, str) and item for item in capture_inputs):
         raise ValueError("capture.inputs must be a non-empty string list")
     declared_inputs = set(capture_inputs)
+    runtime_payload_inputs = config.get("runtime_payload_inputs", {})
+    if not isinstance(runtime_payload_inputs, Mapping) or not all(
+        isinstance(key, str) and key
+        for key in runtime_payload_inputs
+    ):
+        raise ValueError("normalize.config.runtime_payload_inputs must be an object")
+    declared_inputs.update(runtime_payload_inputs)
     seen: set[str] = set()
     validated: list[Mapping[str, Any]] = []
     for row in builders:
@@ -177,7 +191,10 @@ def _record_builders(lane_def: Mapping[str, Any]) -> tuple[Mapping[str, Any], ..
         if not isinstance(source, str) or not source:
             raise ValueError(f"record builder {builder_id!r} source must be a non-empty path")
         if source not in declared_inputs:
-            raise ValueError(f"record builder {builder_id!r} source must be declared in capture.inputs")
+            raise ValueError(
+                f"record builder {builder_id!r} source must be declared "
+                "in capture.inputs or runtime_payload_inputs"
+            )
         records = row.get("records")
         if not isinstance(records, list) or not records or not all(isinstance(item, str) and item for item in records):
             raise ValueError(f"record builder {builder_id!r} records must be a non-empty string list")
@@ -240,6 +257,28 @@ def _load_projection_inputs(lane_def: Mapping[str, Any]) -> dict[str, dict[str, 
         item = _projection_input(path_text, path)
         inputs[path_text] = item
         inputs.setdefault(_display(path), item)
+    runtime_payload_inputs = _normalize_config(lane_def).get(
+        "runtime_payload_inputs",
+        {},
+    )
+    if not isinstance(runtime_payload_inputs, Mapping):
+        raise ValueError("normalize.config.runtime_payload_inputs must be an object")
+    overlap = sorted(set(inputs).intersection(runtime_payload_inputs))
+    if overlap:
+        raise ValueError(
+            "runtime payload inputs overlap physical capture inputs: "
+            + ", ".join(overlap)
+        )
+    for path_text, value in runtime_payload_inputs.items():
+        if not isinstance(path_text, str) or not path_text:
+            raise ValueError("runtime payload input paths must be non-empty strings")
+        data = _json_bytes(value)
+        inputs[path_text] = {
+            "bytes": len(data),
+            "path": path_text,
+            "sha256": _sha256_bytes(data),
+            "value": value,
+        }
     return inputs
 
 

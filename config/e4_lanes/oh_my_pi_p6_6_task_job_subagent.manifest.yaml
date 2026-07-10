@@ -18,6 +18,7 @@ capture:
     - config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip
     - config/e4_target_freeze_manifest.yaml
     - scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py
+    - scripts/e4_parity/path_refs.py
     - scripts/e4_parity/adapters/oh_my_pi_projection_packet.py
     - scripts/e4_parity/adapters/oh_my_pi_p6_6_work_item_projection.py
     - agentic_coder_prototype/compilation/primitive_records.py
@@ -197,7 +198,7 @@ acceptance:
       description: claimed scope sandbox mode matches
 reverify_command:
   argv:
-    - .venv/bin/python
+    - python
     - scripts/validate_e4_c4_chain.py
     - --config-id
     - oh_my_pi_p6_6_task_job_subagent_v1

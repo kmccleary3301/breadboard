@@ -464,6 +464,12 @@ def load_manifest_lane_def(path: Path, *, parity_legacy: bool = False) -> dict[s
             sidecar,
             roles,
         )
+    reverify_command = dict(manifest.get("reverify_command", {})) or None
+    if parity_legacy and reverify_command is not None:
+        argv = list(reverify_command.get("argv", []))
+        if argv and argv[0] == "python":
+            argv[0] = ".venv/bin/python"
+            reverify_command["argv"] = argv
     lane_def = {
         "schema_version": SCHEMA_VERSION_V2,
         "lane_id": manifest["lane_id"],
@@ -502,7 +508,7 @@ def load_manifest_lane_def(path: Path, *, parity_legacy: bool = False) -> dict[s
         },
         "ct": ct,
         "artifacts_root": manifest["artifacts_root"],
-        "reverify_command": dict(manifest.get("reverify_command", {})) or None,
+        "reverify_command": reverify_command,
         "metadata": {
             "legacy_inventory_ct_test_id": ct.get("test_id"),
             "provider_model": run["provider_model"],

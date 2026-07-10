@@ -303,6 +303,46 @@ def test_compile_uses_only_declared_inputs_and_registry_entries_without_consulti
     }
 
 
+def test_compile_does_not_resolve_a_declared_input_from_an_ancestor_checkout(
+    synthetic_repo: dict[str, Any], capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = synthetic_repo["root"]
+    manifest_path = synthetic_repo["manifest_path"]
+    input_ref = f"{root.name}-outside/tempting-input.yaml"
+    outside_input = root.parent / input_ref
+    _write_yaml(
+        outside_input,
+        {
+            "payload_templates": {"must_not_compile": {"source": "outside"}},
+            "substitutions": {},
+        },
+    )
+    manifest = synthetic_repo["manifest"]
+    manifest["capture"]["inputs"] = [input_ref]
+    _write_yaml(manifest_path, manifest)
+    lock_path = root / "compiled.lock.json"
+    sidecar_path = root / "compiled.packet_constants.v1.json"
+
+    exit_code = compile_lane_lock.main(
+        [
+            "compile",
+            str(manifest_path),
+            "--lock",
+            str(lock_path),
+            "--sidecar",
+            str(sidecar_path),
+        ]
+    )
+
+    assert exit_code == 3
+    assert (
+        f"declared input is not a regular file or directory: {input_ref}"
+        in capsys.readouterr().err
+    )
+    assert not lock_path.exists()
+    assert not sidecar_path.exists()
+
+
 @pytest.mark.parametrize("drift_target", ["lock", "sidecar"])
 def test_check_returns_five_when_either_generated_file_drifts(
     synthetic_repo: dict[str, Any], drift_target: str

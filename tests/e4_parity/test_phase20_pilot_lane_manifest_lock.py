@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib
 import json
+import shutil
 import stat
+import subprocess
 import struct
+import sys
+import tempfile
 import warnings
 import zipfile
 from pathlib import Path
@@ -16,6 +21,7 @@ from jsonschema import Draft202012Validator
 
 from scripts.authoring import validate_lane
 from scripts.e4_parity import compile_lane_lock
+from scripts.e4_parity import refresh_lane_descriptor_pins
 from scripts.e4_parity.lane_definitions import load_lane_def, load_manifest_lane_def
 from scripts.e4_parity.tree_digest import digest_directory
 
@@ -27,8 +33,13 @@ MANIFEST_PATH = LANE_DIR / f"{LANE_ID}.manifest.yaml"
 LEGACY_PATH = LANE_DIR / f"{LANE_ID}.yaml"
 LOCK_PATH = LANE_DIR / f"{LANE_ID}.lock.json"
 SIDECAR_PATH = LANE_DIR / f"{LANE_ID}.packet_constants.v1.json"
+PAYLOAD_SOURCE_PATH = LANE_DIR / f"{LANE_ID}.payloads.yaml"
 MANIFEST_SCHEMA_PATH = ROOT / "contracts" / "kernel" / "schemas" / "bb.e4.lane_manifest.v1.schema.json"
 REGISTRY_PATH = ROOT / "contracts" / "kernel" / "registries" / "e4_adapters.v1.json"
+
+
+def _payload_source_module() -> Any:
+    return importlib.import_module("scripts.e4_parity.promote_lane_payload_source")
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -60,13 +71,7 @@ def _sha256_path(path: Path) -> str:
     return _sha256_bytes(path.read_bytes())
 
 def _resolve_reference(reference: str) -> Path:
-    candidate = ROOT / reference
-    if candidate.exists():
-        return candidate
-    return next(
-        (ancestor / reference for ancestor in ROOT.parents if (ancestor / reference).exists()),
-        candidate,
-    )
+    return ROOT / reference
 
 
 def _set_nested(payload: dict[str, Any], pointer: str, value: object) -> None:
@@ -143,10 +148,23 @@ def test_pilot_manifest_runtime_uses_the_derived_tree_and_parity_load_matches_le
     runtime_lane = load_manifest_lane_def(MANIFEST_PATH)
     assert derived_ref in runtime_lane["capture"]["inputs"]
     assert legacy_ref not in runtime_lane["capture"]["inputs"]
-    assert load_manifest_lane_def(MANIFEST_PATH, parity_legacy=True) == load_lane_def(LEGACY_PATH)
+
+    legacy_comparison = load_lane_def(LEGACY_PATH)
+    promoted_payloads = _load_yaml(PAYLOAD_SOURCE_PATH)
+    legacy_packet_constants = legacy_comparison["normalize"]["config"]["packet_constants"]
+    legacy_packet_constants["payload_templates"] = promoted_payloads["payload_templates"]
+    legacy_packet_constants["substitutions"] = promoted_payloads["substitutions"]
+    assert load_manifest_lane_def(MANIFEST_PATH, parity_legacy=True) == legacy_comparison
 
 
-def test_pilot_lock_pins_every_dependency_and_keeps_the_three_layers_directional() -> None:
+@pytest.fixture
+def materialized_pilot_extraction() -> None:
+    assert compile_lane_lock.main(["compile", str(MANIFEST_PATH), "--check"]) == 0
+
+
+def test_pilot_lock_pins_every_dependency_and_keeps_the_three_layers_directional(
+    materialized_pilot_extraction: None,
+) -> None:
     """The lock pins manifest, sidecar, inputs, registry entries, and freeze row without generated or volatile state."""
     manifest = _load_yaml(MANIFEST_PATH)
     lock = _load_json(LOCK_PATH)
@@ -179,7 +197,6 @@ def test_pilot_lock_pins_every_dependency_and_keeps_the_three_layers_directional
     expected_paths = set(manifest["capture"]["inputs"])
     expected_paths.update(
         {
-            LEGACY_PATH.relative_to(ROOT).as_posix(),
             manifest["target"]["source_freeze_ref"],
             compile_lane_lock.SOURCE_FREEZE_EXTRACTION_REF,
         }
@@ -333,7 +350,7 @@ def _synthetic_archive_migration(
         "capture": {
             "strategy": "adapter",
             "adapter": "fixture_capture",
-            "inputs": [archive_ref],
+            "inputs": [archive_ref, "fixture.payloads.yaml"],
         },
         "normalize": {
             "mode": "translate",
@@ -351,6 +368,10 @@ def _synthetic_archive_migration(
     sidecar_path = root / "fixture_lane.packet_constants.v1.json"
     _write_yaml(manifest_path, manifest)
     _write_yaml(
+        root / "fixture.payloads.yaml",
+        {"payload_templates": {}, "substitutions": {}},
+    )
+    _write_yaml(
         legacy_path,
         {
             "normalize": {
@@ -362,6 +383,7 @@ def _synthetic_archive_migration(
         },
     )
     monkeypatch.setattr(compile_lane_lock, "ROOT", root)
+    monkeypatch.setattr(compile_lane_lock, "_artifact_roles", lambda _manifest: {})
     argv = [
         "migrate",
         str(manifest_path),
@@ -461,3 +483,208 @@ def test_safe_archive_extraction_rejects_an_invalid_utf8_member_name(tmp_path: P
         compile_lane_lock.extract_source_archive(archive_path, extraction_path)
 
     assert not extraction_path.exists() or not any(extraction_path.rglob("*"))
+
+
+def test_am14_am16_manifest_inventory_is_tracked_source_only_and_payload_source_is_pinned() -> None:
+    """The author inventory contains clean-checkout sources, never downstream run/evidence artifacts."""
+    manifest = _load_yaml(MANIFEST_PATH)
+    inputs = [str(reference) for reference in manifest["capture"]["inputs"]]
+    payload_ref = PAYLOAD_SOURCE_PATH.relative_to(ROOT).as_posix()
+
+    assert inputs.count(payload_ref) == 1
+    allowed_source_prefixes = (
+        "agentic_coder_prototype/compilation/",
+        "config/",
+        "contracts/kernel/schemas/",
+        "docs_tmp/phase_15/",
+        "scripts/e4_parity/",
+    )
+    assert all(reference.startswith(allowed_source_prefixes) for reference in inputs)
+    assert all(
+        not reference.startswith(
+            (
+                "artifacts/",
+                "docs/conformance/e4_target_support/",
+                "docs/conformance/support_claims/",
+            )
+        )
+        for reference in inputs
+    )
+    for reference in inputs:
+        if reference == compile_lane_lock.SOURCE_FREEZE_ARCHIVE_REF:
+            assert _resolve_reference(reference).is_file()
+            continue
+        tracked = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", reference],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert tracked.returncode == 0, reference
+
+    source = _load_yaml(PAYLOAD_SOURCE_PATH)
+    assert set(source) == {"payload_templates", "substitutions"}
+    assert all(isinstance(source[field], dict) for field in source)
+    lock_rows = {row["path"]: row for row in _load_json(LOCK_PATH)["resolved_inputs"]}
+    assert lock_rows[payload_ref] == {
+        "path": payload_ref,
+        "sha256": _sha256_path(PAYLOAD_SOURCE_PATH),
+        "bytes": len(PAYLOAD_SOURCE_PATH.read_bytes()),
+        "role": "payload_source",
+    }
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        pytest.param([], id="top-level-array"),
+        pytest.param({"payload_templates": {}}, id="missing-substitutions"),
+        pytest.param(
+            {"payload_templates": {}, "substitutions": {}, "extra": {}},
+            id="extra-top-level-field",
+        ),
+        pytest.param(
+            {"payload_templates": [], "substitutions": {}},
+            id="payload-templates-not-mapping",
+        ),
+        pytest.param(
+            {"payload_templates": {}, "substitutions": []},
+            id="substitutions-not-mapping",
+        ),
+    ],
+)
+def test_promoted_payload_source_rejects_malformed_shapes(malformed: object) -> None:
+    """The promoted author source accepts exactly the two mapping-valued payload blocks."""
+    with pytest.raises(ValueError):
+        _payload_source_module().validate_payload_source(malformed, source=PAYLOAD_SOURCE_PATH)
+
+
+def test_migrate_and_compile_emit_identical_sidecar_bytes_from_the_promoted_source(
+    tmp_path: Path,
+) -> None:
+    """One-time legacy migration and steady-state source compilation converge on identical payload bytes."""
+    migrate_lock = tmp_path / "migrate.lock.json"
+    migrate_sidecar = tmp_path / "migrate.packet_constants.v1.json"
+    compile_lock = tmp_path / "compile.lock.json"
+    compile_sidecar = tmp_path / "compile.packet_constants.v1.json"
+
+    assert compile_lane_lock.main(
+        [
+            "migrate",
+            str(MANIFEST_PATH),
+            "--legacy",
+            str(LEGACY_PATH),
+            "--lock",
+            str(migrate_lock),
+            "--sidecar",
+            str(migrate_sidecar),
+        ]
+    ) == 0
+    assert compile_lane_lock.main(
+        [
+            "compile",
+            str(MANIFEST_PATH),
+            "--lock",
+            str(compile_lock),
+            "--sidecar",
+            str(compile_sidecar),
+        ]
+    ) == 0
+
+    expected = _payload_source_module().canonical_source_bytes(_load_yaml(PAYLOAD_SOURCE_PATH))
+    assert migrate_sidecar.read_bytes() == compile_sidecar.read_bytes() == expected
+    assert all(
+        row["role"] != "legacy_lane_descriptor"
+        for row in _load_json(migrate_lock)["resolved_inputs"]
+    )
+
+
+def test_compile_and_check_recreate_disposable_extraction_without_legacy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Steady-state compile/check need only tracked sources and recreate a missing derived extraction."""
+    lock_path = tmp_path / "lane.lock.json"
+    sidecar_path = tmp_path / "lane.packet_constants.v1.json"
+    with tempfile.TemporaryDirectory(dir=compile_lane_lock.ROOT) as scratch_dir:
+        extraction_path = Path(scratch_dir) / "derived" / "source"
+        extraction_ref = extraction_path.relative_to(compile_lane_lock.ROOT).as_posix()
+        monkeypatch.setattr(
+            compile_lane_lock,
+            "SOURCE_FREEZE_EXTRACTION_REF",
+            extraction_ref,
+        )
+        argv = [
+            "compile",
+            str(MANIFEST_PATH),
+            "--lock",
+            str(lock_path),
+            "--sidecar",
+            str(sidecar_path),
+        ]
+
+        assert compile_lane_lock.main(argv) == 0
+        generated = lock_path.read_bytes(), sidecar_path.read_bytes()
+        assert extraction_path.is_dir()
+
+        shutil.rmtree(extraction_path)
+        assert compile_lane_lock.main([*argv, "--check"]) == 0
+        assert extraction_path.is_dir()
+        assert (lock_path.read_bytes(), sidecar_path.read_bytes()) == generated
+
+
+def test_payload_extractor_check_is_reproducible_and_detects_drift(tmp_path: Path) -> None:
+    """Extractor check accepts exact canonical bytes and rejects a modified promoted source."""
+    output = tmp_path / "promoted.payloads.yaml"
+    script = ROOT / "scripts" / "e4_parity" / "promote_lane_payload_source.py"
+    command = [
+        str(script),
+        str(LEGACY_PATH),
+        str(output),
+    ]
+
+    created = subprocess.run(
+        [sys.executable, *command],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert created.returncode == 0, created.stderr
+    exact = output.read_bytes()
+    checked = subprocess.run(
+        [sys.executable, *command, "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert checked.returncode == 0, checked.stderr
+
+    output.write_bytes(exact + b"\n")
+    drifted = subprocess.run(
+        [sys.executable, *command, "--check"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert drifted.returncode == 5
+
+
+def test_refresh_migrated_lane_preserves_authored_inputs_and_rejects_a_manifest_target(
+    tmp_path: Path,
+) -> None:
+    """Refresh may update only generated lock/sidecar outputs and refuses any non-manifest input target."""
+    authored_before = MANIFEST_PATH.read_bytes(), PAYLOAD_SOURCE_PATH.read_bytes()
+
+    assert refresh_lane_descriptor_pins.refresh_migrated_lane(MANIFEST_PATH) == 0
+    assert (MANIFEST_PATH.read_bytes(), PAYLOAD_SOURCE_PATH.read_bytes()) == authored_before
+    assert refresh_lane_descriptor_pins.refresh_migrated_lane(MANIFEST_PATH, check=True) == 0
+
+    forbidden_target = tmp_path / "lane.lock.json"
+    forbidden_target.write_text("sentinel", encoding="utf-8")
+    with pytest.raises(ValueError):
+        refresh_lane_descriptor_pins.refresh_migrated_lane(forbidden_target)
+    assert forbidden_target.read_text(encoding="utf-8") == "sentinel"
