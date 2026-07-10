@@ -158,7 +158,7 @@ class BreadboardClient:
             "tail_lines": tail_lines,
             "max_bytes": max_bytes,
         }
-        return self._request("GET", f"/v1/sessions/{session_id}/files", query=query)
+        return self._request("GET", f"/v1/sessions/{session_id}/files/content", query=query)
 
     def download_artifact(self, session_id: str, *, artifact: str) -> str:
         return str(self._request("GET", f"/v1/sessions/{session_id}/download", query={"artifact": artifact}))

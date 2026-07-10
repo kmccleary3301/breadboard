@@ -80,9 +80,9 @@ class _JsonResponse:
                 tail_lines=3,
                 max_bytes=512,
             ),
-            "https://breadboard.test/v1/sessions/session-123/files?"
+            "https://breadboard.test/v1/sessions/session-123/files/content?"
             "path=reports%2Fresult.txt&mode=tail&head_lines=2&tail_lines=3&max_bytes=512",
-            id="read-session-file-a4-intermediate-path",
+            id="read-session-file-a5-content-path",
         ),
         pytest.param(
             lambda client: client.download_artifact("session-123", artifact="logs/run 1.txt"),
