@@ -37,6 +37,7 @@ export interface E4LaneDefV1 {
     workspace_template?: string | null;
   };
   normalize: {
+    mode: "identity" | "translate";
     translator: string;
     config: FreeformObject;
   };

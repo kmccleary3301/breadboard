@@ -1030,6 +1030,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
                     "type": "integer"
                   },
                   "max_total_cost_usd": {
+                    "minimum": 0,
                     "type": "number"
                   },
                   "max_total_tokens": {
@@ -1048,6 +1049,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
                         "type": "integer"
                       },
                       "max_total_cost_usd": {
+                        "minimum": 0,
                         "type": "number"
                       },
                       "max_total_tokens": {
@@ -1109,6 +1111,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
                         "type": "integer"
                       },
                       "timeout_seconds": {
+                        "minimum": 0,
                         "type": "number"
                       }
                     },
@@ -1135,6 +1138,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
                     "type": "integer"
                   },
                   "timeout_seconds": {
+                    "minimum": 0,
                     "type": "number"
                   }
                 },
@@ -1210,6 +1214,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
             "additionalProperties": false,
             "properties": {
               "max_total_cost_usd": {
+                "minimum": 0,
                 "type": "number"
               },
               "max_total_tokens": {
@@ -1217,6 +1222,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
                 "type": "integer"
               },
               "total_cost_usd": {
+                "minimum": 0,
                 "type": "number"
               },
               "total_episodes": {
@@ -1277,12 +1283,14 @@ export const GENERATED_SCHEMA_OBJECTS = {
             "additionalProperties": false,
             "properties": {
               "backoff_base_seconds": {
+                "minimum": 0,
                 "type": "number"
               },
               "backoff_disable_jitter": {
                 "type": "boolean"
               },
               "backoff_max_seconds": {
+                "minimum": 0,
                 "type": "number"
               },
               "no_progress_signature_repeats": {
@@ -1336,6 +1344,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
                         "minLength": 1,
                         "type": "string"
                       },
+                      "minItems": 1,
                       "type": "array"
                     },
                     "hard_fail": {
@@ -1346,6 +1355,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
                       "type": "string"
                     },
                     "timeout_seconds": {
+                      "exclusiveMinimum": 0,
                       "type": "number"
                     }
                   },
@@ -1417,6 +1427,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
               },
               "type": "object"
             },
+            "minItems": 1,
             "type": "array"
           },
           "turn_strategy": {
@@ -1853,6 +1864,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
               ],
               "type": "object"
             },
+            "minItems": 1,
             "type": "array"
           },
           "routing": {
@@ -6450,10 +6462,17 @@ export const GENERATED_SCHEMA_OBJECTS = {
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "mode",
           "translator",
           "config"
         ],
         "properties": {
+          "mode": {
+            "enum": [
+              "identity",
+              "translate"
+            ]
+          },
           "translator": {
             "type": "string",
             "minLength": 1
@@ -6747,10 +6766,17 @@ export const GENERATED_SCHEMA_OBJECTS = {
         "type": "object",
         "additionalProperties": false,
         "required": [
+          "mode",
           "translator",
           "config"
         ],
         "properties": {
+          "mode": {
+            "enum": [
+              "identity",
+              "translate"
+            ]
+          },
           "translator": {
             "type": "string",
             "minLength": 1,

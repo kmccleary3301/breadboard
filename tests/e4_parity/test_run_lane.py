@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -28,7 +29,7 @@ def _write_lane_def(
         "status": status,
         "points": 1,
         "capture": {"strategy": "legacy_builder", "argv": None, "inputs": ["fixture"]},
-        "normalize": {"translator": "fixture", "config": {}},
+        "normalize": {"mode": "identity", "translator": "identity", "config": {}},
         "replay": {"session": None, "comparator_class": "byte"},
         "compare": {"comparator": "byte", "config": {}},
         "claim": {"scope": {"behaviors": ["claim"], "surfaces": ["artifact"]}, "exclusions": []},
@@ -69,6 +70,180 @@ def _patch_successful_subprocess(monkeypatch: pytest.MonkeyPatch) -> list[list[s
     monkeypatch.setattr(run_lane.subprocess, "run", fake_run)
     monkeypatch.setattr(run_lane, "sha256_file", lambda path: f"sha256:{Path(path).name}")
     return calls
+
+
+def _normalized_h2_lane(
+    input_paths: list[str],
+    *,
+    lane_id: str = "identity_normalize_fixture",
+    mode: str | None = "identity",
+) -> dict[str, object]:
+    normalize: dict[str, object] = {"translator": "identity", "config": {"fixture": "h2"}}
+    if mode is not None:
+        normalize["mode"] = mode
+    return {
+        "schema_version": "bb.e4.lane_def.v2",
+        "_lane_def_version": 2,
+        "lane_id": lane_id,
+        "config_id": f"{lane_id}_v1",
+        "kind": "target_support",
+        "status": "planned",
+        "capture": {
+            "strategy": "adapter",
+            "argv": None,
+            "inputs": input_paths,
+            "adapter": "pi_p5_l1_capture",
+        },
+        "normalize": normalize,
+        "replay": {"mode": "stored", "session": None, "comparator_class": "semantic"},
+        "compare": {"comparator": "pi_stored_report_replay", "config": {}},
+        "claim": {"scope": {"behaviors": ["fixture"], "surfaces": ["fixture"]}, "exclusions": []},
+        "artifacts_root": "artifacts/fixture",
+        "reverify_command": None,
+        "run": None,
+        "provenance": None,
+        "acceptance": {
+            "behavior_family": None,
+            "semantic_key": None,
+            "target": None,
+            "assertions": [],
+        },
+    }
+
+
+def _patch_h2_lane_loading(
+    monkeypatch: pytest.MonkeyPatch, lane_def: dict[str, object]
+) -> None:
+    monkeypatch.setattr(run_lane, "load_lane_defs", lambda _directory: {lane_def["lane_id"]: lane_def})
+    monkeypatch.setattr(run_lane, "_inventory_lane", lambda _lane_id, _inventory_path: None)
+
+
+def _report_path(repo_root: Path, report_ref: object) -> Path:
+    assert isinstance(report_ref, str) and report_ref
+    path = Path(report_ref)
+    return path if path.is_absolute() else repo_root / path
+
+
+def test_identity_normalize_resolves_and_invokes_registered_translator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from scripts.e4_parity.adapters import identity
+
+    logical_paths = ["inputs/first.json", "inputs/second.txt"]
+    input_bytes = [b'{"raw":true}\n', b"second input\n"]
+    for logical_path, content in zip(logical_paths, input_bytes, strict=True):
+        path = tmp_path / logical_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+    lane_def = _normalized_h2_lane(logical_paths)
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+    calls: list[tuple[object, object]] = []
+
+    def recording_identity(payload: object, *, config: object = None) -> object:
+        calls.append((payload, config))
+        return payload
+
+    monkeypatch.setattr(identity, "translate", recording_identity)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="normalize",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert calls == [(logical_paths, {"fixture": "h2"})]
+    assert result["ok"] is True
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_pass"
+    assert stage["reused_inputs"] is None
+    assert stage["honesty_errors"] == []
+    report_path = _report_path(tmp_path, stage["report_ref"])
+    assert report_path.is_file()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["ok"] is True
+    assert report["lane_id"] == lane_def["lane_id"]
+    assert report["mode"] == "identity"
+    assert report["translator"] == "identity"
+    assert report["input_hashes"] == [
+        {
+            "path": logical_path,
+            "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+        }
+        for logical_path, content in zip(logical_paths, input_bytes, strict=True)
+    ]
+    assert report["output"] == logical_paths
+
+
+def test_pi_p5_l1_adapter_lane_produces_executed_normalize_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    logical_path = "inputs/pi-p5-l1.json"
+    content = b'{"surface":"cli/config/context/tool"}\n'
+    input_path = tmp_path / logical_path
+    input_path.parent.mkdir(parents=True)
+    input_path.write_bytes(content)
+    lane_def = _normalized_h2_lane(
+        [logical_path],
+        lane_id="pi_p5_l1_cli_config_context_tool_surface",
+    )
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="normalize",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert result["ok"] is True
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_pass"
+    report = json.loads(_report_path(tmp_path, stage["report_ref"]).read_text(encoding="utf-8"))
+    assert report["lane_id"] == "pi_p5_l1_cli_config_context_tool_surface"
+    assert report["translator"] == "identity"
+    assert report["input_hashes"] == [
+        {
+            "path": logical_path,
+            "sha256": "sha256:" + hashlib.sha256(content).hexdigest(),
+        }
+    ]
+
+
+def test_missing_normalize_mode_fails_with_a_concrete_stage_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    logical_path = "inputs/source.json"
+    input_path = tmp_path / logical_path
+    input_path.parent.mkdir(parents=True)
+    input_path.write_text('{"source":true}\n', encoding="utf-8")
+    lane_def = _normalized_h2_lane([logical_path], mode=None)
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="normalize",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_fail"
+    assert stage["returncode"] != 0
+    assert "normalize.mode" in stage["detail"]
+    assert stage["honesty_errors"] == []
+    report_path = _report_path(tmp_path, stage["report_ref"])
+    assert report_path.is_file()
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    assert report["ok"] is False
+    assert "normalize.mode" in report["detail"]
 
 
 def test_accepted_lane_without_out_is_rejected_before_subprocess_can_write(
@@ -155,23 +330,20 @@ def test_claim_stage_uses_lane_def_reverify_command_and_retargets_json_out(
             "tail",
         ]
     ]
-    assert result == {
-        "ok": True,
-        "lane_id": lane_id,
-        "stages": [
-            {
-                "stage": "claim",
-                "lane_id": lane_id,
-                "command": calls[0],
-                "returncode": 0,
-                "output_path": expected_output.resolve().as_posix(),
-                "accepted_path": accepted_json,
-                "stdout": "claim stdout",
-                "stderr": "",
-                "output_sha256": "sha256:lane_def_claim.json",
-            }
-        ],
-    }
+    assert result["ok"] is True
+    stage = result["stages"][0]
+    assert stage["stage"] == "claim"
+    assert stage["lane_id"] == lane_id
+    assert stage["command"] == calls[0]
+    assert stage["returncode"] == 0
+    assert stage["output_path"] == expected_output.resolve().as_posix()
+    assert stage["accepted_path"] == accepted_json
+    assert stage["stdout"] == "claim stdout"
+    assert stage["stderr"] == ""
+    assert stage["output_sha256"] == "sha256:lane_def_claim.json"
+    assert stage["outcome"] == "executed_pass"
+    assert stage["report_ref"] == expected_output.resolve().as_posix()
+    assert stage["honesty_errors"] == []
     assert expected_output.read_text(encoding="utf-8") == '{"ok": true}\n'
     assert not (repo_root / accepted_json).exists()
 
@@ -238,15 +410,16 @@ def test_claim_stage_falls_back_to_inventory_reverify_then_ct_command_when_lane_
     assert not (repo_root / expected_json).exists()
 
 
-def test_all_stages_execute_safe_json_contract_and_resolve_comparator_registry(
+def test_all_stages_execute_normalize_then_fail_closed_on_undeclared_replay(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lane_id = "run_lane_test_all_stages"
     config_id = "run_lane_test_config"
     lane_def_dir = tmp_path / "lane_defs"
     inventory_path = tmp_path / "inventory.json"
-    registry_path = tmp_path / "comparators.json"
     scratch_root = tmp_path / "scratch"
+    input_path = tmp_path / "fixture"
+    input_path.write_text('{"fixture":true}\n', encoding="utf-8")
     _write_lane_def(
         lane_def_dir,
         lane_id=lane_id,
@@ -257,23 +430,9 @@ def test_all_stages_execute_safe_json_contract_and_resolve_comparator_registry(
     lane_payload = json.loads((lane_def_dir / f"{lane_id}.yaml").read_text(encoding="utf-8"))
     lane_payload["capture"]["strategy"] = "probe_argv"
     lane_payload["capture"]["argv"] = ["python", "capture.py", "--json-out=artifacts/capture.json"]
-    lane_payload["compare"]["comparator"] = "fixture_comparator"
     (lane_def_dir / f"{lane_id}.yaml").write_text(json.dumps(lane_payload), encoding="utf-8")
     _write_inventory(inventory_path, [{"lane_id": lane_id, "config_id": config_id}])
-    registry_path.write_text(
-        json.dumps(
-            {
-                "comparators": [
-                    {
-                        "comparator_id": "fixture_comparator",
-                        "entrypoint": {"module": "fixture", "callable": "compare"},
-                        "lane_ids": [lane_id],
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
+    monkeypatch.setattr(run_lane, "ROOT", tmp_path)
     calls = _patch_successful_subprocess(monkeypatch)
 
     result = run_lane.run_lane(
@@ -282,15 +441,17 @@ def test_all_stages_execute_safe_json_contract_and_resolve_comparator_registry(
         out_dir=scratch_root,
         lane_def_dir=lane_def_dir,
         inventory_path=inventory_path,
-        comparator_registry_path=registry_path,
     )
 
-    assert result["ok"] is True
+    assert result["ok"] is False
     assert [stage["stage"] for stage in result["stages"]] == ["capture", "normalize", "replay", "compare", "claim"]
-    assert [call[1] for call in calls] == ["capture.py", "claim.py"]
+    assert [call[1] for call in calls] == ["capture.py"]
     assert calls[0][2].startswith("--json-out=")
-    assert result["stages"][3]["comparator_id"] == "fixture_comparator"
-    assert result["stages"][3]["skipped"] is True
+    assert result["stages"][1]["outcome"] == "executed_pass"
+    assert _report_path(tmp_path, result["stages"][1]["report_ref"]).is_file()
+    assert result["stages"][2]["outcome"] == "executed_fail"
+    assert "no author declaration" in result["stages"][2]["detail"]
+    assert all(stage["outcome"] == "executed_fail" for stage in result["stages"][2:])
 
 
 
@@ -313,7 +474,7 @@ def test_capture_adapter_runs_for_scratch_out_without_promoted_refresh(
     lane_payload["schema_version"] = "bb.e4.lane_def.v2"
     lane_payload["status"] = "planned"
     lane_payload["capture"] = {"strategy": "adapter", "inputs": ["fixture"], "adapter": "north_star_package_capture"}
-    lane_payload["normalize"] = {"translator": "identity", "config": {}}
+    lane_payload["normalize"] = {"mode": "identity", "translator": "identity", "config": {}}
     lane_payload["compare"] = {"comparator": "semantic_replay_v1", "config": {}}
     (lane_def_dir / f"{lane_id}.yaml").write_text(json.dumps(lane_payload), encoding="utf-8")
     _write_inventory(inventory_path, [{"lane_id": lane_id, "config_id": config_id}])
@@ -366,7 +527,7 @@ def test_capture_adapter_scratch_out_requires_adapter_out_dir_support(
     lane_payload["schema_version"] = "bb.e4.lane_def.v2"
     lane_payload["status"] = "planned"
     lane_payload["capture"] = {"strategy": "adapter", "inputs": ["fixture"], "adapter": "north_star_package_capture"}
-    lane_payload["normalize"] = {"translator": "identity", "config": {}}
+    lane_payload["normalize"] = {"mode": "identity", "translator": "identity", "config": {}}
     lane_payload["compare"] = {"comparator": "semantic_replay_v1", "config": {}}
     (lane_def_dir / f"{lane_id}.yaml").write_text(json.dumps(lane_payload), encoding="utf-8")
     _write_inventory(inventory_path, [{"lane_id": lane_id, "config_id": config_id}])
@@ -416,7 +577,7 @@ def test_capture_adapter_promoted_run_refreshes_promoted_bindings(
         "assertions": [{"id": "fixture_assertion", "description": "fixture assertion"}],
     }
     lane_payload["capture"] = {"strategy": "adapter", "inputs": ["fixture"], "adapter": "north_star_package_capture"}
-    lane_payload["normalize"] = {"translator": "identity", "config": {}}
+    lane_payload["normalize"] = {"mode": "identity", "translator": "identity", "config": {}}
     lane_payload["compare"] = {"comparator": "semantic_replay_v1", "config": {}}
     (lane_def_dir / f"{lane_id}.yaml").write_text(json.dumps(lane_payload), encoding="utf-8")
     _write_inventory(inventory_path, [{"lane_id": lane_id, "config_id": config_id}])

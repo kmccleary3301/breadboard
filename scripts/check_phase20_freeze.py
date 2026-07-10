@@ -49,6 +49,18 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "packet": "I2",
         "sha256": "fbb7d1492c4f98ac8b38b2923d971b3faa51c921f70cee012d3903fcc29491ad",
     },
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v1.schema.json": {
+        "packet": "H2",
+        "sha256": "7dc69a05f574b291c73b44a18a502b0c1b1957119bbb734e6ae346a0060a66c1",
+        "class": "plan_mandated_evolution",
+        "ref": "plan §3 H2/H3 + AM17a/AM17b-r",
+    },
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json": {
+        "packet": "H2",
+        "sha256": "8625f6902e1a511428abc9bfea0129254a409ebfdf7c6f709b8dedf9bfcc9d2f",
+        "class": "plan_mandated_evolution",
+        "ref": "plan §3 H2/H3 + AM17a/AM17b-r",
+    },
 }
 
 # Phase 20 packet F4. These generated sources are known before the freeze begins.

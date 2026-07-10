@@ -47,6 +47,7 @@
   },
   "normalize": {
     "translator": "identity",
+    "mode": "identity",
     "config": {
       "projection": "oh_my_pi_p6_packet_v1",
       "raw_at": "2026-07-01T23:19:24Z",

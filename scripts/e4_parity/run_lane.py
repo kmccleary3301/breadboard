@@ -105,7 +105,15 @@ def _json_out_location(argv: Sequence[str]) -> tuple[int, str, bool]:
 
 def _resolve_repo_path(path_text: str) -> Path:
     path = Path(path_text)
-    return path if path.is_absolute() else ROOT / path
+    if path.is_absolute():
+        return path
+    if path.parts and path.parts[0] in {"docs_tmp", ROOT.name}:
+        workspace = next(
+            (parent for parent in ROOT.parents if (parent / "docs_tmp").is_dir()),
+            ROOT.parent,
+        )
+        return workspace / path
+    return ROOT / path
 
 
 def _retarget_json_out(argv: Sequence[str], out_dir: Path | None) -> tuple[list[str], Path, Path]:
@@ -177,6 +185,101 @@ def _capture_adapter_callable(lane_def: Mapping[str, Any]) -> Any | None:
     module_name, callable_name = impl.split(":", 1)
     module = importlib.import_module(module_name)
     return getattr(module, callable_name)
+
+
+def _translator_callable(lane_def: Mapping[str, Any]) -> tuple[str, Any]:
+    normalize = lane_def.get("normalize")
+    if not isinstance(normalize, Mapping):
+        raise LaneRunError(f"lane {lane_def['lane_id']!r} requires normalize declaration")
+    translator_id = normalize.get("translator")
+    if not isinstance(translator_id, str) or not translator_id:
+        raise LaneRunError(f"lane {lane_def['lane_id']!r} requires normalize.translator")
+    registry = load_registry("e4_adapters")
+    matches = [
+        entry
+        for entry in registry.get("entries", [])
+        if isinstance(entry, Mapping)
+        and entry.get("id") == translator_id
+        and entry.get("status") == "active"
+        and isinstance(entry.get("metadata"), Mapping)
+        and entry["metadata"].get("kind") == "translator"
+    ]
+    if len(matches) != 1:
+        raise LaneRunError(
+            f"lane {lane_def['lane_id']!r} normalize.translator {translator_id!r} "
+            "must name one active translator"
+        )
+    impl = matches[0]["metadata"].get("impl")
+    if not isinstance(impl, str) or ":" not in impl:
+        raise LaneRunError(f"normalize.translator {translator_id!r} has invalid impl {impl!r}")
+    module_name, callable_name = impl.split(":", 1)
+    module = importlib.import_module(module_name)
+    return translator_id, getattr(module, callable_name)
+
+
+def _normalize_report_path(lane_id: str, out_dir: Path | None) -> Path:
+    root = out_dir if out_dir is not None else ROOT / "tmp" / "e4_lane_runs"
+    return root / lane_id / "normalize_report.json"
+
+
+def _run_normalize(lane_def: Mapping[str, Any], out_dir: Path | None) -> dict[str, Any]:
+    lane_id = str(lane_def["lane_id"])
+    report_path = _normalize_report_path(lane_id, out_dir)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report: dict[str, Any] = {"ok": False, "lane_id": lane_id}
+    try:
+        normalize = lane_def.get("normalize")
+        if not isinstance(normalize, Mapping):
+            raise LaneRunError("normalize declaration is required")
+        mode = normalize.get("mode")
+        if not isinstance(mode, str) or not mode:
+            raise LaneRunError("normalize.mode is required explicitly")
+        translator_id, translator = _translator_callable(lane_def)
+        if mode not in {"identity", "translate"}:
+            raise LaneRunError(f"normalize.mode {mode!r} is unsupported")
+        if mode == "identity" and translator_id != "identity":
+            raise LaneRunError("normalize.mode 'identity' requires normalize.translator 'identity'")
+        capture = lane_def.get("capture")
+        inputs = capture.get("inputs") if isinstance(capture, Mapping) else None
+        if not isinstance(inputs, list) or not inputs or not all(isinstance(path, str) for path in inputs):
+            raise LaneRunError("normalize requires non-empty capture.inputs")
+        input_hashes: list[dict[str, str]] = []
+        for logical_path in inputs:
+            input_path = _resolve_repo_path(logical_path)
+            if not input_path.is_file():
+                raise LaneRunError(
+                    f"normalize input {logical_path!r} must be a regular file"
+                )
+            input_hashes.append({"path": logical_path, "sha256": sha256_file(input_path)})
+        config = normalize.get("config")
+        if config is not None and not isinstance(config, Mapping):
+            raise LaneRunError("normalize.config must be a mapping or null")
+        output = translator(list(inputs), config=config)
+        report.update(
+            ok=True,
+            mode=mode,
+            translator=translator_id,
+            input_hashes=input_hashes,
+            output=output,
+        )
+        returncode = 0
+        detail = "normalize executed successfully"
+    except Exception as exc:
+        report["detail"] = str(exc)
+        returncode = 1
+        detail = f"normalize execution failed: {exc}"
+    report_path.write_text(
+        json.dumps(report, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "stage": "normalize",
+        "lane_id": lane_id,
+        "returncode": returncode,
+        "output_path": _display_path(report_path),
+        "detail": detail,
+        "normalize_report": report,
+    }
 
 
 def _command_stage_argv(stage_name: str, lane_def: Mapping[str, Any], inventory_lane: Mapping[str, Any] | None) -> list[str] | None:
@@ -343,7 +446,10 @@ def _finalize_stage_result(
             detail=(
                 f"{result['stage']} executed successfully"
                 if returncode == 0
-                else f"{result['stage']} execution failed with return code {returncode}"
+                else str(
+                    result.get("detail")
+                    or f"{result['stage']} execution failed with return code {returncode}"
+                )
             ),
         )
     errors = check_stage_report(result, lane_def)
@@ -572,6 +678,16 @@ def run_lane(
                     executed=False,
                 )
             )
+            continue
+        if stage_name == "normalize":
+            normalize_result = _finalize_stage_result(
+                _run_normalize(lane_def, out_dir),
+                lane_def,
+                executed=True,
+            )
+            results.append(normalize_result)
+            if normalize_result["returncode"] != 0:
+                blocked_by = stage_name
             continue
         adapter_capture = _capture_adapter_callable(lane_def) if stage_name == "capture" else None
         if defer_derived_writes:

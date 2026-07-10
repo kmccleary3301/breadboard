@@ -124,10 +124,17 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "mode",
         "translator",
         "config"
       ],
       "properties": {
+        "mode": {
+          "enum": [
+            "identity",
+            "translate"
+          ]
+        },
         "translator": {
           "type": "string",
           "minLength": 1,

@@ -150,6 +150,7 @@ def check_stage_report(report: StageReport, manifest: Mapping[str, Any]) -> list
 
 STAGES_BY_KIND: dict[str, tuple[str, ...]] = {
     "target_support": ("capture", "normalize", "replay", "compare", "claim"),
+    "non_target_accounting": ("capture", "normalize", "replay", "compare", "claim"),
     "self_runtime": ("capture", "normalize", "replay", "compare", "claim"),
     "probe": ("capture", "claim"),
 }

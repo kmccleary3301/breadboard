@@ -18,6 +18,7 @@ capture:
   adapter: pi_p5_l2_capture
 normalize:
   translator: identity
+  mode: identity
   config: {}
 replay:
   session: null

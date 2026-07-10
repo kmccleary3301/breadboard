@@ -41,6 +41,7 @@
   },
   "normalize": {
     "translator": "identity",
+    "mode": "identity",
     "config": {
       "record_builders": [
         {

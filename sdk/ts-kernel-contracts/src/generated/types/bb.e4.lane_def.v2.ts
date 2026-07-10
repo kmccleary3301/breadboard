@@ -27,6 +27,7 @@ export type E4LaneDefV2 = {
     adapter?: string | null;
   };
   normalize: {
+    mode: "identity" | "translate";
     translator: string;
     config: FreeformObject;
   };

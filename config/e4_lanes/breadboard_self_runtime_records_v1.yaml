@@ -16,6 +16,7 @@ capture:
   workspace_template: null
 normalize:
   translator: identity
+  mode: identity
   config: {}
 replay:
   session: null

@@ -27,6 +27,7 @@
   },
   "normalize": {
     "translator": "identity",
+    "mode": "identity",
     "config": {}
   },
   "replay": {
