@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 235,
+ "points_done": 250,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:25:45Z",
+ "updated_at_utc": "2026-07-10T21:31:12Z",
  "items": [
   {
    "id": "A1",
@@ -444,50 +444,146 @@
    "ws": "D",
    "title": "product-spine CI job",
    "weight": 30,
-   "status": "todo",
+   "status": "blocked",
    "deps": [],
-   "evidence": [],
-   "notes": "AM3: D1 ACCEPT explicitly includes ci.yml product-spine running scripts/check_phase20_freeze.py; verifier confirms the step exists and passes.",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/D1/implementer.json",
+     "bound_sha": "6a9869f0911e"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "c11add8c1a11"
+    }
+   ],
+   "notes": "AM3: D1 ACCEPT explicitly includes ci.yml product-spine running scripts/check_phase20_freeze.py; verifier confirms the step exists and passes. [pending_integration] CI wiring merged+verified; green product-spine run URL requires a pushed PR run; 4 red product-command groups are PRE-EXISTING (exec-verified identical at base 82411af2); AM3 freeze wiring in place.",
+   "verifiers": [
+    {
+     "agent": "VerifyWsDStatic",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+    },
+    {
+     "agent": "VerifyWsDExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+    }
+   ]
   },
   {
    "id": "D2",
    "ws": "D",
    "title": "e4-battery nightly workflow",
    "weight": 20,
-   "status": "todo",
+   "status": "blocked",
    "deps": [
     "D1"
    ],
-   "evidence": [],
-   "notes": "",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/D2/implementer.json",
+     "bound_sha": "af3b24580a45"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "c11add8c1a11"
+    }
+   ],
+   "notes": "[pending_integration] Nightly battery wiring merged+verified; green dispatch URL pending integration; battery/fixed-point reds are PRE-EXISTING (exec-verified).",
+   "verifiers": [
+    {
+     "agent": "VerifyWsDStatic",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+    },
+    {
+     "agent": "VerifyWsDExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+    }
+   ]
   },
   {
    "id": "D3",
    "ws": "D",
    "title": "touched-path triggers",
    "weight": 15,
-   "status": "todo",
+   "status": "blocked",
    "deps": [
     "D1"
    ],
-   "evidence": [],
-   "notes": "",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/D3/implementer.json",
+     "bound_sha": "8424d4623954"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "c11add8c1a11"
+    }
+   ],
+   "notes": "[blocked_missing_repo_admin_credentials] Path filters + job graph merged+verified; required-check activation needs GitHub Administration write permission (gh api PUT recorded in evidence); activation or signed waiver owned by D5. No enforcement claimed.",
+   "verifiers": [
+    {
+     "agent": "VerifyWsDStatic",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+    },
+    {
+     "agent": "VerifyWsDExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+    }
+   ]
   },
   {
    "id": "D4",
    "ws": "D",
    "title": "canonical exporter everywhere in ci.yml",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "D1"
    ],
-   "evidence": [],
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/D4/implementer.json",
+     "bound_sha": "9b4c486773fb"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "c11add8c1a11"
+    }
+   ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsDStatic",
+     "lens": "anti_scope+static",
+     "verdict": "pass",
+     "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+    },
+    {
+     "agent": "VerifyWsDExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
+    }
+   ]
   },
   {
    "id": "D5",
