@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 250,
+ "points_done": 315,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:37:49Z",
+ "updated_at_utc": "2026-07-10T21:48:34Z",
  "items": [
   {
    "id": "A1",
@@ -604,13 +604,44 @@
    "ws": "E",
    "title": "tier registry schema+file committed",
    "weight": 25,
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "B1"
    ],
-   "evidence": [],
-   "notes": "RED @ 2f54eea1 (verify): tier invariant runs outside git ls-files snapshot; consumer check uses Path.exists() \u2014 untracked consumer satisfies invariant (product_defect); fix routed.",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/E1/implementer.json",
+     "bound_sha": "5297124121f8"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "071dc1c98d7c"
+    }
+   ],
+   "notes": "RED @ 2f54eea1 (verify): tier invariant runs outside git ls-files snapshot; consumer check uses Path.exists() \u2014 untracked consumer satisfies invariant (product_defect); fix routed. done after red->fix->pass: E1fix 1e62e36d/071dc1c9 derives tier invariant from tracked snapshot; untracked consumer rejected.",
+   "verifiers": [
+    {
+     "agent": "VerifyWsFStatic",
+     "lens": "anti_scope+static",
+     "verdict": "fail->superseded",
+     "sha": "2f54eea1aaa9"
+    },
+    {
+     "agent": "VerifyWsFExec",
+     "lens": "gate_execution",
+     "verdict": "fail->superseded",
+     "sha": "2f54eea1aaa9"
+    },
+    {
+     "agent": "ReverifyWsF",
+     "lens": "gate_execution+static",
+     "verdict": "pass",
+     "sha": "071dc1c98d7c853a4c6051fa67d304fa38f1f8b4",
+     "patch_id_bound": true
+    }
+   ]
   },
   {
    "id": "E2",
@@ -687,27 +718,89 @@
    "ws": "F",
    "title": "lane_manifest schema committed verbatim",
    "weight": 20,
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "B1",
     "C1"
    ],
-   "evidence": [],
-   "notes": "RED @ acef713e (verify): AM7 digest rejection in load_lane_manifest() but validate_lane() entry calls load_lane_def() \u2014 schema error masks digest rejection (product_defect); fix routed.",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/F1/implementer.json",
+     "bound_sha": "a5ef522c7f2c"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "071dc1c98d7c"
+    }
+   ],
+   "notes": "RED @ acef713e (verify): AM7 digest rejection in load_lane_manifest() but validate_lane() entry calls load_lane_def() \u2014 schema error masks digest rejection (product_defect); fix routed. done after red->fix->pass: F1fix c692e015/772f638f wires digest rejection into validate_lane entry; AM7 negative now yields digest error pre-schema.",
+   "verifiers": [
+    {
+     "agent": "VerifyWsFStatic",
+     "lens": "anti_scope+static",
+     "verdict": "fail->superseded",
+     "sha": "acef713ec90a"
+    },
+    {
+     "agent": "VerifyWsFExec",
+     "lens": "gate_execution",
+     "verdict": "fail->superseded",
+     "sha": "acef713ec90a"
+    },
+    {
+     "agent": "ReverifyWsF",
+     "lens": "gate_execution+static",
+     "verdict": "pass",
+     "sha": "071dc1c98d7c853a4c6051fa67d304fa38f1f8b4",
+     "patch_id_bound": true
+    }
+   ]
   },
   {
    "id": "F2",
    "ws": "F",
    "title": "lane_lock schema committed verbatim",
    "weight": 20,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "F1"
    ],
-   "evidence": [],
-   "notes": "Exec lens PASS @ d494b90e; merge blocked pending F1/E1 fixes (same packet).",
-   "verifiers": []
+   "evidence": [
+    {
+     "kind": "implementer_report",
+     "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/phase_20/evidence/F2/implementer.json",
+     "bound_sha": "7c7007d7fca0"
+    },
+    {
+     "kind": "verifier_verdicts",
+     "ref": "ledger.verifiers[]",
+     "bound_sha": "071dc1c98d7c"
+    }
+   ],
+   "notes": "Exec lens PASS @ d494b90e; merge blocked pending F1/E1 fixes (same packet). exec+static+reverify green; B2 battery preserved.",
+   "verifiers": [
+    {
+     "agent": "VerifyWsFStatic",
+     "lens": "anti_scope+static",
+     "verdict": "fail->superseded",
+     "sha": "d494b90ec446"
+    },
+    {
+     "agent": "VerifyWsFExec",
+     "lens": "gate_execution",
+     "verdict": "pass",
+     "sha": "d494b90ec446"
+    },
+    {
+     "agent": "ReverifyWsF",
+     "lens": "gate_execution+static",
+     "verdict": "pass",
+     "sha": "071dc1c98d7c853a4c6051fa67d304fa38f1f8b4",
+     "patch_id_bound": true
+    }
+   ]
   },
   {
    "id": "F3",
