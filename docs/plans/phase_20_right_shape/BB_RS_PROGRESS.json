@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 165,
+ "points_done": 185,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T21:15:44Z",
+ "updated_at_utc": "2026-07-10T21:18:01Z",
  "items": [
   {
    "id": "A1",
@@ -211,7 +211,7 @@
    "ws": "B",
    "title": "freeze gate script + CI wiring",
    "weight": 20,
-   "status": "in_progress",
+   "status": "done",
    "deps": [
     "B1"
    ],
@@ -227,13 +227,19 @@
      "sha": "de76cf2b"
     }
    ],
-   "notes": "Implementer ran all 4 negative tests red; verifier independently reproduced 2 (new $id, lane kind edit). AM3: 'wire into product-spine' clause owned by D1 (see SPEC_AMENDMENTS.md#amendment-3); D1's verifier must confirm the freeze step in ci.yml. REOPENED: post-merge integration smoke @ 0d127901 exit=1 - script inventories untracked node_modules package.json files (product_defect); fix routed to implementer; tracked-files-only + new negative test required; re-verify pending.",
+   "notes": "Implementer ran all 4 negative tests red; verifier independently reproduced 2 (new $id, lane kind edit). AM3: 'wire into product-spine' clause owned by D1 (see SPEC_AMENDMENTS.md#amendment-3); D1's verifier must confirm the freeze step in ci.yml. REOPENED: post-merge integration smoke @ 0d127901 exit=1 - script inventories untracked node_modules package.json files (product_defect); fix routed to implementer; tracked-files-only + new negative test required; re-verify pending. FIXED+re-verified: inventories tracked-files-only from single git ls-files snapshot; baseline unchanged; integration smoke green post-merge.",
    "verifiers": [
     {
      "agent": "VerifyWsB(reviewer)",
      "lens": "correctness",
      "verdict": "pass",
      "verdict_ref": "verdict bound to de76cf2b4c003535bc5e4a7b7e96df1a7e86b235; 4.10 byte-identical; clean gate 0; 2 negatives reproduced red; baseline exact (148 schema ids, 14 sdk pkgs, 21 lanes, 2 kinds)"
+    },
+    {
+     "agent": "ReverifyWsB2",
+     "lens": "gate_execution+static",
+     "verdict": "pass",
+     "sha": "67b32ab64146f4942aa1cca908f4ae6991a0b739"
     }
    ]
   },
