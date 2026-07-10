@@ -13,11 +13,6 @@ export type AttachmentUploadResponse = {
   readonly "attachments": ReadonlyArray<AttachmentHandle>
 }
 
-export type Body_upload_attachments_sessions__session_id__attachments_post = {
-  readonly "files": ReadonlyArray<string>
-  readonly "metadata"?: string | null
-}
-
 export type Body_upload_attachments_v1_sessions__session_id__attachments_post = {
   readonly "files": ReadonlyArray<string>
   readonly "metadata"?: string | null
@@ -47,6 +42,7 @@ export type E4CatalogBinding = {
   readonly "schema_version": string
   readonly "segments": ReadonlyArray<E4CatalogBindingSegment>
   readonly "segments_hash": string
+  readonly "stable_entries_hash": string
 }
 
 export type E4CatalogBindingSegment = {
@@ -176,6 +172,7 @@ export type E4ReverifyResult = {
 }
 
 export type E4SchemaInfo = {
+  readonly "pack": string
   readonly "path": string
   readonly "schema_id": string
   readonly "schema_version"?: string | null

@@ -19,11 +19,17 @@ interface ClientRoute {
   readonly path: string
 }
 
+interface OpenApiRouteTypeRefs {
+  readonly request: Set<string>
+  readonly response: Set<string>
+}
+
 const scriptDir = dirname(fileURLToPath(import.meta.url))
 const tuiRoot = resolve(scriptDir, "..")
 const repoRoot = resolve(tuiRoot, "..")
 const openApiPath = resolve(repoRoot, "docs/contracts/cli_bridge/openapi.json")
 const clientPath = resolve(tuiRoot, "src/api/client.ts")
+const typesPath = resolve(tuiRoot, "src/api/types.ts")
 const generatedDir = resolve(tuiRoot, "src/api/generated")
 const routeManifestPath = resolve(generatedDir, "client-route-manifest.json")
 const openApiTypesPath = resolve(generatedDir, "openapi-types.ts")
@@ -36,13 +42,39 @@ const normalizeOpenApiPath = (path: string): string => path.replace(/\{[^}]+\}/g
 
 const extractClientRoutes = (source: string): ClientRoute[] => {
   const routes = new Map<string, ClientRoute>()
-  const callPattern = /requestWithConfig<[^>]+>\(config,\s*([`"])([\s\S]*?)\1,\s*"(GET|POST|DELETE)"/g
+  const callPattern = /requestWithConfig<([\s\S]*?)>\(config,\s*([`"])([\s\S]*?)\2,\s*"(GET|POST|DELETE)"/g
   for (const match of source.matchAll(callPattern)) {
-    const method = match[3] as ClientRoute["method"]
+    const method = match[4] as ClientRoute["method"]
+    const path = normalizeTemplatePath(match[3])
+    routes.set(`${method} ${path}`, { method, path })
+  }
+  return [...routes.values()].sort((left, right) => left.path.localeCompare(right.path) || left.method.localeCompare(right.method))
+}
+
+const extractDirectFetchRoutes = (source: string): ClientRoute[] => {
+  const routes = new Map<string, ClientRoute>()
+  const directFetchPattern = /buildUrl\(config\.baseUrl,\s*([`"])([\s\S]*?)\1/g
+  for (const match of source.matchAll(directFetchPattern)) {
+    const window = source.slice(match.index ?? 0, (match.index ?? 0) + 1800)
+    const methodMatch = window.match(/\bmethod:\s*"(GET|POST|DELETE)"/)
+    if (!methodMatch) continue
+    const method = methodMatch[1] as ClientRoute["method"]
     const path = normalizeTemplatePath(match[2])
     routes.set(`${method} ${path}`, { method, path })
   }
   return [...routes.values()].sort((left, right) => left.path.localeCompare(right.path) || left.method.localeCompare(right.method))
+}
+
+const requiredDirectFetchRoutes: Record<string, true> = {
+  "POST /v1/sessions/{}/attachments": true,
+}
+
+const assertRequiredDirectFetchRoutes = (routes: readonly ClientRoute[]): void => {
+  const discovered = new Set(routes.map((route) => `${route.method} ${route.path}`))
+  const missing = Object.keys(requiredDirectFetchRoutes).filter((route) => !discovered.has(route))
+  if (missing.length > 0) {
+    throw new Error(`Required direct-fetch client routes are missing: ${missing.join(", ")}`)
+  }
 }
 
 const extensionClientRoutes: Record<string, true> = {
@@ -79,6 +111,105 @@ const assertNoLegacyRlClientRoutes = (routes: readonly ClientRoute[]): void => {
   const legacyRlRoutes = routes.filter((route) => route.path.startsWith("/rl/"))
   if (legacyRlRoutes.length > 0) {
     throw new Error(`Legacy /rl client routes remain: ${legacyRlRoutes.map((route) => `${route.method} ${route.path}`).join(", ")}`)
+  }
+}
+
+const generatedSchemaTypeNames = (openapi: OpenApiDocument): Set<string> =>
+  new Set(Object.keys(openapi.components?.schemas ?? {}).map(schemaTypeName))
+
+const extractGeneratedTypeImports = (source: string): Set<string> => {
+  const match = source.match(/import type \{([\s\S]*?)\} from "\.\/generated\/openapi-types\.js"/)
+  if (!match) return new Set()
+  return new Set(
+    match[1]
+      .split("\n")
+      .map((line) => line.trim().replace(/,$/, ""))
+      .filter(Boolean)
+      .map((entry) => entry.split(/\s+as\s+/)[0]?.trim())
+      .filter((entry): entry is string => Boolean(entry)),
+  )
+}
+
+const typeIdentifiers = (typeExpression: string): string[] =>
+  [...typeExpression.matchAll(/\b[A-Z][A-Za-z0-9_]*\b/g)].map((match) => match[0])
+
+const assertSchemaDtoDefinitionsDeleted = (sources: readonly { readonly label: string; readonly source: string }[], openapi: OpenApiDocument): void => {
+  const schemaNames = generatedSchemaTypeNames(openapi)
+  const collisions: string[] = []
+  for (const { label, source } of sources) {
+    for (const match of source.matchAll(/^export interface ([A-Za-z_$][A-Za-z0-9_$]*)\b/gm)) {
+      if (schemaNames.has(match[1])) collisions.push(`${label}:${match[1]}`)
+    }
+  }
+  if (collisions.length > 0) {
+    throw new Error(`Schema-derived DTO interfaces must come from generated OpenAPI types: ${collisions.join(", ")}`)
+  }
+}
+
+const collectSchemaTypeRefs = (value: unknown, refs = new Set<string>()): Set<string> => {
+  if (value === null || typeof value !== "object") return refs
+  if (Array.isArray(value)) {
+    for (const item of value) collectSchemaTypeRefs(item, refs)
+    return refs
+  }
+  const record = value as Record<string, unknown>
+  if (typeof record.$ref === "string") refs.add(schemaTypeName(record.$ref.split("/").at(-1) ?? "unknown"))
+  for (const child of Object.values(record)) collectSchemaTypeRefs(child, refs)
+  return refs
+}
+
+const assertOpenApiRoutesUseGeneratedTypes = (source: string, openapi: OpenApiDocument): void => {
+  const openApiRouteRefs = new Map<string, OpenApiRouteTypeRefs>()
+  for (const [path, operations] of Object.entries(openapi.paths)) {
+    for (const [method, operation] of Object.entries(operations)) {
+      const request = collectSchemaTypeRefs(operation.requestBody)
+      const response = new Set<string>()
+      for (const [status, responseSchema] of Object.entries(operation.responses ?? {})) {
+        if (/^2\d\d$/.test(status)) collectSchemaTypeRefs(responseSchema, response)
+      }
+      if (request.size > 0 || response.size > 0) {
+        openApiRouteRefs.set(`${method.toUpperCase()} ${normalizeOpenApiPath(path)}`, { request, response })
+      }
+    }
+  }
+  const generatedImports = extractGeneratedTypeImports(source)
+  const missing: string[] = []
+  const usesExpectedType = (value: string, expected: ReadonlySet<string>): boolean =>
+    typeIdentifiers(value).some((identifier) => expected.has(identifier) && generatedImports.has(identifier))
+  const expectedNames = (expected: ReadonlySet<string>): string => [...expected].sort().join("|")
+
+  const callPattern = /requestWithConfig<([\s\S]*?)>\(config,\s*([`"])([\s\S]*?)\2,\s*"(GET|POST|DELETE)"/g
+  for (const match of source.matchAll(callPattern)) {
+    const responseType = match[1]
+    const route = `${match[4]} ${normalizeTemplatePath(match[3])}`
+    const expected = openApiRouteRefs.get(route)
+    if (expected === undefined) continue
+    const window = source.slice(Math.max(0, (match.index ?? 0) - 500), (match.index ?? 0) + match[0].length + 500)
+    if (expected.request.size > 0 && !usesExpectedType(window, expected.request)) {
+      missing.push(`${route} request expected one of ${expectedNames(expected.request)}`)
+    }
+    if (expected.response.size > 0 && !usesExpectedType(responseType, expected.response)) {
+      missing.push(`${route} response -> ${responseType.trim()} (expected one of ${expectedNames(expected.response)})`)
+    }
+  }
+
+  const directFetchPattern = /buildUrl\(config\.baseUrl,\s*([`"])([\s\S]*?)\1/g
+  for (const match of source.matchAll(directFetchPattern)) {
+    const window = source.slice(match.index ?? 0, (match.index ?? 0) + 2200)
+    const methodMatch = window.match(/\bmethod:\s*"(GET|POST|DELETE)"/)
+    if (!methodMatch) continue
+    const route = `${methodMatch[1]} ${normalizeTemplatePath(match[2])}`
+    const expected = openApiRouteRefs.get(route)
+    if (expected === undefined) continue
+    if (expected.request.size > 0 && !usesExpectedType(window, expected.request)) {
+      missing.push(`${route} direct-fetch request expected one of ${expectedNames(expected.request)}`)
+    }
+    if (expected.response.size > 0 && !usesExpectedType(window, expected.response)) {
+      missing.push(`${route} direct-fetch response expected one of ${expectedNames(expected.response)}`)
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(`OpenAPI-backed client routes must reference generated DTO types: ${missing.join(", ")}`)
   }
 }
 
@@ -140,9 +271,20 @@ const maybeWrite = async (path: string, content: string): Promise<void> => {
 
 const openapi = JSON.parse(await readFile(openApiPath, "utf8")) as OpenApiDocument
 const clientSource = await readFile(clientPath, "utf8")
+const typesSource = await readFile(typesPath, "utf8")
 const routes = extractClientRoutes(clientSource)
+const directFetchRoutes = extractDirectFetchRoutes(clientSource)
+assertRequiredDirectFetchRoutes(directFetchRoutes)
 assertNoLegacyRlClientRoutes(routes)
-assertRoutesHaveOpenApiOwners(routes, openapi)
+assertRoutesHaveOpenApiOwners([...routes, ...directFetchRoutes], openapi)
+assertSchemaDtoDefinitionsDeleted(
+  [
+    { label: "src/api/client.ts", source: clientSource },
+    { label: "src/api/types.ts", source: typesSource },
+  ],
+  openapi,
+)
+assertOpenApiRoutesUseGeneratedTypes(clientSource, openapi)
 await mkdir(generatedDir, { recursive: true })
 await maybeWrite(routeManifestPath, emitRouteManifest(routes))
 await maybeWrite(openApiTypesPath, emitOpenApiTypes(openapi))

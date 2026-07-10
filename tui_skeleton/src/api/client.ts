@@ -1,35 +1,39 @@
 import { loadAppConfig, type AppConfig } from "../config/appConfig.js"
 import { resolveAuthToken } from "../config/authTokenProvider.js"
 import type {
+  AttachmentHandle,
+  AttachmentUploadResponse,
+  Body_upload_attachments_v1_sessions__session_id__attachments_post,
   ErrorResponse,
   SessionCreateRequest,
   SessionCreateResponse,
-  SessionEvent,
   SessionSummary,
-  SessionKernelRecordList,
   SessionFileInfo,
   SessionFileContent,
+  SessionInputRequest,
   SessionInputResponse,
+  SessionCommandRequest,
   SessionCommandResponse,
-  HealthResponse,
-  EngineStatusResponse,
   ModelCatalogResponse,
   SkillCatalogResponse,
   CTreeSnapshotResponse,
-  CTreeTreeResponse,
-  CTreeDiskArtifactsResponse,
-  CTreeEventsResponse,
   ProviderAuthAttachRequest,
   ProviderAuthAttachResponse,
   ProviderAuthDetachRequest,
   ProviderAuthDetachResponse,
   ProviderAuthStatusResponse,
+  RLRunArtifactListResponse,
+  RLRunAuditResponse,
+  RLRunCancelRequest,
+  RLRunReplayResponse,
+  RLRunStatusResponse,
+  RLRunSubmitRequest,
+  RLRunSubmitResponse,
   E4CatalogPage,
   E4CatalogBinding,
   E4ClaimDetail,
   E4ClaimList,
   E4CoverageMatrix,
-  E4ApiErrorEnvelope,
   E4Health,
   E4LaneDetail,
   E4LaneList,
@@ -39,11 +43,16 @@ import type {
   E4ReverifyResult,
   E4SchemaList,
   RegistryList,
-  RlRunSubmitRequest,
-  RlRunStatus,
-  RlStreamEvent,
-  RlArtifact,
-  RlAuditReport,
+} from "./generated/openapi-types.js"
+import type {
+  SessionEvent,
+  SessionKernelRecordList,
+  HealthResponse,
+  EngineStatusResponse,
+  CTreeTreeResponse,
+  CTreeDiskArtifactsResponse,
+  CTreeEventsResponse,
+  E4ApiErrorEnvelope,
 } from "./types.js"
 
 export class ApiError extends Error {
@@ -74,12 +83,6 @@ export interface AttachmentUploadPayload {
   readonly filename?: string
 }
 
-export interface AttachmentHandle {
-  readonly id: string
-  readonly filename?: string
-  readonly mime?: string
-  readonly size_bytes?: number
-}
 
 export interface ReadSessionFileOptions {
   readonly mode?: "cat" | "snippet"
@@ -101,8 +104,8 @@ export interface ApiClientInstance {
   listSessions(): Promise<SessionSummary[]>
   getSession(sessionId: string): Promise<SessionSummary>
   listSessionRecords(sessionId: string, options?: { readonly schemaVersion?: string; readonly offset?: number; readonly limit?: number }): Promise<SessionKernelRecordList>
-  postInput(sessionId: string, body: { content: string; attachments?: ReadonlyArray<string> }): Promise<SessionInputResponse>
-  postCommand(sessionId: string, body: Record<string, unknown>): Promise<SessionCommandResponse>
+  postInput(sessionId: string, body: SessionInputRequest): Promise<SessionInputResponse>
+  postCommand(sessionId: string, body: SessionCommandRequest): Promise<SessionCommandResponse>
   deleteSession(sessionId: string): Promise<void>
   listSessionFiles(sessionId: string, path?: string): Promise<SessionFileInfo[]>
   readSessionFile(sessionId: string, filePath: string, options?: ReadSessionFileOptions): Promise<SessionFileContent>
@@ -126,13 +129,13 @@ export interface ApiClientInstance {
   getE4Coverage(targetFamily: string): Promise<E4CoverageMatrix>
   listRegistries(): Promise<RegistryList>
   getRegistry(registryId: string): Promise<Record<string, unknown>>
-  submitRlRun(payload: RlRunSubmitRequest): Promise<RlRunStatus>
-  getRlRun(runId: string, tenantId: string, workspaceId: string): Promise<RlRunStatus>
+  submitRlRun(payload: RLRunSubmitRequest): Promise<RLRunSubmitResponse>
+  getRlRun(runId: string, tenantId: string, workspaceId: string): Promise<RLRunStatusResponse>
   getRlRunEvents(runId: string, tenantId: string, workspaceId: string, fromSequence?: number): Promise<string>
-  cancelRlRun(runId: string, tenantId: string, workspaceId: string, reason?: string): Promise<RlRunStatus>
-  listRlArtifacts(runId: string, tenantId: string, workspaceId: string): Promise<{ readonly run_id: string; readonly artifacts: RlArtifact[] }>
-  replayRlArtifact(runId: string, artifactId: string, tenantId: string, workspaceId: string): Promise<{ readonly available: boolean; readonly artifact_id: string; readonly replay_path?: string; readonly sha256?: string; readonly reason?: string }>
-  getRlAudit(runId: string, tenantId: string, workspaceId: string): Promise<RlAuditReport>
+  cancelRlRun(runId: string, tenantId: string, workspaceId: string, reason?: string): Promise<RLRunStatusResponse>
+  listRlArtifacts(runId: string, tenantId: string, workspaceId: string): Promise<RLRunArtifactListResponse>
+  replayRlArtifact(runId: string, artifactId: string, tenantId: string, workspaceId: string): Promise<RLRunReplayResponse>
+  getRlAudit(runId: string, tenantId: string, workspaceId: string): Promise<RLRunAuditResponse>
   providerAuthAttach(body: ProviderAuthAttachRequest): Promise<ProviderAuthAttachResponse>
   providerAuthDetach(body: ProviderAuthDetachRequest): Promise<ProviderAuthDetachResponse>
   providerAuthStatus(): Promise<ProviderAuthStatusResponse>
@@ -261,9 +264,9 @@ export const createApiClient = (config: ApiClientConfig): ApiClientInstance => (
         limit: options?.limit,
       },
     }),
-  postInput: (sessionId: string, body: { content: string; attachments?: ReadonlyArray<string> }) =>
+  postInput: (sessionId: string, body: SessionInputRequest) =>
     requestWithConfig<SessionInputResponse>(config, `/v1/sessions/${sessionId}/input`, "POST", { body }),
-  postCommand: (sessionId: string, body: Record<string, unknown>) =>
+  postCommand: (sessionId: string, body: SessionCommandRequest) =>
     requestWithConfig<SessionCommandResponse>(config, `/v1/sessions/${sessionId}/command`, "POST", { body }),
   deleteSession: (sessionId: string) => requestWithConfig<void>(config, `/v1/sessions/${sessionId}`, "DELETE"),
   listSessionFiles: (sessionId: string, path?: string) =>
@@ -378,20 +381,20 @@ export const createApiClient = (config: ApiClientConfig): ApiClientInstance => (
   listRegistries: () => requestWithConfig<RegistryList>(config, "/v1/registries", "GET"),
   getRegistry: (registryId: string) =>
     requestWithConfig<Record<string, unknown>>(config, `/v1/registries/${registryId}`, "GET"),
-  submitRlRun: (payload: RlRunSubmitRequest) =>
-    requestWithConfig<RlRunStatus>(config, "/v1/rl/runs", "POST", { body: payload }),
+  submitRlRun: (payload: RLRunSubmitRequest) =>
+    requestWithConfig<RLRunSubmitResponse>(config, "/v1/rl/runs", "POST", { body: payload }),
   getRlRun: (runId: string, tenantId: string, workspaceId: string) =>
-    requestWithConfig<RlRunStatus>(config, `/v1/rl/runs/${runId}`, "GET", { query: { tenant_id: tenantId, workspace_id: workspaceId } }),
+    requestWithConfig<RLRunStatusResponse>(config, `/v1/rl/runs/${runId}`, "GET", { query: { tenant_id: tenantId, workspace_id: workspaceId } }),
   getRlRunEvents: (runId: string, tenantId: string, workspaceId: string, fromSequence = 0) =>
     requestWithConfig<string>(config, `/v1/rl/runs/${runId}/events`, "GET", { query: { tenant_id: tenantId, workspace_id: workspaceId, from_sequence: fromSequence }, responseType: "text" }),
   cancelRlRun: (runId: string, tenantId: string, workspaceId: string, reason?: string) =>
-    requestWithConfig<RlRunStatus>(config, `/v1/rl/runs/${runId}/cancel`, "POST", { body: { tenant_id: tenantId, workspace_id: workspaceId, reason } }),
+    requestWithConfig<RLRunStatusResponse>(config, `/v1/rl/runs/${runId}/cancel`, "POST", { body: { tenant_id: tenantId, workspace_id: workspaceId, reason } satisfies RLRunCancelRequest }),
   listRlArtifacts: (runId: string, tenantId: string, workspaceId: string) =>
-    requestWithConfig<{ readonly run_id: string; readonly artifacts: RlArtifact[] }>(config, `/v1/rl/runs/${runId}/artifacts`, "GET", { query: { tenant_id: tenantId, workspace_id: workspaceId } }),
+    requestWithConfig<RLRunArtifactListResponse>(config, `/v1/rl/runs/${runId}/artifacts`, "GET", { query: { tenant_id: tenantId, workspace_id: workspaceId } }),
   replayRlArtifact: (runId: string, artifactId: string, tenantId: string, workspaceId: string) =>
-    requestWithConfig<{ readonly available: boolean; readonly artifact_id: string; readonly replay_path?: string; readonly sha256?: string; readonly reason?: string }>(config, `/v1/rl/runs/${runId}/replay/${artifactId}`, "GET", { query: { tenant_id: tenantId, workspace_id: workspaceId } }),
+    requestWithConfig<RLRunReplayResponse>(config, `/v1/rl/runs/${runId}/replay/${artifactId}`, "GET", { query: { tenant_id: tenantId, workspace_id: workspaceId } }),
   getRlAudit: (runId: string, tenantId: string, workspaceId: string) =>
-    requestWithConfig<RlAuditReport>(config, `/v1/rl/runs/${runId}/audit`, "GET", { query: { tenant_id: tenantId, workspace_id: workspaceId } }),
+    requestWithConfig<RLRunAuditResponse>(config, `/v1/rl/runs/${runId}/audit`, "GET", { query: { tenant_id: tenantId, workspace_id: workspaceId } }),
   providerAuthAttach: (body: ProviderAuthAttachRequest) =>
     requestWithConfig<ProviderAuthAttachResponse>(config, "/v1/provider-auth/attach", "POST", { body }),
   providerAuthDetach: (body: ProviderAuthDetachRequest) =>
@@ -403,14 +406,18 @@ export const createApiClient = (config: ApiClientConfig): ApiClientInstance => (
   uploadAttachments: async (sessionId: string, attachments: ReadonlyArray<AttachmentUploadPayload>) => {
     if (attachments.length === 0) return []
     const url = buildUrl(config.baseUrl, `/v1/sessions/${sessionId}/attachments`)
+    const uploadFields = {
+      files: "files",
+      metadata: "metadata",
+    } as const satisfies { readonly [Field in keyof Body_upload_attachments_v1_sessions__session_id__attachments_post]-?: Field }
     const form = new FormData()
     attachments.forEach((attachment, index) => {
       const buffer = Buffer.from(attachment.base64, "base64")
       const blob = new Blob([buffer], { type: attachment.mime || "application/octet-stream" })
       const filename = attachment.filename ?? `attachment-${index + 1}.bin`
-      form.append("files", blob, filename)
+      form.append(uploadFields.files, blob, filename)
     })
-    form.append("metadata", JSON.stringify({ source: "clipboard" }))
+    form.append(uploadFields.metadata, JSON.stringify({ source: "clipboard" }))
     const headers: Record<string, string> = {}
     const controller = new AbortController()
     const timeoutMs = config.requestTimeoutMs ?? 30_000
@@ -432,8 +439,8 @@ export const createApiClient = (config: ApiClientConfig): ApiClientInstance => (
       if (!isJson) {
         return []
       }
-      const payload = (await response.json()) as { attachments?: AttachmentHandle[] }
-      return payload.attachments ?? []
+      const payload = (await response.json()) as AttachmentUploadResponse
+      return [...payload.attachments]
     } finally {
       clearTimeout(timeout)
     }
@@ -504,7 +511,9 @@ export type {
   ErrorResponse,
   SessionFileInfo,
   SessionFileContent,
+  SessionInputRequest,
   SessionInputResponse,
+  SessionCommandRequest,
   SessionCommandResponse,
   HealthResponse,
   EngineStatusResponse,
@@ -519,9 +528,11 @@ export type {
   ProviderAuthDetachRequest,
   ProviderAuthDetachResponse,
   ProviderAuthStatusResponse,
-  RlRunSubmitRequest,
-  RlRunStatus,
-  RlStreamEvent,
-  RlArtifact,
-  RlAuditReport,
+  RLRunArtifactListResponse,
+  RLRunAuditResponse,
+  RLRunCancelRequest,
+  RLRunReplayResponse,
+  RLRunStatusResponse,
+  RLRunSubmitRequest,
+  RLRunSubmitResponse,
 }
