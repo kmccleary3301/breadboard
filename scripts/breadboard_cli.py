@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
+import shutil
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 EXIT_OK = 0
 EXIT_VALIDATION_FAILURE = 2
@@ -13,13 +16,159 @@ EXIT_RUNTIME_FAILURE = 4
 EXIT_LOCK_DRIFT = 5
 
 
-def _not_implemented(command: str, item: str) -> int:
-    """Report a planned command whose implementation belongs to a later packet."""
-    print(
-        f"bbh {command} is not implemented yet; see Phase 20 item {item}.",
-        file=sys.stderr,
+def _repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _print_error(message: str) -> None:
+    print(f"bbh: {message}", file=sys.stderr)
+
+
+def _copy_bundle(files: Sequence[tuple[Path, Path]]) -> int:
+    conflicts = [destination for _, destination in files if destination.exists()]
+    if conflicts:
+        _print_error(
+            "refusing to overwrite existing path(s): "
+            + ", ".join(str(path) for path in conflicts)
+        )
+        return EXIT_VALIDATION_FAILURE
+    try:
+        for source, destination in files:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, destination)
+    except OSError as exc:
+        _print_error(str(exc))
+        return EXIT_RESOLUTION_FAILURE
+    return EXIT_OK
+
+
+def _harness_init(args: argparse.Namespace) -> int:
+    root = _repo_root()
+    out_dir = Path(args.out or ".").expanduser()
+    source_dir = root / "agent_configs" / "templates"
+    files = (
+        (
+            source_dir / "minimal_harness.v2.yaml",
+            out_dir / "minimal_harness.v2.yaml",
+        ),
+        (
+            source_dir / "prompts" / "minimal_system.md",
+            out_dir / "prompts" / "minimal_system.md",
+        ),
     )
-    return EXIT_VALIDATION_FAILURE
+    result = _copy_bundle(files)
+    if result == EXIT_OK and not args.quiet:
+        print(f"Created {files[0][1]}")
+        print(f"Next: bbh harness validate {files[0][1]}")
+    return result
+
+
+def _harness_validate(args: argparse.Namespace) -> int:
+    from agentic_coder_prototype.compilation.v2_loader import load_agent_config_view
+
+    try:
+        load_agent_config_view(args.PATH)
+    except (OSError, ValueError) as exc:
+        _print_error(str(exc))
+        return EXIT_VALIDATION_FAILURE
+    if args.json:
+        print(json.dumps({"ok": True, "path": args.PATH}, sort_keys=True))
+    elif not args.quiet:
+        print(f"Valid harness config: {args.PATH}")
+    return EXIT_OK
+
+
+def _harness_explain(args: argparse.Namespace) -> int:
+    from scripts.authoring.explain_agent_config import main as explain_main
+
+    argv = ["--config", args.PATH]
+    if args.strict:
+        argv.append("--strict")
+    return explain_main(argv)
+
+
+LANE_MANIFEST_SKELETON = """\
+schema_version: bb.e4.lane_manifest.v1
+lane_id: new_lane
+config_id: new_lane
+title: New E4 lane
+agent_config_ref: null
+kind: probe
+status: draft
+target:
+  family: new_target
+  version: "0"
+  package_ref: null
+  source_freeze_ref: null
+capture:
+  strategy: probe_argv
+  argv:
+    - echo
+    - replace-with-capture-command
+  inputs: []
+  workspace_template: null
+normalize:
+  mode: identity
+  record_builders: []
+  projection_constants: {}
+  required_records: []
+  required_roles: []
+replay:
+  mode: stored
+  comparator_class: semantic
+compare:
+  comparator: semantic
+  assertions: []
+claim:
+  scope:
+    behaviors:
+      - replace-with-proven-behavior
+    surfaces: []
+  exclusions: []
+artifacts_root: docs_tmp/e4/new_lane
+notes: Replace placeholder values before capture.
+"""
+
+
+def _lane_init(args: argparse.Namespace) -> int:
+    out_dir = Path(args.out or ".").expanduser()
+    manifest_path = out_dir / "lane.manifest.yaml"
+    if manifest_path.exists():
+        _print_error(f"refusing to overwrite existing path: {manifest_path}")
+        return EXIT_VALIDATION_FAILURE
+    try:
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(LANE_MANIFEST_SKELETON, encoding="utf-8")
+    except OSError as exc:
+        _print_error(str(exc))
+        return EXIT_RESOLUTION_FAILURE
+    if not args.quiet:
+        print(f"Created {manifest_path}")
+        print(f"Next: bbh lane validate {manifest_path}")
+    return EXIT_OK
+
+
+def _lane_validate(args: argparse.Namespace) -> int:
+    from scripts.authoring.validate_lane import (
+        LaneDefValidationError,
+        load_lane_manifest,
+    )
+
+    try:
+        manifest = load_lane_manifest(Path(args.PATH))
+    except (OSError, LaneDefValidationError) as exc:
+        _print_error(str(exc))
+        return EXIT_VALIDATION_FAILURE
+    if args.json:
+        print(
+            json.dumps(
+                {"ok": True, "lane_id": manifest["lane_id"], "path": args.PATH},
+                sort_keys=True,
+            )
+        )
+    elif not args.quiet:
+        print(f"Valid lane manifest: {args.PATH}")
+    return EXIT_OK
 
 
 def _add_leaf(
@@ -59,6 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
         item="G2",
     )
     harness_init.add_argument("--out", metavar="DIR")
+    harness_init.set_defaults(handler=_harness_init)
 
     harness_validate = _add_leaf(
         harness_commands,
@@ -68,6 +218,7 @@ def build_parser() -> argparse.ArgumentParser:
         item="G2",
     )
     harness_validate.add_argument("PATH")
+    harness_validate.set_defaults(handler=_harness_validate)
 
     harness_explain = _add_leaf(
         harness_commands,
@@ -78,6 +229,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     harness_explain.add_argument("PATH")
     harness_explain.add_argument("--strict", action="store_true")
+    harness_explain.set_defaults(handler=_harness_explain)
 
     harness_run = _add_leaf(
         harness_commands,
@@ -105,6 +257,7 @@ def build_parser() -> argparse.ArgumentParser:
         item="G2",
     )
     lane_init.add_argument("--out", metavar="DIR")
+    lane_init.set_defaults(handler=_lane_init)
 
     lane_validate = _add_leaf(
         lane_commands,
@@ -114,6 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
         item="G2",
     )
     lane_validate.add_argument("PATH")
+    lane_validate.set_defaults(handler=_lane_validate)
 
     lane_lock = _add_leaf(
         lane_commands,
