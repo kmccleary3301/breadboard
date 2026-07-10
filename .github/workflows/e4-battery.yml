@@ -1,0 +1,37 @@
+name: E4 Battery
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "scripts/e4_parity/**"
+      - "tests/e4_parity/**"
+      - "contracts/kernel/**"
+      - "config/e4_lanes/**"
+
+jobs:
+  e4-battery:
+    name: e4-battery
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Bootstrap E4 battery environment
+        run: |
+          python -m pip install -U pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Run E4 parity battery
+        run: pytest -q tests/e4_parity
+
+      - name: Verify regeneration fixed point
+        run: python scripts/e4_parity/regen.py fixed-point --json artifacts/conformance/e4_regen_fixed_point.json
