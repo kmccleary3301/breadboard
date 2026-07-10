@@ -6,7 +6,7 @@
  "points_done": 385,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T22:34:28Z",
+ "updated_at_utc": "2026-07-10T22:34:48Z",
  "items": [
   {
    "id": "A1",
@@ -1563,6 +1563,14 @@
    "classification": "spec_gap",
    "what": "shared dependency commit class: standalone artifact commit, owner item commit excludes those paths, consumers pick exact SHA, integration verifies patch-id/tree identity on shared paths",
    "owner": "orchestrator+WsF3Compiler",
+   "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM13",
+   "date": "2026-07-10",
+   "classification": "spec_gap",
+   "what": "F5(a) additionally depends on H2-H4; resolved by sequencing (WS-H merges first, wsF3 rebases), never whole-packet picks; lock_sha256 propagation authorized in F5 scope",
+   "owner": "F5+orchestrator",
    "recorded_by": "orchestrator"
   }
  ],

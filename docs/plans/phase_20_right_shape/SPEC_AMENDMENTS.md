@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **12 amendments** (below).
+Current state: **13 amendments** (below).
 
 ---
 
@@ -197,3 +197,13 @@ The one-commit-per-item rule governs ITEM commits. A **shared dependency node** 
 - Applies retroactively to F3 54147aaa -> G4 pick 04b11cb5 (same shape, already patch-id-bound).
 
 **Classification:** spec_gap. **Owner:** orchestrator (rule), WsF3Compiler (tree_digest node). **Recorded-by:** orchestrator.
+
+---
+
+## Amendment 13 - 2026-07-10 - F5 full-flow gate depends on WS-H stage semantics (spec_gap: plan dependency table lists only F4)
+
+F5(a)'s end-to-end run reaches capture executed_pass but normalize fails at base head (`did not execute and has no author declaration`) because stage semantics land in H2/H3/H4. The plan's F5 dependency column is corrected: F5(a) additionally depends on H2-H4.
+
+**Resolution is SEQUENCING, not dependency-picks:** whole H packets must not be cherry-picked into wsF3 (packet verification boundaries stay intact; AM12 covers only single shared-artifact commits). Order: WS-H verifies + merges into integration first; wsF3 then rebases onto that head and completes F5(a)'s full-flow gate. F5's other sub-gates (regen/churn, lock_sha256 propagation in run reports — authorized, in-scope) proceed now. F5's ACCEPT is unchanged; only its prerequisite set is corrected.
+
+**Classification:** spec_gap. **Owner:** F5 (WsF3Compiler), sequencing by orchestrator. **Recorded-by:** orchestrator.
