@@ -118,6 +118,7 @@ EXAMPLE_SCHEMA_MAP = {
     "terminal_cleanup_result_minimal.json": "bb.terminal_cleanup_result.v1.schema.json",
     "work_item_minimal.json": "bb.work_item.v1.schema.json",
     "effective_config_graph_minimal.json": "bb.effective_config_graph.v1.schema.json",
+    "config_explanation_minimal.json": "bb.config_explanation.v1.schema.json",
     "config_mutation_record_minimal.json": "bb.config_mutation_record.v1.schema.json",
     "context_resource_pack_minimal.json": "bb.context_resource_pack.v1.schema.json",
     "provider_route_minimal.json": "bb.provider_route.v1.schema.json",

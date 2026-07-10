@@ -227,6 +227,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--summary-json", default=str(DEFAULT_SUMMARY_JSON))
     parser.add_argument("--summary-md", default=str(DEFAULT_SUMMARY_MD))
     parser.add_argument("--fail-on-failing", action="store_true")
+    parser.add_argument(
+        "--fail-on-summary-not-ok",
+        action="store_true",
+        help="Return 1 after writing outputs when the generated summary is fail-closed.",
+    )
     parser.add_argument("--generated-at-utc", default=None)
     args = parser.parse_args(argv)
 
@@ -260,6 +265,8 @@ def main(argv: list[str] | None = None) -> int:
             sort_keys=True,
         )
     )
+    if args.fail_on_summary_not_ok and summary["ok"] is not True:
+        return 1
     if args.fail_on_failing and summary["failing_rows"]:
         return 1
     return 0
