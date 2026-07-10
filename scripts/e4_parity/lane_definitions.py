@@ -62,7 +62,12 @@ def _validator(schema_version: str) -> Draft202012Validator:
 
 
 def _format_error(error: Any) -> str:
-    pointer = "/" + "/".join(str(part) for part in error.absolute_path) if error.absolute_path else ""
+    parts = [str(part).replace("~", "~0").replace("/", "~1") for part in error.absolute_path]
+    if error.validator == "required":
+        quoted = error.message.split("'")
+        if len(quoted) >= 3:
+            parts.append(quoted[1].replace("~", "~0").replace("/", "~1"))
+    pointer = "/" + "/".join(parts) if parts else ""
     return f"{pointer or '<root>'}: {error.message}"
 
 
