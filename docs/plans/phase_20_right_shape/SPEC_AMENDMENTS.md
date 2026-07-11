@@ -336,3 +336,23 @@ CLI subcommands are not frozen inventory (B2 freeze covers schema $ids, SDK pack
 
 
 **AM22 addendum (AM22a, same date) - supersession of the fix-packet/rerun authorization:** on review, implementing the three missing front doors mid-campaign and rerunning J2 would (a) expand scope beyond every approved item contract (J3: no WS-G/WS-F item promised them) and (b) invalidate the predeclared experiment by testing a product modified in response to the test. AM22's fix-packet + rerun authorization is WITHDRAWN unexecuted. Instead: G-J is recorded FAIL for this campaign on the first run's evidence ('unavailable bbh capability' - the protocol's own anticipated failure class; budgets all passed); J3-G7/G8/G9 are filed as follow-up bd backlog issues OUTSIDE the campaign ledger, requiring their own approval and points if later executed; J4 states the measured reality in the charter; J5 verifies the first-run evidence. K2-K4 remain na_gated per gate G-K.
+
+
+---
+
+## Finalization record — M1(d), 2026-07-11
+
+This file is the complete deviation record for the Phase 20 "Right Shape" campaign: 23 amendments
+(AM1-AM22) plus addenda AM17a/AM17b-r, AM19a, AM20a, AM21a, AM22a. The M1 final completeness critic
+independently grepped for undocumented drift (§6 criterion 12: met) and the final derailment audit
+found zero §0.3 violations across 166 commits (docs_tmp/phase_20/evidence/M1/derailment_final.json,
+sha256 9b6d8e10...). No undocumented deviations are known. Standing statement for any surface not
+named above: none.
+
+Campaign terminal state at finalization: §6 INCOMPLETE (criteria 2,3,5,6 unmet; criterion 1 at
+885/1000) — every unmet criterion traces to items honestly blocked on pre-existing product defects
+(D1/D2/D3/D5: product-spine/battery members red before the campaign) or external environment (F5:
+phase-15 atomic-ledger mutability; AM19 activation parked). Gates G-J/G-K/G-L: recorded FAIL
+decisions with countersigned docs (§6 criterion 10: met). Per §217 M1 remains open; reopened/owning
+items already carry their classifications. Flip conditions are recorded in GATE_K_DECISION.md,
+GATE_L_DECISION.md, and bd comments on bb-c6n.4/bb-c6n.6.
