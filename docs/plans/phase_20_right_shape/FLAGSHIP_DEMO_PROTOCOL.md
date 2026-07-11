@@ -148,3 +148,21 @@ G-J passes only when all nine functional conditions pass and all three budgets r
 A target crash, provider failure, missing public instruction, unavailable `bbh` capability, schema failure, non-deterministic lock, incorrect fixture delta, incomplete claim, line overrun, or time overrun is recorded as a failure with the measured result. The outsider must not broaden the profile, consult prohibited material, change the frozen artifact or model, or relax an assertion to convert that failure into a pass.
 
 The independent verifier reruns the available gates from the recorded head SHA, recomputes both line counts, checks the unpaused timing arithmetic, audits the materials log, and reports J2 completion separately from the G-J verdict. WS-J permits at most one rerun after named fixes; the original evidence and this predeclaration remain immutable.
+
+---
+
+## Measurement appendix — run 1 (J4; predeclaration above remains immutable)
+
+Run: 2026-07-11, head 3b413aff, evidence docs_tmp/phase_20/j2_run/ (immutable), model input per AM21/AM21a (`openrouter/openai/gpt-5.6-luna`, provider-default effort; provider id `openai/gpt-5.6-luna-20260709` preflighted).
+
+| Measurement | Budget | Measured | Status |
+|---|---|---|---|
+| Manifest canonical lines | <=150 | 103 (max physical line 101) | within budget (stage completed) |
+| Adapter counted lines | <=300 | 182 (1 file) | within budget (stage completed) |
+| Time | <=8h | run FAILED after 0.14h; censored measurement, critical path incomplete | not comparable to budget |
+| Stages passed | 8/8 | scaffold, validate, session_run | 3 of 8 |
+| Stages failed | — | author/registration, lock, scratch_capture, claim, reverify | unavailable `bbh` capability |
+| Outsider-rule violations | 0 | 0 | pass |
+| G-J | all 9 conditions + budgets | conditions 2-5,8,9 unmet | **FAIL** (recorded; AM22a: no rerun this campaign) |
+
+Root cause (J3): protocol_gap_predeclared_unbuildable — this predeclaration requires adapter registration "through the documented/scaffolded route" plus `bbh` claim/claim-reverify stages, but no campaign item promised those front doors. Backlog: bb-72h (register), bb-9c8 (claim), bb-ys7 (claim-reverify).
