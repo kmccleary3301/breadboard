@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **22 amendments** (below).
+Current state: **23 numbered amendments (AM1-AM23)** plus addenda AM9a, AM11a, AM14a, AM17a, AM17b-r, AM19a, AM20a, AM21a, AM22a (below).
 
 ---
 
@@ -342,8 +342,8 @@ CLI subcommands are not frozen inventory (B2 freeze covers schema $ids, SDK pack
 
 ## Finalization record — M1(d), 2026-07-11
 
-This file is the complete deviation record for the Phase 20 "Right Shape" campaign: 23 amendments
-(AM1-AM22) plus addenda AM17a/AM17b-r, AM19a, AM20a, AM21a, AM22a. The M1 final completeness critic
+This file is the complete deviation record for the Phase 20 "Right Shape" campaign: 22 numbered amendments
+(AM1-AM22) plus addenda AM9a, AM11a, AM14a, AM17a, AM17b-r, AM19a, AM20a, AM21a, AM22a at finalization. The M1 final completeness critic
 independently grepped for undocumented drift (§6 criterion 12: met) and the final derailment audit
 found zero §0.3 violations across 166 commits (docs_tmp/phase_20/evidence/M1/derailment_final.json,
 sha256 9b6d8e10...). No undocumented deviations are known. Standing statement for any surface not
@@ -356,3 +356,19 @@ phase-15 atomic-ledger mutability; AM19 activation parked). Gates G-J/G-K/G-L: r
 decisions with countersigned docs (§6 criterion 10: met). Per §217 M1 remains open; reopened/owning
 items already carry their classifications. Flip conditions are recorded in GATE_K_DECISION.md,
 GATE_L_DECISION.md, and bd comments on bb-c6n.4/bb-c6n.6.
+
+---
+
+## Amendment 23 — 2026-07-11 — §217 post-finalization reopen: D1/D2/D3/D5 + F5 as product_defect (fix-packet route)
+
+**Rule applied:** §217 (unmet §6 criteria route to reopening the owning item as product_defect/spec_gap; M1 re-runs after fixes) and §202 fix-packet ceiling (≤25 pts each).
+**Trigger:** M1 R2 critic verdict INCOMPLETE at 885/1000 (criteria 1,2,3,5,6 unmet), all tracing to D1/D2/D3/D5 (product-spine/battery reds) and F5 (env-classified parity blocker).
+**Gate evidence (execution, not historical counts):**
+- Dual-SHA reproduction (docs_tmp/phase_20/evidence/M1/d1_dual_sha_repro_v2.json, py3.11 clean venvs, worktrees at workspace root): compilation 175 failures with EXACT same test identities at base 3b8d862f and head e3997b9a; parity subset 2→2 exact; cli exports 1→1 exact; API 9 base failures all persist at head. Full-ladder parity at base impossible (steps 3/5/6/13 N/A with concrete missing paths) — recorded, not glossed.
+- One head-only API failure bisected to first bad commit acef713e ("P20 F1: add lane manifest contract"), adjacent-commit validated: campaign-introduced (schema file added without lifecycle registration → schemas endpoint 503). Classified product_defect (campaign-introduced, F1), owned by SP3 (docs_tmp/phase_20/evidence/M1/api_regression_attribution.json).
+- Root-cause/size matrix: 13 spine causes (docs_tmp/phase_20/evidence/M1/spine_reds_taxonomy.json — 173/175 compile failures = one v2_loader metadata leak); F5 feasibility (docs_tmp/phase_20/evidence/M1/f5_unblock_feasibility.json): fresh detached full flow exit 1 (normalize split-brain, F5-RC1); five-stage P6.6 run exit 0 with lock sha bbcf3272 ONLY after provisioning two clean-checkout prerequisites (deterministic extraction + stored capture artifacts — the F5-RC2 defect class); regen fixed-point exit 1 both passes (missing north-star runtime_records manifest). Seed-digest MECHANISM established (ambient-merge + ref-refresh, generator blob identical at base/e805/head); exact pinned bytes UNRESOLVED, and the live workspace seed currently has 17/20 changed refs non-resolving at head vs 3/20 for the tracked sidecar (f5_seed_digest_resolution.json, f5_seed_row_diff_detail.json) — F5 packet must produce 100% resolution or justified tombstones.
+**Reopened items:** D1, D2, D3, D5 (blocked_product_defect → reopened product_defect); F5 (blocked_env → reopened product_defect: the "external mutable ledger" is generator ambient-merge state, not an unavailable external; AM19/AM19a activation work is in scope of the reopen).
+**Authorized work:** spine packet series SP1(25) SP2(20) SP3(20) SP4(15) SP5(15) SP6(25) SP7(10) charged to WS-D, and F5 completion (AM19 resolver activation + tracked 100%-resolving ledger input or justified tombstones + clean-checkout prerequisites) under F5's existing 25-pt weight. Every packet gets an independent reviewer on its branch diff + focused-test evidence BEFORE integration; only reviewed SHAs merge; full spine + battery + fixed-point run at the integrated head; then real PR-triggered + nightly runs; then M1 rerun.
+**AM22a distinction (why this is not the withdrawn J-route):** AM22a withdrew packets that would have BUILT capabilities no item promised, modifying the product in response to the J2 experiment. SP/F5 packets REPAIR capabilities existing items already promised and delivered defectively — exactly the repair class §217 routes to product_defect reopens. No new public capability, no lane CRUD, no SDK surface, no new schema family, no scorecard change (§0.3 checked per packet).
+**Bookkeeping folded in:** ledger amendments[] mirror completed (AM22/AM22a were missing; AM23 added); finalization-record count phrasing corrected ("22 numbered amendments" + addenda); G-D/G-F remain pending with explicit reopen-pending refs.
+**Recorded by:** orchestrating agent, 2026-07-11, integration head e3997b9a (pre-reopen).
