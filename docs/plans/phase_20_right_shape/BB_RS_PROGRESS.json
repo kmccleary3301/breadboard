@@ -6,7 +6,7 @@
  "points_done": 885,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T05:21:10Z",
+ "updated_at_utc": "2026-07-11T05:55:02Z",
  "items": [
   {
    "id": "A1",
@@ -388,6 +388,12 @@
      "lens": "anti_scope",
      "verdict": "fail",
      "verdict_ref": "docs_tmp/phase_20/evidence/B3C2/verifier.json (RED: B2 merge-SHA citation error; corrected via bd comments CORRECTION/CORRECTION-2 + ledger; round-2 re-verify pending)"
+    },
+    {
+     "agent": "VerifyB3Round2",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "docs_tmp/phase_20/evidence/B3C2/verifier_round2.json (round-2 pass @ de28fc6d: corrections verified, true merge SHAs 919e5b4e/c6935c85/b5805ab3/47b0e636 first-parent confirmed)"
     }
    ]
   },
@@ -1222,6 +1228,12 @@
      "lens": "anti_scope",
      "verdict": "fail",
      "verdict_ref": "agent://VerifyWsGStatic per_item[G2]=red (boundary self-containment: cited packaging test added later in-chain at c00c6f48; exec lens runs it green at head; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyG2StaticR2",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "docs_tmp/phase_20/evidence/G2/verifier_static_round2.json (round-2 pass @ de28fc6d: boundary self-containment with in-chain remedy c00c6f48; supersedes round-1 static RED on this check)"
     }
    ]
   },
@@ -1840,6 +1852,12 @@
      "lens": "correctness",
      "verdict": "pass",
      "verdict_ref": "docs_tmp/phase_20/evidence/J5/verifier.json (j2_execution_verdict pass: honest+complete; gates/counts/materials reproduced)"
+    },
+    {
+     "agent": "VerifyJ2AntiScope",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "docs_tmp/phase_20/evidence/J2/verifier_anti_scope.json (pass @ 2f8e2e5a: 80/80 accesses allowed, bounded profile exact, no assertion relaxation, wheel SHA + model input frozen)"
     }
    ]
   },
@@ -1859,8 +1877,15 @@
      "sha": ""
     }
    ],
-   "notes": "root-cause classification @ evidence/J3/root_cause.json: all 5 failures protocol_gap_predeclared_unbuildable, outsider correct throughout; retro @ evidence/J3/retro.md; gaps TICKETED as follow-up bd issues (AM22a: outside campaign ledger) - satisfies ACCEPT \"fixes merged or ticketed with bd ids\"",
-   "verifiers": []
+   "notes": "root-cause classification @ evidence/J3/root_cause.json: all 5 failures protocol_gap_predeclared_unbuildable, outsider correct throughout; retro @ evidence/J3/retro.md; gaps TICKETED as follow-up bd issues (AM22a: outside campaign ledger) - satisfies ACCEPT \"fixes merged or ticketed with bd ids\" | Independent verifier round-1 RED (retro: schema friction absent + stale routing) -> retro corrected -> round-2 PASS",
+   "verifiers": [
+    {
+     "agent": "VerifyJ3Packet",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "docs_tmp/phase_20/evidence/J3/verifier_round2.json (round-1 RED retro_doc -> retro corrected (schema friction + AM22a routing + 0.15h) -> round-2 PASS)"
+    }
+   ]
   },
   {
    "id": "J4",
