@@ -77,20 +77,43 @@ def _python_annotation_ts_type(annotation: ast.expr) -> str:
     raise AssertionError(f"Unsupported Python DTO annotation: {ast.unparse(annotation)}")
 
 
-def _ts_interface_fields(types_path: Path, interface_name: str) -> dict[str, dict[str, object]]:
+def _ts_export_fields(types_path: Path, export_name: str) -> dict[str, dict[str, object]]:
     text = types_path.read_text(encoding="utf-8")
-    match = re.search(rf"export interface {interface_name} \{{(?P<body>.*?)\n\}}", text, flags=re.DOTALL)
-    assert match, f"Missing {interface_name} in {types_path}"
+    match = re.search(
+        rf"export (?:interface {export_name}|type {export_name} =) \{{(?P<body>.*?)\n\}}",
+        text,
+        flags=re.DOTALL,
+    )
+    if match is None:
+        alias_match = re.search(rf"export type {export_name} = (?P<alias>[A-Za-z0-9_]+)", text)
+        assert alias_match, f"Missing {export_name} in {types_path}"
+        alias = alias_match.group("alias")
+        for import_match in re.finditer(
+            r'import type \{(?P<body>.*?)\} from "(?P<source>[^"]+)"',
+            text,
+            flags=re.DOTALL,
+        ):
+            imported = re.search(rf"\b(?P<name>[A-Za-z0-9_]+) as {alias}\b", import_match.group("body"))
+            if imported is None:
+                continue
+            source = import_match.group("source")
+            generated_path = types_path.parent / f"{source.removesuffix('.js')}.ts"
+            return _ts_export_fields(generated_path, imported.group("name"))
+        raise AssertionError(f"Unresolved {export_name} alias {alias} in {types_path}")
+
     fields: dict[str, dict[str, object]] = {}
     for raw_line in match.group("body").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("//"):
             continue
-        prop = re.match(r"readonly (?P<name>[A-Za-z0-9_]+)(?P<optional>\?)?: (?P<type>.+)$", line)
-        assert prop, f"Unsupported {interface_name} property syntax in {types_path}: {raw_line!r}"
+        prop = re.match(
+            r'readonly "?(?P<name>[A-Za-z0-9_]+)"?(?P<optional>\?)?: (?P<type>.+?);?$',
+            line,
+        )
+        assert prop, f"Unsupported {export_name} property syntax in {types_path}: {raw_line!r}"
         fields[prop.group("name")] = {
             "optional": bool(prop.group("optional")),
-            "ts_type": prop.group("type").strip(),
+            "ts_type": prop.group("type").strip().removesuffix(" | null"),
         }
     return fields
 
@@ -101,7 +124,7 @@ def test_session_file_dtos_do_not_drift_between_python_and_ts_contracts() -> Non
     for model_name, expected_fields in SESSION_FILE_DTO_FIELDS.items():
         assert python_fields[model_name] == expected_fields
         for types_path in (root / "sdk" / "ts" / "src" / "types.ts", root / "tui_skeleton" / "src" / "api" / "types.ts"):
-            assert _ts_interface_fields(types_path, model_name) == expected_fields
+            assert _ts_export_fields(types_path, model_name) == expected_fields
 
 
 def test_cli_bridge_contract_files_present() -> None:

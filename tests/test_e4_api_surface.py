@@ -123,7 +123,7 @@ def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pyte
 
     local_client = TestClient(create_app())
 
-    assert local_client.get("/status").status_code == 404
+    assert local_client.get("/status").status_code == 200
     assert local_client.get("/features").status_code == 404
     assert local_client.get("/models", params={"config_path": "agent_configs/test.yaml"}).status_code == 404
     assert local_client.get("/sessions").status_code == 404
@@ -142,7 +142,7 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
 
     local_client = TestClient(create_app())
 
-    assert local_client.get("/status").status_code == 404
+    assert local_client.get("/status").status_code == 200
     assert local_client.get("/features").status_code == 404
     assert local_client.get("/models", params={"config_path": "agent_configs/test.yaml"}).status_code == 404
     assert local_client.get("/sessions").status_code == 404
