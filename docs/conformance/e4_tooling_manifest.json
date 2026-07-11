@@ -15,10 +15,10 @@
       "sha256": "sha256:d0c404cc6a6d2a591cbbb4c267f36fa2767ae08c8c24d7d271951bf4d6a80c20"
     },
     {
-      "bytes": 68993,
+      "bytes": 70028,
       "path": "scripts/e4_parity/build_e4_final_readiness_packet.py",
       "role_id": "e4_static:script/build_e4_final_readiness_packet",
-      "sha256": "sha256:5658286a5ffb47e79b451d5155000d90fabb26ec01ba7cb75a0916a7c99e8611"
+      "sha256": "sha256:72269e16ace718dba3a4e68ff3b060ed1ea53e0a906dce1d4a7541172f235b73"
     },
     {
       "bytes": 32206,
@@ -33,10 +33,10 @@
       "sha256": "sha256:eb33c3931c808123eb88e9a61ff74e21d7c65edd9a3efe1868a948bac410cb1c"
     },
     {
-      "bytes": 51698,
+      "bytes": 53609,
       "path": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
       "role_id": "e4_static:script/oh_my_pi_compiler_capture_adapter",
-      "sha256": "sha256:f0a1d2462de75acbd354d9259200902a7e249fb7b0e73cb4aa75ca731de1f798"
+      "sha256": "sha256:0ee15f8f70bb8156e793875053b9a0499a3e2e4ed6625bf62a339277e10857a8"
     },
     {
       "bytes": 52852,
@@ -51,10 +51,10 @@
       "sha256": "sha256:a258ee8b9258130a32dbe1bb4787592ed27ea16904102eb83325e5956af6cb1a"
     },
     {
-      "bytes": 44146,
+      "bytes": 57517,
       "path": "scripts/e4_parity/regenerate_evidence.py",
       "role_id": "e4_static:script/regenerate_evidence",
-      "sha256": "sha256:15d0f98890820fb1eebb5c9df0d48c38ec8ec40e6c94d229dc454fab4398630b"
+      "sha256": "sha256:cc0c0d4092e047a53c9ecd6727277f9bae8c6e64d0f1fef4ad435d438db9b3ea"
     },
     {
       "bytes": 7594,

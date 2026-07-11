@@ -50,14 +50,14 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:6e3cf1624a00c3ce7f3c3231665e3216c812c22f10b85e70a25e16b17a9f2346"
+      "sha256": "sha256:c926f3557fe67ea70294f10a5b26392195858e7c263c4d2bbf1baf55ebdddd63"
     },
     {
       "bytes": 124871,
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
+      "sha256": "sha256:684e34783e8fb14cb34a92b2305a56efcbd917770ecf0116eed793ac6ecef939"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",

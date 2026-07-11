@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/raw_capture_manifest.json#sha256:08eb9b4cef8fac675dfea16ca3bdb48a01851bd9ec830feb8dd278ca1ca71f43",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 7,
-    "segment_hash": "sha256:16b13c3a6dd86415e5e2aeb69655138ac75ef9264bc2cb78418a374cbd3d4f7b",
+    "catalog_revision": 8,
+    "segment_hash": "sha256:7386dddb13940d209cc7e7b9153997d2ac38ac326699413005e95b9e194faa49",
     "segment_id": "opencode_north_star_capture_v1",
-    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
+    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
   },
   "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
   "claim_semantics": {
@@ -75,7 +75,7 @@
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_48d391c67faf0adf#sha256:77af07ee20f81c39524f0177b326861b6315ca3a8910dcc2b84d4b0aae3d7c66"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_48d391c67faf0adf#sha256:44bc6082203d578ea0a32abc673a9cdab6d34801b0fd4489984f8cced9b8621a"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4"

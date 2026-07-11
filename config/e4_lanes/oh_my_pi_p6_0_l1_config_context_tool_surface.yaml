@@ -25,7 +25,7 @@
       "docs/conformance/e4_lane_inventory.json",
       "config/e4_target_freeze_manifest.yaml",
       "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
-      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
       "scripts/e4_parity/oh_my_pi_p6_lane_projection.py",
       "scripts/e4_parity/adapters/lane_definition_build.py"
     ],
@@ -155,7 +155,7 @@
       "agent_configs/misc/oh_my_pi_p6_0_l1_config_context_tool_surface_v1.yaml",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
-      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
       "scripts/e4_parity/oh_my_pi_p6_lane_projection.py",
       "scripts/e4_parity/adapters/lane_definition_build.py"
     ]

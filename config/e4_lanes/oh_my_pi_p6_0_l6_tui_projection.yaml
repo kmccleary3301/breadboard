@@ -18,7 +18,7 @@
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/oh_my_pi_p6_0_l6_tui_projection_probe.mjs",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw",
-      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
       "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest",
       "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
       "scripts/e4_parity/adapters/oh_my_pi_projection_packet.py",
@@ -1080,7 +1080,7 @@
               "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
             },
             "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json#sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b",
-            "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+            "source_freeze_ref": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
             "summary": "Oh-My-Pi 16.2.13 provider-free `omp gallery --plain` host TUI/tool-surface projection is accepted only for the named P6.0-L6 lane, run, config, target version, fixed terminal width, selected renderer lifecycle states, and read-only projection-only scope.",
             "target_family": "oh_my_pi",
             "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
@@ -1342,7 +1342,7 @@
     "source_paths": [
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json",
-      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
       "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
       "scripts/e4_parity/adapters/oh_my_pi_projection_packet.py",
       "scripts/e4_parity/adapters/oh_my_pi_l6_projection.py",

@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/raw_capture_manifest.json#sha256:3c319b5c6307ab15b53260eecab67e86f33ae2c6d62d980b488fb9f2b5a130e2",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 7,
+    "catalog_revision": 8,
     "segment_hash": "sha256:2e43bb4f1971b76d0e03bb4c3c2ed290fd342b9677c884a9e922ef4b9a3205fe",
     "segment_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
-    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
+    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
   },
   "claim_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim",
   "claim_semantics": {

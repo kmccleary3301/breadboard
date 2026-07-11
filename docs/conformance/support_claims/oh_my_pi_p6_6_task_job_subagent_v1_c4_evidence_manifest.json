@@ -88,7 +88,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:12329dcf5554decf97ab40b27d1ca80de390d96d380423e86fd2ca65c178f583"
+      "sha256": "sha256:1bce9940b9fffd6c2d91e60190c0aca73bb5af93a6f0ce91a62ceb5413962295"
     },
     {
       "bytes": 231320,

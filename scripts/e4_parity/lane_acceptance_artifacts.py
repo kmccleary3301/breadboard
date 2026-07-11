@@ -159,6 +159,29 @@ def _materialized_path(path: Path, output_root: Path | None) -> Path:
             return path
 
 
+def _materialize_candidate_validation_inputs(
+    spec: Mapping[str, Any], output_root: Path | None
+) -> None:
+    if output_root is None:
+        return
+    for logical_path in dict.fromkeys(
+        [str(spec["config_path"]), *map(str, spec["source_paths"])]
+    ):
+        source = resolve(logical_path)
+        try:
+            relative = source.relative_to(ROOT.resolve())
+        except ValueError:
+            continue
+        destination = output_root / relative
+        if destination.exists():
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, destination, symlinks=True)
+        else:
+            shutil.copy2(source, destination)
+
+
 def _write_json(path: Path, payload: Mapping[str, Any], output_root: Path | None) -> None:
     write_json(_materialized_path(path, output_root), payload)
 
@@ -651,12 +674,14 @@ def build_lane(spec: Mapping[str, Any], output_root: Path | None = None) -> dict
     }
     _write_json(manifest_path, manifest, output_root)
 
+    _materialize_candidate_validation_inputs(spec, output_root)
+    validation_root = ROOT if output_root is None else output_root
     report = validate_c4_chain(
-        repo_root=ROOT,
-        freeze_manifest_path=FREEZE_MANIFEST_PATH,
+        repo_root=validation_root,
+        freeze_manifest_path=_materialized_path(FREEZE_MANIFEST_PATH, output_root),
         config_id=spec["config_id"],
-        support_claim_path=support_path,
-        evidence_manifest_path=manifest_path,
+        support_claim_path=_materialized_path(support_path, output_root),
+        evidence_manifest_path=_materialized_path(manifest_path, output_root),
         enforce_catalog_binding=False,
     )
     _write_json(node_gate_path, report, output_root)
