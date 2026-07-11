@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T02:30:07Z",
+ "updated_at_utc": "2026-07-11T03:29:14Z",
  "items": [
   {
    "id": "A1",
@@ -977,12 +977,12 @@
    "ws": "G",
    "title": "harness init/validate/explain + lane init/validate",
    "weight": 30,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "G1"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item cb7f93fe; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
    "verifiers": []
   },
   {
@@ -990,13 +990,13 @@
    "ws": "G",
    "title": "bbh harness run --server/--local",
    "weight": 25,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "G1",
     "A7"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item b9566134; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
    "verifiers": []
   },
   {
@@ -1004,13 +1004,13 @@
    "ws": "G",
    "title": "bbh lane lock/capture",
    "weight": 15,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "G1",
     "F3"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item 6b7fe7fe; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
    "verifiers": []
   },
   {
@@ -1018,14 +1018,14 @@
    "ws": "G",
    "title": "docs front-door rewrite",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "G2",
     "G3",
     "G4"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item 123242f4; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
    "verifiers": []
   },
   {
@@ -1033,12 +1033,12 @@
    "ws": "G",
    "title": "verifier E2E transcript",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "G5"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item ab4c9e96; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
    "verifiers": []
   },
   {
