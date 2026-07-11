@@ -31,6 +31,11 @@ from agentic_coder_prototype.permissions import (
 )
 from agentic_coder_prototype.todo import TodoStore
 from agentic_coder_prototype.todo.projection import project_store_snapshot_to_tui_envelope
+from agentic_coder_prototype.state.session_state import (
+    AUDIT_ONLY_RUNTIME_EVENT_TYPES,
+    CANONICAL_KERNEL_EVENT_TYPES,
+    PROJECTION_ONLY_RUNTIME_EVENT_TYPES,
+)
 
 from .events import EventType, SessionEvent
 from .event_normalization import normalize_task_event_payload
@@ -97,20 +102,23 @@ RuntimeEventContract = Dict[str, Optional[str]]
 TranslatedRuntimeEvent = Tuple[EventType, Dict[str, Any], Optional[int], RuntimeEventContract]
 
 
-def _pop_runtime_event_contract(payload: Dict[str, Any]) -> RuntimeEventContract:
-    raw = payload.pop("_bb_event_contract", None)
-    if not isinstance(raw, dict):
-        return {}
-    return {
-        "classification": str(raw.get("classification")) if raw.get("classification") is not None else None,
-        "family": str(raw.get("family")) if raw.get("family") is not None else None,
-        "actor": str(raw.get("actor")) if raw.get("actor") is not None else None,
-        "visibility": str(raw.get("visibility")) if raw.get("visibility") is not None else None,
-    }
 
 
 def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
     event_name = str(event_type or "")
+    for registry, classification in (
+        (CANONICAL_KERNEL_EVENT_TYPES, "canonical"),
+        (PROJECTION_ONLY_RUNTIME_EVENT_TYPES, "projection_only"),
+        (AUDIT_ONLY_RUNTIME_EVENT_TYPES, "audit_only"),
+    ):
+        metadata = registry.get(event_name)
+        if metadata is not None:
+            return {
+                "classification": classification,
+                "family": metadata["family"],
+                "actor": metadata["actor"],
+                "visibility": metadata["visibility"],
+            }
     if event_name in {"assistant_message", "assistant_delta", "assistant.message.start", "assistant.message.delta", "assistant.message.end"}:
         return {"classification": "bridge_stream", "family": "message.assistant", "actor": "engine", "visibility": "transcript"}
     if event_name == "user_message":
@@ -126,18 +134,6 @@ def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
     return {"classification": "legacy_unclassified", "family": "legacy.unclassified", "actor": "engine", "visibility": "audit"}
 
 
-def _effective_runtime_event_contract(event_type: str, contract: RuntimeEventContract) -> RuntimeEventContract:
-    default = _default_runtime_event_contract(event_type)
-    if not contract:
-        return default
-    if contract.get("classification") == "legacy_unclassified" and contract.get("visibility") == "audit":
-        return default
-    return {
-        "classification": contract.get("classification") or default.get("classification"),
-        "family": contract.get("family") or default.get("family"),
-        "actor": contract.get("actor") or default.get("actor"),
-        "visibility": contract.get("visibility") or default.get("visibility"),
-    }
 
 
 class SessionRunner:
@@ -1871,7 +1867,7 @@ class SessionRunner:
             return None
 
         normalized_payload: Dict[str, Any] = dict(payload or {})
-        event_contract = _effective_runtime_event_contract(event_type, _pop_runtime_event_contract(normalized_payload))
+        event_contract = _default_runtime_event_contract(event_type)
         if event_type == "todo_event":
             try:
                 todo_update = normalized_payload.get("todo")

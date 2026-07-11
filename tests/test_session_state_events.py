@@ -32,7 +32,7 @@ class EventCollector:
         return [evt for evt in self.events if evt[0] == event_type]
 
 
-def test_session_state_emits_unique_assistant_events_per_turn() -> None:
+def test_session_state_emits_unique_assistant_events_with_legacy_payload_shape_per_turn() -> None:
     collector = EventCollector()
     state = SessionState("ws", "image", {}, event_emitter=collector)
 
@@ -51,9 +51,10 @@ def test_session_state_emits_unique_assistant_events_per_turn() -> None:
 
     assistant_events = collector.of_type("assistant_message")
     assert len(assistant_events) == 1
-    assert assistant_events[0][1]["message"]["content"] == "draft patch"
-    assert assistant_events[0][1]["_bb_event_contract"]["visibility"] == "transcript"
-    assert assistant_events[0][1]["_bb_event_contract"]["family"] == "message.assistant"
+    assert assistant_events[0][1] == {
+        "message": {"role": "assistant", "content": "draft patch"},
+        "seq": 7,
+    }
     assert assistant_events[0][2] == 1
     assistant_messages = [message for message in state.messages if message.get("role") == "assistant"]
     assistant_provider_messages = [
@@ -411,6 +412,7 @@ def test_session_runner_translates_runtime_events() -> None:
     request = SessionCreateRequest(config_path="cfg.yaml", task="do work")
 
     runner = SessionRunner(session=record, registry=registry, request=request)
+    event_registry = SessionState.event_family_registry()
     translated = runner._translate_runtime_event(
         "assistant_message",
         {"message": {"role": "assistant", "content": "hi"}},
@@ -419,10 +421,12 @@ def test_session_runner_translates_runtime_events() -> None:
     assert translated is not None
     evt_type, payload, turn, contract = translated
     assert evt_type is EventType.ASSISTANT_MESSAGE
-    assert payload["text"] == "hi"
+    assert payload == {
+        "text": "hi",
+        "message": {"role": "assistant", "content": "hi"},
+    }
     assert turn == 3
-    assert contract["visibility"] == "transcript"
-    assert contract["family"] == "message.assistant"
+    assert contract == event_registry["assistant_message"]
 
     translated_none = runner._translate_runtime_event(
         "assistant_message",
@@ -434,7 +438,7 @@ def test_session_runner_translates_runtime_events() -> None:
     assert evt_type is EventType.ASSISTANT_MESSAGE
     assert payload["text"] == ""
     assert turn == 3
-    assert contract["visibility"] == "transcript"
+    assert contract == event_registry["assistant_message"]
 
     delta_translated = runner._translate_runtime_event(
         "assistant_delta",
@@ -451,6 +455,24 @@ def test_session_runner_translates_runtime_events() -> None:
 
     assert runner._translate_runtime_event("unknown", {}, turn=None) is None
 
+    tool_call_translated = runner._translate_runtime_event(
+        "tool_call",
+        {
+            "call": {
+                "id": "call-1",
+                "function": {"name": "run_shell", "arguments": {"command": "pwd"}},
+            }
+        },
+        turn=3,
+    )
+    assert tool_call_translated is not None
+    evt_type, payload, turn, contract = tool_call_translated
+    assert evt_type is EventType.TOOL_CALL
+    assert payload["tool"] == "run_shell"
+    assert "_bb_event_contract" not in payload
+    assert turn == 3
+    assert contract == event_registry["tool_call"]
+
     todo_translated = runner._translate_runtime_event(
         "todo_event",
         {"call_id": "todo:1", "todo": {"op": "replace", "revision": 1, "scopeKey": "main", "items": []}},
@@ -462,7 +484,8 @@ def test_session_runner_translates_runtime_events() -> None:
     assert isinstance(payload.get("todo"), dict)
     assert payload["todo"]["revision"] == 1
     assert turn == 3
-    assert contract["visibility"] == "tool"
+    assert "_bb_event_contract" not in payload
+    assert contract == event_registry["todo_event"]
     assert isinstance(record.metadata, dict)
     assert isinstance(record.metadata.get("todo_last_update"), dict)
 

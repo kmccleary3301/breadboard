@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import fnmatch
 import os
+import shutil
+import tempfile
 import subprocess
 import sys
 import time
@@ -872,8 +874,12 @@ def _gate_error_bullets(result: StageResult) -> list[str]:
 
 
 
-def run_pipeline(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable) -> tuple[int, list[StageResult]]:
-    validate_stage_graph(stages)
+def _run_stage_sequence(
+    stages: Sequence[Stage],
+    *,
+    python: str,
+    execution_root: Path,
+) -> tuple[int, list[StageResult]]:
     results: list[StageResult] = []
     blocked_exit_code: int | None = None
     for stage in stages:
@@ -885,8 +891,12 @@ def run_pipeline(stages: Sequence[Stage] = STAGES, *, python: str = sys.executab
         start = time.perf_counter()
         env = dict(os.environ)
         existing_pythonpath = env.get("PYTHONPATH")
-        env["PYTHONPATH"] = str(ROOT) if not existing_pythonpath else f"{ROOT}{os.pathsep}{existing_pythonpath}"
-        completed = subprocess.run(argv, cwd=ROOT, text=True, capture_output=True, env=env)
+        env["PYTHONPATH"] = (
+            str(execution_root)
+            if not existing_pythonpath
+            else f"{execution_root}{os.pathsep}{existing_pythonpath}"
+        )
+        completed = subprocess.run(argv, cwd=execution_root, text=True, capture_output=True, env=env)
         duration_seconds = round(time.perf_counter() - start, 6)
         result = StageResult(
             stage_id=stage.stage_id,
@@ -901,7 +911,11 @@ def run_pipeline(stages: Sequence[Stage] = STAGES, *, python: str = sys.executab
             print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
         if result.stderr:
             print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
-        print(f"<== {stage.stage_id}: exit={result.returncode} duration_seconds={result.duration_seconds:.3f}", flush=True)
+        print(
+            f"<== {stage.stage_id}: exit={result.returncode} "
+            f"duration_seconds={result.duration_seconds:.3f}",
+            flush=True,
+        )
         if result.returncode != 0:
             if result.returncode in stage.allowed_exit_codes:
                 blocked_exit_code = blocked_exit_code or result.returncode
@@ -918,6 +932,228 @@ def run_pipeline(stages: Sequence[Stage] = STAGES, *, python: str = sys.executab
                 print(f"GATE_ERROR {bullet}", file=sys.stderr)
             return result.returncode, results
     return blocked_exit_code or 0, results
+
+
+def _copy_path(source: Path, destination: Path) -> None:
+    if source.is_dir():
+        shutil.copytree(source, destination, dirs_exist_ok=True)
+    elif source.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+
+def _candidate_path(candidate_root: Path, accepted_path: Path) -> Path:
+    resolved = accepted_path.resolve()
+    try:
+        return candidate_root / resolved.relative_to(ROOT.resolve())
+    except ValueError:
+        return candidate_root.parent / resolved.relative_to(WORKSPACE.resolve())
+
+
+def _seed_external_candidate_paths(candidate_root: Path, stages: Sequence[Stage]) -> None:
+    patterns = dict.fromkeys(
+        value
+        for stage in stages
+        for value in (*stage.reads, *_declared_stage_writes(stage))
+        if value.startswith("../")
+    )
+    for pattern in patterns:
+        accepted_pattern = ROOT / pattern
+        if _is_glob(pattern):
+            sources = sorted(accepted_pattern.parent.glob(accepted_pattern.name))
+        else:
+            sources = [accepted_pattern]
+        for source in sources:
+            if source.exists():
+                _copy_path(source, _candidate_path(candidate_root, source))
+
+
+def _prepare_candidate_root(candidate_root: Path, stages: Sequence[Stage]) -> None:
+    shutil.copytree(
+        ROOT,
+        candidate_root,
+        ignore=shutil.ignore_patterns(
+            ".git",
+            ".pytest_cache",
+            "__pycache__",
+            "*.pyc",
+        ),
+    )
+    _seed_external_candidate_paths(candidate_root, stages)
+
+
+def _write_set_entries(
+    candidate_root: Path,
+    stages: Sequence[Stage],
+) -> list[tuple[Path | None, Path]]:
+    entries: dict[Path, Path | None] = {}
+    for pattern in dict.fromkeys(
+        value for stage in stages for value in _declared_stage_writes(stage)
+    ):
+        candidate_pattern = candidate_root / pattern
+        accepted_pattern = ROOT / pattern
+        if _is_glob(pattern):
+            candidate_matches = set(candidate_pattern.parent.glob(candidate_pattern.name))
+            accepted_matches = set(accepted_pattern.parent.glob(accepted_pattern.name))
+            for source in candidate_matches:
+                destination = (
+                    ROOT / source.resolve().relative_to(candidate_root.resolve())
+                    if source.resolve().is_relative_to(candidate_root.resolve())
+                    else WORKSPACE / source.resolve().relative_to(candidate_root.parent.resolve())
+                )
+                entries[destination] = source
+            for destination in accepted_matches:
+                candidate = _candidate_path(candidate_root, destination)
+                entries.setdefault(destination, candidate if candidate.exists() else None)
+            continue
+        source = candidate_pattern
+        destination = accepted_pattern
+        entries[destination] = source if source.exists() else None
+    return [(source, destination) for destination, source in sorted(entries.items(), key=lambda item: str(item[0]))]
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    elif path.exists() or path.is_symlink():
+        path.unlink()
+
+
+def _rollback_promoted_write_set(applied: Sequence[tuple[Path, Path | None]]) -> None:
+    for destination, backup in reversed(applied):
+        _remove_path(destination)
+        if backup is not None and backup.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            backup.replace(destination)
+
+
+def _promote_write_set(
+    candidate_root: Path,
+    stages: Sequence[Stage],
+    transaction_root: Path,
+) -> list[tuple[Path, Path | None]]:
+    entries = _write_set_entries(candidate_root, stages)
+    staged_root = transaction_root / "staged"
+    backup_root = transaction_root / "backup"
+    staged: list[tuple[Path | None, Path, Path]] = []
+    for index, (source, destination) in enumerate(entries):
+        staged_path: Path | None = None
+        if source is not None:
+            staged_path = staged_root / str(index)
+            _copy_path(source, staged_path)
+        staged.append((staged_path, destination, backup_root / str(index)))
+
+    applied: list[tuple[Path, Path | None]] = []
+    try:
+        for staged_path, destination, backup_path in staged:
+            backup: Path | None = None
+            if destination.exists() or destination.is_symlink():
+                backup_path.parent.mkdir(parents=True, exist_ok=True)
+                destination.replace(backup_path)
+                backup = backup_path
+            applied.append((destination, backup))
+            if staged_path is None:
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            staged_path.replace(destination)
+    except Exception:
+        _rollback_promoted_write_set(applied)
+        raise
+    return applied
+
+
+def _run_regeneration_transaction(
+    candidate_stages: Sequence[Stage],
+    canonical_rebind_stages: Sequence[Stage],
+    final_c4_stages: Sequence[Stage],
+    *,
+    python: str = sys.executable,
+) -> tuple[int, list[StageResult]]:
+    results: list[StageResult] = []
+    with tempfile.TemporaryDirectory(prefix=".e4-candidate-", dir=WORKSPACE) as temp_name:
+        candidate_root = Path(temp_name) / "repo"
+        _prepare_candidate_root(candidate_root, candidate_stages)
+        candidate_code, candidate_results = _run_stage_sequence(
+            candidate_stages,
+            python=python,
+            execution_root=candidate_root,
+        )
+        results.extend(candidate_results)
+        if candidate_code != 0:
+            return candidate_code, results
+
+        with tempfile.TemporaryDirectory(prefix=".e4-promotion-", dir=WORKSPACE) as promotion_name:
+            try:
+                applied = _promote_write_set(
+                    candidate_root,
+                    candidate_stages,
+                    Path(promotion_name),
+                )
+            except Exception as exc:
+                print(f"FAILED atomic candidate promotion: {exc}", file=sys.stderr)
+                return 1, results
+
+            try:
+                rebind_code, rebind_results = _run_stage_sequence(
+                    canonical_rebind_stages,
+                    python=python,
+                    execution_root=ROOT,
+                )
+                results.extend(rebind_results)
+                if rebind_code != 0:
+                    _rollback_promoted_write_set(applied)
+                    return rebind_code, results
+                final_code, final_results = _run_stage_sequence(
+                    final_c4_stages,
+                    python=python,
+                    execution_root=ROOT,
+                )
+                results.extend(final_results)
+                if final_code != 0:
+                    _rollback_promoted_write_set(applied)
+                return final_code, results
+            except Exception:
+                _rollback_promoted_write_set(applied)
+                raise
+
+
+def _candidate_stage(stage: Stage) -> Stage:
+    if stage.stage_id != "north_star_proof_packets":
+        return stage
+    argv = list(stage.argv)
+    stage_index = argv.index("--stage") + 1
+    argv[stage_index] = "capture"
+    if "--defer-derived-writes" not in argv:
+        argv.append("--defer-derived-writes")
+    return replace(stage, argv=tuple(argv))
+
+
+def _canonical_transaction_groups(
+    stages: Sequence[Stage],
+) -> tuple[tuple[Stage, ...], tuple[Stage, ...], tuple[Stage, ...]]:
+    candidate_stages = tuple(_candidate_stage(stage) for stage in stages)
+    rebind_start = next(
+        index for index, stage in enumerate(stages) if stage.stage_id == "catalog_claim_binding_snapshot"
+    )
+    final_start = next(index for index, stage in enumerate(stages) if stage.phase == "validators")
+    canonical_rebind_stages = tuple(stages[rebind_start:final_start])
+    final_c4_stages = tuple(stages[final_start:])
+    return candidate_stages, canonical_rebind_stages, final_c4_stages
+
+
+def run_pipeline(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable) -> tuple[int, list[StageResult]]:
+    validate_stage_graph(stages)
+    stage_ids = {stage.stage_id for stage in stages}
+    if {
+        "north_star_proof_packets",
+        "catalog_claim_binding_snapshot",
+        "validate_e4_closure",
+    }.issubset(stage_ids):
+        return _run_regeneration_transaction(
+            *_canonical_transaction_groups(stages),
+            python=python,
+        )
+    return _run_stage_sequence(stages, python=python, execution_root=ROOT)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
