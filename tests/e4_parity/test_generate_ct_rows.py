@@ -198,8 +198,15 @@ def test_lane_def_data_projects_new_ct_row_without_python_lane_branch(tmp_path: 
                 "inputs": ["synthetic/input.json"],
                 "workspace_template": None,
             },
-            "normalize": {"translator": "identity", "config": {}},
-            "replay": {"session": None, "comparator_class": "semantic"},
+            "normalize": {"mode": "identity", "translator": "identity", "config": {}},
+            "replay": {
+                "mode": "stored",
+                "artifacts": [
+                    "docs/conformance/e4_target_support/synthetic_data_owned_lane/bb_replay_result.json"
+                ],
+                "session": None,
+                "comparator_class": "semantic",
+            },
             "compare": {"comparator": "synthetic_comparator", "config": {"assertions": expected_checks}},
             "claim": {"scope": {"behaviors": ["bb.synthetic.v1"], "surfaces": ["synthetic C4"]}, "exclusions": []},
             "ct": {"description": "Lane-def-owned synthetic CT row", "timeout_seconds": 77},

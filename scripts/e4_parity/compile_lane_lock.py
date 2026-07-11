@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 import shutil
@@ -26,10 +25,12 @@ try:
         validate_payload_source,
     )
     from scripts.e4_parity.tree_digest import TreeDigest, TreeDigestError, digest_directory
+    from scripts.e4_parity.validators.hash_utils import sha256_bytes
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from path_refs import ReferenceResolutionError, resolve_declared_reference
     from promote_lane_payload_source import extract_payload_source, validate_payload_source
     from tree_digest import TreeDigest, TreeDigestError, digest_directory
+    from validators.hash_utils import sha256_bytes
 
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 ROOT = SOURCE_ROOT
@@ -78,10 +79,6 @@ class ReferenceError(ValueError):
 def canonical_bytes(value: Any, *, newline: bool = True) -> bytes:
     suffix = "\n" if newline else ""
     return (json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + suffix).encode("utf-8")
-
-
-def digest_bytes(value: bytes) -> str:
-    return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
 def _repo_path(
@@ -161,7 +158,7 @@ def _input_row(path: Path, role: str, *, logical_path: str | None = None) -> dic
         data = path.read_bytes()
     except OSError as exc:
         raise ReferenceError(f"cannot read declared input {display}: {exc}") from exc
-    return {"path": display, "sha256": digest_bytes(data), "bytes": len(data), "role": role}
+    return {"path": display, "sha256": sha256_bytes(data), "bytes": len(data), "role": role}
 
 def extract_source_archive(archive_path: Path, extraction_path: Path) -> TreeDigest:
     """Safely materialize a canonical regular-file-only ZIP extraction."""
@@ -252,7 +249,7 @@ def _freeze_row(manifest: Mapping[str, Any], manifest_path: Path) -> tuple[dict[
     if not isinstance(row, Mapping):
         raise ReferenceError(f"freeze manifest {_display(path)} has no e4_configs row {config_id!r}")
     preimage = canonical_bytes({"row_id": config_id, "row": row}, newline=False)
-    target_freeze = {"config_id": config_id, "freeze_manifest_row_sha256": digest_bytes(preimage)}
+    target_freeze = {"config_id": config_id, "freeze_manifest_row_sha256": sha256_bytes(preimage)}
     return target_freeze, _input_row(path, "target_freeze_manifest", logical_path=reference)
 
 
@@ -274,7 +271,7 @@ def _registry_pins(manifest: Mapping[str, Any]) -> list[dict[str, str]]:
         pins.append({
             "registry": "e4_adapters",
             "entry_id": str(entry_id),
-            "entry_sha256": digest_bytes(canonical_bytes(entry, newline=False)),
+            "entry_sha256": sha256_bytes(canonical_bytes(entry, newline=False)),
         })
     return sorted(pins, key=lambda pin: (pin["registry"], pin["entry_id"]))
 
@@ -519,11 +516,11 @@ def build_outputs(
         "lock_format": "canonical-json-v1",
         "lane_id": str(manifest["lane_id"]),
         "manifest_ref": _display(manifest_path),
-        "manifest_sha256": digest_bytes(manifest_path.read_bytes()),
+        "manifest_sha256": sha256_bytes(manifest_path.read_bytes()),
         "target_freeze": target_freeze,
         "resolved_inputs": sorted(unique_rows.values(), key=lambda row: (row["path"], row["role"])),
         "artifact_roles": artifact_roles,
-        "packet_constants_ref": {"path": _display(sidecar_path), "sha256": digest_bytes(sidecar_data)},
+        "packet_constants_ref": {"path": _display(sidecar_path), "sha256": sha256_bytes(sidecar_data)},
         "registry_pins": _registry_pins(manifest),
     }
     lock_schema_path = _repo_path(

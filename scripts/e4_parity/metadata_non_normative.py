@@ -42,14 +42,16 @@ def sentinel_lane_def() -> GuardedLaneDef:
             "capture": {
                 "strategy": "replay_dump",
                 "argv": None,
-                "inputs": [
-                    "config/e4_targets/sentinel/1.0",
-                    "agent_configs/sentinel.yaml",
-                ],
+                "inputs": ["contracts/kernel/examples/e4_lane_def_minimal.json"],
                 "workspace_template": None,
             },
-            "normalize": {"translator": "identity", "config": {}},
-            "replay": {"session": None, "comparator_class": "semantic"},
+            "normalize": {"mode": "identity", "translator": "identity", "config": {}},
+            "replay": {
+                "mode": "stored",
+                "artifacts": [f"docs/conformance/e4_target_support/{lane_id}/bb_replay_result.json"],
+                "session": None,
+                "comparator_class": "semantic",
+            },
             "compare": {"comparator": "sentinel_comparator", "config": {}},
             "claim": {"scope": {"behaviors": ["bb.sentinel.v1"], "surfaces": ["sentinel"]}, "exclusions": []},
             "artifacts_root": f"docs/conformance/e4_target_support/{lane_id}",

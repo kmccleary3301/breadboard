@@ -20,10 +20,15 @@
     "workspace_template": null
   },
   "normalize": {
+    "mode": "identity",
     "translator": "identity",
     "config": {}
   },
   "replay": {
+    "mode": "stored",
+    "artifacts": [
+      "docs/conformance/e4_target_support/example_lane_v1/bb_replay_result.json"
+    ],
     "session": null,
     "comparator_class": "semantic"
   },

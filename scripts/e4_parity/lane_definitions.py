@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import hashlib
 from datetime import datetime, timezone
 from functools import lru_cache
 from pathlib import Path
@@ -10,6 +9,7 @@ from typing import Any, Mapping
 import yaml
 from jsonschema import Draft202012Validator, RefResolver
 from scripts.e4_parity.validators.registries import RegistryValidationError, assert_registered
+from scripts.e4_parity.validators.hash_utils import sha256_file
 from scripts.e4_parity.path_refs import (
     ReferenceResolutionError,
     resolve_declared_reference,
@@ -258,7 +258,7 @@ def load_lane_def(path: Path) -> dict[str, Any]:
     return validate_lane_def(_load_yaml(path), source=path)
 
 def _sha256(path: Path) -> str:
-    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    return sha256_file(path)
 
 
 
