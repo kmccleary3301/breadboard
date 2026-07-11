@@ -577,6 +577,7 @@ def test_e4_claim_reverify_uses_support_claim_source_path_when_filename_differs_
     assert response.status_code == 200
     assert response.json()["claim_id"] == ACCEPTED_CLAIM_ID
     assert Path(captured["support_claim_path"]).resolve() == mismatched_claim_path.resolve()
+    assert captured["config_id"] == "oh_my_pi_p6_0_l4_mcp_browser_resource_v1"
 
 def test_e4_missing_resources_return_flat_error_envelope(client: TestClient) -> None:
     missing_lane = client.get("/v1/e4/lanes/not_a_lane")

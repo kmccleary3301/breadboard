@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "bb.e4.lane_lock.v1",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
   "title": "BreadBoard E4 lane lock (machine-owned deterministic resolution; never hand-edited)",
   "type": "object",
   "additionalProperties": false,

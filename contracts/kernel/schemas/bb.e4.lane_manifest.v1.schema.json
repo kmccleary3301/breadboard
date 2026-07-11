@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "bb.e4.lane_manifest.v1",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
   "title": "BreadBoard E4 lane manifest (author-owned conformance intent; digests live in bb.e4.lane_lock.v1)",
   "type": "object",
   "additionalProperties": false,

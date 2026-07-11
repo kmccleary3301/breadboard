@@ -98,6 +98,16 @@
       "status": "active"
     },
     {
+      "description": "contract_tiers contract family.",
+      "id": "contract_tiers",
+      "metadata": {
+        "schema_versions": [
+          "bb.contract_tiers.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
       "description": "coordination_delegated_verification_reference_slice contract family.",
       "id": "coordination_delegated_verification_reference_slice",
       "metadata": {
@@ -266,6 +276,26 @@
         "schema_versions": [
           "bb.e4.lane_inventory.v1",
           "bb.e4.lane_inventory.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_lane_lock contract family.",
+      "id": "e4_lane_lock",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.lane_lock.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_lane_manifest contract family.",
+      "id": "e4_lane_manifest",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.lane_manifest.v1"
         ]
       },
       "status": "active"
