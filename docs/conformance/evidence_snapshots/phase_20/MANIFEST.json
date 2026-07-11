@@ -50,12 +50,12 @@
       "sha256": "b7f7cb3522e48708fe9c98bf83830b03db87c23eefda9b15b56dd263c6565ab5",
       "status": "reviewer-confirmed",
       "detail": "ReviewSP7 verdict artifact line names this file @sha256:b7f7cb35...",
-      "reviewed_code_sha": "6107d12b (empty; snapshot commit 07bc045b under fresh review)"
+      "reviewed_code_sha": "07bc045b (snapshot commit, ReviewSP7R2 approved; audit copy byte-authenticated b7f7cb35...)"
     },
     "SP7/reviewer.json": {
-      "sha256": "f8d53c9d49699089e00878765d938b4ff34702df69ffabbbc090646c8d05741d",
+      "sha256": "623abbc9a0f085eaceab7545c0994364e2bd63b11cdba02a1ea0445387b06002",
       "status": "orchestrator-materialized",
-      "detail": "from ReviewSP7 blocked yield (agent://ReviewSP7), verdict retained"
+      "detail": "transcription: original blocked verdict + ReviewSP7R2 approved verdict (agent://ReviewSP7R2)"
     },
     "SP3/reviewer.json": {
       "sha256": "71a7b6609ba80b45ddb39bb9b4d262ebd3e3047459bab1c737582742f7478f21",
