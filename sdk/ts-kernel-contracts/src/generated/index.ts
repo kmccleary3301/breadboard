@@ -86,8 +86,6 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_plan.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v4.schema.json",
@@ -209,8 +207,6 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_plan.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_plan.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v4.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v4.schema.json"],
@@ -271,8 +267,6 @@ export type { E4LaneDefV1 } from "./types/bb.e4.lane_def.v1.js"
 export type { E4LaneDefV2 } from "./types/bb.e4.lane_def.v2.js"
 export type { E4LaneInventoryV1 } from "./types/bb.e4.lane_inventory.v1.js"
 export type { E4LaneInventoryV2 } from "./types/bb.e4.lane_inventory.v2.js"
-export type { E4LaneLockV1 } from "./types/bb.e4.lane_lock.v1.js"
-export type { E4LaneManifestV1 } from "./types/bb.e4.lane_manifest.v1.js"
 export type { E4RegenFailureClassificationV1 } from "./types/bb.e4.regen_failure_classification.v1.js"
 export type { E4RegenPlanV1 } from "./types/bb.e4.regen_plan.v1.js"
 export type { E4SupportClaimV1 } from "./types/bb.e4.support_claim.v1.js"

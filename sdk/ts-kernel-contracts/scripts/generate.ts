@@ -16,6 +16,10 @@ const PHASE20_UNPACKED_SCHEMAS: Record<string, true> = {
   "bb.e4.lane_lock.v1.schema.json": true,
   "bb.e4.lane_manifest.v1.schema.json": true,
 }
+const INTERNAL_ONLY_SCHEMAS: Record<string, true> = {
+  "bb.e4.lane_lock.v1.schema.json": true,
+  "bb.e4.lane_manifest.v1.schema.json": true,
+}
 
 interface SchemaEntry {
   filename: string
@@ -165,7 +169,7 @@ function schemaIdsForPack(pack: PackEntry, entriesByFilename: Map<string, Schema
   })
 }
 
-function emitRegistry(entries: SchemaEntry[]): void {
+function emitRegistry(entries: SchemaEntry[], outputFilename: string): void {
   const schemaObjects = entries
     .map((entry) => `  ${JSON.stringify(entry.schemaId)}: ${JSON.stringify(entry.schema, null, 2).replace(/^/gm, "  ").trimStart()}`)
     .join(",\n")
@@ -206,12 +210,13 @@ for (const [schemaId, schema] of Object.entries(GENERATED_SCHEMA_OBJECTS)) {
   GENERATED_SCHEMAS[schemaId] = { schema, validate }
 }
 `
-  writeFileSync(join(GENERATED_ROOT, "registry.ts"), registry, "utf8")
+  writeFileSync(join(GENERATED_ROOT, outputFilename), registry, "utf8")
 }
 
 function emitIndex(entries: SchemaEntry[], packs: PackEntry[]): void {
   const entriesByFilename = new Map(entries.map((entry) => [entry.filename, entry]))
   const typeExports = entries
+    .filter((entry) => INTERNAL_ONLY_SCHEMAS[entry.filename] !== true)
     .map((entry) => `export type { ${entry.typeName} } from "./types/${entry.filename.replace(/\.schema\.json$/, ".js")}"`)
     .join("\n")
   const packObjects = packs
@@ -344,13 +349,22 @@ function emitSchemaReadme(entries: SchemaEntry[], packs: PackEntry[], tiers: Map
 
 async function main(): Promise<void> {
   const entries = readSchemas()
+  const publicEntries = entries.filter((entry) => INTERNAL_ONLY_SCHEMAS[entry.filename] !== true)
+  const internalEntries = entries.filter((entry) => INTERNAL_ONLY_SCHEMAS[entry.filename] === true)
   const packs = readPacks(entries)
+  const publicPacks = packs.map((pack) => ({
+    ...pack,
+    schemaFilenames: pack.schemaFilenames.filter(
+      (filename) => INTERNAL_ONLY_SCHEMAS[filename] !== true,
+    ),
+  }))
   const tiers = readContractTiers(entries)
   rmSync(GENERATED_ROOT, { recursive: true, force: true })
   mkdirSync(TYPES_DIR, { recursive: true })
   await emitTypes(entries)
-  emitRegistry(entries)
-  emitIndex(entries, packs)
+  emitRegistry(publicEntries, "registry.ts")
+  emitRegistry(internalEntries, "internal-registry.ts")
+  emitIndex(publicEntries, publicPacks)
   emitSchemaReadme(entries, packs, tiers)
   console.log(JSON.stringify({ generatedSchemas: entries.length, generatedPacks: packs.length, outputDir: relative(PACKAGE_ROOT, GENERATED_ROOT) }))
 }

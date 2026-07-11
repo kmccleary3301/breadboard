@@ -10,6 +10,17 @@ export interface E4FixedPointReportV1 {
    * RFC 3339 UTC timestamp. The only wall-clock form for new contracts.
    */
   generated_at_utc: string;
+  score_authority: {
+    source_ref: string;
+    /**
+     * Lowercase hex sha256 with mandatory 'sha256:' prefix. The only digest string form for new contracts.
+     */
+    source_sha256: string;
+    source_observed: ScoreAuthoritySourceValues;
+    expected: ScoreAuthorityValues;
+    observed: ScoreAuthorityValues;
+    ok: boolean;
+  };
   watch_set_size: number;
   /**
    * Lowercase hex sha256 with mandatory 'sha256:' prefix. The only digest string form for new contracts.
@@ -23,4 +34,22 @@ export interface E4FixedPointReportV1 {
   first_exit_code?: number;
   second_exit_code?: number;
   changed_paths: string[];
+}
+/**
+ * This interface was referenced by `E4FixedPointReportV1`'s JSON-Schema
+ * via the `definition` "score_authority_source_values".
+ */
+export interface ScoreAuthoritySourceValues {
+  points_total: number;
+  points_done: number;
+  points_blocked: number;
+}
+/**
+ * This interface was referenced by `E4FixedPointReportV1`'s JSON-Schema
+ * via the `definition` "score_authority_values".
+ */
+export interface ScoreAuthorityValues {
+  points: number;
+  target_claims: number;
+  non_target_claims: number;
 }
