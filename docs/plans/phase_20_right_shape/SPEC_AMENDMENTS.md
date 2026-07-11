@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **19 amendments** (below).
+Current state: **20 amendments** (below).
 
 ---
 
@@ -283,3 +283,14 @@ Discovery: run_lane and related stage runners invoke a hardcoded repo-local `.ve
 Rule: lane-pipeline subprocess interpreters resolve as `sys.executable` by default; an explicit environment override (`BB_LANE_PYTHON`) is permitted ONLY if it names an existing executable file — the resolver must validate existence+executability and fail closed with a clear error otherwise. Behavior-preserving at the integration checkout (gates already run under the mandated venv python).
 
 Ownership: this touches H-owned stage/runtime machinery (run_lane), which is already merged — therefore it is a SEPARATE, explicitly owned prerequisite commit (owner: WsH2Stages2), independently verified (H-stage suites 78, comparator 15, freeze suite 14, freeze gate, plus a nested-worktree no-.venv stage-subprocess test), merged BEFORE the WS-F rework rebases onto it. F-owned launch sites (compiler/adapters) route through the same rule in F's commits. Verifiers are PROHIBITED from synthesizing `.venv` or any untracked dependency in verification worktrees.
+
+
+---
+
+## Amendment 19 - 2026-07-11 - explicit workspace evidence root (BB_WORKSPACE_ROOT)
+
+Discovery: multiple resolvers located the workspace-level `docs_tmp` evidence tree by scanning checkout ancestors (path_refs.workspace_root_for_checkout, F5 additions in c4_chain/readiness, and run_lane's AM18 fixed-ROOT.parent rule) — ambient, layout-dependent authority.
+
+Rule: any external/workspace evidence reference REQUIRES an explicit root: `BB_WORKSPACE_ROOT` env or an explicit CLI/config value. Resolve once at startup, canonicalize (realpath), and verify every referenced target remains beneath that root after resolution; fail closed with a clear provisioning error when unset, relative, nonexistent, or when a target escapes (including via symlink). NO default and NO scanning. Repo-internal references keep checkout-ROOT-only resolution with no env involvement. Subprocess launches that need workspace refs must propagate the resolved root explicitly. Documented gate/evidence commands that consume workspace evidence must state `BB_WORKSPACE_ROOT` explicitly.
+
+Ownership: cross-packet contract. H-owned run_lane workspace-ref resolution updates on a separately owned prerequisite branch (owner: WsH2Stages2, supersedes the AM18 fixed-parent rule for workspace refs); F-owned resolvers (path_refs, c4_chain, readiness, compiler/loader) update inside the WS-F rework. Required negative tests per resolver: unset root; relative root; nonexistent root; symlink-escape containment; plus propagation test for subprocess paths.
