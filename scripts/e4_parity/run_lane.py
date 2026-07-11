@@ -17,6 +17,7 @@ try:
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
+    from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, lane_lock_sha256, load_lane_defs
@@ -24,6 +25,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
+    from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
@@ -149,12 +151,21 @@ def _json_out_location(argv: Sequence[str]) -> tuple[int, str, bool]:
 
 
 def _resolve_repo_path(path_text: str) -> Path:
-    path = Path(path_text)
-    if path.is_absolute():
-        return path
-    if path.parts and path.parts[0] in {"docs_tmp", ROOT.name}:
-        return ROOT.parent / path
-    return ROOT / path
+    path = Path(path_text.split("#", 1)[0])
+    namespace = (
+        "repo"
+        if path.parts[:3] == ("docs_tmp", "phase_20", "derived")
+        or not path.parts
+        or path.parts[0] != "docs_tmp"
+        else "workspace_evidence"
+    )
+    return resolve_declared_reference(
+        path,
+        checkout_root=ROOT,
+        namespace=namespace,
+        label="lane reference",
+        must_exist=False,
+    )
 
 
 def _digest_input(path: Path) -> str:
@@ -168,7 +179,7 @@ def _digest_input(path: Path) -> str:
 def _retarget_json_out(argv: Sequence[str], out_dir: Path | None) -> tuple[list[str], Path, Path]:
     result = list(argv)
     index, value, inline = _json_out_location(result)
-    accepted_path = _resolve_repo_path(value)
+    accepted_path = Path(value).resolve() if Path(value).is_absolute() else _resolve_repo_path(value)
     if out_dir is None:
         return result, accepted_path, accepted_path
     try:

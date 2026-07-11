@@ -46,7 +46,7 @@ PILOT_LANE_ID = "oh_my_pi_p6_6_task_job_subagent"
 _PILOT_ARTIFACT_ROLES = {
     "agent_config": "agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml",
     "artifact_catalog": "docs/conformance/e4_artifact_catalog.json",
-    "atomic_feature_ledger": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+    "atomic_feature_ledger": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
     "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json",
     "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
     "detached_subagent_target_capture": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json",

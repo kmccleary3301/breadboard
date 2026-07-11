@@ -10,7 +10,11 @@ from typing import Any, Mapping
 
 import yaml
 from jsonschema import Draft202012Validator, RefResolver
-from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
+from scripts.e4_parity.path_refs import (
+    ReferenceResolutionError,
+    resolve_declared_reference,
+    workspace_root_for_checkout,
+)
 from scripts.e4_parity.validators.gate_errors import BlameEntry, GateError, apply_gate_error_envelope, gate_error_to_dict, gate_exit_code
 from scripts.e4_parity.validators.registries import RegistryValidationError, assert_registered
 
@@ -92,10 +96,11 @@ def _resolve_path(repo_root: Path, ref_or_path: str) -> Path:
     raw = _strip_ref_suffix(ref_or_path)
     path = Path(raw)
     namespace = (
-        "workspace_evidence"
-        if path.is_absolute()
-        or (path.parts and path.parts[0] in {"docs_tmp", repo_root.resolve().name})
-        else "repo"
+        "repo"
+        if path.parts[:3] == ("docs_tmp", "phase_20", "derived")
+        or not path.parts
+        or path.parts[0] != "docs_tmp"
+        else "workspace_evidence"
     )
     try:
         return resolve_declared_reference(
@@ -113,14 +118,16 @@ def _display_path(repo_root: Path, path: Path) -> str:
     checkout = repo_root.resolve()
     resolved = path.resolve()
     try:
-        return str(Path(checkout.name) / resolved.relative_to(checkout))
+        return resolved.relative_to(checkout).as_posix()
     except ValueError:
         pass
-    validated = _resolve_path(repo_root, str(resolved))
-    if "docs_tmp" in validated.parts:
-        docs_tmp_index = validated.parts.index("docs_tmp")
-        return str(Path(*validated.parts[docs_tmp_index:]))
-    return str(validated)
+    try:
+        workspace = workspace_root_for_checkout(checkout)
+    except ReferenceResolutionError as exc:
+        raise C4ChainValidationError(str(exc)) from exc
+    if resolved.is_relative_to(workspace):
+        return resolved.relative_to(workspace).as_posix()
+    raise C4ChainValidationError(f"path escapes checkout/workspace boundary: {path}")
 
 
 def _canonicalish_path(repo_root: Path, path: Path) -> bool:
@@ -791,7 +798,7 @@ def validate_c4_chain(
         evidence_manifest = _require_mapping(_try_load_json(evidence_manifest_path, "evidence_manifest", errors), "evidence_manifest", errors)
 
     for label, path in (("freeze_manifest", freeze_manifest_path), ("support_claim", support_claim_path), ("evidence_manifest", evidence_manifest_path)):
-        _validate_artifact_hash(repo_root, label, str(path), None, errors)
+        _validate_artifact_hash(repo_root, label, _display_path(repo_root, path), None, errors)
         refs[label] = _display_path(repo_root, path)
         if path.exists():
             hashes[label] = _sha256(path)

@@ -1,0 +1,9 @@
+You are producing a canonical Oh-My-Pi P6.6 task/job/subagent target capture focused on detached subagent lifecycle. Keep actions local. Do not read secrets. Do not call external URLs from tools. Do not write outside the current working directory.
+
+Required actions:
+1. Use the task/subagent capability to invoke a detached/asynchronous child if the schema exposes such a control. If there is no explicit detached field, use the normal task invocation only if it returns immediately with a background job handle.
+2. The child/subagent assignment is: Use bash to run: sleep 8 && echo P6_6_DETACHED_CHILD_OK. Then return a final JSON object {"result":"P6_6_DETACHED_CHILD_OK"}. Do not read files, do not access the network, and do not write files.
+3. Immediately after the task tool returns the spawned agent/job id, do not wait for it first. Use job list to observe that the detached child is running.
+4. Start a harmless local background bash job that prints P6_6_PARENT_CONTINUED_OK. This demonstrates the parent continued after the detached child spawn.
+5. Use job poll to wait for the detached child to finish and capture its final output.
+6. At the end, output one concise JSON object on one line prefixed with P6_6_DETACHED_CAPTURE_JSON=. Include detached_subagent_observed, parent_continued_after_spawn, detached_child_completed, tool_names_used, provider_model_visible_to_target, and notes.

@@ -13,7 +13,10 @@ class ReferenceResolutionError(ValueError):
 
 
 def _validated_workspace_root(value: str | Path, *, source: str) -> Path:
-    candidate = Path(value).expanduser().resolve()
+    raw = Path(value).expanduser()
+    if not raw.is_absolute():
+        raise ReferenceResolutionError(f"{source} must be an absolute path: {value}")
+    candidate = raw.resolve()
     if not candidate.is_dir() or not (candidate / "docs_tmp").is_dir():
         raise ReferenceResolutionError(
             f"{source} must name an existing workspace containing docs_tmp: "
@@ -70,9 +73,11 @@ def resolve_declared_reference(
             if workspace_root is not None
             else workspace_root_for_checkout(checkout)
         )
-        if path.is_absolute():
-            resolved = path.resolve()
-        elif path.parts and path.parts[0] in {"docs_tmp", checkout.name}:
+        if path.is_absolute() or ".." in path.parts:
+            raise ReferenceResolutionError(
+                f"{label} must be relative to checkout/workspace: {reference}"
+            )
+        if path.parts and path.parts[0] in {"docs_tmp", checkout.name}:
             resolved = (workspace / path).resolve()
         else:
             resolved = (checkout / path).resolve()

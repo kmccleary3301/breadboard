@@ -1,0 +1,504 @@
+[
+  {
+    "assignee": {
+      "actor_id": "omp-local-job-manager",
+      "actor_kind": "host"
+    },
+    "cancellation_policy": {
+      "cancellable_by": [
+        {
+          "actor_id": "Main",
+          "actor_kind": "agent"
+        },
+        {
+          "actor_id": "omp-local-job-manager",
+          "actor_kind": "host"
+        }
+      ],
+      "mode": "immediate",
+      "on_cancel": "keep_partial_outputs",
+      "propagate_to_children": false
+    },
+    "delegation": {
+      "delegated_by": {
+        "actor_id": "Main",
+        "actor_kind": "agent"
+      },
+      "delegation_ref": "job-manager-only-list-poll-cancel",
+      "parent_task_id": "p6-6-parent-turn",
+      "parent_work_item_id": "wi-parent-turn"
+    },
+    "identity": {
+      "correlation_id": "job-manager-only-1",
+      "distributed_task_id": null,
+      "subagent_id": null,
+      "task_id": "job-manager-only-list-poll-cancel",
+      "task_kind": "background"
+    },
+    "input_artifact_refs": [
+      {
+        "artifact_kind": "transcript",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "output_artifact_refs": [
+      {
+        "artifact_kind": "report",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "owner": {
+      "actor_id": "Main",
+      "actor_kind": "agent"
+    },
+    "resume_policy": {
+      "mode": "checkpoint",
+      "requires_approval": false,
+      "resume_from_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+      "wake_refs": [
+        "job-manager-only-1"
+      ]
+    },
+    "schema_version": "bb.work_item.v1",
+    "state": {
+      "checkpoint_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+      "entered_at": "2026-07-04T00:00:00Z",
+      "reason": "job_list_returned;job_poll_running;job_cancel_requested",
+      "status": "cancelled"
+    },
+    "visibility": {
+      "host_visible": true,
+      "model_visible": true,
+      "provider_visible": true
+    },
+    "work_item_id": "wi-job-manager-only"
+  },
+  {
+    "assignee": {
+      "actor_id": "joined-subagent",
+      "actor_kind": "subagent"
+    },
+    "cancellation_policy": {
+      "cancellable_by": [
+        {
+          "actor_id": "Main",
+          "actor_kind": "agent"
+        },
+        {
+          "actor_id": "omp-local-job-manager",
+          "actor_kind": "host"
+        }
+      ],
+      "mode": "cooperative",
+      "on_cancel": "checkpoint_then_stop",
+      "propagate_to_children": true
+    },
+    "delegation": {
+      "delegated_by": {
+        "actor_id": "Main",
+        "actor_kind": "agent"
+      },
+      "delegation_ref": "joined-subagent-completed",
+      "parent_task_id": "p6-6-parent-turn",
+      "parent_work_item_id": "wi-parent-turn"
+    },
+    "identity": {
+      "correlation_id": null,
+      "distributed_task_id": null,
+      "subagent_id": "joined-subagent",
+      "task_id": "joined-task",
+      "task_kind": "subagent"
+    },
+    "input_artifact_refs": [
+      {
+        "artifact_kind": "transcript",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "output_artifact_refs": [
+      {
+        "artifact_kind": "report",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "owner": {
+      "actor_id": "Main",
+      "actor_kind": "agent"
+    },
+    "resume_policy": {
+      "mode": "replay",
+      "requires_approval": false,
+      "resume_from_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+      "wake_refs": []
+    },
+    "schema_version": "bb.work_item.v1",
+    "state": {
+      "checkpoint_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+      "entered_at": "2026-07-04T00:00:00Z",
+      "reason": "task_tool_invoked;subagent_spawned;subagent_completed;joined_result_returned",
+      "status": "completed"
+    },
+    "visibility": {
+      "host_visible": true,
+      "model_visible": true,
+      "provider_visible": true
+    },
+    "work_item_id": "wi-joined-subagent"
+  },
+  {
+    "assignee": {
+      "actor_id": "omp-local-job-manager",
+      "actor_kind": "host"
+    },
+    "cancellation_policy": {
+      "cancellable_by": [
+        {
+          "actor_id": "Main",
+          "actor_kind": "agent"
+        },
+        {
+          "actor_id": "omp-local-job-manager",
+          "actor_kind": "host"
+        }
+      ],
+      "mode": "cooperative",
+      "on_cancel": "checkpoint_then_stop",
+      "propagate_to_children": false
+    },
+    "delegation": {
+      "delegated_by": {
+        "actor_id": "Main",
+        "actor_kind": "agent"
+      },
+      "delegation_ref": "background-job-completed",
+      "parent_task_id": "p6-6-parent-turn",
+      "parent_work_item_id": "wi-parent-turn"
+    },
+    "identity": {
+      "correlation_id": "job-background-1",
+      "distributed_task_id": null,
+      "subagent_id": null,
+      "task_id": "background-job",
+      "task_kind": "background"
+    },
+    "input_artifact_refs": [
+      {
+        "artifact_kind": "transcript",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "output_artifact_refs": [
+      {
+        "artifact_kind": "report",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "owner": {
+      "actor_id": "Main",
+      "actor_kind": "agent"
+    },
+    "resume_policy": {
+      "mode": "replay",
+      "requires_approval": false,
+      "resume_from_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+      "wake_refs": [
+        "job-background-1"
+      ]
+    },
+    "schema_version": "bb.work_item.v1",
+    "state": {
+      "checkpoint_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+      "entered_at": "2026-07-04T00:00:00Z",
+      "reason": "background_job_completed;job_poll_completed",
+      "status": "completed"
+    },
+    "visibility": {
+      "host_visible": true,
+      "model_visible": true,
+      "provider_visible": true
+    },
+    "work_item_id": "wi-background-job"
+  },
+  {
+    "assignee": {
+      "actor_id": "omp-local-job-manager",
+      "actor_kind": "host"
+    },
+    "cancellation_policy": {
+      "cancellable_by": [
+        {
+          "actor_id": "Main",
+          "actor_kind": "agent"
+        },
+        {
+          "actor_id": "omp-local-job-manager",
+          "actor_kind": "host"
+        }
+      ],
+      "mode": "immediate",
+      "on_cancel": "keep_partial_outputs",
+      "propagate_to_children": false
+    },
+    "delegation": {
+      "delegated_by": {
+        "actor_id": "Main",
+        "actor_kind": "agent"
+      },
+      "delegation_ref": "background-job-cancelled",
+      "parent_task_id": "p6-6-parent-turn",
+      "parent_work_item_id": "wi-parent-turn"
+    },
+    "identity": {
+      "correlation_id": "job-background-cancel",
+      "distributed_task_id": null,
+      "subagent_id": null,
+      "task_id": "background-cancel",
+      "task_kind": "background"
+    },
+    "input_artifact_refs": [
+      {
+        "artifact_kind": "transcript",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "output_artifact_refs": [
+      {
+        "artifact_kind": "report",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "owner": {
+      "actor_id": "Main",
+      "actor_kind": "agent"
+    },
+    "resume_policy": {
+      "mode": "checkpoint",
+      "requires_approval": false,
+      "resume_from_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+      "wake_refs": [
+        "job-background-cancel"
+      ]
+    },
+    "schema_version": "bb.work_item.v1",
+    "state": {
+      "checkpoint_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4",
+      "entered_at": "2026-07-04T00:00:00Z",
+      "reason": "job_cancel_requested;job_cancelled",
+      "status": "cancelled"
+    },
+    "visibility": {
+      "host_visible": true,
+      "model_visible": true,
+      "provider_visible": true
+    },
+    "work_item_id": "wi-background-cancel"
+  },
+  {
+    "assignee": {
+      "actor_id": "detached-subagent",
+      "actor_kind": "subagent"
+    },
+    "cancellation_policy": {
+      "cancellable_by": [
+        {
+          "actor_id": "Main",
+          "actor_kind": "agent"
+        },
+        {
+          "actor_id": "omp-local-job-manager",
+          "actor_kind": "host"
+        }
+      ],
+      "mode": "cooperative",
+      "on_cancel": "checkpoint_then_stop",
+      "propagate_to_children": true
+    },
+    "delegation": {
+      "delegated_by": {
+        "actor_id": "Main",
+        "actor_kind": "agent"
+      },
+      "delegation_ref": "detached-subagent-completed",
+      "parent_task_id": "p6-6-parent-turn",
+      "parent_work_item_id": "wi-parent-turn"
+    },
+    "identity": {
+      "correlation_id": "job-detached-1",
+      "distributed_task_id": null,
+      "subagent_id": "detached-subagent",
+      "task_id": "detached-task",
+      "task_kind": "subagent"
+    },
+    "input_artifact_refs": [
+      {
+        "artifact_kind": "transcript",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "output_artifact_refs": [
+      {
+        "artifact_kind": "report",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "owner": {
+      "actor_id": "Main",
+      "actor_kind": "agent"
+    },
+    "resume_policy": {
+      "mode": "replay",
+      "requires_approval": false,
+      "resume_from_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+      "wake_refs": [
+        "job-detached-1"
+      ]
+    },
+    "schema_version": "bb.work_item.v1",
+    "state": {
+      "checkpoint_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+      "entered_at": "2026-07-04T00:00:00Z",
+      "reason": "task_tool_invoked;subagent_spawned;background_job_created;job_list_returned;job_poll_running;parent_continued_after_spawn;subagent_completed",
+      "status": "completed"
+    },
+    "visibility": {
+      "host_visible": true,
+      "model_visible": true,
+      "provider_visible": true
+    },
+    "work_item_id": "wi-detached-subagent"
+  },
+  {
+    "assignee": {
+      "actor_id": "detached-subagent",
+      "actor_kind": "subagent"
+    },
+    "cancellation_policy": {
+      "cancellable_by": [
+        {
+          "actor_id": "Main",
+          "actor_kind": "agent"
+        },
+        {
+          "actor_id": "omp-local-job-manager",
+          "actor_kind": "host"
+        }
+      ],
+      "mode": "cooperative",
+      "on_cancel": "checkpoint_then_stop",
+      "propagate_to_children": false
+    },
+    "delegation": {
+      "delegated_by": {
+        "actor_id": "Main",
+        "actor_kind": "agent"
+      },
+      "delegation_ref": "detached-background-job-completed",
+      "parent_task_id": "p6-6-parent-turn",
+      "parent_work_item_id": "wi-parent-turn"
+    },
+    "identity": {
+      "correlation_id": "job-detached-1",
+      "distributed_task_id": null,
+      "subagent_id": "detached-subagent",
+      "task_id": "detached-task",
+      "task_kind": "background"
+    },
+    "input_artifact_refs": [
+      {
+        "artifact_kind": "transcript",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "output_artifact_refs": [
+      {
+        "artifact_kind": "report",
+        "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
+        "visibility": {
+          "host_visible": true,
+          "model_visible": true,
+          "provider_visible": true
+        }
+      }
+    ],
+    "owner": {
+      "actor_id": "Main",
+      "actor_kind": "agent"
+    },
+    "resume_policy": {
+      "mode": "replay",
+      "requires_approval": false,
+      "resume_from_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+      "wake_refs": [
+        "job-detached-1"
+      ]
+    },
+    "schema_version": "bb.work_item.v1",
+    "state": {
+      "checkpoint_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",
+      "entered_at": "2026-07-04T00:00:00Z",
+      "reason": "background_job_created;job_list_returned;job_poll_running;subagent_completed",
+      "status": "completed"
+    },
+    "visibility": {
+      "host_visible": true,
+      "model_visible": true,
+      "provider_visible": true
+    },
+    "work_item_id": "wi-detached-job"
+  }
+]
