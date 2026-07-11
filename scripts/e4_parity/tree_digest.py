@@ -1,12 +1,16 @@
 """Canonical, fail-closed directory-tree digests for E4 declared inputs."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import stat
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    from scripts.e4_parity.validators.hash_utils import sha256_bytes, sha256_hex
+except ModuleNotFoundError:  # pragma: no cover - direct script import
+    from validators.hash_utils import sha256_bytes, sha256_hex
 
 
 class TreeDigestError(ValueError):
@@ -91,7 +95,7 @@ def digest_directory(root: Path) -> TreeDigest:
                     relative_bytes,
                     {
                         "path": relative,
-                        "sha256": hashlib.sha256(data).hexdigest(),
+                        "sha256": sha256_hex(data),
                         "bytes": len(data),
                     },
                 )
@@ -107,7 +111,7 @@ def digest_directory(root: Path) -> TreeDigest:
     ).encode("utf-8")
     return TreeDigest(
         preimage=preimage,
-        digest="sha256:" + hashlib.sha256(preimage).hexdigest(),
+        digest=sha256_bytes(preimage),
         bytes=sum(int(row["bytes"]) for row in rows),
     )
 

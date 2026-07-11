@@ -55,6 +55,7 @@
   "lane_id": "example_adapter_lane",
   "metadata": {},
   "normalize": {
+    "mode": "identity",
     "config": {},
     "translator": "identity"
   },
@@ -62,6 +63,10 @@
   "points": 1,
   "provenance": null,
   "replay": {
+    "mode": "stored",
+    "artifacts": [
+      "docs/conformance/e4_target_support/example_adapter_lane/bb_replay_result.json"
+    ],
     "comparator_class": "semantic",
     "session": null
   },
