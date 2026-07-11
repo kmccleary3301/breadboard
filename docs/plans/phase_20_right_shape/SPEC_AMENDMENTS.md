@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **20 amendments** (below).
+Current state: **20 amendments + AM19a addendum** (below).
 
 ---
 
@@ -294,3 +294,6 @@ Discovery: multiple resolvers located the workspace-level `docs_tmp` evidence tr
 Rule: any external/workspace evidence reference REQUIRES an explicit root: `BB_WORKSPACE_ROOT` env or an explicit CLI/config value. Resolve once at startup, canonicalize (realpath), and verify every referenced target remains beneath that root after resolution; fail closed with a clear provisioning error when unset, relative, nonexistent, or when a target escapes (including via symlink). NO default and NO scanning. Repo-internal references keep checkout-ROOT-only resolution with no env involvement. Subprocess launches that need workspace refs must propagate the resolved root explicitly. Documented gate/evidence commands that consume workspace evidence must state `BB_WORKSPACE_ROOT` explicitly.
 
 Ownership: cross-packet contract. H-owned run_lane workspace-ref resolution updates on a separately owned prerequisite branch (owner: WsH2Stages2, supersedes the AM18 fixed-parent rule for workspace refs); F-owned resolvers (path_refs, c4_chain, readiness, compiler/loader) update inside the WS-F rework. Required negative tests per resolver: unset root; relative root; nonexistent root; symlink-escape containment; plus propagation test for subprocess paths.
+
+
+**AM19 addendum (AM19a, same date) - activation boundary:** AM19 is a governing contract with DEFERRED activation. It binds when workspace/docs_tmp evidence references are next consumed by packet work (the F5 completion / full-flow path and any later consumer); at that point the owning prerequisite (H run_lane part) and F-owned resolver parts MUST land before that packet merges. Until activation, the merged AM18 behavior (fixed ROOT.parent for explicitly docs_tmp/checkout-qualified refs in run_lane) remains the operative, conformant rule for already-merged code. Immediately binding regardless of activation: NO new ancestor/parents scanning may be introduced anywhere, and the merge candidate for WS-F is workspace-free (no workspace refs consumed). This addendum prevents the integration branch from being text-nonconformant while the AM19 implementation is parked.
