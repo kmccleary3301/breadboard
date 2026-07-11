@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -732,6 +733,7 @@ def test_regeneration_transaction_validation_failure_preserves_accepted_write_se
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
     monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
     code, results = runner(
@@ -823,6 +825,7 @@ def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
     monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
     code, results = runner(
@@ -899,10 +902,12 @@ def test_regeneration_transaction_promotes_before_rebind_then_runs_final_c4(
             (candidate_dir / "a.txt").write_bytes(b"candidate-a\n")
             (candidate_dir / "b.txt").write_bytes(b"candidate-b\n")
         elif command == "candidate_validate.py":
+            assert Path(kwargs["env"]["BB_WORKSPACE_ROOT"]) == execution_root.parent
             assert (execution_root / "accepted" / "a.txt").read_bytes() == b"candidate-a\n"
             assert (execution_root / "accepted" / "b.txt").read_bytes() == b"candidate-b\n"
             observations.append((command, accepted_a.read_bytes(), accepted_b.read_bytes()))
         else:
+            assert execution_root == tmp_path
             observations.append((command, accepted_a.read_bytes(), accepted_b.read_bytes()))
         return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
 
@@ -910,6 +915,7 @@ def test_regeneration_transaction_promotes_before_rebind_then_runs_final_c4(
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
     monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
     code, results = runner(
@@ -1000,6 +1006,7 @@ def test_regeneration_transaction_rebind_failure_restores_accepted_write_set(
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
     monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
     code, results = runner(
@@ -1094,6 +1101,7 @@ def test_regeneration_transaction_final_c4_failure_restores_rebind_mutations(
     assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
     monkeypatch.setattr(driver, "ROOT", tmp_path)
     monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
     monkeypatch.setattr(driver.subprocess, "run", fake_run)
 
     code, results = runner(
@@ -1117,3 +1125,203 @@ def test_regeneration_transaction_final_c4_failure_restores_rebind_mutations(
         "final_c4_validate.py",
     ]
     assert {path: path.read_bytes() for path in accepted_before} == accepted_before
+
+
+def test_prepare_candidate_root_preserves_dangling_symlinks_and_excludes_untracked_local_roots(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    ordinary_file = source_root / "scripts" / "required.py"
+    ordinary_file.parent.mkdir(parents=True)
+    ordinary_file.write_text("print('required input')\n")
+    dangling_link = source_root / "dangling-link"
+    dangling_target = Path("missing-target")
+    dangling_link.symlink_to(dangling_target)
+    subprocess.run(["git", "init", "-q"], cwd=source_root, check=True)
+    subprocess.run(
+        ["git", "add", "scripts/required.py", dangling_link.name],
+        cwd=source_root,
+        check=True,
+    )
+
+    excluded_sentinel = (
+        source_root / ".venv_linux_import_20260618" / "must-not-copy"
+    )
+    excluded_sentinel.parent.mkdir()
+    excluded_sentinel.write_text("untracked local state\n")
+
+    candidate_root = tmp_path / "candidate"
+    monkeypatch.setattr(driver, "ROOT", source_root)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+
+    driver._prepare_candidate_root(candidate_root, ())
+
+    assert (candidate_root / "scripts" / "required.py").read_text() == (
+        "print('required input')\n"
+    )
+    copied_link = candidate_root / dangling_link.name
+    assert copied_link.is_symlink()
+    assert copied_link.readlink() == dangling_target
+    assert not (
+        candidate_root / ".venv_linux_import_20260618" / "must-not-copy"
+    ).exists()
+
+
+def test_prepare_candidate_root_maps_workspace_docs_tmp_read_beside_candidate_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    source_root = workspace / "sp2b_wt"
+    source_root.mkdir(parents=True)
+    workspace_input = workspace / "docs_tmp" / "phase_15" / "input.json"
+    workspace_input.parent.mkdir(parents=True)
+    workspace_input.write_text('{"source": "workspace"}\n')
+    candidate_root = tmp_path / "scratch" / "candidate"
+    stage = driver.Stage(
+        stage_id="workspace_read",
+        phase="test",
+        label="workspace read",
+        argv=("PY",),
+        reads=("docs_tmp/phase_15/input.json",),
+    )
+    monkeypatch.setattr(driver, "ROOT", source_root)
+    monkeypatch.setattr(driver, "WORKSPACE", workspace)
+    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
+
+    driver._prepare_candidate_root(candidate_root, (stage,))
+
+    assert (
+        candidate_root.parent / "docs_tmp" / "phase_15" / "input.json"
+    ).read_text() == '{"source": "workspace"}\n'
+    assert not (candidate_root / "docs_tmp").exists()
+
+
+def test_prepare_candidate_root_rejects_gitlink_without_copying_its_worktree(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    untracked_gitlink_file = source_root / "vendor" / "module" / "local-only.txt"
+    untracked_gitlink_file.parent.mkdir(parents=True)
+    untracked_gitlink_file.write_text("must not enter candidate\n")
+    candidate_root = tmp_path / "scratch" / "candidate"
+    monkeypatch.setattr(driver, "ROOT", source_root)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setattr(
+        driver,
+        "_tracked_checkout_paths",
+        lambda: (("160000", "0" * 40, Path("vendor/module")),),
+    )
+
+    with pytest.raises(RuntimeError, match="cannot materialize tracked gitlink"):
+        driver._prepare_candidate_root(candidate_root, ())
+
+    assert not (candidate_root / "vendor" / "module").exists()
+
+
+def test_prepare_candidate_root_rejects_tracked_symlink_escaping_scratch_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    escaping_link = source_root / "escape"
+    escaping_link.symlink_to(Path("../..") / "host-state")
+    subprocess.run(["git", "init", "-q"], cwd=source_root, check=True)
+    subprocess.run(["git", "add", escaping_link.name], cwd=source_root, check=True)
+    candidate_root = tmp_path / "scratch" / "candidate"
+    monkeypatch.setattr(driver, "ROOT", source_root)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+
+    with pytest.raises(ValueError, match="candidate symlink escapes scratch workspace"):
+        driver._prepare_candidate_root(candidate_root, ())
+
+    assert not (candidate_root / escaping_link.name).is_symlink()
+
+
+def test_prepare_candidate_root_materializes_index_content_when_checkout_file_deleted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    tracked = source_root / "tracked.py"
+    tracked.write_text("print('index truth')\n")
+    script = source_root / "run.sh"
+    script.write_text("#!/bin/sh\n")
+    script.chmod(0o755)
+    subprocess.run(["git", "init", "-q"], cwd=source_root, check=True)
+    subprocess.run(
+        ["git", "add", "tracked.py", "run.sh"], cwd=source_root, check=True
+    )
+    tracked.unlink()
+    script.unlink()
+
+    candidate_root = tmp_path / "scratch" / "candidate"
+    monkeypatch.setattr(driver, "ROOT", source_root)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+
+    driver._prepare_candidate_root(candidate_root, ())
+
+    assert (candidate_root / "tracked.py").read_text() == "print('index truth')\n"
+    materialized_script = candidate_root / "run.sh"
+    assert materialized_script.read_text() == "#!/bin/sh\n"
+    assert materialized_script.stat().st_mode & 0o111
+
+
+def test_prepare_candidate_root_ignores_untracked_directory_shadowing_tracked_file(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    tracked = source_root / "tracked-file"
+    tracked.write_text("index truth\n")
+    subprocess.run(["git", "init", "-q"], cwd=source_root, check=True)
+    subprocess.run(["git", "add", "tracked-file"], cwd=source_root, check=True)
+    tracked.unlink()
+    shadow = source_root / "tracked-file"
+    shadow.mkdir()
+    (shadow / "untracked-leak.txt").write_text("must not enter candidate\n")
+
+    candidate_root = tmp_path / "scratch" / "candidate"
+    monkeypatch.setattr(driver, "ROOT", source_root)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+
+    driver._prepare_candidate_root(candidate_root, ())
+
+    materialized = candidate_root / "tracked-file"
+    assert materialized.is_file()
+    assert not materialized.is_symlink()
+    assert materialized.read_text() == "index truth\n"
+
+
+def test_prepare_candidate_root_reads_index_not_symlinked_parent_traversal(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    outside = tmp_path / "outside" / "scripts"
+    outside.mkdir(parents=True)
+    (outside / "required.py").write_text("print('outside impostor')\n")
+    source_root = tmp_path / "source"
+    tracked = source_root / "scripts" / "required.py"
+    tracked.parent.mkdir(parents=True)
+    tracked.write_text("print('index truth')\n")
+    subprocess.run(["git", "init", "-q"], cwd=source_root, check=True)
+    subprocess.run(
+        ["git", "add", "scripts/required.py"], cwd=source_root, check=True
+    )
+    shutil.rmtree(source_root / "scripts")
+    (source_root / "scripts").symlink_to(outside)
+
+    candidate_root = tmp_path / "scratch" / "candidate"
+    monkeypatch.setattr(driver, "ROOT", source_root)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+
+    driver._prepare_candidate_root(candidate_root, ())
+
+    assert not (candidate_root / "scripts").is_symlink()
+    materialized = candidate_root / "scripts" / "required.py"
+    assert materialized.read_text() == "print('index truth')\n"
