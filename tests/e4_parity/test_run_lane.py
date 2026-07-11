@@ -137,6 +137,17 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _nested_root_with_ancestor_input(tmp_path: Path, logical_path: str) -> tuple[Path, Path]:
+    workspace = tmp_path / "workspace"
+    root = workspace / "docs_tmp" / "phase_20" / "worktrees" / "nested"
+    root.mkdir(parents=True)
+    ancestor_input = workspace / logical_path
+    ancestor_input.parent.mkdir(parents=True, exist_ok=True)
+    assert not (root.parent / logical_path).exists()
+    assert not (root / logical_path).exists()
+    return root, ancestor_input
+
+
 def _h4_lane(repo_root: Path, *, lane_id: str) -> tuple[dict[str, object], dict[str, Path]]:
     artifacts_root = Path("evidence") / lane_id
     paths = {
@@ -260,6 +271,33 @@ def test_stored_replay_fails_when_a_declared_artifact_is_missing(
     assert result["ok"] is False
     assert missing_ref in result["stages"][0]["detail"]
 
+
+
+def test_stored_replay_refuses_ancestor_only_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logical_path = "docs_tmp/phase_20/evidence/am18/replay-result.json"
+    root, ancestor_input = _nested_root_with_ancestor_input(tmp_path, logical_path)
+    ancestor_input.write_bytes(b'{"must_not_be_reused":true}\n')
+    lane_def = _normalized_h2_lane([])
+    lane_def["replay"]["artifacts"] = [logical_path]
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", root)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="replay",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_fail"
+    assert stage["reused_inputs"] is None
+    assert logical_path in stage["detail"]
 
 def test_stored_replay_directory_uses_shared_canonical_tree_digest(
     tmp_path: Path,
@@ -390,6 +428,41 @@ def test_identity_normalize_resolves_and_invokes_registered_translator(
     assert report["output"] == logical_paths
 
 
+def test_normalize_refuses_ancestor_only_capture_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.e4_parity.adapters import identity
+
+    logical_path = "docs_tmp/phase_20/evidence/am18/capture-input.json"
+    root, ancestor_input = _nested_root_with_ancestor_input(tmp_path, logical_path)
+    ancestor_input.write_bytes(b'{"must_not_be_normalized":true}\n')
+    lane_def = _normalized_h2_lane([logical_path])
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", root)
+    calls: list[object] = []
+
+    def recording_identity(payload: object, *, config: object = None) -> object:
+        calls.append((payload, config))
+        return payload
+
+    monkeypatch.setattr(identity, "translate", recording_identity)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="normalize",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert calls == []
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_fail"
+    assert logical_path in stage["detail"]
+
+
 def test_pi_p5_l1_adapter_lane_produces_executed_normalize_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -492,6 +565,107 @@ def test_accepted_lane_without_out_is_rejected_before_subprocess_can_write(
     assert not would_write.exists()
 
 
+def test_stage_subprocess_defaults_to_invoking_python_in_fresh_nested_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lane_id = "run_lane_test_default_python"
+    config_id = "run_lane_test_config"
+    lane_def_dir = tmp_path / "lane_defs"
+    inventory_path = tmp_path / "inventory.json"
+    repo_root = tmp_path / "workspace" / "docs_tmp" / "phase_20" / "worktrees" / "fresh"
+    scratch_root = tmp_path / "scratch"
+    accepted_json = "artifacts/default_python_claim.json"
+    repo_root.mkdir(parents=True)
+    assert not (repo_root / ".venv").exists()
+    _write_lane_def(
+        lane_def_dir,
+        lane_id=lane_id,
+        config_id=config_id,
+        reverify_command=_command(["python", "claim.py", "--json-out", accepted_json]),
+    )
+    _write_inventory(inventory_path, [])
+    monkeypatch.setattr(run_lane, "ROOT", repo_root)
+    monkeypatch.delenv("BB_LANE_PYTHON", raising=False)
+    calls = _patch_successful_subprocess(monkeypatch)
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="claim",
+        out_dir=scratch_root,
+        lane_def_dir=lane_def_dir,
+        inventory_path=inventory_path,
+    )
+
+    assert result["ok"] is True
+    assert len(calls) == 1
+    assert calls[0][0] == sys.executable
+    assert calls[0][1:] == [
+        "claim.py",
+        "--json-out",
+        (scratch_root / accepted_json).resolve().as_posix(),
+    ]
+    assert result["stages"][0]["command"] == calls[0]
+
+
+@pytest.mark.parametrize(
+    ("invalid_kind", "reason"),
+    [
+        pytest.param("missing", "path does not exist", id="missing"),
+        pytest.param("directory", "path is not a regular file", id="directory"),
+        pytest.param("not_executable", "path is not executable", id="not-executable"),
+    ],
+)
+def test_invalid_lane_python_fails_before_stage_subprocess(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_kind: str,
+    reason: str,
+) -> None:
+    lane_id = f"run_lane_test_invalid_python_{invalid_kind}"
+    config_id = "run_lane_test_config"
+    lane_def_dir = tmp_path / "lane_defs"
+    inventory_path = tmp_path / "inventory.json"
+    scratch_root = tmp_path / "scratch"
+    accepted_json = "artifacts/invalid_python_claim.json"
+    invalid_python = tmp_path / "invalid-python"
+    if invalid_kind == "directory":
+        invalid_python.mkdir()
+    elif invalid_kind == "not_executable":
+        invalid_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        invalid_python.chmod(0o644)
+    _write_lane_def(
+        lane_def_dir,
+        lane_id=lane_id,
+        config_id=config_id,
+        reverify_command=_command(["python", "claim.py", "--json-out", accepted_json]),
+    )
+    _write_inventory(inventory_path, [])
+    monkeypatch.setenv("BB_LANE_PYTHON", str(invalid_python))
+    subprocess_calls: list[list[str]] = []
+
+    def fail_if_called(command: list[str], **_: object) -> None:
+        subprocess_calls.append(command)
+        raise AssertionError("invalid BB_LANE_PYTHON must fail before subprocess.run")
+
+    monkeypatch.setattr(run_lane.subprocess, "run", fail_if_called)
+
+    with pytest.raises(run_lane.LaneRunError) as exc_info:
+        run_lane.run_lane(
+            lane_id,
+            stage="claim",
+            out_dir=scratch_root,
+            lane_def_dir=lane_def_dir,
+            inventory_path=inventory_path,
+        )
+
+    message = str(exc_info.value)
+    assert "BB_LANE_PYTHON" in message
+    assert str(invalid_python) in message
+    assert reason in message
+    assert subprocess_calls == []
+    assert not (scratch_root / accepted_json).exists()
+
+
 def test_claim_stage_uses_lane_def_reverify_command_and_retargets_json_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -533,7 +707,7 @@ def test_claim_stage_uses_lane_def_reverify_command_and_retargets_json_out(
     expected_output = scratch_root / accepted_json
     assert calls == [
         [
-            "python",
+            sys.executable,
             "lane_def_builder.py",
             "--source",
             "lane-def",
@@ -947,6 +1121,66 @@ def test_compare_invokes_registered_callable_once_with_protocol_exact_input_and_
     assert json.loads(report_path.read_text(encoding="utf-8")) == returned_report
 
 
+def test_compare_refuses_ancestor_only_input_role_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane_id = "h4_ancestor_input_isolation"
+    artifacts_root = "docs_tmp/phase_20/evidence/am18/comparator"
+    root, ancestor_capture = _nested_root_with_ancestor_input(
+        tmp_path, f"{artifacts_root}/raw_capture_manifest.json"
+    )
+    ancestor_replay = ancestor_capture.with_name("bb_replay_result.json")
+    ancestor_comparator = ancestor_capture.with_name("comparator_report.json")
+    _write_json(ancestor_capture, {"schema_version": "capture.fixture.v1", "ancestor": True})
+    _write_json(ancestor_replay, {"schema_version": "replay.fixture.v1", "ancestor": True})
+    _write_json(
+        ancestor_comparator,
+        {"schema_version": "bb.e4.comparator_report.v1", "ancestor": True},
+    )
+    lane = _normalized_h2_lane([], lane_id=lane_id)
+    lane["artifacts_root"] = artifacts_root
+    registry_path = tmp_path / "comparator_registry.json"
+    module_name = "h4_ancestor_input_isolation_comparator"
+    _write_h4_registry(registry_path, lane_id=lane_id, module_name=module_name)
+    calls: list[dict[str, object]] = []
+    comparator_module = ModuleType(module_name)
+
+    def compare(inp: dict[str, object]) -> dict[str, object]:
+        calls.append(inp)
+        return {
+            "schema_version": "bb.e4.comparator_report.v1",
+            "lane_id": lane_id,
+            "config_id": lane["config_id"],
+            "scope": lane["claim"]["scope"],
+            "assertions": [],
+            "details": [],
+            "passed": 0,
+            "failed": 0,
+            "warned": 0,
+        }
+
+    comparator_module.compare = compare
+    monkeypatch.setitem(sys.modules, module_name, comparator_module)
+    _patch_h2_lane_loading(monkeypatch, lane)
+    monkeypatch.setattr(run_lane, "ROOT", root)
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="compare",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+        comparator_registry_path=registry_path,
+    )
+
+    assert calls == []
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_fail"
+    assert "missing comparator input_role artifact" in stage["detail"]
+
+
 def test_compare_rejects_invalid_report_without_overwriting_concrete_comparator_artifact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -992,7 +1226,7 @@ def test_claim_uses_existing_comparator_report_and_disables_validator_rerun(
     lane, artifact_paths = _h4_lane(tmp_path, lane_id=lane_id)
     accepted_output = Path("artifacts/conformance/node_gate/h4_claim.json")
     original_argv = [
-        "python",
+        sys.executable,
         "scripts/validate_e4_c4_chain.py",
         "--config-id",
         str(lane["config_id"]),

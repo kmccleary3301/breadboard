@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import importlib
+import os
 import subprocess
 import sys
 import shutil
@@ -77,6 +78,36 @@ def _command_argv(command: Any) -> list[str] | None:
     return None
 
 
+def _lane_python() -> str:
+    override = os.environ.get("BB_LANE_PYTHON")
+    if not override:
+        return sys.executable
+    path = Path(override)
+    if not path.exists():
+        raise LaneRunError(
+            "BB_LANE_PYTHON must name an existing executable file; "
+            f"path does not exist: {override}"
+        )
+    if not path.is_file():
+        raise LaneRunError(
+            "BB_LANE_PYTHON must name an existing executable file; "
+            f"path is not a regular file: {override}"
+        )
+    if not os.access(path, os.X_OK):
+        raise LaneRunError(
+            "BB_LANE_PYTHON must name an existing executable file; "
+            f"path is not executable: {override}"
+        )
+    return str(path)
+
+
+def _resolve_python_launcher(argv: Sequence[str]) -> list[str]:
+    command = list(argv)
+    if command and Path(command[0]).name.startswith("python"):
+        command[0] = _lane_python()
+    return command
+
+
 def _claim_without_comparator_rerun(argv: list[str]) -> list[str]:
     if any(Path(item).name == "validate_e4_c4_chain.py" for item in argv):
         result = [
@@ -122,11 +153,7 @@ def _resolve_repo_path(path_text: str) -> Path:
     if path.is_absolute():
         return path
     if path.parts and path.parts[0] in {"docs_tmp", ROOT.name}:
-        workspace = next(
-            (parent for parent in ROOT.parents if (parent / "docs_tmp").is_dir()),
-            ROOT.parent,
-        )
-        return workspace / path
+        return ROOT.parent / path
     return ROOT / path
 
 
@@ -934,8 +961,9 @@ def run_lane(
             if metadata_result["returncode"] != 0:
                 blocked_by = stage_name
             continue
+        command = _resolve_python_launcher(argv)
         try:
-            command, accepted_path, output_path = _retarget_json_out(argv, out_dir)
+            command, accepted_path, output_path = _retarget_json_out(command, out_dir)
         except LaneRunError:
             if stage_name == "capture":
                 metadata_result = _finalize_stage_result(
