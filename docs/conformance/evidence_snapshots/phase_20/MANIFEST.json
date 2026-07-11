@@ -1,0 +1,61 @@
+{
+  "schema": "bb.evidence_snapshot.v1",
+  "authorized_by": "AM23a (SPEC_AMENDMENTS.md)",
+  "generated_at_utc": "2026-07-11",
+  "note": "Byte-exact snapshots of campaign evidence from the workspace evidence root (docs_tmp/phase_20/evidence/). Live workspace files remain the campaign working set; these tracked copies exist for durability and SHA-binding of reviewed evidence.",
+  "files": {
+    "SP1/implementer.json": {
+      "sha256": "e7eea63b7194a13da6d3d06842ee8020b55954655e0c4739ae27a4d8178402a1",
+      "status": "reviewer-path-confirmed",
+      "detail": "ReviewSP1 verdict cites this canonical-root path and matched pinned head/base/files; digest not named in verdict; confirmation requested from ReviewSP1",
+      "reviewed_code_sha": "0775bbde"
+    },
+    "SP1/reviewer.json": {
+      "sha256": "0f6f9b1a83f52063524f475ecf9e79ad7d89f1a28a569ca082593a02fdc6aaa5",
+      "status": "orchestrator-materialized",
+      "detail": "from ReviewSP1 yield (agent://ReviewSP1)"
+    },
+    "SP3/implementer.json": {
+      "sha256": "7ce332812c1433012e06ab59167aa37f0c5c7a09461e947c346202a52202c53e",
+      "status": "pending-re-review",
+      "detail": "amended by PacketSP3 rework; ReviewSP3 re-verdict on aea51859 will confirm current digest"
+    },
+    "SP4/implementer.json": {
+      "sha256": "175ebff1fddf458519badd2cf5a11d1c7196c79fa6e0d1c298a4bffd2aaed6a2",
+      "status": "retroactive-copy-unconfirmed",
+      "detail": "copied from sp4_wt worktree docs_tmp after review; authoritative review yield at agent://ReviewSP4; digest confirmation requested",
+      "reviewed_code_sha": "7e89d927"
+    },
+    "SP4/reviewer.json": {
+      "sha256": "2bb789df2328cfe50cfaf5c90d8983ce711535109ac15b13a3f30ebaa6cb9a88",
+      "status": "retroactive-copy-unconfirmed",
+      "detail": "written by ReviewSP4 in worktree docs_tmp; digest confirmation requested"
+    },
+    "SP5/implementer.json": {
+      "sha256": "3e886b377948b20995bc85e74027ce98b2e86cd42d5cd8759e1090474beef96a",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP5 2026-07-11 bound verdict jointly to code SHA 650c7daa and this sha256",
+      "reviewed_code_sha": "650c7daa"
+    },
+    "SP5/relocation_note.json": {
+      "sha256": "33258335f6d51df35a11b83cf074ba03c4e4cd2397d6d671683dcb0ee6faf4a3",
+      "status": "orchestrator-authored"
+    },
+    "SP5/reviewer.json": {
+      "sha256": "e9fdd431aa85b13b82b82b54bfd19c651f15b9846e19fd1db6ddef72abcbcd4f",
+      "status": "orchestrator-materialized",
+      "detail": "from ReviewSP5 yield + final IRC verdict"
+    },
+    "SP7/implementer.json": {
+      "sha256": "b7f7cb3522e48708fe9c98bf83830b03db87c23eefda9b15b56dd263c6565ab5",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP7 verdict artifact line names this file @sha256:b7f7cb35...",
+      "reviewed_code_sha": "6107d12b (empty; snapshot commit 07bc045b under fresh review)"
+    },
+    "SP7/reviewer.json": {
+      "sha256": "f8d53c9d49699089e00878765d938b4ff34702df69ffabbbc090646c8d05741d",
+      "status": "orchestrator-materialized",
+      "detail": "from ReviewSP7 blocked yield (agent://ReviewSP7), verdict retained"
+    }
+  }
+}

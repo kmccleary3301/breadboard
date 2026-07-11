@@ -1,0 +1,50 @@
+{
+  "verdict": "pass",
+  "head_sha": "7e89d9270dac867ed8a168442e2bfd5f50854402",
+  "diff_ok": true,
+  "test_only_confirmed": true,
+  "before_after_verified": true,
+  "no_weakening": {
+    "legacy_alias_gating": true,
+    "absolute_path_rejection": true
+  },
+  "findings": [
+    {
+      "check": "artifact_binding_and_scope",
+      "result": "pass",
+      "evidence": "sp4_wt HEAD exactly 7e89d9270dac867ed8a168442e2bfd5f50854402. git diff ba1a1cf7..7e89d927 changes only tests/test_e4_api_surface.py, tests/test_cli_bridge_contract_exports.py, and tests/e4_parity/test_oh_my_pi_compiler_capture.py (47 insertions, 12 deletions); the production-excluding diff is empty and git diff --check is clean."
+    },
+    {
+      "check": "api_status_contract",
+      "result": "pass",
+      "old_contract": "At base, the default-off case and four explicit-off parameter cases asserted GET /status == 404, causing all five cases to stop at a stale assertion.",
+      "new_contract": "At head, tests/test_e4_api_surface.py:126 and :145 assert GET /status == 200. The same cases still require actual legacy aliases /features, /models, /sessions, and /rl/runs/probe to return 404 at lines 127-130 and 146-149; versioned routes remain asserted at lines 132-135 and 151-154.",
+      "independent_product_truth": "agentic_coder_prototype/api/cli_bridge/app.py:128-130 explicitly excludes /status from _drop_legacy_routes and lists only /models, /features plus legacy prefixes; app.py:451-453 mounts /status directly. Non-test TUI code tui_skeleton/scripts/run_stress_bundles.ts:235-248 builds and fetches /status. The detached base run independently reproduced exactly 5 failures, all assert 200 == 404 at the stale /status assertion; head rerun passed 5 with 22 warnings."
+    },
+    {
+      "check": "cli_generated_truth",
+      "result": "pass",
+      "old_contract": "The helper accepted only a handwritten export interface and therefore failed on the TUI's generated-type alias before checking its contract fields.",
+      "new_contract": "tests/test_cli_bridge_contract_exports.py:84-124 parses either an inline interface/type object or an exported alias, resolves the matching imported alias and source module recursively, then parses fields and compares the resulting exact field map to SESSION_FILE_DTO_FIELDS at lines 127-133. It does not accept an arbitrary string.",
+      "independent_product_truth": "tui_skeleton/src/api/types.ts:1-39 imports SessionFileInfo as GeneratedSessionFileInfo from ./generated/openapi-types.js and line 160 exports type SessionFileInfo = GeneratedSessionFileInfo. tui_skeleton/src/api/generated/openapi-types.ts:426-431 defines the actual generated object with path:string, size?:number|null, type:file|directory, updated_at?:string|null, which normalizes to the exact expected field map. No production file changed, so no handwritten duplicate interface was introduced. Head rerun passed 4 with 2 warnings."
+    },
+    {
+      "check": "projection_absolute_path_contract",
+      "result": "pass",
+      "old_contract": "The ordering test supplied an absolute pytest tmp path even though capture inputs are checkout-relative declarations; this failed before exercising projection selection/order.",
+      "new_contract": "tests/e4_parity/test_oh_my_pi_compiler_capture.py:201-205 creates a checkout seam, derives source_ref relative to it, and monkeypatches compiler.ROOT; lines 235 and 243 use that relative source. A new independent negative case at lines 255-261 supplies the absolute pytest path and requires ValueError matching 'capture input must be relative to checkout'.",
+      "independent_product_truth": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py:234-240 routes every declared capture input through _resolve_display; _resolve_display delegates to resolve_declared_reference. scripts/e4_parity/path_refs.py:17-24 rejects any path where is_absolute() or '..' appears before resolution, with no pytest/tmp special case. Head rerun of ordering plus the negative test passed 2 with 4 warnings."
+    },
+    {
+      "check": "assertion_and_case_anti_weakening",
+      "result": "pass",
+      "evidence": "Every diff hunk was reviewed. No skip/xfail marker was added, no test or parametrized value was deleted, and no assertion besides the two justified /status expectations changed. Collected cases per file base->head: tests/test_e4_api_surface.py 41->41; tests/test_cli_bridge_contract_exports.py 4->4; tests/e4_parity/test_oh_my_pi_compiler_capture.py 23->24 (new absolute-path negative). Total 68->69, with no reduction."
+    },
+    {
+      "check": "focused_command_reproduction",
+      "result": "pass",
+      "evidence": "At exact head, reruns matched implementer evidence: CLI exports exit 0, 4 passed/2 warnings; legacy gating exit 0, 5 passed/22 warnings; projection ordering plus absolute rejection exit 0, 2 passed/4 warnings. Detached base ba1a1cf7 status spot-check exit 1, 5 failed/22 warnings. Throwaway /Users/kylemccleary/projects/breadboard/rv_sp4_wt was removed afterward; sp4_wt remained clean and at the bound head."
+    }
+  ],
+  "evidence_path": "docs_tmp/phase_20/evidence/SP4/reviewer.json"
+}

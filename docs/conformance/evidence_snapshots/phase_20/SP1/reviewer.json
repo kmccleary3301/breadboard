@@ -1,0 +1,8 @@
+{
+  "verdict": "approved",
+  "reviewed_sha": "0775bbdee380bb7f3982771826b67196f701936f",
+  "base": "ba1a1cf70ac8c110dbc76aee8fa9f0f724836e99",
+  "reviewer": "ReviewSP1 (loop-reviewer)",
+  "summary_source": "agent://ReviewSP1 (full payload); key facts: 8-file diff scoped to two root causes; no production _config_metadata consumer remains; Codex dossier RESTORED to governed bytes (head sha 2e2ba957... matches unchanged pin at test_config_surface_v2_dossier_variants.py:14-18; drifted base bytes 7c0c67d6...); full tests/compilation rerun exactly 1F/376P/22S with sole residual SP2-owned; base/head semantic digests identical for two representative configs across 4 entrypoints; no assertion weakening (+38 test lines only).",
+  "findings": []
+}
