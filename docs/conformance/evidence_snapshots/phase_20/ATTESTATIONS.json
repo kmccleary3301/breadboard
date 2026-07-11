@@ -16,6 +16,11 @@
       "from": "ReviewSP4",
       "date": "2026-07-11",
       "verbatim": "Confirmed against the originals in sp4_wt. implementer.json SHA-256 = 175ebff1fddf458519badd2cf5a11d1c7196c79fa6e0d1c298a4bffd2aaed6a2; reviewer.json SHA-256 = 2bb789df2328cfe50cfaf5c90d8983ce711535109ac15b13a3f30ebaa6cb9a88. Both exactly match the AM23a snapshot values; manifest entries may be marked reviewer-confirmed."
+    },
+    {
+      "from": "ReviewSP3",
+      "date": "2026-07-11",
+      "verbatim": "Re-verdict: APPROVED at exact head aea51859b49401bec344631fb3af13cc093ad096. Reviewed implementer.json SHA-256 7ce332812c1433012e06ab59167aa37f0c5c7a09461e947c346202a52202c53e. Prior blockers resolved: generated registry/index canonical for all 3 schemas; amended pagination list exactly equals catalog comparator estate (21 vs 21, empty set differences); ledger PIN_STALE independently recorded with F5/post-F5 rebind owner. Delta from 0fc11917 is only README.md + generated index.ts/registry.ts; clean tree. Independent rerun: 18/18 conventions+2 focused API passed; full API exactly 9 failed/32 passed. Could not rerun TS generator because tsx dependency absent (`npm exec --no -- tsx --version` canceled missing package); static generated output and recorded two-pass hashes checked. Residual generated-artifact CI production remains nonblocking integration risk."
     }
   ]
 }

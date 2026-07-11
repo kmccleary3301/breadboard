@@ -17,8 +17,8 @@
     },
     "SP3/implementer.json": {
       "sha256": "7ce332812c1433012e06ab59167aa37f0c5c7a09461e947c346202a52202c53e",
-      "status": "pending-re-review",
-      "detail": "amended by PacketSP3 rework; ReviewSP3 re-verdict on aea51859 will confirm current digest"
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP3 re-verdict 2026-07-11: reviewed sha 7ce33281... matches snapshot at d225b137"
     },
     "SP4/implementer.json": {
       "sha256": "175ebff1fddf458519badd2cf5a11d1c7196c79fa6e0d1c298a4bffd2aaed6a2",
@@ -56,6 +56,11 @@
       "sha256": "f8d53c9d49699089e00878765d938b4ff34702df69ffabbbc090646c8d05741d",
       "status": "orchestrator-materialized",
       "detail": "from ReviewSP7 blocked yield (agent://ReviewSP7), verdict retained"
+    },
+    "SP3/reviewer.json": {
+      "sha256": "71a7b6609ba80b45ddb39bb9b4d262ebd3e3047459bab1c737582742f7478f21",
+      "status": "orchestrator-materialized",
+      "detail": "transcription from ReviewSP3 re-verdict IRC + agent://ReviewSP3"
     }
   },
   "attestations_file": "ATTESTATIONS.json"
