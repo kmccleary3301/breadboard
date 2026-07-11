@@ -49,6 +49,12 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "packet": "I2",
         "sha256": "fbb7d1492c4f98ac8b38b2923d971b3faa51c921f70cee012d3903fcc29491ad",
     },
+    "bb.e4.lane_manifest.v1": {
+        "packet": "F4",
+        "sha256": "06667d867257949a5cd51af4b6d92ffe93af34a0656c6958fc59900eeb64613b",
+        "class": "plan_mandated_evolution",
+        "ref": "plan §3 F4 + AM8",
+    },
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v1.schema.json": {
         "packet": "H3",
         "sha256": "bde8357bb29a8e25120385d6e7196607c3fb67745815b83aa3185d9f4d429dc6",

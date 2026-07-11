@@ -1,0 +1,213 @@
+schema_version: bb.e4.lane_manifest.v1
+lane_id: oh_my_pi_p6_6_task_job_subagent
+config_id: oh_my_pi_p6_6_task_job_subagent_v1
+kind: target_support
+status: accepted
+points: 20
+target:
+  family: oh_my_pi
+  version: '@oh-my-pi/pi-coding-agent@16.2.13'
+  package_ref: null
+  source_freeze_ref: config/e4_target_freeze_manifest.yaml
+capture:
+  strategy: adapter
+  adapter: oh_my_pi_compiler_capture
+  argv: null
+  inputs:
+    - config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.payloads.yaml
+    - config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip
+    - config/e4_target_freeze_manifest.yaml
+    - scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py
+    - scripts/e4_parity/path_refs.py
+    - scripts/e4_parity/adapters/oh_my_pi_projection_packet.py
+    - scripts/e4_parity/adapters/oh_my_pi_p6_6_work_item_projection.py
+    - agentic_coder_prototype/compilation/primitive_records.py
+    - contracts/kernel/schemas/bb.work_item.v1.schema.json
+  workspace_template: null
+normalize:
+  mode: identity
+  translator: identity
+  record_builders:
+    - id: p6_6_task_job_subagent
+      schema_version: bb.work_item.v1
+      source: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json
+      projection: p6_6_task_job_subagent
+      records:
+        - wi-job-manager-only
+        - wi-joined-subagent
+        - wi-background-job
+        - wi-background-cancel
+        - wi-detached-subagent
+        - wi-detached-job
+      source_roles:
+        target_probe_output: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json
+        target_setup_report: "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/\
+          target_setup_and_capture_report.json"
+        joined_subagent_target_capture: "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/\
+          joined_subagent_target_capture.json"
+        detached_subagent_target_capture: "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/\
+          detached_subagent_target_capture.json"
+        raw_dir: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw
+        probe_script: "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/\
+          oh_my_pi_p6_6_task_job_subagent_probe.mjs"
+        agent_config: agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml
+        lane_dir: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent
+        joined_session_dir: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions
+        detached_session_dir: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions
+  projection_constants:
+    p6_6_task_job_subagent:
+      generated_at_utc: '2026-07-04T00:00:00Z'
+      parent_work_item_id: wi-parent-turn
+      parent_task_id: p6-6-parent-turn
+      delegated_by:
+        actor_kind: agent
+        actor_id: Main
+      owner:
+        actor_kind: agent
+        actor_id: Main
+      host_assignee:
+        actor_kind: host
+        actor_id: omp-local-job-manager
+      cancellable_by:
+        - actor_kind: agent
+          actor_id: Main
+        - actor_kind: host
+          actor_id: omp-local-job-manager
+  required_records:
+    - wi-job-manager-only
+    - wi-joined-subagent
+    - wi-background-job
+    - wi-background-cancel
+    - wi-detached-subagent
+    - wi-detached-job
+  required_roles:
+    - capture_ref
+    - target_probe_output
+    - target_setup_report
+    - joined_subagent_target_capture
+    - detached_subagent_target_capture
+    - work_item_ref
+    - work_item_replay
+    - replay_ref
+    - comparator_ref
+    - parity_results
+    - secret_scan_report
+    - validator_output
+    - support_claim_ref
+    - evidence_manifest
+    - node_gate
+    - task_job_subagent_comparator
+    - atomic_feature_ledger
+  record_roles: {}
+  record_envelopes: {}
+  role_aliases:
+    task_job_subagent_comparator: comparator_ref
+  auto_bind_role_refs: true
+  scope_observation_labels:
+    - detached_capture
+    - joined_capture
+    - raw_capture
+    - raw_capture_scope
+    - target_probe
+    - target_setup
+replay:
+  mode: stored
+  comparator_class: semantic
+compare:
+  comparator: oh_my_pi_stored_report_replay
+  assertions:
+    - assertion_id: ok_true
+      kind: equals
+      description: comparator report is ok
+      record_selector:
+        path: ok
+      expect: true
+    - assertion_id: no_errors
+      kind: length_equals
+      description: comparator report has no errors
+      record_selector:
+        path: errors
+      expect: 0
+    - assertion_id: config_id_matches
+      kind: equals
+      description: claimed scope config id matches
+      record_selector:
+        path: claimed_scope.config_id
+      expect: oh_my_pi_p6_6_task_job_subagent_v1
+    - assertion_id: lane_id_matches
+      kind: equals
+      description: claimed scope lane id matches
+      record_selector:
+        path: claimed_scope.lane_id
+      expect: oh_my_pi_p6_6_task_job_subagent
+    - assertion_id: provider_model_matches
+      kind: equals
+      description: claimed scope provider model matches
+      record_selector:
+        path: claimed_scope.provider_model
+      expect: anthropic/claude-haiku-4-5
+    - assertion_id: provider_authenticated_capture
+      kind: equals
+      description: provider authenticated capture is recorded
+      record_selector:
+        path: claimed_scope.provider_authenticated_capture
+      expect: true
+    - assertion_id: provider_parity_not_claimed
+      kind: equals
+      description: provider parity is not claimed
+      record_selector:
+        path: claimed_scope.provider_parity_claimed
+      expect: false
+    - assertion_id: sandbox_mode_matches
+      kind: equals
+      description: claimed scope sandbox mode matches
+      record_selector:
+        path: claimed_scope.sandbox_mode
+      expect: read-only
+claim:
+  scope:
+    behaviors:
+      - bb.work_item.v1
+    surfaces:
+      - P6 exact-scope C4 support chain
+  exclusions: []
+ct:
+  description: Oh-My-Pi 16.2.13 provider-authenticated P6.6 task/job/subagent exact-scope C4 chain validation.
+  timeout_seconds: 180
+  test_id: CT-P6-OHMYPI-P66-TASK-JOB-SUBAGENT-C4
+acceptance:
+  behavior_family: work_items
+  semantic_key: oh_my_pi_p6_6_task_job_subagent
+  target: oh_my_pi
+  assertions:
+    - id: ok_true
+      description: comparator report is ok
+    - id: no_errors
+      description: comparator report has no errors
+    - id: config_id_matches
+      description: claimed scope config id matches
+    - id: lane_id_matches
+      description: claimed scope lane id matches
+    - id: provider_model_matches
+      description: claimed scope provider model matches
+    - id: provider_authenticated_capture
+      description: provider authenticated capture is recorded
+    - id: provider_parity_not_claimed
+      description: provider parity is not claimed
+    - id: sandbox_mode_matches
+      description: claimed scope sandbox mode matches
+reverify_command:
+  argv:
+    - python
+    - scripts/validate_e4_c4_chain.py
+    - --config-id
+    - oh_my_pi_p6_6_task_job_subagent_v1
+    - --support-claim
+    - docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json
+    - --evidence-manifest
+    - docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json
+    - --json-out
+    - artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json
+    - --check-only
+  cwd: .
+artifacts_root: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent
