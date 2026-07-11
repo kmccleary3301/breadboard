@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "P3.2 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:58a8eff1bf84482d9a0fe2e8827051491cc47ff89347b3db85e667bf2a997226",
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 10,
-    "segment_hash": "sha256:b33c719c60340ad916342ba74b071aa4c63d386d7641462f2ea966a3d7d7662f",
+    "catalog_revision": 11,
+    "segment_hash": "sha256:cf22a86281ec8af996d31fb7ee6e1a3734636450562144721d279be47c9bf242",
     "segment_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
-    "shared_segment_hash": "sha256:d5ce927049289ee43a5ba59e3c10648d34b52a5427cbf10946167254c5e3194e"
+    "shared_segment_hash": "sha256:ed0a6dbaa54eb84868c85d057a081f66e6267993b0eef7db10d10d5f502c60d4"
   },
   "claim_id": "oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -48,7 +48,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:75c197207e232729c579b972d9d76c50d5e361fd2cc132ba670128a172b48626",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -86,9 +86,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json#sha256:459b13170e314de1f67a776e8d05bfb18f4ee8ba5fbf45090153ab8996bf0ee7",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json#sha256:45ec480971434a3bea865bae377b918c686a47ec7107a41082b10d93dd95f5b7",
   "phase_label": "P3",
-  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:dadf6241f1df822b4ded0848e91a5f10312866fd8c262497d8a50b0fc101f71a",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:0c808af1ba7e021e869fd7825a20599510f884b5bd71cde7a84f777fcd48121f",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",

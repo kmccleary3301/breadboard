@@ -8,7 +8,7 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:e32bae48d42b11073de8959f5d26b99978681f0783984167f9e5b8d94a328b70"
+      "sha256": "sha256:58d2385505e26f65ea5c4a2c2e839adeafb68bc150a8991ff1046adc2e1da51b"
     },
     {
       "derived_from": [
@@ -17,7 +17,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:13b049eaa17247ecaf65f178e0d2360c8558e38ab6d520b0f2659d3cb6f6d565"
+      "sha256": "sha256:9c9bd8648a4b57722632657414272e54ae1ef03349a63f945709bf52f9bda138"
     },
     {
       "derived_from": [
@@ -27,12 +27,12 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:ffffa2c0de96ea56d3a8572efd5de039fdf0c759d6e8214631c4646f00735ecc"
+      "sha256": "sha256:2cae5e176aad70f56514a9c1d6a613ae31827afd836db4e2335fc6307904037e"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:c9cead29d4d68a5004610acda55480df862da12f2d84a0d4e6cf600ed13a7090"
+      "sha256": "sha256:4c945034a036ce6abc8b0fa974915585dd8afae4d3c8e99b296ce6f783c7c68c"
     },
     {
       "derived_from": [
@@ -40,7 +40,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:b5276bbb873043e64f2f5cdba737b7cd697cbc7fb1166ccdbda6d6cbcbc50fce"
+      "sha256": "sha256:ef2919aa56ce490407dc06ed48ad1b131d59a7fc6cb7ef2eacef61bb52df9bfb"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/secret_scan_report.json",

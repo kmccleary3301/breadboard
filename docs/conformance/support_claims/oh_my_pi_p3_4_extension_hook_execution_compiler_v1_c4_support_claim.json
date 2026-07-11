@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "P3.4 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:e32bae48d42b11073de8959f5d26b99978681f0783984167f9e5b8d94a328b70",
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:58d2385505e26f65ea5c4a2c2e839adeafb68bc150a8991ff1046adc2e1da51b",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 10,
-    "segment_hash": "sha256:562d1a76cf5d11d157894e7de89c13f7e708b9f43649d3e01219420ab2d25bd2",
+    "catalog_revision": 11,
+    "segment_hash": "sha256:a8fbb2dcd826feda6442b0eab875fa34e1d4ad30971a65da49a271f72c214280",
     "segment_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
-    "shared_segment_hash": "sha256:d5ce927049289ee43a5ba59e3c10648d34b52a5427cbf10946167254c5e3194e"
+    "shared_segment_hash": "sha256:ed0a6dbaa54eb84868c85d057a081f66e6267993b0eef7db10d10d5f502c60d4"
   },
   "claim_id": "oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -41,7 +41,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:ffffa2c0de96ea56d3a8572efd5de039fdf0c759d6e8214631c4646f00735ecc",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:2cae5e176aad70f56514a9c1d6a613ae31827afd836db4e2335fc6307904037e",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -79,9 +79,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json#sha256:b5276bbb873043e64f2f5cdba737b7cd697cbc7fb1166ccdbda6d6cbcbc50fce",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json#sha256:ef2919aa56ce490407dc06ed48ad1b131d59a7fc6cb7ef2eacef61bb52df9bfb",
   "phase_label": "P3",
-  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json#sha256:13b049eaa17247ecaf65f178e0d2360c8558e38ab6d520b0f2659d3cb6f6d565",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json#sha256:9c9bd8648a4b57722632657414272e54ae1ef03349a63f945709bf52f9bda138",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",

@@ -17,7 +17,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:cdf42d917dde5cf59061176456652324c03ad1a980e094d3a105704f3ceb065a"
+      "sha256": "sha256:856a9f246f9521923a87b1aafb529bd7984223ebfe03501d59c64d5e694e9deb"
     },
     {
       "derived_from": [
@@ -27,12 +27,12 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:72940468ff864a1632bfd6899d5d8a6312ef9e139b7d409c607560e015e2023e"
+      "sha256": "sha256:fb2919daf8c21854656c1a126034776be8ed1f8e3c5a7007ba1ab557362b0fea"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:7bf1a86c732d3a92431820fa3fbb27c52c595ef7597811981caa293d80842ec4"
+      "sha256": "sha256:21de5ad043f36ca3b05f6e133ddde59f4b4784b5e33ff2e80ac6a22df350c22d"
     },
     {
       "derived_from": [
@@ -50,7 +50,7 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json",
       "role": "validator_output",
-      "sha256": "sha256:e713e7576fb5ee24c6e8e82d28e630dd5bcc5855ed932da26ab0e3b180c37637"
+      "sha256": "sha256:5d037ec0ad98e133705a31c23c8214db2ff1bfa63041f16f69b9c5adb75972f1"
     },
     {
       "path": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/effective_config_graph.v1.json",
@@ -60,7 +60,7 @@
     {
       "path": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/primitive_projection_manifest.v1.json",
       "role": "primitive_projection_manifest",
-      "sha256": "sha256:ae58aa16ecfbb27049ef8d2436fb5f8de49abd377dd76017ca9dd221579c5a28"
+      "sha256": "sha256:33acbaa374a6d3e56cf2ca01b10377cff5d113df3f723b545793c1e8241ca46e"
     },
     {
       "path": "agent_configs/misc/oh_my_pi_p3_1_effective_config_graph_compiler_v1.yaml",

@@ -8,7 +8,7 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98"
+      "sha256": "sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5"
     },
     {
       "derived_from": [
@@ -17,7 +17,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:3408d24a3b7581ca5bc78d7145ef7202650d6804906230c425000e5ca4900da5"
+      "sha256": "sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b"
     },
     {
       "derived_from": [
@@ -27,12 +27,12 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:09118d45c07d126ea0299f7bb132239e928bdfdf9c085eaf11504d953c1fa7c0"
+      "sha256": "sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:7b95ce240f6296aec1d81f609b198c93dc890a1e6d2aa9fb548609a8faa4ca99"
+      "sha256": "sha256:5ca36f3c333163803c86836fd6298cc260a45c32cdd39178f129b87bf6206d84"
     },
     {
       "derived_from": [
@@ -40,7 +40,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:839e941ee148eedeea879a037a4414f35bbc81d5c03cc1822a018b15472a5047"
+      "sha256": "sha256:014a27b3d4f220e39ed3de6efaef9e90c0390b8b45b900ca22cb6f204258dd63"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/secret_scan_report.json",

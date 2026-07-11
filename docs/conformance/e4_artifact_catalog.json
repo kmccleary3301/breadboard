@@ -3,7 +3,7 @@
   "entries": [
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -11,7 +11,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "breadboard_self_runtime_records_v1:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -59,7 +59,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json",
       "role_id": "breadboard_self_runtime_records_v1:evidence_manifest",
-      "sha256": "sha256:68af2a0fca005fde38189db0568b41384f206c543096c5295ec2c548f816023d"
+      "sha256": "sha256:b15fd1d3b4a83b997adedc76a0f02aee4b7a67b099ca1238e3d329dacdb31518"
     },
     {
       "artifact_kind": "freeze",
@@ -166,7 +166,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 6221,
+      "bytes": 6222,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -174,7 +174,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
       "role_id": "breadboard_self_runtime_records_v1:support_claim",
-      "sha256": "sha256:be40ae9ca5ec36999cdc742c9d2691966f83c6a1de86e4aee4ab74d6a1fb6725"
+      "sha256": "sha256:6096e6b533544a526b59e16bd60aa5a72ee5be3a7f115d22f57b76b23dc33eed"
     },
     {
       "artifact_kind": "config",
@@ -214,7 +214,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -222,7 +222,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "claude_code_north_star_capture_v1:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -267,7 +267,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json",
       "role_id": "claude_code_north_star_capture_v1:evidence_manifest",
-      "sha256": "sha256:72c8df14501a4e672e9877de7b49f49ef22ae4896437d819f9d97afc32b5fa03"
+      "sha256": "sha256:6743e9a4a0c123a98c606d2fd4ac03f58720583ae28d37a9a1e99a3b3f59995d"
     },
     {
       "artifact_kind": "freeze",
@@ -338,7 +338,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 5527,
+      "bytes": 5528,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -346,7 +346,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
       "role_id": "claude_code_north_star_capture_v1:support_claim",
-      "sha256": "sha256:7fd969dc20ed4572b1d09fecce0d70ba06d395ba61a624b5c255ae53211569e5"
+      "sha256": "sha256:05c630cfbecf2a1e795dca1d6e9291c16d0a7e7924e386de45d9c7b99096f3e6"
     },
     {
       "artifact_kind": "config",
@@ -386,7 +386,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -394,7 +394,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "codex_cli_e4_capture_probe_v1:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -437,7 +437,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
       "role_id": "codex_cli_e4_capture_probe_v1:evidence_manifest",
-      "sha256": "sha256:d68fc9568d483e8a779f7b71391c5d38482a0ed97460c066d1403b0fe6a68c64"
+      "sha256": "sha256:d1f87ba36d43aeb7d22d496de79a5abb9f55e0e6020799daa6992e6bce39f9cb"
     },
     {
       "artifact_kind": "freeze",
@@ -566,7 +566,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 8396,
+      "bytes": 8397,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -574,7 +574,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
       "role_id": "codex_cli_e4_capture_probe_v1:support_claim",
-      "sha256": "sha256:6310202ef6a051de9460556fdc29287ee5cfe01b8eabfa1a576dd59d41e74c1e"
+      "sha256": "sha256:583de29f4e7c9f85aa91999d55fc3363d20d887554a2743141bf2437ba2a217c"
     },
     {
       "artifact_kind": "config",
@@ -640,7 +640,7 @@
     },
     {
       "artifact_kind": "report",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "scripts/e4_parity/seed_atomic_feature_ledger.py",
@@ -648,7 +648,7 @@
       "media_type": "application/json",
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "e4_static:report/bb_e4_atomic_feature_ledger_seed_json",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "report",
@@ -1195,7 +1195,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:comparator",
-      "sha256": "sha256:72940468ff864a1632bfd6899d5d8a6312ef9e139b7d409c607560e015e2023e"
+      "sha256": "sha256:fb2919daf8c21854656c1a126034776be8ed1f8e3c5a7007ba1ab557362b0fea"
     },
     {
       "artifact_kind": "schema",
@@ -1221,7 +1221,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:evidence_manifest",
-      "sha256": "sha256:02bb7451cda6988f2bda84ae0329c0f2940ca069b95a0536c8dc8ceb6383355a"
+      "sha256": "sha256:64b0e01694bc75fc793766c61e4fbeff198d2614614f334c76acea924dcf7569"
     },
     {
       "artifact_kind": "freeze",
@@ -1237,7 +1237,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2045,
+      "bytes": 2171,
       "derived_from": [
         "oh_my_pi_p3_1_effective_config_graph_compiler:evidence_manifest"
       ],
@@ -1247,7 +1247,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_c4_chain.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:node_gate",
-      "sha256": "sha256:05532da04b354d6fd27999239fc5f3debd9f056cad19a1957e3675520df745df"
+      "sha256": "sha256:8b87e3fca8fe40769697e3c2732dd2b08a045695816b42372ed36b6a8c4801d4"
     },
     {
       "artifact_kind": "parity_results",
@@ -1273,7 +1273,7 @@
       "media_type": null,
       "path": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/primitive_projection_manifest.v1.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:primitive_projection_manifest",
-      "sha256": "sha256:ae58aa16ecfbb27049ef8d2436fb5f8de49abd377dd76017ca9dd221579c5a28"
+      "sha256": "sha256:33acbaa374a6d3e56cf2ca01b10377cff5d113df3f723b545793c1e8241ca46e"
     },
     {
       "artifact_kind": "replay",
@@ -1288,7 +1288,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:replay",
-      "sha256": "sha256:cdf42d917dde5cf59061176456652324c03ad1a980e094d3a105704f3ceb065a"
+      "sha256": "sha256:856a9f246f9521923a87b1aafb529bd7984223ebfe03501d59c64d5e694e9deb"
     },
     {
       "artifact_kind": "secret_scan",
@@ -1324,7 +1324,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:support_claim",
-      "sha256": "sha256:7bf1a86c732d3a92431820fa3fbb27c52c595ef7597811981caa293d80842ec4"
+      "sha256": "sha256:21de5ad043f36ca3b05f6e133ddde59f4b4784b5e33ff2e80ac6a22df350c22d"
     },
     {
       "artifact_kind": "node_gate",
@@ -1336,7 +1336,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:validator_output",
-      "sha256": "sha256:e713e7576fb5ee24c6e8e82d28e630dd5bcc5855ed932da26ab0e3b180c37637"
+      "sha256": "sha256:5d037ec0ad98e133705a31c23c8214db2ff1bfa63041f16f69b9c5adb75972f1"
     },
     {
       "artifact_kind": "config",
@@ -1352,7 +1352,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 5075,
+      "bytes": 5069,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1360,7 +1360,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:capture",
-      "sha256": "sha256:58a8eff1bf84482d9a0fe2e8827051491cc47ff89347b3db85e667bf2a997226"
+      "sha256": "sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715"
     },
     {
       "artifact_kind": "comparator",
@@ -1376,7 +1376,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:comparator",
-      "sha256": "sha256:75c197207e232729c579b972d9d76c50d5e361fd2cc132ba670128a172b48626"
+      "sha256": "sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72"
     },
     {
       "artifact_kind": "schema",
@@ -1388,7 +1388,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/compiled_records.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:compiled_records",
-      "sha256": "sha256:afc72e925712afff0fb38567b7a1e6a60a25cae3f15cde5c102e179984366aa0"
+      "sha256": "sha256:cc5b2cd4e4a7679d1599081d3c93f17505f1ca66679092ccf414c8560081d163"
     },
     {
       "artifact_kind": "evidence_manifest",
@@ -1402,7 +1402,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:evidence_manifest",
-      "sha256": "sha256:32939312a36996345ec5b9e2b67c785b96e014120ce9447c246fa8962d80580c"
+      "sha256": "sha256:9752eda7a88a5e19b271dfa1a8e9af63dd71abaf48f571a0b62d7013cf80fbf2"
     },
     {
       "artifact_kind": "freeze",
@@ -1418,7 +1418,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2079,
+      "bytes": 2163,
       "derived_from": [
         "oh_my_pi_p3_2_context_resource_pack_compiler:evidence_manifest"
       ],
@@ -1428,7 +1428,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p32_context_resource_pack_c4_chain.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:node_gate",
-      "sha256": "sha256:4cac36212ae38b3753f236173d626c7104ae4c9bb823c34945324c52f491956f"
+      "sha256": "sha256:ba23844aad0162d09b1942ceb3c9b11cb51aa21ae4ef3ccf5632ab998c197fcd"
     },
     {
       "artifact_kind": "parity_results",
@@ -1442,7 +1442,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:parity_results",
-      "sha256": "sha256:459b13170e314de1f67a776e8d05bfb18f4ee8ba5fbf45090153ab8996bf0ee7"
+      "sha256": "sha256:45ec480971434a3bea865bae377b918c686a47ec7107a41082b10d93dd95f5b7"
     },
     {
       "artifact_kind": "replay",
@@ -1457,7 +1457,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:replay",
-      "sha256": "sha256:dadf6241f1df822b4ded0848e91a5f10312866fd8c262497d8a50b0fc101f71a"
+      "sha256": "sha256:0c808af1ba7e021e869fd7825a20599510f884b5bd71cde7a84f777fcd48121f"
     },
     {
       "artifact_kind": "node_gate",
@@ -1505,7 +1505,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:support_claim",
-      "sha256": "sha256:45867c175cbe2b231297c423871887e5a4bfa210cf728605fd7e47b6c3a4af6f"
+      "sha256": "sha256:37182bb1ba058482678af61e623a6ea41aae072b70f4765fc585e5135e054001"
     },
     {
       "artifact_kind": "node_gate",
@@ -1533,7 +1533,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 5053,
+      "bytes": 5047,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1541,7 +1541,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:capture",
-      "sha256": "sha256:7a0e9aa4a4747e4d5e1751bf2f714a117b00ae2e1e5ac963c4a9b6208bb7abc3"
+      "sha256": "sha256:a6571aac4acdd0833fda62f2c58c9888974b2d39689f2590454d7c39e41efe5a"
     },
     {
       "artifact_kind": "comparator",
@@ -1557,7 +1557,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:comparator",
-      "sha256": "sha256:1764b2a9cddf3f4c520eb674f26e38a479960ccc699e2283612a11a4f6b64ff5"
+      "sha256": "sha256:8c505e256a5ecf141ff54a569e50b4f99c5491ed3e98ba67ef5dcbabd38af5f0"
     },
     {
       "artifact_kind": "schema",
@@ -1583,7 +1583,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:evidence_manifest",
-      "sha256": "sha256:b184895f48fa5dc971c842d412ea6f0088c4f36003ddd11a29af4247b46de3b0"
+      "sha256": "sha256:14eb9c821c4d7711c6f8f2ed832fbcb398e10104647091ffba1832fcdffd182d"
     },
     {
       "artifact_kind": "freeze",
@@ -1599,7 +1599,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2065,
+      "bytes": 2149,
       "derived_from": [
         "oh_my_pi_p3_3_capability_registry_compiler:evidence_manifest"
       ],
@@ -1609,7 +1609,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p33_capability_registry_c4_chain.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:node_gate",
-      "sha256": "sha256:fdcc51cbbc898520a1cf8ab998ad8c95b7131fcaf85f34b76a9208c69bd3d1a6"
+      "sha256": "sha256:e8863943ee2ed7d7d6e2efa1af680e47a59bea04b4bb64d1dce30dd8a8afb567"
     },
     {
       "artifact_kind": "parity_results",
@@ -1623,7 +1623,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:parity_results",
-      "sha256": "sha256:fac080c0e727d178c3f93c8e78ed81b294d55b52c19246e5924aacc63857446b"
+      "sha256": "sha256:4f4ea6e7db13fb1b1fd32eb4b10b0808f4f30a3eeb70e82c45b49577540f83c6"
     },
     {
       "artifact_kind": "replay",
@@ -1638,7 +1638,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:replay",
-      "sha256": "sha256:163f39cd545b563cc426b800178ded385eb7d5a5a93a8f8a54748e8f95952cc3"
+      "sha256": "sha256:eb5ac608cbb27fcd40a47e7a1dbeec468dbd3c91180badc9723a2a545f35d3dd"
     },
     {
       "artifact_kind": "node_gate",
@@ -1686,7 +1686,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:support_claim",
-      "sha256": "sha256:921a8af3ce3ff5e19b0d9cfa4f3f6cdf8c9d1272b5d951abef1302a3fa4b4176"
+      "sha256": "sha256:6539d884fdf2702ac8ec514060aea9f2504d09dcb9fc51380c4285018b30a7ec"
     },
     {
       "artifact_kind": "node_gate",
@@ -1714,7 +1714,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 5108,
+      "bytes": 5102,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1722,7 +1722,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:capture",
-      "sha256": "sha256:e32bae48d42b11073de8959f5d26b99978681f0783984167f9e5b8d94a328b70"
+      "sha256": "sha256:58d2385505e26f65ea5c4a2c2e839adeafb68bc150a8991ff1046adc2e1da51b"
     },
     {
       "artifact_kind": "comparator",
@@ -1738,7 +1738,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:comparator",
-      "sha256": "sha256:ffffa2c0de96ea56d3a8572efd5de039fdf0c759d6e8214631c4646f00735ecc"
+      "sha256": "sha256:2cae5e176aad70f56514a9c1d6a613ae31827afd836db4e2335fc6307904037e"
     },
     {
       "artifact_kind": "schema",
@@ -1764,7 +1764,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:evidence_manifest",
-      "sha256": "sha256:f466f4d923cbb579d5d8ec01d04b746136eb70dec15060aacfc58b1adf2229ff"
+      "sha256": "sha256:f1fcaad11b66780ee8f9a2bb1ea7005f7887753975b80c71f7be0a2eb5a7790e"
     },
     {
       "artifact_kind": "freeze",
@@ -1780,7 +1780,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2100,
+      "bytes": 2184,
       "derived_from": [
         "oh_my_pi_p3_4_extension_hook_execution_compiler:evidence_manifest"
       ],
@@ -1790,7 +1790,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p34_extension_hook_c4_chain.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:node_gate",
-      "sha256": "sha256:4ee4f399766f797750f051da3fc7d67396122cc190803dac01dd42a70ecf92ba"
+      "sha256": "sha256:be77c0d15b0c8f2806e52f05a8a4a12a5fa85038b68014bfa00743f18608da44"
     },
     {
       "artifact_kind": "parity_results",
@@ -1804,7 +1804,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:parity_results",
-      "sha256": "sha256:b5276bbb873043e64f2f5cdba737b7cd697cbc7fb1166ccdbda6d6cbcbc50fce"
+      "sha256": "sha256:ef2919aa56ce490407dc06ed48ad1b131d59a7fc6cb7ef2eacef61bb52df9bfb"
     },
     {
       "artifact_kind": "replay",
@@ -1819,7 +1819,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:replay",
-      "sha256": "sha256:13b049eaa17247ecaf65f178e0d2360c8558e38ab6d520b0f2659d3cb6f6d565"
+      "sha256": "sha256:9c9bd8648a4b57722632657414272e54ae1ef03349a63f945709bf52f9bda138"
     },
     {
       "artifact_kind": "node_gate",
@@ -1867,7 +1867,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:support_claim",
-      "sha256": "sha256:c9cead29d4d68a5004610acda55480df862da12f2d84a0d4e6cf600ed13a7090"
+      "sha256": "sha256:4c945034a036ce6abc8b0fa974915585dd8afae4d3c8e99b296ce6f783c7c68c"
     },
     {
       "artifact_kind": "node_gate",
@@ -1895,7 +1895,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 4987,
+      "bytes": 4981,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1903,7 +1903,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:capture",
-      "sha256": "sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa"
+      "sha256": "sha256:cadae9c57e73639c5c858a99203403aacad2d51d45b630b6060aa3c1041ac9e4"
     },
     {
       "artifact_kind": "comparator",
@@ -1919,7 +1919,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:comparator",
-      "sha256": "sha256:9772186b764d95426926eedb725561605f4ff78e350249c0ab097efc9322df60"
+      "sha256": "sha256:d67157252a9660a84c872d7b7090ce22a67a1bbfc90e27f46e52151870c74307"
     },
     {
       "artifact_kind": "schema",
@@ -1945,7 +1945,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:evidence_manifest",
-      "sha256": "sha256:83fa8c6becd14b7d233bc17693d16c5af4ac5a17a4b9748f54add25f8e7a3e35"
+      "sha256": "sha256:4c792b57d6141291af8f04b4c4e5e5a74513d0495856c50d7f2f37e612858df5"
     },
     {
       "artifact_kind": "freeze",
@@ -1961,7 +1961,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2023,
+      "bytes": 2107,
       "derived_from": [
         "oh_my_pi_p3_5_resource_blob_compiler:evidence_manifest"
       ],
@@ -1971,7 +1971,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p35_resource_blob_c4_chain.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:node_gate",
-      "sha256": "sha256:9826b9260bb44631ba6d3afabf73ef6fdd0f4c8387af20421da88fb40510cc2c"
+      "sha256": "sha256:11b9d1d4fbf13be85a545634c805640581d203ac8f793c7c83576d6243114d71"
     },
     {
       "artifact_kind": "parity_results",
@@ -1985,7 +1985,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:parity_results",
-      "sha256": "sha256:c264346f7f9b07df12aa5ac71876c62527e9819788d6b749eb46c6d84a7ba9df"
+      "sha256": "sha256:0fbac34c8be6914121ef3d5581cb87c2b16feab82f1f0575313d671029e22e23"
     },
     {
       "artifact_kind": "replay",
@@ -2000,7 +2000,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:replay",
-      "sha256": "sha256:2d8c2bbda80e1130ed3114dc1aada5ac45f1de341c12f6987c715e0dd1c0ca42"
+      "sha256": "sha256:9ae9735552e51660fd4216409844f2deb9889ac90ebbdfa700a09e9375878a3a"
     },
     {
       "artifact_kind": "node_gate",
@@ -2048,7 +2048,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:support_claim",
-      "sha256": "sha256:86716b2f86a878b42dc2b4f49f7e4bff5f42aa88e27f9399b453203c9710ca5a"
+      "sha256": "sha256:bad57941f997196ee6793971a426c81928d169dbfd75d6a7de2e0356399fd7dc"
     },
     {
       "artifact_kind": "node_gate",
@@ -2076,7 +2076,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 5108,
+      "bytes": 5102,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2084,7 +2084,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:capture",
-      "sha256": "sha256:25890e81ab15eb4f70fa8e8e282895a71df6e2e8b6d8f0e0bc6f4423bdf24e7c"
+      "sha256": "sha256:3c319b5c6307ab15b53260eecab67e86f33ae2c6d62d980b488fb9f2b5a130e2"
     },
     {
       "artifact_kind": "comparator",
@@ -2100,7 +2100,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:comparator",
-      "sha256": "sha256:0579d31e4453807c6a63d99f9da701654dee31fd164acbb1aec227ecab02bb48"
+      "sha256": "sha256:625cac6ad2a2550d1d930acedad035d7b2cea2ba3b8f413a630b23f95c23741b"
     },
     {
       "artifact_kind": "schema",
@@ -2126,7 +2126,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:evidence_manifest",
-      "sha256": "sha256:4288f6ba39389673baf4ff7be59134735bc5d176476abb98106d340f48443ddb"
+      "sha256": "sha256:cda67db9185ef73efa194d91125eeacc2d070332c8ceeef57a5a1c0b5144d4f4"
     },
     {
       "artifact_kind": "freeze",
@@ -2142,7 +2142,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2100,
+      "bytes": 2184,
       "derived_from": [
         "oh_my_pi_p3_6_protocol_provider_policy_compiler:evidence_manifest"
       ],
@@ -2152,7 +2152,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p36_protocol_provider_policy_c4_chain.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:node_gate",
-      "sha256": "sha256:89cee20ce72cc018faf468c22a0a374ae016426b8738e2351b1b61eaa9f9744b"
+      "sha256": "sha256:9de2ad3d136a4d86e024569de5780b4c56fe451b19957533bd4a97a5737f13f1"
     },
     {
       "artifact_kind": "parity_results",
@@ -2166,7 +2166,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:parity_results",
-      "sha256": "sha256:6a71d2c922cdcdb87722301a626e6757b864c1fa86c02dc7aa9f3f5c5d6505c0"
+      "sha256": "sha256:a7509379d9e9bea0ce554cf4f663cca6c1fe2a9fe6dc6bafa3e58d91e75f9c6c"
     },
     {
       "artifact_kind": "replay",
@@ -2181,7 +2181,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:replay",
-      "sha256": "sha256:fd9e28b43dae49b8fb7766f1b2429e0d008c2637f7b0197d748286786a5c3156"
+      "sha256": "sha256:e02024c641cad14e2bff6c72e59a7b795bcbaff039c185f781dc5853057c9dd7"
     },
     {
       "artifact_kind": "node_gate",
@@ -2229,7 +2229,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:support_claim",
-      "sha256": "sha256:5d5ff3f718f436d7c0714628dba12a6ea53406df00c946ca970c63f7e7b5be1b"
+      "sha256": "sha256:2e05d87ef188d5136c0d10b4f7dc589853a138e7005de29bd27c275e3402ed44"
     },
     {
       "artifact_kind": "node_gate",
@@ -2257,7 +2257,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 4965,
+      "bytes": 4959,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2265,7 +2265,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_7_memory_work_compiler:capture",
-      "sha256": "sha256:7cb8a75c681e858d0c697ebed24551cc102409afdcbfde234276802b6d0d6828"
+      "sha256": "sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72"
     },
     {
       "artifact_kind": "comparator",
@@ -2281,7 +2281,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_7_memory_work_compiler:comparator",
-      "sha256": "sha256:5018880ebc35ba442553a66541371b21c0992436670da3dc18e07595e7d30e19"
+      "sha256": "sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01"
     },
     {
       "artifact_kind": "schema",
@@ -2307,7 +2307,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_7_memory_work_compiler:evidence_manifest",
-      "sha256": "sha256:24c7434e77e110cae789cbe34bb599f3ecbcf29ba5443b8c7867c41f20598f0b"
+      "sha256": "sha256:7d299783abe1b85a44da9562b1c872486b2578664a6a116a79aaad1bcb7b8bde"
     },
     {
       "artifact_kind": "freeze",
@@ -2323,7 +2323,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2009,
+      "bytes": 2093,
       "derived_from": [
         "oh_my_pi_p3_7_memory_work_compiler:evidence_manifest"
       ],
@@ -2333,7 +2333,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json",
       "role_id": "oh_my_pi_p3_7_memory_work_compiler:node_gate",
-      "sha256": "sha256:8bba23bdaf6ee0573a5cd84d16ed3e050ee28aa8f2aefcdfdd6f12e14510aa05"
+      "sha256": "sha256:19c7948c441f0570f0649e524260ce5d77178132be6b7cff5c192513cb207c6a"
     },
     {
       "artifact_kind": "parity_results",
@@ -2347,7 +2347,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_7_memory_work_compiler:parity_results",
-      "sha256": "sha256:64e2734be1354ffdea697fec66ca8f0efeed86e57fa150d45bd5c4d75a30f6ac"
+      "sha256": "sha256:ce16682d0bd3a14e4f777aa796cb000181552ac13bf2f088346641fe03b0b037"
     },
     {
       "artifact_kind": "replay",
@@ -2362,7 +2362,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_7_memory_work_compiler:replay",
-      "sha256": "sha256:5e555daee1dd17ad7796b6c813fda5483e32339f1f559b4edc1491d7fe051e77"
+      "sha256": "sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e"
     },
     {
       "artifact_kind": "node_gate",
@@ -2410,7 +2410,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_7_memory_work_compiler:support_claim",
-      "sha256": "sha256:c817c2660e6ebce5c59f5f60789af77cdafee890e372402ee4659678fa80cabc"
+      "sha256": "sha256:491034e3c2c1623b77e2ba140f6af0b2e52671222e7e02947833eb7c5a9766ce"
     },
     {
       "artifact_kind": "node_gate",
@@ -2438,7 +2438,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 5020,
+      "bytes": 5014,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2446,7 +2446,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:capture",
-      "sha256": "sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98"
+      "sha256": "sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5"
     },
     {
       "artifact_kind": "comparator",
@@ -2462,7 +2462,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:comparator",
-      "sha256": "sha256:09118d45c07d126ea0299f7bb132239e928bdfdf9c085eaf11504d953c1fa7c0"
+      "sha256": "sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb"
     },
     {
       "artifact_kind": "schema",
@@ -2488,7 +2488,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:evidence_manifest",
-      "sha256": "sha256:e7d43a7a200ebc39b81f6288a0f5f919de9f64cb67d9ef40f1d483c66ccbcd7d"
+      "sha256": "sha256:5dff487809ff8cc316582eb4db89b177f9a7f4131683c75d0c24a63952da8e28"
     },
     {
       "artifact_kind": "freeze",
@@ -2504,7 +2504,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2044,
+      "bytes": 2128,
       "derived_from": [
         "oh_my_pi_p3_8_projection_broker_adapter:evidence_manifest"
       ],
@@ -2514,7 +2514,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p38_projection_broker_c4_chain.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:node_gate",
-      "sha256": "sha256:2d2140350fd301e25bd76e655225f4b0106198f7acd1bacd17bbfb6148c15dd5"
+      "sha256": "sha256:c077a2bdcd89d07ce431b390b93937c706dc775a9fba61efa15eab094f23872f"
     },
     {
       "artifact_kind": "parity_results",
@@ -2528,7 +2528,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:parity_results",
-      "sha256": "sha256:839e941ee148eedeea879a037a4414f35bbc81d5c03cc1822a018b15472a5047"
+      "sha256": "sha256:014a27b3d4f220e39ed3de6efaef9e90c0390b8b45b900ca22cb6f204258dd63"
     },
     {
       "artifact_kind": "replay",
@@ -2543,7 +2543,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:replay",
-      "sha256": "sha256:3408d24a3b7581ca5bc78d7145ef7202650d6804906230c425000e5ca4900da5"
+      "sha256": "sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b"
     },
     {
       "artifact_kind": "node_gate",
@@ -2591,7 +2591,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:support_claim",
-      "sha256": "sha256:7b95ce240f6296aec1d81f609b198c93dc890a1e6d2aa9fb548609a8faa4ca99"
+      "sha256": "sha256:5ca36f3c333163803c86836fd6298cc260a45c32cdd39178f129b87bf6206d84"
     },
     {
       "artifact_kind": "node_gate",
@@ -2607,7 +2607,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2615,7 +2615,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -2656,7 +2656,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:evidence_manifest",
-      "sha256": "sha256:fa9487b0a2cb3fe0f51177d4c4ebfd1c00b81e0f56eabbcc0442a9d51811ed3f"
+      "sha256": "sha256:995001c35ed28d4000f6543640b0121dc5a328b190fe4a43c350aeca8e9c487b"
     },
     {
       "artifact_kind": "freeze",
@@ -2726,7 +2726,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 5870,
+      "bytes": 5871,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2734,7 +2734,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:support_claim",
-      "sha256": "sha256:7905e907861c836631f496a8bdb419f743e6b1bfc2bada6d9b2d60a6c4f5fb2b"
+      "sha256": "sha256:467d603fe4d2c677911d5044cda5b5d661bf0d4864b0ed2e60c1b795b20a5199"
     },
     {
       "artifact_kind": "node_gate",
@@ -2750,7 +2750,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2758,7 +2758,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -2799,7 +2799,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:evidence_manifest",
-      "sha256": "sha256:ef9f5cb2d070e0b7346fb286bdc82d0fada2f336db1c2536372dc88db6103a8a"
+      "sha256": "sha256:260fe5e88a12f51665042e491b8f9de47a0b508f856025170d92eeceed483829"
     },
     {
       "artifact_kind": "freeze",
@@ -2869,7 +2869,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 5934,
+      "bytes": 5935,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2877,7 +2877,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:support_claim",
-      "sha256": "sha256:b153468171e662554e1d0bb29aca22ed76ded7f7a394666e0e7ed10114bca675"
+      "sha256": "sha256:b09c4a46319308bd1cef47b6420b9840db7096d5b5537b5c390e5e7c1b367130"
     },
     {
       "artifact_kind": "node_gate",
@@ -2893,7 +2893,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2901,7 +2901,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -2942,7 +2942,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:evidence_manifest",
-      "sha256": "sha256:9fb17b6ef6b0d9afc161e73331ba053e38f05b72b35735973415e7f8b661152e"
+      "sha256": "sha256:57d2db6e56057968e8ebbd02d8da3f41ef6c0141ea370a3a4cc14a89984c59e9"
     },
     {
       "artifact_kind": "freeze",
@@ -3012,7 +3012,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 6510,
+      "bytes": 6511,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3020,7 +3020,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:support_claim",
-      "sha256": "sha256:7d8c0602da8e47014d8c1c1b2e7a373ddad086b13c0d2df95c05f19ec1779ea1"
+      "sha256": "sha256:c5aed0aa91e9eac0f9e9852059c6162310280c4019bf37bcef0bae1789bce173"
     },
     {
       "artifact_kind": "node_gate",
@@ -3036,7 +3036,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3044,7 +3044,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -3085,7 +3085,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:evidence_manifest",
-      "sha256": "sha256:820d8554e61722170ea85e85468bb0f4327bae43d3a32e2bc9b8e16bade10f8a"
+      "sha256": "sha256:037b4ebdfd6c41288b531e96401642a49a82c75e28c6538f5bf96dbf985c10d0"
     },
     {
       "artifact_kind": "freeze",
@@ -3155,7 +3155,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 6907,
+      "bytes": 6908,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3163,7 +3163,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:support_claim",
-      "sha256": "sha256:13ce25250eac522d4d0fc323816d9690d3e9b67acb3d9cf989798d9a136fb81b"
+      "sha256": "sha256:0437710b9ccd03de04a50d6bec4be270bab19cd1d917f46e7f67eac2913b6799"
     },
     {
       "artifact_kind": "node_gate",
@@ -3179,7 +3179,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3187,7 +3187,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -3230,7 +3230,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:evidence_manifest",
-      "sha256": "sha256:8ffa449212c5bfba739ef936c2bd25c24612ed3ee71525c619bb8c2aa99e55b2"
+      "sha256": "sha256:0f440d806d99f42caf01d5ba319a73fe8ef829541fcf974a8195a413faef723a"
     },
     {
       "artifact_kind": "freeze",
@@ -3314,7 +3314,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 7670,
+      "bytes": 7671,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3322,7 +3322,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:support_claim",
-      "sha256": "sha256:f24e3d7cc74d63b42f5007734f58e53baee04dd5d6e2b783cab85816b5f18da6"
+      "sha256": "sha256:d4e313b721e3451fb56d434209e2f06fb59fb186a21840f20b5e68f684237851"
     },
     {
       "artifact_kind": "node_gate",
@@ -3362,7 +3362,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3370,7 +3370,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -3412,7 +3412,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:evidence_manifest",
-      "sha256": "sha256:fda3dec2989be150471dca56e391d41f9167e03e9298b07c8a8a3c80276619ee"
+      "sha256": "sha256:ce2163376c732f52bde4cb4159d305f260af19b3c6108e03b7d8d86ccc541aea"
     },
     {
       "artifact_kind": "freeze",
@@ -3495,7 +3495,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 7067,
+      "bytes": 7068,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3503,7 +3503,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:support_claim",
-      "sha256": "sha256:aae3052ef9d03093874642ee41387f4df32f20cbf1c541491f90a10cc1dab7fb"
+      "sha256": "sha256:13c46b5b9261d1458a1cd2c56ce93efebafdc9327a57e6e8e89008965bf38fa6"
     },
     {
       "artifact_kind": "node_gate",
@@ -3519,19 +3519,19 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 231320,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
       "lane_id": "oh_my_pi_p6_6_task_job_subagent",
       "media_type": null,
-      "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+      "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e"
     },
     {
       "artifact_kind": "capture",
-      "bytes": 13101,
+      "bytes": 13185,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3539,11 +3539,11 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:capture",
-      "sha256": "sha256:cf81c6107aa547b752ebda676c5e2743ad6cc932ccc61e48ddd0e1369c48495c"
+      "sha256": "sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc"
     },
     {
       "artifact_kind": "comparator",
-      "bytes": 5736,
+      "bytes": 5889,
       "derived_from": [
         "oh_my_pi_p6_6_task_job_subagent:capture",
         "oh_my_pi_p6_6_task_job_subagent:replay"
@@ -3554,7 +3554,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:comparator",
-      "sha256": "sha256:6a1f45d5c8f7b11e884627810476143f227d20737ca71a5802288b5c0bc6217d"
+      "sha256": "sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9"
     },
     {
       "artifact_kind": "capture",
@@ -3570,7 +3570,7 @@
     },
     {
       "artifact_kind": "evidence_manifest",
-      "bytes": 7358,
+      "bytes": 7378,
       "derived_from": [
         "oh_my_pi_p6_6_task_job_subagent:support_claim"
       ],
@@ -3580,7 +3580,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:evidence_manifest",
-      "sha256": "sha256:cdd325c98fa68bae24b840ad631c02c3a704ac867cb20e4dff74f68da923ee24"
+      "sha256": "sha256:0b51e19d5b51ee2f045c1b52ec90cc3249f60f9bd5ceb8e58061e8dd371e8eed"
     },
     {
       "artifact_kind": "freeze",
@@ -3608,7 +3608,7 @@
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 2562,
+      "bytes": 2436,
       "derived_from": [
         "oh_my_pi_p6_6_task_job_subagent:evidence_manifest"
       ],
@@ -3618,11 +3618,11 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:node_gate",
-      "sha256": "sha256:7bd83d0f10bd6fd6ccc1349155556c1885bcfd60954253b034563bb402c6af36"
+      "sha256": "sha256:b8ff0a93e0a40eb499d500fe4af6b42b444a87c17f199cd2b4f1e7b804d6a165"
     },
     {
       "artifact_kind": "parity_results",
-      "bytes": 474,
+      "bytes": 501,
       "derived_from": [
         "oh_my_pi_p6_6_task_job_subagent:task_job_subagent_comparator"
       ],
@@ -3632,11 +3632,11 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:parity_results",
-      "sha256": "sha256:1534daf772f67a15ea94d99764297aff826b464e6d5feae06d4be457429104d8"
+      "sha256": "sha256:b361ad6d45bb7a1e977b6565cdf8600ec997a5dbd3e3f67b40889472179c0816"
     },
     {
       "artifact_kind": "replay",
-      "bytes": 19048,
+      "bytes": 19075,
       "derived_from": [
         "oh_my_pi_p6_6_task_job_subagent:target_probe_output",
         "oh_my_pi_p6_6_task_job_subagent:work_item"
@@ -3647,7 +3647,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:replay",
-      "sha256": "sha256:d9ca49aad9f4c48601d019b13605dccf18751b6c112a369d24d44303912ee3be"
+      "sha256": "sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
     },
     {
       "artifact_kind": "secret_scan",
@@ -3675,7 +3675,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 8272,
+      "bytes": 8292,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3683,7 +3683,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:support_claim",
-      "sha256": "sha256:92f457de4498fa2a785fd760094a5464be2728babfb643095c5495c8bd340350"
+      "sha256": "sha256:60500c81e2fd48b3c8208c61d6ab26a7f3e4e6ceaba0ee30092cb9c893054386"
     },
     {
       "artifact_kind": "node_gate",
@@ -3711,7 +3711,7 @@
     },
     {
       "artifact_kind": "comparator",
-      "bytes": 5736,
+      "bytes": 5889,
       "derived_from": [
         "oh_my_pi_p6_6_task_job_subagent:capture",
         "oh_my_pi_p6_6_task_job_subagent:replay"
@@ -3722,11 +3722,11 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:task_job_subagent_comparator",
-      "sha256": "sha256:6a1f45d5c8f7b11e884627810476143f227d20737ca71a5802288b5c0bc6217d"
+      "sha256": "sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9"
     },
     {
       "artifact_kind": "node_gate",
-      "bytes": 1705,
+      "bytes": 3194,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3734,7 +3734,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:validator_output",
-      "sha256": "sha256:7d2ec02ec2408cb05ae6e98885307783918c0a2cc980cc08fa0dbe84936d8ebf"
+      "sha256": "sha256:199514225cd36cfb2d8ae20fa9dd203c9c710c2baf2f7e1792241255d997edef"
     },
     {
       "artifact_kind": "config",
@@ -3754,7 +3754,7 @@
     },
     {
       "artifact_kind": "replay",
-      "bytes": 19048,
+      "bytes": 19075,
       "derived_from": [
         "oh_my_pi_p6_6_task_job_subagent:detached_subagent_target_capture",
         "oh_my_pi_p6_6_task_job_subagent:joined_subagent_target_capture",
@@ -3766,11 +3766,11 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_item_replay.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:work_item_replay",
-      "sha256": "sha256:d9ca49aad9f4c48601d019b13605dccf18751b6c112a369d24d44303912ee3be"
+      "sha256": "sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 124871,
+      "bytes": 124439,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3778,7 +3778,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "opencode_north_star_capture_v1:atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "artifact_kind": "capture",
@@ -3823,7 +3823,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json",
       "role_id": "opencode_north_star_capture_v1:evidence_manifest",
-      "sha256": "sha256:e13c00d8aa56edb4bacf288cbddc0130b83953702e2be64db4d42cbfbd2f87c1"
+      "sha256": "sha256:d9c4c01f6ed74edaee72976c639a11bd3cdf8ab3301f6ae9fe1f6d714da70c03"
     },
     {
       "artifact_kind": "freeze",
@@ -3894,7 +3894,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 5465,
+      "bytes": 5466,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3902,7 +3902,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
       "role_id": "opencode_north_star_capture_v1:support_claim",
-      "sha256": "sha256:b9f8a8b863f6d0dfe867348358f5aa5535445a7d3453bbf6dab3bce3fac2b02b"
+      "sha256": "sha256:9b9f7714f00ff8b1ab5d08b5a2014b52acafa6b40abab4b1e0c0d26d82fb3470"
     },
     {
       "artifact_kind": "config",
@@ -3992,7 +3992,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
       "role_id": "pi_p5_l1_cli_config_context_tool_surface:evidence_manifest",
-      "sha256": "sha256:b5d63ea5f69c64450c0a041f9777e823083bebcf445f073a6e597939f73973ef"
+      "sha256": "sha256:f7aca4f73864abaefe9e0a734b78d4aa79337df47c7255d54c8d4de905d10c59"
     },
     {
       "artifact_kind": "freeze",
@@ -4087,7 +4087,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 10547,
+      "bytes": 10548,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -4095,7 +4095,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
       "role_id": "pi_p5_l1_cli_config_context_tool_surface:support_claim",
-      "sha256": "sha256:897b8045909248e9b653a3ae3b81fafb2ffc50cdacb7299c7b21e123b265514d"
+      "sha256": "sha256:77658d36322a678f39babcb7da5cf19d3b0dfe8372d093eb1b28f1ec54c8c137"
     },
     {
       "artifact_kind": "node_gate",
@@ -4197,7 +4197,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
       "role_id": "pi_p5_l2_extension_session_residual:evidence_manifest",
-      "sha256": "sha256:a8c3b21e6725b48769325cad91e30b808db81ff96823993c295a9d8a98f695de"
+      "sha256": "sha256:1bdbf4c17b6321b6b0b37a555e70eb2bf522ded30ad06cc81ad2d58997131c0e"
     },
     {
       "artifact_kind": "freeze",
@@ -4290,7 +4290,7 @@
     },
     {
       "artifact_kind": "support_claim",
-      "bytes": 10360,
+      "bytes": 10361,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -4298,7 +4298,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
       "role_id": "pi_p5_l2_extension_session_residual:support_claim",
-      "sha256": "sha256:7dc01670aa11fa7a7cccacea4c5513c0f9fc15a27c2934eb123c4b2d141d43d2"
+      "sha256": "sha256:d5c66f653b5a9d27889390b6c25b3b5b27c6a0f864b9c7f5c4b1a9590acab1d5"
     },
     {
       "artifact_kind": "node_gate",
@@ -4351,145 +4351,145 @@
   ],
   "generated_at_utc": "2026-07-03T00:00:00Z",
   "integrity": {
-    "entries_hash": "sha256:a7dd984d80b6547b45347deca2e6ce390b91d02de293aeb1fcf69d2d4a9fffaf",
+    "entries_hash": "sha256:414bea9d2cf02526b4549472de40b531db0ebd2ed250adaff5a7fdb3e1eefa5c",
     "entry_count": 337,
-    "segments_hash": "sha256:be18606a5377bca5d30fdd2a277ceda10fc120c5010aeea0c066c32ed1b6994a",
-    "stable_entries_hash": "sha256:c9e3bbc5444499dfa70298ceda352fdfc213b369d07d9c73f155e50b948b9efa"
+    "segments_hash": "sha256:8b7af0e242bd56c70e260ab6edc156a1d05909aa54a11fed7bbc1643b4ebc733",
+    "stable_entries_hash": "sha256:2387f6f2607578b2de4f8423edc12bee05a392f8babf9aeade35515436f69d79"
   },
-  "revision": 10,
+  "revision": 11,
   "schema_version": "bb.e4.artifact_catalog.v2",
   "segments": [
     {
-      "entries_hash": "sha256:2ac10427ab298b4695066f73595821eaf5f5fa09779099a4704a275318e7de14",
+      "entries_hash": "sha256:db8fb09dd07a8cb6422ba3f34fca4658833e4f3e4e9b6b1b3af5432732ad432b",
       "entry_count": 16,
       "segment_id": "breadboard_self_runtime_records_v1",
-      "stable_entries_hash": "sha256:363e98064662721206ad87c62fa47c8a43fa80bb016842cc14a28fec811397da"
+      "stable_entries_hash": "sha256:b6161ab34b83a2c15631d82e9de14e5711a37fdc25b29e283f5c142e7c9be8dd"
     },
     {
-      "entries_hash": "sha256:ae492ae5c1a6893b2fa4e03d70284d9f8682722119c1206884d03d284ec96891",
+      "entries_hash": "sha256:ba187ea89402cc050614edc16c27969303e1a39c109f85fa65afaf01832378b8",
       "entry_count": 13,
       "segment_id": "claude_code_north_star_capture_v1",
-      "stable_entries_hash": "sha256:9ef8a28f5446c16bf3b86fec2cacff26fdb786253ea7ef4eb6375255a49a79ad"
+      "stable_entries_hash": "sha256:faa9cbd32686a73420747798b6df9b3d7b134c892142e77c963bc775c5a02ca2"
     },
     {
-      "entries_hash": "sha256:d0742099893834c066474137509bbc247904ae57a3e98b89a8b9fa2fd9c675d1",
+      "entries_hash": "sha256:9c9c6df4cd3872f30c66f72025f4054b4fc173b1d0c37fdf73889b4d556c9fd1",
       "entry_count": 17,
       "segment_id": "codex_cli_e4_capture_probe_v1",
-      "stable_entries_hash": "sha256:6fe377a61f72f3da327ad644b85623c5d2c496953c4eb4cbf4c20a0450b5b59d"
+      "stable_entries_hash": "sha256:859f70738f6c42f44e8d80b734c31624bc2c7eb76a3c9c34da67d1c16c0c29ab"
     },
     {
-      "entries_hash": "sha256:4011e1256dcde6c9687e810b9931de3cafec742640802c277adc93e794f4e0e4",
+      "entries_hash": "sha256:22e02e89d2460c8c3455bedcf1207556cd857d6f01a8a3842983e58628c4695c",
       "entry_count": 15,
       "segment_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
-      "stable_entries_hash": "sha256:618395ec9459a8252ad683a4f70675ba8430e398b05c6ffcd800333a65ba00d2"
+      "stable_entries_hash": "sha256:e1f38e5277183b173c1f3552d1438ac828e9d28739746e751a8426dc56def0ff"
     },
     {
-      "entries_hash": "sha256:b3f154e606d2344a4760a35b8464a654b46b178ae93999eef6d98fec1e81e597",
+      "entries_hash": "sha256:14099ff17df04ff6e7d34994f45b19b21d7f68b3445b795fdf58fe17286e3916",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
-      "stable_entries_hash": "sha256:b33c719c60340ad916342ba74b071aa4c63d386d7641462f2ea966a3d7d7662f"
+      "stable_entries_hash": "sha256:cf22a86281ec8af996d31fb7ee6e1a3734636450562144721d279be47c9bf242"
     },
     {
-      "entries_hash": "sha256:b2beed9a077f2bf40e4f3eff0ea678da20b8ee6a088d0a14406949b2ff5f9578",
+      "entries_hash": "sha256:f77881242b40b815005ed167eac0cfe6590f505523608f741c5b07416656ea97",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_3_capability_registry_compiler",
-      "stable_entries_hash": "sha256:f7c2ed252799d8a8ccc10107872ee66983abeabbb26494be4363752e3f92c0ba"
+      "stable_entries_hash": "sha256:74ff78c9de5d96d98e1fcda960542324aa370e47fbcb822c8c232ff1442c9157"
     },
     {
-      "entries_hash": "sha256:4fd14a59666657abd24f84c59752fbea2c07b7109a78bef3a3ba07abeb33df6c",
+      "entries_hash": "sha256:c6f9261928aa1f8251bfcd102e7fd9fe55e27b507b5b610eeb67f3042dd95e23",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
-      "stable_entries_hash": "sha256:562d1a76cf5d11d157894e7de89c13f7e708b9f43649d3e01219420ab2d25bd2"
+      "stable_entries_hash": "sha256:a8fbb2dcd826feda6442b0eab875fa34e1d4ad30971a65da49a271f72c214280"
     },
     {
-      "entries_hash": "sha256:37ea32a917699c9a171fbff0fa4d3fa5efc23232276485ac8eaea4b2f4562015",
+      "entries_hash": "sha256:62a7a2d212cda2f39a3ced7f07162b570be5a6b65384826c484dfae739fc9963",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_5_resource_blob_compiler",
-      "stable_entries_hash": "sha256:8e6e0492d84b73be48f8858f0222634ff3b4267efbbc28a2bf52043429c20d0b"
+      "stable_entries_hash": "sha256:fdf267ece3894f6026591a8dca90abd8d5f43cc4fd564c9b191c312aa6c3d8ae"
     },
     {
-      "entries_hash": "sha256:7346590b7b99603116596aa8463db2b7757d96b197ddb60a610ed8624576c734",
+      "entries_hash": "sha256:05fb621d7a51a8c057a49e2420d97598105cd25d08f0866545680dbfe89604a6",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
-      "stable_entries_hash": "sha256:f781e142044f02ce4dead5ea224e20e926d584cc716f2c6fec195618ba6d6a48"
+      "stable_entries_hash": "sha256:37d465650a7a4168de0061faa8c3299612f9c2f0fb4571b0e0973b0418d20651"
     },
     {
-      "entries_hash": "sha256:e28217cace10e07d5303d336e480b213d662cba551e4632e2917194164d390eb",
+      "entries_hash": "sha256:192661781c17b82b75ea6495f771ed0c1351ef1b921584fce299c3027177d8c9",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "stable_entries_hash": "sha256:ad3af038c159c37a0b59973cea7b336f36d719a2ffa2906c338c7abd853f73c9"
+      "stable_entries_hash": "sha256:aa5caffe3b68b0f0918083797583cae49e7f125f1b5b37739080dcfebb612780"
     },
     {
-      "entries_hash": "sha256:c3b7e9387be2a9bd4df571f28f18264ab4a9359a4fc908a7159279e257ec7cc7",
+      "entries_hash": "sha256:2c256f37dac3017f5180427c6aa69a791e6e2ec4acb3617a121379594438ebe5",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_8_projection_broker_adapter",
-      "stable_entries_hash": "sha256:7c96e6c35e1a280d73c193c5a0f8e7ce1ba9c05aadf16ead0b32572712cdd8bf"
+      "stable_entries_hash": "sha256:56acaac89e6b092584a0ea5a338b6a5a107fcf55e15734ac80dbf983a155d56f"
     },
     {
-      "entries_hash": "sha256:85a99dd07b1f89946cef0a9063284dc3063fed30452b984d30e1edf89fb48b75",
+      "entries_hash": "sha256:5d04cf6013133e6e7561de652bde484e37c511f8b67afdc19d7b5445aad60c2e",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
-      "stable_entries_hash": "sha256:1af451972fcf8f7ca5789df51343d019d4f178c4b5d2646fbe14b771c9cbd24a"
+      "stable_entries_hash": "sha256:bca72ab84c35e75659e7c376fc3a17d735316601f25adaa4bed3c0f12cf5cb1a"
     },
     {
-      "entries_hash": "sha256:03bcffe7f103bc706dc44d5a27e73115db624d09e3e979e6da64eda457db29e8",
+      "entries_hash": "sha256:0a85dae6f4f4a52bea3844a5cc1abf0ce661b003845206b34a2d730eb25a2872",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l2_tool_execution",
-      "stable_entries_hash": "sha256:52822e5abc0ca7b6e121434f807912cecced1514345c450b4acaf6bca2fdae2d"
+      "stable_entries_hash": "sha256:84cb719f2a98bff88f6caa262a2fee61f7c78a9d2d6ceb7d45217def8a505f68"
     },
     {
-      "entries_hash": "sha256:16480f896e93dce8ba6f922d30ee10b38a7e7dd972077778160dda41b75d0b70",
+      "entries_hash": "sha256:2fe5de4671f4a735d9b889ce9b9dc737488bd37d43e44dea5b8f33ddffd0b3c2",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l3_command_network_hook",
-      "stable_entries_hash": "sha256:279998feb8016b4bb6bfa98bbe6b4a033dd7705abb5688351778db1082bfeb16"
+      "stable_entries_hash": "sha256:22316e9c0a83f32395b1da2f8d8150f83b55061626baa304423ae5548ba5e4f9"
     },
     {
-      "entries_hash": "sha256:ab59109a6062115e6e18510df4cef83cc4e9f0be6b4c3ade64c6de90335f752c",
+      "entries_hash": "sha256:c009a06e614e406afca989277f741b8622d394d2aac3ed92cd389808328706cd",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
-      "stable_entries_hash": "sha256:24ef4cf38a22ca1f115deaefda7fd2ac15bab95cb9aea8553067076d87381e45"
+      "stable_entries_hash": "sha256:bf5802036ad24ae5c13e11b973116483d63e3e3b40e2d3a55f431ec9118e7d63"
     },
     {
-      "entries_hash": "sha256:6bed31aa72ea8b1ea6d654e687075802de68ae633c4fefeff7961fd0f7272591",
+      "entries_hash": "sha256:c2e5c790c13556d0b5e38df5bf0fefc5264734d1f02ccaec12da8366d77c49a7",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p6_0_l5_memory_compaction",
-      "stable_entries_hash": "sha256:a9077a7c9af954616e00965dbaedd12d0581a02a0487a5e6e1f0e1613b31a4e4"
+      "stable_entries_hash": "sha256:12a1d63a4fe0ef0f8ab321db336ae3a01c4fc5453724e00925e42cad98a1bdeb"
     },
     {
-      "entries_hash": "sha256:a3f5f8150680f0d64cd31dcb89a4c023148f8b228a2f2145efa2e7c35d49bf63",
+      "entries_hash": "sha256:0e09e7be6946ec11bc99722631e415f940acb003beccb30f9ed9329eb1ed3305",
       "entry_count": 12,
       "segment_id": "oh_my_pi_p6_0_l6_tui_projection",
-      "stable_entries_hash": "sha256:dd9800ab7767081d1cfbebe8941ac61bd386512a53a09ce814ab8cb36347f72d"
+      "stable_entries_hash": "sha256:c1752d76a090bf6459ca1b599b9d6612f664217afdd35b8bb216a7765870b1fe"
     },
     {
-      "entries_hash": "sha256:2daf900274eca866de070c4327ac4beff966901faac332fc65e20bccc0304d3c",
+      "entries_hash": "sha256:cbeb19b427ce1821c1a1f7f0fedb05034748f9162333cf2652dc2ffc6eb60d63",
       "entry_count": 19,
       "segment_id": "oh_my_pi_p6_6_task_job_subagent",
-      "stable_entries_hash": "sha256:6ec262c115abf20219d84f9345dfd48087b8c9e3d14baa080d71505dc045b4a4"
+      "stable_entries_hash": "sha256:3443009a8558519b2c2c5ae7070058df5c211692efbbcf06e2abc6538f012ed4"
     },
     {
-      "entries_hash": "sha256:8a12f07718f05e2fb78997a270de7f41298a9eaa205b49038f38618901d29bf4",
+      "entries_hash": "sha256:5ecf211feb155066c8522b9bc7dc27a22e2565b34fa3f48e238f9d22ff2b964a",
       "entry_count": 13,
       "segment_id": "opencode_north_star_capture_v1",
-      "stable_entries_hash": "sha256:d08e7d4a99570e8cd50259284bd7eb89fa5d322296f016f0bbf10b900fab4399"
+      "stable_entries_hash": "sha256:3b06e75943c10b8e0ff2a2f63180db716d37ffb8af28fcb7696df7d136fdcb2f"
     },
     {
-      "entries_hash": "sha256:2c71ef0c7a02f66948446614dc8f98c6fd88eafa7aa63898d794ea9b7b98ddc4",
+      "entries_hash": "sha256:6c0db5fbf7c91bf6fdb286fdd7d30f482dcc5a74f7871ee29142bb25d4ccbace",
       "entry_count": 17,
       "segment_id": "pi_p5_l1_cli_config_context_tool_surface",
       "stable_entries_hash": "sha256:2dfae6e0b5983a74880d298c3c0e5728f02e35e664adbcfec657d2fa9d8bd5bb"
     },
     {
-      "entries_hash": "sha256:f0064230a02c6c019f69b2c79f25788f30882c653d5caa11ccbef582220400a3",
+      "entries_hash": "sha256:bb2ba4a62806fa9dc1ed82cde9fa2dc5c944d837cedf43c14faf5c907f8aeaf3",
       "entry_count": 17,
       "segment_id": "pi_p5_l2_extension_session_residual",
       "stable_entries_hash": "sha256:dcb1e4e7d101ecefa74be59b0198e55f24a26f7cd1820b4621132d237a54b3d7"
     },
     {
-      "entries_hash": "sha256:0f5d6d7752b4a4416e99e34f4f94c0450f58d69a138ff3208ba738ed1fc9c263",
+      "entries_hash": "sha256:a5832eb8ab4d80a1db56821f24956ec2fb368775106e8a27ab4230eb670c0289",
       "entry_count": 42,
       "segment_id": "shared",
-      "stable_entries_hash": "sha256:d5ce927049289ee43a5ba59e3c10648d34b52a5427cbf10946167254c5e3194e"
+      "stable_entries_hash": "sha256:ed0a6dbaa54eb84868c85d057a081f66e6267993b0eef7db10d10d5f502c60d4"
     }
   ]
 }

@@ -48,14 +48,14 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:7d8c0602da8e47014d8c1c1b2e7a373ddad086b13c0d2df95c05f19ec1779ea1"
+      "sha256": "sha256:c5aed0aa91e9eac0f9e9852059c6162310280c4019bf37bcef0bae1789bce173"
     },
     {
       "bytes": 124871,
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     }
   ],
   "claim_id": "oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim",

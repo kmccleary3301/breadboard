@@ -8,7 +8,7 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:7cb8a75c681e858d0c697ebed24551cc102409afdcbfde234276802b6d0d6828"
+      "sha256": "sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72"
     },
     {
       "derived_from": [
@@ -17,7 +17,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:5e555daee1dd17ad7796b6c813fda5483e32339f1f559b4edc1491d7fe051e77"
+      "sha256": "sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e"
     },
     {
       "derived_from": [
@@ -27,12 +27,12 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:5018880ebc35ba442553a66541371b21c0992436670da3dc18e07595e7d30e19"
+      "sha256": "sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:c817c2660e6ebce5c59f5f60789af77cdafee890e372402ee4659678fa80cabc"
+      "sha256": "sha256:491034e3c2c1623b77e2ba140f6af0b2e52671222e7e02947833eb7c5a9766ce"
     },
     {
       "derived_from": [
@@ -40,7 +40,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:64e2734be1354ffdea697fec66ca8f0efeed86e57fa150d45bd5c4d75a30f6ac"
+      "sha256": "sha256:ce16682d0bd3a14e4f777aa796cb000181552ac13bf2f088346641fe03b0b037"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/secret_scan_report.json",

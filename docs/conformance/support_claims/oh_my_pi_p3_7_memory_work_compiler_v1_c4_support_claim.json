@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "P3.7 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:7cb8a75c681e858d0c697ebed24551cc102409afdcbfde234276802b6d0d6828",
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 10,
-    "segment_hash": "sha256:ad3af038c159c37a0b59973cea7b336f36d719a2ffa2906c338c7abd853f73c9",
+    "catalog_revision": 11,
+    "segment_hash": "sha256:aa5caffe3b68b0f0918083797583cae49e7f125f1b5b37739080dcfebb612780",
     "segment_id": "oh_my_pi_p3_7_memory_work_compiler",
-    "shared_segment_hash": "sha256:d5ce927049289ee43a5ba59e3c10648d34b52a5427cbf10946167254c5e3194e"
+    "shared_segment_hash": "sha256:ed0a6dbaa54eb84868c85d057a081f66e6267993b0eef7db10d10d5f502c60d4"
   },
   "claim_id": "oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -48,7 +48,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:5018880ebc35ba442553a66541371b21c0992436670da3dc18e07595e7d30e19",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -86,9 +86,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json#sha256:64e2734be1354ffdea697fec66ca8f0efeed86e57fa150d45bd5c4d75a30f6ac",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json#sha256:ce16682d0bd3a14e4f777aa796cb000181552ac13bf2f088346641fe03b0b037",
   "phase_label": "P3",
-  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:5e555daee1dd17ad7796b6c813fda5483e32339f1f559b4edc1491d7fe051e77",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",

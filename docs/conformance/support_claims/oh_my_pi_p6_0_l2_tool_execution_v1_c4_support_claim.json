@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json#sha256:541c8fa785cf5d8e48b9619755fd201e95df956c14e91e43479b358309bcbf67",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 9,
-    "segment_hash": "sha256:52822e5abc0ca7b6e121434f807912cecced1514345c450b4acaf6bca2fdae2d",
+    "catalog_revision": 11,
+    "segment_hash": "sha256:84cb719f2a98bff88f6caa262a2fee61f7c78a9d2d6ceb7d45217def8a505f68",
     "segment_id": "oh_my_pi_p6_0_l2_tool_execution",
-    "shared_segment_hash": "sha256:d5ce927049289ee43a5ba59e3c10648d34b52a5427cbf10946167254c5e3194e"
+    "shared_segment_hash": "sha256:ed0a6dbaa54eb84868c85d057a081f66e6267993b0eef7db10d10d5f502c60d4"
   },
   "claim_id": "oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim",
   "claim_semantics": {

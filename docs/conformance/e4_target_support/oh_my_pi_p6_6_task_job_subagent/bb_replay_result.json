@@ -527,7 +527,7 @@
     "provider_parity_claimed": false,
     "work_item_schema_valid": true
   },
-  "run_id": "derived-from-lane-def",
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
   "schema_version": "bb.e4.bb_replay_result.v1",
   "warnings": []
 }

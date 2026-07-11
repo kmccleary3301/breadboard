@@ -32,19 +32,19 @@
   "lane_id": "oh_my_pi_p6_6_task_job_subagent",
   "lineage_rationale": "Canonical lane-local JSONL captures were re-run with an explicit npx @oh-my-pi/pi-coding-agent@16.2.13 runner, lane-local cwd, explicit session dirs for parent and child JSONL, and a setup report recording the runner/version. Scratch captures are not promotion evidence.",
   "provider_authenticated_capture": true,
-  "provider_model": "no-provider",
+  "provider_model": "anthropic/claude-haiku-4-5",
   "provider_parity_claimed": false,
   "raw_source_status": "canonical_raw_present",
-  "run_id": "derived-from-lane-def",
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
   "sandbox_mode": "read-only",
   "schema_version": "bb.e4.raw_capture_manifest.v1",
   "scope": {
     "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
     "lane_id": "oh_my_pi_p6_6_task_job_subagent",
     "provider_authenticated_capture": true,
-    "provider_model": "no-provider",
+    "provider_model": "anthropic/claude-haiku-4-5",
     "provider_parity_claimed": false,
-    "run_id": "derived-from-lane-def",
+    "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
     "sandbox_mode": "read-only",
     "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
     "work_item_boundary": "joined subagent, detached subagent, background job, and cancel lifecycle only"
@@ -171,10 +171,10 @@
       "sha256": "sha256:f1dc02928312b01a282766e8d8b6c7729a03fb970e1547a42096ca0e3fb56c4a"
     },
     {
-      "bytes": 1250,
+      "bytes": 1280,
       "path": "agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml",
       "role": "raw_source",
-      "sha256": "sha256:851f9772f6e69f371f6bb5680bb4c1d228d393fc2c1673575bc2682f38a37826"
+      "sha256": "sha256:1561b410d8d58e1c105222ae8c39bdef3e3c10ac1fa0eb74c547357f0ba99122"
     },
     {
       "bytes": 178,
@@ -184,7 +184,7 @@
     }
   ],
   "source_hashes": {
-    "agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml": "sha256:851f9772f6e69f371f6bb5680bb4c1d228d393fc2c1673575bc2682f38a37826",
+    "agent_configs/misc/oh_my_pi_p6_6_task_job_subagent_v1.yaml": "sha256:1561b410d8d58e1c105222ae8c39bdef3e3c10ac1fa0eb74c547357f0ba99122",
     "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions/2026-07-03T02-54-26-641Z_019f25e6-2151-7000-997a-8c9c5018840a.jsonl": "sha256:5d9a5bb09fe6118a9933b387ae239f1bc3f637ce501fb6b83d15455206ae2f69",
     "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions/2026-07-03T02-54-26-641Z_019f25e6-2151-7000-997a-8c9c5018840a/P66DetachedChild.jsonl": "sha256:f010e7a0dbb3a2c53ffae506607c45c85ad507bbc97ee9a68f58786df89c04c3",
     "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json": "sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540",

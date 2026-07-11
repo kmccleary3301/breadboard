@@ -52,14 +52,14 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:f24e3d7cc74d63b42f5007734f58e53baee04dd5d6e2b783cab85816b5f18da6"
+      "sha256": "sha256:d4e313b721e3451fb56d434209e2f06fb59fb186a21840f20b5e68f684237851"
     },
     {
       "bytes": 124871,
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",
