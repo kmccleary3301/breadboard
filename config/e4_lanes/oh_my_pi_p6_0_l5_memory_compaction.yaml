@@ -1,19 +1,40 @@
 {
-  "schema_version": "bb.e4.lane_def.v2",
-  "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
-  "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
-  "target_family": "oh_my_pi",
-  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
-  "package_ref": null,
-  "kind": "target_support",
-  "status": "accepted",
-  "points": 15,
+  "acceptance": {
+    "assertions": [
+      {
+        "description": "comparator report is ok",
+        "id": "acceptance_ok_true"
+      },
+      {
+        "description": "comparator report has no errors",
+        "id": "acceptance_no_errors"
+      },
+      {
+        "description": "claimed scope config id matches",
+        "id": "acceptance_config_id_matches"
+      },
+      {
+        "description": "claimed scope lane id matches",
+        "id": "acceptance_lane_id_matches"
+      },
+      {
+        "description": "claimed scope provider model matches",
+        "id": "acceptance_provider_model_matches"
+      },
+      {
+        "description": "claimed scope sandbox mode matches",
+        "id": "acceptance_sandbox_mode_matches"
+      }
+    ],
+    "behavior_family": "memory",
+    "semantic_key": "oh_my_pi_p6_0_l5_memory_compaction",
+    "target": "oh_my_pi"
+  },
+  "artifacts_root": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction",
   "capture": {
-    "strategy": "adapter",
+    "adapter": "oh_my_pi_compiler_capture",
     "argv": null,
     "inputs": [
-      "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
-      "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_setup_and_capture_report.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json",
@@ -27,118 +48,86 @@
       "contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
       "contracts/kernel/schemas/bb.transcript_continuation_patch.v1.schema.json"
     ],
-    "workspace_template": null,
-    "adapter": "oh_my_pi_compiler_capture"
+    "strategy": "adapter",
+    "workspace_template": null
+  },
+  "claim": {
+    "exclusions": [],
+    "scope": {
+      "behaviors": [
+        "bb.memory_compaction_plan.v1"
+      ],
+      "surfaces": [
+        "P6 exact-scope C4 support chain"
+      ]
+    }
+  },
+  "compare": {
+    "comparator": "oh_my_pi_stored_report_replay",
+    "config": {
+      "assertions": [
+        {
+          "description": "comparator report is ok",
+          "id": "ok_true",
+          "op": "equals",
+          "path": "ok",
+          "value": true
+        },
+        {
+          "description": "comparator report has no errors",
+          "id": "no_errors",
+          "op": "length_equals",
+          "path": "errors",
+          "value": 0
+        },
+        {
+          "description": "claimed scope config id matches",
+          "id": "config_id_matches",
+          "op": "equals",
+          "path": "claimed_scope.config_id",
+          "value": "oh_my_pi_p6_0_l5_memory_compaction_v1"
+        },
+        {
+          "description": "claimed scope lane id matches",
+          "id": "lane_id_matches",
+          "op": "equals",
+          "path": "claimed_scope.lane_id",
+          "value": "oh_my_pi_p6_0_l5_memory_compaction"
+        },
+        {
+          "description": "claimed scope provider model matches",
+          "id": "provider_model_matches",
+          "op": "equals",
+          "path": "claimed_scope.provider_model",
+          "value": "no-provider"
+        },
+        {
+          "description": "claimed scope sandbox mode matches",
+          "id": "sandbox_mode_matches",
+          "op": "equals",
+          "path": "claimed_scope.sandbox_mode",
+          "value": "read-only"
+        }
+      ]
+    }
+  },
+  "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+  "ct": {
+    "description": "Oh-My-Pi 16.2.13 provider-free P6.0-L5 memory/compaction exact-scope C4 chain validation.",
+    "test_id": "CT-P6-OHMYPI-L5-MEMORY-COMPACTION-C4",
+    "timeout_seconds": 180
+  },
+  "kind": "target_support",
+  "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+  "metadata": {
+    "legacy_inventory_ct_test_id": "CT-P6-OHMYPI-L5-MEMORY-COMPACTION-C4",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
+    "sandbox_mode": "read-only"
   },
   "normalize": {
-    "translator": "identity",
-    "mode": "identity",
     "config": {
-      "record_builders": [
-        {
-          "id": "p6_l5_memory_compaction_plan",
-          "schema_version": "bb.memory_compaction_plan.v1",
-          "source": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
-          "projection": "p6_l5_memory_compaction_plan",
-          "records": [
-            "memory_compaction_plan"
-          ]
-        },
-        {
-          "id": "p6_l5_transcript_continuation_patch",
-          "schema_version": "bb.transcript_continuation_patch.v1",
-          "source": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
-          "projection": "p6_l5_transcript_continuation_patch",
-          "records": [
-            "transcript_continuation_patch"
-          ]
-        }
-      ],
-      "roles": {
-        "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json",
-        "target_probe_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
-        "memory_compaction_plan": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",
-        "transcript_continuation_patch": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
-        "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json",
-        "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json",
-        "parity_results": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json",
-        "secret_scan_report": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json",
-        "validator_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json",
-        "support_claim_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
-        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
-        "node_gate": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json"
-      },
-      "projection_module": "scripts.e4_parity.adapters.oh_my_pi_l5_projection",
-      "projection_constants": {
-        "p6_l5_memory_compaction_plan": {
-          "paths": {
-            "target_probe_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
-            "transcript_fixture": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json",
-            "transcript_continuation_patch": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json"
-          },
-          "trigger_reason": "P6.0-L5 deterministic no-provider snapcompact runtime probe",
-          "memory_backend_visibility_label": "none absent; mnemopi/hindsight tools blocked without initialized state",
-          "summary_producer": "@oh-my-pi/snapcompact.compact + createCompactionSummaryMessage",
-          "memory_visibility_producer": "Oh-My-Pi retain/recall/reflect createIf/execute runtime probe",
-          "compactor_id": "@oh-my-pi/snapcompact.compact",
-          "memory_tool_contributor_id": "retain/recall/reflect memory.backend none|mnemopi|hindsight",
-          "model_context_window": 128000,
-          "max_input_tokens": 128000,
-          "visibility_model": {
-            "model_visible": true,
-            "provider_visible": true,
-            "host_visible": true
-          },
-          "visibility_host": {
-            "model_visible": false,
-            "provider_visible": false,
-            "host_visible": true
-          },
-          "lossiness_flags": [
-            "older_history_elided_to_snapcompact_archive",
-            "memory_backend_configured_tool_visibility_captured_without_backend_state"
-          ]
-        },
-        "p6_l5_transcript_continuation_patch": {
-          "paths": {
-            "target_probe_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
-            "transcript_fixture": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json",
-            "transcript_continuation_patch": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json"
-          },
-          "trigger_reason": "P6.0-L5 deterministic no-provider snapcompact runtime probe",
-          "memory_backend_visibility_label": "none absent; mnemopi/hindsight tools blocked without initialized state",
-          "summary_producer": "@oh-my-pi/snapcompact.compact + createCompactionSummaryMessage",
-          "memory_visibility_producer": "Oh-My-Pi retain/recall/reflect createIf/execute runtime probe",
-          "compactor_id": "@oh-my-pi/snapcompact.compact",
-          "memory_tool_contributor_id": "retain/recall/reflect memory.backend none|mnemopi|hindsight",
-          "model_context_window": 128000,
-          "max_input_tokens": 128000,
-          "visibility_model": {
-            "model_visible": true,
-            "provider_visible": true,
-            "host_visible": true
-          },
-          "visibility_host": {
-            "model_visible": false,
-            "provider_visible": false,
-            "host_visible": true
-          },
-          "lossiness_flags": [
-            "older_history_elided_to_snapcompact_archive",
-            "memory_backend_configured_tool_visibility_captured_without_backend_state"
-          ]
-        }
-      },
       "packet_constants": {
-        "required_records": [
-          "memory_compaction_plan",
-          "transcript_continuation_patch"
-        ],
-        "record_roles": {
-          "memory_compaction_plan": "memory_compaction_plan",
-          "transcript_continuation_patch": "transcript_continuation_patch"
-        },
-        "record_envelopes": {},
         "payload_templates": {
           "capture_ref": {
             "accepted_as_capture_ref": true,
@@ -430,230 +419,6 @@
             "target_family": "oh_my_pi",
             "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
           },
-          "replay_ref": {
-            "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
-            "errors": [],
-            "exit_status": "passed",
-            "generated_at_utc": "2026-07-04T00:00:00Z",
-            "input_hashes": {
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json": "sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json": "sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_setup_and_capture_report.json": "sha256:2a2f503ea21fae75739aae7a5fae53317380360a9e9dcf3e1f57c61e9b36a15d",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json": "sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json": "sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
-            },
-            "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
-            "normalized_records": [
-              {
-                "backend_contributions": [
-                  {
-                    "contribution_id": "snapcompact_local_archive",
-                    "contributor_id": "@oh-my-pi/snapcompact.compact",
-                    "contributor_kind": "compactor",
-                    "hash": "sha256:bcc10fc3fc6b2a24114f0b802b164e273071f7595f25992df591a2167259e396",
-                    "input_refs": [
-                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json"
-                    ],
-                    "output_refs": [
-                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
-                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json"
-                    ],
-                    "visibility": {
-                      "host_visible": true,
-                      "model_visible": true,
-                      "provider_visible": true
-                    }
-                  },
-                  {
-                    "contribution_id": "memory_backend_tool_visibility",
-                    "contributor_id": "retain/recall/reflect memory.backend none|mnemopi|hindsight",
-                    "contributor_kind": "tool",
-                    "hash": "sha256:bcc10fc3fc6b2a24114f0b802b164e273071f7595f25992df591a2167259e396",
-                    "input_refs": [
-                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json"
-                    ],
-                    "output_refs": [
-                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json"
-                    ],
-                    "visibility": {
-                      "host_visible": true,
-                      "model_visible": false,
-                      "provider_visible": false
-                    }
-                  }
-                ],
-                "elided_refs": [
-                  {
-                    "reason": "target snapcompact archived older history into a compaction summary/archive and kept the live suffix",
-                    "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json#entries=0..2",
-                    "ref_id": "snapcompact_archived_prefix",
-                    "replacement_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976",
-                    "token_estimate": 128960,
-                    "visibility": {
-                      "host_visible": true,
-                      "model_visible": true,
-                      "provider_visible": true
-                    }
-                  }
-                ],
-                "generated_refs": [
-                  {
-                    "artifact_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
-                    "hash": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
-                    "produced_by": "@oh-my-pi/snapcompact.compact + createCompactionSummaryMessage",
-                    "ref_id": "snapcompact_summary_patch",
-                    "ref_kind": "model_visible_insertion"
-                  },
-                  {
-                    "artifact_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
-                    "hash": "sha256:bcc10fc3fc6b2a24114f0b802b164e273071f7595f25992df591a2167259e396",
-                    "produced_by": "Oh-My-Pi retain/recall/reflect createIf/execute runtime probe",
-                    "ref_id": "memory_backend_visibility_probe",
-                    "ref_kind": "backend_note"
-                  }
-                ],
-                "hashes": {
-                  "algorithm": "sha256",
-                  "compacted_hash": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
-                  "plan_hash": "sha256:222897c0ba5df378ec8aaaf601b0b1b749a6d59247038434ac1f20196cbe4196",
-                  "source_hash": "sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164"
-                },
-                "model_visible_insertions": [
-                  {
-                    "content_hash": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
-                    "content_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
-                    "insertion_id": "compaction_summary_message",
-                    "position": "between_turns",
-                    "token_estimate": 90
-                  }
-                ],
-                "plan_id": "oh_my_pi_p6_0_l5_memory_compaction_snapcompact_plan",
-                "preserved_refs": [
-                  {
-                    "hash": "sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164",
-                    "reason": "target prepareCompaction kept the live suffix beginning at firstKeptEntryId",
-                    "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json#firstKeptEntryId=entry-004-assistant-recent",
-                    "ref_id": "recent_live_suffix",
-                    "ref_kind": "transcript_segment",
-                    "visibility": {
-                      "host_visible": true,
-                      "model_visible": true,
-                      "provider_visible": true
-                    }
-                  }
-                ],
-                "schema_version": "bb.memory_compaction_plan.v1",
-                "status": "applied",
-                "token_budget": {
-                  "before_tokens": 128960,
-                  "max_input_tokens": 128000,
-                  "model_context_window": 128000,
-                  "reserved_output_tokens": 16384,
-                  "target_after_tokens": 108800
-                },
-                "transcript_refs": [
-                  {
-                    "end_seq": 4,
-                    "hash": "sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164",
-                    "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json",
-                    "start_seq": 0,
-                    "transcript_id": "oh_my_pi_p6_0_l5_transcript_fixture",
-                    "visibility": {
-                      "host_visible": true,
-                      "model_visible": true,
-                      "provider_visible": true
-                    }
-                  }
-                ],
-                "trigger": {
-                  "kind": "manual",
-                  "observed_tokens": 128960,
-                  "reason": "P6.0-L5 deterministic no-provider snapcompact runtime probe",
-                  "source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
-                  "threshold_tokens": 108800
-                }
-              },
-              {
-                "appended_messages": [
-                  {
-                    "firstKeptEntryId": "entry-004-assistant-recent",
-                    "modelVisible": true,
-                    "providerVisible": true,
-                    "role": "compactionSummary",
-                    "shortSummary": "Archived 362 chars of history onto 0 snapcompact frames (+362 chars as text)",
-                    "summary": "You are resuming a prior conversation. Its earlier turns were archived to reclaim context and are reproduced under HISTORY below, oldest to newest. Read HISTORY in full, then continue from the live conversation that follows it.\n\nThe archived transcript is compact: each turn opens with a heading \u2014 `# User \u00b6`, `# Assistant \u00b6`, or `# Tool call \u00b6` \u2014 assistant reasoning is wrapped in _italics_, and tool output sits inside `<out>\u2026</out>`.\n\nReading HISTORY:\n- Plain-text sections are the verbatim transcript \u2014 rely on them exactly.\n- When an exact earlier detail matters and a section reads unclearly, re-derive it from the workspace (re-read files, re-run commands) rather than guessing.\n\nFILES\n===================\n# src/\nalpha.ts (Read)\n\nHISTORY\n===================",
-                    "tokensBefore": 128960
-                  }
-                ],
-                "appended_tool_events": [],
-                "compaction_markers": [
-                  {
-                    "archiveFrameCount": 0,
-                    "archiveTextHeadChars": 362,
-                    "firstKeptEntryId": "entry-004-assistant-recent",
-                    "memoryBackendVisibility": "none absent; mnemopi/hindsight tools blocked without initialized state",
-                    "messagesToSummarizeCount": 3,
-                    "recentMessagesCount": 1,
-                    "strategy": "snapcompact",
-                    "tokensBefore": 128960
-                  }
-                ],
-                "lineage_updates": [
-                  {
-                    "archive": {
-                      "frameCount": 0,
-                      "hasArchive": true,
-                      "historyBlockTypes": [
-                        "text"
-                      ],
-                      "imageBlockCount": 0,
-                      "textChars": 362,
-                      "textHeadChars": 362,
-                      "textTailChars": 0,
-                      "totalChars": 362,
-                      "truncatedChars": 0
-                    },
-                    "kind": "snapcompact_archive",
-                    "source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3"
-                  },
-                  {
-                    "configured_backends_blocked_without_initialized_state": true,
-                    "kind": "memory_backend_visibility",
-                    "none_backend_tools_absent": true,
-                    "source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3"
-                  }
-                ],
-                "lossiness_flags": [
-                  "older_history_elided_to_snapcompact_archive",
-                  "memory_backend_configured_tool_visibility_captured_without_backend_state"
-                ],
-                "patch_id": "oh_my_pi_p6_0_l5_memory_compaction_snapcompact_patch",
-                "post_state_digest": "sha256:3c6d0a656c8972267463d783f15634c6dd2f5a5edc0069b102b90c73245675bf",
-                "pre_state_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json#sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164",
-                "schema_version": "bb.transcript_continuation_patch.v1"
-              }
-            ],
-            "provider_model": "no-provider",
-            "replay_summary": {
-              "command_count": 2,
-              "fetch_event_count": 0,
-              "memory_backend_none_tools_absent": true,
-              "memory_backends_blocked_without_initialized_state": true,
-              "memory_compaction_plan_schema_valid": true,
-              "messages_to_summarize_count": 3,
-              "network_observed": false,
-              "provider_dispatch_observed": false,
-              "snapcompact_archive_present": true,
-              "transcript_patch_schema_valid": true
-            },
-            "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
-            "sandbox_mode": "read-only",
-            "schema_version": "bb.e4.bb_replay_result.v1",
-            "target_family": "oh_my_pi",
-            "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
-            "warnings": []
-          },
           "comparator_ref": {
             "assertions": [
               {
@@ -809,6 +574,148 @@
             "target_family": "oh_my_pi",
             "warned": 0
           },
+          "evidence_manifest": {
+            "artifacts": [
+              {
+                "path": "config/e4_target_freeze_manifest.yaml",
+                "role": "freeze_manifest",
+                "sha256": "sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json",
+                "role": "capture_ref",
+                "sha256": "sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55"
+              },
+              {
+                "derived_from": [
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
+                ],
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json",
+                "role": "replay_ref",
+                "sha256": "sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a"
+              },
+              {
+                "derived_from": [
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a",
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
+                ],
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json",
+                "role": "comparator_ref",
+                "sha256": "sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064"
+              },
+              {
+                "derived_from": [
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064"
+                ],
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json",
+                "role": "parity_results",
+                "sha256": "sha256:9766c59f5fdc954b37e6048e40e0dde8f38eeec81aa77e0d7dad618a59ae209c"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json",
+                "role": "secret_scan_report",
+                "sha256": "sha256:28bbf8b3a8568de2686d79eafcc9b9a19e62606b1e760c6b7303a7fcb70775a5"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json",
+                "role": "validator_output",
+                "sha256": "sha256:d63d77e69a664d05bddf88d39d08dc201d77db373161a05e8f051262bbedf00f"
+              },
+              {
+                "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+                "role": "support_claim_ref",
+                "sha256": "sha256:ebb933f02cfb854edae37c2edc1f25a27683ddcaf612e76dfa22b61ec7dcb8c2"
+              },
+              {
+                "bytes": 124871,
+                "exists": true,
+                "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+                "role": "atomic_feature_ledger",
+                "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",
+                "role": "memory_compaction_plan",
+                "sha256": "sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
+                "role": "transcript_continuation_patch",
+                "sha256": "sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
+                "role": "target_probe_output",
+                "sha256": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3"
+              }
+            ],
+            "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
+            "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+            "forbidden_roots_checked": [
+              "scratch",
+              "tmp",
+              "scratch_runs",
+              "/shared_folders"
+            ],
+            "generated_at_utc": "2026-07-04T00:00:00Z",
+            "hash_algorithm": "sha256",
+            "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+            "manifest_scope_note": "Every governed artifact for this oh_my_pi_p6_0_l5_memory_compaction C4 chain is packet-local canonical repo evidence, source-freeze evidence under docs_tmp/phase_15/source_freezes, or a named target command/probe artifact. Scratch/tmp/shared roots are not promotion evidence.",
+            "schema_version": "bb.e4.evidence_manifest.v1"
+          },
+          "node_gate": {
+            "accepted": true,
+            "catalog_binding_pending": [],
+            "claimed_scope": {
+              "compaction_strategy": "snapcompact",
+              "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+              "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+              "memory_backend_state": "none absent; mnemopi/hindsight blocked without initialized state",
+              "memory_boundary": "provider-free snapcompact compaction plus memory-backend/tool visibility only",
+              "provider_model": "no-provider",
+              "remote_compaction": false,
+              "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
+              "sandbox_mode": "read-only",
+              "target_family": "oh_my_pi",
+              "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+            },
+            "comparator_rerun": {
+              "assertion_count": 6,
+              "comparator_class": "deterministic_replay",
+              "comparator_id": "oh_my_pi_stored_report_replay",
+              "missing_assertion_ids": [],
+              "ok": true,
+              "registry": "conformance/comparators/registry.json",
+              "status_mismatch_ids": [],
+              "unexpected_assertion_ids": [],
+              "value_mismatch_ids": []
+            },
+            "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+            "error_count": 0,
+            "errors": [],
+            "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+            "gate_errors": [],
+            "hashes": {
+              "evidence_manifest": "sha256:bb2553600f0aa8ba669975582e30d0e647e6040b233fc6a3e96d4c4de3891fe4",
+              "freeze_manifest": "sha256:6d7979a411879d2ef6ca291745bd3df35a97a72b51fdcc90088fb7b66a82a27e",
+              "freeze_manifest_row": "sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124",
+              "support_claim": "sha256:ebb933f02cfb854edae37c2edc1f25a27683ddcaf612e76dfa22b61ec7dcb8c2"
+            },
+            "ok": true,
+            "pin_stale_count": 0,
+            "refs": {
+              "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+              "freeze_manifest": "config/e4_target_freeze_manifest.yaml",
+              "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json"
+            },
+            "schema_version": "bb.e4.c4_chain_validation_report.v1",
+            "semantic_count": 0,
+            "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json"
+          },
           "parity_results": {
             "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064",
             "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
@@ -822,6 +729,230 @@
             "summary": "Oh-My-Pi P6.0-L5 provider-free memory/compaction target runtime capture, BreadBoard replay, and comparator passed for exact snapcompact plus memory-backend visibility scope.",
             "target_family": "oh_my_pi",
             "warned": 0
+          },
+          "replay_ref": {
+            "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+            "errors": [],
+            "exit_status": "passed",
+            "generated_at_utc": "2026-07-04T00:00:00Z",
+            "input_hashes": {
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json": "sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json": "sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_setup_and_capture_report.json": "sha256:2a2f503ea21fae75739aae7a5fae53317380360a9e9dcf3e1f57c61e9b36a15d",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json": "sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json": "sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
+            },
+            "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+            "normalized_records": [
+              {
+                "backend_contributions": [
+                  {
+                    "contribution_id": "snapcompact_local_archive",
+                    "contributor_id": "@oh-my-pi/snapcompact.compact",
+                    "contributor_kind": "compactor",
+                    "hash": "sha256:bcc10fc3fc6b2a24114f0b802b164e273071f7595f25992df591a2167259e396",
+                    "input_refs": [
+                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json"
+                    ],
+                    "output_refs": [
+                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
+                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json"
+                    ],
+                    "visibility": {
+                      "host_visible": true,
+                      "model_visible": true,
+                      "provider_visible": true
+                    }
+                  },
+                  {
+                    "contribution_id": "memory_backend_tool_visibility",
+                    "contributor_id": "retain/recall/reflect memory.backend none|mnemopi|hindsight",
+                    "contributor_kind": "tool",
+                    "hash": "sha256:bcc10fc3fc6b2a24114f0b802b164e273071f7595f25992df591a2167259e396",
+                    "input_refs": [
+                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json"
+                    ],
+                    "output_refs": [
+                      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json"
+                    ],
+                    "visibility": {
+                      "host_visible": true,
+                      "model_visible": false,
+                      "provider_visible": false
+                    }
+                  }
+                ],
+                "elided_refs": [
+                  {
+                    "reason": "target snapcompact archived older history into a compaction summary/archive and kept the live suffix",
+                    "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json#entries=0..2",
+                    "ref_id": "snapcompact_archived_prefix",
+                    "replacement_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976",
+                    "token_estimate": 128960,
+                    "visibility": {
+                      "host_visible": true,
+                      "model_visible": true,
+                      "provider_visible": true
+                    }
+                  }
+                ],
+                "generated_refs": [
+                  {
+                    "artifact_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
+                    "hash": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
+                    "produced_by": "@oh-my-pi/snapcompact.compact + createCompactionSummaryMessage",
+                    "ref_id": "snapcompact_summary_patch",
+                    "ref_kind": "model_visible_insertion"
+                  },
+                  {
+                    "artifact_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
+                    "hash": "sha256:bcc10fc3fc6b2a24114f0b802b164e273071f7595f25992df591a2167259e396",
+                    "produced_by": "Oh-My-Pi retain/recall/reflect createIf/execute runtime probe",
+                    "ref_id": "memory_backend_visibility_probe",
+                    "ref_kind": "backend_note"
+                  }
+                ],
+                "hashes": {
+                  "algorithm": "sha256",
+                  "compacted_hash": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
+                  "plan_hash": "sha256:222897c0ba5df378ec8aaaf601b0b1b749a6d59247038434ac1f20196cbe4196",
+                  "source_hash": "sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164"
+                },
+                "model_visible_insertions": [
+                  {
+                    "content_hash": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
+                    "content_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
+                    "insertion_id": "compaction_summary_message",
+                    "position": "between_turns",
+                    "token_estimate": 90
+                  }
+                ],
+                "plan_id": "oh_my_pi_p6_0_l5_memory_compaction_snapcompact_plan",
+                "preserved_refs": [
+                  {
+                    "hash": "sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164",
+                    "reason": "target prepareCompaction kept the live suffix beginning at firstKeptEntryId",
+                    "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json#firstKeptEntryId=entry-004-assistant-recent",
+                    "ref_id": "recent_live_suffix",
+                    "ref_kind": "transcript_segment",
+                    "visibility": {
+                      "host_visible": true,
+                      "model_visible": true,
+                      "provider_visible": true
+                    }
+                  }
+                ],
+                "schema_version": "bb.memory_compaction_plan.v1",
+                "status": "applied",
+                "token_budget": {
+                  "before_tokens": 128960,
+                  "max_input_tokens": 128000,
+                  "model_context_window": 128000,
+                  "reserved_output_tokens": 16384,
+                  "target_after_tokens": 108800
+                },
+                "transcript_refs": [
+                  {
+                    "end_seq": 4,
+                    "hash": "sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164",
+                    "ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json",
+                    "start_seq": 0,
+                    "transcript_id": "oh_my_pi_p6_0_l5_transcript_fixture",
+                    "visibility": {
+                      "host_visible": true,
+                      "model_visible": true,
+                      "provider_visible": true
+                    }
+                  }
+                ],
+                "trigger": {
+                  "kind": "manual",
+                  "observed_tokens": 128960,
+                  "reason": "P6.0-L5 deterministic no-provider snapcompact runtime probe",
+                  "source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
+                  "threshold_tokens": 108800
+                }
+              },
+              {
+                "appended_messages": [
+                  {
+                    "firstKeptEntryId": "entry-004-assistant-recent",
+                    "modelVisible": true,
+                    "providerVisible": true,
+                    "role": "compactionSummary",
+                    "shortSummary": "Archived 362 chars of history onto 0 snapcompact frames (+362 chars as text)",
+                    "summary": "You are resuming a prior conversation. Its earlier turns were archived to reclaim context and are reproduced under HISTORY below, oldest to newest. Read HISTORY in full, then continue from the live conversation that follows it.\n\nThe archived transcript is compact: each turn opens with a heading — `# User ¶`, `# Assistant ¶`, or `# Tool call ¶` — assistant reasoning is wrapped in _italics_, and tool output sits inside `<out>…</out>`.\n\nReading HISTORY:\n- Plain-text sections are the verbatim transcript — rely on them exactly.\n- When an exact earlier detail matters and a section reads unclearly, re-derive it from the workspace (re-read files, re-run commands) rather than guessing.\n\nFILES\n===================\n# src/\nalpha.ts (Read)\n\nHISTORY\n===================",
+                    "tokensBefore": 128960
+                  }
+                ],
+                "appended_tool_events": [],
+                "compaction_markers": [
+                  {
+                    "archiveFrameCount": 0,
+                    "archiveTextHeadChars": 362,
+                    "firstKeptEntryId": "entry-004-assistant-recent",
+                    "memoryBackendVisibility": "none absent; mnemopi/hindsight tools blocked without initialized state",
+                    "messagesToSummarizeCount": 3,
+                    "recentMessagesCount": 1,
+                    "strategy": "snapcompact",
+                    "tokensBefore": 128960
+                  }
+                ],
+                "lineage_updates": [
+                  {
+                    "archive": {
+                      "frameCount": 0,
+                      "hasArchive": true,
+                      "historyBlockTypes": [
+                        "text"
+                      ],
+                      "imageBlockCount": 0,
+                      "textChars": 362,
+                      "textHeadChars": 362,
+                      "textTailChars": 0,
+                      "totalChars": 362,
+                      "truncatedChars": 0
+                    },
+                    "kind": "snapcompact_archive",
+                    "source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3"
+                  },
+                  {
+                    "configured_backends_blocked_without_initialized_state": true,
+                    "kind": "memory_backend_visibility",
+                    "none_backend_tools_absent": true,
+                    "source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3"
+                  }
+                ],
+                "lossiness_flags": [
+                  "older_history_elided_to_snapcompact_archive",
+                  "memory_backend_configured_tool_visibility_captured_without_backend_state"
+                ],
+                "patch_id": "oh_my_pi_p6_0_l5_memory_compaction_snapcompact_patch",
+                "post_state_digest": "sha256:3c6d0a656c8972267463d783f15634c6dd2f5a5edc0069b102b90c73245675bf",
+                "pre_state_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json#sha256:9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164",
+                "schema_version": "bb.transcript_continuation_patch.v1"
+              }
+            ],
+            "provider_model": "no-provider",
+            "replay_summary": {
+              "command_count": 2,
+              "fetch_event_count": 0,
+              "memory_backend_none_tools_absent": true,
+              "memory_backends_blocked_without_initialized_state": true,
+              "memory_compaction_plan_schema_valid": true,
+              "messages_to_summarize_count": 3,
+              "network_observed": false,
+              "provider_dispatch_observed": false,
+              "snapcompact_archive_present": true,
+              "transcript_patch_schema_valid": true
+            },
+            "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
+            "sandbox_mode": "read-only",
+            "schema_version": "bb.e4.bb_replay_result.v1",
+            "target_family": "oh_my_pi",
+            "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+            "warnings": []
           },
           "secret_scan_report": {
             "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
@@ -854,6 +985,149 @@
             "schema_version": "bb.e4.secret_scan_report.v1",
             "status": "passed",
             "target_family": "oh_my_pi"
+          },
+          "support_claim_ref": {
+            "acceptance_rationale": "The governed claim is limited to frozen target runtime execution of prepareCompaction, @oh-my-pi/snapcompact.compact, createCompactionSummaryMessage, convertMessageToLlm, and retain/recall/reflect memory-tool visibility. The packet contains raw command reports, BreadBoard replay into bb.memory_compaction_plan.v1 and bb.transcript_continuation_patch.v1, comparator pass, parity result, packet-local secret scan, validator-output hash, and ledger-row freshness.",
+            "accepted": true,
+            "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
+            "catalog_binding": {
+              "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+              "catalog_revision": 12,
+              "segment_hash": "sha256:5115581f4b8653dc55828651d8fe4f611aab33fab4b75a2226146c1e97fc03a6",
+              "segment_id": "oh_my_pi_p6_0_l5_memory_compaction",
+              "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
+            },
+            "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
+            "claim_semantics": {
+              "asserted_behaviors": [
+                {
+                  "behavior_id": "memory_compaction_scope_matches_exact_claim",
+                  "comparator_assertion_ids": [
+                    "scope_matches_exact_claim"
+                  ],
+                  "description": "scope matches exact claim"
+                },
+                {
+                  "behavior_id": "memory_compaction_commands_exit_zero",
+                  "comparator_assertion_ids": [
+                    "commands_exit_zero"
+                  ],
+                  "description": "commands exit zero"
+                },
+                {
+                  "behavior_id": "memory_compaction_target_compaction_runtime_exercised",
+                  "comparator_assertion_ids": [
+                    "target_compaction_runtime_exercised"
+                  ],
+                  "description": "target compaction runtime exercised"
+                },
+                {
+                  "behavior_id": "memory_compaction_breadboard_memory_plan_and_patch_valid",
+                  "comparator_assertion_ids": [
+                    "breadboard_memory_plan_and_patch_valid"
+                  ],
+                  "description": "breadboard memory plan and patch valid"
+                },
+                {
+                  "behavior_id": "memory_compaction_memory_backend_visibility_captured",
+                  "comparator_assertion_ids": [
+                    "memory_backend_visibility_captured"
+                  ],
+                  "description": "memory backend visibility captured"
+                },
+                {
+                  "behavior_id": "memory_compaction_provider_network_scope_limited",
+                  "comparator_assertion_ids": [
+                    "provider_network_scope_limited"
+                  ],
+                  "description": "provider network scope limited"
+                }
+              ],
+              "excluded_behaviors": [
+                {
+                  "behavior_id": "broad_target_parity",
+                  "description": "Broad target-family parity remains outside this exact C4 lane claim."
+                }
+              ]
+            },
+            "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064",
+            "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+            "exclusion_facets": {
+              "excluded_behavior_classes": [
+                "broad_target_parity",
+                "browser",
+                "danger_full_access",
+                "model_inference",
+                "provider_authenticated",
+                "write_enabled"
+              ],
+              "excluded_families": [
+                "all_other_families",
+                "codex",
+                "opencode",
+                "pi"
+              ]
+            },
+            "exclusions": [
+              "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+              "No Pi, OpenCode, Opencode, Codex, Claude, provider-parity, task/agent-routing/job, browser automation, screenshot, or general P6/P7 support claim is made.",
+              "No write-enabled, provider-authenticated, or danger-full-access sandbox behavior is claimed.",
+              "No claim is made for provider endpoints, web search execution, external SaaS APIs, model inference, remote compaction, or provider-native compaction.",
+              "No initialized durable Mnemopi/Hindsight memory store or successful memory persistence is claimed; the evidence captures target-observed backend/tool visibility and blocked status without initialized backend state.",
+              "No task, job, subagent, IRC, wake subscription, or work_item lane semantics are claimed."
+            ],
+            "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l5_memory_compaction_v1#sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124",
+            "generated_at_utc": "2026-07-04T00:00:00Z",
+            "kind": "target_support",
+            "ledger_row_refs": [
+              "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_oh_my_pi_p6_0_l5_memory_compaction#sha256:acb9ccec1d6d935a49ff3b46c1948914f6584130eb647c3879b8dc76eec83cf7"
+            ],
+            "metadata": {
+              "generated_from_schema_version": "bb.e4.support_claim.v4",
+              "legacy_scope": {
+                "compaction_strategy": "snapcompact",
+                "memory_backend_state": "none absent; mnemopi/hindsight blocked without initialized state",
+                "memory_boundary": "provider-free snapcompact compaction plus memory-backend/tool visibility only",
+                "remote_compaction": false
+              },
+              "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json"
+            },
+            "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json#sha256:9766c59f5fdc954b37e6048e40e0dde8f38eeec81aa77e0d7dad618a59ae209c",
+            "phase_label": "P6",
+            "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
+            "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a",
+            "reverify_command": {
+              "argv": [
+                ".venv/bin/python",
+                "scripts/validate_e4_c4_chain.py",
+                "--config-id",
+                "oh_my_pi_p6_0_l5_memory_compaction_v1",
+                "--support-claim",
+                "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+                "--evidence-manifest",
+                "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+                "--json-out",
+                "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
+                "--check-only"
+              ],
+              "cwd": "."
+            },
+            "schema_version": "bb.e4.support_claim.v4",
+            "scope": {
+              "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+              "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+              "provider_model": "no-provider",
+              "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
+              "sandbox_mode": "read-only",
+              "target_family": "oh_my_pi",
+              "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+            },
+            "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json#sha256:28bbf8b3a8568de2686d79eafcc9b9a19e62606b1e760c6b7303a7fcb70775a5",
+            "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+            "summary": "Oh-My-Pi 16.2.13 provider-free memory/compaction support is accepted only for the named P6.0-L5 lane: target snapcompact compaction preparation and transcript continuation plus target-observed memory backend/tool visibility without initialized backend state.",
+            "validation_refs": [
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json#sha256:d63d77e69a664d05bddf88d39d08dc201d77db373161a05e8f051262bbedf00f"
+            ]
           },
           "validator_output": {
             "accepted": true,
@@ -916,296 +1190,17 @@
             "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
             "schema_version": "bb.e4.c4_prevalidation_report.v1",
             "target_family": "oh_my_pi"
-          },
-          "support_claim_ref": {
-            "acceptance_rationale": "The governed claim is limited to frozen target runtime execution of prepareCompaction, @oh-my-pi/snapcompact.compact, createCompactionSummaryMessage, convertMessageToLlm, and retain/recall/reflect memory-tool visibility. The packet contains raw command reports, BreadBoard replay into bb.memory_compaction_plan.v1 and bb.transcript_continuation_patch.v1, comparator pass, parity result, packet-local secret scan, validator-output hash, and ledger-row freshness.",
-            "accepted": true,
-            "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
-            "catalog_binding": {
-              "catalog_hash": "sha256:ca6f45ce8823c8ffe4f29210c66c11d7ecca08240ad8b3b5108c80fac445bffe",
-              "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-              "catalog_revision": 9
-            },
-            "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
-            "claim_semantics": {
-              "asserted_behaviors": [
-                {
-                  "behavior_id": "memory_compaction_scope_matches_exact_claim",
-                  "comparator_assertion_ids": [
-                    "scope_matches_exact_claim"
-                  ],
-                  "description": "scope matches exact claim"
-                },
-                {
-                  "behavior_id": "memory_compaction_commands_exit_zero",
-                  "comparator_assertion_ids": [
-                    "commands_exit_zero"
-                  ],
-                  "description": "commands exit zero"
-                },
-                {
-                  "behavior_id": "memory_compaction_target_compaction_runtime_exercised",
-                  "comparator_assertion_ids": [
-                    "target_compaction_runtime_exercised"
-                  ],
-                  "description": "target compaction runtime exercised"
-                },
-                {
-                  "behavior_id": "memory_compaction_breadboard_memory_plan_and_patch_valid",
-                  "comparator_assertion_ids": [
-                    "breadboard_memory_plan_and_patch_valid"
-                  ],
-                  "description": "breadboard memory plan and patch valid"
-                },
-                {
-                  "behavior_id": "memory_compaction_memory_backend_visibility_captured",
-                  "comparator_assertion_ids": [
-                    "memory_backend_visibility_captured"
-                  ],
-                  "description": "memory backend visibility captured"
-                },
-                {
-                  "behavior_id": "memory_compaction_provider_network_scope_limited",
-                  "comparator_assertion_ids": [
-                    "provider_network_scope_limited"
-                  ],
-                  "description": "provider network scope limited"
-                }
-              ],
-              "excluded_behaviors": [
-                {
-                  "behavior_id": "broad_target_parity",
-                  "description": "Broad target-family parity remains outside this exact C4 lane claim."
-                }
-              ]
-            },
-            "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064",
-            "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
-            "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
-            "exclusion_facets": {
-              "excluded_behavior_classes": [
-                "broad_target_parity",
-                "browser",
-                "danger_full_access",
-                "model_inference",
-                "provider_authenticated",
-                "write_enabled"
-              ],
-              "excluded_families": [
-                "all_other_families",
-                "codex",
-                "opencode",
-                "pi"
-              ]
-            },
-            "exclusions": [
-              "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
-              "No Pi, OpenCode, Opencode, Codex, Claude, provider-parity, task/agent-routing/job, browser automation, screenshot, or general P6/P7 support claim is made.",
-              "No write-enabled, provider-authenticated, or danger-full-access sandbox behavior is claimed.",
-              "No claim is made for provider endpoints, web search execution, external SaaS APIs, model inference, remote compaction, or provider-native compaction.",
-              "No initialized durable Mnemopi/Hindsight memory store or successful memory persistence is claimed; the evidence captures target-observed backend/tool visibility and blocked status without initialized backend state.",
-              "No task, job, subagent, IRC, wake subscription, or work_item lane semantics are claimed."
-            ],
-            "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l5_memory_compaction_v1#sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124",
-            "generated_at_utc": "2026-07-04T00:00:00Z",
-            "kind": "target_support",
-            "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
-            "ledger_row_refs": [
-              "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_oh_my_pi_p6_0_l5_memory_compaction#sha256:90dac10bd82f50484ced0bb4f8a318f332891b759a19d8fb5230d5b3491f4700"
-            ],
-            "metadata": {
-              "generated_from_schema_version": "bb.e4.support_claim.v2",
-              "legacy_scope": {
-                "compaction_strategy": "snapcompact",
-                "memory_backend_state": "none absent; mnemopi/hindsight blocked without initialized state",
-                "memory_boundary": "provider-free snapcompact compaction plus memory-backend/tool visibility only",
-                "remote_compaction": false
-              },
-              "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json"
-            },
-            "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json#sha256:9766c59f5fdc954b37e6048e40e0dde8f38eeec81aa77e0d7dad618a59ae209c",
-            "phase_label": "P6",
-            "provider_model": "no-provider",
-            "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json#sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3",
-            "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a",
-            "reverify_command": {
-              "argv": [
-                ".venv/bin/python",
-                "scripts/validate_e4_c4_chain.py",
-                "--config-id",
-                "oh_my_pi_p6_0_l5_memory_compaction_v1",
-                "--support-claim",
-                "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
-                "--evidence-manifest",
-                "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
-                "--json-out",
-                "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
-                "--check-only"
-              ],
-              "cwd": "."
-            },
-            "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
-            "sandbox_mode": "read-only",
-            "schema_version": "bb.e4.support_claim.v2",
-            "scope": {
-              "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
-              "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
-              "provider_model": "no-provider",
-              "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
-              "sandbox_mode": "read-only",
-              "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
-            },
-            "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json#sha256:28bbf8b3a8568de2686d79eafcc9b9a19e62606b1e760c6b7303a7fcb70775a5",
-            "source_freeze_ref": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
-            "summary": "Oh-My-Pi 16.2.13 provider-free memory/compaction support is accepted only for the named P6.0-L5 lane: target snapcompact compaction preparation and transcript continuation plus target-observed memory backend/tool visibility without initialized backend state.",
-            "target_family": "oh_my_pi",
-            "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
-            "validation_refs": [
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json#sha256:d63d77e69a664d05bddf88d39d08dc201d77db373161a05e8f051262bbedf00f"
-            ]
-          },
-          "evidence_manifest": {
-            "artifacts": [
-              {
-                "path": "config/e4_target_freeze_manifest.yaml",
-                "role": "freeze_manifest",
-                "sha256": "sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124"
-              },
-              {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json",
-                "role": "capture_ref",
-                "sha256": "sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55"
-              },
-              {
-                "derived_from": [
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
-                ],
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json",
-                "role": "replay_ref",
-                "sha256": "sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a"
-              },
-              {
-                "derived_from": [
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a",
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
-                ],
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json",
-                "role": "comparator_ref",
-                "sha256": "sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064"
-              },
-              {
-                "derived_from": [
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064"
-                ],
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json",
-                "role": "parity_results",
-                "sha256": "sha256:9766c59f5fdc954b37e6048e40e0dde8f38eeec81aa77e0d7dad618a59ae209c"
-              },
-              {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json",
-                "role": "secret_scan_report",
-                "sha256": "sha256:28bbf8b3a8568de2686d79eafcc9b9a19e62606b1e760c6b7303a7fcb70775a5"
-              },
-              {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json",
-                "role": "validator_output",
-                "sha256": "sha256:d63d77e69a664d05bddf88d39d08dc201d77db373161a05e8f051262bbedf00f"
-              },
-              {
-                "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
-                "role": "support_claim_ref",
-                "sha256": "sha256:f24e3d7cc74d63b42f5007734f58e53baee04dd5d6e2b783cab85816b5f18da6"
-              },
-              {
-                "bytes": 124871,
-                "exists": true,
-                "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
-                "role": "atomic_feature_ledger",
-                "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
-              },
-              {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",
-                "role": "memory_compaction_plan",
-                "sha256": "sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f"
-              },
-              {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
-                "role": "transcript_continuation_patch",
-                "sha256": "sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
-              },
-              {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
-                "role": "target_probe_output",
-                "sha256": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3"
-              }
-            ],
-            "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
-            "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
-            "forbidden_roots_checked": [
-              "scratch",
-              "tmp",
-              "scratch_runs",
-              "/shared_folders"
-            ],
-            "generated_at_utc": "2026-07-04T00:00:00Z",
-            "hash_algorithm": "sha256",
-            "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
-            "manifest_scope_note": "Every governed artifact for this oh_my_pi_p6_0_l5_memory_compaction C4 chain is packet-local canonical repo evidence, source-freeze evidence under docs_tmp/phase_15/source_freezes, or a named target command/probe artifact. Scratch/tmp/shared roots are not promotion evidence.",
-            "schema_version": "bb.e4.evidence_manifest.v1"
-          },
-          "node_gate": {
-            "accepted": true,
-            "catalog_binding_pending": [],
-            "claimed_scope": {
-              "compaction_strategy": "snapcompact",
-              "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
-              "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
-              "memory_backend_state": "none absent; mnemopi/hindsight blocked without initialized state",
-              "memory_boundary": "provider-free snapcompact compaction plus memory-backend/tool visibility only",
-              "provider_model": "no-provider",
-              "remote_compaction": false,
-              "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
-              "sandbox_mode": "read-only",
-              "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
-            },
-            "comparator_rerun": {
-              "assertion_count": 6,
-              "comparator_class": "deterministic_replay",
-              "comparator_id": "oh_my_pi_stored_report_replay",
-              "missing_assertion_ids": [],
-              "ok": true,
-              "registry": "breadboard_repo_integration_main_20260326/conformance/comparators/registry.json",
-              "status_mismatch_ids": [],
-              "unexpected_assertion_ids": [],
-              "value_mismatch_ids": []
-            },
-            "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
-            "error_count": 0,
-            "errors": [],
-            "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
-            "gate_errors": [],
-            "hashes": {
-              "evidence_manifest": "sha256:9af12e8ed57d2dcee2c70bbb99bc4a6b9757b622d27768b111b5442c4db1cb3b",
-              "freeze_manifest": "sha256:de628cd1c653dca7a011c3953f678f1c630c73b1647dd673801ddbeaa037d0e5",
-              "freeze_manifest_row": "sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124",
-              "support_claim": "sha256:e1a8e8a80d798cb2511f941f231cb756d0dcf8dc5a74b1bf231c3307befa4451"
-            },
-            "ok": true,
-            "pin_stale_count": 0,
-            "refs": {
-              "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
-              "freeze_manifest": "breadboard_repo_integration_main_20260326/config/e4_target_freeze_manifest.yaml",
-              "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json"
-            },
-            "schema_version": "bb.e4.c4_chain_validation_report.v1",
-            "semantic_count": 0,
-            "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json"
           }
         },
+        "record_envelopes": {},
+        "record_roles": {
+          "memory_compaction_plan": "memory_compaction_plan",
+          "transcript_continuation_patch": "transcript_continuation_patch"
+        },
+        "required_records": [
+          "memory_compaction_plan",
+          "transcript_continuation_patch"
+        ],
         "required_roles": [
           "memory_compaction_plan",
           "transcript_continuation_patch",
@@ -1219,83 +1214,134 @@
           "evidence_manifest",
           "node_gate"
         ]
+      },
+      "projection_constants": {
+        "p6_l5_memory_compaction_plan": {
+          "compactor_id": "@oh-my-pi/snapcompact.compact",
+          "lossiness_flags": [
+            "older_history_elided_to_snapcompact_archive",
+            "memory_backend_configured_tool_visibility_captured_without_backend_state"
+          ],
+          "max_input_tokens": 128000,
+          "memory_backend_visibility_label": "none absent; mnemopi/hindsight tools blocked without initialized state",
+          "memory_tool_contributor_id": "retain/recall/reflect memory.backend none|mnemopi|hindsight",
+          "memory_visibility_producer": "Oh-My-Pi retain/recall/reflect createIf/execute runtime probe",
+          "model_context_window": 128000,
+          "paths": {
+            "target_probe_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
+            "transcript_continuation_patch": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
+            "transcript_fixture": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json"
+          },
+          "summary_producer": "@oh-my-pi/snapcompact.compact + createCompactionSummaryMessage",
+          "trigger_reason": "P6.0-L5 deterministic no-provider snapcompact runtime probe",
+          "visibility_host": {
+            "host_visible": true,
+            "model_visible": false,
+            "provider_visible": false
+          },
+          "visibility_model": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": true
+          }
+        },
+        "p6_l5_transcript_continuation_patch": {
+          "compactor_id": "@oh-my-pi/snapcompact.compact",
+          "lossiness_flags": [
+            "older_history_elided_to_snapcompact_archive",
+            "memory_backend_configured_tool_visibility_captured_without_backend_state"
+          ],
+          "max_input_tokens": 128000,
+          "memory_backend_visibility_label": "none absent; mnemopi/hindsight tools blocked without initialized state",
+          "memory_tool_contributor_id": "retain/recall/reflect memory.backend none|mnemopi|hindsight",
+          "memory_visibility_producer": "Oh-My-Pi retain/recall/reflect createIf/execute runtime probe",
+          "model_context_window": 128000,
+          "paths": {
+            "target_probe_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
+            "transcript_continuation_patch": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
+            "transcript_fixture": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json"
+          },
+          "summary_producer": "@oh-my-pi/snapcompact.compact + createCompactionSummaryMessage",
+          "trigger_reason": "P6.0-L5 deterministic no-provider snapcompact runtime probe",
+          "visibility_host": {
+            "host_visible": true,
+            "model_visible": false,
+            "provider_visible": false
+          },
+          "visibility_model": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": true
+          }
+        }
+      },
+      "projection_module": "scripts.e4_parity.adapters.oh_my_pi_l5_projection",
+      "record_builders": [
+        {
+          "id": "p6_l5_memory_compaction_plan",
+          "projection": "p6_l5_memory_compaction_plan",
+          "records": [
+            "memory_compaction_plan"
+          ],
+          "schema_version": "bb.memory_compaction_plan.v1",
+          "source": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json"
+        },
+        {
+          "id": "p6_l5_transcript_continuation_patch",
+          "projection": "p6_l5_transcript_continuation_patch",
+          "records": [
+            "transcript_continuation_patch"
+          ],
+          "schema_version": "bb.transcript_continuation_patch.v1",
+          "source": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json"
+        }
+      ],
+      "roles": {
+        "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json",
+        "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json",
+        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+        "memory_compaction_plan": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",
+        "node_gate": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
+        "parity_results": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json",
+        "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json",
+        "secret_scan_report": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json",
+        "support_claim_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+        "target_probe_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
+        "transcript_continuation_patch": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
+        "validator_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json"
       }
-    }
+    },
+    "mode": "identity",
+    "translator": "identity"
+  },
+  "package_ref": null,
+  "points": 15,
+  "provenance": {
+    "provenance_kind": "git_commit",
+    "source_paths": [
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_setup_and_capture_report.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json",
+      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
+      "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+      "scripts/e4_parity/adapters/oh_my_pi_projection_packet.py",
+      "scripts/e4_parity/adapters/oh_my_pi_l5_projection.py",
+      "contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
+      "contracts/kernel/schemas/bb.transcript_continuation_patch.v1.schema.json"
+    ],
+    "upstream_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "upstream_commit_date": "2026-07-01T18:03:42Z",
+    "upstream_release_label": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "upstream_repo": "https://github.com/can1357/oh-my-pi"
   },
   "replay": {
-    "mode": "stored",
     "artifacts": [
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json"
     ],
-    "session": null,
-    "comparator_class": "semantic"
+    "comparator_class": "semantic",
+    "mode": "stored",
+    "session": null
   },
-  "compare": {
-    "comparator": "oh_my_pi_stored_report_replay",
-    "config": {
-      "assertions": [
-        {
-          "id": "ok_true",
-          "path": "ok",
-          "op": "equals",
-          "value": true,
-          "description": "comparator report is ok"
-        },
-        {
-          "id": "no_errors",
-          "path": "errors",
-          "op": "length_equals",
-          "value": 0,
-          "description": "comparator report has no errors"
-        },
-        {
-          "id": "config_id_matches",
-          "path": "claimed_scope.config_id",
-          "op": "equals",
-          "value": "oh_my_pi_p6_0_l5_memory_compaction_v1",
-          "description": "claimed scope config id matches"
-        },
-        {
-          "id": "lane_id_matches",
-          "path": "claimed_scope.lane_id",
-          "op": "equals",
-          "value": "oh_my_pi_p6_0_l5_memory_compaction",
-          "description": "claimed scope lane id matches"
-        },
-        {
-          "id": "provider_model_matches",
-          "path": "claimed_scope.provider_model",
-          "op": "equals",
-          "value": "no-provider",
-          "description": "claimed scope provider model matches"
-        },
-        {
-          "id": "sandbox_mode_matches",
-          "path": "claimed_scope.sandbox_mode",
-          "op": "equals",
-          "value": "read-only",
-          "description": "claimed scope sandbox mode matches"
-        }
-      ]
-    }
-  },
-  "claim": {
-    "scope": {
-      "behaviors": [
-        "bb.memory_compaction_plan.v1"
-      ],
-      "surfaces": [
-        "P6 exact-scope C4 support chain"
-      ]
-    },
-    "exclusions": []
-  },
-  "ct": {
-    "description": "Oh-My-Pi 16.2.13 provider-free P6.0-L5 memory/compaction exact-scope C4 chain validation.",
-    "timeout_seconds": 180,
-    "test_id": "CT-P6-OHMYPI-L5-MEMORY-COMPACTION-C4"
-  },
-  "artifacts_root": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",
@@ -1312,64 +1358,13 @@
     ],
     "cwd": "."
   },
-  "metadata": {
-    "legacy_inventory_ct_test_id": "CT-P6-OHMYPI-L5-MEMORY-COMPACTION-C4",
-    "provider_model": "no-provider",
-    "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
-    "sandbox_mode": "read-only"
-  },
   "run": {
-    "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
     "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
     "sandbox_mode": "read-only"
   },
-  "provenance": {
-    "provenance_kind": "git_commit",
-    "upstream_repo": "https://github.com/can1357/oh-my-pi",
-    "upstream_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
-    "upstream_commit_date": "2026-07-01T18:03:42Z",
-    "upstream_release_label": "@oh-my-pi/pi-coding-agent@16.2.13",
-    "source_paths": [
-      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
-      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_setup_and_capture_report.json",
-      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json",
-      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
-      "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
-      "scripts/e4_parity/adapters/oh_my_pi_projection_packet.py",
-      "scripts/e4_parity/adapters/oh_my_pi_l5_projection.py",
-      "contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
-      "contracts/kernel/schemas/bb.transcript_continuation_patch.v1.schema.json"
-    ]
-  },
-  "acceptance": {
-    "behavior_family": "memory",
-    "semantic_key": "oh_my_pi_p6_0_l5_memory_compaction",
-    "target": "oh_my_pi",
-    "assertions": [
-      {
-        "id": "acceptance_ok_true",
-        "description": "comparator report is ok"
-      },
-      {
-        "id": "acceptance_no_errors",
-        "description": "comparator report has no errors"
-      },
-      {
-        "id": "acceptance_config_id_matches",
-        "description": "claimed scope config id matches"
-      },
-      {
-        "id": "acceptance_lane_id_matches",
-        "description": "claimed scope lane id matches"
-      },
-      {
-        "id": "acceptance_provider_model_matches",
-        "description": "claimed scope provider model matches"
-      },
-      {
-        "id": "acceptance_sandbox_mode_matches",
-        "description": "claimed scope sandbox mode matches"
-      }
-    ]
-  }
+  "schema_version": "bb.e4.lane_def.v2",
+  "status": "accepted",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
 }

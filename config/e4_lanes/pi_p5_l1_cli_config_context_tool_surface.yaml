@@ -14,12 +14,23 @@ capture:
     - docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip
     - docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json
     - agent_configs/misc/pi_p5_l1_cli_config_context_tool_surface_v1.yaml
+    - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/pi_p5_target_probe.mjs
+    - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json
+    - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_setup_and_capture_report.json
+    - docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw
   workspace_template: null
   adapter: pi_p5_l1_capture
 normalize:
   translator: identity
   mode: identity
-  config: {}
+  config:
+    roles:
+      replay_ref: docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json
+      comparator_ref: docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json
+      parity_results: docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/parity_results.json
+      capture_ref: docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json
+      secret_scan_report: docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/secret_scan_report.json
+      validator_output: docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/prevalidation_report.json
 replay:
   mode: stored
   artifacts:

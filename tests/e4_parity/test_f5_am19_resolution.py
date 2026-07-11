@@ -11,7 +11,11 @@ import pytest
 import yaml
 
 from scripts.e4_parity import run_lane
-from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
+from scripts.e4_parity.path_refs import (
+    ReferenceResolutionError,
+    resolve_declared_reference,
+    workspace_root_for_checkout,
+)
 from scripts.e4_parity.validate_atomic_feature_ledger import collect_atomic_feature_ledger_errors
 
 
@@ -122,6 +126,182 @@ def test_workspace_evidence_fails_closed_without_valid_absolute_workspace_root(
             namespace="workspace_evidence",
             checkout_root=checkout,
         )
+
+
+def test_workspace_root_resolver_returns_existing_canonical_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "docs_tmp").mkdir(parents=True)
+    checkout = workspace / "checkout"
+    checkout.mkdir()
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
+
+    assert workspace_root_for_checkout(checkout) == workspace.resolve()
+
+
+def test_workspace_root_resolver_rejects_docs_tmp_symlink_escape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (workspace / "docs_tmp").symlink_to(outside, target_is_directory=True)
+    checkout = workspace / "checkout"
+    checkout.mkdir()
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
+
+    with pytest.raises(
+        ReferenceResolutionError,
+        match="docs_tmp must be an existing directory contained by the workspace",
+    ):
+        workspace_root_for_checkout(checkout)
+
+
+def test_er_progress_seed_refresh_uses_explicit_workspace_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    checkout = workspace / "checkout"
+    checkout.mkdir(parents=True)
+    progress_path = workspace / "docs_tmp" / "phase_16" / "BB_ER_PROGRESS.json"
+    progress_path.parent.mkdir(parents=True)
+    progress_path.write_text(
+        json.dumps(
+            {
+                "workstreams": [
+                    {
+                        "items": [
+                            {
+                                "item_id": "J.5",
+                                "evidence": [
+                                    {
+                                        "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+                                        "sha256": "sha256:stale",
+                                    }
+                                ],
+                            }
+                        ]
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    seed_path = checkout / "seed.json"
+    seed_path.write_text('{"seed": true}\n', encoding="utf-8")
+    monkeypatch.setattr(run_lane, "ROOT", checkout)
+
+    run_lane._refresh_er_progress_seed_pin(
+        seed_path,
+        workspace_root=workspace,
+    )
+
+    progress = json.loads(progress_path.read_text(encoding="utf-8"))
+    assert progress["workstreams"][0]["items"][0]["evidence"][0]["sha256"] == run_lane.sha256_file(seed_path)
+
+
+def test_er_progress_seed_refresh_fails_when_progress_file_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "docs_tmp").mkdir(parents=True)
+    checkout = workspace / "checkout"
+    checkout.mkdir()
+    seed_path = checkout / "seed.json"
+    seed_path.write_text('{"seed": true}\n', encoding="utf-8")
+    monkeypatch.setattr(run_lane, "ROOT", checkout)
+
+    with pytest.raises(
+        ReferenceResolutionError,
+        match="ER progress seed pin is missing from checkout/workspace",
+    ):
+        run_lane._refresh_er_progress_seed_pin(
+            seed_path,
+            workspace_root=workspace,
+        )
+
+
+def test_promotion_refresh_fails_before_writes_without_explicit_workspace_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    monkeypatch.setattr(run_lane, "ROOT", checkout)
+    monkeypatch.delenv("BB_WORKSPACE_ROOT", raising=False)
+
+    with pytest.raises(ReferenceResolutionError, match="BB_WORKSPACE_ROOT is required"):
+        run_lane._refresh_promoted_bindings()
+
+
+def test_promotion_refresh_propagates_valid_explicit_workspace_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "docs_tmp").mkdir(parents=True)
+    checkout = workspace / "checkout"
+    checkout.mkdir()
+    monkeypatch.setattr(run_lane, "ROOT", checkout)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
+
+    from scripts.e4_parity import (
+        build_artifact_catalog,
+        build_e4_final_readiness_packet,
+        generate_support_claims,
+        seed_atomic_feature_ledger,
+    )
+
+    propagated: dict[str, Path] = {}
+
+    def record_refresh(seed_path: Path, *, workspace_root: Path) -> None:
+        propagated["seed_path"] = seed_path
+        propagated["workspace_root"] = workspace_root
+
+    monkeypatch.setattr(run_lane, "_refresh_er_progress_seed_pin", record_refresh)
+    monkeypatch.setattr(
+        seed_atomic_feature_ledger,
+        "write_ledger",
+        lambda *_args, **_kwargs: {"row_count": 1},
+    )
+    monkeypatch.setattr(
+        build_artifact_catalog,
+        "build_catalog",
+        lambda **_kwargs: {"integrity": {"entry_count": 2}},
+    )
+    monkeypatch.setattr(build_artifact_catalog, "write_json", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        generate_support_claims,
+        "generate",
+        lambda **_kwargs: {"claim_count": 3},
+    )
+    monkeypatch.setattr(
+        build_e4_final_readiness_packet,
+        "refresh_score_artifact_hashes",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        build_e4_final_readiness_packet,
+        "load_json",
+        lambda path: (
+            {"score_rows": []}
+            if path == build_e4_final_readiness_packet.SCORE_SUBLEDGER_PATH
+            else {"accepted_support_claims": [], "preflight_blocked": False}
+        ),
+    )
+
+    run_lane._refresh_promoted_bindings()
+
+    assert propagated == {
+        "seed_path": seed_atomic_feature_ledger.DEFAULT_OUT,
+        "workspace_root": workspace.resolve(),
+    }
 
 
 def test_workspace_evidence_rejects_symlink_escape(

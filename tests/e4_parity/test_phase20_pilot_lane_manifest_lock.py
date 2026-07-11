@@ -391,6 +391,7 @@ def _synthetic_archive_migration(
         },
     )
     monkeypatch.setattr(compile_lane_lock, "ROOT", root)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(root))
     monkeypatch.setattr(compile_lane_lock, "_artifact_roles", lambda _manifest: {})
     argv = [
         "migrate",

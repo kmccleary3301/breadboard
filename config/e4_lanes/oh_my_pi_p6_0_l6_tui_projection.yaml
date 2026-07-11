@@ -1,19 +1,40 @@
 {
-  "schema_version": "bb.e4.lane_def.v2",
-  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-  "target_family": "oh_my_pi",
-  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
-  "package_ref": null,
-  "kind": "target_support",
-  "status": "accepted",
-  "points": 20,
+  "acceptance": {
+    "assertions": [
+      {
+        "description": "comparator report is ok",
+        "id": "acceptance_ok_true"
+      },
+      {
+        "description": "comparator report has no errors",
+        "id": "acceptance_no_errors"
+      },
+      {
+        "description": "claimed scope config id matches",
+        "id": "acceptance_config_id_matches"
+      },
+      {
+        "description": "claimed scope lane id matches",
+        "id": "acceptance_lane_id_matches"
+      },
+      {
+        "description": "claimed scope provider model matches",
+        "id": "acceptance_provider_model_matches"
+      },
+      {
+        "description": "claimed scope sandbox mode matches",
+        "id": "acceptance_sandbox_mode_matches"
+      }
+    ],
+    "behavior_family": "projection",
+    "semantic_key": "oh_my_pi_p6_0_l6_tui_projection",
+    "target": "oh_my_pi"
+  },
+  "artifacts_root": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection",
   "capture": {
-    "strategy": "adapter",
+    "adapter": "oh_my_pi_compiler_capture",
     "argv": null,
     "inputs": [
-      "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
-      "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/oh_my_pi_p6_0_l6_tui_projection_probe.mjs",
@@ -25,100 +46,86 @@
       "scripts/e4_parity/adapters/oh_my_pi_l6_projection.py",
       "contracts/kernel/schemas/bb.projection_event.v1.schema.json"
     ],
-    "workspace_template": null,
-    "adapter": "oh_my_pi_compiler_capture"
+    "strategy": "adapter",
+    "workspace_template": null
+  },
+  "claim": {
+    "exclusions": [],
+    "scope": {
+      "behaviors": [
+        "bb.projection_event.v1"
+      ],
+      "surfaces": [
+        "P6 exact-scope C4 support chain"
+      ]
+    }
+  },
+  "compare": {
+    "comparator": "oh_my_pi_stored_report_replay",
+    "config": {
+      "assertions": [
+        {
+          "description": "comparator report is ok",
+          "id": "ok_true",
+          "op": "equals",
+          "path": "ok",
+          "value": true
+        },
+        {
+          "description": "comparator report has no errors",
+          "id": "no_errors",
+          "op": "length_equals",
+          "path": "errors",
+          "value": 0
+        },
+        {
+          "description": "claimed scope config id matches",
+          "id": "config_id_matches",
+          "op": "equals",
+          "path": "claimed_scope.config_id",
+          "value": "oh_my_pi_p6_0_l6_tui_projection_v1"
+        },
+        {
+          "description": "claimed scope lane id matches",
+          "id": "lane_id_matches",
+          "op": "equals",
+          "path": "claimed_scope.lane_id",
+          "value": "oh_my_pi_p6_0_l6_tui_projection"
+        },
+        {
+          "description": "claimed scope provider model matches",
+          "id": "provider_model_matches",
+          "op": "equals",
+          "path": "claimed_scope.provider_model",
+          "value": "no-provider"
+        },
+        {
+          "description": "claimed scope sandbox mode matches",
+          "id": "sandbox_mode_matches",
+          "op": "equals",
+          "path": "claimed_scope.sandbox_mode",
+          "value": "read-only"
+        }
+      ]
+    }
+  },
+  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+  "ct": {
+    "description": "Oh-My-Pi 16.2.13 provider-free P6.0-L6 TUI/gallery projection exact-scope C4 chain validation.",
+    "test_id": "CT-P6-OHMYPI-L6-TUI-PROJECTION-C4",
+    "timeout_seconds": 180
+  },
+  "kind": "target_support",
+  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+  "metadata": {
+    "legacy_inventory_ct_test_id": "CT-P6-OHMYPI-L6-TUI-PROJECTION-C4",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+    "sandbox_mode": "read-only"
   },
   "normalize": {
-    "translator": "identity",
-    "mode": "identity",
     "config": {
-      "record_builders": [
-        {
-          "id": "p6_l6_tui_projection",
-          "schema_version": "bb.projection_event.v1",
-          "source": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw",
-          "projection": "p6_l6_tui_projection",
-          "records": [
-            "read_success_projection_event",
-            "bash_error_projection_event",
-            "report_tool_issue_success_projection_event"
-          ]
-        }
-      ],
-      "roles": {
-        "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json",
-        "projection_events": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",
-        "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json",
-        "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json",
-        "parity_results": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json",
-        "secret_scan_report": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json",
-        "validator_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json",
-        "support_claim_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
-        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
-        "node_gate": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json"
-      },
-      "projection_module": "scripts.e4_parity.adapters.oh_my_pi_l6_projection",
-      "projection_constants": {
-        "p6_l6_tui_projection": {
-          "generated_at_utc": "2026-07-04T00:00:00Z",
-          "primary_source_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/cli/gallery-cli.ts",
-          "source_refs": [
-            "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/commands/gallery.ts",
-            "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/modes/components/tool-execution.ts"
-          ],
-          "payload_media_type": "text/plain; charset=utf-8",
-          "events": [
-            {
-              "record_key": "read_success_projection_event",
-              "tool": "read",
-              "lifecycle_state": "success",
-              "surface_kind": "tool_surface",
-              "stdout_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.stdout.txt",
-              "report_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.command_report.json"
-            },
-            {
-              "record_key": "bash_error_projection_event",
-              "tool": "bash",
-              "lifecycle_state": "error",
-              "surface_kind": "tool_surface",
-              "stdout_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.stdout.txt",
-              "report_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.command_report.json"
-            },
-            {
-              "record_key": "report_tool_issue_success_projection_event",
-              "tool": "report_tool_issue",
-              "lifecycle_state": "success",
-              "surface_kind": "tool_surface",
-              "stdout_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.stdout.txt",
-              "report_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.command_report.json"
-            }
-          ]
-        }
-      },
       "packet_constants": {
-        "required_records": [
-          "read_success_projection_event",
-          "bash_error_projection_event",
-          "report_tool_issue_success_projection_event"
-        ],
-        "record_roles": {},
-        "record_envelopes": {
-          "projection_events": {
-            "records_field": "records",
-            "records": [
-              "read_success_projection_event",
-              "bash_error_projection_event",
-              "report_tool_issue_success_projection_event"
-            ],
-            "fields": {
-              "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-              "generated_at_utc": "2026-07-04T00:00:00Z",
-              "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-              "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-              "schema_version": "bb.e4.projection_events_manifest.v1"
-            }
-          }
-        },
         "payload_templates": {
           "capture_ref": {
             "accepted_as_capture_ref": true,
@@ -501,6 +508,309 @@
             "target_family": "oh_my_pi",
             "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
           },
+          "comparator_ref": {
+            "assertions": [
+              {
+                "expected": {
+                  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+                  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+                  "plain": true,
+                  "projection_boundary": "host-visible projection-only; kernel_truth=false",
+                  "provider_model": "no-provider",
+                  "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+                  "sandbox_mode": "read-only",
+                  "target_family": "oh_my_pi",
+                  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+                  "terminal_width": 100
+                },
+                "name": "scope_matches_exact_claim",
+                "observed": {
+                  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+                  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+                  "plain": true,
+                  "projection_boundary": "host-visible projection-only; kernel_truth=false",
+                  "provider_model": "no-provider",
+                  "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+                  "sandbox_mode": "read-only",
+                  "target_family": "oh_my_pi",
+                  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+                  "terminal_width": 100
+                },
+                "status": "passed"
+              },
+              {
+                "expected": {
+                  "all_commands_exit_zero": true,
+                  "command_count": 5
+                },
+                "name": "commands_exit_zero",
+                "observed": {
+                  "all_commands_exit_zero": true,
+                  "command_count": 5
+                },
+                "status": "passed"
+              },
+              {
+                "expected": {
+                  "bash_error_exit_visible": true,
+                  "bash_error_heading": true,
+                  "bash_error_state_label": true,
+                  "plain_stdout_ansi_absent": true,
+                  "read_success_heading": true,
+                  "read_success_output_box": true,
+                  "read_success_state_label": true,
+                  "report_tool_issue_heading": true,
+                  "report_tool_issue_result_visible": true,
+                  "report_tool_issue_state_label": true
+                },
+                "name": "plain_gallery_stdout_contains_lifecycle_frames",
+                "observed": {
+                  "bash_error_exit_visible": true,
+                  "bash_error_heading": true,
+                  "bash_error_state_label": true,
+                  "plain_stdout_ansi_absent": true,
+                  "read_success_heading": true,
+                  "read_success_output_box": true,
+                  "read_success_state_label": true,
+                  "report_tool_issue_heading": true,
+                  "report_tool_issue_result_visible": true,
+                  "report_tool_issue_state_label": true
+                },
+                "status": "passed"
+              },
+              {
+                "expected": {
+                  "host_visible": true,
+                  "kernel_truth_false": true,
+                  "model_visible": false,
+                  "projection_event_count": 3,
+                  "provider_visible": false,
+                  "schema_errors": 0
+                },
+                "name": "projection_events_are_host_visible_not_kernel_truth",
+                "observed": {
+                  "host_visible": true,
+                  "kernel_truth_false": true,
+                  "model_visible": false,
+                  "projection_event_count": 3,
+                  "provider_visible": false,
+                  "schema_errors": 0
+                },
+                "status": "passed"
+              },
+              {
+                "expected": {
+                  "fetch_event_count": 0,
+                  "network_observed": false,
+                  "provider_dispatch_observed": false,
+                  "provider_model": "no-provider",
+                  "sandbox_mode": "read-only"
+                },
+                "name": "provider_network_scope_limited",
+                "observed": {
+                  "fetch_event_count": 0,
+                  "network_observed": false,
+                  "provider_dispatch_observed": false,
+                  "provider_model": "no-provider",
+                  "sandbox_mode": "read-only"
+                },
+                "status": "passed"
+              }
+            ],
+            "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+            "details": [
+              {
+                "detail": "Comparator scope contains only the named Oh-My-Pi P6.0-L6 gallery/TUI projection lane and rejects broad OMP, provider, memory, task-routing, browser, or kernel-truth support.",
+                "name": "scope_is_exact_projection_lane",
+                "status": "passed"
+              },
+              {
+                "detail": "Frozen target `omp gallery` rendered read success, bash error, and report_tool_issue success lifecycle frames to deterministic plain stdout at width 100.",
+                "name": "gallery_plain_projection_present",
+                "status": "passed"
+              },
+              {
+                "detail": "Replay maps stdout to bb.projection_event.v1 records with kernel_truth=false, host visibility true, and model/provider visibility false.",
+                "name": "projection_only_boundary",
+                "status": "passed"
+              },
+              {
+                "detail": "Provider credential environment variables were scrubbed and the target probe observed zero fetch/provider dispatch events.",
+                "name": "provider_free_packet",
+                "status": "passed"
+              }
+            ],
+            "failed": 0,
+            "generated_at_utc": "2026-07-04T00:00:00Z",
+            "input_hashes": {
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json": "sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json": "sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json": "sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json": "sha256:9b8da9aa7be53a52f049968340a7f25d84b146af2d581c494c25babbcbdd39a4",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json": "sha256:9353515d79728afa3abe319b5ca2c9f7fb19ac85bbea63fc4b813fdb19d12f87"
+            },
+            "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+            "passed": true,
+            "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+            "schema_version": "bb.e4.comparator_report.v1",
+            "scope": {
+              "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+              "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+              "plain": true,
+              "projection_boundary": "host-visible projection-only; kernel_truth=false",
+              "provider_model": "no-provider",
+              "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+              "sandbox_mode": "read-only",
+              "target_family": "oh_my_pi",
+              "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+              "terminal_width": 100
+            },
+            "target_family": "oh_my_pi",
+            "warned": 0
+          },
+          "evidence_manifest": {
+            "artifacts": [
+              {
+                "path": "config/e4_target_freeze_manifest.yaml",
+                "role": "freeze_manifest",
+                "sha256": "sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json",
+                "role": "capture_ref",
+                "sha256": "sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9"
+              },
+              {
+                "derived_from": [
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
+                ],
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json",
+                "role": "replay_ref",
+                "sha256": "sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9"
+              },
+              {
+                "derived_from": [
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
+                ],
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json",
+                "role": "comparator_ref",
+                "sha256": "sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb"
+              },
+              {
+                "derived_from": [
+                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb"
+                ],
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json",
+                "role": "parity_results",
+                "sha256": "sha256:af9038e2ba67a051180f0dd2279567e6434ffb3a789ad05032314b6b318be5a8"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json",
+                "role": "secret_scan_report",
+                "sha256": "sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json",
+                "role": "validator_output",
+                "sha256": "sha256:00458fae1e0b58c2a399b3fa06e834be5d60ba08734934615c3d98d4193bc566"
+              },
+              {
+                "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+                "role": "support_claim_ref",
+                "sha256": "sha256:0c415a426a3f485e06603bc2a5813a1c1e3b3b6a125b1be345665608a0315872"
+              },
+              {
+                "bytes": 124871,
+                "exists": true,
+                "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+                "role": "atomic_feature_ledger",
+                "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+              },
+              {
+                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",
+                "role": "projection_events",
+                "sha256": "sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
+              }
+            ],
+            "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
+            "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+            "forbidden_roots_checked": [
+              "scratch",
+              "tmp",
+              "scratch_runs",
+              "/shared_folders"
+            ],
+            "generated_at_utc": "2026-07-04T00:00:00Z",
+            "hash_algorithm": "sha256",
+            "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+            "manifest_scope_note": "Every governed artifact for this oh_my_pi_p6_0_l6_tui_projection C4 chain is packet-local canonical repo evidence, source-freeze evidence under docs_tmp/phase_15/source_freezes, or a named target command/probe artifact. Scratch/tmp/shared roots are not promotion evidence.",
+            "schema_version": "bb.e4.evidence_manifest.v1"
+          },
+          "node_gate": {
+            "accepted": true,
+            "catalog_binding_pending": [],
+            "claimed_scope": {
+              "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+              "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+              "plain": true,
+              "projection_boundary": "host-visible projection-only; kernel_truth=false",
+              "provider_model": "no-provider",
+              "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+              "sandbox_mode": "read-only",
+              "target_family": "oh_my_pi",
+              "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+              "terminal_width": 100
+            },
+            "comparator_rerun": {
+              "assertion_count": 5,
+              "comparator_class": "deterministic_replay",
+              "comparator_id": "oh_my_pi_stored_report_replay",
+              "missing_assertion_ids": [],
+              "ok": true,
+              "registry": "conformance/comparators/registry.json",
+              "status_mismatch_ids": [],
+              "unexpected_assertion_ids": [],
+              "value_mismatch_ids": []
+            },
+            "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+            "error_count": 0,
+            "errors": [],
+            "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+            "gate_errors": [],
+            "hashes": {
+              "evidence_manifest": "sha256:898bdd974e128f68ee385dbff618d25505b2033a6000530f2508f71088f442f4",
+              "freeze_manifest": "sha256:6d7979a411879d2ef6ca291745bd3df35a97a72b51fdcc90088fb7b66a82a27e",
+              "freeze_manifest_row": "sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0",
+              "support_claim": "sha256:0c415a426a3f485e06603bc2a5813a1c1e3b3b6a125b1be345665608a0315872"
+            },
+            "ok": true,
+            "pin_stale_count": 0,
+            "refs": {
+              "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+              "freeze_manifest": "config/e4_target_freeze_manifest.yaml",
+              "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json"
+            },
+            "schema_version": "bb.e4.c4_chain_validation_report.v1",
+            "semantic_count": 0,
+            "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json"
+          },
+          "parity_results": {
+            "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb",
+            "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+            "failed": 0,
+            "generated_at_utc": "2026-07-04T00:00:00Z",
+            "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+            "passed": true,
+            "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+            "schema_version": "bb.e4.parity_results.v1",
+            "status": "passed",
+            "summary": "Oh-My-Pi P6.0-L6 provider-free TUI/projection gallery capture, replay, and comparator passed for exact read-only projection-only scope.",
+            "target_family": "oh_my_pi",
+            "warned": 0
+          },
           "replay_ref": {
             "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
             "errors": [],
@@ -687,180 +997,6 @@
             "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
             "warnings": []
           },
-          "comparator_ref": {
-            "assertions": [
-              {
-                "expected": {
-                  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-                  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-                  "plain": true,
-                  "projection_boundary": "host-visible projection-only; kernel_truth=false",
-                  "provider_model": "no-provider",
-                  "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-                  "sandbox_mode": "read-only",
-                  "target_family": "oh_my_pi",
-                  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
-                  "terminal_width": 100
-                },
-                "name": "scope_matches_exact_claim",
-                "observed": {
-                  "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-                  "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-                  "plain": true,
-                  "projection_boundary": "host-visible projection-only; kernel_truth=false",
-                  "provider_model": "no-provider",
-                  "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-                  "sandbox_mode": "read-only",
-                  "target_family": "oh_my_pi",
-                  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
-                  "terminal_width": 100
-                },
-                "status": "passed"
-              },
-              {
-                "expected": {
-                  "all_commands_exit_zero": true,
-                  "command_count": 5
-                },
-                "name": "commands_exit_zero",
-                "observed": {
-                  "all_commands_exit_zero": true,
-                  "command_count": 5
-                },
-                "status": "passed"
-              },
-              {
-                "expected": {
-                  "bash_error_exit_visible": true,
-                  "bash_error_heading": true,
-                  "bash_error_state_label": true,
-                  "plain_stdout_ansi_absent": true,
-                  "read_success_heading": true,
-                  "read_success_output_box": true,
-                  "read_success_state_label": true,
-                  "report_tool_issue_heading": true,
-                  "report_tool_issue_result_visible": true,
-                  "report_tool_issue_state_label": true
-                },
-                "name": "plain_gallery_stdout_contains_lifecycle_frames",
-                "observed": {
-                  "bash_error_exit_visible": true,
-                  "bash_error_heading": true,
-                  "bash_error_state_label": true,
-                  "plain_stdout_ansi_absent": true,
-                  "read_success_heading": true,
-                  "read_success_output_box": true,
-                  "read_success_state_label": true,
-                  "report_tool_issue_heading": true,
-                  "report_tool_issue_result_visible": true,
-                  "report_tool_issue_state_label": true
-                },
-                "status": "passed"
-              },
-              {
-                "expected": {
-                  "host_visible": true,
-                  "kernel_truth_false": true,
-                  "model_visible": false,
-                  "projection_event_count": 3,
-                  "provider_visible": false,
-                  "schema_errors": 0
-                },
-                "name": "projection_events_are_host_visible_not_kernel_truth",
-                "observed": {
-                  "host_visible": true,
-                  "kernel_truth_false": true,
-                  "model_visible": false,
-                  "projection_event_count": 3,
-                  "provider_visible": false,
-                  "schema_errors": 0
-                },
-                "status": "passed"
-              },
-              {
-                "expected": {
-                  "fetch_event_count": 0,
-                  "network_observed": false,
-                  "provider_dispatch_observed": false,
-                  "provider_model": "no-provider",
-                  "sandbox_mode": "read-only"
-                },
-                "name": "provider_network_scope_limited",
-                "observed": {
-                  "fetch_event_count": 0,
-                  "network_observed": false,
-                  "provider_dispatch_observed": false,
-                  "provider_model": "no-provider",
-                  "sandbox_mode": "read-only"
-                },
-                "status": "passed"
-              }
-            ],
-            "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-            "details": [
-              {
-                "detail": "Comparator scope contains only the named Oh-My-Pi P6.0-L6 gallery/TUI projection lane and rejects broad OMP, provider, memory, task-routing, browser, or kernel-truth support.",
-                "name": "scope_is_exact_projection_lane",
-                "status": "passed"
-              },
-              {
-                "detail": "Frozen target `omp gallery` rendered read success, bash error, and report_tool_issue success lifecycle frames to deterministic plain stdout at width 100.",
-                "name": "gallery_plain_projection_present",
-                "status": "passed"
-              },
-              {
-                "detail": "Replay maps stdout to bb.projection_event.v1 records with kernel_truth=false, host visibility true, and model/provider visibility false.",
-                "name": "projection_only_boundary",
-                "status": "passed"
-              },
-              {
-                "detail": "Provider credential environment variables were scrubbed and the target probe observed zero fetch/provider dispatch events.",
-                "name": "provider_free_packet",
-                "status": "passed"
-              }
-            ],
-            "failed": 0,
-            "generated_at_utc": "2026-07-04T00:00:00Z",
-            "input_hashes": {
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json": "sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json": "sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json": "sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json": "sha256:9b8da9aa7be53a52f049968340a7f25d84b146af2d581c494c25babbcbdd39a4",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json": "sha256:9353515d79728afa3abe319b5ca2c9f7fb19ac85bbea63fc4b813fdb19d12f87"
-            },
-            "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-            "passed": true,
-            "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-            "schema_version": "bb.e4.comparator_report.v1",
-            "scope": {
-              "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-              "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-              "plain": true,
-              "projection_boundary": "host-visible projection-only; kernel_truth=false",
-              "provider_model": "no-provider",
-              "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-              "sandbox_mode": "read-only",
-              "target_family": "oh_my_pi",
-              "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
-              "terminal_width": 100
-            },
-            "target_family": "oh_my_pi",
-            "warned": 0
-          },
-          "parity_results": {
-            "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb",
-            "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-            "failed": 0,
-            "generated_at_utc": "2026-07-04T00:00:00Z",
-            "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-            "passed": true,
-            "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-            "schema_version": "bb.e4.parity_results.v1",
-            "status": "passed",
-            "summary": "Oh-My-Pi P6.0-L6 provider-free TUI/projection gallery capture, replay, and comparator passed for exact read-only projection-only scope.",
-            "target_family": "oh_my_pi",
-            "warned": 0
-          },
           "secret_scan_report": {
             "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
             "findings": [],
@@ -900,62 +1036,16 @@
             "status": "passed",
             "target_family": "oh_my_pi"
           },
-          "validator_output": {
-            "accepted": true,
-            "artifact_hashes": {
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json": "sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json": "sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json": "sha256:af9038e2ba67a051180f0dd2279567e6434ffb3a789ad05032314b6b318be5a8",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json": "sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json": "sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json": "sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json": "sha256:9b8da9aa7be53a52f049968340a7f25d84b146af2d581c494c25babbcbdd39a4",
-              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json": "sha256:9353515d79728afa3abe319b5ca2c9f7fb19ac85bbea63fc4b813fdb19d12f87"
-            },
-            "checks": [
-              {
-                "name": "raw_capture_present",
-                "passed": true
-              },
-              {
-                "name": "replay_passed",
-                "passed": true
-              },
-              {
-                "name": "comparator_assertions_passed",
-                "passed": true
-              },
-              {
-                "name": "secret_scan_passed",
-                "passed": true
-              },
-              {
-                "name": "provider_free_network_free",
-                "passed": true
-              },
-              {
-                "name": "projection_events_host_visible_not_kernel_truth",
-                "passed": true
-              }
-            ],
-            "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-            "errors": [],
-            "exit_status": "passed",
-            "generated_at_utc": "2026-07-04T00:00:00Z",
-            "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-            "ok": true,
-            "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-            "schema_version": "bb.e4.c4_prevalidation_report.v1",
-            "target_family": "oh_my_pi"
-          },
           "support_claim_ref": {
             "acceptance_rationale": "The governed claim is limited to exact gallery stdout projections for read success, bash error, and report_tool_issue success. The packet contains raw command reports, replay normalization into bb.projection_event.v1 with kernel_truth=false, comparator pass, parity result, packet-local secret scan, validator-output hash, and ledger-row freshness.",
             "accepted": true,
             "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
             "catalog_binding": {
-              "catalog_hash": "sha256:ca6f45ce8823c8ffe4f29210c66c11d7ecca08240ad8b3b5108c80fac445bffe",
               "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-              "catalog_revision": 9
+              "catalog_revision": 12,
+              "segment_hash": "sha256:3a78af15d0aa9b85c031ea2d372a452c8a60f420161c377587a74974ad94fde3",
+              "segment_id": "oh_my_pi_p6_0_l6_tui_projection",
+              "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
             },
             "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
             "claim_semantics": {
@@ -1004,7 +1094,6 @@
               ]
             },
             "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb",
-            "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
             "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
             "exclusion_facets": {
               "excluded_behavior_classes": [
@@ -1034,12 +1123,11 @@
             "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l6_tui_projection_v1#sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0",
             "generated_at_utc": "2026-07-04T00:00:00Z",
             "kind": "target_support",
-            "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
             "ledger_row_refs": [
-              "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_55bf4adc8ee7717b#sha256:190f8401fe003f785d6da01fb6e28923259f02c95dd28a6d8edd8514b6212add"
+              "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_55bf4adc8ee7717b#sha256:c61c8502286d07a7596e92f05e05b7893e5002630a05534940a1d1bf9641f557"
             ],
             "metadata": {
-              "generated_from_schema_version": "bb.e4.support_claim.v2",
+              "generated_from_schema_version": "bb.e4.support_claim.v4",
               "legacy_scope": {
                 "plain": true,
                 "projection_boundary": "host-visible projection-only; kernel_truth=false",
@@ -1049,7 +1137,6 @@
             },
             "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json#sha256:af9038e2ba67a051180f0dd2279567e6434ffb3a789ad05032314b6b318be5a8",
             "phase_label": "P6",
-            "provider_model": "no-provider",
             "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c",
             "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
             "reverify_command": {
@@ -1068,155 +1155,95 @@
               ],
               "cwd": "."
             },
-            "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-            "sandbox_mode": "read-only",
-            "schema_version": "bb.e4.support_claim.v2",
+            "schema_version": "bb.e4.support_claim.v4",
             "scope": {
               "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
               "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
               "provider_model": "no-provider",
               "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
               "sandbox_mode": "read-only",
+              "target_family": "oh_my_pi",
               "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
             },
             "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json#sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b",
-            "source_freeze_ref": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+            "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
             "summary": "Oh-My-Pi 16.2.13 provider-free `omp gallery --plain` host TUI/tool-surface projection is accepted only for the named P6.0-L6 lane, run, config, target version, fixed terminal width, selected renderer lifecycle states, and read-only projection-only scope.",
-            "target_family": "oh_my_pi",
-            "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
             "validation_refs": [
               "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json#sha256:00458fae1e0b58c2a399b3fa06e834be5d60ba08734934615c3d98d4193bc566"
             ]
           },
-          "evidence_manifest": {
-            "artifacts": [
+          "validator_output": {
+            "accepted": true,
+            "artifact_hashes": {
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json": "sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json": "sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json": "sha256:af9038e2ba67a051180f0dd2279567e6434ffb3a789ad05032314b6b318be5a8",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json": "sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json": "sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json": "sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json": "sha256:9b8da9aa7be53a52f049968340a7f25d84b146af2d581c494c25babbcbdd39a4",
+              "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json": "sha256:9353515d79728afa3abe319b5ca2c9f7fb19ac85bbea63fc4b813fdb19d12f87"
+            },
+            "checks": [
               {
-                "path": "config/e4_target_freeze_manifest.yaml",
-                "role": "freeze_manifest",
-                "sha256": "sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0"
+                "name": "raw_capture_present",
+                "passed": true
               },
               {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json",
-                "role": "capture_ref",
-                "sha256": "sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9"
+                "name": "replay_passed",
+                "passed": true
               },
               {
-                "derived_from": [
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
-                ],
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json",
-                "role": "replay_ref",
-                "sha256": "sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9"
+                "name": "comparator_assertions_passed",
+                "passed": true
               },
               {
-                "derived_from": [
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json#sha256:b539af6481521b3f4a1e05f3a3ce6c88fa6ee353671253f8d66d4fc1cca2f6a9",
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json#sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
-                ],
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json",
-                "role": "comparator_ref",
-                "sha256": "sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb"
+                "name": "secret_scan_passed",
+                "passed": true
               },
               {
-                "derived_from": [
-                  "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json#sha256:b6a8adcbad6c9fb0d748dc82960e37908bd7920039ed157671c63f56c32a79fb"
-                ],
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json",
-                "role": "parity_results",
-                "sha256": "sha256:af9038e2ba67a051180f0dd2279567e6434ffb3a789ad05032314b6b318be5a8"
+                "name": "provider_free_network_free",
+                "passed": true
               },
               {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json",
-                "role": "secret_scan_report",
-                "sha256": "sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b"
-              },
-              {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json",
-                "role": "validator_output",
-                "sha256": "sha256:00458fae1e0b58c2a399b3fa06e834be5d60ba08734934615c3d98d4193bc566"
-              },
-              {
-                "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
-                "role": "support_claim_ref",
-                "sha256": "sha256:aae3052ef9d03093874642ee41387f4df32f20cbf1c541491f90a10cc1dab7fb"
-              },
-              {
-                "bytes": 124871,
-                "exists": true,
-                "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
-                "role": "atomic_feature_ledger",
-                "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
-              },
-              {
-                "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",
-                "role": "projection_events",
-                "sha256": "sha256:64e7a2a23044207c73038599ffb725bd452b2e9669b34ef2d8fa08c75bc5135c"
+                "name": "projection_events_host_visible_not_kernel_truth",
+                "passed": true
               }
             ],
-            "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
             "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-            "forbidden_roots_checked": [
-              "scratch",
-              "tmp",
-              "scratch_runs",
-              "/shared_folders"
-            ],
-            "generated_at_utc": "2026-07-04T00:00:00Z",
-            "hash_algorithm": "sha256",
-            "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-            "manifest_scope_note": "Every governed artifact for this oh_my_pi_p6_0_l6_tui_projection C4 chain is packet-local canonical repo evidence, source-freeze evidence under docs_tmp/phase_15/source_freezes, or a named target command/probe artifact. Scratch/tmp/shared roots are not promotion evidence.",
-            "schema_version": "bb.e4.evidence_manifest.v1"
-          },
-          "node_gate": {
-            "accepted": true,
-            "catalog_binding_pending": [],
-            "claimed_scope": {
-              "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-              "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
-              "plain": true,
-              "projection_boundary": "host-visible projection-only; kernel_truth=false",
-              "provider_model": "no-provider",
-              "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-              "sandbox_mode": "read-only",
-              "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
-              "terminal_width": 100
-            },
-            "comparator_rerun": {
-              "assertion_count": 5,
-              "comparator_class": "deterministic_replay",
-              "comparator_id": "oh_my_pi_stored_report_replay",
-              "missing_assertion_ids": [],
-              "ok": true,
-              "registry": "breadboard_repo_integration_main_20260326/conformance/comparators/registry.json",
-              "status_mismatch_ids": [],
-              "unexpected_assertion_ids": [],
-              "value_mismatch_ids": []
-            },
-            "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
-            "error_count": 0,
             "errors": [],
-            "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
-            "gate_errors": [],
-            "hashes": {
-              "evidence_manifest": "sha256:72655dd099d5067784a645cc91158ad1508718c046cfe0b84cd8c75a9c4d3314",
-              "freeze_manifest": "sha256:de628cd1c653dca7a011c3953f678f1c630c73b1647dd673801ddbeaa037d0e5",
-              "freeze_manifest_row": "sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0",
-              "support_claim": "sha256:2675a6a33fafba27a537ce3700f0a07d4e3986d37769b90fc7bf0ab7fa436222"
-            },
+            "exit_status": "passed",
+            "generated_at_utc": "2026-07-04T00:00:00Z",
+            "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
             "ok": true,
-            "pin_stale_count": 0,
-            "refs": {
-              "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
-              "freeze_manifest": "breadboard_repo_integration_main_20260326/config/e4_target_freeze_manifest.yaml",
-              "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json"
-            },
-            "schema_version": "bb.e4.c4_chain_validation_report.v1",
-            "semantic_count": 0,
-            "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json"
+            "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+            "schema_version": "bb.e4.c4_prevalidation_report.v1",
+            "target_family": "oh_my_pi"
           }
         },
+        "record_envelopes": {
+          "projection_events": {
+            "fields": {
+              "config_id": "oh_my_pi_p6_0_l6_tui_projection_v1",
+              "generated_at_utc": "2026-07-04T00:00:00Z",
+              "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+              "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+              "schema_version": "bb.e4.projection_events_manifest.v1"
+            },
+            "records": [
+              "read_success_projection_event",
+              "bash_error_projection_event",
+              "report_tool_issue_success_projection_event"
+            ],
+            "records_field": "records"
+          }
+        },
+        "record_roles": {},
+        "required_records": [
+          "read_success_projection_event",
+          "bash_error_projection_event",
+          "report_tool_issue_success_projection_event"
+        ],
         "required_roles": [
           "projection_events",
           "capture_ref",
@@ -1229,83 +1256,100 @@
           "evidence_manifest",
           "node_gate"
         ]
+      },
+      "projection_constants": {
+        "p6_l6_tui_projection": {
+          "events": [
+            {
+              "lifecycle_state": "success",
+              "record_key": "read_success_projection_event",
+              "report_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.command_report.json",
+              "stdout_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.stdout.txt",
+              "surface_kind": "tool_surface",
+              "tool": "read"
+            },
+            {
+              "lifecycle_state": "error",
+              "record_key": "bash_error_projection_event",
+              "report_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.command_report.json",
+              "stdout_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.stdout.txt",
+              "surface_kind": "tool_surface",
+              "tool": "bash"
+            },
+            {
+              "lifecycle_state": "success",
+              "record_key": "report_tool_issue_success_projection_event",
+              "report_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.command_report.json",
+              "stdout_path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.stdout.txt",
+              "surface_kind": "tool_surface",
+              "tool": "report_tool_issue"
+            }
+          ],
+          "generated_at_utc": "2026-07-04T00:00:00Z",
+          "payload_media_type": "text/plain; charset=utf-8",
+          "primary_source_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/cli/gallery-cli.ts",
+          "source_refs": [
+            "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/commands/gallery.ts",
+            "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/modes/components/tool-execution.ts"
+          ]
+        }
+      },
+      "projection_module": "scripts.e4_parity.adapters.oh_my_pi_l6_projection",
+      "record_builders": [
+        {
+          "id": "p6_l6_tui_projection",
+          "projection": "p6_l6_tui_projection",
+          "records": [
+            "read_success_projection_event",
+            "bash_error_projection_event",
+            "report_tool_issue_success_projection_event"
+          ],
+          "schema_version": "bb.projection_event.v1",
+          "source": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw"
+        }
+      ],
+      "roles": {
+        "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json",
+        "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/comparator_report.json",
+        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+        "node_gate": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
+        "parity_results": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/parity_results.json",
+        "projection_events": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",
+        "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json",
+        "secret_scan_report": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json",
+        "support_claim_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+        "validator_output": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/prevalidation_report.json"
       }
-    }
+    },
+    "mode": "identity",
+    "translator": "identity"
+  },
+  "package_ref": null,
+  "points": 20,
+  "provenance": {
+    "provenance_kind": "git_commit",
+    "source_paths": [
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json",
+      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
+      "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+      "scripts/e4_parity/adapters/oh_my_pi_projection_packet.py",
+      "scripts/e4_parity/adapters/oh_my_pi_l6_projection.py",
+      "contracts/kernel/schemas/bb.projection_event.v1.schema.json"
+    ],
+    "upstream_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "upstream_commit_date": "2026-07-01T18:03:42Z",
+    "upstream_release_label": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "upstream_repo": "https://github.com/can1357/oh-my-pi"
   },
   "replay": {
-    "mode": "stored",
     "artifacts": [
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/bb_replay_result.json"
     ],
-    "session": null,
-    "comparator_class": "semantic"
+    "comparator_class": "semantic",
+    "mode": "stored",
+    "session": null
   },
-  "compare": {
-    "comparator": "oh_my_pi_stored_report_replay",
-    "config": {
-      "assertions": [
-        {
-          "id": "ok_true",
-          "path": "ok",
-          "op": "equals",
-          "value": true,
-          "description": "comparator report is ok"
-        },
-        {
-          "id": "no_errors",
-          "path": "errors",
-          "op": "length_equals",
-          "value": 0,
-          "description": "comparator report has no errors"
-        },
-        {
-          "id": "config_id_matches",
-          "path": "claimed_scope.config_id",
-          "op": "equals",
-          "value": "oh_my_pi_p6_0_l6_tui_projection_v1",
-          "description": "claimed scope config id matches"
-        },
-        {
-          "id": "lane_id_matches",
-          "path": "claimed_scope.lane_id",
-          "op": "equals",
-          "value": "oh_my_pi_p6_0_l6_tui_projection",
-          "description": "claimed scope lane id matches"
-        },
-        {
-          "id": "provider_model_matches",
-          "path": "claimed_scope.provider_model",
-          "op": "equals",
-          "value": "no-provider",
-          "description": "claimed scope provider model matches"
-        },
-        {
-          "id": "sandbox_mode_matches",
-          "path": "claimed_scope.sandbox_mode",
-          "op": "equals",
-          "value": "read-only",
-          "description": "claimed scope sandbox mode matches"
-        }
-      ]
-    }
-  },
-  "claim": {
-    "scope": {
-      "behaviors": [
-        "bb.projection_event.v1"
-      ],
-      "surfaces": [
-        "P6 exact-scope C4 support chain"
-      ]
-    },
-    "exclusions": []
-  },
-  "ct": {
-    "description": "Oh-My-Pi 16.2.13 provider-free P6.0-L6 TUI/gallery projection exact-scope C4 chain validation.",
-    "timeout_seconds": 180,
-    "test_id": "CT-P6-OHMYPI-L6-TUI-PROJECTION-C4"
-  },
-  "artifacts_root": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",
@@ -1322,62 +1366,13 @@
     ],
     "cwd": "."
   },
-  "metadata": {
-    "legacy_inventory_ct_test_id": "CT-P6-OHMYPI-L6-TUI-PROJECTION-C4",
-    "provider_model": "no-provider",
-    "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
-    "sandbox_mode": "read-only"
-  },
   "run": {
-    "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
     "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
     "sandbox_mode": "read-only"
   },
-  "provenance": {
-    "provenance_kind": "git_commit",
-    "upstream_repo": "https://github.com/can1357/oh-my-pi",
-    "upstream_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
-    "upstream_commit_date": "2026-07-01T18:03:42Z",
-    "upstream_release_label": "@oh-my-pi/pi-coding-agent@16.2.13",
-    "source_paths": [
-      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json",
-      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json",
-      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
-      "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
-      "scripts/e4_parity/adapters/oh_my_pi_projection_packet.py",
-      "scripts/e4_parity/adapters/oh_my_pi_l6_projection.py",
-      "contracts/kernel/schemas/bb.projection_event.v1.schema.json"
-    ]
-  },
-  "acceptance": {
-    "behavior_family": "projection",
-    "semantic_key": "oh_my_pi_p6_0_l6_tui_projection",
-    "target": "oh_my_pi",
-    "assertions": [
-      {
-        "id": "acceptance_ok_true",
-        "description": "comparator report is ok"
-      },
-      {
-        "id": "acceptance_no_errors",
-        "description": "comparator report has no errors"
-      },
-      {
-        "id": "acceptance_config_id_matches",
-        "description": "claimed scope config id matches"
-      },
-      {
-        "id": "acceptance_lane_id_matches",
-        "description": "claimed scope lane id matches"
-      },
-      {
-        "id": "acceptance_provider_model_matches",
-        "description": "claimed scope provider model matches"
-      },
-      {
-        "id": "acceptance_sandbox_mode_matches",
-        "description": "claimed scope sandbox mode matches"
-      }
-    ]
-  }
+  "schema_version": "bb.e4.lane_def.v2",
+  "status": "accepted",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
 }

@@ -57,6 +57,78 @@ class LaneDefValidationError(ValueError):
     pass
 
 
+def _record_builders(lane_def: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    normalize = lane_def.get("normalize")
+    config = normalize.get("config") if isinstance(normalize, Mapping) else None
+    builders = config.get("record_builders") if isinstance(config, Mapping) else None
+    if builders is None:
+        return ()
+    if not isinstance(builders, list):
+        raise LaneDefValidationError(
+            "normalize.config.record_builders must be a list"
+        )
+    return tuple(builder for builder in builders if isinstance(builder, Mapping))
+
+
+def record_builder_source_roles(
+    lane_def: Mapping[str, Any],
+    *,
+    verbatim_only: bool = False,
+) -> dict[str, str]:
+    """Return the normalized role-to-source mapping declared by record builders."""
+    sources: dict[str, str] = {}
+    for builder in _record_builders(lane_def):
+        source_roles = builder.get("source_roles")
+        if not isinstance(source_roles, Mapping):
+            continue
+        roles = (
+            builder.get("verbatim_source_roles", [])
+            if verbatim_only
+            else source_roles
+        )
+        if not isinstance(roles, (list, Mapping)):
+            raise LaneDefValidationError(
+                "record builder verbatim_source_roles must be a list"
+            )
+        for role in roles:
+            if not isinstance(role, str):
+                raise LaneDefValidationError(
+                    f"record builder source role must be a string: {role!r}"
+                )
+            path = source_roles.get(role)
+            if not isinstance(path, str):
+                raise LaneDefValidationError(
+                    f"record builder source_roles.{role} must be a path"
+                )
+            previous = sources.get(role)
+            if previous is not None and previous != path:
+                raise LaneDefValidationError(
+                    f"record builder source role {role!r} maps to multiple paths"
+                )
+            sources[role] = path
+    return sources
+
+
+def record_builder_source_paths(
+    lane_def: Mapping[str, Any],
+    *,
+    verbatim_only: bool = False,
+) -> tuple[str, ...]:
+    """Return deduplicated source files consumed by record builders."""
+    paths = [
+        source
+        for builder in _record_builders(lane_def)
+        if isinstance((source := builder.get("source")), str)
+    ]
+    paths.extend(
+        record_builder_source_roles(
+            lane_def,
+            verbatim_only=verbatim_only,
+        ).values()
+    )
+    return tuple(dict.fromkeys(paths))
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
