@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T03:40:51Z",
+ "updated_at_utc": "2026-07-11T04:34:05Z",
  "items": [
   {
    "id": "A1",
@@ -464,7 +464,7 @@
      "bound_sha": "c11add8c1a11"
     }
    ],
-   "notes": "AM3: D1 ACCEPT explicitly includes ci.yml product-spine running scripts/check_phase20_freeze.py; verifier confirms the step exists and passes. [pending_integration] CI wiring merged+verified; green product-spine run URL requires a pushed PR run; 4 red product-command groups are PRE-EXISTING (exec-verified identical at base 82411af2); AM3 freeze wiring in place.",
+   "notes": "AM3: D1 ACCEPT explicitly includes ci.yml product-spine running scripts/check_phase20_freeze.py; verifier confirms the step exists and passes. [pending_integration] CI wiring merged+verified; green product-spine run URL requires a pushed PR run; 4 red product-command groups are PRE-EXISTING (exec-verified identical at base 82411af2); AM3 freeze wiring in place. | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes",
    "verifiers": [
     {
      "agent": "VerifyWsDStatic",
@@ -501,7 +501,7 @@
      "bound_sha": "c11add8c1a11"
     }
    ],
-   "notes": "[pending_integration] Nightly battery wiring merged+verified; green dispatch URL pending integration; battery/fixed-point reds are PRE-EXISTING (exec-verified).",
+   "notes": "[pending_integration] Nightly battery wiring merged+verified; green dispatch URL pending integration; battery/fixed-point reds are PRE-EXISTING (exec-verified). | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes",
    "verifiers": [
     {
      "agent": "VerifyWsDStatic",
@@ -538,7 +538,7 @@
      "bound_sha": "c11add8c1a11"
     }
    ],
-   "notes": "[pending_integration] Path filters + job graph merged+verified; D3 acceptance closes with one green PR-triggered E4-battery run on a matched-path PR (run evidence pending integration). Required-status-check activation is NOT a D3 obligation \u2014 it belongs to D5 per AM3/\u00a76.3 (needs GitHub Administration write permission; gh api PUT command recorded in D3 evidence; activation or signed human waiver owned by D5). No enforcement claimed. Reclassified per Wave2DerailAudit finding 1 (was: blocked_missing_repo_admin_credentials).",
+   "notes": "[pending_integration] Path filters + job graph merged+verified; D3 acceptance closes with one green PR-triggered E4-battery run on a matched-path PR (run evidence pending integration). Required-status-check activation is NOT a D3 obligation \u2014 it belongs to D5 per AM3/\u00a76.3 (needs GitHub Administration write permission; gh api PUT command recorded in D3 evidence; activation or signed human waiver owned by D5). No enforcement claimed. Reclassified per Wave2DerailAudit finding 1 (was: blocked_missing_repo_admin_credentials). | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes",
    "verifiers": [
     {
      "agent": "VerifyWsDStatic",
@@ -596,14 +596,15 @@
    "ws": "D",
    "title": "SDK smokes in spine; <=10min",
    "weight": 15,
-   "status": "todo",
+   "status": "blocked",
    "deps": [
     "A7",
     "D1"
    ],
    "evidence": [],
-   "notes": "",
-   "verifiers": []
+   "notes": "executable scope COMPLETE and dual-verified (static PASS @ a46a8d1a; exec amended PASS run 29139694598: both smokes green in real CI, runtime 44s <=10min, no new reds vs PR #28 comparator); required-check activation evidenced verbatim then rolled back (main restored to unprotected - leaving a known-red required check would block all merges); ACCEPT clause \"job green\" unmet SOLELY due to pre-existing baseline spine member (E4 API surface 10F/31P, fail-fast). Workflow commit merged @ head. Unblock: fix pre-existing spine members (same blocker family as D1-D3)",
+   "verifiers": [],
+   "classification": "blocked_product_defect_pre_existing"
   },
   {
    "id": "E1",
@@ -674,7 +675,7 @@
      "sha256": "4ca441a744902ddee09ee219f6abd2a35ead2f15681d38ca4f0747fff7b2a41e"
     }
    ],
-   "notes": " | plan-text grounding: \u00a71.4 L79 defines evidence dir as ../docs_tmp/phase_20/evidence/ with final refs copied into ledger; audit transcript verified there by VerifyWsE2Static (amended verdict), bound to source commit 84a71cd1 whose patch-id matches pick 26f3ffba",
+   "notes": "plan-text grounding: \u00a71.4 L79 defines evidence dir as ../docs_tmp/phase_20/evidence/ with final refs copied into ledger; audit transcript verified there by VerifyWsE2Static (amended verdict), bound to source commit 84a71cd1 whose patch-id matches pick 26f3ffba | reopened by E6 round1, resolved @ bc52b1ba merged a61868eb; commit scope audited (registry + generated census/TS + tier test only)",
    "verifiers": [
     "VerifyWsE2Static",
     "VerifyWsE2Exec"
@@ -784,7 +785,7 @@
    "ws": "E",
    "title": "workstream skeptic zero unresolved",
    "weight": 20,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "E1",
     "E2",
@@ -793,7 +794,7 @@
     "E5"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "round1 skeptic RED @ d64e0f00 (3 upheld: work_item, context_resource_pack, contract_tiers) -> E2 reopened @ bc52b1ba (2 frozen, 1 retiered to evidence) -> round2 skeptic PASS @ bc52b1ba: 16 keeps attacked all refuted (denominator 19->16: 2 frozen + 1 moved out of attacked tiers), reopen audit pass, unresolved 0; evidence E6/skeptic.json + skeptic_round2.json + E2/reopen_implementer.json",
    "verifiers": []
   },
   {
