@@ -21,6 +21,11 @@
       "from": "ReviewSP3",
       "date": "2026-07-11",
       "verbatim": "Re-verdict: APPROVED at exact head aea51859b49401bec344631fb3af13cc093ad096. Reviewed implementer.json SHA-256 7ce332812c1433012e06ab59167aa37f0c5c7a09461e947c346202a52202c53e. Prior blockers resolved: generated registry/index canonical for all 3 schemas; amended pagination list exactly equals catalog comparator estate (21 vs 21, empty set differences); ledger PIN_STALE independently recorded with F5/post-F5 rebind owner. Delta from 0fc11917 is only README.md + generated index.ts/registry.ts; clean tree. Independent rerun: 18/18 conventions+2 focused API passed; full API exactly 9 failed/32 passed. Could not rerun TS generator because tsx dependency absent (`npm exec --no -- tsx --version` canceled missing package); static generated output and recorded two-pass hashes checked. Residual generated-artifact CI production remains nonblocking integration risk."
+    },
+    {
+      "from": "ReviewSP2",
+      "date": "2026-07-11",
+      "verbatim_excerpt": "APPROVED at the requested immutable head [4210f02e...]; reviewed evidence .../SP2/implementer.json with SHA-256 5215b003d2901175a33cf067d7a8d921d1b6f8f869a1344c447e4439545d0c56; sideband_fix_ok/classification_passthrough_ok/regen_rollback_ok/no_scope_creep/deferred_items_legit all true. Full yield: agent://ReviewSP2"
     }
   ]
 }

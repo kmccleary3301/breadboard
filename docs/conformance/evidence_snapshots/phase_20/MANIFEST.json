@@ -61,6 +61,17 @@
       "sha256": "71a7b6609ba80b45ddb39bb9b4d262ebd3e3047459bab1c737582742f7478f21",
       "status": "orchestrator-materialized",
       "detail": "transcription from ReviewSP3 re-verdict IRC + agent://ReviewSP3"
+    },
+    "SP2/implementer.json": {
+      "sha256": "5215b003d2901175a33cf067d7a8d921d1b6f8f869a1344c447e4439545d0c56",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP2 verdict names this sha256",
+      "reviewed_code_sha": "4210f02e"
+    },
+    "SP2/reviewer.json": {
+      "sha256": "8c294d9228a45d22221764d9c9ed71687ccfb0e30e1f63690c5f998d73e7d2bf",
+      "status": "orchestrator-materialized",
+      "detail": "transcription from agent://ReviewSP2"
     }
   },
   "attestations_file": "ATTESTATIONS.json"
