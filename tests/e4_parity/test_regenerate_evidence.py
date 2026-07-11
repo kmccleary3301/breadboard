@@ -1168,10 +1168,15 @@ def test_prepare_candidate_root_preserves_dangling_symlinks_and_excludes_untrack
     ).exists()
 
 
-def test_prepare_candidate_root_maps_workspace_docs_tmp_read_beside_candidate_root(
+def test_prepare_candidate_root_seeds_bare_docs_tmp_checkout_local_with_workspace_mirror(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    # Bare "docs_tmp/..." reads are checkout-local (lane adapter convention);
+    # when the checkout estate is absent they are provisioned from the
+    # workspace estate, and the seeded bytes are hardlink-mirrored beside the
+    # candidate root so validator workspace-level resolution sees the same
+    # single copy.
     workspace = tmp_path / "workspace"
     source_root = workspace / "sp2b_wt"
     source_root.mkdir(parents=True)
@@ -1192,10 +1197,11 @@ def test_prepare_candidate_root_maps_workspace_docs_tmp_read_beside_candidate_ro
 
     driver._prepare_candidate_root(candidate_root, (stage,))
 
-    assert (
-        candidate_root.parent / "docs_tmp" / "phase_15" / "input.json"
-    ).read_text() == '{"source": "workspace"}\n'
-    assert not (candidate_root / "docs_tmp").exists()
+    seeded = candidate_root / "docs_tmp" / "phase_15" / "input.json"
+    mirrored = candidate_root.parent / "docs_tmp" / "phase_15" / "input.json"
+    assert seeded.read_text() == '{"source": "workspace"}\n'
+    assert mirrored.read_text() == '{"source": "workspace"}\n'
+    assert seeded.stat().st_ino == mirrored.stat().st_ino
 
 
 def test_prepare_candidate_root_rejects_gitlink_without_copying_its_worktree(
