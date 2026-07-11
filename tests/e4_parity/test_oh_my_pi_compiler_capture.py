@@ -195,8 +195,12 @@ def test_record_builder_descriptors_select_only_configured_projections_in_list_o
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = tmp_path / "source.json"
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    source = checkout / "source.json"
     source.write_text('{"source": true}\n', encoding="utf-8")
+    source_ref = source.relative_to(checkout).as_posix()
+    monkeypatch.setattr(compiler, "ROOT", checkout)
     configured = ("p3_8_projection_event", "p3_2_context_resource_pack")
     calls: list[str] = []
 
@@ -225,7 +229,7 @@ def test_record_builder_descriptors_select_only_configured_projections_in_list_o
                 "id": projection_id,
                 "projection": projection_id,
                 "schema_version": f"bb.test_projection_{index}.v1",
-                "source": str(source),
+                "source": source_ref,
                 "records": [record_key],
             }
         )
@@ -235,7 +239,7 @@ def test_record_builder_descriptors_select_only_configured_projections_in_list_o
         "config_id": "compiler_projection_selection_v1",
         "target_family": "oh_my_pi",
         "target_version": "test",
-        "capture": {"inputs": [str(source)]},
+        "capture": {"inputs": [source_ref]},
         "normalize": {"config": {"record_builders": builders, "roles": {}}},
         "run": {"run_id": "run", "provider_model": "none", "sandbox_mode": "read-only"},
     }
@@ -247,6 +251,14 @@ def test_record_builder_descriptors_select_only_configured_projections_in_list_o
     assert selected_builders == tuple(builders)
     assert calls == list(configured)
     assert [record["projection"] for record in records.values()] == list(configured)
+
+def test_projection_inputs_reject_absolute_paths(tmp_path: Path) -> None:
+    source = tmp_path / "source.json"
+    source.write_text('{"source": true}\n', encoding="utf-8")
+    lane = {"capture": {"inputs": [str(source)]}, "normalize": {"config": {}}}
+
+    with pytest.raises(ValueError, match="capture input must be relative to checkout"):
+        compiler._load_projection_inputs(lane)
 
 
 @pytest.mark.parametrize(
