@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -70,6 +71,36 @@ def test_stage_graph_is_topological_and_cataloged() -> None:
     assert all(stage.note and "config/e4_lanes" in stage.note for stage in lane_stages)
     assert positions["catalog_full"] < positions[lane_stages[0].stage_id]
     assert positions[lane_stages[-1].stage_id] < positions["ct_scenarios"]
+
+
+def test_canonical_transaction_groups_isolate_candidate_rebind_and_final_c4() -> None:
+    """The canonical DAG is first validated as one scratch candidate, then rebound and finally C4-validated."""
+    candidate_stages, canonical_rebind_stages, final_c4_stages = (
+        driver._canonical_transaction_groups(driver.STAGES)
+    )
+
+    assert [stage.stage_id for stage in candidate_stages] == [
+        stage.stage_id for stage in driver.STAGES
+    ]
+    source_north_star = next(
+        stage for stage in driver.STAGES if stage.stage_id == "north_star_proof_packets"
+    )
+    candidate_north_star = next(
+        stage for stage in candidate_stages if stage.stage_id == "north_star_proof_packets"
+    )
+    source_stage_value = source_north_star.argv[source_north_star.argv.index("--stage") + 1]
+    candidate_stage_value = candidate_north_star.argv[
+        candidate_north_star.argv.index("--stage") + 1
+    ]
+
+    assert source_stage_value == "capture"
+    assert source_north_star.argv.count("--defer-derived-writes") == 1
+    assert candidate_stage_value == "capture"
+    assert candidate_north_star.argv.count("--defer-derived-writes") == 1
+    assert canonical_rebind_stages[0].stage_id == "catalog_claim_binding_snapshot"
+    assert all(stage.phase != "validators" for stage in canonical_rebind_stages)
+    assert final_c4_stages
+    assert all(stage.phase == "validators" for stage in final_c4_stages)
 
 def test_report_hash_freshness_only_runs_at_release_boundary() -> None:
     positions = {stage.stage_id: index for index, stage in enumerate(driver.STAGES)}
@@ -621,3 +652,468 @@ def test_run_pipeline_stops_on_unallowed_blocker_exit(
     assert calls == [["PY", "scripts/e4_parity/build_artifact_catalog.py"], ["PY", "scripts/e4_parity/build_artifact_catalog.py"], ["PY", "ct.py"]]
     assert "FAILED stage ct exit=2" in captured.err
     assert "schema error" in captured.err
+
+
+def test_regeneration_transaction_validation_failure_preserves_accepted_write_set(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A rejected complete candidate cannot change accepted bytes or start canonical post-promotion work."""
+    accepted_a = tmp_path / "accepted" / "a.txt"
+    accepted_b = tmp_path / "accepted" / "b.txt"
+    accepted_a.parent.mkdir()
+    accepted_a.write_bytes(b"accepted-a\n")
+    accepted_b.write_bytes(b"accepted-b\n")
+    accepted_before = {accepted_a: accepted_a.read_bytes(), accepted_b: accepted_b.read_bytes()}
+    candidate_stages = (
+        driver.Stage(
+            stage_id="candidate_a",
+            phase="lane_artifacts",
+            label="candidate a",
+            argv=(driver.PYTHON, "candidate_a.py"),
+            writes=("accepted/a.txt",),
+        ),
+        driver.Stage(
+            stage_id="candidate_b",
+            phase="lane_artifacts",
+            label="candidate b",
+            argv=(driver.PYTHON, "candidate_b.py"),
+            depends_on=("candidate_a",),
+            writes=("accepted/b.txt",),
+        ),
+        driver.Stage(
+            stage_id="candidate_validate",
+            phase="reports",
+            label="validate complete candidate",
+            argv=(driver.PYTHON, "candidate_validate.py"),
+            depends_on=("candidate_b",),
+            read_only=True,
+        ),
+    )
+    post_promotion_stages = (
+        driver.Stage(
+            stage_id="canonical_rebind",
+            phase="reports",
+            label="canonical rebind",
+            argv=(driver.PYTHON, "canonical_rebind.py"),
+            read_only=True,
+        ),
+    )
+    final_c4_stages = (
+        driver.Stage(
+            stage_id="final_c4_validate",
+            phase="validators",
+            label="final C4",
+            argv=(driver.PYTHON, "final_c4_validate.py"),
+            read_only=True,
+        ),
+    )
+    calls: list[str] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        command = argv[-1]
+        calls.append(command)
+        execution_root = Path(kwargs["cwd"])
+        if command == "candidate_a.py":
+            path = execution_root / "accepted" / "a.txt"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"candidate-a\n")
+        elif command == "candidate_b.py":
+            path = execution_root / "accepted" / "b.txt"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"candidate-b\n")
+        elif command == "candidate_validate.py":
+            assert (execution_root / "accepted" / "a.txt").read_bytes() == b"candidate-a\n"
+            assert (execution_root / "accepted" / "b.txt").read_bytes() == b"candidate-b\n"
+            return subprocess.CompletedProcess(argv, 3, stdout="", stderr="candidate invalid\n")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    runner = getattr(driver, "_run_regeneration_transaction", None)
+    assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
+    monkeypatch.setattr(driver, "ROOT", tmp_path)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver.subprocess, "run", fake_run)
+
+    code, results = runner(
+        candidate_stages,
+        post_promotion_stages,
+        final_c4_stages,
+        python="PY",
+    )
+
+    assert code == 3
+    assert [result.stage_id for result in results] == [
+        "candidate_a",
+        "candidate_b",
+        "candidate_validate",
+    ]
+    assert calls == ["candidate_a.py", "candidate_b.py", "candidate_validate.py"]
+    assert {path: path.read_bytes() for path in accepted_before} == accepted_before
+
+
+def test_regeneration_transaction_rolls_back_all_paths_when_promotion_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A failed multi-path promotion restores old files and removes newly created accepted destinations."""
+    accepted_a = tmp_path / "accepted" / "a.txt"
+    accepted_new = tmp_path / "accepted" / "new.txt"
+    blocking_path = tmp_path / "accepted" / "zz_blocked"
+    accepted_a.parent.mkdir()
+    accepted_a.write_bytes(b"accepted-a\n")
+    blocking_path.write_bytes(b"accepted-blocker\n")
+    candidate_stages = (
+        driver.Stage(
+            stage_id="candidate_write_set",
+            phase="lane_artifacts",
+            label="complete candidate write set",
+            argv=(driver.PYTHON, "candidate_write_set.py"),
+            writes=(
+                "accepted/a.txt",
+                "accepted/new.txt",
+                "accepted/zz_blocked/b.txt",
+            ),
+        ),
+        driver.Stage(
+            stage_id="candidate_validate",
+            phase="reports",
+            label="validate complete candidate",
+            argv=(driver.PYTHON, "candidate_validate.py"),
+            depends_on=("candidate_write_set",),
+            read_only=True,
+        ),
+    )
+    post_promotion_stages = (
+        driver.Stage(
+            stage_id="canonical_rebind",
+            phase="reports",
+            label="canonical rebind",
+            argv=(driver.PYTHON, "canonical_rebind.py"),
+            read_only=True,
+        ),
+    )
+    final_c4_stages = (
+        driver.Stage(
+            stage_id="final_c4_validate",
+            phase="validators",
+            label="final C4",
+            argv=(driver.PYTHON, "final_c4_validate.py"),
+            read_only=True,
+        ),
+    )
+    calls: list[str] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        command = argv[-1]
+        calls.append(command)
+        execution_root = Path(kwargs["cwd"])
+        if command == "candidate_write_set.py":
+            accepted_dir = execution_root / "accepted"
+            accepted_dir.mkdir(parents=True, exist_ok=True)
+            (accepted_dir / "a.txt").write_bytes(b"candidate-a\n")
+            (accepted_dir / "new.txt").write_bytes(b"candidate-new\n")
+            scratch_blocker = accepted_dir / "zz_blocked"
+            if scratch_blocker.is_file():
+                scratch_blocker.unlink()
+            scratch_blocker.mkdir(exist_ok=True)
+            (scratch_blocker / "b.txt").write_bytes(b"candidate-b\n")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    runner = getattr(driver, "_run_regeneration_transaction", None)
+    assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
+    monkeypatch.setattr(driver, "ROOT", tmp_path)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver.subprocess, "run", fake_run)
+
+    code, results = runner(
+        candidate_stages,
+        post_promotion_stages,
+        final_c4_stages,
+        python="PY",
+    )
+
+    assert code != 0
+    assert [result.stage_id for result in results] == [
+        "candidate_write_set",
+        "candidate_validate",
+    ]
+    assert calls == ["candidate_write_set.py", "candidate_validate.py"]
+    assert accepted_a.read_bytes() == b"accepted-a\n"
+    assert not accepted_new.exists()
+    assert blocking_path.read_bytes() == b"accepted-blocker\n"
+
+
+def test_regeneration_transaction_promotes_before_rebind_then_runs_final_c4(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Validation sees a complete scratch candidate while rebind and final C4 see only the promoted write set."""
+    accepted_a = tmp_path / "accepted" / "a.txt"
+    accepted_b = tmp_path / "accepted" / "b.txt"
+    accepted_a.parent.mkdir()
+    accepted_a.write_bytes(b"accepted-a\n")
+    accepted_b.write_bytes(b"accepted-b\n")
+    candidate_stages = (
+        driver.Stage(
+            stage_id="candidate_write_set",
+            phase="lane_artifacts",
+            label="complete candidate write set",
+            argv=(driver.PYTHON, "candidate_write_set.py"),
+            writes=("accepted/a.txt", "accepted/b.txt"),
+        ),
+        driver.Stage(
+            stage_id="candidate_validate",
+            phase="reports",
+            label="validate complete candidate",
+            argv=(driver.PYTHON, "candidate_validate.py"),
+            depends_on=("candidate_write_set",),
+            read_only=True,
+        ),
+    )
+    post_promotion_stages = (
+        driver.Stage(
+            stage_id="canonical_rebind",
+            phase="reports",
+            label="canonical rebind",
+            argv=(driver.PYTHON, "canonical_rebind.py"),
+            read_only=True,
+        ),
+    )
+    final_c4_stages = (
+        driver.Stage(
+            stage_id="final_c4_validate",
+            phase="validators",
+            label="final C4",
+            argv=(driver.PYTHON, "final_c4_validate.py"),
+            read_only=True,
+        ),
+    )
+    observations: list[tuple[str, bytes, bytes]] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        command = argv[-1]
+        execution_root = Path(kwargs["cwd"])
+        if command == "candidate_write_set.py":
+            candidate_dir = execution_root / "accepted"
+            candidate_dir.mkdir(parents=True, exist_ok=True)
+            (candidate_dir / "a.txt").write_bytes(b"candidate-a\n")
+            (candidate_dir / "b.txt").write_bytes(b"candidate-b\n")
+        elif command == "candidate_validate.py":
+            assert (execution_root / "accepted" / "a.txt").read_bytes() == b"candidate-a\n"
+            assert (execution_root / "accepted" / "b.txt").read_bytes() == b"candidate-b\n"
+            observations.append((command, accepted_a.read_bytes(), accepted_b.read_bytes()))
+        else:
+            observations.append((command, accepted_a.read_bytes(), accepted_b.read_bytes()))
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    runner = getattr(driver, "_run_regeneration_transaction", None)
+    assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
+    monkeypatch.setattr(driver, "ROOT", tmp_path)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver.subprocess, "run", fake_run)
+
+    code, results = runner(
+        candidate_stages,
+        post_promotion_stages,
+        final_c4_stages,
+        python="PY",
+    )
+
+    assert code == 0
+    assert [result.stage_id for result in results] == [
+        "candidate_write_set",
+        "candidate_validate",
+        "canonical_rebind",
+        "final_c4_validate",
+    ]
+    assert observations == [
+        ("candidate_validate.py", b"accepted-a\n", b"accepted-b\n"),
+        ("canonical_rebind.py", b"candidate-a\n", b"candidate-b\n"),
+        ("final_c4_validate.py", b"candidate-a\n", b"candidate-b\n"),
+    ]
+
+
+def test_regeneration_transaction_rebind_failure_restores_accepted_write_set(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A canonical-rebind failure rolls back the promoted candidate and never starts final C4."""
+    accepted_a = tmp_path / "accepted" / "a.txt"
+    accepted_b = tmp_path / "accepted" / "b.txt"
+    accepted_a.parent.mkdir()
+    accepted_a.write_bytes(b"accepted-a\n")
+    accepted_b.write_bytes(b"accepted-b\n")
+    accepted_before = {accepted_a: accepted_a.read_bytes(), accepted_b: accepted_b.read_bytes()}
+    candidate_stages = (
+        driver.Stage(
+            stage_id="candidate_write_set",
+            phase="lane_artifacts",
+            label="complete candidate write set",
+            argv=(driver.PYTHON, "candidate_write_set.py"),
+            writes=("accepted/a.txt", "accepted/b.txt"),
+        ),
+        driver.Stage(
+            stage_id="candidate_validate",
+            phase="reports",
+            label="validate complete candidate",
+            argv=(driver.PYTHON, "candidate_validate.py"),
+            depends_on=("candidate_write_set",),
+            read_only=True,
+        ),
+    )
+    canonical_rebind_stages = (
+        driver.Stage(
+            stage_id="canonical_rebind",
+            phase="reports",
+            label="canonical rebind",
+            argv=(driver.PYTHON, "canonical_rebind.py"),
+            read_only=True,
+        ),
+    )
+    final_c4_stages = (
+        driver.Stage(
+            stage_id="final_c4_validate",
+            phase="validators",
+            label="final C4",
+            argv=(driver.PYTHON, "final_c4_validate.py"),
+            read_only=True,
+        ),
+    )
+    calls: list[str] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        command = argv[-1]
+        calls.append(command)
+        execution_root = Path(kwargs["cwd"])
+        if command == "candidate_write_set.py":
+            candidate_dir = execution_root / "accepted"
+            candidate_dir.mkdir(parents=True, exist_ok=True)
+            (candidate_dir / "a.txt").write_bytes(b"candidate-a\n")
+            (candidate_dir / "b.txt").write_bytes(b"candidate-b\n")
+        elif command == "canonical_rebind.py":
+            assert accepted_a.read_bytes() == b"candidate-a\n"
+            assert accepted_b.read_bytes() == b"candidate-b\n"
+            return subprocess.CompletedProcess(argv, 4, stdout="", stderr="rebind failed\n")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    runner = getattr(driver, "_run_regeneration_transaction", None)
+    assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
+    monkeypatch.setattr(driver, "ROOT", tmp_path)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver.subprocess, "run", fake_run)
+
+    code, results = runner(
+        candidate_stages,
+        canonical_rebind_stages,
+        final_c4_stages,
+        python="PY",
+    )
+
+    assert code == 4
+    assert [result.stage_id for result in results] == [
+        "candidate_write_set",
+        "candidate_validate",
+        "canonical_rebind",
+    ]
+    assert calls == [
+        "candidate_write_set.py",
+        "candidate_validate.py",
+        "canonical_rebind.py",
+    ]
+    assert {path: path.read_bytes() for path in accepted_before} == accepted_before
+
+
+def test_regeneration_transaction_final_c4_failure_restores_rebind_mutations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A final-C4 failure restores the pre-transaction bytes, including paths mutated during rebinding."""
+    accepted_a = tmp_path / "accepted" / "a.txt"
+    accepted_b = tmp_path / "accepted" / "b.txt"
+    accepted_a.parent.mkdir()
+    accepted_a.write_bytes(b"accepted-a\n")
+    accepted_b.write_bytes(b"accepted-b\n")
+    accepted_before = {accepted_a: accepted_a.read_bytes(), accepted_b: accepted_b.read_bytes()}
+    candidate_stages = (
+        driver.Stage(
+            stage_id="candidate_write_set",
+            phase="lane_artifacts",
+            label="complete candidate write set",
+            argv=(driver.PYTHON, "candidate_write_set.py"),
+            writes=("accepted/a.txt", "accepted/b.txt"),
+        ),
+        driver.Stage(
+            stage_id="candidate_validate",
+            phase="reports",
+            label="validate complete candidate",
+            argv=(driver.PYTHON, "candidate_validate.py"),
+            depends_on=("candidate_write_set",),
+            read_only=True,
+        ),
+    )
+    canonical_rebind_stages = (
+        driver.Stage(
+            stage_id="canonical_rebind",
+            phase="reports",
+            label="canonical rebind",
+            argv=(driver.PYTHON, "canonical_rebind.py"),
+            writes=("accepted/a.txt",),
+        ),
+    )
+    final_c4_stages = (
+        driver.Stage(
+            stage_id="final_c4_validate",
+            phase="validators",
+            label="final C4",
+            argv=(driver.PYTHON, "final_c4_validate.py"),
+            read_only=True,
+        ),
+    )
+    calls: list[str] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        command = argv[-1]
+        calls.append(command)
+        execution_root = Path(kwargs["cwd"])
+        if command == "candidate_write_set.py":
+            candidate_dir = execution_root / "accepted"
+            candidate_dir.mkdir(parents=True, exist_ok=True)
+            (candidate_dir / "a.txt").write_bytes(b"candidate-a\n")
+            (candidate_dir / "b.txt").write_bytes(b"candidate-b\n")
+        elif command == "canonical_rebind.py":
+            assert accepted_a.read_bytes() == b"candidate-a\n"
+            assert accepted_b.read_bytes() == b"candidate-b\n"
+            accepted_a.write_bytes(b"rebound-a\n")
+        elif command == "final_c4_validate.py":
+            assert accepted_a.read_bytes() == b"rebound-a\n"
+            assert accepted_b.read_bytes() == b"candidate-b\n"
+            return subprocess.CompletedProcess(argv, 5, stdout="", stderr="final C4 failed\n")
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    runner = getattr(driver, "_run_regeneration_transaction", None)
+    assert runner is not None, "regeneration must expose one scratch-to-accepted transaction"
+    monkeypatch.setattr(driver, "ROOT", tmp_path)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path.parent)
+    monkeypatch.setattr(driver.subprocess, "run", fake_run)
+
+    code, results = runner(
+        candidate_stages,
+        canonical_rebind_stages,
+        final_c4_stages,
+        python="PY",
+    )
+
+    assert code == 5
+    assert [result.stage_id for result in results] == [
+        "candidate_write_set",
+        "candidate_validate",
+        "canonical_rebind",
+        "final_c4_validate",
+    ]
+    assert calls == [
+        "candidate_write_set.py",
+        "candidate_validate.py",
+        "canonical_rebind.py",
+        "final_c4_validate.py",
+    ]
+    assert {path: path.read_bytes() for path in accepted_before} == accepted_before

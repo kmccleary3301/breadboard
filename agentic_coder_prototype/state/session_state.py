@@ -91,15 +91,6 @@ def _is_internal_user_message(content: Any) -> bool:
     return stripped.startswith("<VALIDATION_ERROR>") or "<WORKSPACE_TOOL_REQUIRED>" in stripped
 
 
-def _attach_event_contract(payload: Dict[str, Any], event_record: Dict[str, Any]) -> Dict[str, Any]:
-    payload_out = dict(payload or {})
-    payload_out["_bb_event_contract"] = {
-        "classification": str(event_record.get("classification") or "legacy_unclassified"),
-        "family": str(event_record.get("family") or "legacy.unclassified"),
-        "actor": str(event_record.get("actor") or "engine"),
-        "visibility": str(event_record.get("visibility") or "audit"),
-    }
-    return payload_out
 
 
 class SessionState:
@@ -302,7 +293,7 @@ class SessionState:
     def _emit_event(self, event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> Optional[int]:
         seq = self._next_event_seq()
         event_record = self.build_kernel_event_record(event_type, payload, turn=turn, seq=seq)
-        payload_out = _attach_event_contract(event_record["payload"], event_record)
+        payload_out = dict(event_record["payload"])
         if self._kernel_emitter is not None:
             self._kernel_emitter.emit(
                 "bb.kernel_event.v2",
