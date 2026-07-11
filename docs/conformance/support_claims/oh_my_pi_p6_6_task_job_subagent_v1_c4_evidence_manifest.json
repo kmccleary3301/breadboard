@@ -88,9 +88,11 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:60500c81e2fd48b3c8208c61d6ab26a7f3e4e6ceaba0ee30092cb9c893054386"
+      "sha256": "sha256:1bce9940b9fffd6c2d91e60190c0aca73bb5af93a6f0ce91a62ceb5413962295"
     },
     {
+      "bytes": 231320,
+      "exists": true,
       "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
       "role": "atomic_feature_ledger",
       "sha256": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e"
@@ -106,9 +108,9 @@
       "sha256": "sha256:0e056c9ac056b008a2123a6add336d7e77ddf5be0a5c63d5372c57f004db2364"
     },
     {
-      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "path": "config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip",
       "role": "source_freeze",
-      "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
+      "sha256": "sha256:03fd855b01bb7457f85e929ff747d8560d7cf7ed420fd0676bf32b917fb264a3"
     }
   ],
   "claim_id": "oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim",

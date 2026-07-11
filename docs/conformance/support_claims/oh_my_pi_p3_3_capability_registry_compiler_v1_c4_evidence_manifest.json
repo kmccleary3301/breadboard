@@ -12,7 +12,7 @@
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json#sha256:7a0e9aa4a4747e4d5e1751bf2f714a117b00ae2e1e5ac963c4a9b6208bb7abc3",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json#sha256:a6571aac4acdd0833fda62f2c58c9888974b2d39689f2590454d7c39e41efe5a",
         "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/compiled_records.json#sha256:eecabd5b9bb5d4e6a3ee2e2662d38be6e52feeff147f795bf37a602f83a919fe"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json",
@@ -21,8 +21,8 @@
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json#sha256:7a0e9aa4a4747e4d5e1751bf2f714a117b00ae2e1e5ac963c4a9b6208bb7abc3",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json#sha256:163f39cd545b563cc426b800178ded385eb7d5a5a93a8f8a54748e8f95952cc3",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json#sha256:a6571aac4acdd0833fda62f2c58c9888974b2d39689f2590454d7c39e41efe5a",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json#sha256:eb5ac608cbb27fcd40a47e7a1dbeec468dbd3c91180badc9723a2a545f35d3dd",
         "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/compiled_records.json#sha256:eecabd5b9bb5d4e6a3ee2e2662d38be6e52feeff147f795bf37a602f83a919fe"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json",
@@ -32,11 +32,11 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:6539d884fdf2702ac8ec514060aea9f2504d09dcb9fc51380c4285018b30a7ec"
+      "sha256": "sha256:a2d1e7a38bddf85cbcb104c26f57f51bb609ab27581450b48a83335ce699cff4"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json#sha256:1764b2a9cddf3f4c520eb674f26e38a479960ccc699e2283612a11a4f6b64ff5"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json#sha256:8c505e256a5ecf141ff54a569e50b4f99c5491ed3e98ba67ef5dcbabd38af5f0"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/parity_results.json",
       "role": "parity_results",
@@ -68,7 +68,7 @@
       "sha256": "sha256:596bc2f58566f92d9dbd8eaab4801992310e506bf97508d9e853acb401d83ea7"
     },
     {
-      "path": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
+      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
       "role": "source_freeze",
       "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
     }

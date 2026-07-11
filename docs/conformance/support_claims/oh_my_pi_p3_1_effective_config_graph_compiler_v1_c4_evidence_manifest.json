@@ -22,7 +22,7 @@
     {
       "derived_from": [
         "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/raw_capture_manifest.json#sha256:f2337df471cdcc6c2e0eb1adc0e58c4fdee1dee3bac2d0c921d68220622781d2",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json#sha256:cdf42d917dde5cf59061176456652324c03ad1a980e094d3a105704f3ceb065a",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json#sha256:856a9f246f9521923a87b1aafb529bd7984223ebfe03501d59c64d5e694e9deb",
         "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/effective_config_graph.v1.json#sha256:3816a6751ea56e8526f0acc0cceb50a93d651090d8ed553457e1ac7e37d2c898"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json",
@@ -32,11 +32,11 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:21de5ad043f36ca3b05f6e133ddde59f4b4784b5e33ff2e80ac6a22df350c22d"
+      "sha256": "sha256:29dc0ead32a4ee8135625c1b947778b49cd0487dc62d72e54657c2dd847ebbc8"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json#sha256:72940468ff864a1632bfd6899d5d8a6312ef9e139b7d409c607560e015e2023e"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json#sha256:fb2919daf8c21854656c1a126034776be8ed1f8e3c5a7007ba1ab557362b0fea"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/parity_results.json",
       "role": "parity_results",
@@ -68,7 +68,7 @@
       "sha256": "sha256:039e7861f37ee4733ad61074194ac3364ba09ce338b2a516e382135c21052fe8"
     },
     {
-      "path": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
+      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
       "role": "source_freeze",
       "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
     }

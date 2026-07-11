@@ -49,7 +49,7 @@
     {
       "path": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:6096e6b533544a526b59e16bd60aa5a72ee5be3a7f115d22f57b76b23dc33eed"
+      "sha256": "sha256:9a5d58ffc3feded3143efdc93fc3b59699ea999ec7e151b22dcbac719ed77379"
     },
     {
       "derived_from": [
@@ -74,7 +74,7 @@
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:ec88ea208e2924d6758a7c4cdef603aada6285a49dd162cdce258e1dbdc5e63a"
+      "sha256": "sha256:684e34783e8fb14cb34a92b2305a56efcbd917770ecf0116eed793ac6ecef939"
     },
     {
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json",

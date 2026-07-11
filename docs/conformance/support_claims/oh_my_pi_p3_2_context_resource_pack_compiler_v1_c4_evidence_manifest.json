@@ -12,8 +12,8 @@
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:58a8eff1bf84482d9a0fe2e8827051491cc47ff89347b3db85e667bf2a997226",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/compiled_records.json#sha256:afc72e925712afff0fb38567b7a1e6a60a25cae3f15cde5c102e179984366aa0"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/compiled_records.json#sha256:cc5b2cd4e4a7679d1599081d3c93f17505f1ca66679092ccf414c8560081d163"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json",
       "role": "replay_ref",
@@ -21,9 +21,9 @@
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:58a8eff1bf84482d9a0fe2e8827051491cc47ff89347b3db85e667bf2a997226",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:dadf6241f1df822b4ded0848e91a5f10312866fd8c262497d8a50b0fc101f71a",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/compiled_records.json#sha256:afc72e925712afff0fb38567b7a1e6a60a25cae3f15cde5c102e179984366aa0"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:0c808af1ba7e021e869fd7825a20599510f884b5bd71cde7a84f777fcd48121f",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/compiled_records.json#sha256:cc5b2cd4e4a7679d1599081d3c93f17505f1ca66679092ccf414c8560081d163"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json",
       "role": "comparator_ref",
@@ -32,11 +32,11 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:37182bb1ba058482678af61e623a6ea41aae072b70f4765fc585e5135e054001"
+      "sha256": "sha256:234005f505cbdcb160b0679bba0464116c8153b3e217c16c38ba03d6d0670ef0"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:75c197207e232729c579b972d9d76c50d5e361fd2cc132ba670128a172b48626"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json",
       "role": "parity_results",
@@ -68,7 +68,7 @@
       "sha256": "sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
     },
     {
-      "path": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
+      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
       "role": "source_freeze",
       "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
     }
