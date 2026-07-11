@@ -12,18 +12,20 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 try:
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, lane_lock_sha256, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
+    from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, lane_lock_sha256, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
+    from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
@@ -149,12 +151,21 @@ def _json_out_location(argv: Sequence[str]) -> tuple[int, str, bool]:
 
 
 def _resolve_repo_path(path_text: str) -> Path:
-    path = Path(path_text)
-    if path.is_absolute():
-        return path
-    if path.parts and path.parts[0] in {"docs_tmp", ROOT.name}:
-        return ROOT.parent / path
-    return ROOT / path
+    path = Path(path_text.split("#", 1)[0])
+    namespace = (
+        "repo"
+        if path.parts[:3] == ("docs_tmp", "phase_20", "derived")
+        or not path.parts
+        or path.parts[0] != "docs_tmp"
+        else "workspace_evidence"
+    )
+    return resolve_declared_reference(
+        path,
+        checkout_root=ROOT,
+        namespace=namespace,
+        label="lane reference",
+        must_exist=False,
+    )
 
 
 def _digest_input(path: Path) -> str:
@@ -168,7 +179,7 @@ def _digest_input(path: Path) -> str:
 def _retarget_json_out(argv: Sequence[str], out_dir: Path | None) -> tuple[list[str], Path, Path]:
     result = list(argv)
     index, value, inline = _json_out_location(result)
-    accepted_path = _resolve_repo_path(value)
+    accepted_path = Path(value).resolve() if Path(value).is_absolute() else _resolve_repo_path(value)
     if out_dir is None:
         return result, accepted_path, accepted_path
     try:
@@ -622,6 +633,7 @@ def _finalize_stage_result(
     *,
     executed: bool,
 ) -> dict[str, Any]:
+    result["lock_sha256"] = lane_def.get("_lock_sha256")
     if executed:
         returncode = int(result.get("returncode", 1))
         report_ref = result.get("output_path")
@@ -630,7 +642,6 @@ def _finalize_stage_result(
             manifest_rule=None,
             reused_inputs=None,
             report_ref=report_ref if isinstance(report_ref, str) and report_ref else None,
-            lock_sha256=None,
             detail=(
                 f"{result['stage']} executed successfully"
                 if returncode == 0
@@ -824,6 +835,8 @@ def run_lane(
         lane_def = lane_defs[lane_id]
     except KeyError as exc:
         raise LaneRunError(f"unknown lane {lane_id!r} in {lane_def_dir}") from exc
+    lane_def = dict(lane_def)
+    lane_def["_lock_sha256"] = lane_lock_sha256(lane_id, lane_def_dir)
     inventory_lane = _inventory_lane(lane_id, inventory_path)
     if inventory_lane is not None and inventory_lane.get("config_id") != lane_def.get("config_id"):
         raise LaneRunError(f"lane {lane_id!r} config_id differs between lane_def and inventory")

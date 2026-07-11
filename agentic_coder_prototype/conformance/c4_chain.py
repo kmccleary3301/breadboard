@@ -10,6 +10,11 @@ from typing import Any, Mapping
 
 import yaml
 from jsonschema import Draft202012Validator, RefResolver
+from scripts.e4_parity.path_refs import (
+    ReferenceResolutionError,
+    resolve_declared_reference,
+    workspace_root_for_checkout,
+)
 from scripts.e4_parity.validators.gate_errors import BlameEntry, GateError, apply_gate_error_envelope, gate_error_to_dict, gate_exit_code
 from scripts.e4_parity.validators.registries import RegistryValidationError, assert_registered
 
@@ -86,41 +91,59 @@ def _ref_hash(ref: str) -> str | None:
     return None
 
 
-def _workspace_root(repo_root: Path) -> Path:
-    return repo_root.parent
-
 
 def _resolve_path(repo_root: Path, ref_or_path: str) -> Path:
     raw = _strip_ref_suffix(ref_or_path)
     path = Path(raw)
-    if path.is_absolute():
-        return path.resolve()
-    workspace = _workspace_root(repo_root)
-    if raw.startswith("docs_tmp/") or raw.startswith("breadboard_repo_integration_main_20260326/"):
-        return (workspace / raw).resolve()
-    return (repo_root / raw).resolve()
+    namespace = (
+        "repo"
+        if path.parts[:3] == ("docs_tmp", "phase_20", "derived")
+        or not path.parts
+        or path.parts[0] != "docs_tmp"
+        else "workspace_evidence"
+    )
+    try:
+        return resolve_declared_reference(
+            raw,
+            checkout_root=repo_root,
+            namespace=namespace,
+            label="C4 chain reference",
+            must_exist=False,
+        )
+    except ReferenceResolutionError as exc:
+        raise C4ChainValidationError(str(exc)) from exc
 
 
 def _display_path(repo_root: Path, path: Path) -> str:
-    workspace = _workspace_root(repo_root).resolve()
+    checkout = repo_root.resolve()
     resolved = path.resolve()
     try:
-        return str(resolved.relative_to(workspace))
+        return resolved.relative_to(checkout).as_posix()
     except ValueError:
-        return str(resolved)
+        pass
+    try:
+        workspace = workspace_root_for_checkout(checkout)
+    except ReferenceResolutionError as exc:
+        raise C4ChainValidationError(str(exc)) from exc
+    if resolved.is_relative_to(workspace):
+        return resolved.relative_to(workspace).as_posix()
+    raise C4ChainValidationError(f"path escapes checkout/workspace boundary: {path}")
 
 
 def _canonicalish_path(repo_root: Path, path: Path) -> bool:
     resolved = path.resolve()
-    workspace = _workspace_root(repo_root).resolve()
-    roots = [
-        workspace / "docs_tmp" / "phase_15",
+    repo_roots = [
         repo_root / "docs" / "conformance",
         repo_root / "artifacts" / "conformance",
         repo_root / "config",
         repo_root / "agent_configs",
     ]
-    return any(resolved == root.resolve() or root.resolve() in resolved.parents for root in roots)
+    if any(resolved == root.resolve() or root.resolve() in resolved.parents for root in repo_roots):
+        return True
+    if resolved.is_relative_to(repo_root.resolve()):
+        return False
+    phase_15_root = _resolve_path(repo_root, "docs_tmp/phase_15")
+    return resolved == phase_15_root or phase_15_root in resolved.parents
 
 
 def _path_policy_errors(repo_root: Path, label: str, ref_or_path: str) -> list[str]:
@@ -350,7 +373,8 @@ def _artifact_by_role(evidence_manifest: Mapping[str, Any]) -> dict[str, Mapping
 
 
 def _normalize_manifest_path(repo_root: Path, value: str) -> str:
-    resolved = _resolve_path(repo_root, value)
+    raw = Path(_strip_ref_suffix(value))
+    resolved = raw.resolve() if raw.is_absolute() else _resolve_path(repo_root, value)
     return _display_path(repo_root, resolved)
 
 
@@ -775,7 +799,7 @@ def validate_c4_chain(
         evidence_manifest = _require_mapping(_try_load_json(evidence_manifest_path, "evidence_manifest", errors), "evidence_manifest", errors)
 
     for label, path in (("freeze_manifest", freeze_manifest_path), ("support_claim", support_claim_path), ("evidence_manifest", evidence_manifest_path)):
-        _validate_artifact_hash(repo_root, label, str(path), None, errors)
+        _validate_artifact_hash(repo_root, label, _display_path(repo_root, path), None, errors)
         refs[label] = _display_path(repo_root, path)
         if path.exists():
             hashes[label] = _sha256(path)
@@ -1190,7 +1214,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     if args.json_out and not args.check_only:
-        out_path = _resolve_path(repo_root, args.json_out)
+        requested_out = Path(args.json_out)
+        out_path = requested_out.resolve() if requested_out.is_absolute() else _resolve_path(repo_root, args.json_out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if report["ok"]:

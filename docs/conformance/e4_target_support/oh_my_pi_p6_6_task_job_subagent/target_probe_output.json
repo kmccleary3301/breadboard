@@ -1,0 +1,184 @@
+{
+  "all_expected_passed": true,
+  "apis_observed": [
+    "anthropic-messages",
+    "openai-codex-responses"
+  ],
+  "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+  "explicit_exclusions": [
+    "job-manager list/poll/cancel output alone is insufficient for promotion",
+    "P3/P5/P8 parity blockers are outside this P6.6 lane",
+    "No Pi target, provider parity, browser, screenshot, memory, or TUI projection behavior is claimed"
+  ],
+  "fetch_event_count": 2,
+  "fetch_events": [
+    "anthropic-messages",
+    "openai-codex-responses"
+  ],
+  "job_manager_only_evidence": false,
+  "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+  "network_observed": true,
+  "provider_authenticated_capture": true,
+  "provider_dispatch_observed": true,
+  "provider_model": "anthropic/claude-haiku-4-5",
+  "provider_models_observed": [
+    "anthropic/claude-haiku-4-5",
+    "claude-haiku-4-5",
+    "gpt-5.5",
+    "openai-codex/gpt-5.5"
+  ],
+  "provider_parity_claimed": false,
+  "providers_observed": [
+    "anthropic",
+    "openai-codex"
+  ],
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.oh_my_pi_p6_6_task_job_subagent_report.v1",
+  "target_captures": [
+    {
+      "capture_id": "joined-subagent-target-capture",
+      "capture_kind": "joined_subagent",
+      "observed_events": [
+        "task_tool_invoked",
+        "subagent_spawned",
+        "subagent_completed",
+        "joined_result_returned",
+        "background_job_completed",
+        "job_cancel_requested"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json",
+      "sha256": "sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4"
+    },
+    {
+      "capture_id": "detached-subagent-target-capture",
+      "capture_kind": "detached_subagent",
+      "observed_events": [
+        "task_tool_invoked",
+        "subagent_spawned",
+        "background_job_created",
+        "job_list_returned",
+        "job_poll_running",
+        "parent_continued_after_spawn",
+        "subagent_completed"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json",
+      "sha256": "sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540"
+    }
+  ],
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "work_item_observations": [
+    {
+      "evidence_source": "job_manager_only",
+      "job_id": "job-manager-only-1",
+      "lifecycle_mode": "detached",
+      "observation_id": "job-manager-only-list-poll-cancel",
+      "observed_events": [
+        "job_list_returned",
+        "job_poll_running",
+        "job_cancel_requested"
+      ],
+      "status": "cancelled",
+      "subagent_id": null,
+      "sufficient_for_promotion": false,
+      "task_id": null,
+      "task_kind": "background",
+      "work_item_id": "wi-job-manager-only"
+    },
+    {
+      "evidence_source": "target_subagent_lifecycle",
+      "job_id": null,
+      "lifecycle_mode": "joined",
+      "observation_id": "joined-subagent-completed",
+      "observed_events": [
+        "task_tool_invoked",
+        "subagent_spawned",
+        "subagent_completed",
+        "joined_result_returned"
+      ],
+      "source_capture_id": "joined-subagent-target-capture",
+      "status": "completed",
+      "subagent_id": "joined-subagent",
+      "sufficient_for_promotion": true,
+      "task_id": "joined-task",
+      "task_kind": "subagent",
+      "work_item_id": "wi-joined-subagent"
+    },
+    {
+      "evidence_source": "target_subagent_lifecycle",
+      "job_id": "job-background-1",
+      "lifecycle_mode": "background",
+      "observation_id": "background-job-completed",
+      "observed_events": [
+        "background_job_completed",
+        "job_poll_completed"
+      ],
+      "source_capture_id": "joined-subagent-target-capture",
+      "status": "completed",
+      "subagent_id": null,
+      "sufficient_for_promotion": true,
+      "task_id": "background-job",
+      "task_kind": "background",
+      "work_item_id": "wi-background-job"
+    },
+    {
+      "evidence_source": "target_subagent_lifecycle",
+      "job_id": "job-background-cancel",
+      "lifecycle_mode": "background",
+      "observation_id": "background-job-cancelled",
+      "observed_events": [
+        "job_cancel_requested",
+        "job_cancelled"
+      ],
+      "source_capture_id": "joined-subagent-target-capture",
+      "status": "cancelled",
+      "subagent_id": null,
+      "sufficient_for_promotion": true,
+      "task_id": "background-cancel",
+      "task_kind": "background",
+      "work_item_id": "wi-background-cancel"
+    },
+    {
+      "evidence_source": "target_subagent_lifecycle",
+      "job_id": "job-detached-1",
+      "lifecycle_mode": "detached",
+      "observation_id": "detached-subagent-completed",
+      "observed_events": [
+        "task_tool_invoked",
+        "subagent_spawned",
+        "background_job_created",
+        "job_list_returned",
+        "job_poll_running",
+        "parent_continued_after_spawn",
+        "subagent_completed"
+      ],
+      "source_capture_id": "detached-subagent-target-capture",
+      "status": "completed",
+      "subagent_id": "detached-subagent",
+      "sufficient_for_promotion": true,
+      "task_id": "detached-task",
+      "task_kind": "subagent",
+      "work_item_id": "wi-detached-subagent"
+    },
+    {
+      "evidence_source": "target_subagent_lifecycle",
+      "job_id": "job-detached-1",
+      "lifecycle_mode": "detached",
+      "observation_id": "detached-background-job-completed",
+      "observed_events": [
+        "background_job_created",
+        "job_list_returned",
+        "job_poll_running",
+        "subagent_completed"
+      ],
+      "source_capture_id": "detached-subagent-target-capture",
+      "status": "completed",
+      "subagent_id": "detached-subagent",
+      "sufficient_for_promotion": true,
+      "task_id": "detached-task",
+      "task_kind": "background",
+      "work_item_id": "wi-detached-job"
+    }
+  ]
+}

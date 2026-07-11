@@ -1,0 +1,57 @@
+{
+  "advisory_boundary": "Raw capture records provider/API/model transport as capture machinery; the promoted claim is limited to task/job/subagent lifecycle behavior and does not claim provider parity.",
+  "command_reports": {
+    "all_exit_zero": true,
+    "count": 3,
+    "reports": [
+      {
+        "exit_code": 0,
+        "name": "omp_version_capture",
+        "report_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.command_report.json",
+        "stderr_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stderr.txt",
+        "stdout_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stdout.txt"
+      },
+      {
+        "exit_code": 0,
+        "name": "omp_joined_subagent_capture",
+        "report_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.command_report.json",
+        "stderr_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stderr.txt",
+        "stdout_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stdout.txt"
+      },
+      {
+        "exit_code": 0,
+        "name": "omp_detached_subagent_capture",
+        "report_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.command_report.json",
+        "stderr_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.stderr.txt",
+        "stdout_path": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.stdout.txt"
+      }
+    ]
+  },
+  "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
+  "detached_session_dir": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions",
+  "generated_at_utc": "2026-07-03T02:54:01Z",
+  "joined_session_dir": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions",
+  "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+  "ok": true,
+  "provider_authenticated_capture": true,
+  "provider_model": "anthropic/claude-haiku-4-5",
+  "provider_parity_claimed": false,
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+  "runner": {
+    "argv_prefix": [
+      "npx",
+      "-y",
+      "@oh-my-pi/pi-coding-agent@16.2.13"
+    ],
+    "npm_package": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "npx_path": "/Users/kylemccleary/.nvm/versions/node/v26.3.0/bin/npx",
+    "npx_sha256": "sha256:237adf8f3747cad8b9b62fcfd0d9c8d509a64e550337707f55100afcb79e8900"
+  },
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.oh_my_pi_p6_6_setup_report.v1",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "version_matches_target": true,
+  "version_stdout": "omp/16.2.13",
+  "workspace": "breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_fixture_workspace"
+}

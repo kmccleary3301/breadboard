@@ -1,0 +1,63 @@
+{
+  "capture_id": "joined-subagent-target-capture",
+  "events": [
+    {
+      "event_kind": "task_tool_invoked",
+      "status": "queued",
+      "subagent_id": "joined-subagent",
+      "task_id": "joined-task",
+      "work_item_id": "wi-joined-subagent"
+    },
+    {
+      "event_kind": "subagent_spawned",
+      "status": "running",
+      "subagent_id": "joined-subagent",
+      "task_id": "joined-task",
+      "work_item_id": "wi-joined-subagent"
+    },
+    {
+      "event_kind": "subagent_completed",
+      "status": "completed",
+      "subagent_id": "joined-subagent",
+      "task_id": "joined-task",
+      "work_item_id": "wi-joined-subagent"
+    },
+    {
+      "event_kind": "joined_result_returned",
+      "status": "completed",
+      "subagent_id": "joined-subagent",
+      "task_id": "joined-task",
+      "work_item_id": "wi-joined-subagent"
+    },
+    {
+      "event_kind": "background_job_completed",
+      "job_id": "job-background-1",
+      "status": "completed",
+      "subagent_id": null,
+      "task_id": "background-job",
+      "work_item_id": "wi-background-job"
+    },
+    {
+      "event_kind": "job_cancel_requested",
+      "job_id": "job-background-cancel",
+      "status": "cancelled",
+      "subagent_id": null,
+      "task_id": "background-cancel",
+      "work_item_id": "wi-background-cancel"
+    }
+  ],
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "lifecycle_mode": "joined",
+  "provider_authenticated_capture": true,
+  "provider_model": "anthropic/claude-haiku-4-5",
+  "provider_parity_claimed": false,
+  "raw_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stdout.txt#sha256:00d76d11fa1b28c2fbeda8f93b862e5128b7a5649882492b9533909aee3e4683",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions/2026-07-03T02-54-03-035Z_019f25e5-c51b-7000-891c-332aa0524c91/LiveCoral.jsonl#sha256:b3d792d612d8eefd182f849f9bd1bf641c9f53eab9244405a3bf51e7da62f004",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions/2026-07-03T02-54-03-035Z_019f25e5-c51b-7000-891c-332aa0524c91.jsonl#sha256:08b147a68022adcbfd656316b164605b12f9cce6edb5436a0360d56ec7980083"
+  ],
+  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+  "schema_version": "bb.e4.oh_my_pi_p6_6_joined_subagent_capture.v1",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+}

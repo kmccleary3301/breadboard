@@ -257,21 +257,26 @@ def _load_projection_inputs(lane_def: Mapping[str, Any]) -> dict[str, dict[str, 
         item = _projection_input(path_text, path)
         inputs[path_text] = item
         inputs.setdefault(_display(path), item)
-    runtime_payload_inputs = _normalize_config(lane_def).get(
-        "runtime_payload_inputs",
-        {},
-    )
+    normalize_config = _normalize_config(lane_def)
+    runtime_payload_inputs = normalize_config.get("runtime_payload_inputs", {})
     if not isinstance(runtime_payload_inputs, Mapping):
         raise ValueError("normalize.config.runtime_payload_inputs must be an object")
+    roles = normalize_config.get("roles")
+    if not isinstance(roles, Mapping):
+        raise ValueError("normalize.config.roles must be an object")
+    physical_ledger_path = roles.get("atomic_feature_ledger")
     overlap = sorted(set(inputs).intersection(runtime_payload_inputs))
-    if overlap:
+    forbidden_overlap = [path for path in overlap if path != physical_ledger_path]
+    if forbidden_overlap:
         raise ValueError(
             "runtime payload inputs overlap physical capture inputs: "
-            + ", ".join(overlap)
+            + ", ".join(forbidden_overlap)
         )
     for path_text, value in runtime_payload_inputs.items():
         if not isinstance(path_text, str) or not path_text:
             raise ValueError("runtime payload input paths must be non-empty strings")
+        if path_text == physical_ledger_path and path_text in inputs:
+            continue
         data = _json_bytes(value)
         inputs[path_text] = {
             "bytes": len(data),
