@@ -1,0 +1,22 @@
+{
+  "schema": "bb.packet_reviewer_evidence.v1",
+  "packet": "M1-DAG-hermeticity",
+  "verdict": "approved",
+  "reviewer": "ReviewDagFixes (loop task reviewer)",
+  "provenance": "orchestrator-materialized transcription of reviewer job yield + IRC re-verdict [history://ReviewDagFixes]",
+  "first_verdict": "changes_requested",
+  "findings": [
+    {
+      "file": "scripts/e4_parity/regenerate_evidence.py:1175",
+      "severity": "medium",
+      "resolution": "symlink children recreated verbatim via symlink_to(os.readlink) before os.link"
+    },
+    {
+      "file": "candidate_stale_pin_census.json",
+      "severity": "medium",
+      "resolution": "gate record corrected to 9/21 reverify pass"
+    }
+  ],
+  "re_review": "Approved on re-review: mirror handles symlinks before os.link (lines 1174-1178); py_compile passes; attempt_7 states 9/21 matching census.",
+  "generated_at_utc": "2026-07-11T23:30:00Z"
+}
