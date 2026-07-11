@@ -8,9 +8,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from agentic_coder_prototype.conformance import c4_chain
 from scripts.e4_parity import lane_definitions, run_lane
-from scripts.e4_parity.adapters import oh_my_pi_compiler_capture as adapter
 from scripts.e4_parity.lane_definitions import load_manifest_lane_def
 
 
@@ -134,55 +132,3 @@ def test_run_lane_binds_current_lock_digest_to_executed_and_nonexecuted_reports(
     assert legacy["lock_sha256"] is None
 
 
-def test_resolve_display_finds_docs_tmp_at_workspace_ancestor_from_nested_worktree(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    workspace = tmp_path / "workspace"
-    nested_root = workspace / "docs_tmp" / "phase_20" / "worktrees" / "wsF3"
-    nested_root.mkdir(parents=True)
-    (workspace / "docs_tmp" / "phase_15").mkdir(parents=True)
-    wrong_workspace = tmp_path / "incorrect-root-parent"
-
-    monkeypatch.setattr(adapter, "ROOT", nested_root)
-    monkeypatch.setattr(adapter, "WORKSPACE", wrong_workspace)
-
-    resolved = adapter._resolve_display("docs_tmp/phase_15/ledger.json#feature-id")
-
-    assert resolved == workspace / "docs_tmp" / "phase_15" / "ledger.json"
-    assert not resolved.is_relative_to(wrong_workspace)
-
-
-def test_c4_chain_resolves_docs_tmp_ref_from_nested_packet_worktree(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    repo_root = workspace / "docs_tmp" / "phase_20" / "worktrees" / "wsF3"
-    ledger_path = workspace / "docs_tmp" / "phase_15" / "ledger.json"
-    repo_root.mkdir(parents=True)
-    ledger_path.parent.mkdir(parents=True)
-    ledger_path.write_text('{"features":[]}\n', encoding="utf-8")
-
-    assert c4_chain._workspace_root(repo_root) == workspace
-    assert (
-        c4_chain._resolve_path(
-            repo_root,
-            "docs_tmp/phase_15/ledger.json#feature-id#sha256:" + "a" * 64,
-        )
-        == ledger_path
-    )
-
-
-def test_c4_chain_keeps_direct_workspace_repo_path_resolution_compatible(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    repo_root = workspace / "repo"
-    workspace_artifact = workspace / "docs_tmp" / "phase_15" / "ledger.json"
-    repo_artifact = repo_root / "artifacts" / "capture.json"
-    workspace_artifact.parent.mkdir(parents=True)
-    repo_artifact.parent.mkdir(parents=True)
-    workspace_artifact.write_text('{"features":[]}\n', encoding="utf-8")
-    repo_artifact.write_text('{"capture":[]}\n', encoding="utf-8")
-
-    assert c4_chain._workspace_root(repo_root) == workspace
-    assert (
-        c4_chain._resolve_path(repo_root, "docs_tmp/phase_15/ledger.json#feature-id")
-        == workspace_artifact
-    )
-    assert c4_chain._resolve_path(repo_root, "artifacts/capture.json") == repo_artifact

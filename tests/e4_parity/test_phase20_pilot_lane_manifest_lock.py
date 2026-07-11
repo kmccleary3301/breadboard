@@ -35,6 +35,10 @@ LOCK_PATH = LANE_DIR / f"{LANE_ID}.lock.json"
 SIDECAR_PATH = LANE_DIR / f"{LANE_ID}.packet_constants.v1.json"
 PAYLOAD_SOURCE_PATH = LANE_DIR / f"{LANE_ID}.payloads.yaml"
 MANIFEST_SCHEMA_PATH = ROOT / "contracts" / "kernel" / "schemas" / "bb.e4.lane_manifest.v1.schema.json"
+CANONICAL_LEDGER_REF = (
+    "config/e4_lanes/evidence_inputs/"
+    "oh_my_pi_p6_6_atomic_feature_ledger.v1.json"
+)
 REGISTRY_PATH = ROOT / "contracts" / "kernel" / "registries" / "e4_adapters.v1.json"
 
 
@@ -140,21 +144,32 @@ def test_pilot_manifest_is_canonical_author_owned_intent_within_the_pilot_budget
     assert loaded == _load_yaml(MANIFEST_PATH)
 
 
-def test_pilot_manifest_runtime_uses_the_derived_tree_and_parity_load_matches_legacy() -> None:
-    """Runtime consumes the derived extraction, while explicit parity mode alone substitutes the legacy tree."""
+def test_pilot_migration_parity_isolates_the_canonical_ledger_path_delta() -> None:
+    """Migration parity differs from the retired lane only at the canonical ledger path."""
     derived_ref = compile_lane_lock.SOURCE_FREEZE_EXTRACTION_REF
-    legacy_ref = "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest"
+    legacy_freeze_ref = "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest"
+    legacy_ledger_ref = "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
 
     runtime_lane = load_manifest_lane_def(MANIFEST_PATH)
     assert derived_ref in runtime_lane["capture"]["inputs"]
-    assert legacy_ref not in runtime_lane["capture"]["inputs"]
+    assert legacy_freeze_ref not in runtime_lane["capture"]["inputs"]
 
-    legacy_comparison = load_lane_def(LEGACY_PATH)
+    expected = load_lane_def(LEGACY_PATH)
     promoted_payloads = _load_yaml(PAYLOAD_SOURCE_PATH)
-    legacy_packet_constants = legacy_comparison["normalize"]["config"]["packet_constants"]
-    legacy_packet_constants["payload_templates"] = promoted_payloads["payload_templates"]
-    legacy_packet_constants["substitutions"] = promoted_payloads["substitutions"]
-    assert load_manifest_lane_def(MANIFEST_PATH, parity_legacy=True) == legacy_comparison
+    expected_config = expected["normalize"]["config"]
+    expected_packet_constants = expected_config["packet_constants"]
+    expected_packet_constants["payload_templates"] = promoted_payloads["payload_templates"]
+    expected_packet_constants["substitutions"] = promoted_payloads["substitutions"]
+    legacy_role_path = expected_config["roles"]["atomic_feature_ledger"]
+    assert legacy_role_path == legacy_ledger_ref
+    expected_config["roles"]["atomic_feature_ledger"] = CANONICAL_LEDGER_REF
+
+    parity_lane = load_manifest_lane_def(MANIFEST_PATH, parity_legacy=True)
+    assert parity_lane == expected
+    assert parity_lane["capture"]["inputs"].count(legacy_ledger_ref) == 1
+    assert parity_lane["normalize"]["config"]["roles"]["atomic_feature_ledger"] == (
+        CANONICAL_LEDGER_REF
+    )
 
 
 @pytest.fixture
@@ -478,18 +493,18 @@ def test_safe_archive_extraction_rejects_an_invalid_utf8_member_name(tmp_path: P
     assert not extraction_path.exists() or not any(extraction_path.rglob("*"))
 
 
-def test_am14_am16_manifest_inventory_is_tracked_source_only_and_payload_source_is_pinned() -> None:
-    """The author inventory contains clean-checkout sources, never downstream run/evidence artifacts."""
+def test_am14_am16_manifest_inventory_is_source_only_and_lock_pinned() -> None:
+    """The author inventory contains readable clean-checkout sources, never downstream run artifacts."""
     manifest = _load_yaml(MANIFEST_PATH)
     inputs = [str(reference) for reference in manifest["capture"]["inputs"]]
     payload_ref = PAYLOAD_SOURCE_PATH.relative_to(ROOT).as_posix()
 
     assert inputs.count(payload_ref) == 1
+    assert inputs.count(CANONICAL_LEDGER_REF) == 1
     allowed_source_prefixes = (
         "agentic_coder_prototype/compilation/",
         "config/",
         "contracts/kernel/schemas/",
-        "docs_tmp/phase_15/",
         "scripts/e4_parity/",
     )
     assert all(reference.startswith(allowed_source_prefixes) for reference in inputs)
@@ -499,22 +514,12 @@ def test_am14_am16_manifest_inventory_is_tracked_source_only_and_payload_source_
                 "artifacts/",
                 "docs/conformance/e4_target_support/",
                 "docs/conformance/support_claims/",
+                "docs_tmp/",
             )
         )
         for reference in inputs
     )
-    for reference in inputs:
-        if reference == compile_lane_lock.SOURCE_FREEZE_ARCHIVE_REF:
-            assert _resolve_reference(reference).is_file()
-            continue
-        tracked = subprocess.run(
-            ["git", "ls-files", "--error-unmatch", reference],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        assert tracked.returncode == 0, reference
+    assert all(_resolve_reference(reference).exists() for reference in inputs)
 
     source = _load_yaml(PAYLOAD_SOURCE_PATH)
     assert set(source) == {"payload_templates", "substitutions"}
@@ -525,6 +530,13 @@ def test_am14_am16_manifest_inventory_is_tracked_source_only_and_payload_source_
         "sha256": _sha256_path(PAYLOAD_SOURCE_PATH),
         "bytes": len(PAYLOAD_SOURCE_PATH.read_bytes()),
         "role": "payload_source",
+    }
+    canonical_ledger_path = _resolve_reference(CANONICAL_LEDGER_REF)
+    assert lock_rows[CANONICAL_LEDGER_REF] == {
+        "path": CANONICAL_LEDGER_REF,
+        "sha256": _sha256_path(canonical_ledger_path),
+        "bytes": len(canonical_ledger_path.read_bytes()),
+        "role": "capture_input",
     }
 
 

@@ -7,8 +7,8 @@
   "plan_ref": "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_MASTER_PLAN.md:317-323",
   "reference_resolution": {
     "policy": "Every unresolved historical source/fixture reference has an explicit justified tombstone; the P6.6 claim consumes only tracked, lock-pinned inputs.",
-    "resolved_reference_count": 299,
-    "tombstone_count": 195
+    "resolved_reference_count": 312,
+    "tombstone_count": 182
   },
   "reference_tombstones": [
     {
@@ -276,97 +276,6 @@
       "field": "source_refs",
       "reason": "Historical workspace source is outside the tracked checkout or absent at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
       "reference": "source:docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "capture:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "comparator:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "detached_subagent_target_capture:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json#sha256:c9328508c2b34f85e93e80664facb14ec3a3639832d1e5345751b57ef270b540"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "joined_subagent_target_capture:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json#sha256:dcf1d0c061405f19d049b3e4da6832fd129cbd007b1b6d3418d8320a5949bbc4"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "parity_results:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json#sha256:b361ad6d45bb7a1e977b6565cdf8600ec997a5dbd3e3f67b40889472179c0816"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "replay:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json#sha256:66da20e9a02a36e84fe35a7a95c0d21ae11adcd3d4580ac007c3166e5b09f228"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "target_probe:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "target_setup_report:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json#sha256:0e056c9ac056b008a2123a6add336d7e77ddf5be0a5c63d5372c57f004db2364"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "task_job_subagent_comparator:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json#sha256:199514225cd36cfb2d8ae20fa9dd203c9c710c2baf2f7e1792241255d997edef"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "work_item_ref:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json#sha256:0f93c80969b6c9b1c586470b50bafc14e77d284c249e208e6050d8f54483fc7f"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_397dab44f9f126c3",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "work_item_replay:docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_item_replay.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
     },
     {
       "disposition": "historical_provenance_only",
@@ -1819,7 +1728,7 @@
       "promotion_state": "draft",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:7c0c67d6a2aec11dc3a0d182121d0fbf37f1b571782b1d7a85df6f31d56c5cb9",
+        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_0_72_opencode1_2_17_20260305.yaml#sha256:aa766d480feb8dd1edfb8985a019aefdb5e282a0fa49f7cc8d8b1d2b67f41eb1",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml#sha256:f9af596a59f8411f7d9951e73d588263e4767dc8fc5a57df2423328a7e2ae43e"
       ],
@@ -1844,7 +1753,7 @@
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
         "source:agent_configs/misc/oh_my_opencode_e4_phase8_async_subagents_v1_replay__codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305.yaml#sha256:27aca163855c2ae2217fd1bc76c4213271506987b58ada6ca2fd96a9904a56ef",
-        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:7c0c67d6a2aec11dc3a0d182121d0fbf37f1b571782b1d7a85df6f31d56c5cb9",
+        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_0_72_opencode1_2_17_20260305.yaml#sha256:aa766d480feb8dd1edfb8985a019aefdb5e282a0fa49f7cc8d8b1d2b67f41eb1"
       ],
       "stateful": true,
@@ -1867,7 +1776,7 @@
       "promotion_state": "draft",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:7c0c67d6a2aec11dc3a0d182121d0fbf37f1b571782b1d7a85df6f31d56c5cb9",
+        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_0_72_opencode1_2_17_20260305.yaml#sha256:aa766d480feb8dd1edfb8985a019aefdb5e282a0fa49f7cc8d8b1d2b67f41eb1",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml#sha256:f9af596a59f8411f7d9951e73d588263e4767dc8fc5a57df2423328a7e2ae43e"
       ],
@@ -1891,7 +1800,7 @@
       "promotion_state": "draft",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:7c0c67d6a2aec11dc3a0d182121d0fbf37f1b571782b1d7a85df6f31d56c5cb9",
+        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_0_72_opencode1_2_17_20260305.yaml#sha256:aa766d480feb8dd1edfb8985a019aefdb5e282a0fa49f7cc8d8b1d2b67f41eb1",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml#sha256:f9af596a59f8411f7d9951e73d588263e4767dc8fc5a57df2423328a7e2ae43e"
       ],
@@ -1916,7 +1825,7 @@
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
         "source:agent_configs/misc/opencode_openai_codexmini_c_fs_cli_happy_capture.yaml#sha256:ff36590f13f08d9382962aa80074f66b3c17e99a305318c8863fb6eac32e98df",
-        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:7c0c67d6a2aec11dc3a0d182121d0fbf37f1b571782b1d7a85df6f31d56c5cb9",
+        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_0_72_opencode1_2_17_20260305.yaml#sha256:aa766d480feb8dd1edfb8985a019aefdb5e282a0fa49f7cc8d8b1d2b67f41eb1"
       ],
       "stateful": true,
@@ -1940,7 +1849,7 @@
       "promotion_state": "draft",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:7c0c67d6a2aec11dc3a0d182121d0fbf37f1b571782b1d7a85df6f31d56c5cb9",
+        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768",
         "source:agent_configs/misc/breadboard_tui_engine_smoke_mock.yaml#sha256:981fed2287aa83fbee02fad374957dfc596edbf22054ae13681debc4dd545b33",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_0_72_opencode1_2_17_20260305.yaml#sha256:aa766d480feb8dd1edfb8985a019aefdb5e282a0fa49f7cc8d8b1d2b67f41eb1"
       ],
@@ -1998,7 +1907,7 @@
       "promotion_state": "draft",
       "schema_version": "bb.atomic_feature_ledger.v1",
       "source_refs": [
-        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:7c0c67d6a2aec11dc3a0d182121d0fbf37f1b571782b1d7a85df6f31d56c5cb9",
+        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_0_72_opencode1_2_17_20260305.yaml#sha256:aa766d480feb8dd1edfb8985a019aefdb5e282a0fa49f7cc8d8b1d2b67f41eb1",
         "source:agent_configs/misc/claude_code_haiku45_e4_replay__codex0_1070_claude2_1_63_opencode1_2_17_20260305.yaml#sha256:f9af596a59f8411f7d9951e73d588263e4767dc8fc5a57df2423328a7e2ae43e"
       ],
@@ -2024,7 +1933,7 @@
       "source_refs": [
         "source:agent_configs/misc/codex_subagent_readonly.yaml#sha256:4d88bcbaa47b2686f543b5f75027e804122c3dc5fde4ae50946139ce083207bd",
         "source:agent_configs/misc/oh_my_opencode_e4_phase8_async_subagents_v1_replay__codex0_1070_claude2_1_63_opencode1_2_17_ohmyopencode3_10_0_20260305.yaml#sha256:27aca163855c2ae2217fd1bc76c4213271506987b58ada6ca2fd96a9904a56ef",
-        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:7c0c67d6a2aec11dc3a0d182121d0fbf37f1b571782b1d7a85df6f31d56c5cb9"
+        "source:agent_configs/codex_0-107-0_e4_3-6-2026.yaml#sha256:2e2ba957f396b8dbc7d5adb4b35d6ccaccf322d21b792bafe1d996ec0d661768"
       ],
       "stateful": true,
       "target": "codex"
@@ -3512,7 +3421,7 @@
       "dedupe_key": "omp/helper_runtime/p3_1_effective_config_graph_compiler/c4",
       "e4_row_ref": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
       "evidence_tier": "C4",
-      "family": "helper_runtime",
+      "family": "config",
       "feature_id": "feat_b3bcb7697f3ea258",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_1_effective_config_graph_compiler_v1#sha256:bce4ded7ac594c144b751cde193078b8b4db984389e7edc41adfa34243c205e7",
@@ -3549,7 +3458,7 @@
       "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_6_protocol_provider_policy_compiler/c4",
       "e4_row_ref": "oh_my_pi_p3_6_protocol_provider_policy_compiler_v1",
       "evidence_tier": "C4",
-      "family": "helper_runtime",
+      "family": "provider",
       "feature_id": "feat_0234bfa2b266f538",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_6_protocol_provider_policy_compiler_v1#sha256:bc6accb385d0d8be769c2957ea73dc292cc333cfd43a0a42012d14b0a37cdefa",
@@ -3585,7 +3494,7 @@
       "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_3_capability_registry_compiler/c4",
       "e4_row_ref": "oh_my_pi_p3_3_capability_registry_compiler_v1",
       "evidence_tier": "C4",
-      "family": "helper_runtime",
+      "family": "capability",
       "feature_id": "feat_5123d3276f9ca468",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_3_capability_registry_compiler_v1#sha256:ba2cbee50de9672220d2aea86cfe011bcf5bcf9df4fb484eee5e4a018a2b5d00",
@@ -3621,7 +3530,7 @@
       "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_8_projection_broker_adapter/c4",
       "e4_row_ref": "oh_my_pi_p3_8_projection_broker_adapter_v1",
       "evidence_tier": "C4",
-      "family": "helper_runtime",
+      "family": "side_effect",
       "feature_id": "feat_a8c1754af302f290",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_8_projection_broker_adapter_v1#sha256:47986b7c5a0718fa8121263fc1ba090d9cf62987e79d0a42da6a21ba4c0ce210",
@@ -3657,7 +3566,7 @@
       "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_7_memory_work_compiler/c4",
       "e4_row_ref": "oh_my_pi_p3_7_memory_work_compiler_v1",
       "evidence_tier": "C4",
-      "family": "helper_runtime",
+      "family": "task",
       "feature_id": "feat_b650fa627d57aa92",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:eb8e4807da21d37e88280deb188f533d5e789e66196246e7c7417347c486dac5",
@@ -3693,7 +3602,7 @@
       "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_5_resource_blob_compiler/c4",
       "e4_row_ref": "oh_my_pi_p3_5_resource_blob_compiler_v1",
       "evidence_tier": "C4",
-      "family": "helper_runtime",
+      "family": "resource",
       "feature_id": "feat_bc11e30da175b4a9",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_5_resource_blob_compiler_v1#sha256:f52f66f627901b2346016eb31bc59a6923db9fe9fb5027de218dede954ed671e",
@@ -3729,7 +3638,7 @@
       "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_4_extension_hook_execution_compiler/c4",
       "e4_row_ref": "oh_my_pi_p3_4_extension_hook_execution_compiler_v1",
       "evidence_tier": "C4",
-      "family": "helper_runtime",
+      "family": "extension",
       "feature_id": "feat_dcc5055b78969aba",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_4_extension_hook_execution_compiler_v1#sha256:6589db3e7a400dc23ca550d2f35fbf57e21ae5b7a4676299a72731383d0721e2",
@@ -3765,7 +3674,7 @@
       "dedupe_key": "omp/helper_runtime/oh_my_pi_p3_2_context_resource_pack_compiler/c4",
       "e4_row_ref": "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
       "evidence_tier": "C4",
-      "family": "helper_runtime",
+      "family": "context",
       "feature_id": "feat_e9ae27a72149301b",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_2_context_resource_pack_compiler_v1#sha256:714a8588ed5968a1fb5499819674f4a6e3382d7fdc4e2f7761132ac33acdaba8",
@@ -3801,7 +3710,7 @@
       "dedupe_key": "pi/p5/pi_p5_l1_cli_config_context_tool_surface/c4",
       "e4_row_ref": "pi_p5_l1_cli_config_context_tool_surface_v1",
       "evidence_tier": "C4",
-      "family": "target.pi",
+      "family": "product",
       "feature_id": "feat_2f47f564bacc6202",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#pi_p5_l1_cli_config_context_tool_surface_v1#sha256:54a9d3ddd9e90fb341fbe412ab0656f366eba27ca3fe818ae6c7b0e6b346817b",
@@ -3837,7 +3746,7 @@
       "dedupe_key": "pi/p5/pi_p5_l2_extension_session_residual/c4",
       "e4_row_ref": "pi_p5_l2_extension_session_residual_v1",
       "evidence_tier": "C4",
-      "family": "target.pi",
+      "family": "product",
       "feature_id": "feat_38725eb172b28cb1",
       "fixture_refs": [
         "freeze:config/e4_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:34b38f0eb690e8940d6b8c6bd8cf623c795f9239fab75343f1aea3b46bdc1d6f",
@@ -3947,7 +3856,7 @@
       "breadboard_mapping": {
         "primitive": "bb.work_item.v1",
         "support": "supported",
-        "truth_scope": "target_runtime_observed"
+        "truth_scope": "target_projection"
       },
       "claim_type": "runtime_behavior",
       "dedupe_key": "omp/task/oh_my_pi_p6_6_task_job_subagent/joined_detached_lifecycle/provider_authenticated/stateful_yes",

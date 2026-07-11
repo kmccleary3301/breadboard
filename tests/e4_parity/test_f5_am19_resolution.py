@@ -1,16 +1,26 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import re
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from scripts.e4_parity import run_lane
 from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
+from scripts.e4_parity.validate_atomic_feature_ledger import collect_atomic_feature_ledger_errors
 
 
 DERIVED_LEDGER_REF = "docs_tmp/phase_20/derived/BB_ER_FEATURE_LEDGER.json"
+CANONICAL_LEDGER_REF = (
+    "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json"
+)
+ROOT = Path(__file__).resolve().parents[2]
+SOURCE_LINE_RANGE = re.compile(r":\d+(?:-\d+)?$")
 
 
 def _nested_checkout(tmp_path: Path) -> Path:
@@ -165,15 +175,15 @@ def test_declared_absolute_references_are_rejected_by_both_resolvers(
         run_lane._resolve_repo_path(str(absolute_reference))
 
 
-def test_claim_only_run_preserves_tracked_canonical_ledger_bytes(
+def test_claim_only_run_preserves_repo_local_derived_ledger_bytes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     checkout = _nested_checkout(tmp_path)
-    canonical_ledger = checkout / DERIVED_LEDGER_REF
-    canonical_ledger.parent.mkdir(parents=True)
+    derived_ledger = checkout / DERIVED_LEDGER_REF
+    derived_ledger.parent.mkdir(parents=True)
     original_bytes = b'{"features": []}\n'
-    canonical_ledger.write_bytes(original_bytes)
+    derived_ledger.write_bytes(original_bytes)
 
     lane_id = "f5_am19_claim_immutability"
     lane_def_dir = tmp_path / "lane_defs"
@@ -200,5 +210,165 @@ def test_claim_only_run_preserves_tracked_canonical_ledger_bytes(
     )
 
     assert result["ok"] is True
-    assert canonical_ledger.read_bytes() == original_bytes
+    assert derived_ledger.read_bytes() == original_bytes
     assert (scratch / DERIVED_LEDGER_REF).read_bytes() == original_bytes
+
+
+def _tracked_checkout_files() -> frozenset[Path]:
+    result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return frozenset(
+        (ROOT / reference).resolve()
+        for reference in result.stdout.split("\0")
+        if reference
+    )
+
+
+def _row_digest(row_id: str, row: object) -> str:
+    preimage = json.dumps(
+        {"row_id": row_id, "row": row},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return "sha256:" + hashlib.sha256(preimage).hexdigest()
+
+
+def _reference_resolution_error(
+    reference: str,
+    *,
+    tracked_files: frozenset[Path],
+    freeze_rows: object,
+) -> str | None:
+    kind, separator, payload = reference.partition(":")
+    if not separator:
+        return "reference has no kind prefix"
+    if kind == "source_index":
+        return "source_index is not backed by a declared tracked source index"
+
+    if kind == "freeze":
+        parts = payload.rsplit("#", 2)
+        if len(parts) != 3 or not parts[2].startswith("sha256:"):
+            return "freeze reference must identify a row and its sha256 digest"
+        path_ref, row_id, expected_digest = parts
+    else:
+        path_ref, hash_separator, digest = payload.rpartition("#sha256:")
+        if not hash_separator:
+            path_ref = payload
+            expected_digest = None
+        else:
+            expected_digest = f"sha256:{digest}"
+        if kind == "source":
+            path_ref = SOURCE_LINE_RANGE.sub("", path_ref)
+
+    candidate = (ROOT / path_ref).resolve()
+    try:
+        candidate.relative_to(ROOT.resolve())
+    except ValueError:
+        return f"path escapes checkout: {path_ref}"
+    if candidate not in tracked_files:
+        return f"path is not tracked: {path_ref}"
+    if not candidate.is_file():
+        return f"tracked path is not a file: {path_ref}"
+
+    if kind == "freeze":
+        if not isinstance(freeze_rows, dict) or row_id not in freeze_rows:
+            return f"freeze row does not exist: {row_id}"
+        actual_digest = _row_digest(row_id, freeze_rows[row_id])
+    elif expected_digest is not None:
+        actual_digest = "sha256:" + hashlib.sha256(candidate.read_bytes()).hexdigest()
+    else:
+        return None
+
+    if actual_digest != expected_digest:
+        return (
+            f"digest mismatch for {path_ref}: expected {expected_digest}, "
+            f"got {actual_digest}"
+        )
+    return None
+
+
+def test_canonical_f5_ledger_has_complete_valid_reference_disposition() -> None:
+    ledger = json.loads((ROOT / CANONICAL_LEDGER_REF).read_text(encoding="utf-8"))
+    rows = ledger["rows"]
+    assert len(rows) == ledger["row_count"] == 98
+    assert ledger["source_index_ref"] is None
+
+    validation_errors = [
+        f"{row['feature_id']}: {error}"
+        for row in rows
+        for error in collect_atomic_feature_ledger_errors(row)
+    ]
+    assert validation_errors == []
+
+    tombstones: dict[tuple[str, str, str], dict[str, object]] = {}
+    disposition_errors: list[str] = []
+    for tombstone in ledger["reference_tombstones"]:
+        key = (
+            str(tombstone.get("feature_id")),
+            str(tombstone.get("field")),
+            str(tombstone.get("reference")),
+        )
+        if key in tombstones:
+            disposition_errors.append(f"duplicate tombstone: {key!r}")
+        tombstones[key] = tombstone
+        if tombstone.get("disposition") != "historical_provenance_only":
+            disposition_errors.append(f"invalid tombstone disposition: {key!r}")
+        reason = tombstone.get("reason")
+        if not isinstance(reason, str) or not reason.strip():
+            disposition_errors.append(f"tombstone has no reason: {key!r}")
+
+    tracked_files = _tracked_checkout_files()
+    freeze_manifest = yaml.safe_load(
+        (ROOT / "config/e4_target_freeze_manifest.yaml").read_text(encoding="utf-8")
+    )
+    freeze_rows = freeze_manifest["e4_configs"]
+    consumed_tombstones: set[tuple[str, str, str]] = set()
+    resolved_count = 0
+    tombstoned_count = 0
+
+    for row in rows:
+        feature_id = row["feature_id"]
+        for field in ("source_refs", "fixture_refs"):
+            for reference in row[field]:
+                resolution_error = _reference_resolution_error(
+                    reference,
+                    tracked_files=tracked_files,
+                    freeze_rows=freeze_rows,
+                )
+                key = (feature_id, field, reference)
+                if resolution_error is None:
+                    resolved_count += 1
+                    continue
+                tombstone = tombstones.get(key)
+                if tombstone is None:
+                    disposition_errors.append(
+                        f"{feature_id}.{field} unresolved without exact tombstone: "
+                        f"{reference!r} ({resolution_error})"
+                    )
+                    continue
+                consumed_tombstones.add(key)
+                tombstoned_count += 1
+
+    orphan_tombstones = sorted(set(tombstones) - consumed_tombstones)
+    if orphan_tombstones:
+        disposition_errors.append(f"orphan tombstones: {orphan_tombstones!r}")
+
+    summary = ledger["reference_resolution"]
+    if resolved_count != summary["resolved_reference_count"]:
+        disposition_errors.append(
+            "resolved reference count mismatch: "
+            f"metadata={summary['resolved_reference_count']}, observed={resolved_count}"
+        )
+    if tombstoned_count != summary["tombstone_count"]:
+        disposition_errors.append(
+            "tombstone count mismatch: "
+            f"metadata={summary['tombstone_count']}, observed={tombstoned_count}"
+        )
+
+    assert disposition_errors == []

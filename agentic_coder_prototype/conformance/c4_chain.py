@@ -373,7 +373,8 @@ def _artifact_by_role(evidence_manifest: Mapping[str, Any]) -> dict[str, Mapping
 
 
 def _normalize_manifest_path(repo_root: Path, value: str) -> str:
-    resolved = _resolve_path(repo_root, value)
+    raw = Path(_strip_ref_suffix(value))
+    resolved = raw.resolve() if raw.is_absolute() else _resolve_path(repo_root, value)
     return _display_path(repo_root, resolved)
 
 
@@ -1213,7 +1214,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
     if args.json_out and not args.check_only:
-        out_path = _resolve_path(repo_root, args.json_out)
+        requested_out = Path(args.json_out)
+        out_path = requested_out.resolve() if requested_out.is_absolute() else _resolve_path(repo_root, args.json_out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if report["ok"]:

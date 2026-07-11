@@ -112,7 +112,7 @@
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
   "ledger_row_refs": [
-    "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json#feat_397dab44f9f126c3#sha256:b30c90cd5277db079b1e124f93a412e948e1a9f73a7ae3276288879e6460caee"
+    "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json#feat_397dab44f9f126c3#sha256:c388aced191c46ac3ba202826084b6e37a4052793b7a83b76cae86cc6ba1b705"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",

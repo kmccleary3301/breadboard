@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import shutil
 from pathlib import Path
 
@@ -17,18 +19,36 @@ LANE_DIR = ROOT / "config" / "e4_lanes"
 MANIFEST_PATH = LANE_DIR / f"{LANE_ID}.manifest.yaml"
 
 
-def test_runtime_projection_consumes_sidecar_payloads_without_legacy_physical_inputs() -> None:
-    """Every record-builder source is supplied virtually even though runtime capture declares sources only."""
+def test_runtime_projection_requires_physical_canonical_ledger_and_prefers_its_bytes() -> None:
+    """The lock-pinned physical ledger overrides the retired embedded ledger payload."""
+    canonical_ledger_ref = (
+        "config/e4_lanes/evidence_inputs/"
+        "oh_my_pi_p6_6_atomic_feature_ledger.v1.json"
+    )
     lane = load_manifest_lane_def(MANIFEST_PATH)
     config = lane["normalize"]["config"]
     virtual = config["runtime_payload_inputs"]
 
     assert virtual
-    assert set(virtual).isdisjoint(lane["capture"]["inputs"])
+    assert config["roles"]["atomic_feature_ledger"] == canonical_ledger_ref
+    assert set(virtual).intersection(lane["capture"]["inputs"]) == {
+        canonical_ledger_ref
+    }
     assert {builder["source"] for builder in config["record_builders"]} <= set(virtual)
 
     loaded = adapter._load_projection_inputs(lane)
-    assert {reference: loaded[reference]["value"] for reference in virtual} == virtual
+    canonical_bytes = (ROOT / canonical_ledger_ref).read_bytes()
+    assert loaded[canonical_ledger_ref] == {
+        "bytes": len(canonical_bytes),
+        "path": canonical_ledger_ref,
+        "sha256": f"sha256:{hashlib.sha256(canonical_bytes).hexdigest()}",
+        "value": json.loads(canonical_bytes),
+    }
+    assert loaded[canonical_ledger_ref]["value"] != virtual[canonical_ledger_ref]
+    virtual_only = set(virtual) - {canonical_ledger_ref}
+    assert {
+        reference: loaded[reference]["value"] for reference in virtual_only
+    } == {reference: virtual[reference] for reference in virtual_only}
 
 
 def test_runtime_loader_materializes_missing_source_freeze_extraction(
