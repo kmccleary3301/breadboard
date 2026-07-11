@@ -163,6 +163,7 @@ def test_load_agent_config_authorities_match_config_view_for_representative_conf
     expected_projection = v2_loader.load_agent_config_view(str(config_path)).as_dict()
 
     assert authority_projection == expected_projection
+    assert "_config_metadata" not in authority_projection
 
 
 @pytest.mark.parametrize(

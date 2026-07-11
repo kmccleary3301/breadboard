@@ -306,7 +306,15 @@ def _dump_tool_defs(tool_defs: List[ToolDefinition]) -> List[Dict[str, Any]]:
 
 @ray.remote
 class OpenAIConductor(OpenAIConductorFacadeMethods):
-    def __init__(self, workspace: str, image: str = "python-dev:latest", config: Optional[Dict[str, Any]] = None, *, local_mode: bool = False) -> None:
+    def __init__(
+        self,
+        workspace: str,
+        image: str = "python-dev:latest",
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        local_mode: bool = False,
+        prompt_base_dirs: Optional[List[Path]] = None,
+    ) -> None:
         """Initialize conductor with workspace, image, and configuration."""
         self._bootstrap_openai_env_from_runtime_config(config if isinstance(config, dict) else None)
         bootstrap_conductor(
@@ -319,6 +327,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             zero_tool_abort_message=ZERO_TOOL_ABORT_MESSAGE,
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
         )
+        self._prompt_base_dirs = list(prompt_base_dirs or [])
         # Stop requests are session-scoped and should only affect the current run.
         self._stop_requested = False
         # Runtime-only reference used for streaming task events (e.g., async subagent completions).
@@ -728,6 +737,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 image=str(getattr(self, "image", "python-dev:latest")),
                 config=cfg_copy,
                 local_mode=True,
+                prompt_base_dirs=list(getattr(self, "_prompt_base_dirs", [])),
             )
             return child.run_agentic_loop(
                 "",
@@ -5193,6 +5203,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                     tool_defs,
                     active_dialect_names,
                     extra_blocks=extra_blocks,
+                    prompt_base_dirs=list(getattr(self, "_prompt_base_dirs", [])),
                 )
                 session_state.set_provider_metadata("current_mode", mode_name)
                 system_prompt = v2.get("system") or system_prompt

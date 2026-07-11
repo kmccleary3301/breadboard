@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from agentic_coder_prototype.compilation.v2_loader import _config_resolution_base_dirs, load_agent_config
 from agentic_coder_prototype.provider.runtime import (
     AnthropicMessagesRuntime,
     OpenAIChatRuntime,
@@ -203,6 +203,7 @@ def capture_request_body(
         workspace=str(workspace_root),
         config=config,
         local_mode=True,
+        prompt_base_dirs=list(_config_resolution_base_dirs(config_path)),
     )
 
     tool_prompt_mode = ""
