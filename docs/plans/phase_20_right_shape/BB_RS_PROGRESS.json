@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T03:33:58Z",
+ "updated_at_utc": "2026-07-11T03:40:51Z",
  "items": [
   {
    "id": "A1",
@@ -262,12 +262,12 @@
    "ws": "A",
    "title": "verifier packet incl base-SHA repro",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "A7"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "verifier packet PASS @ d64e0f00 (agent://VerifyA8Packet): all A1-A7 gates green (TS typecheck/unit/smokes, py SDK 19p, default-server smokes both SDKs, OpenAPI artifact check); base 3b8d862f repro: both SDK README flows 404 on POST /sessions; evidence docs_tmp/phase_20/evidence/A8/verifier.json",
    "verifiers": []
   },
   {
@@ -434,7 +434,7 @@
    "ws": "C",
    "title": "charter verifier",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "C1",
     "C2",
@@ -442,7 +442,7 @@
     "E3"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "verifier PASS amended + rebound to 99fd1152 (post-C2 charter): byte-exact to \u00a74.7 modulo authorized 150/300 substitutions matching J1 budgets; links live; boundary contradiction sweep clean (3 allowlisted historical); evidence docs_tmp/phase_20/evidence/C4/verifier.json",
    "verifiers": []
   },
   {
