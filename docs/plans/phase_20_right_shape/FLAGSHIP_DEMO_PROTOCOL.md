@@ -159,10 +159,10 @@ Run: 2026-07-11, head 3b413aff, evidence docs_tmp/phase_20/j2_run/ (immutable), 
 |---|---|---|---|
 | Manifest canonical lines | <=150 | 103 (max physical line 101) | within budget (stage completed) |
 | Adapter counted lines | <=300 | 182 (1 file) | within budget (stage completed) |
-| Time | <=8h | run FAILED after 0.14h; censored measurement, critical path incomplete | not comparable to budget |
+| Time | <=8h | run FAILED after 0.15h (525s whole-second wall, first timed access -> final claim-reverify attempt; the outsider's recorded 0.139712h was the staged-duration sum, corrected per J5-TIME-001); censored measurement, critical path incomplete | not comparable to budget |
 | Stages passed | 8/8 | scaffold, validate, session_run | 3 of 8 |
 | Stages failed | — | author/registration, lock, scratch_capture, claim, reverify | unavailable `bbh` capability |
 | Outsider-rule violations | 0 | 0 | pass |
-| G-J | all 9 conditions + budgets | conditions 2-5,8,9 unmet | **FAIL** (recorded; AM22a: no rerun this campaign) |
+| G-J | all 9 conditions + budgets | conditions 2,3,4,5,7 unmet; 8 and 9 pass (all stages attempted, logs complete, zero violations) | **FAIL** (recorded; AM22a: no rerun this campaign) |
 
 Root cause (J3): protocol_gap_predeclared_unbuildable — this predeclaration requires adapter registration "through the documented/scaffolded route" plus `bbh` claim/claim-reverify stages, but no campaign item promised those front doors. Backlog: bb-72h (register), bb-9c8 (claim), bb-ys7 (claim-reverify).

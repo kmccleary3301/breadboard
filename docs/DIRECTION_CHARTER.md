@@ -14,7 +14,7 @@ bounded harness profile in one working day: hand-authored manifest ≤ 150 lines
 ≤ 300 lines, producing a session-running harness and an accepted-scope conformance claim.
 The flagship demo protocol (docs/plans/phase_20_right_shape/FLAGSHIP_DEMO_PROTOCOL.md) measures this;
 measured numbers replace aspirations here after each run. Measured reality (run 1, 2026-07-11,
-G-J FAIL): the run failed after 0.14h of its 8h budget with the critical path incomplete. The
+G-J FAIL): the run failed after 0.15h (525s) of its 8h budget with the critical path incomplete. The
 authoring stages that did complete stayed within line budgets (manifest 103/150, adapter 182/300)
 and a session ran through `bbh`, but lock, capture, claim, and claim-reverify never completed:
 `bbh` exposes no adapter-registration, claim, or claim-reverify front door (backlog: bb-72h,

@@ -6,7 +6,7 @@
  "points_done": 840,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T05:02:30Z",
+ "updated_at_utc": "2026-07-11T05:08:52Z",
  "items": [
   {
    "id": "A1",
@@ -1325,7 +1325,7 @@
     "H5"
    ],
    "evidence": [],
-   "notes": "executed HONESTLY AND COMPLETELY @ 3b413aff (all 8 stages attempted, timings + materials log kept, zero outsider violations); provisional G-J FAIL: unavailable bbh capability (adapter registration/claim/reverify absent from front door); budgets PASSED: manifest 103/150 (max line 101), adapter 182/300, 0.14h/8h; model input recorded per AM21/AM21a; evidence docs_tmp/phase_20/j2_run/ (immutable) + J3 integrity/budget recount; execution+measurement integrity confirmed by J3RootCause (independent) | credential hygiene: single-var env file deleted post-run; full-key-value scan over j2_run+evidence = 0 hits; rotation recommended to user",
+   "notes": "executed HONESTLY AND COMPLETELY @ 3b413aff (all 8 stages attempted, timings + materials log kept, zero outsider violations); provisional G-J FAIL: unavailable bbh capability (adapter registration/claim/reverify absent from front door); budgets PASSED: manifest 103/150 (max line 101), adapter 182/300, 0.14h/8h; model input recorded per AM21/AM21a; evidence docs_tmp/phase_20/j2_run/ (immutable) + J3 integrity/budget recount; execution+measurement integrity confirmed by J3RootCause (independent) | credential hygiene: single-var env file deleted post-run; full-key-value scan over j2_run+evidence = 0 hits; rotation recommended to user | CORRECTION (J5-TIME-001): protocol-canonical elapsed is 525s whole-second wall (0.15h at 2dp; precise 524.62s = 0.1457h) first timed access -> final claim-reverify attempt; the 0.139712h figure in j2_result.json is the staged-duration sum (immutable outsider record, superseded for budget arithmetic).",
    "verifiers": []
   },
   {
@@ -1351,7 +1351,7 @@
     "J2"
    ],
    "evidence": [],
-   "notes": "charter measured-reality statement (censored failure measurement phrasing: run failed at 0.14h, critical path incomplete; completed authoring stages within line budgets) + protocol measurement appendix; gaps named as backlog bb-72h/bb-9c8/bb-ys7; commit above",
+   "notes": "charter measured-reality statement (censored failure measurement phrasing: run failed at 0.14h, critical path incomplete; completed authoring stages within line budgets) + protocol measurement appendix; gaps named as backlog bb-72h/bb-9c8/bb-ys7; commit above | J5 round-1 RED (J5-TIME-001 timing basis, J5-J4-001 wrong failed-condition ids 2-5,8,9 -> 2-5,7 with 8,9 pass) fixed at this commit; J5 round-2 rerun follows.",
    "verifiers": []
   },
   {
