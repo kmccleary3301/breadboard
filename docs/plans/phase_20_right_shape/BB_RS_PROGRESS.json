@@ -6,7 +6,7 @@
  "points_done": 840,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T05:01:02Z",
+ "updated_at_utc": "2026-07-11T05:02:30Z",
  "items": [
   {
    "id": "A1",
@@ -1520,6 +1520,20 @@
    "recorded_at_utc": "2026-07-11T04:59:03Z",
    "basis": "first-run evidence docs_tmp/phase_20/j2_run/ (unavailable bbh capability; budgets passed); AM22a: no rerun this campaign",
    "consequence": "K2-K4 stay na_gated"
+  },
+  {
+   "id": "G-K",
+   "result": "FAIL",
+   "recorded_at_utc": "2026-07-11T05:02:30Z",
+   "basis": "GATE_K_DECISION.md @ this commit: conditions 1,3,4 unmet (F5 blocked_env; G-J FAIL; no churn accrual)",
+   "consequence": "K2-K4 na_gated"
+  },
+  {
+   "id": "G-L",
+   "result": "FAIL_DEFER",
+   "recorded_at_utc": "2026-07-11T05:02:30Z",
+   "basis": "GATE_L_DECISION.md @ this commit: G-K failed; no second consumer/reuse demand",
+   "consequence": "L2-L3 na_gated"
   }
  ],
  "amendments": [
