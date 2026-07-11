@@ -137,6 +137,17 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def _nested_root_with_ancestor_input(tmp_path: Path, logical_path: str) -> tuple[Path, Path]:
+    workspace = tmp_path / "workspace"
+    root = workspace / "docs_tmp" / "phase_20" / "worktrees" / "nested"
+    root.mkdir(parents=True)
+    ancestor_input = workspace / logical_path
+    ancestor_input.parent.mkdir(parents=True, exist_ok=True)
+    assert not (root.parent / logical_path).exists()
+    assert not (root / logical_path).exists()
+    return root, ancestor_input
+
+
 def _h4_lane(repo_root: Path, *, lane_id: str) -> tuple[dict[str, object], dict[str, Path]]:
     artifacts_root = Path("evidence") / lane_id
     paths = {
@@ -260,6 +271,33 @@ def test_stored_replay_fails_when_a_declared_artifact_is_missing(
     assert result["ok"] is False
     assert missing_ref in result["stages"][0]["detail"]
 
+
+
+def test_stored_replay_refuses_ancestor_only_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logical_path = "docs_tmp/phase_20/evidence/am18/replay-result.json"
+    root, ancestor_input = _nested_root_with_ancestor_input(tmp_path, logical_path)
+    ancestor_input.write_bytes(b'{"must_not_be_reused":true}\n')
+    lane_def = _normalized_h2_lane([])
+    lane_def["replay"]["artifacts"] = [logical_path]
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", root)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="replay",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_fail"
+    assert stage["reused_inputs"] is None
+    assert logical_path in stage["detail"]
 
 def test_stored_replay_directory_uses_shared_canonical_tree_digest(
     tmp_path: Path,
@@ -388,6 +426,41 @@ def test_identity_normalize_resolves_and_invokes_registered_translator(
         for logical_path, content in zip(logical_paths, input_bytes, strict=True)
     ]
     assert report["output"] == logical_paths
+
+
+def test_normalize_refuses_ancestor_only_capture_input(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from scripts.e4_parity.adapters import identity
+
+    logical_path = "docs_tmp/phase_20/evidence/am18/capture-input.json"
+    root, ancestor_input = _nested_root_with_ancestor_input(tmp_path, logical_path)
+    ancestor_input.write_bytes(b'{"must_not_be_normalized":true}\n')
+    lane_def = _normalized_h2_lane([logical_path])
+    _patch_h2_lane_loading(monkeypatch, lane_def)
+    monkeypatch.setattr(run_lane, "ROOT", root)
+    calls: list[object] = []
+
+    def recording_identity(payload: object, *, config: object = None) -> object:
+        calls.append((payload, config))
+        return payload
+
+    monkeypatch.setattr(identity, "translate", recording_identity)
+
+    result = run_lane.run_lane(
+        str(lane_def["lane_id"]),
+        stage="normalize",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+    )
+
+    assert calls == []
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_fail"
+    assert logical_path in stage["detail"]
 
 
 def test_pi_p5_l1_adapter_lane_produces_executed_normalize_report(
@@ -1048,6 +1121,66 @@ def test_compare_invokes_registered_callable_once_with_protocol_exact_input_and_
     assert json.loads(report_path.read_text(encoding="utf-8")) == returned_report
 
 
+def test_compare_refuses_ancestor_only_input_role_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    lane_id = "h4_ancestor_input_isolation"
+    artifacts_root = "docs_tmp/phase_20/evidence/am18/comparator"
+    root, ancestor_capture = _nested_root_with_ancestor_input(
+        tmp_path, f"{artifacts_root}/raw_capture_manifest.json"
+    )
+    ancestor_replay = ancestor_capture.with_name("bb_replay_result.json")
+    ancestor_comparator = ancestor_capture.with_name("comparator_report.json")
+    _write_json(ancestor_capture, {"schema_version": "capture.fixture.v1", "ancestor": True})
+    _write_json(ancestor_replay, {"schema_version": "replay.fixture.v1", "ancestor": True})
+    _write_json(
+        ancestor_comparator,
+        {"schema_version": "bb.e4.comparator_report.v1", "ancestor": True},
+    )
+    lane = _normalized_h2_lane([], lane_id=lane_id)
+    lane["artifacts_root"] = artifacts_root
+    registry_path = tmp_path / "comparator_registry.json"
+    module_name = "h4_ancestor_input_isolation_comparator"
+    _write_h4_registry(registry_path, lane_id=lane_id, module_name=module_name)
+    calls: list[dict[str, object]] = []
+    comparator_module = ModuleType(module_name)
+
+    def compare(inp: dict[str, object]) -> dict[str, object]:
+        calls.append(inp)
+        return {
+            "schema_version": "bb.e4.comparator_report.v1",
+            "lane_id": lane_id,
+            "config_id": lane["config_id"],
+            "scope": lane["claim"]["scope"],
+            "assertions": [],
+            "details": [],
+            "passed": 0,
+            "failed": 0,
+            "warned": 0,
+        }
+
+    comparator_module.compare = compare
+    monkeypatch.setitem(sys.modules, module_name, comparator_module)
+    _patch_h2_lane_loading(monkeypatch, lane)
+    monkeypatch.setattr(run_lane, "ROOT", root)
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="compare",
+        out_dir=tmp_path / "scratch",
+        lane_def_dir=tmp_path / "unused-lane-defs",
+        inventory_path=tmp_path / "unused-inventory.json",
+        comparator_registry_path=registry_path,
+    )
+
+    assert calls == []
+    assert result["ok"] is False
+    stage = result["stages"][0]
+    assert stage["outcome"] == "executed_fail"
+    assert "missing comparator input_role artifact" in stage["detail"]
+
+
 def test_compare_rejects_invalid_report_without_overwriting_concrete_comparator_artifact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1093,7 +1226,7 @@ def test_claim_uses_existing_comparator_report_and_disables_validator_rerun(
     lane, artifact_paths = _h4_lane(tmp_path, lane_id=lane_id)
     accepted_output = Path("artifacts/conformance/node_gate/h4_claim.json")
     original_argv = [
-        "python",
+        sys.executable,
         "scripts/validate_e4_c4_chain.py",
         "--config-id",
         str(lane["config_id"]),

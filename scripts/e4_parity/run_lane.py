@@ -153,11 +153,7 @@ def _resolve_repo_path(path_text: str) -> Path:
     if path.is_absolute():
         return path
     if path.parts and path.parts[0] in {"docs_tmp", ROOT.name}:
-        workspace = next(
-            (parent for parent in ROOT.parents if (parent / "docs_tmp").is_dir()),
-            ROOT.parent,
-        )
-        return workspace / path
+        return ROOT.parent / path
     return ROOT / path
 
 
