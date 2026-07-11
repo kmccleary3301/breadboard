@@ -1,0 +1,15 @@
+{
+  "schema": "bb.packet_acceptance_adjudication.v1",
+  "packet": "SP6",
+  "actor": "Main orchestrating agent",
+  "generated_at_utc": "2026-07-11T13:05:00Z",
+  "context": "ReviewSP6 second verdict (changes_requested @ 496434aa) demands (a) 22/22 exact-ID green in a fresh detached clean checkout without ambient copying and (b) hermetic generator estate for catalog/support-claim regeneration. Reviewer evidence shows the residual 21 clean-checkout failures at head and the generator exit-1 both trace to the ignored generated-conformance estate (node gates, raw captures, accepted packet files) that is ALSO absent at base (base clean battery: 51 reds) - the pre-existing generator/stage-coverage gap AM23b explicitly excluded from this campaign and filed as bd bb-n4e (31 pts).",
+  "adjudication": [
+    "BINDING on SP6 (must fix): every head-only failure identity vs base in the fresh e4_parity battery (incl. test_pilot_compile_is_byte_deterministic_and_committed_outputs_pass_check, test_am14_am16_manifest_inventory_is_source_only_and_lock_pinned, test_pilot_lock_pins_every_dependency error) - head failed-ID set MUST be a subset of base failed-ID set.",
+    "BINDING on SP6 (evidence): per-ID signature closure for the exact 22 family IDs at head in a fresh detached worktree - the OHMYPI-FREEZE-INPUT-NOT-CHECKOUT-PORTABLE signature (missing docs_tmp/phase_15/source_freezes/... input) must be ABSENT from all 22; each residual failure must carry a pre-existing estate signature demonstrably present in the base failure population. Artifact-rich (sp6_wt) 22/22 pass recorded as supplementary, labeled non-hermetic.",
+    "BINDING on SP6 (generated truth): ambient-provisioned byte-reproduction proof of all committed generated files AT THE FINAL HEAD (both generators, git diff --exit-code), with the exact provisioning preconditions documented.",
+    "BINDING on SP6 (protocol): implementer evidence materialized under the workspace evidence root, binding implementation_sha AND reviewed head_sha.",
+    "ADJUSTED (out of SP6): full clean-checkout 22/22 green and hermetic generator estate REQUIRE materializing the pre-existing generated evidence estate - that is bb-n4e scope per AM23b. Requiring it here would fold a 31-pt out-of-campaign packet into SP6 and exceed the AM23b authorization."
+  ],
+  "authority": "AM23b (SPEC_AMENDMENTS.md) campaign-boundary disposition; same adjudication mechanism as earlier packet scope corrections recorded via IRC + evidence (SP3 residual ownership, SP7 J.5 deferral)."
+}

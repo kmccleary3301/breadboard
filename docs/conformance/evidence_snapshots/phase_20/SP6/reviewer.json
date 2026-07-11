@@ -1,0 +1,25 @@
+{
+  "schema": "bb.packet_reviewer_evidence.v1",
+  "packet": "SP6",
+  "verdict": "approved",
+  "reviewed_sha": "fe1778cc7e27287bc884b7c18cbec4733fa0e483",
+  "reviewer": "ReviewSP6 (loop-reviewer)",
+  "provenance": "orchestrator-materialized transcription of reviewer IRC verdict [152c14472b41def0]; transcript at history://ReviewSP6",
+  "contract": "acceptance_adjudication.json (AM23b boundary): strict head-failed-subset, per-ID signature closure, ambient-provisioned generated truth, dual-SHA workspace evidence",
+  "verdict_history": [
+    "changes_requested @ e32d57e1 (migration-parity regression; family closure unproven; generator hermeticity)",
+    "changes_requested @ 496434aa (head-only battery regressions 58v51; clean-checkout 22/22 demand later adjudicated to bb-n4e)",
+    "APPROVED @ fe1778cc under adjudicated contract"
+  ],
+  "reviewer_counts": {
+    "fresh_head_battery": "50 failed, 595 passed, 1 skipped, 1 xfailed (116.23s); head failed-ID set strict subset of base 51; sole base-only ID = P6.6 pure-projection mutate case, legitimately migrated (passes 1/1 at head)",
+    "pristine_exact_22": "21 failed, 1 passed; ZERO occurrences of retired freeze-provenance signature; all residuals bb-n4e estate classes present in base population",
+    "generated_truth": "catalog 337 entries hash sha256:22705a62a97502c5ab03abbd964dea6602f8dae5a2256960b72e7a91d7643390; 21 claims; scoped git diff --exit-code clean under documented preconditions",
+    "north_star": "exit 0, 3/3 lanes executed_pass",
+    "scope": "74 files, +705/-287, confined to sanctioned areas; no weakening; no P6.6 sidecar binding; freeze provenance byte-identical sha256:4da3ae4a..."
+  },
+  "nonblocking_findings": [
+    "P3 evidence-determinism: tests/e4_parity/test_oh_my_pi_compiler_capture.py:91 _files() iterates unordered set - first-missing signature nondeterministic (6/1/14 vs 7/1/13 class split, same 21 IDs); suggested sort - folded to bb-n4e-adjacent cleanup"
+  ],
+  "generated_at_utc": "2026-07-11T14:20:00Z"
+}

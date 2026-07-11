@@ -94,6 +94,22 @@
       "sha256": "3885ebb0a84dfec200e9f1ac7451e62e8388babe96b6d888351c3aa154b20507",
       "status": "orchestrator-materialized",
       "detail": "transcription of ReviewSP2b IRC verdict; transcript at history://ReviewSP2b"
+    },
+    "SP6/implementer.json": {
+      "sha256": "feb01145e5d70c4622d3686c35f60915c62ebdc8a119922462e36b1a3682e672",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP6 final IRC [152c14472b41def0] APPROVED binding fe1778cc; workspace evidence supersedes in-branch historical copies",
+      "reviewed_code_sha": "fe1778cc"
+    },
+    "SP6/reviewer.json": {
+      "sha256": "576a0d5661601a6b049509f9c626aec8b93e9d37463614b29a1f2a592942b841",
+      "status": "orchestrator-materialized",
+      "detail": "transcription of ReviewSP6 IRC verdict; transcript at history://ReviewSP6"
+    },
+    "SP6/acceptance_adjudication.json": {
+      "sha256": "971fd37e249ba28c861d5f371eebfb1b0242b963723ccb6aa1c28a2cbcdf3570",
+      "status": "orchestrator-authored",
+      "detail": "AM23b boundary adjudication governing the final review contract"
     }
   },
   "attestations_file": "ATTESTATIONS.json"

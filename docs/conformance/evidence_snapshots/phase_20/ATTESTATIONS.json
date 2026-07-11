@@ -38,6 +38,13 @@
       "verbatim_irc": "Re-review at exact ffceba6b9aef3fb90f85b56202647fc6899943ac: APPROVED. Index object IDs are retained and regular/symlink content is materialized via cat-file, eliminating both prior blockers. New deleted-checkout, directory-shadow, and parent-symlink regressions pin the fixes. Independent focused suite: 48 passed, 4 warnings in 5.54s. Cumulative diff remains confined to the two packet files.",
       "message_id": "152be8fd6741dec4",
       "recorded_by": "orchestrating agent, 2026-07-11"
+    },
+    {
+      "packet": "SP6",
+      "reviewer": "ReviewSP6 (loop-reviewer)",
+      "message_id": "152c14472b41def0",
+      "verbatim_irc_headline": "FINAL SP6 REVIEW - artifact fe1778cc7e27287bc884b7c18cbec4733fa0e483; verdict=APPROVED under acceptance_adjudication.json; battery_family_ok=true; candidate_boundary_ok=true; generated_rebinds_ok=true; freeze_provenance_ok=true; no_test_weakening=true; confidence=0.98.",
+      "recorded_by": "orchestrating agent, 2026-07-11"
     }
   ]
 }
