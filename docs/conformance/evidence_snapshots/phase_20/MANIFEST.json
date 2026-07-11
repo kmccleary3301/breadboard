@@ -83,6 +83,17 @@
       "sha256": "b42567d8e61de8a5e3784ef0bd704741932095ae6e8ca9623c873e66184bae14",
       "status": "orchestrator-materialized",
       "detail": "transcription from agent://ReviewF5"
+    },
+    "SP2b/implementer.json": {
+      "sha256": "b6cfa6e6913769278631e36f8fadabbe1887780338303f54bf01cb2b5bbafdf7",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP2b re-verdict 2026-07-11 IRC [152be8fd6741dec4]: APPROVED binding ffceba6b exactly; independent focused suite 48 passed",
+      "reviewed_code_sha": "ffceba6b"
+    },
+    "SP2b/reviewer.json": {
+      "sha256": "3885ebb0a84dfec200e9f1ac7451e62e8388babe96b6d888351c3aa154b20507",
+      "status": "orchestrator-materialized",
+      "detail": "transcription of ReviewSP2b IRC verdict; transcript at history://ReviewSP2b"
     }
   },
   "attestations_file": "ATTESTATIONS.json"

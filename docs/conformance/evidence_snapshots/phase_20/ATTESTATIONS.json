@@ -31,6 +31,13 @@
       "from": "ReviewF5",
       "date": "2026-07-11",
       "verbatim_excerpt": "Approved F5 at exact head 0def21d547ac65ee6e9d0ec042fb54171cbda5ff; implementer evidence docs_tmp/phase_20/evidence/F5/implementer.json sha256:d3834e2fb90491e51969226243f8d2764a009fef2b8e1b9476ce21cce685bc8f; ledger tracked blob b3ceb260... commit-byte digest 908cd376...; 312 resolved/182 exact tombstones; five-stage/C4/49-test gates independently green. Full yield: agent://ReviewF5"
+    },
+    {
+      "packet": "SP2b",
+      "reviewer": "ReviewSP2b (loop-reviewer)",
+      "verbatim_irc": "Re-review at exact ffceba6b9aef3fb90f85b56202647fc6899943ac: APPROVED. Index object IDs are retained and regular/symlink content is materialized via cat-file, eliminating both prior blockers. New deleted-checkout, directory-shadow, and parent-symlink regressions pin the fixes. Independent focused suite: 48 passed, 4 warnings in 5.54s. Cumulative diff remains confined to the two packet files.",
+      "message_id": "152be8fd6741dec4",
+      "recorded_by": "orchestrating agent, 2026-07-11"
     }
   ]
 }

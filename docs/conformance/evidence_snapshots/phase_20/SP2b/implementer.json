@@ -1,0 +1,35 @@
+{
+  "schema": "bb.packet_implementer_evidence.v1",
+  "packet": "SP2b",
+  "campaign": "phase_20_right_shape",
+  "branch": "p20/sp2b",
+  "head_sha": "ffceba6b9aef3fb90f85b56202647fc6899943ac",
+  "base_sha": "b84c759eee90da8c778597514ff593741df6b941",
+  "produced_at_utc": "2026-07-11T18:17:35Z",
+  "claim": "SP2 integration defect fix: _prepare_candidate_root builds the candidate from the TRACKED TREE (git ls-files --stage -z) instead of full-checkout copytree; preserves symlink index entries as links; fails closed on gitlinks and unsafe paths; seeds declared untracked reads (workspace docs_tmp) beside the candidate; binds BB_WORKSPACE_ROOT to candidate_root.parent",
+  "root_cause_fixed": "canonical fixed-point regen at integration head failed in _prepare_candidate_root: shutil.copytree over full checkout hit dangling golden symlink (misc/codex_cli_runs/goldens) and copied stale .venv_linux_import_20260618; see docs_tmp/phase_20/evidence/M1/integration_fixed_point_gate.json",
+  "files_changed": [
+    "scripts/e4_parity/regenerate_evidence.py (+135/-18)",
+    "tests/e4_parity/test_regenerate_evidence.py (+124/-0)"
+  ],
+  "test_evidence": [
+    {
+      "cmd": "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=sp2b_wt .venv/bin/python -m pytest -q tests/e4_parity/test_regenerate_evidence.py tests/e4_parity/test_regen_front_door.py (cwd sp2b_wt)",
+      "exit": 0,
+      "tail": "45 passed, 4 warnings in 4.87s",
+      "note": "post-park rerun at exact parked head 9df0ae4a including final BB_WORKSPACE_ROOT binding lines"
+    },
+    {
+      "cmd": "same suite WITHOUT BB_WORKSPACE_ROOT",
+      "exit": 2,
+      "tail": "ReferenceResolutionError: BB_WORKSPACE_ROOT is required for workspace evidence references",
+      "note": "demonstrates fail-closed workspace-reference behavior at import time"
+    }
+  ],
+  "park_context": "committed at park order before final rerun; see docs_tmp/phase_20/evidence/M1/p20_park_record.json",
+  "status": "approved_pending_merge",
+  "revision": 2,
+  "revision_2_note": "Re-review response to ReviewSP2b changes_requested (both P2 blockers): replaced working-tree copy with index-backed materialization. _tracked_checkout_paths now retains object IDs; _copy_tracked_checkout writes blob bytes via `git cat-file blob <oid>` (regenerate_evidence.py:995-1041). This removes all three defect vectors structurally: (1) tracked entry missing from checkout cannot be silently skipped - candidate content comes from the index, not the worktree; (2) tracked file shadowed by an untracked directory cannot leak descendants - only the indexed blob is written; (3) a symlinked parent cannot traverse outside ROOT - cat-file reads the object store. 120000 entries keep the scratch-workspace escape check; 100755 restores the executable bit; 160000 still fails closed. Regression tests: checkout-file-deleted (incl. exec bit), untracked-directory-shadowing, symlinked-parent-traversal; escape test now uses a real git index instead of a stub.",
+  "test_command": "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=/Users/kylemccleary/projects/breadboard/sp2b_wt .../breadboard_repo_integration_main_20260326/.venv/bin/python -m pytest -q tests/e4_parity/test_regenerate_evidence.py tests/e4_parity/test_regen_front_door.py",
+  "test_result": "48 passed, 4 warnings in 5.14s"
+}
