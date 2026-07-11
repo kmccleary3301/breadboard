@@ -72,6 +72,17 @@
       "sha256": "8c294d9228a45d22221764d9c9ed71687ccfb0e30e1f63690c5f998d73e7d2bf",
       "status": "orchestrator-materialized",
       "detail": "transcription from agent://ReviewSP2"
+    },
+    "F5/implementer.json": {
+      "sha256": "d3834e2fb90491e51969226243f8d2764a009fef2b8e1b9476ce21cce685bc8f",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewF5 verdict names this sha256",
+      "reviewed_code_sha": "0def21d5"
+    },
+    "F5/reviewer.json": {
+      "sha256": "b42567d8e61de8a5e3784ef0bd704741932095ae6e8ca9623c873e66184bae14",
+      "status": "orchestrator-materialized",
+      "detail": "transcription from agent://ReviewF5"
     }
   },
   "attestations_file": "ATTESTATIONS.json"

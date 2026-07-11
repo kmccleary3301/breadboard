@@ -26,6 +26,11 @@
       "from": "ReviewSP2",
       "date": "2026-07-11",
       "verbatim_excerpt": "APPROVED at the requested immutable head [4210f02e...]; reviewed evidence .../SP2/implementer.json with SHA-256 5215b003d2901175a33cf067d7a8d921d1b6f8f869a1344c447e4439545d0c56; sideband_fix_ok/classification_passthrough_ok/regen_rollback_ok/no_scope_creep/deferred_items_legit all true. Full yield: agent://ReviewSP2"
+    },
+    {
+      "from": "ReviewF5",
+      "date": "2026-07-11",
+      "verbatim_excerpt": "Approved F5 at exact head 0def21d547ac65ee6e9d0ec042fb54171cbda5ff; implementer evidence docs_tmp/phase_20/evidence/F5/implementer.json sha256:d3834e2fb90491e51969226243f8d2764a009fef2b8e1b9476ce21cce685bc8f; ledger tracked blob b3ceb260... commit-byte digest 908cd376...; 312 resolved/182 exact tombstones; five-stage/C4/49-test gates independently green. Full yield: agent://ReviewF5"
     }
   ]
 }

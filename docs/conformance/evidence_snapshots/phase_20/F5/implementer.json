@@ -1,0 +1,135 @@
+{
+  "packet": "F5",
+  "provenance_note": "original implementer agent aborted post-implementation pre-evidence; this file authored from fresh reruns at the rebased head",
+  "rebased_head_sha": "0def21d547ac65ee6e9d0ec042fb54171cbda5ff",
+  "base_sha": "3c39bdbb",
+  "files_changed": [
+    "agentic_coder_prototype/conformance/c4_chain.py",
+    "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
+    "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.lock.json",
+    "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml",
+    "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.yaml",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/parity_results.json",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/prevalidation_report.json",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/raw_session_transcript/bb.session_transcript.v2.jsonl",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/secret_scan_report.json",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions/2026-07-03T02-54-26-641Z_019f25e6-2151-7000-997a-8c9c5018840a.jsonl",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions/2026-07-03T02-54-26-641Z_019f25e6-2151-7000-997a-8c9c5018840a/P66DetachedChild.jsonl",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_subagent_target_capture.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions/2026-07-03T02-54-03-035Z_019f25e5-c51b-7000-891c-332aa0524c91.jsonl",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions/2026-07-03T02-54-03-035Z_019f25e5-c51b-7000-891c-332aa0524c91/LiveCoral.jsonl",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/oh_my_pi_p6_6_task_job_subagent_probe.mjs",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/p6_6_detached_prompt.txt",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/p6_6_joined_prompt.txt",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.command_report.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.stderr.txt",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_detached_subagent_capture.stdout.txt",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.command_report.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stderr.txt",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_joined_subagent_capture.stdout.txt",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.command_report.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stderr.txt",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw/omp_version_capture.stdout.txt",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_fixture_workspace/.omp/SYSTEM.md",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_setup_and_capture_report.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_item_replay.json",
+    "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_items.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+    "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+    "scripts/e4_parity/build_e4_final_readiness_packet.py",
+    "scripts/e4_parity/compile_lane_lock.py",
+    "scripts/e4_parity/path_refs.py",
+    "scripts/e4_parity/run_lane.py",
+    "tests/e4_parity/test_f5_am19_resolution.py",
+    "tests/e4_parity/test_lane_definitions.py",
+    "tests/e4_parity/test_lane_lock_run_report_binding.py",
+    "tests/e4_parity/test_manifest_lane_runtime_binding.py",
+    "tests/e4_parity/test_phase20_pilot_lane_manifest_lock.py"
+  ],
+  "five_stage_flow": {
+    "cmd": "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=<fresh-detached-checkout> $PY scripts/e4_parity/run_lane.py --lane oh_my_pi_p6_6_task_job_subagent --stage all --out /tmp/f5-rebased-five-stage --json",
+    "exit": 0,
+    "tail": "ok=true; capture=executed_pass(0), normalize=executed_pass(0), replay=reused_stored_result(0), compare=executed_pass(0; 9 passed, 0 failed), claim=executed_pass(0); lock_sha256=sha256:b910f726273afaddf201cde911fe5339ca18b405c1f4b4c7825350d5cc4b683d; final stdout: [e4-c4-chain] pass: oh_my_pi_p6_6_task_job_subagent_v1"
+  },
+  "direct_c4": {
+    "cmd": "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=<fresh-detached-checkout> $PY scripts/validate_e4_c4_chain.py --config-id oh_my_pi_p6_6_task_job_subagent_v1 --support-claim docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json --evidence-manifest docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json --json-out /tmp/f5-rebased-direct-c4.json --no-rerun-comparators",
+    "exit": 0
+  },
+  "focused_tests": {
+    "cmd": "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=<fresh-detached-checkout> $PY -m pytest -q tests/e4_parity/test_f5_am19_resolution.py tests/e4_parity/test_lane_definitions.py tests/e4_parity/test_lane_lock_run_report_binding.py tests/e4_parity/test_manifest_lane_runtime_binding.py tests/e4_parity/test_phase20_pilot_lane_manifest_lock.py",
+    "exit": 0,
+    "counts": {
+      "passed": 49,
+      "failed": 0,
+      "warnings": 6,
+      "duration_seconds": 47.75
+    }
+  },
+  "ledger": {
+    "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
+    "digest": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e",
+    "resolved_count": 312,
+    "tombstone_count": 182,
+    "post_sp2_delta": {
+      "comparison_baseline": {
+        "commit": "1423c0cd151e73d15bd9a57c6c0a2768202b2a79",
+        "digest": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e",
+        "resolved_count": 312,
+        "tombstone_count": 182
+      },
+      "resolved_count": 0,
+      "tombstone_count": 0,
+      "note": "Baseline is the original pre-rebase F5 final head named by this packet, not an intermediate ledger lineage commit."
+    }
+  },
+  "j5_routing": {
+    "label": "J.5.evidence[0]",
+    "status": "separate_post_integration_step",
+    "source_contract": "docs_tmp/phase_20/evidence/SP7/implementer.json:95-103",
+    "prerequisite": "Run only from the integrated SHA after F5 lands; do not bind J.5 to the former ambient workspace ledger.",
+    "tracked_artifact": {
+      "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
+      "digest": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e"
+    },
+    "action": "Rebind phase-16 BB_ER_PROGRESS.json J.5.evidence[0] to the tracked canonical artifact from the integrated F5 SHA using the audited SP7 precedent and checker; this F5 packet does not claim that workspace-progress mutation complete.",
+    "verification": [
+      "PYTHONPATH=<integrated-checkout> <venv-python> scripts/e4_parity/check_er_progress.py --progress <workspace>/docs_tmp/phase_16/BB_ER_PROGRESS.json --workspace-root <workspace> --json-out /tmp/f5_j5_after_report.json",
+      "PYTHONPATH=<integrated-checkout> <venv-python> -m pytest -q tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker"
+    ],
+    "required_result": "checker exit 0 and focused test pass with J.5.evidence[0] no longer PIN_STALE"
+  },
+  "s03_check": {
+    "new_capability": false,
+    "lane_crud_or_api": false,
+    "sdk_e4_surface": false,
+    "typescript_repackaging": false,
+    "new_schema_family": false,
+    "scorecard_or_ledger_shape_change": false,
+    "parallel_framework": false,
+    "validation_weakened": false,
+    "hash_allowlist_expanded": false
+  },
+  "residuals": {
+    "gate_failures": [],
+    "ledger_accounting_delta": null,
+    "warnings": [
+      "Focused pytest run emitted 6 jsonschema.RefResolver deprecation warnings; all 49 tests passed."
+    ]
+  }
+}
