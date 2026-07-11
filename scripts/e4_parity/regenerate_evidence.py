@@ -879,6 +879,7 @@ def _run_stage_sequence(
     *,
     python: str,
     execution_root: Path,
+    workspace_root: Path | None = None,
 ) -> tuple[int, list[StageResult]]:
     results: list[StageResult] = []
     blocked_exit_code: int | None = None
@@ -896,6 +897,8 @@ def _run_stage_sequence(
             if not existing_pythonpath
             else f"{execution_root}{os.pathsep}{existing_pythonpath}"
         )
+        if workspace_root is not None:
+            env["BB_WORKSPACE_ROOT"] = str(workspace_root)
         completed = subprocess.run(argv, cwd=execution_root, text=True, capture_output=True, env=env)
         duration_seconds = round(time.perf_counter() - start, 6)
         result = StageResult(
@@ -934,20 +937,37 @@ def _run_stage_sequence(
     return blocked_exit_code or 0, results
 
 
-def _copy_path(source: Path, destination: Path) -> None:
-    if source.is_dir():
-        shutil.copytree(source, destination, dirs_exist_ok=True)
+def _copy_path(
+    source: Path,
+    destination: Path,
+    *,
+    symlink_boundary: Path | None = None,
+) -> None:
+    if source.is_symlink():
+        target = os.readlink(source)
+        if symlink_boundary is not None:
+            resolved_target = (destination.parent / target).resolve(strict=False)
+            if not resolved_target.is_relative_to(symlink_boundary.resolve()):
+                raise ValueError(
+                    f"candidate symlink escapes scratch workspace: {destination} -> {target}"
+                )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.symlink_to(target)
+    elif source.is_dir():
+        shutil.copytree(source, destination, dirs_exist_ok=True, symlinks=True)
     elif source.is_file():
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
 
 
 def _candidate_path(candidate_root: Path, accepted_path: Path) -> Path:
-    resolved = accepted_path.resolve()
+    accepted_absolute = Path(os.path.abspath(accepted_path))
+    root_absolute = Path(os.path.abspath(ROOT))
+    workspace_absolute = Path(os.path.abspath(WORKSPACE))
     try:
-        return candidate_root / resolved.relative_to(ROOT.resolve())
+        return candidate_root / accepted_absolute.relative_to(root_absolute)
     except ValueError:
-        return candidate_root.parent / resolved.relative_to(WORKSPACE.resolve())
+        return candidate_root.parent / accepted_absolute.relative_to(workspace_absolute)
 
 
 def _seed_external_candidate_paths(candidate_root: Path, stages: Sequence[Stage]) -> None:
@@ -964,21 +984,99 @@ def _seed_external_candidate_paths(candidate_root: Path, stages: Sequence[Stage]
         else:
             sources = [accepted_pattern]
         for source in sources:
-            if source.exists():
-                _copy_path(source, _candidate_path(candidate_root, source))
+            if source.exists() or source.is_symlink():
+                _copy_path(
+                    source,
+                    _candidate_path(candidate_root, source),
+                    symlink_boundary=candidate_root.parent,
+                )
+
+
+def _tracked_checkout_paths() -> tuple[tuple[str, Path], ...]:
+    output = subprocess.check_output(
+        ("git", "ls-files", "--stage", "-z"),
+        cwd=ROOT,
+    )
+    entries: list[tuple[str, Path]] = []
+    for raw_entry in output.split(b"\0"):
+        if not raw_entry:
+            continue
+        metadata, raw_path = raw_entry.split(b"\t", 1)
+        mode, _object_id, stage = metadata.decode("ascii").split()
+        if stage != "0":
+            raise RuntimeError(f"candidate checkout has unresolved index stage {stage}")
+        entries.append((mode, Path(raw_path.decode("utf-8"))))
+    return tuple(entries)
+
+
+def _copy_tracked_checkout(candidate_root: Path) -> None:
+    candidate_root.mkdir(parents=True)
+    for mode, relative_path in _tracked_checkout_paths():
+        if relative_path.is_absolute() or ".." in relative_path.parts:
+            raise ValueError(f"git returned unsafe tracked path: {relative_path}")
+        if mode == "160000":
+            raise RuntimeError(
+                f"candidate checkout cannot materialize tracked gitlink: {relative_path}"
+            )
+        source = ROOT / relative_path
+        if not source.exists() and not source.is_symlink():
+            continue
+        if mode == "120000" and not source.is_symlink():
+            raise RuntimeError(f"tracked symlink is not checked out as a link: {relative_path}")
+        if mode not in {"100644", "100755", "120000"}:
+            raise RuntimeError(f"unsupported tracked mode {mode}: {relative_path}")
+        _copy_path(
+            source,
+            candidate_root / relative_path,
+            symlink_boundary=candidate_root.parent,
+        )
+
+
+def _declared_checkout_source(pattern: str) -> Path:
+    path = Path(pattern)
+    if (
+        path.parts
+        and path.parts[0] == "docs_tmp"
+        and path.parts[:3] != ("docs_tmp", "phase_20", "derived")
+    ):
+        return WORKSPACE / path
+    return ROOT / path
+
+
+def _seed_declared_checkout_reads(candidate_root: Path, stages: Sequence[Stage]) -> None:
+    patterns = dict.fromkeys(
+        value
+        for stage in stages
+        for value in stage.reads
+        if not value.startswith("../")
+    )
+    for pattern in patterns:
+        accepted_pattern = _declared_checkout_source(pattern)
+        sources = (
+            sorted(accepted_pattern.parent.glob(accepted_pattern.name))
+            if _is_glob(pattern)
+            else [accepted_pattern]
+        )
+        for source in sources:
+            candidate = _candidate_path(candidate_root, source)
+            if (
+                (source.exists() or source.is_symlink())
+                and not candidate.exists()
+                and not candidate.is_symlink()
+            ):
+                _copy_path(
+                    source,
+                    candidate,
+                    symlink_boundary=candidate_root.parent,
+                )
 
 
 def _prepare_candidate_root(candidate_root: Path, stages: Sequence[Stage]) -> None:
-    shutil.copytree(
-        ROOT,
-        candidate_root,
-        ignore=shutil.ignore_patterns(
-            ".git",
-            ".pytest_cache",
-            "__pycache__",
-            "*.pyc",
-        ),
-    )
+    # Invariant: the candidate contains every tracked path plus every untracked
+    # read/write input explicitly declared by run_pipeline stages, and nothing
+    # else. Blanket copies admit stale venvs, worktrees, and other local state.
+    _copy_tracked_checkout(candidate_root)
+    _seed_declared_checkout_reads(candidate_root, stages)
     _seed_external_candidate_paths(candidate_root, stages)
 
 
@@ -1077,6 +1175,7 @@ def _run_regeneration_transaction(
             candidate_stages,
             python=python,
             execution_root=candidate_root,
+            workspace_root=candidate_root.parent,
         )
         results.extend(candidate_results)
         if candidate_code != 0:
