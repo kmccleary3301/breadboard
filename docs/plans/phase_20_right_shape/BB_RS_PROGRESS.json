@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 815,
+ "points_done": 840,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T04:59:03Z",
+ "updated_at_utc": "2026-07-11T05:01:02Z",
  "items": [
   {
    "id": "A1",
@@ -1325,7 +1325,7 @@
     "H5"
    ],
    "evidence": [],
-   "notes": "executed HONESTLY AND COMPLETELY @ 3b413aff (all 8 stages attempted, timings + materials log kept, zero outsider violations); provisional G-J FAIL: unavailable bbh capability (adapter registration/claim/reverify absent from front door); budgets PASSED: manifest 103/150 (max line 101), adapter 182/300, 0.14h/8h; model input recorded per AM21/AM21a; evidence docs_tmp/phase_20/j2_run/ (immutable) + J3 integrity/budget recount; execution+measurement integrity confirmed by J3RootCause (independent)",
+   "notes": "executed HONESTLY AND COMPLETELY @ 3b413aff (all 8 stages attempted, timings + materials log kept, zero outsider violations); provisional G-J FAIL: unavailable bbh capability (adapter registration/claim/reverify absent from front door); budgets PASSED: manifest 103/150 (max line 101), adapter 182/300, 0.14h/8h; model input recorded per AM21/AM21a; evidence docs_tmp/phase_20/j2_run/ (immutable) + J3 integrity/budget recount; execution+measurement integrity confirmed by J3RootCause (independent) | credential hygiene: single-var env file deleted post-run; full-key-value scan over j2_run+evidence = 0 hits; rotation recommended to user",
    "verifiers": []
   },
   {
@@ -1346,12 +1346,12 @@
    "ws": "J",
    "title": "charter carries measured numbers",
    "weight": 25,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "J2"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "charter measured-reality statement (censored failure measurement phrasing: run failed at 0.14h, critical path incomplete; completed authoring stages within line budgets) + protocol measurement appendix; gaps named as backlog bb-72h/bb-9c8/bb-ys7; commit above",
    "verifiers": []
   },
   {
