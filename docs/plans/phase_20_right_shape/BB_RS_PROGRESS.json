@@ -6,7 +6,7 @@
  "points_done": 885,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T05:17:42Z",
+ "updated_at_utc": "2026-07-11T05:21:10Z",
  "items": [
   {
    "id": "A1",
@@ -284,7 +284,14 @@
     }
    ],
    "notes": "verifier packet PASS @ d64e0f00 (agent://VerifyA8Packet): all A1-A7 gates green (TS typecheck/unit/smokes, py SDK 19p, default-server smokes both SDKs, OpenAPI artifact check); base 3b8d862f repro: both SDK README flows 404 on POST /sessions; evidence docs_tmp/phase_20/evidence/A8/verifier.json",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyA8Packet",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "docs_tmp/phase_20/evidence/A8/verifier.json (verdict pass @ d64e0f00; A1-A7 gates + base-SHA 404 repro both SDKs)"
+    }
+   ]
   },
   {
    "id": "B1",
@@ -739,7 +746,26 @@
     }
    ],
    "notes": "plan-text grounding: \u00a71.4 L79 defines evidence dir as ../docs_tmp/phase_20/evidence/ with final refs copied into ledger; audit transcript verified there by VerifyWsE2Static (amended verdict), bound to source commit 84a71cd1 whose patch-id matches pick 26f3ffba | reopened by E6 round1, resolved @ bc52b1ba merged a61868eb; commit scope audited (registry + generated census/TS + tier test only)",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyE2ReopenStatic",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "docs_tmp/phase_20/evidence/E2/verifier_reopen_static.json (pass, bound bc52b1ba, merged-head a61868eb)"
+    },
+    {
+     "agent": "VerifyWsE2Exec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsE2Exec per_item[E2]=pass @ 5a5d22ed (tiers/freeze/pytest/verify:generated green; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsE2Static",
+     "lens": "anti_scope",
+     "verdict": "fail",
+     "verdict_ref": "agent://VerifyWsE2Static per_item[E2]=fail (missing adversarial audit transcript) - superseded by E2 reopen cycle + VerifyE2ReopenStatic pass"
+    }
+   ]
   },
   {
    "id": "E3",
@@ -767,7 +793,20 @@
     }
    ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsE2Static",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsE2Static per_item[E3]=pass @ 5a5d22ed (patch-ids + registry census; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsE2Exec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsE2Exec per_item[E3]=pass @ 5a5d22ed (inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "E4",
@@ -795,7 +834,20 @@
     }
    ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsE2Static",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsE2Static per_item[E4]=pass @ 5a5d22ed (patch-ids + registry census; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsE2Exec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsE2Exec per_item[E4]=pass @ 5a5d22ed (inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "E5",
@@ -829,7 +881,14 @@
     }
    ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "WsE2Retier.E5ConsumerVerifier",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "docs_tmp/phase_20/evidence/E5/verifier.json (pass @ 4b2467d3; 19/19 kept-tier consumer rows verified, unresolved=[])"
+    }
+   ]
   },
   {
    "id": "E6",
@@ -983,7 +1042,20 @@
     }
    ],
    "notes": "round-3 dual PASS @ 81d51422 (patch-id 8e1f3f03) | round-6 dual PASS (VerifyWsF6Static agent://VerifyWsF6Static @ 8847a6b0 + VerifyWsF6Exec agent://VerifyWsF6Exec @ eee87ed7); workspace-free subset merged; sources 7baf05d0",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsF6Static",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsF6Static per_item[F3]=pass @ head 8847a6b0 (patch-ids bound; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsF6Exec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsF6Exec per_item[F3] @ head eee87ed7 (boundary worktree batteries green; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "F4",
@@ -1007,7 +1079,20 @@
     }
    ],
    "notes": "RED @ verify-wsF2 3f8e3faf (VerifyWsF2Static): declared zip input under gitignored docs_tmp/ + outside-worktree resolution climb violates AM15/AM11a; fix routed to WsF3Compiler2 (track zip at config/e4_lanes/source_freezes/, repin lock, remove climb fallback + negative test) | exec lens FAIL @ 3f8e3faf (VerifyWsF2Exec): runtime-binding test file never committed (pytest exit 4); bb.e4.lane_manifest.v1 drift w/o allowlist pin (freeze exit 1); F3/F6 gates green; fixed-point base-repro shows F5(b) stale-pin claim NOT reproduced at base | round-3 @ verify-wsF2c 81d51422: static PASS (R1-R4 closed: zip tracked, no-fallback+negative test, pin same-commit valid B2c/B2d w/ AM8 authorization, boundaries self-contained); exec FAIL solely on fresh-checkout FileNotFoundError (derived dir assumed) \u2014 materialization-ownership fix routed | round-6 dual PASS (VerifyWsF6Static agent://VerifyWsF6Static @ 8847a6b0 + VerifyWsF6Exec agent://VerifyWsF6Exec @ eee87ed7); workspace-free subset merged; sources adab754f+2d82b7a8",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsF6Static",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsF6Static per_item[F4]=pass @ head 8847a6b0 (patch-ids bound; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsF6Exec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsF6Exec per_item[F4] @ head eee87ed7 (boundary worktree batteries green; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "F5",
@@ -1049,7 +1134,20 @@
     }
    ],
    "notes": "round-3 dual PASS @ 81d51422 (promotion byte-identity at F6/F4/head boundaries) | round-6 dual PASS (VerifyWsF6Static agent://VerifyWsF6Static @ 8847a6b0 + VerifyWsF6Exec agent://VerifyWsF6Exec @ eee87ed7); workspace-free subset merged; sources c44966e3",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsF6Static",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsF6Static per_item[F6]=pass @ head 8847a6b0 (patch-ids bound; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsF6Exec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsF6Exec per_item[F6] @ head eee87ed7 (boundary worktree batteries green; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "G1",
@@ -1112,7 +1210,20 @@
     }
    ],
    "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item cb7f93fe; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsGExec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsGExec per_item[G2]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsGStatic",
+     "lens": "anti_scope",
+     "verdict": "fail",
+     "verdict_ref": "agent://VerifyWsGStatic per_item[G2]=red (boundary self-containment: cited packaging test added later in-chain at c00c6f48; exec lens runs it green at head; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "G3",
@@ -1142,7 +1253,20 @@
     }
    ],
    "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item b9566134; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsGExec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsGExec per_item[G3]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsGStatic",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsGStatic per_item[G3]=pass @ ab4c9e96 (inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "G4",
@@ -1172,7 +1296,20 @@
     }
    ],
    "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item 6b7fe7fe; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsGExec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsGExec per_item[G4]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsGStatic",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsGStatic per_item[G4]=pass @ ab4c9e96 (inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "G5",
@@ -1203,7 +1340,20 @@
     }
    ],
    "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item 123242f4; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsGExec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsGExec per_item[G5]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsGStatic",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsGStatic per_item[G5]=pass @ ab4c9e96 (inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "G6",
@@ -1227,7 +1377,20 @@
     }
    ],
    "notes": "dual verifier PASS @ ab4c9e96 (VerifyWsGStatic amended + VerifyWsGExec, full fresh-clone log artifact://16201); item ab4c9e96; review fixes 9934acce/c00c6f48/1c367683; AM20/AM20a floor declared",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsGExec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsGExec per_item[G6]=pass @ ab4c9e96 (incl. fresh-clone full-command log artifact://16201; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsGStatic",
+     "lens": "anti_scope",
+     "verdict": "fail",
+     "verdict_ref": "agent://VerifyWsGStatic per_item[G6]=red (evidence freshness: full transcript bound to sibling 44df2bd; CLOSED by VerifyWsGExec fresh-clone full-command log at ab4c9e96; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "H1",
@@ -1286,7 +1449,20 @@
     }
    ],
    "notes": "final 815827a2 picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsH2Static2",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Static2 per_item[H2]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsH2Exec2",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H2]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "H3",
@@ -1310,7 +1486,20 @@
     }
    ],
    "notes": "final 60357e42 picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsH2Static2",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Static2 per_item[H3]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsH2Exec2",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H3]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "H4",
@@ -1334,7 +1523,20 @@
     }
    ],
    "notes": "final b08b6db2 picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsH2Static2",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Static2 per_item[H4]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsH2Exec2",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H4]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "H5",
@@ -1361,7 +1563,20 @@
     }
    ],
    "notes": "final 11ac780b picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsH2Static2",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Static2 per_item[H5]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsH2Exec2",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H5]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "H6",
@@ -1385,7 +1600,20 @@
     }
    ],
    "notes": "final 60a3862a picked to verify-wsH2 @ 03ca3d8c; dual verifier PASS (VerifyWsH2Static2 agent://VerifyWsH2Static2 + VerifyWsH2Exec2 agent://VerifyWsH2Exec2); AM17a/AM17b-r conformance enumerated; class-tagged pins validated by B2c/B2d gate",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsH2Static2",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Static2 per_item[H6]=pass @ 03ca3d8c (patch-id equivalent, schema deltas authorized; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsH2Exec2",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsH2Exec2 per_item[H6]=PASS @ 03ca3d8c (suites green incl. freeze red/green; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "I1",
@@ -1448,7 +1676,20 @@
     }
    ],
    "notes": " | allowlist swap f3d48e02: hash-pinned {I2, fbb7d149...}; I4 evidence-only (empty diff by design), corpus parity rerun bound to a80dcfcb (base 27deb570), several cases strictly-better-typed pointers | exec checks 6-7 confirmed full-output: tests/compilation AM10 normalized delta base=175 head=175 sets_equal=true head_only=0; final status clean at a80dcfcb",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsIStatic",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsIStatic per_item[I2]=pass @ a80dcfcb (patch-id + allowlist pins; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsIExec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsIExec @ a80dcfcb (152 schema-first tests, freeze red/green, corpus parity, AM10 delta equal; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "I3",
@@ -1476,7 +1717,20 @@
     }
    ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsIStatic",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsIStatic per_item[I3]=pass @ a80dcfcb (patch-id + allowlist pins; inspected 2026-07-11)"
+    },
+    {
+     "agent": "VerifyWsIExec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsIExec @ a80dcfcb (152 schema-first tests, freeze red/green, corpus parity, AM10 delta equal; inspected 2026-07-11)"
+    }
+   ]
   },
   {
    "id": "I4",
@@ -1509,7 +1763,20 @@
     }
    ],
    "notes": "",
-   "verifiers": []
+   "verifiers": [
+    {
+     "agent": "VerifyWsIStatic",
+     "lens": "anti_scope",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsIStatic per_item[I4]=pass (evidence binding verified)"
+    },
+    {
+     "agent": "VerifyWsIExec",
+     "lens": "correctness",
+     "verdict": "pass",
+     "verdict_ref": "agent://VerifyWsIExec per_item[5_I4_corpus_parity]=pass (12-case corpus, both entrypoints)"
+    }
+   ]
   },
   {
    "id": "J1",
