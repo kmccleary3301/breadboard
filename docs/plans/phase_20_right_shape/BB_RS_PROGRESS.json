@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T03:29:14Z",
+ "updated_at_utc": "2026-07-11T03:32:59Z",
  "items": [
   {
    "id": "A1",
@@ -347,12 +347,12 @@
    "ws": "B",
    "title": "bd epic + child issues",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "B1"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "epic bb-c6n (children bb-c6n.1..13 = WS-A..WS-M) pre-existing, confirmed via bd ready/show; duplicate bb-tri closed; ws closures recorded per-workstream with accepting merge SHAs",
    "verifiers": []
   },
   {
@@ -389,13 +389,13 @@
    "ws": "C",
    "title": "thesis numbers from J-evidence",
    "weight": 10,
-   "status": "todo",
+   "status": "done",
    "deps": [
     "C1",
     "J1"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "C2 decision: thesis numbers CONFIRMED unchanged from J1 predeclared budgets (FLAGSHIP_DEMO_PROTOCOL.md: manifest <=150 canonical lines, adapter <=300 counted lines, 8h agent-time = one working day); charter bracketed [150]/[300] placeholders stay until J4 fills MEASURED values per charter self-text",
    "verifiers": []
   },
   {
@@ -1719,6 +1719,10 @@
   {
    "at": "2026-07-10T20:56:55Z",
    "note": "AM1 recorded: shared interpreter /Users/kylemccleary/projects/breadboard/breadboard_repo_integration_main_20260326/.venv/bin/python, requirements sha256:9f19031842d0d2c2..., python: Python 3.11.15"
+  },
+  {
+   "id": "bd_tracking",
+   "note": "bd epic bb-c6n; children: .1 WS-A .2 WS-B .3 WS-C .4 WS-D .5 WS-E .6 WS-F .7 WS-G .8 WS-H .9 WS-I .10 WS-J .11 WS-K .12 WS-L .13 WS-M; closures cite accepting merge SHAs"
   }
  ],
  "wave_boundaries": [
