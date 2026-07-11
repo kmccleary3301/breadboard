@@ -413,6 +413,13 @@ def is_v2_config(doc: Dict[str, Any]) -> bool:
     return doc.get("schema_version") == "bb.agent_config_surface.v2"
 
 
+def _config_resolution_base_dirs(config_path_str: str) -> tuple[Path, Path]:
+    """Return private prompt-resolution roots without decorating the public config."""
+
+    config_path = _resolve_config_path(config_path_str)
+    return config_path.parent, config_path.parent.parent.parent
+
+
 def load_agent_config(config_path_str: str) -> Dict[str, Any]:
     """
     Load agent config with v1/v2 support (extends + validation + minimal normalization).
@@ -426,17 +433,7 @@ def load_agent_config(config_path_str: str) -> Dict[str, Any]:
     # Prefer resolving extends first (so child files inherit version/mode/loop)
     doc = _resolve_extends(raw, config_path) if (isinstance(raw, dict) and raw.get("extends")) else raw
 
-    metadata = {
-        "config_path": str(config_path),
-        "config_dir": str(config_path.parent),
-        "repo_root": str(config_path.parent.parent.parent),
-    }
 
-    def _with_metadata(doc_out):
-        if isinstance(doc_out, dict):
-            doc_out = dict(doc_out)
-            doc_out["_config_metadata"] = metadata
-        return doc_out
 
     surface_schema_version = _surface_schema_version(doc)
     if surface_schema_version == "bb.agent_config_surface.v2":
@@ -452,12 +449,12 @@ def load_agent_config(config_path_str: str) -> Dict[str, Any]:
         active_logger.warning("Unknown BREADBOARD_CONFIG_AUTHORITY=%r; using config", authority)
         authority = "config"
     if authority == "config":
-        return _with_metadata(legacy_doc)
+        return legacy_doc
 
     view = build_config_view(str(config_path))
     effective_doc = view.as_dict()
     if legacy_doc != effective_doc:
         _log_config_divergence(config_path, legacy_doc, effective_doc, logger=active_logger)
     if authority == "parity":
-        return _with_metadata(legacy_doc)
-    return _with_metadata(effective_doc)
+        return legacy_doc
+    return effective_doc

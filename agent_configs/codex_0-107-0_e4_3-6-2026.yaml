@@ -1,5 +1,5 @@
 # Codex CLI E4 reference config
-# Captured against Codex CLI 0.107.0 and calibrated using the GPT-5.4 Mini lane.
+# Captured against Codex CLI 0.107.0 and calibrated using the GPT-5.1 Codex Mini lane.
 # This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
 # Local reference material lives under `../config/e4_targets/codex/0.107.0/`.
 #
@@ -18,7 +18,7 @@
 #
 # Calibration note:
 # The short filename intentionally omits the calibration model nickname. The current latest
-# strict Codex E4 lane was frozen using the GPT-5.4 Mini route, which is why that exact
+# strict Codex E4 lane was frozen using the GPT-5.1 Codex Mini route, which is why that exact
 # model id is still explicit below.
 
 version: 2
@@ -38,14 +38,14 @@ workspace:
     mode: development
 
 providers:
-  default_model: openai/gpt-5.4-mini
+  default_model: openai/gpt-5.1-codex-mini
   routing:
     # If the provider cannot honor native tools or streaming, fail soft instead of crashing
     # the harness. This keeps the public lane operational while still preferring the real shape.
     disable_native_tools_on_probe_failure: true
     disable_stream_on_probe_failure: true
   models:
-  - id: openai/gpt-5.4-mini
+  - id: openai/gpt-5.1-codex-mini
     adapter: openai
     params:
       temperature: 0.2

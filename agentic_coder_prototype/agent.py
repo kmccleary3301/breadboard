@@ -33,7 +33,7 @@ def _get_ray():  # type: ignore[no-untyped-def]
         _ray = _ray_mod
     return _ray
 from .agent_llm_openai import OpenAIConductor
-from .compilation.v2_loader import load_agent_config
+from .compilation.v2_loader import _config_resolution_base_dirs, load_agent_config
 from .provider.routing import provider_router
 from .provider import provider_adapter_manager
 from .compilation.tool_yaml_loader import load_yaml_tools
@@ -358,6 +358,7 @@ class AgenticCoder:
                 workspace=self.workspace_dir,
                 config=self.config,
                 local_mode=True,
+                prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
             )
         else:
             runtime_env = {
@@ -370,6 +371,7 @@ class AgenticCoder:
             self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
                 workspace=self.workspace_dir,
                 config=self.config,
+                prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
             )
     
     def run_task(
