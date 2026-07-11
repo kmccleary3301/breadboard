@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-10T23:27:21Z",
+ "updated_at_utc": "2026-07-11T00:00:35Z",
  "items": [
   {
    "id": "A1",
@@ -896,7 +896,7 @@
     "F2"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "round-3 dual PASS @ 81d51422 (patch-id 8e1f3f03)",
    "verifiers": []
   },
   {
@@ -909,7 +909,7 @@
     "F3"
    ],
    "evidence": [],
-   "notes": "RED @ verify-wsF2 3f8e3faf (VerifyWsF2Static): declared zip input under gitignored docs_tmp/ + outside-worktree resolution climb violates AM15/AM11a; fix routed to WsF3Compiler2 (track zip at config/e4_lanes/source_freezes/, repin lock, remove climb fallback + negative test) | exec lens FAIL @ 3f8e3faf (VerifyWsF2Exec): runtime-binding test file never committed (pytest exit 4); bb.e4.lane_manifest.v1 drift w/o allowlist pin (freeze exit 1); F3/F6 gates green; fixed-point base-repro shows F5(b) stale-pin claim NOT reproduced at base",
+   "notes": "RED @ verify-wsF2 3f8e3faf (VerifyWsF2Static): declared zip input under gitignored docs_tmp/ + outside-worktree resolution climb violates AM15/AM11a; fix routed to WsF3Compiler2 (track zip at config/e4_lanes/source_freezes/, repin lock, remove climb fallback + negative test) | exec lens FAIL @ 3f8e3faf (VerifyWsF2Exec): runtime-binding test file never committed (pytest exit 4); bb.e4.lane_manifest.v1 drift w/o allowlist pin (freeze exit 1); F3/F6 gates green; fixed-point base-repro shows F5(b) stale-pin claim NOT reproduced at base | round-3 @ verify-wsF2c 81d51422: static PASS (R1-R4 closed: zip tracked, no-fallback+negative test, pin same-commit valid B2c/B2d w/ AM8 authorization, boundaries self-contained); exec FAIL solely on fresh-checkout FileNotFoundError (derived dir assumed) \u2014 materialization-ownership fix routed",
    "verifiers": []
   },
   {
@@ -922,7 +922,7 @@
     "F4"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "round-3: static FAIL \u2014 legacy payload blocks not retired (descriptor unchanged); full-flow claim stage red on moving external phase-15 atomic-ledger digest + regen fixed-point exit 1 (byte_identical, same signature at base per exec lens = env/pre-existing, honest classification). Retirement routed; env gates stay classified w/ prerequisite: refreshed/repinned phase-15 external evidence",
    "verifiers": []
   },
   {
@@ -935,7 +935,7 @@
     "F5"
    ],
    "evidence": [],
-   "notes": "",
+   "notes": "round-3 dual PASS @ 81d51422 (promotion byte-identity at F6/F4/head boundaries)",
    "verifiers": []
   },
   {
