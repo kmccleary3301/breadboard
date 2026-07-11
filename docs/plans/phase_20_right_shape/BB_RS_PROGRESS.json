@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T03:32:59Z",
+ "updated_at_utc": "2026-07-11T03:33:58Z",
  "items": [
   {
    "id": "A1",
@@ -395,7 +395,7 @@
     "J1"
    ],
    "evidence": [],
-   "notes": "C2 decision: thesis numbers CONFIRMED unchanged from J1 predeclared budgets (FLAGSHIP_DEMO_PROTOCOL.md: manifest <=150 canonical lines, adapter <=300 counted lines, 8h agent-time = one working day); charter bracketed [150]/[300] placeholders stay until J4 fills MEASURED values per charter self-text",
+   "notes": "C2 decision: thesis numbers CONFIRMED unchanged from J1 predeclared budgets (FLAGSHIP_DEMO_PROTOCOL.md: manifest <=150 canonical lines, adapter <=300 counted lines, 8h agent-time = one working day); charter placeholders RESOLVED to unbracketed 150/300 in this commit (C2's permitted delta); J4 later replaces with MEASURED values per charter self-text",
    "verifiers": []
   },
   {

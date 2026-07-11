@@ -10,8 +10,8 @@ claims trustworthy; its records, lanes, catalogs, ledgers, and regeneration mach
 of the ordinary harness-builder experience and are not public API.
 
 **Falsifiable thesis.** An outsider, using only published docs and the `bbh` front door, can clone a
-bounded harness profile in one working day: hand-authored manifest ≤ [150] lines and adapter code
-≤ [300] lines, producing a session-running harness and an accepted-scope conformance claim.
+bounded harness profile in one working day: hand-authored manifest ≤ 150 lines and adapter code
+≤ 300 lines, producing a session-running harness and an accepted-scope conformance claim.
 The flagship demo protocol (docs/plans/phase_20_right_shape/FLAGSHIP_DEMO_PROTOCOL.md) measures this;
 measured numbers replace aspirations here after each run.
 
