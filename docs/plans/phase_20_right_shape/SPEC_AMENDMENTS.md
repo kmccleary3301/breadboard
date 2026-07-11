@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **21 amendments + AM19a addendum** (below).
+Current state: **22 amendments** (below).
 
 ---
 
@@ -311,3 +311,10 @@ Ownership: G6 (fresh-checkout bootstrap + install surfaces). No core-runtime edi
 
 
 **AM20 addendum (AM20a, same date) - grounding evidence for the floor decision:** advisory review challenged raising a floor off one data point; inventory performed. Facts: (1) pyproject.toml (G1 packaging skeleton 0f09c736) declares NO requires-python; no python_requires exists anywhere in packaging metadata — there is no declared 3.9 contract to preserve; AM20 DECLARES a floor for the first time. (2) AST scan of 970 .py files across agentic_coder_prototype/, breadboard/, scripts/: exactly ONE match statement (agentic_coder_prototype/api/cli_bridge/session_runner.py:274). (3) git blame: introduced 2025-12-19 in pre-campaign commit 8e475b83 — not campaign work; the import floor has been de facto >= 3.10 for ~7 months. (4) Independent second 3.9 blocker: pydantic annotation evaluation requires eval-type-backport under 3.9 (G6 evidence). Decision stands: declare >= 3.10 (codification of reality); the alternative (core if/elif conversion + backport dep + 3.9 CI lane) would build support for a version no consumer was promised or ever had.
+
+
+---
+
+## Amendment 21 - 2026-07-11 - J2 model-input substitution (pre-run)
+
+FLAGSHIP_DEMO_PROTOCOL.md 'Target freeze' model selection revised BEFORE the first timed outsider access (run remains G-J eligible per the protocol's own eligibility clause): `openai/gpt-4.1-mini` -> route `openrouter/openai/gpt-5.6-luna` (OpenRouter; credential `OPENROUTER_API_KEY` from the user-authorized workspace .env, injected env-only and never echoed into transcripts or evidence), reasoning effort `low` where the pinned target exposes control, else provider default recorded. Grounds: original provider credential absent from execution environment; user directive in-session (GPT 5.6 Luna on low + authorized OpenRouter key). Orchestrator preflight (non-timed, environment check only): model list + 1-message ping returned exact id `openai/gpt-5.6-luna-20260709`, finish=stop. Unchanged and still frozen: target gptme==0.31.0, wheel SHA-256, bounded profile, prompt, tool allowlist, budgets 150/300/8h, counting rules, pass criteria, outsider rule. Model remains a captured input, excluded from the conformance claim.

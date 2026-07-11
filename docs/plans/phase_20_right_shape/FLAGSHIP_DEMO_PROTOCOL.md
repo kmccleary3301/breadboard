@@ -10,7 +10,7 @@ The target is the restricted gptme profile below.
 - Source tag: [`gptme/gptme@v0.31.0`](https://github.com/gptme/gptme/tree/v0.31.0), commit `4130850053d87756d28cabff5c0ba9b68750f5eb`
 - Install artifact: [`gptme-0.31.0-py3-none-any.whl`](https://files.pythonhosted.org/packages/ba/0e/7e65e191e124b44d2949b50c7d29cfbc15d2691a46aa5b228e31cbfaa8c4/gptme-0.31.0-py3-none-any.whl)
 - Artifact SHA-256: `f1a83d8ef2a870ee882965d3dfa5b4d35f788196f676a8a4c8eb6b5840a88b49`
-- Model selection: `openai/gpt-4.1-mini`. The model identifier is captured as an input, not included in the conformance claim.
+- Model selection (AM21, revised before first timed access): route `openrouter/openai/gpt-5.6-luna` via OpenRouter (credential: `OPENROUTER_API_KEY` provided as an environment input; exact provider-returned id recorded at capture, preflighted as `openai/gpt-5.6-luna-20260709`), reasoning effort `low` where the pinned target exposes such control; if gptme 0.31.0 exposes no reasoning-effort control, the provider default applies and the outsider records that fact. The model identifier is captured as an input, not included in the conformance claim. Original selection `openai/gpt-4.1-mini` was replaced solely because its provider credential is unavailable in the execution environment; user-directed substitution, recorded as AM21 in SPEC_AMENDMENTS.md.
 
 Before invoking the target, the outsider must verify the downloaded wheel digest and record `gptme --version`. A version or digest mismatch is a functional failure. Installation time counts against the time budget.
 
