@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **17 amendments** (below).
+Current state: **19 amendments** (below).
 
 ---
 
@@ -272,3 +272,14 @@ WS-H's stage-vocabulary work adds to `bb.e4.lane_def.v1` + `.v2`: required `mode
 **AM17 second addendum (AM17b, same date):** per-pointer disposition for the replay `artifacts` delta in lane_def.{v1,v2}: `required` + `minItems: 1` + `items: {type: string, minLength: 1}` are AUTHORIZED by derivation necessity (H3 mandates non-empty `reused_inputs` digests sourced from author-declared stored artifacts; absent a required non-empty declaration the runtime must infer paths — a silent-inference defect). `uniqueItems: true` and the relative-path pattern `^(?!/).+` are AUTHORIZED as convention-entailed, not verbatim-mandated: §4.4 fixes stage artifact refs as repo-relative, and duplicate declared artifacts are always an authoring error producing duplicate provenance digests. Recorded explicitly so no constraint rides in silently.
 
 **AM17b revision (AM17b-r, same date; partial withdrawal):** the convention-entailed clause is WITHDRAWN — post-failure blessing of unbound constraints repeats the drift pattern this campaign exists to stop. Final disposition: `required` + `minItems: 1` + `items: {type: string, minLength: 1}` REMAIN (genuine H3 derivation necessity). `uniqueItems: true` and pattern `^(?!/).+` are REVERTED from the H packet; they are proposed as a separate planned schema-evolution packet requiring corpus/consumer compatibility evidence (bd-ticketed, not merged this campaign unless separately verified). Loader-level dedup/path checks MAY exist in validate_lane as code (already-verified pointer diagnostics territory) without schema representation.
+
+
+---
+
+## Amendment 18 - 2026-07-11 - lane subprocess interpreter resolution (separately owned prerequisite)
+
+Discovery: run_lane and related stage runners invoke a hardcoded repo-local `.venv/bin/python`, so fresh/nested worktrees cannot execute lane stages without synthesizing an untracked `.venv` (verifiers did this as a workaround — masking a clean-checkout runtime defect).
+
+Rule: lane-pipeline subprocess interpreters resolve as `sys.executable` by default; an explicit environment override (`BB_LANE_PYTHON`) is permitted ONLY if it names an existing executable file — the resolver must validate existence+executability and fail closed with a clear error otherwise. Behavior-preserving at the integration checkout (gates already run under the mandated venv python).
+
+Ownership: this touches H-owned stage/runtime machinery (run_lane), which is already merged — therefore it is a SEPARATE, explicitly owned prerequisite commit (owner: WsH2Stages2), independently verified (H-stage suites 78, comparator 15, freeze suite 14, freeze gate, plus a nested-worktree no-.venv stage-subprocess test), merged BEFORE the WS-F rework rebases onto it. F-owned launch sites (compiler/adapters) route through the same rule in F's commits. Verifiers are PROHIBITED from synthesizing `.venv` or any untracked dependency in verification worktrees.
