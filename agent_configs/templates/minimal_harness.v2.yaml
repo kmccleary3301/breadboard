@@ -9,21 +9,21 @@ workspace:
 # Required provider block. The mock adapter keeps the template offline-safe.
 providers:
   # Modes without an explicit model use this id.
-  default_model: reference-mock
+  default_model: mock/reference
   # At least one model is required so routing has a concrete target.
   models:
     # Stable id used by providers.default_model above.
-    - id: reference-mock
-      # The mock adapter lets explain/boot smoke run without provider credentials.
-      adapter: mock
+    - id: mock/reference
+      # The mock runtime lets explain/boot smoke run without provider credentials.
+      adapter: mock_chat
 # Optional prompt pack. The mode prompt below points at this file.
 prompts:
   # Packs group prompt files by role; base is the smallest useful pack.
   packs:
     # Base pack consumed by the single mode.
     base:
-      # Repo-relative file used by @pack(base).system.
-      system: agent_configs/templates/prompts/minimal_system.md
+      # Config-relative file copied with every initialized harness bundle.
+      system: prompts/minimal_system.md
 # Optional tool registry. One registry path is enough for explain_agent_config to resolve tool names.
 tools:
   # The v2 loader maps the first registry path to the current runtime defs_dir.
