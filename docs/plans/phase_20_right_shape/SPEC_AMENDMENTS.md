@@ -321,3 +321,15 @@ FLAGSHIP_DEMO_PROTOCOL.md 'Target freeze' model selection revised BEFORE the fir
 
 
 **AM21 addendum (AM21a, same date) - effort disposition:** pinned gptme==0.31.0 cannot request OpenRouter reasoning effort: extra_body() sends either no reasoning field (model not marked supports_reasoning) or hardcoded {enabled:true, max_tokens:20000}; `@preset/` slugs collide with its `@` provider-override parsing; preset-creation API returns 404. USER DECISION (recorded): run J2 at provider-default effort; requests carry no effort parameter; the effective effort is recorded as a captured input and is NEVER labeled 'low'. The 'low where exposable' clause of AM21 is superseded by this addendum.
+
+
+---
+
+## Amendment 22 - 2026-07-11 - J2 protocol-gap fix packets (pre-rerun)
+
+J3 root-cause classification (docs_tmp/phase_20/evidence/J3/root_cause.json, bound to 3b413aff) proved all five J2 stage failures are `protocol_gap_predeclared_unbuildable`: FLAGSHIP_DEMO_PROTOCOL.md (J1) requires adapter registration 'through the documented/scaffolded route' plus `bbh` claim and claim-reverify stages, but no WS-G/WS-F item promised those capabilities (G2 = init|validate, G4 = lock|capture, G6 = the eight promised leaves; F-series assumes pre-registered lanes). The outsider executed correctly; budgets passed (manifest 103/150, adapter 182/300, 0.14h/8h).
+AUTHORIZED per WS-J routing ('route the named gaps as high-priority fix packets, re-run the demo ONCE after fixes') and J3 item text: three WS-G fix packets, <=10 pts each, charged to WS-G:
+- J3-G7: documented `bbh` adapter scaffold/register path (protocol-signature skeleton, scratch-support validation, deterministic active e4_adapters registry row add/check).
+- J3-G8: `bbh lane claim MANIFEST --out DIR` (narrow scratch-safe wrapper; requires capture/compare evidence; preserves manifest scope/exclusions; help/docs/E2E).
+- J3-G9: `bbh lane claim-reverify` (wraps existing internal reverify mechanics; help/docs/E2E).
+CLI subcommands are not frozen inventory (B2 freeze covers schema $ids, SDK package identities, lane ids/kinds, ledgers/scorecards); freeze gate must stay green regardless. One J2 rerun permitted after these merge; original J2 evidence immutable at docs_tmp/phase_20/j2_run/.
