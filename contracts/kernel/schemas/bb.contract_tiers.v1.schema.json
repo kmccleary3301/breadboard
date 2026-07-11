@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "bb.contract_tiers.v1",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json",
   "title": "Consumer-backed tier registry for the published contract estate",
   "type": "object", "additionalProperties": false,
   "required": ["schema_version", "registry_id", "baseline_sha", "tiers", "entries"],

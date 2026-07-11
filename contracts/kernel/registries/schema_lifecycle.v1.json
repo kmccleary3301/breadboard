@@ -66,6 +66,13 @@
     },
     {
       "default_for_generation": true,
+      "family": "contract_tiers",
+      "lifecycle": "active_production",
+      "schema_id": "bb.contract_tiers.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
       "family": "coordination_delegated_verification_reference_slice",
       "lifecycle": "active_production",
       "schema_id": "bb.coordination_delegated_verification_reference_slice.v1",
@@ -206,6 +213,20 @@
       "family": "e4_lane_inventory",
       "lifecycle": "active_production",
       "schema_id": "bb.e4.lane_inventory.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_lane_lock",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.lane_lock.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
+      "family": "e4_lane_manifest",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.lane_manifest.v1",
       "superseded_by": null
     },
     {

@@ -534,11 +534,35 @@ def create_e4_router(
                 if "rerun_comparators" in payload.model_fields_set
                 else "API default: check-only reverification"
             )
+        schema_version = claim.get("schema_version")
+        if schema_version == "bb.e4.support_claim.v4":
+            scope = claim.get("scope")
+            config_id = scope.get("config_id") if isinstance(scope, dict) else None
+        elif schema_version in {
+            "bb.e4.support_claim.v1",
+            "bb.e4.support_claim.v2",
+            "bb.e4.support_claim.v3",
+        }:
+            config_id = claim.get("config_id")
+        else:
+            raise E4ApiError(
+                status_code=409,
+                error="unsupported_claim_schema",
+                detail=str(schema_version),
+                path=_display_path(repo_root, source_path),
+            )
+        if not isinstance(config_id, str) or not config_id:
+            raise E4ApiError(
+                status_code=409,
+                error="claim_config_id_invalid",
+                detail=str(config_id),
+                path=_display_path(repo_root, source_path),
+            )
         try:
             report = validate_c4_chain(
                 repo_root=repo_root,
                 freeze_manifest_path=freeze_manifest,
-                config_id=str(claim.get("config_id")),
+                config_id=config_id,
                 support_claim_path=source_path.resolve(),
                 evidence_manifest_path=_resolve_path(repo_root, str(claim.get("evidence_manifest_ref"))),
                 rerun_comparators=payload.rerun_comparators,
