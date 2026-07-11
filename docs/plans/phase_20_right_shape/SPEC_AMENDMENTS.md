@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **20 amendments + AM19a addendum** (below).
+Current state: **21 amendments + AM19a addendum** (below).
 
 ---
 
@@ -297,3 +297,14 @@ Ownership: cross-packet contract. H-owned run_lane workspace-ref resolution upda
 
 
 **AM19 addendum (AM19a, same date) - activation boundary:** AM19 is a governing contract with DEFERRED activation. It binds when workspace/docs_tmp evidence references are next consumed by packet work (the F5 completion / full-flow path and any later consumer); at that point the owning prerequisite (H run_lane part) and F-owned resolver parts MUST land before that packet merges. Until activation, the merged AM18 behavior (fixed ROOT.parent for explicitly docs_tmp/checkout-qualified refs in run_lane) remains the operative, conformant rule for already-merged code. Immediately binding regardless of activation: NO new ancestor/parents scanning may be introduced anywhere, and the merge candidate for WS-F is workspace-free (no workspace refs consumed). This addendum prevents the integration branch from being text-nonconformant while the AM19 implementation is parked.
+
+
+---
+
+## Amendment 20 - 2026-07-11 - honest Python floor: requires-python >= 3.10
+
+Discovery (G6 fresh-checkout E2E on a system-3.9 host): agentic_coder_prototype/session_runner.py line 274 uses a `match` statement (3.10+ syntax) — import fails with SyntaxError under 3.9. The codebase therefore NEVER supported 3.9; any implied 3.9 support was fictional. A prior G6 fix added `eval-type-backport>=0.2.2; python_version < "3.10"` for a pydantic annotation failure — that marker is DEAD once the floor is honest.
+
+Rule (words == behavior): the declared floor is `requires-python >= 3.10` in every canonical install surface (pyproject/package metadata, constraints/locks if any). The dead `eval-type-backport` conditional is REMOVED rather than shipped as unreachable config. The AM4 fresh-checkout bootstrap selects an interpreter >= 3.10 (probe python3.12/3.11/3.10 in order or accept an explicit override), failing closed with a clear error naming the requirement when none exists. Core runtime `match` syntax stays — converting it to appease a floor the code never honored is churn against reality.
+
+Ownership: G6 (fresh-checkout bootstrap + install surfaces). No core-runtime edits.
