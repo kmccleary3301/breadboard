@@ -1,63 +1,81 @@
 {
-  "audit": {
-    "bytes": 10264,
-    "path": "docs/conformance/evidence_snapshots/phase16_er_progress/SP7.implementer.audit.json",
-    "sha256": "sha256:b7f7cb3522e48708fe9c98bf83830b03db87c23eefda9b15b56dd263c6565ab5",
-    "source_path": "docs_tmp/phase_20/evidence/SP7/implementer.json"
+ "audit": {
+  "bytes": 10264,
+  "path": "docs/conformance/evidence_snapshots/phase16_er_progress/SP7.implementer.audit.json",
+  "sha256": "sha256:b7f7cb3522e48708fe9c98bf83830b03db87c23eefda9b15b56dd263c6565ab5",
+  "source_path": "docs_tmp/phase_20/evidence/SP7/implementer.json"
+ },
+ "authority": {
+  "authoritative_path": "docs_tmp/phase_16/BB_ER_PROGRESS.json",
+  "snapshot_is_authoritative": false,
+  "statement": "The live workspace file docs_tmp/phase_16/BB_ER_PROGRESS.json remains authoritative. Every file in this directory is explicitly non-authoritative authentication and reproducibility evidence for the SP7 revision-65 to revision-66 mutation."
+ },
+ "checker_output": {
+  "bytes": 1535,
+  "exit": 3,
+  "path": "docs/conformance/evidence_snapshots/phase16_er_progress/check_er_progress.rev66.exit3.json",
+  "pin_stale_count": 1,
+  "points_done": 1000,
+  "points_total": 1000,
+  "remaining_label": "J.5.evidence[0]",
+  "revision": 66,
+  "semantic_count": 0,
+  "sha256": "sha256:1d7ebd67d3fcf0ede5d2fcf05e912bc5ff20ff30b6b943e797fad2c46f83fe09"
+ },
+ "governance": {
+  "authorization": "AM23a",
+  "authorization_sha": "9290b05e"
+ },
+ "mutation": {
+  "labels": [
+   "J.1.evidence[1]",
+   "J.2.evidence[1]",
+   "J.3.evidence[1]"
+  ],
+  "new_sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf",
+  "old_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1"
+ },
+ "packet": {
+  "base_sha": "ba1a1cf7",
+  "branch": "p20/sp7",
+  "id": "SP7",
+  "issue": "bb-c6b"
+ },
+ "record_kind": "phase16_er_progress_non_authoritative_snapshot",
+ "rev68_update": {
+  "authority": "live docs_tmp/phase_16/BB_ER_PROGRESS.json remains authoritative; these files are non-authoritative authentication/reproducibility evidence for the rev66->68 mutations (J.5 rebind + J.4 re-pins)",
+  "checker": {
+   "exit": 0,
+   "pin_stale_count": 0,
+   "points": "1000/1000",
+   "revision": 68
   },
-  "authority": {
-    "authoritative_path": "docs_tmp/phase_16/BB_ER_PROGRESS.json",
-    "snapshot_is_authoritative": false,
-    "statement": "The live workspace file docs_tmp/phase_16/BB_ER_PROGRESS.json remains authoritative. Every file in this directory is explicitly non-authoritative authentication and reproducibility evidence for the SP7 revision-65 to revision-66 mutation."
-  },
-  "checker_output": {
-    "bytes": 1535,
-    "exit": 3,
-    "path": "docs/conformance/evidence_snapshots/phase16_er_progress/check_er_progress.rev66.exit3.json",
-    "pin_stale_count": 1,
-    "points_done": 1000,
-    "points_total": 1000,
-    "remaining_label": "J.5.evidence[0]",
-    "revision": 66,
-    "semantic_count": 0,
-    "sha256": "sha256:1d7ebd67d3fcf0ede5d2fcf05e912bc5ff20ff30b6b943e797fad2c46f83fe09"
+  "files": {
+   "BB_ER_PROGRESS.rev66-to-rev68.patch": "sha256:e7626349d6212fd51a086c8e10caa33d722a2a2f653189a850e4a870ede36320",
+   "BB_ER_PROGRESS.rev68.snapshot.json": "sha256:4438d3dc8685ed6854b3bb4a99dc9ae280b2e77066fe3a689ec18d5f3e3d8347",
+   "M1.j5_rebind.audit.json": "sha256:5070489a22701aa3cb282a000dd791302653d01bc8812ee7d35b24aacde44761",
+   "check_er_progress.rev68.exit0.json": "sha256:d2c5723310cc0b223aea3d96c5ae9e20d2b443351288bf694494d079a8f1d031"
   },
   "governance": {
-    "authorization": "AM23a",
-    "authorization_sha": "9290b05e"
-  },
-  "mutation": {
-    "labels": [
-      "J.1.evidence[1]",
-      "J.2.evidence[1]",
-      "J.3.evidence[1]"
-    ],
-    "new_sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf",
-    "old_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1"
-  },
-  "packet": {
-    "base_sha": "ba1a1cf7",
-    "branch": "p20/sp7",
-    "id": "SP7",
-    "issue": "bb-c6b"
-  },
-  "record_kind": "phase16_er_progress_non_authoritative_snapshot",
-  "revision_65_before": {
-    "bytes": 89524,
-    "path": "docs/conformance/evidence_snapshots/phase16_er_progress/BB_ER_PROGRESS.rev65.before.json",
-    "revision": 65,
-    "sha256": "sha256:2909c2cac08c9b80771d9b61806c028c713b0565d564412b003f5d5de9e4bea5"
-  },
-  "revision_66_after": {
-    "bytes": 91432,
-    "path": "docs/conformance/evidence_snapshots/phase16_er_progress/BB_ER_PROGRESS.rev66.snapshot.json",
-    "revision": 66,
-    "sha256": "sha256:7326de02316625b7464c758975721680f755c072adfe64f04189ffac1b64b5d4"
-  },
-  "unified_patch": {
-    "application": "Apply as an exact unified text patch to revision_65_before.path; the resulting bytes must equal revision_66_after.path and its sha256.",
-    "bytes": 4415,
-    "path": "docs/conformance/evidence_snapshots/phase16_er_progress/BB_ER_PROGRESS.rev65-to-rev66.patch",
-    "sha256": "sha256:008f950285e6e91eda0e6fc639b721832ceefe766fe32f894db9d83593da9612"
+   "authorization": "AM23b + SP7 deferred_j5.routing"
   }
+ },
+ "revision_65_before": {
+  "bytes": 89524,
+  "path": "docs/conformance/evidence_snapshots/phase16_er_progress/BB_ER_PROGRESS.rev65.before.json",
+  "revision": 65,
+  "sha256": "sha256:2909c2cac08c9b80771d9b61806c028c713b0565d564412b003f5d5de9e4bea5"
+ },
+ "revision_66_after": {
+  "bytes": 91432,
+  "path": "docs/conformance/evidence_snapshots/phase16_er_progress/BB_ER_PROGRESS.rev66.snapshot.json",
+  "revision": 66,
+  "sha256": "sha256:7326de02316625b7464c758975721680f755c072adfe64f04189ffac1b64b5d4"
+ },
+ "unified_patch": {
+  "application": "Apply as an exact unified text patch to revision_65_before.path; the resulting bytes must equal revision_66_after.path and its sha256.",
+  "bytes": 4415,
+  "path": "docs/conformance/evidence_snapshots/phase16_er_progress/BB_ER_PROGRESS.rev65-to-rev66.patch",
+  "sha256": "sha256:008f950285e6e91eda0e6fc639b721832ceefe766fe32f894db9d83593da9612"
+ }
 }

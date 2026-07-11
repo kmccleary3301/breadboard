@@ -1,0 +1,1564 @@
+{
+  "amendments": [
+    {
+      "generated_at_utc": "2026-07-04T11:55:00Z",
+      "summary": "Completed WS-J runtime emission as C3-only evidence with flag-gated session records, runtime record API, fixtures, ledger rows, and RFC."
+    },
+    {
+      "generated_at_utc": "2026-07-04T12:31:00Z",
+      "summary": "Closed WS-F claim v2/scoring split and WS-H consumption surface evidence with terminal 1000/1000 regeneration, CT, API, TS, and doctest proof."
+    },
+    {
+      "generated_at_utc": "2026-07-04T13:10:00Z",
+      "summary": "Refreshed J.5 atomic ledger evidence hash after final regeneration."
+    },
+    {
+      "generated_at_utc": "2026-07-04T13:20:00Z",
+      "summary": "Stabilized P6 L5/L6/P6.6 regeneration timestamps and refreshed J.5 atomic ledger evidence hash."
+    },
+    {
+      "generated_at_utc": "2026-07-04T13:35:00Z",
+      "summary": "Refreshed J.5 atomic ledger evidence hash after deterministic final regeneration."
+    },
+    {
+      "generated_at_utc": "2026-07-05T12:00:00Z",
+      "summary": "BB-ER hardening campaign (bd epic bb-iy7): v2 runtime record dialect added (six closed schemas + conventions + examples); E4 API typed/paginated with packaged C4 validator and flat error envelope; effective_operation_policy compiler + flag-gated policy authority seam; lane_runtime library extraction; semantic_replay comparator pilot; gap-to-CT reconciliation. Evidence integrity work: E4 source index frozen to accepted packet scope (POST_FREEZE_FILE_PATTERNS in build_source_index.py) and Pi P5 live capture frozen to reuse-by-default (--recapture to refresh), making regenerate_evidence.py idempotent for the first time (two consecutive runs converge). Refreshed J.1-J.4 code-file pins for the spec'd W4/W6 changes and J.5 atomic ledger pin to the new stable fixed point."
+    },
+    {
+      "generated_at_utc": "2026-07-05T15:00:00Z",
+      "summary": "Adversarial-review corrections (bd epic bb-iy7). PRECISION CORRECTION of the revision-47 idempotency statement: regenerate_evidence.py is idempotent for the atomic feature ledger (J.5-pinned artifact; two consecutive runs converge, verified repeatedly) because Pi P5 live capture is now reuse-by-default and the source index is membership-frozen. FULL-TREE byte fixation does NOT hold and is structurally unattainable today: e4_artifact_catalog.json carries a monotonic revision counter (+3 per run) embedded into claims via catalog_binding, and claim<->catalog hashes form a reference cycle; catalog, claims, node gates, readiness report, freshness manifest, and source index therefore change bytes every run by design. Tracked as a dedicated bd issue for a future amendment-gated redesign. Review fixups also landed: P5 L1 builder no longer writes into docs_tmp/phase_15/source_freezes and defers claim migration/node-gate refresh to generate_support_claims/CT; source-index freeze now covers file roots; archive-ref preservation on claim regeneration; policy compiler preserves explicit zero budgets; /v1/e4 records lane_id+runtime now 400s; claim-detail errors use the flat envelope; test hardening. J.1-J.5 evidence pins refreshed to current file state."
+    },
+    {
+      "generated_at_utc": "2026-07-06T12:00:00Z",
+      "summary": "bb-jl5 resolved: full-tree regenerate_evidence.py byte-idempotence achieved and measured (17 artifacts including catalog, v2 claims, node gates, readiness report, freshness manifest, source index, CT outputs, matrix summaries identical across three consecutive runs; atomic feature ledger unchanged at sha256:9e37dbdd1656eec51b8ed58ff0e609da802b3b0747e65236291b08f3ec164fe2). Mechanism: (1) support-claim catalog_binding now binds the catalog's stable-subset digest (integrity.stable_entries_hash over entries classified by a total, role-keyed rule in agentic_coder_prototype/conformance/catalog_binding.py; unknown roles raise) plus the real catalog revision, breaking the claim<->catalog hash/revision cycles; (2) catalog revision increments only on stable-subset change; (3) regen DAG CT stage pinned via --zero-durations and --generated-at-utc; (4) seed_atomic_feature_ledger merge-writes so the ledger never passes through an intermediate seed-only state mid-run; (5) c4_chain validates catalog_binding strictly at CT/CLI and defers (catalog_binding_pending) in lane-builder prevalidation, which runs before re-binding. Governance corrections: an undisclosed _pin_artifact_catalog_revision hack and node-gate error-stripping introduced during implementation were removed; end-to-end tests now pin the binding invariant (mutation-probe verified). Catalog revision history: 131 (pre-bb-jl5) -> reset to 1 by a mid-campaign rebuild artifact -> content-versioned, currently 183; revision now versions stable evidence content only. Source index scope: BB_E4_FINAL_READINESS_REPORT.md excluded as a generated output (membership 534 -> 533); ledger derivation and all BB-ER pins unaffected. Adversarially reviewed: three blockers found and fixed; final refutation pass clean."
+    },
+    {
+      "generated_at_utc": "2026-07-06T23:32:00Z",
+      "summary": "BB-NS WS-G API work touched the existing J.4 /v1/e4/records router/test files without changing the phase16 claim: refreshed progress evidence hashes for agentic_coder_prototype/api/e4/router.py and tests/test_e4_api_surface.py so the live progress checker remains current."
+    },
+    {
+      "generated_at_utc": "2026-07-07T02:26:00Z",
+      "summary": "Refreshed phase 16 RFC runtime capture evidence hash after WS-C C11 documentation update; phase 16 status unchanged."
+    },
+    {
+      "generated_at_utc": "2026-07-07T05:50:00Z",
+      "summary": "Refreshed stale Phase 16 progress evidence pins after Phase 17 WS-J/API evidence updates; no Phase 16 status or point changes."
+    },
+    {
+      "generated_at_utc": "2026-07-08T00:00:00Z",
+      "pin_refresh_count": 5,
+      "summary": "Refreshed progress evidence pins after BB-CL T1 contract-language changes so live progress checker remains green without changing item status or evidence content.",
+      "updated_items": [
+        "J.1",
+        "J.2",
+        "J.3",
+        "J.4",
+        "J.6"
+      ]
+    },
+    {
+      "evidence": [
+        {
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+          "sha256": "sha256:9642a36703bbfa8da49887c421976803d084e231809330c345b55fa47be4a962"
+        },
+        {
+          "path": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
+          "sha256": "sha256:3724a952cf7ae57d15f327451190950792c1323cea722c7588ccc12e73dcdf36"
+        }
+      ],
+      "generated_at_utc": "2026-07-08T00:00:00Z",
+      "summary": "Refreshed stale J.4 evidence pins after current workspace evidence files changed; required to keep phase 16 progress v1 validation green while B4 adds v2 pin-policy support."
+    },
+    {
+      "evidence": [
+        {
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+          "sha256": "sha256:dd903cbdc1975a789bdc4af4424993e1e09d35dbca3682a988f128fd716adaa7"
+        },
+        {
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+          "sha256": "sha256:dd903cbdc1975a789bdc4af4424993e1e09d35dbca3682a988f128fd716adaa7"
+        },
+        {
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+          "sha256": "sha256:dd903cbdc1975a789bdc4af4424993e1e09d35dbca3682a988f128fd716adaa7"
+        },
+        {
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+          "sha256": "sha256:9f5691b84c43a85dad45d4ae50fa6a773836b6d8cd8701ba0cf087fa1970a6fc"
+        },
+        {
+          "path": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
+          "sha256": "sha256:597322760329fd91d242b97785d60cdf61cd88bbd3cf58bd5b3fa55bde95e40a"
+        }
+      ],
+      "generated_at_utc": "2026-07-08T00:00:00Z",
+      "pin_refresh_count": 5,
+      "summary": "Refreshed stale phase16 WS-J progress evidence pins after BB-CL T4 API/service changes; item statuses and point totals unchanged.",
+      "updated_items": [
+        "J.1",
+        "J.2",
+        "J.3",
+        "J.4"
+      ]
+    },
+    {
+      "generated_at_utc": "2026-07-08T00:00:00Z",
+      "pin_refresh_count": 4,
+      "summary": "Refreshed evidence pins after WS-F dialect fallback deletion and API-surface test cleanup changed shared runtime/API files; no points or statuses changed.",
+      "updated_items": [
+        "J.1",
+        "J.2",
+        "J.3",
+        "J.4"
+      ]
+    },
+    {
+      "evidence": [
+        {
+          "path": "docs_tmp/phase_16/evidence/live_pin_refresh_ws_f_20260708.json",
+          "sha256": "sha256:843d0e63a69e27eb425a2e4b781e6013d538382bd1ee91327d3862979917caf6"
+        }
+      ],
+      "generated_at_utc": "2026-07-08T00:00:00Z",
+      "summary": "Classified WS-F live source/test evidence-pin refresh as an allowed live-evidence advance, with old/new hashes and rationale recorded; no statuses or points changed."
+    },
+    {
+      "evidence": [
+        {
+          "path": "docs_tmp/phase_16/evidence/live_pin_refresh_ws_f_20260708.json",
+          "sha256": "sha256:843d0e63a69e27eb425a2e4b781e6013d538382bd1ee91327d3862979917caf6"
+        }
+      ],
+      "generated_at_utc": "2026-07-08T00:00:00Z",
+      "summary": "Clarified WS-F live pin-refresh report with prior-hash sources and explicit note where prior bytes were not recovered; no statuses or points changed."
+    },
+    {
+      "generated_at_utc": "2026-07-08T00:00:00Z",
+      "pin_refreshes": [
+        {
+          "item_id": "J.1",
+          "new_sha256": "sha256:202b2086ab449c58b49b4288029f0d9092b14f8764f7db99ea474cbe37b98401",
+          "old_sha256": "sha256:0aea584ac75d64c9364c94287fdf8f3ff7e05ed0ecf6007392130d031a5fa6ae",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+        },
+        {
+          "item_id": "J.1",
+          "new_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1",
+          "old_sha256": "sha256:dd903cbdc1975a789bdc4af4424993e1e09d35dbca3682a988f128fd716adaa7",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py"
+        },
+        {
+          "item_id": "J.2",
+          "new_sha256": "sha256:202b2086ab449c58b49b4288029f0d9092b14f8764f7db99ea474cbe37b98401",
+          "old_sha256": "sha256:0aea584ac75d64c9364c94287fdf8f3ff7e05ed0ecf6007392130d031a5fa6ae",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+        },
+        {
+          "item_id": "J.2",
+          "new_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1",
+          "old_sha256": "sha256:dd903cbdc1975a789bdc4af4424993e1e09d35dbca3682a988f128fd716adaa7",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py"
+        },
+        {
+          "item_id": "J.3",
+          "new_sha256": "sha256:202b2086ab449c58b49b4288029f0d9092b14f8764f7db99ea474cbe37b98401",
+          "old_sha256": "sha256:0aea584ac75d64c9364c94287fdf8f3ff7e05ed0ecf6007392130d031a5fa6ae",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+        },
+        {
+          "item_id": "J.3",
+          "new_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1",
+          "old_sha256": "sha256:dd903cbdc1975a789bdc4af4424993e1e09d35dbca3682a988f128fd716adaa7",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py"
+        },
+        {
+          "item_id": "J.4",
+          "new_sha256": "sha256:9642a36703bbfa8da49887c421976803d084e231809330c345b55fa47be4a962",
+          "old_sha256": "sha256:9f5691b84c43a85dad45d4ae50fa6a773836b6d8cd8701ba0cf087fa1970a6fc",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py"
+        },
+        {
+          "item_id": "J.4",
+          "new_sha256": "sha256:95ddffe8bafa85a219eaf9785c05b62bc4ade38965573b0abaad55b5cd784ebf",
+          "old_sha256": "sha256:0ee774c56fa6217d088c0843745b333e3f899981de745e1672da16c5fb3bd664",
+          "path": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py"
+        }
+      ],
+      "summary": "Phase16 WS-J no-status pin refresh after BB-CL source evolution: runtime emission, service, E4 router, and API-surface test paths changed in the live checkout while WS-J behavior remains covered by Phase18 G1/G2/G8 gates. Old pin hashes are retained in this amendment for recovery/audit; item statuses and points are unchanged.",
+      "updated_items": [
+        "J.1",
+        "J.2",
+        "J.3",
+        "J.4"
+      ]
+    },
+    {
+      "classification_audit": "docs_tmp/phase_19/item_evidence/E7_cross_phase_pin_refresh.json",
+      "generated_at_utc": "2026-07-09T00:00:00Z",
+      "pin_refresh_count": 2,
+      "refreshed_labels": [
+        "J.4.evidence[0]",
+        "J.4.evidence[1]"
+      ],
+      "summary": "Refreshed exactly 2 diff-caused Phase19 BB-AV evidence pins after the E7 239-file fixed-point regeneration; no statuses, points, or evidence paths changed."
+    },
+    {
+      "classification_audit": "docs_tmp/phase_19/item_evidence/G1_cross_phase_pin_refresh.json",
+      "generated_at_utc": "2026-07-09T00:00:00Z",
+      "pin_refresh_count": 1,
+      "refreshed_labels": [
+        "J.5.evidence[0]"
+      ],
+      "summary": "Refreshed the single Phase16 pin changed by the P6.6 provider-scope repair and converged E4 regeneration; no statuses, points, or evidence paths changed."
+    },
+    {
+      "evidence": [
+        {
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+          "sha256": "sha256:66a7f8a127fcd22905c1c0a4f428987d423f9c220d2a4a9abd85cd49a711754c"
+        },
+        {
+          "path": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
+          "sha256": "sha256:3b9910399f2cb3d7c9a16337cf2632053e84e8f4e4cf7c692571b4f6c5c7a8d7"
+        }
+      ],
+      "generated_at_utc": "2026-07-10T03:18:31Z",
+      "summary": "Re-pin 2 evidence hashes flagged pin_stale by check_er_progress --pin-policy v2: the pinned conformance artifacts (claims v2->v4 migration, catalog v2 rebuild, node-gate/manifest refreshes) were legitimately regenerated by the BB-AV campaign (docs_tmp/phase_19, epic bb-71n). No item status or points changed."
+    },
+    {
+      "actor": "p20/sp7 (bd bb-c6b)",
+      "generated_at_utc": "2026-07-11T00:00:00Z",
+      "pin_refresh_count": 3,
+      "pin_refreshes": [
+        {
+          "item_id": "J.1",
+          "label": "J.1.evidence[1]",
+          "new_sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf",
+          "old_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py"
+        },
+        {
+          "item_id": "J.2",
+          "label": "J.2.evidence[1]",
+          "new_sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf",
+          "old_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py"
+        },
+        {
+          "item_id": "J.3",
+          "label": "J.3.evidence[1]",
+          "new_sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf",
+          "old_sha256": "sha256:c066c7ce98edabcb53e445463a908020854212a0f30521e7b6a3500e051171a1",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py"
+        }
+      ],
+      "precedent": "docs_tmp/phase_19/item_evidence/G1_cross_phase_pin_refresh.json#progress_files.phase16 (revision 63 -> 64)",
+      "refreshed_labels": [
+        "J.1.evidence[1]",
+        "J.2.evidence[1]",
+        "J.3.evidence[1]"
+      ],
+      "summary": "Refreshed exactly three Phase16 WS-J progress pins after merge commit fc9e1f3e legitimately added request-scoped provider runtime prewarming to the shared CLI bridge service while preserving the existing primitive-emission path. No evidence paths, item statuses, or point totals changed."
+    },
+    {
+      "actor": "Main orchestrating agent, Phase 20 integration (post-F5/SP2b merge @ 1578bafa)",
+      "generated_at_utc": "2026-07-11T09:30:00Z",
+      "pin_refresh_count": 1,
+      "pin_refreshes": [
+        {
+          "justification": "Deferred J.5 rebind executed per SP7 deferred_j5.routing (docs_tmp/phase_20/evidence/SP7/implementer.json) after PacketF5 landed the canonical tracked ledger artifact (git blob b3ceb2605b7925354c277e9a33952b4e398bd2c1 at integration head; 312 resolved refs / 182 justified tombstones; reviewed APPROVED by ReviewF5 @ 0def21d5). The prior pin bound the ambient phase-15 seed whose bytes are a function of accumulated workspace state (f5_seed_digest_resolution.json: mechanism_established_exact_bytes_unresolved; live seed refs non-resolving at head). The tracked artifact replaces the ambient merge target as the canonical, digest-stable ledger input.",
+          "label": "J.5.evidence[0]",
+          "new_path": "breadboard_repo_integration_main_20260326/config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
+          "new_sha256": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e",
+          "old_path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+          "old_sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1",
+          "precedent": "docs_tmp/phase_20/evidence/SP7/implementer.json#update_mechanism (rev 65->66), itself following docs_tmp/phase_19/item_evidence/G1_cross_phase_pin_refresh.json#progress_files.phase16 (63->64)"
+        }
+      ],
+      "summary": "J.5 atomic ledger evidence rebound from ambient phase-15 seed (stale pin a001fe69) to the F5 canonical tracked ledger artifact (908cd376). No statuses, points, or other evidence changed."
+    },
+    {
+      "actor": "Main orchestrating agent, Phase 20 integration (post-Wave-A merge @ 1578bafa)",
+      "generated_at_utc": "2026-07-11T09:45:00Z",
+      "pin_refresh_count": 2,
+      "pin_refreshes": [
+        {
+          "justification": "Sole change commit 0fc11917 (P20 SP3 schema lifecycle + v4 claim routing), re-reviewed APPROVED @ aea51859 by ReviewSP3 and merged at 9b4cca88. Old digest reproduced from git show ba1a1cf7; legitimate reviewed source evolution, not evidence corruption.",
+          "label": "J.4.evidence[0]",
+          "new_sha256": "sha256:4342d2f4df75c3d462dadd222f5bc38bc51ee005c80e25093dce3323d505c6ec",
+          "old_sha256": "sha256:66a7f8a127fcd22905c1c0a4f428987d423f9c220d2a4a9abd85cd49a711754c",
+          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+          "precedent": "docs_tmp/phase_20/evidence/SP7/implementer.json#update_mechanism (65->66)"
+        },
+        {
+          "justification": "Change commits 7e89d927 (P20 SP4 test-only gate corrections, reviewed APPROVED by ReviewSP4) and 0fc11917 (SP3, re-reviewed APPROVED @ aea51859). Old digest reproduced from git show ba1a1cf7; legitimate reviewed source evolution, not evidence corruption.",
+          "label": "J.4.evidence[1]",
+          "new_sha256": "sha256:ebea22132bed4474377d1e67e29b020e0d45df2ffa0c6ecc678115710086046e",
+          "old_sha256": "sha256:3b9910399f2cb3d7c9a16337cf2632053e84e8f4e4cf7c692571b4f6c5c7a8d7",
+          "path": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
+          "precedent": "docs_tmp/phase_20/evidence/SP7/implementer.json#update_mechanism (65->66)"
+        }
+      ],
+      "summary": "Re-pin J.4 source evidence hashes flagged pin_stale after Wave A merges: router.py and test_e4_api_surface.py bytes changed only via reviewed packet commits (SP3/SP4). No statuses, points, or evidence paths changed."
+    }
+  ],
+  "generated_at_utc": "2026-07-11T09:45:00Z",
+  "plan_ref": "docs_tmp/phase_16/BB_ER_MASTER_PLAN.md",
+  "revision": 68,
+  "schema_version": "bb.er.progress.v1",
+  "totals": {
+    "points_blocked": 0,
+    "points_done": 1000,
+    "points_total": 1000
+  },
+  "workstreams": [
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python /tmp/validate_bb_er_wave0.py",
+              "path": "docs_tmp/phase_16/evidence/wave0_validation_report.json",
+              "preservation_checks": [
+                ".venv/bin/python -m pytest tests/e4_parity -q",
+                "npm test -- --runInBand"
+              ],
+              "sha256": "sha256:4415c7ba3fe97ee36beb2369e54d320d7fc54be35f90affd792f56b390f7232c"
+            }
+          ],
+          "item_id": "A.1",
+          "notes": "Wave 0 schema/example/registry/coverage validation passed.",
+          "points": 10,
+          "status": "done",
+          "title": "Author bb.kernel.common.v1 + example"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python /tmp/validate_bb_er_wave0.py",
+              "path": "docs_tmp/phase_16/evidence/wave0_validation_report.json",
+              "preservation_checks": [
+                ".venv/bin/python -m pytest tests/e4_parity -q",
+                "npm test -- --runInBand"
+              ],
+              "sha256": "sha256:4415c7ba3fe97ee36beb2369e54d320d7fc54be35f90affd792f56b390f7232c"
+            }
+          ],
+          "item_id": "A.2",
+          "notes": "Wave 0 schema/example/registry/coverage validation passed.",
+          "points": 10,
+          "status": "done",
+          "title": "CONTRACT_CONVENTIONS.md + legacy allowlist"
+        },
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/wave1_a3_contract_conventions_lint_report.json",
+              "sha256": "sha256:d4358a9c3006e3e3608a9f3af9d2600228491cdeb113680acd79e665146b4b50"
+            }
+          ],
+          "item_id": "A.3",
+          "notes": "Implemented convention lint script and focused pytest coverage; current schema pack lint clean.",
+          "points": 12,
+          "status": "done",
+          "title": "Convention lint script + test"
+        },
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/wave2_a4_metadata_partial_report.json",
+              "sha256": "sha256:acb80f0081e6a9bfc2828d0cccdd9087f93927ed9212065dfd910b158f4c28d4"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "A.5/A.7 schema inspections clean; contract lint clean; CT 126/126 passing; final readiness 1000/1000; e4 parity 204 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave5_ws_a_schema_polish_report.json",
+              "sha256": "sha256:33bed273b419257b9e062dec3763080853098ee51dbcc7ae864429f5f87fb5a7"
+            }
+          ],
+          "item_id": "A.4",
+          "notes": "Optional metadata refs remain on accepted primitives; G-REGEN and G-BLAST passed after terminal CT regeneration, so prior implementation evidence is promoted.",
+          "points": 10,
+          "status": "done",
+          "title": "metadata bag on primitives lacking one"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "A.5/A.7 schema inspections clean; contract lint clean; CT 126/126 passing; final readiness 1000/1000; e4 parity 204 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave5_ws_a_schema_polish_report.json",
+              "sha256": "sha256:33bed273b419257b9e062dec3763080853098ee51dbcc7ae864429f5f87fb5a7"
+            }
+          ],
+          "item_id": "A.5",
+          "notes": "All property schemas in the 14 primitive schemas now carry descriptions, and identifier/ref/hash/timestamp-like fields carry inline examples. Focused tests enforce both checks.",
+          "points": 12,
+          "status": "done",
+          "title": "Descriptions + inline examples on 14 primitives"
+        },
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/wave1_a6_examples_manifest_report.json",
+              "sha256": "sha256:9d8e89258cbe800f60a442e8b4b409710823d7590e85199ef3e4b1a9642a0f16"
+            }
+          ],
+          "item_id": "A.6",
+          "notes": "Added missing examples and examples_manifest.json pairing all 63 kernel schemas; focused manifest validation test verifies uniqueness, path resolution, and schema validation.",
+          "points": 8,
+          "status": "done",
+          "title": "Examples completeness + pairing manifest + test"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "A.5/A.7 schema inspections clean; contract lint clean; CT 126/126 passing; final readiness 1000/1000; e4 parity 204 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave5_ws_a_schema_polish_report.json",
+              "sha256": "sha256:33bed273b419257b9e062dec3763080853098ee51dbcc7ae864429f5f87fb5a7"
+            }
+          ],
+          "item_id": "A.7",
+          "notes": "Kernel schemas use canonical absolute $id where not legacy-allowlisted; the 14 primitive schemas now use canonical absolute $id, lint is clean, and examples resolve through the schema pack.",
+          "points": 8,
+          "status": "done",
+          "title": "$id canonicalization + resolution test"
+        },
+        {
+          "evidence": [
+            {
+              "command": "lint + examples manifest tests + TS generate/verify/test/typecheck + G-PY + regenerate_evidence.py --json",
+              "observed": "Focused gates pass; regeneration stopped before validators due existing CT/final-readiness blockers, so A.8 remains unclaimed.",
+              "path": "docs_tmp/phase_16/evidence/wave4_a8_work_item_extension_partial_report.json",
+              "sha256": "sha256:1be51368b97c7010c841818a59b186194fd4788edecc137a6ffabfde1713e472"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "A.5/A.7 schema inspections clean; contract lint clean; CT 126/126 passing; final readiness 1000/1000; e4 parity 204 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave5_ws_a_schema_polish_report.json",
+              "sha256": "sha256:33bed273b419257b9e062dec3763080853098ee51dbcc7ae864429f5f87fb5a7"
+            }
+          ],
+          "item_id": "A.8",
+          "notes": "Work item additive refs/budget/isolation/metadata remain schema-valid; G-REGEN and G-BLAST passed after terminal CT regeneration, so prior implementation evidence is promoted.",
+          "points": 10,
+          "status": "done",
+          "title": "work_item v1 additive refs (5.11)"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python /tmp/validate_bb_er_wave0.py",
+              "path": "docs_tmp/phase_16/evidence/wave0_validation_report.json",
+              "preservation_checks": [
+                ".venv/bin/python -m pytest tests/e4_parity -q",
+                "npm test -- --runInBand"
+              ],
+              "sha256": "sha256:4415c7ba3fe97ee36beb2369e54d320d7fc54be35f90affd792f56b390f7232c"
+            }
+          ],
+          "item_id": "A.9",
+          "notes": "Wave 0 schema/example/registry/coverage validation passed.",
+          "points": 10,
+          "status": "done",
+          "title": "Author bb.e4.support_claim.v2 + example"
+        }
+      ],
+      "points_available": 90,
+      "points_done": 90,
+      "title": "Contract vocabulary & common schema",
+      "ws_id": "WS-A"
+    },
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "adversarial_checks": [
+                "AdversarialB1Recheck"
+              ],
+              "command": ".venv/bin/python /tmp/validate_bb_er_b1_crossrefs.py; .venv/bin/python -m pytest tests/e4_parity/test_primitive_boundary.py -q",
+              "path": "docs_tmp/phase_16/evidence/wave1a_b1_b2_d2_validation_report.json",
+              "sha256": "sha256:3d3fa8a13fb03cf1b6d16e0c2f8aec07bebdc74fd10650fb1d683d7733177355"
+            }
+          ],
+          "item_id": "B.1",
+          "notes": "Primitive boundary registered 19 specs and resolves registered cross-schema refs; adversarial recheck passed after resource_access resolver fix.",
+          "points": 20,
+          "status": "done",
+          "title": "primitive_records.py (5.7) + visibility_adapters.py (5.2)"
+        },
+        {
+          "evidence": [
+            {
+              "adversarial_checks": [
+                "AdversarialB1Recheck"
+              ],
+              "command": ".venv/bin/python -m pytest tests/e4_parity/test_primitive_boundary.py -q",
+              "path": "docs_tmp/phase_16/evidence/wave1a_b1_b2_d2_validation_report.json",
+              "sha256": "sha256:3d3fa8a13fb03cf1b6d16e0c2f8aec07bebdc74fd10650fb1d683d7733177355"
+            }
+          ],
+          "item_id": "B.2",
+          "notes": "Boundary unit tests cover hashing, validation errors, visibility adapters, and resource_access cross-schema validation.",
+          "points": 10,
+          "status": "done",
+          "title": "Boundary unit tests"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "Implementation evidence; tests/e4_parity 201 passed before regeneration rerun.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ws_b_helper_runtime_boundary_report.json",
+              "sha256": "sha256:49d5de22c8182b5b4450b513dee05abad6f428d78b1093c9675afe96a22f6780"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py --json; .venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "P3 helper runtime builder passes 7/7 node gates; regeneration advances through P3/P5/P6 and primitive projection, then stops fail-closed at CT/final readiness with 107 blocking not_implemented CT rows; e4 parity 201 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave4_b9_regeneration_partial_report.json",
+              "sha256": "sha256:209d487f2910564c276d8c09544e01b9c19392dd1f1c7d1767ee798fc97e3c30"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json",
+              "observed": "G-REGEN/G-BLAST path passes: CT 126/126 passing, final readiness 1000/1000, hash freshness ok.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ct_terminal_regeneration_report.json",
+              "sha256": "sha256:4d7ff5caab876267fcf0be19c275e2c5ced4b8381644a8f112867e81b7b3321f"
+            }
+          ],
+          "item_id": "B.3",
+          "notes": "Implementation complete and G-PY evidence recorded: effective_config_graph routes through finalize_record while preserving the legacy graph_hash preimage. P3 helper regeneration now passes; G-REGEN + G-BLAST passed on 2026-07-04; implementation evidence is promoted.",
+          "points": 15,
+          "status": "done",
+          "title": "Route effective_config_graph through finalize_record"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "Implementation evidence; tests/e4_parity 201 passed before regeneration rerun.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ws_b_helper_runtime_boundary_report.json",
+              "sha256": "sha256:49d5de22c8182b5b4450b513dee05abad6f428d78b1093c9675afe96a22f6780"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py --json; .venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "P3 helper runtime builder passes 7/7 node gates; regeneration advances through P3/P5/P6 and primitive projection, then stops fail-closed at CT/final readiness with 107 blocking not_implemented CT rows; e4 parity 201 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave4_b9_regeneration_partial_report.json",
+              "sha256": "sha256:209d487f2910564c276d8c09544e01b9c19392dd1f1c7d1767ee798fc97e3c30"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json",
+              "observed": "G-REGEN/G-BLAST path passes: CT 126/126 passing, final readiness 1000/1000, hash freshness ok.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ct_terminal_regeneration_report.json",
+              "sha256": "sha256:4d7ff5caab876267fcf0be19c275e2c5ced4b8381644a8f112867e81b7b3321f"
+            }
+          ],
+          "item_id": "B.4",
+          "notes": "Implementation complete and G-PY evidence recorded: helper compilers take explicit semantic inputs, fixture constants moved to p3_lane_fixtures, invalid source/capability/resource operations raise. P3 helper regeneration now passes; G-REGEN + G-BLAST passed on 2026-07-04; implementation evidence is promoted.",
+          "points": 25,
+          "status": "done",
+          "title": "De-fixture helper compilers; kill coercions/clock constants"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "Implementation evidence; tests/e4_parity 201 passed before regeneration rerun.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ws_b_helper_runtime_boundary_report.json",
+              "sha256": "sha256:49d5de22c8182b5b4450b513dee05abad6f428d78b1093c9675afe96a22f6780"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py --json; .venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "P3 helper runtime builder passes 7/7 node gates; regeneration advances through P3/P5/P6 and primitive projection, then stops fail-closed at CT/final readiness with 107 blocking not_implemented CT rows; e4 parity 201 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave4_b9_regeneration_partial_report.json",
+              "sha256": "sha256:209d487f2910564c276d8c09544e01b9c19392dd1f1c7d1767ee798fc97e3c30"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json",
+              "observed": "G-REGEN/G-BLAST path passes: CT 126/126 passing, final readiness 1000/1000, hash freshness ok.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ct_terminal_regeneration_report.json",
+              "sha256": "sha256:4d7ff5caab876267fcf0be19c275e2c5ced4b8381644a8f112867e81b7b3321f"
+            }
+          ],
+          "item_id": "B.5",
+          "notes": "Implementation complete and G-PY evidence recorded: all seven helper compiler entrypoints emit records through finalize_record. P3 helper regeneration now passes; G-REGEN + G-BLAST passed on 2026-07-04; implementation evidence is promoted.",
+          "points": 15,
+          "status": "done",
+          "title": "All compilers return via finalize_record"
+        },
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/wave1_b6_validator_removal_report.json",
+              "sha256": "sha256:92ead16b51f145b0fde182d2b1b9840087e3324a8bf5230389f800cd65e4c2f3"
+            }
+          ],
+          "item_id": "B.6",
+          "notes": "Removed enhanced_config_validator stub and migrated callsites to clean removal/explicit validator injection; no symbol/file matches remain.",
+          "points": 10,
+          "status": "done",
+          "title": "Delete enhanced_config_validator stub + migrate callsites"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "Implementation evidence; tests/e4_parity 201 passed before regeneration rerun.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ws_b_helper_runtime_boundary_report.json",
+              "sha256": "sha256:49d5de22c8182b5b4450b513dee05abad6f428d78b1093c9675afe96a22f6780"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py --json; .venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "P3 helper runtime builder passes 7/7 node gates; regeneration advances through P3/P5/P6 and primitive projection, then stops fail-closed at CT/final readiness with 107 blocking not_implemented CT rows; e4 parity 201 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave4_b9_regeneration_partial_report.json",
+              "sha256": "sha256:209d487f2910564c276d8c09544e01b9c19392dd1f1c7d1767ee798fc97e3c30"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json",
+              "observed": "G-REGEN/G-BLAST path passes: CT 126/126 passing, final readiness 1000/1000, hash freshness ok.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ct_terminal_regeneration_report.json",
+              "sha256": "sha256:4d7ff5caab876267fcf0be19c275e2c5ced4b8381644a8f112867e81b7b3321f"
+            }
+          ],
+          "item_id": "B.7",
+          "notes": "Implementation complete and G-PY evidence recorded: TypedDict-shaped inputs, exports, and behavior docstrings are present. P3 helper regeneration now passes; G-REGEN + G-BLAST passed on 2026-07-04; implementation evidence is promoted.",
+          "points": 15,
+          "status": "done",
+          "title": "TypedDict inputs; package exports; docstrings"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "Implementation evidence; tests/e4_parity 201 passed before regeneration rerun.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ws_b_helper_runtime_boundary_report.json",
+              "sha256": "sha256:49d5de22c8182b5b4450b513dee05abad6f428d78b1093c9675afe96a22f6780"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py --json; .venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "P3 helper runtime builder passes 7/7 node gates; regeneration advances through P3/P5/P6 and primitive projection, then stops fail-closed at CT/final readiness with 107 blocking not_implemented CT rows; e4 parity 201 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave4_b9_regeneration_partial_report.json",
+              "sha256": "sha256:209d487f2910564c276d8c09544e01b9c19392dd1f1c7d1767ee798fc97e3c30"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json",
+              "observed": "G-REGEN/G-BLAST path passes: CT 126/126 passing, final readiness 1000/1000, hash freshness ok.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ct_terminal_regeneration_report.json",
+              "sha256": "sha256:4d7ff5caab876267fcf0be19c275e2c5ced4b8381644a8f112867e81b7b3321f"
+            }
+          ],
+          "item_id": "B.8",
+          "notes": "Implementation complete and G-PY evidence recorded: 21 malformed-input tests cover all seven helper compilers. P3 helper regeneration now passes; G-REGEN + G-BLAST passed on 2026-07-04; implementation evidence is promoted.",
+          "points": 15,
+          "status": "done",
+          "title": "Malformed-input tests per compiler"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py --json; .venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "P3 helper runtime builder passes 7/7 node gates; regeneration advances through P3/P5/P6 and primitive projection, then stops fail-closed at CT/final readiness with 107 blocking not_implemented CT rows; e4 parity 201 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave4_b9_regeneration_partial_report.json",
+              "sha256": "sha256:209d487f2910564c276d8c09544e01b9c19392dd1f1c7d1767ee798fc97e3c30"
+            },
+            {
+              "command": ".venv/bin/python scripts/run_ct_scenarios.py --json-out artifacts/conformance/ct_scenarios_result_e4_1000.json --rows-out artifacts/conformance/ct_scenarios_rows_e4_1000.json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "Protocol/tool CT checker scripts added; CT fail-closed with passing_count 50, not_implemented_count 76, failing_count 0; e4 parity 201 passed.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ct_checker_unblock_progress_report.json",
+              "sha256": "sha256:c8e63220c7e8f65b8e6b6d5ca2380d680c90dc9c4ee195cb1f8f69ffe6a04cc9"
+            },
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json",
+              "observed": "G-REGEN/G-BLAST path passes: CT 126/126 passing, final readiness 1000/1000, hash freshness ok.",
+              "path": "docs_tmp/phase_16/evidence/wave4_ct_terminal_regeneration_report.json",
+              "sha256": "sha256:4d7ff5caab876267fcf0be19c275e2c5ced4b8381644a8f112867e81b7b3321f"
+            }
+          ],
+          "item_id": "B.9",
+          "notes": "P3 helper regeneration passes, CT blocker surface is zero, final readiness packet reports 1000/1000, and hash freshness validation passes. B.9 is complete.",
+          "points": 15,
+          "status": "done",
+          "title": "Regenerate P3 evidence through boundary"
+        }
+      ],
+      "points_available": 140,
+      "points_done": 140,
+      "title": "Primitive runtime boundary",
+      "ws_id": "WS-B"
+    },
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python /tmp/validate_bb_er_wave0.py",
+              "path": "docs_tmp/phase_16/evidence/wave0_validation_report.json",
+              "preservation_checks": [
+                ".venv/bin/python -m pytest tests/e4_parity -q",
+                "npm test -- --runInBand"
+              ],
+              "sha256": "sha256:4415c7ba3fe97ee36beb2369e54d320d7fc54be35f90affd792f56b390f7232c"
+            }
+          ],
+          "item_id": "C.1",
+          "notes": "Wave 0 schema/example/registry/coverage validation passed.",
+          "points": 15,
+          "status": "done",
+          "title": "Author bb.e4.artifact_catalog.v1 + example"
+        },
+        {
+          "evidence": [
+            {
+              "adversarial_checks": [
+                "AdversarialC2"
+              ],
+              "command": ".venv/bin/python scripts/e4_parity/build_artifact_catalog.py; .venv/bin/python -m pytest tests/e4_parity/test_build_artifact_catalog.py -q; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave1b_c2_artifact_catalog_validation_report.json",
+              "sha256": "sha256:b98c5d1793e6566d9ed02d7d6e486cc67551fab2f11fe4eaad0e176515fa3cd7"
+            }
+          ],
+          "item_id": "C.2",
+          "notes": "Artifact catalog builder reads lane inventory plus report-role manifest, emits 299 deterministic catalog entries, validates via finalize_record, strips checkout prefixes, preserves docs_tmp paths, and has zero unresolved derived_from role references.",
+          "points": 25,
+          "status": "done",
+          "title": "build_artifact_catalog.py"
+        },
+        {
+          "evidence": [
+            {
+              "adversarial_checks": [
+                "AdversarialC3"
+              ],
+              "command": ".venv/bin/python -m py_compile scripts/e4_parity/*.py scripts/e4_parity/validators/*.py; .venv/bin/python -m pytest tests/e4_parity/test_catalog_refs.py tests/e4_parity/test_single_hash_truth.py -q; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave1b_c3_catalog_refs_validation_report.json",
+              "sha256": "sha256:54b271cc5d4e626c33d05d06f89df61ab9c1bc0b211c049cfc8906a0e21db559"
+            }
+          ],
+          "item_id": "C.3",
+          "notes": "catalog_refs.py provides load_catalog/entry/hash_ref/row_ref; single-hash-truth lint confines direct hashlib imports to allowed central files; focused and E4 parity tests passed.",
+          "points": 20,
+          "status": "done",
+          "title": "catalog_refs.py + single-hash-truth lint test"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m py_compile scripts/e4_parity/regenerate_evidence.py; .venv/bin/python -m pytest tests/e4_parity/test_regenerate_evidence.py -q; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave1b_c4_regenerate_evidence_validation_report.json",
+              "sha256": "sha256:ef80edb199cdbb50416a6e580831480e8ea3fe95a12296452e4e00f719481d4e"
+            }
+          ],
+          "item_id": "C.4",
+          "notes": "Topological driver now has 20 checked stages and a normal driver run executed through post-final artifact catalog refresh. Expected fail-closed exit remains 1 because CT reports 107 blocking not_implemented rows; validators are intentionally skipped after report-stage blockage. Legacy refresh remains tracked separately under C.5.",
+          "points": 25,
+          "status": "done",
+          "title": "regenerate_evidence.py topological driver"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; .venv/bin/python -m pytest tests/e4_parity -q; .venv/bin/python -m pytest tests/e4_parity/test_build_artifact_catalog.py tests/e4_parity/test_catalog_refs.py tests/e4_parity/test_regenerate_evidence.py -q; .venv/bin/python -m pytest tests/e4_parity/test_generate_ct_rows.py -q",
+              "path": "docs_tmp/phase_16/evidence/wave1b_c5_legacy_refresh_removal_report.json",
+              "sha256": "sha256:07706dd803c21f46291084557c2fcf8bd09e25c4e53acff091873c8f2ce1202b"
+            }
+          ],
+          "item_id": "C.5",
+          "notes": "Standalone refresh_e4_legacy_evidence_ledger_refs.py is deleted and absent from scripts/tests/report-role metadata. build_artifact_catalog.py now refreshes support-claim ledger row refs and evidence-manifest hashes before cataloging, so regeneration has no post-hoc legacy refresh stage. Normal regeneration remains fail-closed because 107 CT rows are still not_implemented; no CT row was relabeled complete.",
+          "points": 15,
+          "status": "done",
+          "title": "Delete refresh_e4_legacy_evidence_ledger_refs.py"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/e4_parity/test_artifact_catalog.py -q; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave1b_c6_duplication_gate_validation_report.json",
+              "sha256": "sha256:92dc5c0e9c29adaf80e30377947e16f2e3e9b4e848f891e11ee33b39a0997419"
+            }
+          ],
+          "item_id": "C.6",
+          "notes": "tests/e4_parity/test_artifact_catalog.py verifies the catalog integrity block from entries, scans maintained evidence roots for reused catalog hashes, and includes positive/negative tmp-tree duplication-gate cases. Focused test passed 4 cases; E4 parity suite passed 145 tests with 2 existing warnings.",
+          "points": 15,
+          "status": "done",
+          "title": "Duplication gate test"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/e4_parity/test_e4_report_hash_freshness.py tests/e4_parity/test_build_e4_final_readiness_packet.py -q; .venv/bin/python scripts/e4_parity/validate_e4_report_hash_freshness.py --scorecard ../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json --baseline ../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json --progress ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json --accepted-report ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json --accepted-validation ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json --terminal-manifest ../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json --catalog docs/conformance/e4_artifact_catalog.json --expected-points 1000 --expected-claims 10 --json",
+              "observed": "ok=true, expected_points=1000, expected_claims=10, live_validator_refs=18, errors=[]; delegated verifiers failed with usage_limit_reached before verdict.",
+              "path": "docs_tmp/phase_16/evidence/wave2_c7_d5_freshness_catalog_inventory_report.json",
+              "sha256": "sha256:3fe8b7224a369bfe267586bf0cd65b505928f45095299cc64c8a959c6278ed7a"
+            }
+          ],
+          "item_id": "C.7",
+          "notes": "Freshness validator accepts --catalog, resolves live validator refs through inventory-derived node_gate catalog roles, and no static required-validator registry constants remain. Current catalog-backed freshness validation is ok=true.",
+          "points": 15,
+          "status": "done",
+          "title": "Freshness validator consumes catalog"
+        }
+      ],
+      "points_available": 130,
+      "points_done": 130,
+      "title": "Artifact catalog & topological generation",
+      "ws_id": "WS-C"
+    },
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python /tmp/validate_bb_er_wave0.py",
+              "path": "docs_tmp/phase_16/evidence/wave0_validation_report.json",
+              "preservation_checks": [
+                ".venv/bin/python -m pytest tests/e4_parity -q",
+                "npm test -- --runInBand"
+              ],
+              "sha256": "sha256:4415c7ba3fe97ee36beb2369e54d320d7fc54be35f90affd792f56b390f7232c"
+            }
+          ],
+          "item_id": "D.1",
+          "notes": "Wave 0 schema/example/registry/coverage validation passed.",
+          "points": 15,
+          "status": "done",
+          "title": "Author bb.e4.lane_inventory.v1 + example"
+        },
+        {
+          "evidence": [
+            {
+              "adversarial_checks": [
+                "AdversarialD2"
+              ],
+              "command": ".venv/bin/python /tmp/validate_bb_er_d2.py",
+              "path": "docs_tmp/phase_16/evidence/wave1a_b1_b2_d2_validation_report.json",
+              "sha256": "sha256:3d3fa8a13fb03cf1b6d16e0c2f8aec07bebdc74fd10650fb1d683d7733177355"
+            }
+          ],
+          "item_id": "D.2",
+          "notes": "Lane inventory seeded from D3: 18 accepted lanes, five null builders, non-empty artifact roles, finalize_record validation passed.",
+          "points": 20,
+          "status": "done",
+          "title": "Seed e4_lane_inventory.json from D3 (18 lanes)"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py --json; .venv/bin/python -m pytest tests/e4_parity/test_p3_remaining_helper_runtime_inventory.py -q; .venv/bin/python -m pytest tests/e4_parity -q; .venv/bin/python scripts/e4_parity/regenerate_evidence.py --json",
+              "path": "docs_tmp/phase_16/evidence/wave1b_d3_p3_inventory_derivation_partial_report.json",
+              "sha256": "sha256:3cc89d089199afbd42dbbda7c6a31e7fc16b0f32b73cd040e31ab1857295939d"
+            },
+            {
+              "command": ".venv/bin/python -m py_compile scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py scripts/e4_parity/build_pi_p5_cli_config_context_tool_surface.py scripts/e4_parity/build_pi_p5_extension_session_residual.py scripts/e4_parity/build_oh_my_pi_l5_memory_compaction.py scripts/e4_parity/build_oh_my_pi_p6_6_task_job_subagent.py; all six builders --json; .venv/bin/python scripts/e4_parity/build_e4_final_readiness_packet.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave1c_d3_builder_inventory_completion_report.json",
+              "sha256": "sha256:761704f6808d8e386660a52bea146d212bc4a72ff5baf05a36da4d7e81389cd0"
+            }
+          ],
+          "item_id": "D.3",
+          "notes": "Complete: P3.1, P3.2-P3.8, Pi P5 L1/L2, Oh-My-Pi P6 L5, and Oh-My-Pi P6.6 builders now resolve accepted-lane identity from docs/conformance/e4_lane_inventory.json. All six builder commands ran green; final packet refreshed hash refs fail-closed for CT preflight; tests/e4_parity passed.",
+          "points": 25,
+          "status": "done",
+          "title": "Builders consume inventory; LANES derives"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m py_compile scripts/e4_parity/build_e4_final_readiness_packet.py tests/e4_parity/test_build_e4_final_readiness_packet.py; .venv/bin/python scripts/e4_parity/build_e4_final_readiness_packet.py --json; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave1c_d4_final_renderer_derivation_report.json",
+              "sha256": "sha256:ee44af0493e2e96f651c95211833fd25129ea07bfbf5abed87dd5852023f4fe0"
+            }
+          ],
+          "item_id": "D.4",
+          "notes": "Final packet renderer now computes score expectations from projected score rows plus inventory-managed lanes, derives lane artifact lists and validator refs from docs/conformance/e4_lane_inventory.json, and has no D1 \u00a71 EXPECTED/P3/P5/P6/P7/BLOCKED_CURRENT identifier matches. Regeneration is byte-stable in the fail-closed CT state; full terminal completion remains blocked by 107 not_implemented CT rows.",
+          "points": 25,
+          "status": "done",
+          "title": "Final packet becomes renderer; EXPECTED_* computed"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/e4_parity/test_e4_report_hash_freshness.py tests/e4_parity/test_build_e4_final_readiness_packet.py -q; .venv/bin/python scripts/e4_parity/validate_e4_report_hash_freshness.py --scorecard ../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json --baseline ../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json --progress ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json --accepted-report ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json --accepted-validation ../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json --terminal-manifest ../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json --catalog docs/conformance/e4_artifact_catalog.json --expected-points 1000 --expected-claims 10 --json",
+              "observed": "ok=true, expected_points=1000, expected_claims=10, live_validator_refs=18, errors=[]; delegated verifiers failed with usage_limit_reached before verdict.",
+              "path": "docs_tmp/phase_16/evidence/wave2_c7_d5_freshness_catalog_inventory_report.json",
+              "sha256": "sha256:3fe8b7224a369bfe267586bf0cd65b505928f45095299cc64c8a959c6278ed7a"
+            }
+          ],
+          "item_id": "D.5",
+          "notes": "Freshness expectations derive from accepted lane inventory: support-claim count, validator refs, and non-target live node-gate refs are inventory/catalog-derived. Previous stale scorecard/terminal-manifest blockers were resolved by regeneration; catalog-backed freshness validation is ok=true.",
+          "points": 15,
+          "status": "done",
+          "title": "Freshness expectations derive from inventory"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m py_compile tests/e4_parity/test_e4_report_hash_freshness.py tests/e4_parity/test_e4_score_subledger.py tests/e4_parity/test_lane_inventory_consistency.py; .venv/bin/python -m pytest tests/e4_parity/test_e4_report_hash_freshness.py tests/e4_parity/test_e4_score_subledger.py tests/e4_parity/test_lane_inventory_consistency.py -q; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave1c_d6_inventory_tests_report.json",
+              "sha256": "sha256:5a07d119dc73a144cb0b469a1bb1768a74e8b7cd8492361aa1aafb44a4b21e6f"
+            }
+          ],
+          "item_id": "D.6",
+          "notes": "Freshness and score-subledger tests now derive expected counts and validator fixture topology from docs/conformance/e4_lane_inventory.json; added test_lane_inventory_consistency.py for unique lane identities, required accepted artifact roles, and point arithmetic. Focused D6 tests passed (51), full tests/e4_parity passed (157, 2 warnings).",
+          "points": 15,
+          "status": "done",
+          "title": "Tests derive from inventory + consistency test"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m py_compile scripts/e4_parity/generate_ct_rows.py scripts/e4_parity/build_oh_my_pi_p3_1_effective_config_graph.py scripts/e4_parity/build_oh_my_pi_p3_remaining_helper_runtime.py scripts/e4_parity/build_pi_p5_cli_config_context_tool_surface.py scripts/e4_parity/build_pi_p5_extension_session_residual.py scripts/e4_parity/build_oh_my_pi_l5_memory_compaction.py scripts/e4_parity/build_oh_my_pi_l6_tui_projection.py scripts/e4_parity/build_oh_my_pi_p6_6_task_job_subagent.py; .venv/bin/python scripts/e4_parity/generate_ct_rows.py --check --rows-out /tmp/e4_inventory_ct_rows.json; .venv/bin/python -m pytest tests/e4_parity/test_generate_ct_rows.py -q; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave1c_d7_ct_inventory_generator_report.json",
+              "sha256": "sha256:9281b3859f75629aa05beee5a1171b83f7cda773afc25d23180610fc7787445d"
+            }
+          ],
+          "item_id": "D.7",
+          "notes": "generate_ct_rows.upsert_inventory_scenarios now rewrites all inventory-owned CT rows while preserving unrelated manifest rows; D3/P5/P6 builders call the shared generator instead of maintaining per-builder CT literals. Live manifest check reports 18 generated rows, 0 mismatches. Focused generator tests passed (5); full tests/e4_parity passed (158, 2 warnings).",
+          "points": 15,
+          "status": "done",
+          "title": "CT row generator from inventory"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m py_compile scripts/e4_parity/scaffold_e4_target_lane.py tests/e4_parity/test_scaffold_e4_target_lane.py; .venv/bin/python -m pytest tests/e4_parity/test_scaffold_e4_target_lane.py -q; .venv/bin/python scripts/e4_parity/scaffold_e4_target_lane.py --lane-id sample_full_scaffold --config-id sample_full_config_v1 --target-family oh_my_pi --target-version sample --dry-run-json --emit-inventory-row --emit-builder-skeleton --emit-comparator-skeleton; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave1c_d8_scaffold_upgrade_report.json",
+              "sha256": "sha256:684d216833cd3b8bf3b3ecc30d270e0c2e119c13ef33e0e8b7f5a1f1127da6b7"
+            }
+          ],
+          "item_id": "D.8",
+          "notes": "scaffold_e4_target_lane.py now supports --emit-inventory-row, --emit-builder-skeleton, and --emit-comparator-skeleton while retaining docs_tmp-only guardrails. The scaffolded inventory row validates when wrapped as bb.e4.lane_inventory.v1, uses status=scaffolded/points=0, and does not create support-claim or accepted-score state. Dry-run and write-mode tests passed; full tests/e4_parity passed (161, 4 warnings).",
+          "points": 10,
+          "status": "done",
+          "title": "Scaffold emits inventory row + skeletons"
+        }
+      ],
+      "points_available": 140,
+      "points_done": 140,
+      "title": "Declarative lane inventory",
+      "ws_id": "WS-D"
+    },
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python /tmp/validate_bb_er_wave0.py",
+              "path": "docs_tmp/phase_16/evidence/wave0_validation_report.json",
+              "preservation_checks": [
+                ".venv/bin/python -m pytest tests/e4_parity -q",
+                "npm test -- --runInBand"
+              ],
+              "sha256": "sha256:4415c7ba3fe97ee36beb2369e54d320d7fc54be35f90affd792f56b390f7232c"
+            }
+          ],
+          "item_id": "E.1",
+          "notes": "Wave 0 schema/example/registry/coverage validation passed.",
+          "points": 12,
+          "status": "done",
+          "title": "Registry schema + protocol + registry.json"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m py_compile ...; .venv/bin/python /tmp/validate_wse_registry.py; all 18 inventory reverify_command argv; scripts/run_ct_scenarios.py over 18 accepted inventory CT ids",
+              "path": "docs_tmp/phase_16/evidence/wave2_wse_comparator_reexecution_report.json",
+              "sha256": "sha256:c7e8750429601d16cc2ba0d9b1dfb636b4d4f0a5b0941f9ec5bdd7d4bb95f72c"
+            }
+          ],
+          "item_id": "E.2",
+          "notes": "Implemented family comparator entrypoints for oh_my_pi, pi, and codex through deterministic stored-report replay with live input-hash checks. Current evidence reproduces accepted assertion id/status/value sets for all 18 accepted lanes; E.6 remains open for adversarial tamper/determinism test hardening.",
+          "points": 20,
+          "status": "done",
+          "title": "Extract/implement comparators per family"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m py_compile ...; .venv/bin/python /tmp/validate_wse_registry.py; all 18 inventory reverify_command argv; scripts/run_ct_scenarios.py over 18 accepted inventory CT ids",
+              "path": "docs_tmp/phase_16/evidence/wave2_wse_comparator_reexecution_report.json",
+              "sha256": "sha256:c7e8750429601d16cc2ba0d9b1dfb636b4d4f0a5b0941f9ec5bdd7d4bb95f72c"
+            }
+          ],
+          "item_id": "E.3",
+          "notes": "validate_e4_c4_chain.py reruns comparators by default, resolves registry entries, diffs assertion identities/statuses/observed/expected for deterministic_replay, and records --no-rerun-comparators escape state in JSON.",
+          "points": 25,
+          "status": "done",
+          "title": "validate_e4_c4_chain --rerun-comparators"
+        },
+        {
+          "evidence": [
+            {
+              "check_only_probe": "test ! -e /tmp/bb_er_check_only_should_not_exist.json after --check-only --json-out probe",
+              "command": ".venv/bin/python -m py_compile ...; .venv/bin/python /tmp/validate_wse_registry.py; all 18 inventory reverify_command argv; scripts/run_ct_scenarios.py over 18 accepted inventory CT ids",
+              "path": "docs_tmp/phase_16/evidence/wave2_wse_comparator_reexecution_report.json",
+              "sha256": "sha256:c7e8750429601d16cc2ba0d9b1dfb636b4d4f0a5b0941f9ec5bdd7d4bb95f72c"
+            }
+          ],
+          "item_id": "E.4",
+          "notes": "--check-only suppresses --json-out writes; all accepted lane inventory rows now carry reverify_command argv using --check-only.",
+          "points": 13,
+          "status": "done",
+          "title": "--check-only mode + reverify_command"
+        },
+        {
+          "evidence": [
+            {
+              "accepted_ct_report": {
+                "path": "docs_tmp/phase_16/evidence/wave2_wse_accepted_ct_report.json",
+                "sha256": "sha256:a146934930eda060cc4b080e00ce16d61c0f76738ee435f1f3c478fea4cf5777"
+              },
+              "command": ".venv/bin/python -m py_compile ...; .venv/bin/python /tmp/validate_wse_registry.py; all 18 inventory reverify_command argv; scripts/run_ct_scenarios.py over 18 accepted inventory CT ids",
+              "path": "docs_tmp/phase_16/evidence/wave2_wse_comparator_reexecution_report.json",
+              "reverify_report": {
+                "path": "docs_tmp/phase_16/evidence/wave2_wse_reverify_probe.json",
+                "sha256": "sha256:ea150dc504cfe0dae5f5dac19c173759407e18cfb3fc4f4c2a718bf40e0fe387"
+              },
+              "sha256": "sha256:c7e8750429601d16cc2ba0d9b1dfb636b4d4f0a5b0941f9ec5bdd7d4bb95f72c"
+            }
+          ],
+          "item_id": "E.5",
+          "notes": "Comparator registry now has 3 family entries covering all 18 accepted lanes; default validator rerun and accepted CT subset pass with 18/18 passing rows.",
+          "points": 20,
+          "status": "done",
+          "title": "Registry coverage for all 18 lanes; default ON"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/e4_parity/test_comparator_rerun_semantics.py -q; .venv/bin/python -m pytest tests/e4_parity -q",
+              "path": "docs_tmp/phase_16/evidence/wave3_e6_comparator_rerun_tests_report.json",
+              "sha256": "sha256:97de40a71465cbae08f3c9f209b7a39e94edd429a560a35644cefa5133a79e50"
+            }
+          ],
+          "item_id": "E.6",
+          "notes": "Comparator rerun tests now cover tampered replay divergence naming, accepted-lane registry completeness, comparator protocol conformance, and deterministic reruns. Focused test and full tests/e4_parity gate passed; delegated adversarial verifier retry failed with usage_limit_reached before verdict.",
+          "points": 20,
+          "status": "done",
+          "title": "Divergence/completeness/determinism tests"
+        }
+      ],
+      "points_available": 110,
+      "points_done": 110,
+      "title": "Comparator re-execution",
+      "ws_id": "WS-E"
+    },
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; focused pytest/API/doctest/TS gates",
+              "observed": "WS-F/WS-H remaining items validated; final readiness 1000/1000; CT 126/126; matrix 126 mapped with no failing/not_implemented rows.",
+              "path": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+              "sha256": "sha256:daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+            }
+          ],
+          "item_id": "F.1",
+          "notes": "18 support claims migrated to bb.e4.support_claim.v2; v1 payloads preserved under docs/conformance/support_claims/v1_archive with legacy-scope metadata.",
+          "points": 20,
+          "status": "done",
+          "title": "Migrate 18 claims to v2 (generated); archive v1"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; focused pytest/API/doctest/TS gates",
+              "observed": "WS-F/WS-H remaining items validated; final readiness 1000/1000; CT 126/126; matrix 126 mapped with no failing/not_implemented rows.",
+              "path": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+              "sha256": "sha256:daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+            }
+          ],
+          "item_id": "F.2",
+          "notes": "Score rows carry support_claim_ref/support_claim_sha256 and keep points in the score subledger/final report rather than support-claim payloads.",
+          "points": 10,
+          "status": "done",
+          "title": "Score rows gain claim_ref; no points in claims"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python /tmp/validate_bb_er_wave0.py",
+              "path": "docs_tmp/phase_16/evidence/wave0_validation_report.json",
+              "preservation_checks": [
+                ".venv/bin/python -m pytest tests/e4_parity -q",
+                "npm test -- --runInBand"
+              ],
+              "sha256": "sha256:4415c7ba3fe97ee36beb2369e54d320d7fc54be35f90affd792f56b390f7232c"
+            }
+          ],
+          "item_id": "F.3",
+          "notes": "Wave 0 schema/example/registry/coverage validation passed.",
+          "points": 15,
+          "status": "done",
+          "title": "Author target_coverage.v1 + seed 6 matrices"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; focused pytest/API/doctest/TS gates",
+              "observed": "WS-F/WS-H remaining items validated; final readiness 1000/1000; CT 126/126; matrix 126 mapped with no failing/not_implemented rows.",
+              "path": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+              "sha256": "sha256:daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+            }
+          ],
+          "item_id": "F.4",
+          "notes": "Coverage status sources regenerated from CT rows and matrix sync; current summary has 126 mapped, 0 failing, 0 not_implemented.",
+          "points": 10,
+          "status": "done",
+          "title": "Seed coverage statuses from reality"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; focused pytest/API/doctest/TS gates",
+              "observed": "WS-F/WS-H remaining items validated; final readiness 1000/1000; CT 126/126; matrix 126 mapped with no failing/not_implemented rows.",
+              "path": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+              "sha256": "sha256:daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+            }
+          ],
+          "item_id": "F.5",
+          "notes": "Final readiness report separates target-support claims, non-target C4 lineage, score subledger, CT rows, and artifact freshness manifest.",
+          "points": 15,
+          "status": "done",
+          "title": "Reporting split (infra ledger + coverage tables)"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; focused pytest/API/doctest/TS gates",
+              "observed": "WS-F/WS-H remaining items validated; final readiness 1000/1000; CT 126/126; matrix 126 mapped with no failing/not_implemented rows.",
+              "path": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+              "sha256": "sha256:daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+            }
+          ],
+          "item_id": "F.6",
+          "notes": "Support-claim v2 generation, score subledger validation, primitive readiness validation, and hash freshness validation passed in terminal regeneration.",
+          "points": 10,
+          "status": "done",
+          "title": "Claim v2 + coverage validators"
+        }
+      ],
+      "points_available": 80,
+      "points_done": 80,
+      "title": "Claim v2 adoption & scoring split",
+      "ws_id": "WS-F"
+    },
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "adversarial_checks": [
+                "AdversarialG1:not_refuted"
+              ],
+              "command": ".venv/bin/python -m pytest tests/e4_parity/test_ct_honesty_semantics.py -q; .venv/bin/python -m pytest tests/e4_parity -q; .venv/bin/python scripts/run_ct_scenarios.py --json-out artifacts/conformance/ct_scenarios_result_er.json --rows-out artifacts/conformance/ct_scenarios_rows_er.json",
+              "observed": "Focused CT honesty tests: 7 passed. G-PY: 137 passed, 2 warnings. Current CT run exits 1 by design with ok=false, status=fail, 107 blocking not_implemented rows, 0 failing rows, 0 planned rows.",
+              "path": "docs_tmp/phase_16/evidence/wave1a_g1_g4_ct_honesty_validation_report.json",
+              "sha256": "sha256:f38593c819cf611f397e4e8350bcdccd75b06e79e2d9f45f662efdb17df3a63e"
+            }
+          ],
+          "item_id": "G.1",
+          "notes": "CT runner now rejects mutable manifest status except justified skipped rows, reports missing commands as not_implemented, and fails P0/P1 blocking not_implemented rows by default. The current suite is honestly fail-closed with 107 blocking not_implemented rows; this is a remaining CT implementation blocker, not planned-as-green.",
+          "points": 15,
+          "status": "done",
+          "title": "not_implemented/skipped statuses; blocking gates fail"
+        },
+        {
+          "evidence": [
+            {
+              "command": "derived inspection of docs/conformance/CONFORMANCE_TEST_MATRIX_V1.csv and docs/conformance/ct_scenarios_v1.json",
+              "observed": "Source CSV fieldnames are test_id, primitive_family, schema_target, fixture_source, gate_level, owner; no status/notes columns. CT manifest has zero scenario-level status keys.",
+              "path": "docs_tmp/phase_16/evidence/wave1a_g1_g4_ct_honesty_validation_report.json",
+              "sha256": "sha256:f38593c819cf611f397e4e8350bcdccd75b06e79e2d9f45f662efdb17df3a63e"
+            }
+          ],
+          "item_id": "G.2",
+          "notes": "Source CT metadata is status-free; generated CT rows/synced CSV are the status source.",
+          "points": 10,
+          "status": "done",
+          "title": "Strip mutable status from source CSV/manifest"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/sync_conformance_matrix_status.py --rows-json artifacts/conformance/ct_scenarios_rows_er.json --out-csv artifacts/conformance/CONFORMANCE_TEST_MATRIX_V1.er.synced.csv --summary-json artifacts/conformance/conformance_matrix_sync_summary_er.json --summary-md artifacts/conformance/conformance_matrix_sync_summary_er.md",
+              "observed": "Sync mapped 126 rows from generated CT rows, produced generated status/notes, and reported ok=false only because 107 generated rows are blocking not_implemented.",
+              "path": "docs_tmp/phase_16/evidence/wave1a_g1_g4_ct_honesty_validation_report.json",
+              "sha256": "sha256:f38593c819cf611f397e4e8350bcdccd75b06e79e2d9f45f662efdb17df3a63e"
+            }
+          ],
+          "item_id": "G.3",
+          "notes": "sync_conformance_matrix_status.py rejects source matrices with generated status/notes and derives generated status from CT row JSON.",
+          "points": 10,
+          "status": "done",
+          "title": "Generated artifacts sole status truth"
+        },
+        {
+          "evidence": [
+            {
+              "command": "derived inspection of docs/conformance/ct_scenarios_v1.json and artifacts/conformance/ct_scenarios_rows_er.json",
+              "observed": "No absolute paths were found in CT manifest command/assertion paths or generated ER row artifact_paths; grep for /Users/ in CT manifest/result/rows returned no matches.",
+              "path": "docs_tmp/phase_16/evidence/wave1a_g1_g4_ct_honesty_validation_report.json",
+              "sha256": "sha256:f38593c819cf611f397e4e8350bcdccd75b06e79e2d9f45f662efdb17df3a63e"
+            }
+          ],
+          "item_id": "G.4",
+          "notes": "Generated CT row artifact paths are repo-relative; absolute manifest artifact paths are rejected unless debug explicitly allows them.",
+          "points": 10,
+          "status": "done",
+          "title": "Repo-relative paths in CT rows"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/generate_ct_rows.py --check; .venv/bin/python -m py_compile scripts/e4_parity/generate_ct_rows.py; .venv/bin/python -m pytest tests/e4_parity/test_generate_ct_rows.py -q; .venv/bin/python -m pytest tests/e4_parity -q",
+              "observed": "Generator --check: ok=true, generated_row_count=18, mismatch_count=0. Focused generator tests: 4 passed including scaffolded CT exclusion. G-PY: 141 passed, 2 warnings.",
+              "path": "docs_tmp/phase_16/evidence/wave1a_g5_ct_generator_validation_report.json",
+              "sha256": "sha256:8bb061e6daf7cb20a17d46f97f99a6ea160df3cda30a3bcf300da259e6f81b5e",
+              "tester": "G5GeneratorTests; G5AcceptedStatusTests"
+            }
+          ],
+          "item_id": "G.5",
+          "notes": "generate_ct_rows.py renders inventory-backed accepted-lane C4 rows from e4_lane_inventory ct blocks; CONFORMANCE_TEST_MATRIX_V1.md documents inventory C4 evidence-class vs executable <phase>-support gate semantics; focused tests cover live manifest round-trip and tamper rejection.",
+          "points": 5,
+          "status": "done",
+          "title": "Gate-level semantics doc + generator round-trip"
+        }
+      ],
+      "points_available": 50,
+      "points_done": 50,
+      "title": "CT honesty",
+      "ws_id": "WS-G"
+    },
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; focused pytest/API/doctest/TS gates",
+              "observed": "WS-F/WS-H remaining items validated; final readiness 1000/1000; CT 126/126; matrix 126 mapped with no failing/not_implemented rows.",
+              "path": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+              "sha256": "sha256:daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+            }
+          ],
+          "item_id": "H.1",
+          "notes": "E4 API surface serves runtime records and v1/v2 support-claim records; focused API pytest passes with runtime emission coverage.",
+          "points": 20,
+          "status": "done",
+          "title": "api/e4 models + router per 5.8"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python /tmp/smoke_e4_api.py",
+              "observed": "TestClient create_app boots and GET /v1/e4/health returns 200; app.py mounts create_e4_router at prefix /v1/e4 with the route-convention comment.",
+              "path": "docs_tmp/phase_16/evidence/wave4_wsh_api_surface_report.json",
+              "sha256": "sha256:d66baaec93f5cb1d99f097ed35172181d9f2df37ee784049555afe93beda113b"
+            }
+          ],
+          "item_id": "H.2",
+          "notes": "Mounted in cli_bridge app factory with injected repo/catalog/inventory/claims/schema/ledger paths.",
+          "points": 10,
+          "status": "done",
+          "title": "Mount /v1/e4 + convention note"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python -m pytest tests/test_e4_api_surface.py -q",
+              "observed": "5 passed: OpenAPI route surface, health/schema/lane filters, lane/claim/catalog/ledger/records artifact resolution, reverify check-only/no-write, and missing-resource 404s. Tester delegation attempted twice but agent failed with usage_limit_reached before editing/review.",
+              "path": "docs_tmp/phase_16/evidence/wave4_wsh_api_surface_report.json",
+              "sha256": "sha256:d66baaec93f5cb1d99f097ed35172181d9f2df37ee784049555afe93beda113b"
+            }
+          ],
+          "item_id": "H.3",
+          "notes": "Focused endpoint tests added in tests/test_e4_api_surface.py. Tester agent was delegated twice per process but unavailable due usage_limit_reached; tests are present and passing.",
+          "points": 10,
+          "status": "done",
+          "title": "Endpoint tests"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; focused pytest/API/doctest/TS gates",
+              "observed": "WS-F/WS-H remaining items validated; final readiness 1000/1000; CT 126/126; matrix 126 mapped with no failing/not_implemented rows.",
+              "path": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+              "sha256": "sha256:daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+            }
+          ],
+          "item_id": "H.4",
+          "notes": "TS kernel contracts regenerate and validate all generated schemas; npm test passes with 6 generated/contract tests.",
+          "points": 25,
+          "status": "done",
+          "title": "TS codegen over all schemas"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; focused pytest/API/doctest/TS gates",
+              "observed": "WS-F/WS-H remaining items validated; final readiness 1000/1000; CT 126/126; matrix 126 mapped with no failing/not_implemented rows.",
+              "path": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+              "sha256": "sha256:daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+            }
+          ],
+          "item_id": "H.5",
+          "notes": "Drift gates for schema/example/generated registry and conformance matrix pass through CT regeneration and matrix sync.",
+          "points": 15,
+          "status": "done",
+          "title": "Drift gates (schema-type-example)"
+        },
+        {
+          "evidence": [
+            {
+              "command": "cd tui_skeleton && npx tsc --noEmit --skipLibCheck --target ES2022 --module NodeNext --moduleResolution NodeNext src/api/client.ts src/api/types.ts",
+              "observed": "Focused TUI API compile clean.",
+              "path": "docs_tmp/phase_16/evidence/wave4_wsh_tui_e4_client_report.json",
+              "sha256": "sha256:38c4ec01b5f36f926f0162b994d041fa108906b93d2645b3d494346620eab177"
+            }
+          ],
+          "item_id": "H.6",
+          "notes": "TUI types and client expose required e4 methods, plus catalog/ledger/records/health helpers matching FastAPI surface.",
+          "points": 10,
+          "status": "done",
+          "title": "TUI client e4 methods"
+        },
+        {
+          "evidence": [
+            {
+              "command": ".venv/bin/python scripts/e4_parity/regenerate_evidence.py --json; focused pytest/API/doctest/TS gates",
+              "observed": "WS-F/WS-H remaining items validated; final readiness 1000/1000; CT 126/126; matrix 126 mapped with no failing/not_implemented rows.",
+              "path": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+              "sha256": "sha256:daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+            }
+          ],
+          "item_id": "H.7",
+          "notes": "E4_CONSUMPTION.md quickstarts execute through doctest; 5 documented command blocks passed and results artifact refreshed.",
+          "points": 20,
+          "status": "done",
+          "title": "E4_CONSUMPTION.md with executed quickstarts"
+        }
+      ],
+      "points_available": 110,
+      "points_done": 110,
+      "title": "Consumption surface",
+      "ws_id": "WS-H"
+    },
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/wave4_i1_ordering_regression_report.json",
+              "sha256": "sha256:896b506d609c1605f5d46def344a687d24da48c34c77b0240b7f1978cf838721"
+            }
+          ],
+          "item_id": "I.1",
+          "notes": "Added regression covering support-claim mutation after validator rendering: freshness/C4 gate fails on stale refs, then regenerated validator reports pass.",
+          "points": 15,
+          "status": "done",
+          "title": "Ordering-bug regression test"
+        },
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/wave4_i2_ct_malformed_input_tests_report.json",
+              "sha256": "sha256:642a883804a778c6237ba20afd7bd8a7d69bb7968817042a939d0b5518d11b3f"
+            }
+          ],
+          "item_id": "I.2",
+          "notes": "Added CT runner and matrix-sync malformed-input tests; fixed malformed assertion path discovery to fail as a report row instead of AttributeError.",
+          "points": 10,
+          "status": "done",
+          "title": "CT runner/sync malformed-input tests"
+        },
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/wave4_i3_scaffold_write_mode_tests_report.json",
+              "sha256": "sha256:671e61f6821016902d1847558d8de3c1eb24a31e5486107d2fda69ba9849221d"
+            }
+          ],
+          "item_id": "I.3",
+          "notes": "Added CLI write-mode scaffold coverage for schema-valid outputs, optional artifacts, root confinement, and protected-root rejection.",
+          "points": 10,
+          "status": "done",
+          "title": "Scaffold write-mode test"
+        },
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/wave4_i4_freshness_semantics_report.json",
+              "sha256": "sha256:8855d9e6eb2fadba221cdd44dd41024a7165c7934936aabc79a987ac5bcf1ee1"
+            }
+          ],
+          "item_id": "I.4",
+          "notes": "Removed incidental golden hash literals from E4 parity tests; hash assertions now derive expected values from fixture/content preimages, leaving freshness to freshness contracts.",
+          "points": 10,
+          "status": "done",
+          "title": "Separate freshness gates from semantics"
+        },
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/wave4_i5_progress_checker_report.json",
+              "sha256": "sha256:64fa209cdafac6365638bfe1bb509c61d8fd5f1fab47dd260e044a92f12cf1f7"
+            }
+          ],
+          "item_id": "I.5",
+          "notes": "Added bb.er.progress.v1 schema, minimal example/manifest entry, check_er_progress.py, and focused tests for schema, arithmetic, and evidence freshness invariants.",
+          "points": 15,
+          "status": "done",
+          "title": "Convert plumbing tests; check_er_progress.py"
+        }
+      ],
+      "points_available": 60,
+      "points_done": 60,
+      "title": "Test hardening",
+      "ws_id": "WS-I"
+    },
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py",
+              "sha256": "sha256:202b2086ab449c58b49b4288029f0d9092b14f8764f7db99ea474cbe37b98401"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+              "sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_config_graph.json",
+              "sha256": "sha256:2e868bc4831faf63c9cbc8b8d3d53c50907121b8873fffedb1e8b26ead684c85"
+            }
+          ],
+          "item_id": "J.1",
+          "notes": "Flag-gated runtime emission writes bb.effective_config_graph.v1 on session start; default remains off.",
+          "points": 20,
+          "status": "done",
+          "title": "Session emits effective_config_graph (flagged)"
+        },
+        {
+          "evidence": [
+            {
+              "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py",
+              "sha256": "sha256:202b2086ab449c58b49b4288029f0d9092b14f8764f7db99ea474cbe37b98401"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+              "sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/capability_registry.json",
+              "sha256": "sha256:5f75adf39a7e9d3c2a684b3f3a1b3d4dc33ea2e42c752d4bf120980f08c0d4ea"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_tool_surface.json",
+              "sha256": "sha256:c7b6714c0aa4ff2839d5b7bc7ac7adabc901186f1df3f28f4065d544644f5981"
+            }
+          ],
+          "item_id": "J.2",
+          "notes": "Same flag emits bb.capability_registry.v1 and bb.effective_tool_surface.v1 from loaded config state.",
+          "points": 20,
+          "status": "done",
+          "title": "Session emits capability_registry + tool_surface"
+        },
+        {
+          "evidence": [
+            {
+              "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py",
+              "sha256": "sha256:202b2086ab449c58b49b4288029f0d9092b14f8764f7db99ea474cbe37b98401"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+              "sha256": "sha256:aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_queued.json",
+              "sha256": "sha256:9722e1dc8db8e7073187e129a22db883311c4110c29b681cf10975812bbbe588"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_running.json",
+              "sha256": "sha256:e8afc95107b7a56b3a5ae48780e28411018c08ae01a48d45044025f6e31ae647"
+            }
+          ],
+          "item_id": "J.3",
+          "notes": "Session start emits queued and running bb.work_item.v1 lifecycle records.",
+          "points": 15,
+          "status": "done",
+          "title": "work_item emission for task lifecycle"
+        },
+        {
+          "evidence": [
+            {
+              "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+              "sha256": "sha256:4342d2f4df75c3d462dadd222f5bc38bc51ee005c80e25093dce3323d505c6ec"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
+              "sha256": "sha256:ebea22132bed4474377d1e67e29b020e0d45df2ffa0c6ecc678115710086046e"
+            }
+          ],
+          "item_id": "J.4",
+          "notes": "/v1/e4/records reads runtime record root and filters by schema_version/source.",
+          "points": 10,
+          "status": "done",
+          "title": "/v1/e4/records source=runtime"
+        },
+        {
+          "evidence": [
+            {
+              "path": "breadboard_repo_integration_main_20260326/config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
+              "sha256": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_config_graph.json",
+              "sha256": "sha256:2e868bc4831faf63c9cbc8b8d3d53c50907121b8873fffedb1e8b26ead684c85"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/capability_registry.json",
+              "sha256": "sha256:5f75adf39a7e9d3c2a684b3f3a1b3d4dc33ea2e42c752d4bf120980f08c0d4ea"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_tool_surface.json",
+              "sha256": "sha256:c7b6714c0aa4ff2839d5b7bc7ac7adabc901186f1df3f28f4065d544644f5981"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_queued.json",
+              "sha256": "sha256:9722e1dc8db8e7073187e129a22db883311c4110c29b681cf10975812bbbe588"
+            },
+            {
+              "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_running.json",
+              "sha256": "sha256:e8afc95107b7a56b3a5ae48780e28411018c08ae01a48d45044025f6e31ae647"
+            }
+          ],
+          "item_id": "J.5",
+          "notes": "C3 runtime fixtures and atomic ledger rows added; no C4 support claim promoted for WS-J.",
+          "points": 15,
+          "status": "done",
+          "title": "C3 fixtures + ledger rows (no C4 claims)"
+        },
+        {
+          "evidence": [
+            {
+              "path": "breadboard_repo_integration_main_20260326/docs/contracts/RFC_RUNTIME_CAPTURE_REPLAY.md",
+              "sha256": "sha256:3a0d7084595421e2dfabce83e255ee2b4c072dd4fb39580aa37e89661929ea30"
+            }
+          ],
+          "item_id": "J.6",
+          "notes": "Runtime capture/replay RFC documents staged C3 boundary and later C4 migration path.",
+          "points": 10,
+          "status": "done",
+          "title": "RFC runtime capture/replay (design only)"
+        }
+      ],
+      "points_available": 90,
+      "points_done": 90,
+      "title": "Live runtime emission (staged, C3-tier)",
+      "ws_id": "WS-J"
+    }
+  ]
+}

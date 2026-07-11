@@ -1,0 +1,82 @@
+--- rev66/BB_ER_PROGRESS.json
++++ rev68/BB_ER_PROGRESS.json
+@@ -261,11 +261,52 @@
+         "J.3.evidence[1]"
+       ],
+       "summary": "Refreshed exactly three Phase16 WS-J progress pins after merge commit fc9e1f3e legitimately added request-scoped provider runtime prewarming to the shared CLI bridge service while preserving the existing primitive-emission path. No evidence paths, item statuses, or point totals changed."
++    },
++    {
++      "actor": "Main orchestrating agent, Phase 20 integration (post-F5/SP2b merge @ 1578bafa)",
++      "generated_at_utc": "2026-07-11T09:30:00Z",
++      "pin_refresh_count": 1,
++      "pin_refreshes": [
++        {
++          "justification": "Deferred J.5 rebind executed per SP7 deferred_j5.routing (docs_tmp/phase_20/evidence/SP7/implementer.json) after PacketF5 landed the canonical tracked ledger artifact (git blob b3ceb2605b7925354c277e9a33952b4e398bd2c1 at integration head; 312 resolved refs / 182 justified tombstones; reviewed APPROVED by ReviewF5 @ 0def21d5). The prior pin bound the ambient phase-15 seed whose bytes are a function of accumulated workspace state (f5_seed_digest_resolution.json: mechanism_established_exact_bytes_unresolved; live seed refs non-resolving at head). The tracked artifact replaces the ambient merge target as the canonical, digest-stable ledger input.",
++          "label": "J.5.evidence[0]",
++          "new_path": "breadboard_repo_integration_main_20260326/config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
++          "new_sha256": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e",
++          "old_path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
++          "old_sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1",
++          "precedent": "docs_tmp/phase_20/evidence/SP7/implementer.json#update_mechanism (rev 65->66), itself following docs_tmp/phase_19/item_evidence/G1_cross_phase_pin_refresh.json#progress_files.phase16 (63->64)"
++        }
++      ],
++      "summary": "J.5 atomic ledger evidence rebound from ambient phase-15 seed (stale pin a001fe69) to the F5 canonical tracked ledger artifact (908cd376). No statuses, points, or other evidence changed."
++    },
++    {
++      "actor": "Main orchestrating agent, Phase 20 integration (post-Wave-A merge @ 1578bafa)",
++      "generated_at_utc": "2026-07-11T09:45:00Z",
++      "pin_refresh_count": 2,
++      "pin_refreshes": [
++        {
++          "justification": "Sole change commit 0fc11917 (P20 SP3 schema lifecycle + v4 claim routing), re-reviewed APPROVED @ aea51859 by ReviewSP3 and merged at 9b4cca88. Old digest reproduced from git show ba1a1cf7; legitimate reviewed source evolution, not evidence corruption.",
++          "label": "J.4.evidence[0]",
++          "new_sha256": "sha256:4342d2f4df75c3d462dadd222f5bc38bc51ee005c80e25093dce3323d505c6ec",
++          "old_sha256": "sha256:66a7f8a127fcd22905c1c0a4f428987d423f9c220d2a4a9abd85cd49a711754c",
++          "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
++          "precedent": "docs_tmp/phase_20/evidence/SP7/implementer.json#update_mechanism (65->66)"
++        },
++        {
++          "justification": "Change commits 7e89d927 (P20 SP4 test-only gate corrections, reviewed APPROVED by ReviewSP4) and 0fc11917 (SP3, re-reviewed APPROVED @ aea51859). Old digest reproduced from git show ba1a1cf7; legitimate reviewed source evolution, not evidence corruption.",
++          "label": "J.4.evidence[1]",
++          "new_sha256": "sha256:ebea22132bed4474377d1e67e29b020e0d45df2ffa0c6ecc678115710086046e",
++          "old_sha256": "sha256:3b9910399f2cb3d7c9a16337cf2632053e84e8f4e4cf7c692571b4f6c5c7a8d7",
++          "path": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
++          "precedent": "docs_tmp/phase_20/evidence/SP7/implementer.json#update_mechanism (65->66)"
++        }
++      ],
++      "summary": "Re-pin J.4 source evidence hashes flagged pin_stale after Wave A merges: router.py and test_e4_api_surface.py bytes changed only via reviewed packet commits (SP3/SP4). No statuses, points, or evidence paths changed."
+     }
+   ],
+-  "generated_at_utc": "2026-07-11T00:00:00Z",
++  "generated_at_utc": "2026-07-11T09:45:00Z",
+   "plan_ref": "docs_tmp/phase_16/BB_ER_MASTER_PLAN.md",
+-  "revision": 66,
++  "revision": 68,
+   "schema_version": "bb.er.progress.v1",
+   "totals": {
+     "points_blocked": 0,
+@@ -1454,11 +1495,11 @@
+           "evidence": [
+             {
+               "path": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+-              "sha256": "sha256:66a7f8a127fcd22905c1c0a4f428987d423f9c220d2a4a9abd85cd49a711754c"
++              "sha256": "sha256:4342d2f4df75c3d462dadd222f5bc38bc51ee005c80e25093dce3323d505c6ec"
+             },
+             {
+               "path": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
+-              "sha256": "sha256:3b9910399f2cb3d7c9a16337cf2632053e84e8f4e4cf7c692571b4f6c5c7a8d7"
++              "sha256": "sha256:ebea22132bed4474377d1e67e29b020e0d45df2ffa0c6ecc678115710086046e"
+             }
+           ],
+           "item_id": "J.4",
+@@ -1470,8 +1511,8 @@
+         {
+           "evidence": [
+             {
+-              "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+-              "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
++              "path": "breadboard_repo_integration_main_20260326/config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
++              "sha256": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e"
+             },
+             {
+               "path": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_config_graph.json",
