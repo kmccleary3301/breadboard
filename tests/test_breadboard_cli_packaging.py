@@ -70,8 +70,11 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
             "-I",
             "-c",
             (
-                "import json, agentic_coder_prototype, breadboard_sdk; "
-                "print(json.dumps([agentic_coder_prototype.__file__, breadboard_sdk.__file__]))"
+                "import adaptive_iter, json, agentic_coder_prototype, breadboard, "
+                "breadboard_sdk, conformance; "
+                "print(json.dumps([adaptive_iter.__file__, "
+                "agentic_coder_prototype.__file__, breadboard.__file__, "
+                "breadboard_sdk.__file__, conformance.__file__]))"
             ),
         ],
         cwd=outside_repo,

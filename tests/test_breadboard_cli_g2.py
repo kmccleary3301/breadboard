@@ -158,9 +158,12 @@ def test_pyproject_installs_cli_and_runtime_import_packages() -> None:
     assert metadata["project"]["scripts"]["bbh"] == "scripts.breadboard_cli:main"
     assert set(metadata["tool"]["setuptools"]["packages"]) >= {
         "scripts",
+        "breadboard",
         "agentic_coder_prototype",
         "breadboard_sdk",
+        "conformance",
     }
+    assert "adaptive_iter" in metadata["tool"]["setuptools"]["py-modules"]
 
 
 @pytest.mark.parametrize("namespace", ["harness", "lane"])
