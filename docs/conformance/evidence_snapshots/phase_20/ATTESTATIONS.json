@@ -1,0 +1,21 @@
+{
+  "schema": "bb.evidence_attestations.v1",
+  "note": "Verbatim reviewer attestations received via IRC, transcribed by orchestrator. reviewer.json files marked 'orchestrator-materialized' are transcriptions from agent yields/IRC, not reviewer-authored bytes. Authoritative full reviewer outputs: agent://ReviewSP1, agent://ReviewSP3, agent://ReviewSP4, agent://ReviewSP5, agent://ReviewSP7.",
+  "attestations": [
+    {
+      "from": "ReviewSP5",
+      "date": "2026-07-11",
+      "verbatim": "APPROVED: verdict is bound jointly to SP5 code SHA 650c7daa01751e2c35aa1f7f0b2cf79bf96b6687 and reviewed implementer evidence SHA-256 3e886b377948b20995bc85e74027ce98b2e86cd42d5cd8759e1090474beef96a, preserved for integration at 542f43f1."
+    },
+    {
+      "from": "ReviewSP1",
+      "date": "2026-07-11",
+      "verbatim": "CONFIRMED: the reviewed `docs_tmp/phase_20/evidence/SP1/implementer.json` hashes to `e7eea63b7194a13da6d3d06842ee8020b55954655e0c4739ae27a4d8178402a1`, exactly matching the AM23a manifest digest at integration commit d225b137."
+    },
+    {
+      "from": "ReviewSP4",
+      "date": "2026-07-11",
+      "verbatim": "Confirmed against the originals in sp4_wt. implementer.json SHA-256 = 175ebff1fddf458519badd2cf5a11d1c7196c79fa6e0d1c298a4bffd2aaed6a2; reviewer.json SHA-256 = 2bb789df2328cfe50cfaf5c90d8983ce711535109ac15b13a3f30ebaa6cb9a88. Both exactly match the AM23a snapshot values; manifest entries may be marked reviewer-confirmed."
+    }
+  ]
+}

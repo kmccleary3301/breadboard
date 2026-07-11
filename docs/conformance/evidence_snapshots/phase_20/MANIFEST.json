@@ -6,8 +6,8 @@
   "files": {
     "SP1/implementer.json": {
       "sha256": "e7eea63b7194a13da6d3d06842ee8020b55954655e0c4739ae27a4d8178402a1",
-      "status": "reviewer-path-confirmed",
-      "detail": "ReviewSP1 verdict cites this canonical-root path and matched pinned head/base/files; digest not named in verdict; confirmation requested from ReviewSP1",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP1 2026-07-11 IRC: reviewed file hashes to e7eea63b..., exactly matching manifest digest at d225b137",
       "reviewed_code_sha": "0775bbde"
     },
     "SP1/reviewer.json": {
@@ -22,14 +22,14 @@
     },
     "SP4/implementer.json": {
       "sha256": "175ebff1fddf458519badd2cf5a11d1c7196c79fa6e0d1c298a4bffd2aaed6a2",
-      "status": "retroactive-copy-unconfirmed",
-      "detail": "copied from sp4_wt worktree docs_tmp after review; authoritative review yield at agent://ReviewSP4; digest confirmation requested",
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP4 2026-07-11 IRC: originals in sp4_wt hash-match snapshot values (see ATTESTATIONS.json)",
       "reviewed_code_sha": "7e89d927"
     },
     "SP4/reviewer.json": {
       "sha256": "2bb789df2328cfe50cfaf5c90d8983ce711535109ac15b13a3f30ebaa6cb9a88",
-      "status": "retroactive-copy-unconfirmed",
-      "detail": "written by ReviewSP4 in worktree docs_tmp; digest confirmation requested"
+      "status": "reviewer-confirmed",
+      "detail": "ReviewSP4 2026-07-11 IRC: originals in sp4_wt hash-match snapshot values (see ATTESTATIONS.json)"
     },
     "SP5/implementer.json": {
       "sha256": "3e886b377948b20995bc85e74027ce98b2e86cd42d5cd8759e1090474beef96a",
@@ -57,5 +57,6 @@
       "status": "orchestrator-materialized",
       "detail": "from ReviewSP7 blocked yield (agent://ReviewSP7), verdict retained"
     }
-  }
+  },
+  "attestations_file": "ATTESTATIONS.json"
 }
