@@ -492,6 +492,107 @@ def test_accepted_lane_without_out_is_rejected_before_subprocess_can_write(
     assert not would_write.exists()
 
 
+def test_stage_subprocess_defaults_to_invoking_python_in_fresh_nested_worktree(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lane_id = "run_lane_test_default_python"
+    config_id = "run_lane_test_config"
+    lane_def_dir = tmp_path / "lane_defs"
+    inventory_path = tmp_path / "inventory.json"
+    repo_root = tmp_path / "workspace" / "docs_tmp" / "phase_20" / "worktrees" / "fresh"
+    scratch_root = tmp_path / "scratch"
+    accepted_json = "artifacts/default_python_claim.json"
+    repo_root.mkdir(parents=True)
+    assert not (repo_root / ".venv").exists()
+    _write_lane_def(
+        lane_def_dir,
+        lane_id=lane_id,
+        config_id=config_id,
+        reverify_command=_command(["python", "claim.py", "--json-out", accepted_json]),
+    )
+    _write_inventory(inventory_path, [])
+    monkeypatch.setattr(run_lane, "ROOT", repo_root)
+    monkeypatch.delenv("BB_LANE_PYTHON", raising=False)
+    calls = _patch_successful_subprocess(monkeypatch)
+
+    result = run_lane.run_lane(
+        lane_id,
+        stage="claim",
+        out_dir=scratch_root,
+        lane_def_dir=lane_def_dir,
+        inventory_path=inventory_path,
+    )
+
+    assert result["ok"] is True
+    assert len(calls) == 1
+    assert calls[0][0] == sys.executable
+    assert calls[0][1:] == [
+        "claim.py",
+        "--json-out",
+        (scratch_root / accepted_json).resolve().as_posix(),
+    ]
+    assert result["stages"][0]["command"] == calls[0]
+
+
+@pytest.mark.parametrize(
+    ("invalid_kind", "reason"),
+    [
+        pytest.param("missing", "path does not exist", id="missing"),
+        pytest.param("directory", "path is not a regular file", id="directory"),
+        pytest.param("not_executable", "path is not executable", id="not-executable"),
+    ],
+)
+def test_invalid_lane_python_fails_before_stage_subprocess(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    invalid_kind: str,
+    reason: str,
+) -> None:
+    lane_id = f"run_lane_test_invalid_python_{invalid_kind}"
+    config_id = "run_lane_test_config"
+    lane_def_dir = tmp_path / "lane_defs"
+    inventory_path = tmp_path / "inventory.json"
+    scratch_root = tmp_path / "scratch"
+    accepted_json = "artifacts/invalid_python_claim.json"
+    invalid_python = tmp_path / "invalid-python"
+    if invalid_kind == "directory":
+        invalid_python.mkdir()
+    elif invalid_kind == "not_executable":
+        invalid_python.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        invalid_python.chmod(0o644)
+    _write_lane_def(
+        lane_def_dir,
+        lane_id=lane_id,
+        config_id=config_id,
+        reverify_command=_command(["python", "claim.py", "--json-out", accepted_json]),
+    )
+    _write_inventory(inventory_path, [])
+    monkeypatch.setenv("BB_LANE_PYTHON", str(invalid_python))
+    subprocess_calls: list[list[str]] = []
+
+    def fail_if_called(command: list[str], **_: object) -> None:
+        subprocess_calls.append(command)
+        raise AssertionError("invalid BB_LANE_PYTHON must fail before subprocess.run")
+
+    monkeypatch.setattr(run_lane.subprocess, "run", fail_if_called)
+
+    with pytest.raises(run_lane.LaneRunError) as exc_info:
+        run_lane.run_lane(
+            lane_id,
+            stage="claim",
+            out_dir=scratch_root,
+            lane_def_dir=lane_def_dir,
+            inventory_path=inventory_path,
+        )
+
+    message = str(exc_info.value)
+    assert "BB_LANE_PYTHON" in message
+    assert str(invalid_python) in message
+    assert reason in message
+    assert subprocess_calls == []
+    assert not (scratch_root / accepted_json).exists()
+
+
 def test_claim_stage_uses_lane_def_reverify_command_and_retargets_json_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -533,7 +634,7 @@ def test_claim_stage_uses_lane_def_reverify_command_and_retargets_json_out(
     expected_output = scratch_root / accepted_json
     assert calls == [
         [
-            "python",
+            sys.executable,
             "lane_def_builder.py",
             "--source",
             "lane-def",
