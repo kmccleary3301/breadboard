@@ -3,10 +3,10 @@
  "campaign": "phase_20_right_shape",
  "plan_ref": "docs/plans/phase_20_right_shape/BB_RS_MASTER_PLAN.md",
  "points_total": 1000,
- "points_done": 430,
+ "points_done": 755,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T04:34:05Z",
+ "updated_at_utc": "2026-07-11T04:48:30Z",
  "items": [
   {
    "id": "A1",
@@ -464,7 +464,7 @@
      "bound_sha": "c11add8c1a11"
     }
    ],
-   "notes": "AM3: D1 ACCEPT explicitly includes ci.yml product-spine running scripts/check_phase20_freeze.py; verifier confirms the step exists and passes. [pending_integration] CI wiring merged+verified; green product-spine run URL requires a pushed PR run; 4 red product-command groups are PRE-EXISTING (exec-verified identical at base 82411af2); AM3 freeze wiring in place. | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes",
+   "notes": "AM3: D1 ACCEPT explicitly includes ci.yml product-spine running scripts/check_phase20_freeze.py; verifier confirms the step exists and passes. [pending_integration] CI wiring merged+verified; green product-spine run URL requires a pushed PR run; 4 red product-command groups are PRE-EXISTING (exec-verified identical at base 82411af2); AM3 freeze wiring in place. | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes | \u00a71.5 classification: product_defect (pre-existing spine-member failures: E4 API surface 10F/31P first fail-fast member; compilation 175F normalized set; validation collection exit 2; CLI export 1F). Flip condition: spine members green -> PR-triggered green run URLs bind, required-check re-activation per D5 evidence",
    "verifiers": [
     {
      "agent": "VerifyWsDStatic",
@@ -478,7 +478,8 @@
      "verdict": "pass",
      "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
     }
-   ]
+   ],
+   "classification": "blocked_product_defect"
   },
   {
    "id": "D2",
@@ -501,7 +502,7 @@
      "bound_sha": "c11add8c1a11"
     }
    ],
-   "notes": "[pending_integration] Nightly battery wiring merged+verified; green dispatch URL pending integration; battery/fixed-point reds are PRE-EXISTING (exec-verified). | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes",
+   "notes": "[pending_integration] Nightly battery wiring merged+verified; green dispatch URL pending integration; battery/fixed-point reds are PRE-EXISTING (exec-verified). | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes | \u00a71.5 classification: product_defect (pre-existing spine-member failures: E4 API surface 10F/31P first fail-fast member; compilation 175F normalized set; validation collection exit 2; CLI export 1F). Flip condition: spine members green -> PR-triggered green run URLs bind, required-check re-activation per D5 evidence",
    "verifiers": [
     {
      "agent": "VerifyWsDStatic",
@@ -515,7 +516,8 @@
      "verdict": "pass",
      "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
     }
-   ]
+   ],
+   "classification": "blocked_product_defect"
   },
   {
    "id": "D3",
@@ -538,7 +540,7 @@
      "bound_sha": "c11add8c1a11"
     }
    ],
-   "notes": "[pending_integration] Path filters + job graph merged+verified; D3 acceptance closes with one green PR-triggered E4-battery run on a matched-path PR (run evidence pending integration). Required-status-check activation is NOT a D3 obligation \u2014 it belongs to D5 per AM3/\u00a76.3 (needs GitHub Administration write permission; gh api PUT command recorded in D3 evidence; activation or signed human waiver owned by D5). No enforcement claimed. Reclassified per Wave2DerailAudit finding 1 (was: blocked_missing_repo_admin_credentials). | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes",
+   "notes": "[pending_integration] Path filters + job graph merged+verified; D3 acceptance closes with one green PR-triggered E4-battery run on a matched-path PR (run evidence pending integration). Required-status-check activation is NOT a D3 obligation \u2014 it belongs to D5 per AM3/\u00a76.3 (needs GitHub Administration write permission; gh api PUT command recorded in D3 evidence; activation or signed human waiver owned by D5). No enforcement claimed. Reclassified per Wave2DerailAudit finding 1 (was: blocked_missing_repo_admin_credentials). | PR-triggered run evidence bound: PR #28 run 29138083521 + isolated PR #29 run 29139694598 (product-spine job red only on documented pre-existing baseline members; smokes/new members green); blocked classification unchanged pending spine-member fixes | \u00a71.5 classification: product_defect (pre-existing spine-member failures: E4 API surface 10F/31P first fail-fast member; compilation 175F normalized set; validation collection exit 2; CLI export 1F). Flip condition: spine members green -> PR-triggered green run URLs bind, required-check re-activation per D5 evidence",
    "verifiers": [
     {
      "agent": "VerifyWsDStatic",
@@ -552,7 +554,8 @@
      "verdict": "pass",
      "sha": "c11add8c1a11876f9852bc01c4f12d53ecefb5d1"
     }
-   ]
+   ],
+   "classification": "blocked_product_defect"
   },
   {
    "id": "D4",
@@ -604,7 +607,7 @@
    "evidence": [],
    "notes": "executable scope COMPLETE and dual-verified (static PASS @ a46a8d1a; exec amended PASS run 29139694598: both smokes green in real CI, runtime 44s <=10min, no new reds vs PR #28 comparator); required-check activation evidenced verbatim then rolled back (main restored to unprotected - leaving a known-red required check would block all merges); ACCEPT clause \"job green\" unmet SOLELY due to pre-existing baseline spine member (E4 API surface 10F/31P, fail-fast). Workflow commit merged @ head. Unblock: fix pre-existing spine members (same blocker family as D1-D3)",
    "verifiers": [],
-   "classification": "blocked_product_defect_pre_existing"
+   "classification": "blocked_product_defect"
   },
   {
    "id": "E1",
@@ -1710,6 +1713,30 @@
     "agent://VerifyAm18Exec"
    ],
    "classification": "product_defect (clean-checkout runtime) + spec_gap (interpreter rule)"
+  },
+  {
+   "id": "AM19",
+   "note": "explicit BB_WORKSPACE_ROOT contract for workspace evidence refs (f841c1cf)"
+  },
+  {
+   "id": "AM19a",
+   "note": "AM19 deferred-activation boundary (a9e6d777)"
+  },
+  {
+   "id": "AM20",
+   "note": "honest python floor >=3.10; bootstrap interpreter selection (abfc5a86)"
+  },
+  {
+   "id": "AM20a",
+   "note": "floor decision grounding: no declared floor, 1 pre-campaign match stmt in 970 files (8f44bb9d)"
+  },
+  {
+   "id": "AM21",
+   "note": "J2 model-input substitution: gpt-5.6-luna via OpenRouter, pre-run (49a30edb)"
+  },
+  {
+   "id": "AM21a",
+   "note": "J2 effort disposition: provider default; low not exposable by pinned target; user-authorized (567dc6d2)"
   }
  ],
  "notes": [
