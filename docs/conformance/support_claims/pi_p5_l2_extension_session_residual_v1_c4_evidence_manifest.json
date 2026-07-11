@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:9a05ce743c2ea17da01b6f6247bae8051957f0d1a01d4c82cefdb0183097181a"
+      "sha256": "sha256:b9f38957a05fcfef489cd72dffaea1c8cb3b7bd2e9071ac53a3162e69a5d2f09"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json",

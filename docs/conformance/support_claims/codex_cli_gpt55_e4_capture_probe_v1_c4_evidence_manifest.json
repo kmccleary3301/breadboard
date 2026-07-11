@@ -39,7 +39,7 @@
     {
       "path": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:298988e35b75461168ae6b0f63d57e642e5c7de8313d7ee331731e78e89b2ef5"
+      "sha256": "sha256:6c27034f76990533fbc381edd238102bc1798223664c85d4544f28e26e398338"
     },
     {
       "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json",
@@ -61,7 +61,7 @@
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:684e34783e8fb14cb34a92b2305a56efcbd917770ecf0116eed793ac6ecef939"
+      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
     }
   ],
   "claim_id": "codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim",

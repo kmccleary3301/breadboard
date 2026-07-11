@@ -40,7 +40,7 @@ _PILOT_LEGACY_CAPTURE_INPUTS = (
     "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw",
     "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions",
     "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions",
-    "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+    "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
     "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest",
     "config/e4_target_freeze_manifest.yaml",
     "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
@@ -301,7 +301,7 @@ def _provenance_source_paths(inputs: list[str]) -> list[str]:
         name = Path(reference).name
         if (
             name in _PILOT_PROVENANCE_ARTIFACTS
-            or ("/source_freezes/" in reference and reference.endswith("_freeze_provenance.json"))
+            or ("freeze_provenance" in name and name.endswith(".json"))
             or reference.startswith("scripts/e4_parity/adapters/")
             or reference.startswith("contracts/kernel/schemas/")
         ):

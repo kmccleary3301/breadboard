@@ -1271,3 +1271,30 @@ def test_claim_uses_existing_comparator_report_and_disables_validator_rerun(
     assert "--check-only" not in command
     assert result["ok"] is True
     assert result["stages"][0]["outcome"] == "executed_pass"
+
+
+def test_capture_owned_paths_preserve_projection_sources_inside_artifacts_root() -> None:
+    artifacts_root = "docs/conformance/e4_target_support/example"
+    source = f"{artifacts_root}/target_probe_output.json"
+    generated = f"{artifacts_root}/comparator_report.json"
+    lane = {
+        "artifacts_root": artifacts_root,
+        "capture": {"inputs": ["config/e4_lanes/example.payloads.yaml"]},
+        "normalize": {
+            "config": {
+                "record_builders": [
+                    {
+                        "source": source,
+                        "source_roles": {"agent_config": "agent_configs/example.yaml"},
+                    }
+                ],
+                "roles": {
+                    "target_probe_output": source,
+                    "agent_config": "agent_configs/example.yaml",
+                    "comparator_ref": generated,
+                },
+            }
+        },
+    }
+
+    assert run_lane._capture_owned_paths(lane) == (generated,)

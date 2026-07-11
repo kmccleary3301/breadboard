@@ -8,7 +8,7 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc"
+      "sha256": "sha256:cf81c6107aa547b752ebda676c5e2743ad6cc932ccc61e48ddd0e1369c48495c"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_subagent_target_capture.json",
@@ -38,7 +38,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/work_item_replay.json",
       "role": "work_item_replay",
-      "sha256": "sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
+      "sha256": "sha256:d9ca49aad9f4c48601d019b13605dccf18751b6c112a369d24d44303912ee3be"
     },
     {
       "derived_from": [
@@ -47,7 +47,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551"
+      "sha256": "sha256:d9ca49aad9f4c48601d019b13605dccf18751b6c112a369d24d44303912ee3be"
     },
     {
       "derived_from": [
@@ -56,7 +56,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
       "role": "task_job_subagent_comparator",
-      "sha256": "sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9"
+      "sha256": "sha256:6a1f45d5c8f7b11e884627810476143f227d20737ca71a5802288b5c0bc6217d"
     },
     {
       "derived_from": [
@@ -65,7 +65,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9"
+      "sha256": "sha256:6a1f45d5c8f7b11e884627810476143f227d20737ca71a5802288b5c0bc6217d"
     },
     {
       "derived_from": [
@@ -73,7 +73,7 @@
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:b361ad6d45bb7a1e977b6565cdf8600ec997a5dbd3e3f67b40889472179c0816"
+      "sha256": "sha256:1534daf772f67a15ea94d99764297aff826b464e6d5feae06d4be457429104d8"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json",
@@ -83,19 +83,17 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json",
       "role": "validator_output",
-      "sha256": "sha256:199514225cd36cfb2d8ae20fa9dd203c9c710c2baf2f7e1792241255d997edef"
+      "sha256": "sha256:7d2ec02ec2408cb05ae6e98885307783918c0a2cc980cc08fa0dbe84936d8ebf"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:1bce9940b9fffd6c2d91e60190c0aca73bb5af93a6f0ce91a62ceb5413962295"
+      "sha256": "sha256:dd1c1d432b36420dca292e8b6982f82268c2b50c96cfc7bae2c09de65b44c11a"
     },
     {
-      "bytes": 231320,
-      "exists": true,
       "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e"
+      "sha256": "sha256:5ca9558345bf78f7866ff08a8cc6d4ef422637447ba54f30376d583500795459"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json",
@@ -108,9 +106,9 @@
       "sha256": "sha256:0e056c9ac056b008a2123a6add336d7e77ddf5be0a5c63d5372c57f004db2364"
     },
     {
-      "path": "config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip",
+      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
       "role": "source_freeze",
-      "sha256": "sha256:03fd855b01bb7457f85e929ff747d8560d7cf7ed420fd0676bf32b917fb264a3"
+      "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
     }
   ],
   "claim_id": "oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim",

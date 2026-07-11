@@ -3,11 +3,9 @@
   "accepted": true,
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc",
   "catalog_binding": {
+    "catalog_hash": "sha256:a6686171e93a6303d78bc7279acbf4eeb25e5ae416839b54685f390227362e7a",
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:f0091bcceae21875035cb96ed58c41d50e1cb06978e211aeccb365ce24ed6591",
-    "segment_id": "oh_my_pi_p6_6_task_job_subagent",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "catalog_revision": 7
   },
   "claim_id": "oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim",
   "claim_semantics": {
@@ -84,6 +82,7 @@
     ]
   },
   "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9",
+  "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -111,11 +110,12 @@
   "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_6_task_job_subagent_v1#sha256:3fb7286e5cecc187d1039eb7358155eaaea92e0d13779e46085af710ccf7252a",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
+  "lane_id": "oh_my_pi_p6_6_task_job_subagent",
   "ledger_row_refs": [
-    "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json#feat_397dab44f9f126c3#sha256:c388aced191c46ac3ba202826084b6e37a4052793b7a83b76cae86cc6ba1b705"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_397dab44f9f126c3#sha256:b50b52faacd297c1109c820a2ceb921a1cf42a915cfad47f4f936dc09e1ed79e"
   ],
   "metadata": {
-    "generated_from_schema_version": "bb.e4.support_claim.v4",
+    "generated_from_schema_version": "bb.e4.support_claim.v1",
     "legacy_scope": {
       "background_job_observed": true,
       "cancel_observed": true,
@@ -126,12 +126,14 @@
       "network_observed": true,
       "provider_authenticated_capture": true,
       "provider_dispatch_observed": true,
-      "provider_parity_claimed": false
+      "provider_parity_claimed": false,
+      "target_family": "oh_my_pi"
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json"
   },
   "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/parity_results.json#sha256:b361ad6d45bb7a1e977b6565cdf8600ec997a5dbd3e3f67b40889472179c0816",
   "phase_label": "P6",
+  "provider_model": "no-provider",
   "raw_source_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/target_probe_output.json#sha256:b35c4bd883063eae806404b505af018134818ccfb7b99b31e09695a1b7ad765e",
   "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551",
   "reverify_command": {
@@ -150,19 +152,22 @@
     ],
     "cwd": "."
   },
-  "schema_version": "bb.e4.support_claim.v4",
+  "run_id": "derived-from-lane-def",
+  "sandbox_mode": "read-only",
+  "schema_version": "bb.e4.support_claim.v2",
   "scope": {
     "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
     "lane_id": "oh_my_pi_p6_6_task_job_subagent",
-    "provider_model": "anthropic/claude-haiku-4-5",
-    "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+    "provider_model": "no-provider",
+    "run_id": "derived-from-lane-def",
     "sandbox_mode": "read-only",
-    "target_family": "oh_my_pi",
     "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/secret_scan_report.json#sha256:66da20e9a02a36e84fe35a7a95c0d21ae11adcd3d4580ac007c3166e5b09f228",
-  "source_freeze_ref": "config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip#sha256:03fd855b01bb7457f85e929ff747d8560d7cf7ed420fd0676bf32b917fb264a3",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
   "summary": "Oh-My-Pi 16.2.13 P6.6 task/job/subagent support is accepted for the named provider-authenticated capture only: joined subagent completion, detached subagent lifecycle, background job observation, and cancellation projected into bb.work_item.v1 records.",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
   "validation_refs": [
     "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/prevalidation_report.json#sha256:199514225cd36cfb2d8ae20fa9dd203c9c710c2baf2f7e1792241255d997edef"
   ]

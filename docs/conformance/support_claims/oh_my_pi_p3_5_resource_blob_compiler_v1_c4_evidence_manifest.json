@@ -8,39 +8,39 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:cadae9c57e73639c5c858a99203403aacad2d51d45b630b6060aa3c1041ac9e4"
+      "sha256": "sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:cadae9c57e73639c5c858a99203403aacad2d51d45b630b6060aa3c1041ac9e4",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa",
         "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/compiled_records.json#sha256:55cf5a6101bb2f77f84433b30c3c56758d01234e56687c9ca12fc20c5583e5d9"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:9ae9735552e51660fd4216409844f2deb9889ac90ebbdfa700a09e9375878a3a"
+      "sha256": "sha256:2d8c2bbda80e1130ed3114dc1aada5ac45f1de341c12f6987c715e0dd1c0ca42"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:cadae9c57e73639c5c858a99203403aacad2d51d45b630b6060aa3c1041ac9e4",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:9ae9735552e51660fd4216409844f2deb9889ac90ebbdfa700a09e9375878a3a",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:2d8c2bbda80e1130ed3114dc1aada5ac45f1de341c12f6987c715e0dd1c0ca42",
         "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/compiled_records.json#sha256:55cf5a6101bb2f77f84433b30c3c56758d01234e56687c9ca12fc20c5583e5d9"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:d67157252a9660a84c872d7b7090ce22a67a1bbfc90e27f46e52151870c74307"
+      "sha256": "sha256:9772186b764d95426926eedb725561605f4ff78e350249c0ab097efc9322df60"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:97de47bbf927ef1f06ce6f3033b706dde1efc6c856a88d6d156b33750dd1ee64"
+      "sha256": "sha256:86716b2f86a878b42dc2b4f49f7e4bff5f42aa88e27f9399b453203c9710ca5a"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:d67157252a9660a84c872d7b7090ce22a67a1bbfc90e27f46e52151870c74307"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:9772186b764d95426926eedb725561605f4ff78e350249c0ab097efc9322df60"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:0fbac34c8be6914121ef3d5581cb87c2b16feab82f1f0575313d671029e22e23"
+      "sha256": "sha256:c264346f7f9b07df12aa5ac71876c62527e9819788d6b749eb46c6d84a7ba9df"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/secret_scan_report.json",
@@ -68,7 +68,7 @@
       "sha256": "sha256:3c791f8ec67f6ddffd53f30bc13fd3e9642c2a67ccc6e0eb54f2030547301be6"
     },
     {
-      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "path": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
       "role": "source_freeze",
       "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
     }

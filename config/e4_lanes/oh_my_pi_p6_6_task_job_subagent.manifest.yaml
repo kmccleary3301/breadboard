@@ -17,6 +17,7 @@ capture:
     - config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.payloads.yaml
     - config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json
     - config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip
+    - config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json
     - config/e4_target_freeze_manifest.yaml
     - scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py
     - scripts/e4_parity/path_refs.py

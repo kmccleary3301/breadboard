@@ -922,9 +922,9 @@
             "accepted": true,
             "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
             "catalog_binding": {
-              "catalog_hash": "sha256:a6686171e93a6303d78bc7279acbf4eeb25e5ae416839b54685f390227362e7a",
+              "catalog_hash": "sha256:ca6f45ce8823c8ffe4f29210c66c11d7ecca08240ad8b3b5108c80fac445bffe",
               "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-              "catalog_revision": 7
+              "catalog_revision": 9
             },
             "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
             "claim_semantics": {
@@ -1118,14 +1118,14 @@
               {
                 "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
                 "role": "support_claim_ref",
-                "sha256": "sha256:ac213d1f0b61956d70dc88fb3fed87aacaaa526e7ebd4c5394bc8d91953e8841"
+                "sha256": "sha256:f24e3d7cc74d63b42f5007734f58e53baee04dd5d6e2b783cab85816b5f18da6"
               },
               {
                 "bytes": 124871,
                 "exists": true,
                 "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
                 "role": "atomic_feature_ledger",
-                "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
+                "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
               },
               {
                 "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",

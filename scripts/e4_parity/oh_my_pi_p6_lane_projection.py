@@ -16,7 +16,7 @@ WORKSPACE = ROOT.parent
 FREEZE_PATH = ROOT / "config/e4_target_freeze_manifest.yaml"
 CATALOG_PATH = ROOT / "docs/conformance/e4_artifact_catalog.json"
 LEDGER_PATH = WORKSPACE / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
-SOURCE_FREEZE_PATH = WORKSPACE / "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json"
+SOURCE_FREEZE_PATH = ROOT / "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json"
 
 _SECRET_PATTERNS = (
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),

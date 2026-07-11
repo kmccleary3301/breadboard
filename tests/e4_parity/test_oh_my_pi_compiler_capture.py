@@ -14,6 +14,7 @@ from scripts.e4_parity.adapters.oh_my_pi_projection_packet import (
     build_projection_packet,
     canonical_json_bytes,
 )
+from scripts.e4_parity.lane_definitions import load_manifest_lane_def
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -47,7 +48,11 @@ def _load_json(path: Path) -> Any:
 
 
 def _lane(lane_id: str) -> dict[str, Any]:
-    lane = _load_json(LANE_DIR / f"{lane_id}.yaml")
+    lane = (
+        load_manifest_lane_def(LANE_DIR / f"{lane_id}.manifest.yaml")
+        if lane_id == "oh_my_pi_p6_6_task_job_subagent"
+        else _load_json(LANE_DIR / f"{lane_id}.yaml")
+    )
     assert isinstance(lane, dict)
     return lane
 

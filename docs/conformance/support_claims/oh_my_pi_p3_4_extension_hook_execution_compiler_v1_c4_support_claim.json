@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "P3.4 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:58d2385505e26f65ea5c4a2c2e839adeafb68bc150a8991ff1046adc2e1da51b",
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json#sha256:e32bae48d42b11073de8959f5d26b99978681f0783984167f9e5b8d94a328b70",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:e88fcb45cdacaad5b72af01348cf6fe2162d841c674fa2092098a653c5a80920",
+    "catalog_revision": 10,
+    "segment_hash": "sha256:562d1a76cf5d11d157894e7de89c13f7e708b9f43649d3e01219420ab2d25bd2",
     "segment_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:d5ce927049289ee43a5ba59e3c10648d34b52a5427cbf10946167254c5e3194e"
   },
   "claim_id": "oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -41,7 +41,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:2cae5e176aad70f56514a9c1d6a613ae31827afd836db4e2335fc6307904037e",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json#sha256:ffffa2c0de96ea56d3a8572efd5de039fdf0c759d6e8214631c4646f00735ecc",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -79,9 +79,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json#sha256:ef2919aa56ce490407dc06ed48ad1b131d59a7fc6cb7ef2eacef61bb52df9bfb",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json#sha256:b5276bbb873043e64f2f5cdba737b7cd697cbc7fb1166ccdbda6d6cbcbc50fce",
   "phase_label": "P3",
-  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json#sha256:9c9bd8648a4b57722632657414272e54ae1ef03349a63f945709bf52f9bda138",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json#sha256:13b049eaa17247ecaf65f178e0d2360c8558e38ab6d520b0f2659d3cb6f6d565",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",
@@ -109,7 +109,7 @@
     "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/secret_scan_report.json#sha256:04eb087e99a9fda3b4e77554041aff07e5985dd7097c1271d7d7d9cb45be8460",
-  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "source_freeze_ref": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
   "summary": "BreadBoard P3.4 extension hook execution support is accepted only for source-derived hook effect records in the named helper/runtime fixture.",
   "validation_refs": [
     "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/prevalidation_report.json#sha256:8967b53d8c8d867bab6a2ff96a8de776017872d66f9a90935978a91f7ac979e4"

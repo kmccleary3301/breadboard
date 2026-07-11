@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/raw_capture_manifest.json#sha256:87dc1d20a9f2e7383a3bb7704355db752a752b778cdfd9d3750fbb67faaa4e2d",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:f909bc11bf5ee4d7b62b36d8b030fef9050c9dd0d1f2be0fc1cf60e2d429bb90",
+    "catalog_revision": 7,
+    "segment_hash": "sha256:f4c067044c138434a6788902166f273b8bf314dc2c94fb0a664ec7728379d5f4",
     "segment_id": "claude_code_north_star_capture_v1",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "claude_code_haiku45_north_star_capture_v1_c4_support_claim",
   "claim_semantics": {
@@ -75,7 +75,7 @@
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_d5be8aa4451edbac#sha256:a51395fdb2a26450bd079183060ea8aeaf63c76f101602d6a5d3988885ca7b53"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_d5be8aa4451edbac#sha256:85a06d217ad352991259ad893f5ec1eea05647f86e62cd1a1eb584cb13c23420"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4"

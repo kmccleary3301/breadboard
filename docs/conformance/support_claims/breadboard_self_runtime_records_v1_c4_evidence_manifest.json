@@ -13,7 +13,7 @@
     {
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json",
       "role": "target_probe_output",
-      "sha256": "sha256:647d98abfa68c3b6b6a0858fa3c27bc2ec72d49cd7c9546281bc466787cc3d40"
+      "sha256": "sha256:f8a365d0ced9e9e724c827ad6d8f8f7fcd9e9e9233e6cca592aacbb8a624275b"
     },
     {
       "derived_from": [
@@ -25,7 +25,7 @@
       ],
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:1fc80918a10c6332a70d5c18f82cdecef466b8e7e4fbea7bd19f210c16a29fb1"
+      "sha256": "sha256:b14bf1e26700a242e1d950c711f205dbb37c463e39fb0bfeba7e1dee3b89417e"
     },
     {
       "derived_from": [
@@ -34,7 +34,7 @@
       ],
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:8befe2bb74f12f234743c70a1bf21dd6ec4cc6e6ac37ce8abedf3c12a97842d1"
+      "sha256": "sha256:df30b0fae0d54321ae1ee60847c52f4ee7ed234b5cea2f037fa8345fdd880d15"
     },
     {
       "derived_from": [
@@ -44,12 +44,12 @@
       ],
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:70c75b4aaeaac3531eccd55377e87d52851729b99b78bcebab979da3b2f731af"
+      "sha256": "sha256:438e7a851655bac3f350657aaf5ae94806ae285e1dd1883f5d0303b30dda15f7"
     },
     {
       "path": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:95e5de31fb23c39186d6edcb9564a2b0bffc85c71abcedde0763f68e535e8870"
+      "sha256": "sha256:2e420ea4408bbf6185b6e8cc6c558918ebb19d981d945cb382e5ac1b822e2ffd"
     },
     {
       "derived_from": [
@@ -74,22 +74,22 @@
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:684e34783e8fb14cb34a92b2305a56efcbd917770ecf0116eed793ac6ecef939"
+      "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
     },
     {
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json",
       "role": "primitive_projection_manifest",
-      "sha256": "sha256:691e22260f4a083e88469c155658afa0e4681a83b2e2f68f199abca8147c7548"
+      "sha256": "sha256:de8bdf509139ce5d82861374babfd24940d77e6f5151823adbf5fc6c3a35791e"
     },
     {
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl",
       "role": "projection_events",
-      "sha256": "sha256:4a4fe71c21e31c96bbc0213858c01575973f9ef8f5a2993b358fc5fdc0b41758"
+      "sha256": "sha256:6e9a7a8dc7429f7547e6062633aae6de47227ea0be4dd251bc841406e978afd3"
     },
     {
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl",
       "role": "session_transcript",
-      "sha256": "sha256:69d87afbc361a40cb3b7e35e2aeb7c3df1203c199ed8cb93dd1aa798ae006032"
+      "sha256": "sha256:771ef076ff36729c864e44f113d602716157cfa0c86955e8c05a8e15a963bddb"
     }
   ],
   "claim_id": "breadboard_self_runtime_records_v1_c4_support_claim",

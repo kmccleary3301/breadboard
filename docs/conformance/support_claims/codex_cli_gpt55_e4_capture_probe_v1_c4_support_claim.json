@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json#sha256:c22cddc606d25a4e4720d812bf8b162e802240b1859c9ab735fde872926b90eb",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:36bcbd127695562b4baccaa262fb38309f2ac1e9c3e63c994799f7f8d24454e4",
+    "catalog_revision": 7,
+    "segment_hash": "sha256:ada92e45606a776b773cc9a8b30b637867faeb16a569b7f1f665909e555a569d",
     "segment_id": "codex_cli_e4_capture_probe_v1",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:8bfef6d621ee4d60fefac7561ae79e785c7fce5ceb27653bd45e0d86515dbdf4"
   },
   "claim_id": "codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim",
   "claim_semantics": {

@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "P3.5 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:cadae9c57e73639c5c858a99203403aacad2d51d45b630b6060aa3c1041ac9e4",
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json#sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:af68b7d994779cdf786a5115be7267602c19eb8ba9ca546e5665d83400e28b90",
+    "catalog_revision": 10,
+    "segment_hash": "sha256:8e6e0492d84b73be48f8858f0222634ff3b4267efbbc28a2bf52043429c20d0b",
     "segment_id": "oh_my_pi_p3_5_resource_blob_compiler",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:d5ce927049289ee43a5ba59e3c10648d34b52a5427cbf10946167254c5e3194e"
   },
   "claim_id": "oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -55,7 +55,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:d67157252a9660a84c872d7b7090ce22a67a1bbfc90e27f46e52151870c74307",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json#sha256:9772186b764d95426926eedb725561605f4ff78e350249c0ab097efc9322df60",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -93,9 +93,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json#sha256:0fbac34c8be6914121ef3d5581cb87c2b16feab82f1f0575313d671029e22e23",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json#sha256:c264346f7f9b07df12aa5ac71876c62527e9819788d6b749eb46c6d84a7ba9df",
   "phase_label": "P3",
-  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:9ae9735552e51660fd4216409844f2deb9889ac90ebbdfa700a09e9375878a3a",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json#sha256:2d8c2bbda80e1130ed3114dc1aada5ac45f1de341c12f6987c715e0dd1c0ca42",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",
@@ -123,7 +123,7 @@
     "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
   },
   "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/secret_scan_report.json#sha256:d8e69f732d9350eabde879d14a2779f028a190c10becb5573ce732749f69d7af",
-  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "source_freeze_ref": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
   "summary": "BreadBoard P3.5 resource/blob compiler support is accepted only for local resource ref, access, blob, truncation, redaction, approval, and containment records in the named helper/runtime fixture.",
   "validation_refs": [
     "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/prevalidation_report.json#sha256:545a5de5517dc64b8aabf5641048719b1f70e3414835bf482fda7b8f38b0d2f5"

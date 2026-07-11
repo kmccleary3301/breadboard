@@ -2,7 +2,7 @@
   "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/comparator_report.json#sha256:82e9dfbc46284860b9231f630860afc2204334a0da5e44b5cec3bcb9abf4b7a9",
   "config_id": "oh_my_pi_p6_6_task_job_subagent_v1",
   "lane_id": "oh_my_pi_p6_6_task_job_subagent",
-  "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+  "run_id": "derived-from-lane-def",
   "schema_version": "bb.e4.parity_results.v1",
   "status": "passed",
   "summary": "P6.6 task/job/subagent work-item replay and comparator passed."
