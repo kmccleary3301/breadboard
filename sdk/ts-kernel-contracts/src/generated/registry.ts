@@ -3689,9 +3689,9 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     }
   },
-  "bb.contract_tiers.v1": {
+  "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "bb.contract_tiers.v1",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json",
     "title": "Consumer-backed tier registry for the published contract estate",
     "type": "object",
     "additionalProperties": false,
@@ -7565,9 +7565,9 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     }
   },
-  "bb.e4.lane_lock.v1": {
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "bb.e4.lane_lock.v1",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
     "title": "BreadBoard E4 lane lock (machine-owned deterministic resolution; never hand-edited)",
     "type": "object",
     "additionalProperties": false,
@@ -7726,9 +7726,9 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     }
   },
-  "bb.e4.lane_manifest.v1": {
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "$id": "bb.e4.lane_manifest.v1",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
     "title": "BreadBoard E4 lane manifest (author-owned conformance intent; digests live in bb.e4.lane_lock.v1)",
     "type": "object",
     "additionalProperties": false,
@@ -18302,7 +18302,7 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.config_explanation.v1.schema.json": ["bb.config_explanation.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.config_mutation_record.v1.schema.json": ["bb.config_mutation_record.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json": ["bb.context_resource_pack.v1.schema.json"],
-  "bb.contract_tiers.v1": ["bb.contract_tiers.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json": ["bb.contract_tiers.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json": ["bb.coordination_delegated_verification_reference_slice.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_intervention_reference_slice.v1.schema.json": ["bb.coordination_intervention_reference_slice.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json": ["bb.coordination_longrun_reference_slice.v1.schema.json"],
@@ -18323,8 +18323,8 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json": ["bb.e4.lane_def.v2.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v1.schema.json": ["bb.e4.lane_inventory.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json": ["bb.e4.lane_inventory.v2.schema.json"],
-  "bb.e4.lane_lock.v1": ["bb.e4.lane_lock.v1.schema.json"],
-  "bb.e4.lane_manifest.v1": ["bb.e4.lane_manifest.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json": ["bb.e4.lane_lock.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json": ["bb.e4.lane_manifest.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json": ["bb.e4.regen_failure_classification.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_plan.v1.schema.json": ["bb.e4.regen_plan.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v1.schema.json": ["bb.e4.support_claim.v1.schema.json"],

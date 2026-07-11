@@ -32,6 +32,7 @@ Status: `active`
 | `bb.config_explanation.v1` | BreadBoard config explanation V1 | `config_algebra` |
 | `bb.config_mutation_record.v1` | BreadBoard config mutation record | `config_algebra` |
 | `bb.context_resource_pack.v1` | BreadBoard context resource pack | `config_algebra` |
+| `bb.contract_tiers.v1` | Consumer-backed tier registry for the published contract estate | `evidence` |
 | `bb.coordination_delegated_verification_reference_slice.v1` | bb.coordination_delegated_verification_reference_slice.v1 | `evidence` |
 | `bb.coordination_intervention_reference_slice.v1` | bb.coordination_intervention_reference_slice.v1 | `evidence` |
 | `bb.coordination_longrun_reference_slice.v1` | bb.coordination_longrun_reference_slice.v1 | `evidence` |
@@ -101,6 +102,8 @@ Status: `active`
 | `bb.e4.fixed_point_report.v1` | BreadBoard E4 fixed-point report V1 | `evidence` |
 | `bb.e4.lane_def.v2` | BreadBoard E4 lane definition V2 | `evidence` |
 | `bb.e4.lane_inventory.v2` | BreadBoard E4 lane inventory V2 | `evidence` |
+| `bb.e4.lane_lock.v1` | BreadBoard E4 lane lock (machine-owned deterministic resolution; never hand-edited) | `config_algebra` |
+| `bb.e4.lane_manifest.v1` | BreadBoard E4 lane manifest (author-owned conformance intent; digests live in bb.e4.lane_lock.v1) | `config_algebra` |
 | `bb.e4.regen_failure_classification.v1` | BreadBoard E4 regeneration failure classification V1 | `evidence` |
 | `bb.e4.regen_plan.v1` | BreadBoard E4 regeneration plan V1 | `evidence` |
 | `bb.e4.support_claim.v4` | BreadBoard E4 C4 support claim V4 | `evidence` |
