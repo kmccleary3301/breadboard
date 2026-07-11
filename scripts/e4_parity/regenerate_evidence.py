@@ -992,44 +992,53 @@ def _seed_external_candidate_paths(candidate_root: Path, stages: Sequence[Stage]
                 )
 
 
-def _tracked_checkout_paths() -> tuple[tuple[str, Path], ...]:
+def _tracked_checkout_paths() -> tuple[tuple[str, str, Path], ...]:
     output = subprocess.check_output(
         ("git", "ls-files", "--stage", "-z"),
         cwd=ROOT,
     )
-    entries: list[tuple[str, Path]] = []
+    entries: list[tuple[str, str, Path]] = []
     for raw_entry in output.split(b"\0"):
         if not raw_entry:
             continue
         metadata, raw_path = raw_entry.split(b"\t", 1)
-        mode, _object_id, stage = metadata.decode("ascii").split()
+        mode, object_id, stage = metadata.decode("ascii").split()
         if stage != "0":
             raise RuntimeError(f"candidate checkout has unresolved index stage {stage}")
-        entries.append((mode, Path(raw_path.decode("utf-8"))))
+        entries.append((mode, object_id, Path(raw_path.decode("utf-8"))))
     return tuple(entries)
+
+
+def _indexed_blob(object_id: str) -> bytes:
+    return subprocess.check_output(("git", "cat-file", "blob", object_id), cwd=ROOT)
 
 
 def _copy_tracked_checkout(candidate_root: Path) -> None:
     candidate_root.mkdir(parents=True)
-    for mode, relative_path in _tracked_checkout_paths():
+    for mode, object_id, relative_path in _tracked_checkout_paths():
         if relative_path.is_absolute() or ".." in relative_path.parts:
             raise ValueError(f"git returned unsafe tracked path: {relative_path}")
         if mode == "160000":
             raise RuntimeError(
                 f"candidate checkout cannot materialize tracked gitlink: {relative_path}"
             )
-        source = ROOT / relative_path
-        if not source.exists() and not source.is_symlink():
-            continue
-        if mode == "120000" and not source.is_symlink():
-            raise RuntimeError(f"tracked symlink is not checked out as a link: {relative_path}")
-        if mode not in {"100644", "100755", "120000"}:
+        destination = candidate_root / relative_path
+        if mode == "120000":
+            target = _indexed_blob(object_id).decode("utf-8")
+            resolved_target = (destination.parent / target).resolve(strict=False)
+            if not resolved_target.is_relative_to(candidate_root.parent.resolve()):
+                raise ValueError(
+                    f"candidate symlink escapes scratch workspace: {destination} -> {target}"
+                )
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.symlink_to(target)
+        elif mode in {"100644", "100755"}:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(_indexed_blob(object_id))
+            if mode == "100755":
+                destination.chmod(destination.stat().st_mode | 0o111)
+        else:
             raise RuntimeError(f"unsupported tracked mode {mode}: {relative_path}")
-        _copy_path(
-            source,
-            candidate_root / relative_path,
-            symlink_boundary=candidate_root.parent,
-        )
 
 
 def _declared_checkout_source(pattern: str) -> Path:
