@@ -1,0 +1,65 @@
+{
+  "packet": "SP6",
+  "branch": "p20/sp6",
+  "head_sha": "58972e36",
+  "base_sha": "9b9e9ddfe41848ebb0acb4e5c336de8ab18a9707",
+  "root_causes": [
+    "Fifteen accepted Oh-My-Pi lane definitions consumed an ignored campaign-workspace freeze-provenance path, so a clean checkout could not resolve the declared input.",
+    "lane_acceptance_artifacts.build_lane wrote fresh claims, manifests, freeze rows, and governed evidence beneath output_root, then validated the canonical pre-capture claim and manifest under ROOT; fresh capture therefore PIN_STALEd before promotion."
+  ],
+  "files_changed": [
+    "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
+    "config/e4_lanes/oh_my_pi_p3_{1..8}_*.yaml",
+    "config/e4_lanes/oh_my_pi_p6_0_l{1..6}_*.yaml",
+    "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.yaml",
+    "scripts/e4_parity/lane_acceptance_artifacts.py",
+    "tests/e4_parity/test_lane_acceptance_candidate_validation.py",
+    "docs/conformance/e4_artifact_catalog.json",
+    "docs/conformance/e4_tooling_manifest.json",
+    "docs/conformance/support_claims/*_c4_{support_claim,evidence_manifest}.json"
+  ],
+  "before_at_base": {
+    "sha": "9b9e9ddfe41848ebb0acb4e5c336de8ab18a9707",
+    "diagnostic_battery_family": "OHMYPI-FREEZE-INPUT-NOT-CHECKOUT-PORTABLE",
+    "diagnostic_count": 22,
+    "focused_command_result": "2 failed",
+    "failed_test_ids": [
+      "tests/e4_parity/test_lane_acceptance_candidate_validation.py::test_build_lane_validates_fresh_candidate_bytes_before_promotion",
+      "tests/e4_parity/test_lane_acceptance_candidate_validation.py::test_oh_my_pi_freeze_provenance_is_checkout_local_and_tracked"
+    ],
+    "symptoms": [
+      "candidate validation returned PIN_STALE because canonical paths were supplied",
+      "declared freeze input was docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json rather than a tracked checkout file"
+    ]
+  },
+  "after_at_head": {
+    "sha": "58972e36",
+    "focused_command_result": "2 passed",
+    "passed_test_ids": [
+      "tests/e4_parity/test_lane_acceptance_candidate_validation.py::test_build_lane_validates_fresh_candidate_bytes_before_promotion",
+      "tests/e4_parity/test_lane_acceptance_candidate_validation.py::test_oh_my_pi_freeze_provenance_is_checkout_local_and_tracked"
+    ],
+    "north_star_capture": "exit 0; breadboard_self_runtime_records_v1, claude_code_north_star_capture_v1, and opencode_north_star_capture_v1 all executed_pass"
+  },
+  "commands": [
+    "base detached scratch: BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=<base-wt> <venv-python> -m pytest -q tests/e4_parity/test_lane_acceptance_candidate_validation.py (exit 1, 2 failed)",
+    "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=<sp6_wt> <venv-python> scripts/e4_parity/run_lane.py --lane north-star --stage capture --promote-accepted --defer-promotion-refresh --json --defer-derived-writes (exit 0)",
+    "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=<sp6_wt> <venv-python> scripts/e4_parity/build_artifact_catalog.py --schema-version v2 (exit 0)",
+    "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=<sp6_wt> <venv-python> scripts/e4_parity/generate_support_claims.py --defer-node-gates --json (exit 0, 21 claims)",
+    "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=<sp6_wt> <venv-python> -m pytest -q tests/e4_parity/test_lane_acceptance_candidate_validation.py (exit 0, 2 passed)"
+  ],
+  "s03_check": {
+    "new_public_capability": false,
+    "lane_crud": false,
+    "sdk_surface": false,
+    "schema_family": false,
+    "scorecard_change": false,
+    "assertions_weakened": false
+  },
+  "findings": [
+    "Candidate validation now uses candidate-materialized claim, manifest, freeze, and governed output bytes and copies immutable checkout inputs into the isolated validation root; run_lane remains capture owner.",
+    "Canonical promotion/rebinding ownership remains with run_lane/regenerate_evidence plus build_artifact_catalog and generate_support_claims.",
+    "breadboard_self_runtime_records_v1 was not rebound to the P6.6 tracked atomic-feature-ledger sidecar.",
+    "The historical 22-failure count is grounded in M1/spine_reds_taxonomy.json; the new focused clean-checkout test collapses those repeated failures into one tracked-input invariant over all 15 declaring lanes."
+  ]
+}
