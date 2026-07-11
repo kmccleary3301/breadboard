@@ -6,7 +6,7 @@
  "points_done": 430,
  "conditional_total": 250,
  "conditional_done": 0,
- "updated_at_utc": "2026-07-11T00:00:35Z",
+ "updated_at_utc": "2026-07-11T01:00:57Z",
  "items": [
   {
    "id": "A1",
@@ -1695,6 +1695,20 @@
    "what": "withdraws AM17b convention clause: uniqueItems + relative pattern REVERTED from H packet, proposed as separate future packet; minItems/required/string stay by derivation necessity",
    "owner": "WS-H",
    "recorded_by": "orchestrator"
+  },
+  {
+   "id": "AM18",
+   "what": "lane subprocess interpreter resolution (sys.executable + validated BB_LANE_PYTHON) + run_lane input isolation (ancestor search removed)",
+   "owner": "WsH2Stages2",
+   "commits": [
+    "92791f23",
+    "b233ea21"
+   ],
+   "verified": [
+    "agent://VerifyAm18Static",
+    "agent://VerifyAm18Exec"
+   ],
+   "classification": "product_defect (clean-checkout runtime) + spec_gap (interpreter rule)"
   }
  ],
  "notes": [
