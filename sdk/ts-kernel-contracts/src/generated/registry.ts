@@ -7942,6 +7942,33 @@ export const GENERATED_SCHEMA_OBJECTS = {
             "items": {
               "type": "string"
             }
+          },
+          "record_roles": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "record_envelopes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object"
+            }
+          },
+          "role_aliases": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "auto_bind_role_refs": {
+            "type": "boolean"
+          },
+          "scope_observation_labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "allOf": [
@@ -8080,21 +8107,55 @@ export const GENERATED_SCHEMA_OBJECTS = {
           "timeout_seconds": {
             "type": "integer",
             "minimum": 1
+          },
+          "test_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
       "acceptance": {
         "type": "object",
         "additionalProperties": false,
+        "required": [
+          "behavior_family",
+          "semantic_key",
+          "assertions"
+        ],
         "properties": {
-          "behavior_families": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "notes": {
+          "behavior_family": {
             "type": "string"
+          },
+          "semantic_key": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assertions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "description"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       },

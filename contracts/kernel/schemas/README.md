@@ -151,6 +151,6 @@ Status: `active`
 
 | Schema | Title | Tier |
 | --- | --- | --- |
-| `bb.contract_tiers.v1` | Consumer-backed tier registry for the published contract estate | `config_algebra` |
+| `bb.contract_tiers.v1` | Consumer-backed tier registry for the published contract estate | `evidence` |
 | `bb.e4.lane_lock.v1` | BreadBoard E4 lane lock (machine-owned deterministic resolution; never hand-edited) | `config_algebra` |
 | `bb.e4.lane_manifest.v1` | BreadBoard E4 lane manifest (author-owned conformance intent; digests live in bb.e4.lane_lock.v1) | `config_algebra` |
