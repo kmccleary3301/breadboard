@@ -35,11 +35,16 @@ LANE_LOCK_SCHEMA_PATH = (
     ROOT / "contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json"
 )
 
-# Phase 20 plan §4, packets F1/F2/E1.
+# Phase 20 plan §4, packets F1/F2/E1. SP3 (0fc11917, reviewed) canonicalized
+# schema $id values to full https://breadboard.dev URLs; both spellings name
+# the same plan-sanctioned additions.
 ALLOWED_SCHEMA_IDS = {
     "bb.e4.lane_manifest.v1",
     "bb.e4.lane_lock.v1",
     "bb.contract_tiers.v1",
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
+    "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json",
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
