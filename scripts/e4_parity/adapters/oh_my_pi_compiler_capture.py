@@ -43,7 +43,7 @@ WORKSPACE = ROOT
 
 GENERATED_AT_UTC = "2026-07-03T07:30:00Z"
 SUPPORT_CLAIM_GENERATED_AT_UTC = "2026-07-04T00:00:00Z"
-SOURCE_FREEZE_PATH = WORKSPACE / "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json"
+SOURCE_FREEZE_PATH = ROOT / "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json"
 FREEZE_MANIFEST_PATH = ROOT / "config/e4_target_freeze_manifest.yaml"
 LEDGER_PATH = WORKSPACE / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
 HELPER_MODULE_PATH = ROOT / "agentic_coder_prototype/compilation/effective_config_graph.py"

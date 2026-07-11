@@ -18,7 +18,7 @@
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/oh_my_pi_p6_0_l6_tui_projection_probe.mjs",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw",
-      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
       "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest",
       "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
       "scripts/e4_parity/adapters/oh_my_pi_projection_packet.py",
@@ -953,9 +953,9 @@
             "accepted": true,
             "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
             "catalog_binding": {
-              "catalog_hash": "sha256:a6686171e93a6303d78bc7279acbf4eeb25e5ae416839b54685f390227362e7a",
+              "catalog_hash": "sha256:ca6f45ce8823c8ffe4f29210c66c11d7ecca08240ad8b3b5108c80fac445bffe",
               "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-              "catalog_revision": 7
+              "catalog_revision": 9
             },
             "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
             "claim_semantics": {
@@ -1080,7 +1080,7 @@
               "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
             },
             "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json#sha256:62028333e50cabe000e668f921e8b5c6f449bf207159c16ca61e2aae67dc796b",
-            "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+            "source_freeze_ref": "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
             "summary": "Oh-My-Pi 16.2.13 provider-free `omp gallery --plain` host TUI/tool-surface projection is accepted only for the named P6.0-L6 lane, run, config, target version, fixed terminal width, selected renderer lifecycle states, and read-only projection-only scope.",
             "target_family": "oh_my_pi",
             "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
@@ -1140,14 +1140,14 @@
               {
                 "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
                 "role": "support_claim_ref",
-                "sha256": "sha256:6e3cf1624a00c3ce7f3c3231665e3216c812c22f10b85e70a25e16b17a9f2346"
+                "sha256": "sha256:aae3052ef9d03093874642ee41387f4df32f20cbf1c541491f90a10cc1dab7fb"
               },
               {
                 "bytes": 124871,
                 "exists": true,
                 "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
                 "role": "atomic_feature_ledger",
-                "sha256": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1"
+                "sha256": "sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
               },
               {
                 "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",
@@ -1342,7 +1342,7 @@
     "source_paths": [
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json",
       "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json",
-      "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
       "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
       "scripts/e4_parity/adapters/oh_my_pi_projection_packet.py",
       "scripts/e4_parity/adapters/oh_my_pi_l6_projection.py",

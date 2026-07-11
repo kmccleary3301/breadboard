@@ -722,14 +722,27 @@ def _refresh_promoted_bindings() -> dict[str, Any]:
 def _capture_owned_paths(lane_def: Mapping[str, Any]) -> tuple[str, ...]:
     outputs: list[str] = []
     artifacts_root = lane_def.get("artifacts_root")
-    if isinstance(artifacts_root, str):
-        outputs.append(artifacts_root)
     capture = lane_def.get("capture")
     inputs = capture.get("inputs") if isinstance(capture, Mapping) else None
     declared_inputs = frozenset(item for item in inputs if isinstance(item, str)) if isinstance(inputs, list) else frozenset()
     normalize = lane_def.get("normalize")
     config = normalize.get("config") if isinstance(normalize, Mapping) else None
     roles = config.get("roles") if isinstance(config, Mapping) else None
+    record_builders = config.get("record_builders") if isinstance(config, Mapping) else None
+    projection_sources: set[str] = set()
+    if isinstance(record_builders, list):
+        for builder in record_builders:
+            if not isinstance(builder, Mapping):
+                continue
+            source = builder.get("source")
+            if isinstance(source, str):
+                projection_sources.add(source)
+            source_roles = builder.get("source_roles")
+            if isinstance(source_roles, Mapping):
+                projection_sources.update(
+                    value for value in source_roles.values() if isinstance(value, str)
+                )
+    preserved_sources = declared_inputs | projection_sources
     if isinstance(roles, Mapping):
         for value in roles.values():
             if (
@@ -739,9 +752,11 @@ def _capture_owned_paths(lane_def: Mapping[str, Any]) -> tuple[str, ...]:
                 # Role paths declared as capture inputs are preserved sources
                 # (probe scripts, raw session captures, static agent configs),
                 # never capture-owned outputs.
-                and value not in declared_inputs
+                and value not in preserved_sources
             ):
                 outputs.append(value)
+    elif isinstance(artifacts_root, str):
+        outputs.append(artifacts_root)
     return tuple(dict.fromkeys(outputs))
 
 
