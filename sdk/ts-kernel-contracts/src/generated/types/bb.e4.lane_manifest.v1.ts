@@ -53,10 +53,25 @@ export interface E4LaneManifestV1 {
   ct?: {
     description?: string;
     timeout_seconds?: number;
+    test_id?: string | null;
   };
   acceptance?: {
-    behavior_families?: string[];
-    notes?: string;
+    behavior_family: string;
+    semantic_key: string;
+    target?: string | null;
+    /**
+     * @minItems 1
+     */
+    assertions: [
+      {
+        id: string;
+        description: string;
+      },
+      ...{
+        id: string;
+        description: string;
+      }[]
+    ];
   };
   reverify_command?: {
     /**

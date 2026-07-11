@@ -94,14 +94,9 @@
       "tier": "config_algebra"
     },
     {
-      "consumers": [
-        {
-          "kind": "loader",
-          "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence high.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "E6 reopen found only parity producers at scripts/e4_parity/adapters/oh_my_pi_p3_remaining_projections.py:54-58 and scripts/e4_parity/adapters/pi_p5_l1_capture.py:515-520; no product reader exists under agentic_coder_prototype, breadboard, or sdk.",
       "schema_id": "bb.context_resource_pack.v1",
       "tier": "config_algebra"
     },
@@ -110,11 +105,16 @@
         {
           "kind": "evidence_machinery",
           "path": "scripts/check_contract_tiers.py"
+        },
+        {
+          "kind": "evidence_machinery",
+          "path": "scripts/check_phase20_freeze.py"
         }
       ],
       "disposition": "keep",
+      "notes": "Governance schema consumed by its census validator at scripts/check_contract_tiers.py:112-159 and the Phase 20 freeze gate at scripts/check_phase20_freeze.py:517-521; evidence tier records that governance/evidence role rather than product configuration.",
       "schema_id": "bb.contract_tiers.v1",
-      "tier": "config_algebra"
+      "tier": "evidence"
     },
     {
       "consumers": [
@@ -1009,14 +1009,9 @@
       "tier": "host_protocol"
     },
     {
-      "consumers": [
-        {
-          "kind": "runtime_emission",
-          "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "Runtime-emission baseline identified by Phase 20 direction assessment.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "E6 reopen confirmed agentic_coder_prototype/api/cli_bridge/runtime_emission.py:140-185 and :292-313 produce and validate records, but agentic_coder_prototype/api/cli_bridge/service.py:301-348 only transports opaque records and no product code interprets bb.work_item.v1 fields; production emission alone does not earn keep.",
       "schema_id": "bb.work_item.v1",
       "tier": "runtime_protocol"
     }

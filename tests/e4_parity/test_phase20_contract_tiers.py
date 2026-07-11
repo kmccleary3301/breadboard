@@ -50,71 +50,99 @@ def test_contract_tier_schema_and_product_spine_consumers_validate() -> None:
 
 
 @pytest.mark.parametrize(
-    ("schema_id", "tier", "consumer"),
+    ("schema_id", "tier", "consumers"),
     [
         (
             "bb.run_context.v1",
             "host_protocol",
-            {
-                "kind": "runtime_emission",
-                "path": "sdk/ts-kernel-core/src/contracts.ts",
-            },
+            [
+                {
+                    "kind": "runtime_emission",
+                    "path": "sdk/ts-kernel-core/src/contracts.ts",
+                }
+            ],
         ),
         (
             "bb.run_request.v1",
             "host_protocol",
-            {
-                "kind": "runtime_emission",
-                "path": "sdk/ts-host-bridges/src/index.ts",
-            },
+            [
+                {
+                    "kind": "runtime_emission",
+                    "path": "sdk/ts-host-bridges/src/index.ts",
+                }
+            ],
         ),
         (
             "bb.tool_binding.v1",
             "config_algebra",
-            {
-                "kind": "sdk",
-                "path": "sdk/ts-kernel-core/src/tool-surfaces.ts",
-            },
+            [
+                {
+                    "kind": "sdk",
+                    "path": "sdk/ts-kernel-core/src/tool-surfaces.ts",
+                }
+            ],
         ),
         (
             "bb.task.v1",
             "evidence",
-            {
-                "kind": "evidence_machinery",
-                "path": "scripts/build_python_reference_contract_fixtures.py",
-            },
+            [
+                {
+                    "kind": "evidence_machinery",
+                    "path": "scripts/build_python_reference_contract_fixtures.py",
+                }
+            ],
+        ),
+        (
+            "bb.contract_tiers.v1",
+            "evidence",
+            [
+                {
+                    "kind": "evidence_machinery",
+                    "path": "scripts/check_contract_tiers.py",
+                },
+                {
+                    "kind": "evidence_machinery",
+                    "path": "scripts/check_phase20_freeze.py",
+                },
+            ],
         ),
     ],
 )
 def test_audited_contracts_name_their_actual_tier_and_consumer(
     schema_id: str,
     tier: str,
-    consumer: dict[str, str],
+    consumers: list[dict[str, str]],
 ) -> None:
     """Audited contracts remain classified by their actual runtime or evidence use."""
     entry = _entries_by_schema_id()[schema_id]
 
     assert entry["tier"] == tier
-    assert consumer in entry["consumers"]
+    assert entry["disposition"] == "keep"
+    assert {
+        (consumer["kind"], consumer["path"]) for consumer in entry["consumers"]
+    } == {(consumer["kind"], consumer["path"]) for consumer in consumers}
 
 
 @pytest.mark.parametrize(
-    "schema_id",
+    ("schema_id", "tier"),
     [
-        "bb.config_mutation_record.v1",
-        "bb.e4.lane_lock.v1",
-        "bb.environment_selector.v2",
-        "bb.registry.v1",
-        "bb.tool_spec.v2",
+        ("bb.config_mutation_record.v1", "config_algebra"),
+        ("bb.context_resource_pack.v1", "config_algebra"),
+        ("bb.e4.lane_lock.v1", "config_algebra"),
+        ("bb.environment_selector.v2", "config_algebra"),
+        ("bb.registry.v1", "config_algebra"),
+        ("bb.tool_spec.v2", "config_algebra"),
+        ("bb.work_item.v1", "runtime_protocol"),
     ],
 )
-def test_config_algebra_without_a_product_consumer_remains_frozen(
+def test_descriptive_tier_without_a_product_consumer_remains_frozen(
     schema_id: str,
+    tier: str,
 ) -> None:
-    """A descriptive config-algebra tier does not imply an unearned keep disposition."""
+    """A descriptive tier does not imply an unearned keep disposition."""
     entry = _entries_by_schema_id()[schema_id]
 
-    assert entry["tier"] == "config_algebra"
+    assert entry["tier"] == tier
     assert entry["disposition"] == "freeze"
     assert entry["consumers"] == []
 
