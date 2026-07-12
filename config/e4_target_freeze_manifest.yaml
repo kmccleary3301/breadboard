@@ -732,6 +732,8 @@ e4_configs:
       family: oh_my_pi
       upstream_repo: https://github.com/can1357/oh-my-pi
       upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
       upstream_ref: main
       upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
       runtime_surface:
@@ -759,6 +761,8 @@ e4_configs:
       family: oh_my_pi
       upstream_repo: https://github.com/can1357/oh-my-pi
       upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
       upstream_ref: main
       upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
       runtime_surface:
@@ -786,6 +790,8 @@ e4_configs:
       family: oh_my_pi
       upstream_repo: https://github.com/can1357/oh-my-pi
       upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
       upstream_ref: main
       upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
       runtime_surface:
@@ -813,6 +819,8 @@ e4_configs:
       family: oh_my_pi
       upstream_repo: https://github.com/can1357/oh-my-pi
       upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
       upstream_ref: main
       upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
       runtime_surface:
@@ -840,6 +848,8 @@ e4_configs:
       family: oh_my_pi
       upstream_repo: https://github.com/can1357/oh-my-pi
       upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
       upstream_ref: main
       upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
       runtime_surface:
@@ -867,6 +877,8 @@ e4_configs:
       family: oh_my_pi
       upstream_repo: https://github.com/can1357/oh-my-pi
       upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
       upstream_ref: main
       upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
       runtime_surface:
@@ -894,6 +906,8 @@ e4_configs:
       family: oh_my_pi
       upstream_repo: https://github.com/can1357/oh-my-pi
       upstream_commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f
+      upstream_commit_date: '2026-07-01T20:03:42+02:00'
+      upstream_release_label: '@oh-my-pi/pi-coding-agent@16.2.13'
       upstream_ref: main
       upstream_version: '@oh-my-pi/pi-coding-agent@16.2.13'
       runtime_surface:
@@ -921,6 +935,9 @@ e4_configs:
       family: pi
       upstream_repo: https://github.com/badlogic/pi-mono.git
       upstream_ref: archive:01_pi_mono_git_tracked.zip
+      upstream_commit: archive:sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
+      upstream_commit_date: '2026-07-03T08:30:00Z'
+      upstream_release_label: '@mariozechner/pi-coding-agent@0.57.1'
       upstream_version: '@mariozechner/pi-coding-agent@0.57.1'
       provenance:
         kind: archive_snapshot_without_git_dir
@@ -959,6 +976,9 @@ e4_configs:
       family: pi
       upstream_repo: https://github.com/badlogic/pi-mono.git
       upstream_ref: archive:01_pi_mono_git_tracked.zip
+      upstream_commit: archive:sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
+      upstream_commit_date: '2026-07-03T08:30:00Z'
+      upstream_release_label: '@mariozechner/pi-coding-agent@0.57.1'
       upstream_version: '@mariozechner/pi-coding-agent@0.57.1'
       provenance:
         kind: archive_snapshot_without_git_dir
