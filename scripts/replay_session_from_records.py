@@ -65,8 +65,13 @@ def _transcript_item_from_event(event: dict[str, Any], seq: int) -> dict[str, An
     kind = event.get("kind")
     payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
     content: Any
-    if kind in {"message.user", "message.assistant"}:
+    if kind in {"message.system", "message.user", "message.assistant", "message.tool"}:
         content = payload.get("message") if isinstance(payload, dict) and "message" in payload else payload
+    elif kind == "compaction.ctree_node":
+        node = payload.get("node") if isinstance(payload.get("node"), dict) else {}
+        if node.get("node_type") != "message" and node.get("kind") != "message":
+            return None
+        content = node.get("payload") if isinstance(node.get("payload"), dict) else {}
     elif kind == "tool.completed":
         content = payload.get("message") if isinstance(payload, dict) and "message" in payload else payload
     else:
@@ -88,6 +93,48 @@ def _transcript_item_from_event(event: dict[str, Any], seq: int) -> dict[str, An
     return item
 
 
+def _message_identity(item: dict[str, Any]) -> tuple[str, str] | None:
+    content = item.get("content")
+    if not isinstance(content, dict):
+        return None
+    role = content.get("role")
+    text = content.get("content")
+    if not isinstance(role, str) or not isinstance(text, str):
+        return None
+    return role, text
+
+
+def _append_transcript_item(
+    items: list[dict[str, Any]],
+    source_kinds: list[str],
+    event: dict[str, Any],
+) -> None:
+    kind = str(event.get("kind") or "")
+    item = _transcript_item_from_event(event, len(items))
+    if item is None:
+        return
+    if items:
+        previous_kind = source_kinds[-1]
+        projection_pair = (
+            previous_kind == "compaction.ctree_node"
+        ) != (
+            kind == "compaction.ctree_node"
+        )
+        direct_message_pair = previous_kind.startswith("message.") or kind.startswith("message.")
+        if (
+            projection_pair
+            and direct_message_pair
+            and _message_identity(items[-1]) == _message_identity(item)
+        ):
+            if kind.startswith("message."):
+                item["seq"] = items[-1]["seq"]
+                items[-1] = item
+                source_kinds[-1] = kind
+            return
+    items.append(item)
+    source_kinds.append(kind)
+
+
 def replay_session_from_records(session_dir: Path) -> dict[str, Any]:
     records_dir = session_dir / "records"
     if not records_dir.is_dir():
@@ -102,6 +149,7 @@ def replay_session_from_records(session_dir: Path) -> dict[str, Any]:
             manifest = {}
 
     reconstructed_items: list[dict[str, Any]] = []
+    reconstructed_source_kinds: list[str] = []
     validated_count = 0
     for path in sorted(records_dir.glob("*.jsonl")):
         if path.name == "_quarantine.jsonl":
@@ -110,9 +158,7 @@ def replay_session_from_records(session_dir: Path) -> dict[str, Any]:
             record = _validate_record(_record_from_line(payload), path=path, line_no=line_no)
             validated_count += 1
             if record.get("schema_version") == "bb.kernel_event.v2":
-                item = _transcript_item_from_event(record, len(reconstructed_items))
-                if item is not None:
-                    reconstructed_items.append(item)
+                _append_transcript_item(reconstructed_items, reconstructed_source_kinds, record)
             elif record.get("schema_version") == "bb.session_transcript.v2":
                 final_transcript = record
 

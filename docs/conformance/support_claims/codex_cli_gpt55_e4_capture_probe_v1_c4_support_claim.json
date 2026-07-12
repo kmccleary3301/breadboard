@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json#sha256:c22cddc606d25a4e4720d812bf8b162e802240b1859c9ab735fde872926b90eb",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:36bcbd127695562b4baccaa262fb38309f2ac1e9c3e63c994799f7f8d24454e4",
+    "catalog_revision": 12,
+    "segment_hash": "sha256:e4deb8df991acf68eb57aff8aba40877523fdd45f93efc8acbb81ff68d57f7b0",
     "segment_id": "codex_cli_e4_capture_probe_v1",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
   },
   "claim_id": "codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim",
   "claim_semantics": {
@@ -158,7 +158,7 @@
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_79951d1fdd8a3937#sha256:a58ac21f12c7b0aa7db3bee0220f3cc3e15dd7263006ca5f199040d034cd0ca2"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_79951d1fdd8a3937#sha256:9870756578e9df7317195733da898ac5f2d727673ed7489a5c7d6fbef5952742"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",

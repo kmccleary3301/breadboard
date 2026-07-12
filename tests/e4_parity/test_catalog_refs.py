@@ -97,6 +97,7 @@ def test_row_ref_is_deterministic_and_uses_the_requested_row(
     _catalog_path, catalog, row = _catalog_fixture(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(catalog_refs, "ROOT", tmp_path, raising=False)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     first = catalog_refs.row_ref(catalog, "ledger:features", "feature_alpha")
     second = catalog_refs.row_ref(catalog, "ledger:features", "feature_alpha")
@@ -114,8 +115,39 @@ def test_row_ref_errors_on_unknown_role_or_row(
     _catalog_path, catalog, _row = _catalog_fixture(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(catalog_refs, "ROOT", tmp_path, raising=False)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
     with pytest.raises(KeyError, match="missing:role"):
         catalog_refs.row_ref(catalog, "missing:role", "feature_alpha")
     with pytest.raises(KeyError, match="missing_row"):
         catalog_refs.row_ref(catalog, "ledger:features", "missing_row")
+
+
+def test_row_ref_uses_workspace_evidence_over_checkout_shadow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    checkout = tmp_path / "checkout"
+    workspace = tmp_path / "workspace"
+    relative = Path("docs_tmp/phase_16/feature_ledger.json")
+    shadow_row = {"feature_id": "feature_alpha", "source": "checkout-shadow"}
+    workspace_row = {"feature_id": "feature_alpha", "source": "workspace"}
+    _write_json(checkout / relative, {"rows": [shadow_row]})
+    _write_json(workspace / relative, {"rows": [workspace_row]})
+    catalog = {
+        "entries": [
+            {
+                "role_id": "ledger:features",
+                "path": relative.as_posix(),
+            }
+        ]
+    }
+    monkeypatch.setattr(catalog_refs, "ROOT", checkout, raising=False)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(workspace))
+
+    assert catalog_refs.row_ref(
+        catalog, "ledger:features", "feature_alpha"
+    ) == (
+        f"{relative.as_posix()}#feature_alpha#"
+        f"{_row_sha('feature_alpha', workspace_row)}"
+    )

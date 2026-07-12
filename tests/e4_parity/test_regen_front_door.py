@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator, RefResolver
 from jsonschema.exceptions import ValidationError
+import yaml
 
 from scripts.e4_parity import regen as front_door
 
@@ -59,6 +60,135 @@ def _schema_errors(validator: Draft202012Validator, payload: dict[str, Any]) -> 
 def _format_error(error: ValidationError) -> str:
     path = "/" + "/".join(str(part) for part in error.absolute_path)
     return f"{path}: {error.message}"
+
+
+def test_e4_battery_workflow_runs_complete_pytest_and_fixed_point_gates() -> None:
+    workflow_path = ROOT / ".github/workflows/e4-battery.yml"
+    workflow_text = workflow_path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(workflow_text)
+    job = workflow["jobs"]["e4-battery"]
+    commands = {
+        step["name"]: step["run"]
+        for step in job["steps"]
+        if isinstance(step, dict) and "name" in step and "run" in step
+    }
+
+    assert job["env"]["BB_WORKSPACE_ROOT"] == "${{ github.workspace }}/.."
+    assert commands["Provision immutable E4 inputs"] == (
+        "python scripts/e4_parity/provision_immutable_inputs.py "
+        '--repo-root "$GITHUB_WORKSPACE" --workspace-root "$GITHUB_WORKSPACE/.."'
+    )
+    assert commands["Run full literal E4 parity battery"] == "pytest -q tests/e4_parity"
+    assert commands["Verify exact 1000-point fixed-point regeneration"] == (
+        "python scripts/e4_parity/regen.py fixed-point "
+        "--expected-points 1000 --expected-target-claims 10 "
+        "--expected-non-target-claims 8 "
+        "--json artifacts/conformance/e4_regen_fixed_point.json"
+    )
+    assert "--ignore" not in workflow_text
+    assert "--deselect" not in workflow_text
+    assert "--skip" not in workflow_text
+    assert "--continue-on-error" not in workflow_text
+    assert "continue-on-error:" not in workflow_text
+
+
+def test_e4_battery_workflow_compares_two_independent_clean_checkouts() -> None:
+    workflow_path = ROOT / ".github/workflows/e4-battery.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    clean_job = workflow["jobs"]["fixed-point-clean-checkout"]
+    compare_job = workflow["jobs"]["fixed-point-clean-checkout-compare"]
+    clean_commands = {
+        step["name"]: step["run"]
+        for step in clean_job["steps"]
+        if isinstance(step, dict) and "name" in step and "run" in step
+    }
+
+    assert clean_job["strategy"]["matrix"]["pass"] == ["first", "second"]
+    assert clean_job["env"]["BB_WORKSPACE_ROOT"] == "${{ github.workspace }}/.."
+    assert clean_commands["Provision immutable E4 inputs"] == (
+        "python scripts/e4_parity/provision_immutable_inputs.py "
+        '--repo-root "$GITHUB_WORKSPACE" --workspace-root "$GITHUB_WORKSPACE/.."'
+    )
+    assert clean_commands["Generate fixed-point report"] == (
+        "python scripts/e4_parity/regen.py fixed-point "
+        "--expected-points 1000 --expected-target-claims 10 "
+        "--expected-non-target-claims 8 "
+        "--json artifacts/conformance/e4_regen_fixed_point_${{ matrix.pass }}.json"
+    )
+    upload = next(
+        step
+        for step in clean_job["steps"]
+        if step.get("uses") == "actions/upload-artifact@v4"
+    )
+    assert upload["with"] == {
+        "name": "e4-fixed-point-${{ matrix.pass }}",
+        "path": "artifacts/conformance/e4_regen_fixed_point_${{ matrix.pass }}.json",
+        "if-no-files-found": "error",
+    }
+    assert compare_job["needs"] == "fixed-point-clean-checkout"
+    compare_commands = {
+        step["name"]: step["run"]
+        for step in compare_job["steps"]
+        if isinstance(step, dict) and "name" in step and "run" in step
+    }
+    assert compare_commands["Compare clean-checkout reports byte-for-byte"] == (
+        "cmp artifacts/first/e4_regen_fixed_point_first.json "
+        "artifacts/second/e4_regen_fixed_point_second.json"
+    )
+
+
+def test_phase16_score_authority_matches_inventory() -> None:
+    assert front_door.final_readiness.score_authority() == {
+        "source_ref": "docs_tmp/phase_16/BB_ER_PROGRESS.json#totals",
+        "source_sha256": front_door._sha256_path(
+            front_door.final_readiness.SCORE_AUTHORITY_PATH
+        ),
+        "source_observed": {
+            "points_total": 1000,
+            "points_done": 1000,
+            "points_blocked": 0,
+        },
+        "expected": {
+            "points": 1000,
+            "target_claims": 10,
+            "non_target_claims": 8,
+        },
+        "observed": {
+            "points": 1000,
+            "target_claims": 10,
+            "non_target_claims": 8,
+        },
+        "ok": True,
+    }
+
+
+def test_score_authority_rejects_source_total_drift(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    authority_path = tmp_path / "BB_ER_PROGRESS.json"
+    authority_path.write_text(
+        json.dumps(
+            {
+                "totals": {
+                    "points_total": 1000,
+                    "points_done": 999,
+                    "points_blocked": 1,
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(front_door.final_readiness, "SCORE_AUTHORITY_PATH", authority_path)
+
+    authority = front_door.final_readiness.score_authority()
+
+    assert authority["source_observed"] == {
+        "points_total": 1000,
+        "points_done": 999,
+        "points_blocked": 1,
+    }
+    assert authority["ok"] is False
 
 
 def test_explain_json_emits_schema_valid_plan_from_regenerate_evidence_stages(tmp_path: Path) -> None:
@@ -295,7 +425,7 @@ def test_fixed_point_runs_pipeline_twice_and_ignores_undeclared_writes(
     errors = _schema_errors(_fixed_point_validator(), payload)
     assert errors == [], "\n".join(_format_error(error) for error in errors)
     assert payload["schema_version"] == "bb.e4.fixed_point_report.v1"
-    assert payload["watch_set_size"] == 1
+    assert payload["watch_set_size"] == 2  # declared output plus score authority
     assert payload["byte_identical"] is True
     assert payload["changed_paths"] == []
     assert payload["first_pass_snapshot_sha256"] == payload["second_pass_snapshot_sha256"]
@@ -309,11 +439,6 @@ def test_watch_set_includes_generated_self_runtime_record_tree(
     """Fixed-point must recurse directory writes instead of omitting their generated files."""
     self_runtime_write = "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1"
     north_star_write = "docs/conformance/e4_target_support/claude_code_north_star_capture_v1"
-    north_star_stage = next(
-        stage for stage in front_door.regen.STAGES if stage.stage_id == "north_star_proof_packets"
-    )
-    assert self_runtime_write in north_star_stage.writes
-    assert north_star_write in north_star_stage.writes
 
     target_support = tmp_path / "docs/conformance/e4_target_support"
     runtime_root = target_support / "breadboard_self_runtime_records_v1"
@@ -336,10 +461,6 @@ def test_p6_6_producer_declares_full_lane_root_for_fixed_point_watch_set(
 ) -> None:
     """Every P6.6 lane output must participate in fixed-point drift detection."""
     lane_write = "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent"
-    producer = next(
-        stage for stage in front_door.regen.STAGES if stage.stage_id == "oh_my_pi_p66_task_job_subagent"
-    )
-    assert lane_write in producer.writes
 
     lane_root = tmp_path / lane_write
     lane_outputs = (
@@ -398,7 +519,7 @@ def test_fixed_point_reports_declared_write_drift_between_passes(
     payload = _load_json(out_path)
     errors = _schema_errors(_fixed_point_validator(), payload)
     assert errors == [], "\n".join(_format_error(error) for error in errors)
-    assert payload["watch_set_size"] == 1
+    assert payload["watch_set_size"] == 2  # declared output plus score authority
     assert payload["byte_identical"] is False
     assert payload["changed_paths"] == ["watched.txt"]
     assert payload["first_pass_snapshot_sha256"] != payload["second_pass_snapshot_sha256"]

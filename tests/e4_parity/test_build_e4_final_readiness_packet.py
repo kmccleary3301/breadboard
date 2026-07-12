@@ -247,7 +247,7 @@ def test_build_regenerates_packet_outputs_after_clean_ct_preflight(
     monkeypatch.setattr(
         builder,
         "update_accepted_report",
-        record("update_accepted_report", {"accepted_support_claims": [{"claim_id": "synthetic"}]}),
+        record("update_accepted_report", {"accepted_support_claims": [{"claim_id": "synthetic", "points": 1}]}),
     )
     monkeypatch.setattr(builder, "update_baseline", record("update_baseline", {}))
     monkeypatch.setattr(builder, "update_progress", record("update_progress", {}))
@@ -279,6 +279,7 @@ def test_main_returns_two_for_unexpected_builder_exception(
     monkeypatch: Any,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    monkeypatch.setattr(builder, "assert_score_authority", lambda: None)
     monkeypatch.setattr(builder, "build", lambda: (_ for _ in ()).throw(RuntimeError("node gate broke")))
 
     code = builder.main(["--json"])

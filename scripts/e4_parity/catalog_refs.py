@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from agentic_coder_prototype.compilation.primitive_records import canonical_record_bytes, sha256_ref
+from scripts.e4_parity.path_refs import resolve_declared_reference
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CATALOG_PATH = ROOT / "docs" / "conformance" / "e4_artifact_catalog.json"
@@ -122,12 +123,18 @@ def _resolve_artifact_path(display_path: str) -> Path:
     if path.is_absolute():
         return path
 
+    if raw.startswith("docs_tmp/"):
+        return resolve_declared_reference(
+            raw,
+            checkout_root=ROOT,
+            namespace="workspace_evidence",
+            label="catalog row reference",
+            must_exist=False,
+        )
+
     root_path = ROOT / path
     if root_path.exists():
         return root_path
-
-    if raw.startswith("docs_tmp/"):
-        return ROOT.parent / path
 
     checkout_path = ROOT.parent / path
     if raw.startswith(f"{ROOT.name}/") and checkout_path.exists():

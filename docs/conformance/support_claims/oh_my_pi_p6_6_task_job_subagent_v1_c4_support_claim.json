@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/raw_capture_manifest.json#sha256:1ff42afbb9c0ae7dd8744e84eba935187cd3510940a012336d541306c78e68dc",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:f0091bcceae21875035cb96ed58c41d50e1cb06978e211aeccb365ce24ed6591",
+    "catalog_revision": 12,
+    "segment_hash": "sha256:f75fc511e99a1b81e0ab1dac50b7c6cf3d386f26fd77f2900b2d6ce93ec4a186",
     "segment_id": "oh_my_pi_p6_6_task_job_subagent",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
   },
   "claim_id": "oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim",
   "claim_semantics": {
@@ -136,7 +136,7 @@
   "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/bb_replay_result.json#sha256:aadea331fc0ce46d64841f01a35fd533b8d0452f22b7243080d6bc78b1927551",
   "reverify_command": {
     "argv": [
-      ".venv/bin/python",
+      "python",
       "scripts/validate_e4_c4_chain.py",
       "--config-id",
       "oh_my_pi_p6_6_task_job_subagent_v1",

@@ -3,7 +3,7 @@
     {
       "path": "config/e4_target_freeze_manifest.yaml",
       "role": "freeze_manifest",
-      "sha256": "sha256:54a9d3ddd9e90fb341fbe412ab0656f366eba27ca3fe818ae6c7b0e6b346817b"
+      "sha256": "sha256:1660c21c101c360b16d33e33bc19467eab90cc33f81ae56a8cfa4a5fb5ed9a2f"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json",
@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:521f5fa479db7cd5807c33f51e35c6b8c34388fbddc1b9b9467959f97afe3c4d"
+      "sha256": "sha256:0502e01a21f8f39d31b79e1c0351362672acf2b93bac12ba6dd9d89c03a6183a"
     },
     {
       "derived_from": [

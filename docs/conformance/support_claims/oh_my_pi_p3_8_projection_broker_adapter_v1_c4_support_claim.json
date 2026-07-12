@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "P3.8 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5",
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:66644252c6d19807e2f0619cb701ded1c092b2a6527c97ba9b33c798d676e218",
+    "catalog_revision": 12,
+    "segment_hash": "sha256:bc4ff56fee0f2757b6d0815269f08690550633ae775b9caf36881c32801350cc",
     "segment_id": "oh_my_pi_p3_8_projection_broker_adapter",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
   },
   "claim_id": "oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim",
   "claim_semantics": {
@@ -48,7 +48,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json#sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json#sha256:09118d45c07d126ea0299f7bb132239e928bdfdf9c085eaf11504d953c1fa7c0",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -72,11 +72,11 @@
     "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
     "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
   ],
-  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_8_projection_broker_adapter_v1#sha256:47986b7c5a0718fa8121263fc1ba090d9cf62987e79d0a42da6a21ba4c0ce210",
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_8_projection_broker_adapter_v1#sha256:d7a88960f74033b0654e49d3ed34ac7f8da610d8f19870ea42f7a182e3923f97",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "non_target_accounting",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_a8c1754af302f290#sha256:fa777fffff0510f6c8de5b726d2a56764cf25dea6827e6ff7c94149d46a888a3"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_a8c1754af302f290#sha256:3b1023aca314210690dae4150bded9344144daec7f460e575e4176615816dfe2"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",
@@ -86,9 +86,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json#sha256:014a27b3d4f220e39ed3de6efaef9e90c0390b8b45b900ca22cb6f204258dd63",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json#sha256:839e941ee148eedeea879a037a4414f35bbc81d5c03cc1822a018b15472a5047",
   "phase_label": "P3",
-  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json#sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json#sha256:3408d24a3b7581ca5bc78d7145ef7202650d6804906230c425000e5ca4900da5",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",

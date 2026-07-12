@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import importlib
 import json
 import fnmatch
 import os
@@ -16,11 +17,21 @@ from typing import Sequence
 
 
 try:
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    from scripts.e4_parity.immutable_inputs import provision_immutable_inputs
+    from scripts.e4_parity.lane_definitions import (
+        DEFAULT_LANE_DEF_DIR,
+        load_lane_defs,
+        record_builder_source_paths,
+    )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
+    from scripts.e4_parity.immutable_inputs import provision_immutable_inputs
+    from scripts.e4_parity.lane_definitions import (
+        DEFAULT_LANE_DEF_DIR,
+        load_lane_defs,
+        record_builder_source_paths,
+    )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -63,13 +74,19 @@ class Stage:
             EXPECTED_POINTS in self.argv or EXPECTED_CLAIMS in self.argv
         ):
             # The readiness module resolves the external evidence workspace at
-            # import time. Keep that fail-closed boundary at execution, rather
-            # than making DAG plans and explanations require BB_WORKSPACE_ROOT.
+            # import time. Reload it for every candidate workspace and evaluate
+            # the substitutions before restoring the caller's environment.
+            # A fixed-point run creates a new candidate root on each pass.
             previous_workspace = os.environ.get("BB_WORKSPACE_ROOT")
             if workspace_root is not None:
                 os.environ["BB_WORKSPACE_ROOT"] = str(workspace_root)
             try:
-                from scripts.e4_parity import build_e4_final_readiness_packet as final_readiness
+                final_readiness = importlib.import_module(
+                    "scripts.e4_parity.build_e4_final_readiness_packet"
+                )
+                final_readiness = importlib.reload(final_readiness)
+                expected_points = final_readiness.expected_points()
+                expected_claims = final_readiness._expected_target_support_claims()
             finally:
                 if workspace_root is not None:
                     if previous_workspace is None:
@@ -77,8 +94,8 @@ class Stage:
                     else:
                         os.environ["BB_WORKSPACE_ROOT"] = previous_workspace
 
-            substitutions[EXPECTED_POINTS] = str(final_readiness.expected_points())
-            substitutions[EXPECTED_CLAIMS] = str(final_readiness._expected_target_support_claims())
+            substitutions[EXPECTED_POINTS] = str(expected_points)
+            substitutions[EXPECTED_CLAIMS] = str(expected_claims)
         return [
             substitutions.get(part, python if part in (".venv/bin/python", "python") else part)
             for part in self.argv
@@ -104,14 +121,16 @@ def _lane_def_reverify_writes(argv: Sequence[str]) -> tuple[str, ...]:
 _LANE_SHARED_READ_ONLY_PATHS = LANE_SHARED_READ_ONLY_PATHS
 
 
+def _lane_def_projection_sources(lane_def: dict[str, object]) -> tuple[str, ...]:
+    return record_builder_source_paths(lane_def, verbatim_only=True)
+
+
 def _lane_def_output_paths(lane_def: dict[str, object], argv: Sequence[str]) -> tuple[str, ...]:
     outputs: list[str] = []
-    artifacts_root = lane_def.get("artifacts_root")
-    if isinstance(artifacts_root, str):
-        outputs.append(artifacts_root)
     capture = lane_def.get("capture")
     inputs = capture.get("inputs") if isinstance(capture, dict) else None
     declared_inputs = frozenset(item for item in inputs if isinstance(item, str)) if isinstance(inputs, list) else frozenset()
+    preserved_sources = declared_inputs | frozenset(_lane_def_projection_sources(lane_def))
     normalize = lane_def.get("normalize")
     config = normalize.get("config") if isinstance(normalize, dict) else None
     roles = config.get("roles") if isinstance(config, dict) else None
@@ -121,9 +140,9 @@ def _lane_def_output_paths(lane_def: dict[str, object], argv: Sequence[str]) -> 
             for value in roles.values()
             if isinstance(value, str)
             and value not in _LANE_SHARED_READ_ONLY_PATHS
-            # Mirror run_lane._capture_owned_paths: role paths declared as
-            # capture inputs are preserved sources, not lane writes.
-            and value not in declared_inputs
+            # Mirror run_lane._capture_owned_paths: declared and projection
+            # sources are preserved inputs, never lane writes.
+            and value not in preserved_sources
         )
     for flag in ("--support-claim", "--evidence-manifest", "--json-out"):
         value = _arg_value(argv, flag)
@@ -178,7 +197,42 @@ def _lane_def_reverify_stages(
     return tuple(stages)
 
 LANE_DEFS = load_lane_defs(DEFAULT_LANE_DEF_DIR)
-LANE_DEF_REVERIFY_STAGES = _lane_def_reverify_stages(LANE_DEFS, depends_on="catalog_full")
+
+
+_CLAIM_DERIVED_LANE_ROLES = ("evidence_manifest", "node_gate", "support_claim", "validator_output")
+_PRIMITIVE_PROJECTION_LANE_ROLES = (
+    "capability_registry",
+    "effective_config_graph",
+    "effective_tool_surface",
+    "primitive_projection_manifest",
+)
+
+
+def _catalog_argv(
+    output: str,
+    *,
+    excluded_lane_roles: Sequence[str] = (),
+    referenced_static_only: bool = False,
+) -> tuple[str, ...]:
+    argv = [
+        PYTHON,
+        "scripts/e4_parity/build_artifact_catalog.py",
+        "--schema-version",
+        "v2",
+        "--output",
+        output,
+    ]
+    if referenced_static_only:
+        argv.append("--referenced-static-only")
+    for role_key in excluded_lane_roles:
+        argv.extend(("--exclude-lane-role", role_key))
+    return tuple(argv)
+
+
+LANE_DEF_REVERIFY_STAGES = _lane_def_reverify_stages(
+    LANE_DEFS,
+    depends_on="support_claim_generation",
+)
 
 
 
@@ -186,26 +240,17 @@ STAGES: tuple[Stage, ...] = (
     Stage(
         stage_id="source_index",
         phase="lane_artifacts",
-        label="Build deterministic source/path index used by the ledger seed.",
+        label="Build the deterministic source/path index consumed by lane capture.",
         argv=(PYTHON, "scripts/e4_parity/build_source_index.py", "--json"),
         writes=("../docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json",),
-    ),
-    Stage(
-        stage_id="ledger_seed",
-        phase="ledger",
-        label="Seed the base atomic feature ledger from indexed source refs.",
-        argv=(PYTHON, "scripts/e4_parity/seed_atomic_feature_ledger.py", "--json"),
-        depends_on=("source_index",),
-        writes=("../docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",),
     ),
     Stage(
         stage_id="north_star_proof_packets",
         phase="claims_manifests_node_gates_ws_j",
         label="Regenerate WS-J north-star proof packets through the lane runner.",
         argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "north-star", "--stage", "all", "--promote-accepted", "--defer-promotion-refresh", "--json"),
-        depends_on=("ledger_seed",),
+        depends_on=("source_index",),
         reads=(
-            "docs/conformance/e4_artifact_catalog.json",
             # Workspace-level tool defs consumed by the self-capture session's agent
             # config (agent_configs/atp_hilbert_like_gpt54_v1.yaml resolves
             # ../implementations/tools/defs against the execution root). Without this
@@ -214,9 +259,6 @@ STAGES: tuple[Stage, ...] = (
             "../implementations/tools/defs",
         ),
         writes=(
-            "docs/conformance/support_claims/*north_star*_c4_support_claim.json",
-            "docs/conformance/support_claims/*north_star*_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_north_star_*_c4_chain.json",
             "docs/conformance/e4_target_support/*north_star*",
             "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1",
         ),
@@ -233,37 +275,20 @@ STAGES: tuple[Stage, ...] = (
         ),
     ),
     Stage(
-        stage_id="catalog_stable_snapshot",
-        phase="catalog_stable_snapshot",
-        label="Build the stable artifact catalog snapshot before regenerated claim artifacts.",
-        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2", "--output", "docs/conformance/e4_artifact_catalog_stable_snapshot.json"),
+        stage_id="materialize_oh_my_pi_source_freeze",
+        phase="lane_artifacts",
+        label="Safely materialize the tracked Oh-My-Pi source archive for legacy L5/L6 adapters.",
+        argv=(PYTHON, "scripts/e4_parity/materialize_source_freeze.py", "--json"),
         depends_on=("scrub_absorbed_validator_refs",),
-        reads=(
-            # Node-gate reports are registered lane artifacts the catalog requires,
-            # but they live under gitignored artifacts/ and are not regenerated by
-            # the deferred candidate capture stages - seed the live copies.
-            "artifacts/conformance/node_gate/*.json",
-            # Untracked-but-registered P6.0 lane support payloads (catalog registers
-            # them; they are produced by past lane runs and never git-added).
-            "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/*.json",
-            "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/*.json",
-            "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/*.json",
-            "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/*.json",
-            # Workspace-level docs_tmp artifacts registered in the catalog.
-            "../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe",
-            "../docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
-            "../docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
-            "../docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
-        ),
-        writes=("docs/conformance/e4_artifact_catalog_stable_snapshot.json",),
-        note="B2 freeze point: downstream claim generation binds against the stable snapshot before generated support-claim/manifest/node-gate churn is introduced.",
+        reads=("config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip",),
+        writes=("../docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest",),
     ),
     Stage(
         stage_id="p3_1_effective_config_graph",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.1 through lane_def v2 capture adapter.",
         argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_1_effective_config_graph_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
-        depends_on=("catalog_stable_snapshot",),
+        depends_on=("materialize_oh_my_pi_source_freeze",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
             "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
@@ -403,11 +428,34 @@ STAGES: tuple[Stage, ...] = (
         ),
     ),
     Stage(
+        stage_id="materialize_oh_my_pi_p66_lane_lock",
+        phase="lane_artifacts",
+        label="Compile the P6.6 lane lock and materialize its pinned source extraction.",
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/compile_lane_lock.py",
+            "compile",
+            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml",
+        ),
+        depends_on=("oh_my_pi_l6_tui_projection",),
+        reads=(
+            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml",
+            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.payloads.yaml",
+            "config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip",
+            "scripts/e4_parity/compile_lane_lock.py",
+        ),
+        writes=(
+            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.lock.json",
+            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.packet_constants.v1.json",
+            "../docs_tmp/phase_20/derived/oh_my_pi_main_5356713e_extracted",
+        ),
+    ),
+    Stage(
         stage_id="oh_my_pi_p66_task_job_subagent",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate Oh-My-Pi P6.6 through lane_def v2 capture adapter.",
         argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p6_6_task_job_subagent", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
-        depends_on=("oh_my_pi_l6_tui_projection",),
+        depends_on=("materialize_oh_my_pi_p66_lane_lock",),
         writes=(
             "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent",
             "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
@@ -416,18 +464,62 @@ STAGES: tuple[Stage, ...] = (
         ),
     ),
     Stage(
+        stage_id="ledger_seed",
+        phase="ledger",
+        label="Seed the atomic feature ledger from refreshed capture and source refs.",
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/seed_atomic_feature_ledger.py",
+            "--lane-extensions",
+            "config/e4_lanes/evidence_inputs/e4_lane_ledger_seed_extensions.v1.json",
+            "--json",
+        ),
+        depends_on=("oh_my_pi_p66_task_job_subagent",),
+        reads=(
+            "../docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json",
+            "config/e4_lanes/evidence_inputs/e4_lane_ledger_seed_extensions.v1.json",
+        ),
+        writes=("../docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",),
+    ),
+    Stage(
+        stage_id="ledger_report",
+        phase="ledger",
+        label="Build the grouped atomic feature ledger report from the refreshed seed.",
+        argv=(PYTHON, "scripts/e4_parity/report_atomic_feature_ledger.py", "--json"),
+        depends_on=("ledger_seed",),
+        reads=("../docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",),
+        writes=("../docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_REPORT.json",),
+    ),
+    Stage(
+        stage_id="catalog_stable_snapshot",
+        phase="catalog_stable_snapshot",
+        label="Build the stable catalog after every regenerable lane capture.",
+        argv=_catalog_argv(
+            "docs/conformance/e4_artifact_catalog_stable_snapshot.json",
+            excluded_lane_roles=(*_CLAIM_DERIVED_LANE_ROLES, *_PRIMITIVE_PROJECTION_LANE_ROLES),
+            referenced_static_only=True,
+        ),
+        depends_on=("ledger_report",),
+        writes=("docs/conformance/e4_artifact_catalog_stable_snapshot.json",),
+        note="Contains fresh capture outputs but excludes support claims, manifests, node gates, and primitive projection outputs produced later.",
+    ),
+    Stage(
         stage_id="primitive_projection",
         phase="claims_manifests_node_gates_legacy_v1",
         label="Regenerate primitive projection artifacts backed by the current lane packet data.",
         argv=(PYTHON, "scripts/e4_parity/build_primitive_projection.py", "--json"),
-        depends_on=("oh_my_pi_p66_task_job_subagent",),
+        depends_on=("catalog_stable_snapshot",),
         writes=("artifacts/conformance/e4_primitive_projection/*",),
     ),
     Stage(
         stage_id="catalog_claim_binding_snapshot",
         phase="catalog_stable_snapshot",
         label="Rebuild the stable catalog snapshot after promoted lane packet refreshes and before support-claim binding.",
-        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2"),
+        argv=_catalog_argv(
+            "docs/conformance/e4_artifact_catalog.json",
+            excluded_lane_roles=_CLAIM_DERIVED_LANE_ROLES,
+            referenced_static_only=True,
+        ),
         depends_on=("primitive_projection",),
         writes=("docs/conformance/e4_artifact_catalog.json",),
         note="Lane promotion refreshes can rewrite catalog/support artifacts internally; claim generation must bind to the stable catalog snapshot that catalog_full will preserve once claim-derived churn is excluded.",
@@ -445,15 +537,20 @@ STAGES: tuple[Stage, ...] = (
         ),
         note="Owns canonical support claims and manifests; the generated lane_def reverify stages own their --json-out node-gate reports.",
     ),
+    *LANE_DEF_REVERIFY_STAGES,
     Stage(
         stage_id="catalog_full",
         phase="catalog_full",
-        label="Build the full artifact catalog after regenerated support claims, manifests, and node gates.",
-        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2", "--output", "docs/conformance/e4_artifact_catalog_full_snapshot.json"),
-        depends_on=("support_claim_generation",),
+        label="Build the full lane-artifact catalog after support claims, manifests, and node gates.",
+        argv=_catalog_argv(
+            "docs/conformance/e4_artifact_catalog_full_snapshot.json",
+            referenced_static_only=True,
+        ),
+        depends_on=(
+            (LANE_DEF_REVERIFY_STAGES[-1].stage_id if LANE_DEF_REVERIFY_STAGES else "support_claim_generation"),
+        ),
         writes=("docs/conformance/e4_artifact_catalog_full_snapshot.json",),
     ),
-    *LANE_DEF_REVERIFY_STAGES,
     Stage(
         stage_id="ct_scenarios",
         phase="reports",
@@ -469,7 +566,7 @@ STAGES: tuple[Stage, ...] = (
             PINNED_GENERATED_AT_UTC,
             "--zero-durations",
         ),
-        depends_on=((LANE_DEF_REVERIFY_STAGES[-1].stage_id if LANE_DEF_REVERIFY_STAGES else "catalog_full"),),
+        depends_on=("catalog_full",),
         writes=(
             "artifacts/conformance/ct_scenarios_result_e4_1000.json",
             "artifacts/conformance/ct_scenarios_rows_e4_1000.json",
@@ -512,9 +609,17 @@ STAGES: tuple[Stage, ...] = (
         argv=(PYTHON, "scripts/e4_parity/build_e4_final_readiness_packet.py", "--json"),
         depends_on=("sync_conformance_matrix",),
         writes=(
+            "../docs_tmp/phase_15/BB_E4_COMPATIBILITY_MIGRATION_NOTES.md",
+            "../docs_tmp/phase_15/BB_E4_SCORE_SUBLEDGER.json",
+            "../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json",
+            "../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json",
+            "../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json",
+            "../docs_tmp/phase_15/BB_E4_PRIMITIVE_FAMILY_READINESS_REPORT.json",
+            "../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json",
             "../docs_tmp/phase_15/BB_E4_FINAL_READINESS_REPORT.md",
-            "../docs_tmp/phase_15/BB_E4_FINAL_ARTIFACT_FRESHNESS_MANIFEST.json",
+            "../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json",
             "../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json",
+            "../docs_tmp/phase_15/BB_E4_FINAL_ARTIFACT_FRESHNESS_MANIFEST.json",
         ),
         blocker="Final readiness remains fail-closed until CT result, CT rows, and matrix sync summary are pass/all-zero.",
         allowed_exit_codes=(1,),
@@ -608,15 +713,13 @@ def _lane_capture_reads(stage: Stage) -> tuple[str, ...]:
         return ()
     reads: list[str] = [
         "docs/conformance/e4_lane_inventory.json",
-        "docs/conformance/e4_artifact_catalog.json",
         "config/e4_target_freeze_manifest.yaml",
         "docs/conformance/ct_scenarios_v1.json",
+        # Candidate preparation installs the immutable ledger bootstrap in the
+        # candidate workspace. The source index is a canonical prerequisite
+        # generated before capture; the ledger is regenerated after capture.
         "../docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
-        # Checkout-local provisioned estate consumed by the oh_my_pi lane
-        # adapters (WORKSPACE = ROOT in oh_my_pi_compiler_capture.py): the
-        # phase_15 seed pair must exist inside the candidate checkout.
-        "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
-        "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json",
+        "../docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json",
     ]
     for lane_def in lane_defs:
         lane_id = lane_def.get("lane_id")
@@ -626,14 +729,7 @@ def _lane_capture_reads(stage: Stage) -> tuple[str, ...]:
         inputs = capture.get("inputs") if isinstance(capture, dict) else None
         if isinstance(inputs, list):
             reads.extend(value for value in inputs if isinstance(value, str))
-        artifacts_root = lane_def.get("artifacts_root")
-        if isinstance(artifacts_root, str):
-            reads.append(artifacts_root)
-        reverify_argv = _reverify_argv(lane_def)
-        for flag in ("--support-claim", "--evidence-manifest"):
-            value = _arg_value(reverify_argv, flag)
-            if value is not None:
-                reads.append(value)
+        reads.extend(_lane_def_projection_sources(lane_def))
     return tuple(dict.fromkeys(reads))
 
 
@@ -642,18 +738,24 @@ def _lane_capture_writes(stage: Stage) -> tuple[str, ...] | None:
     if not lane_defs:
         return None
     writes: list[str] = []
-    writes.extend(
-        f"tmp/e4_regen_capture/{lane_def['lane_id']}"
-        for lane_def in lane_defs
-        if isinstance(lane_def.get("lane_id"), str)
-    )
     for lane_def in lane_defs:
-        for output in _lane_def_output_paths(lane_def, _reverify_argv(lane_def)):
-            if output.startswith(
+        lane_id = lane_def.get("lane_id")
+        if not isinstance(lane_id, str):
+            continue
+        outputs = tuple(
+            output
+            for output in _lane_def_output_paths(lane_def, _reverify_argv(lane_def))
+            if not output.startswith(
                 (_CLAIM_OUTPUT_PREFIX, _NODE_GATE_OUTPUT_PREFIX, _PRIMITIVE_PROJECTION_OUTPUT_PREFIX)
-            ):
-                continue
-            writes.append(output)
+            )
+        )
+        if outputs:
+            writes.extend(outputs)
+        else:
+            # Capture adapters without enumerated roles publish one logical
+            # packet directory. Scratch roots are transaction-local and must
+            # never be promoted into the canonical checkout.
+            writes.append(f"docs/conformance/e4_target_support/{lane_id}")
     return tuple(dict.fromkeys(writes))
 
 
@@ -880,7 +982,7 @@ def plan_dict(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable)
 
 def print_explain(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable) -> None:
     print("E4 evidence regeneration DAG")
-    print("Topological order: lane/source artifacts -> ledger -> catalog_stable_snapshot -> legacy generators -> support_claim_generation -> catalog_full -> lane reverify -> reports -> catalog_post_report_snapshot -> validators")
+    print("Topological order: immutable ledger bootstrap + source index -> lane captures -> ledger -> ledger report -> catalog_stable_snapshot -> legacy generators -> support_claim_generation -> lane reverify -> catalog_full -> reports -> catalog_post_report_snapshot -> validators")
     for index, stage in enumerate(stages, start=1):
         deps = ", ".join(stage.depends_on) if stage.depends_on else "<root>"
         print(f"{index:02d}. {stage.stage_id} [{stage.phase}]")
@@ -1010,15 +1112,31 @@ def _copy_path(
     destination: Path,
     *,
     symlink_boundary: Path | None = None,
+    dereference_symlinks: bool = False,
 ) -> None:
     if source.is_symlink():
         target = os.readlink(source)
-        if symlink_boundary is not None:
-            resolved_target = (destination.parent / target).resolve(strict=False)
-            if not resolved_target.is_relative_to(symlink_boundary.resolve()):
-                raise ValueError(
-                    f"candidate symlink escapes scratch workspace: {destination} -> {target}"
+        resolved_target = source.resolve(strict=dereference_symlinks)
+        if symlink_boundary is not None and not resolved_target.is_relative_to(
+            symlink_boundary.resolve()
+        ):
+            raise ValueError(
+                f"candidate symlink escapes scratch workspace: {source} -> {target}"
+            )
+        if dereference_symlinks:
+            if resolved_target.is_dir():
+                shutil.copytree(
+                    resolved_target,
+                    destination,
+                    dirs_exist_ok=True,
+                    symlinks=True,
                 )
+            elif resolved_target.is_file():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(resolved_target, destination)
+            else:
+                raise FileNotFoundError(f"candidate symlink target does not exist: {source}")
+            return
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.symlink_to(target)
     elif source.is_dir():
@@ -1038,26 +1156,6 @@ def _candidate_path(candidate_root: Path, accepted_path: Path) -> Path:
         return candidate_root.parent / accepted_absolute.relative_to(workspace_absolute)
 
 
-def _seed_external_candidate_paths(candidate_root: Path, stages: Sequence[Stage]) -> None:
-    patterns = dict.fromkeys(
-        value
-        for stage in stages
-        for value in (*stage.reads, *_declared_stage_writes(stage))
-        if value.startswith("../")
-    )
-    for pattern in patterns:
-        accepted_pattern = ROOT / pattern
-        if _is_glob(pattern):
-            sources = sorted(accepted_pattern.parent.glob(accepted_pattern.name))
-        else:
-            sources = [accepted_pattern]
-        for source in sources:
-            if source.exists() or source.is_symlink():
-                _copy_path(
-                    source,
-                    _candidate_path(candidate_root, source),
-                    symlink_boundary=candidate_root.parent,
-                )
 
 
 def _tracked_checkout_paths() -> tuple[tuple[str, str, Path], ...]:
@@ -1109,123 +1207,46 @@ def _copy_tracked_checkout(candidate_root: Path) -> None:
             raise RuntimeError(f"unsupported tracked mode {mode}: {relative_path}")
 
 
-def _declared_checkout_source(pattern: str) -> Path:
-    # Path-root convention: "../docs_tmp/..." (handled by the external seeder)
-    # denotes the WORKSPACE-level evidence root; a bare "docs_tmp/..." read is
-    # CHECKOUT-LOCAL - the provisioned ignored estate (phase_15 seeds and source
-    # freezes) that lane adapters resolve against the checkout root.
-    return ROOT / Path(pattern)
-
-
-def _seed_declared_checkout_reads(candidate_root: Path, stages: Sequence[Stage]) -> None:
-    patterns = dict.fromkeys(
-        value
-        for stage in stages
-        for value in stage.reads
-        if not value.startswith("../")
-    )
-    for pattern in patterns:
-        base = _declared_checkout_source(pattern)
-        if pattern.startswith("docs_tmp/"):
-            # The checkout-local ignored estate is provisioned from the
-            # workspace estate when the checkout copy is absent (the estate
-            # import precondition documented for the oh_my_pi lanes).
-            probes = sorted(base.parent.glob(base.name)) if _is_glob(pattern) else [base]
-            if not any(probe.exists() or probe.is_symlink() for probe in probes):
-                base = WORKSPACE / Path(pattern)
-        sources = (
-            sorted(base.parent.glob(base.name))
-            if _is_glob(pattern)
-            else [base]
-        )
-        for source in sources:
-            # Destination is always the checkout-local candidate path for the
-            # declared pattern, regardless of which estate sourced the bytes.
-            candidate = candidate_root / Path(pattern).parent / source.name
-            if (
-                (source.exists() or source.is_symlink())
-                and not candidate.exists()
-                and not candidate.is_symlink()
-            ):
-                _copy_path(
-                    source,
-                    candidate,
-                    symlink_boundary=candidate_root.parent,
-                )
-
-
-_LANE_SUPPORT_ROOT = "docs/conformance/e4_target_support"
-# Bulk target-home fixture trees are never hashed by reverify chains; excluding
-# them keeps candidate preparation bounded (L1 alone carries a 2.2GB home).
-_LANE_SUPPORT_EXCLUDED_DIRS = {"target_home"}
-
-
-def _seed_lane_support_estate(candidate_root: Path) -> None:
-    # Accepted capture estates are untracked (.git/info/exclude) but reverify
-    # chains hash arbitrary members recorded in each raw_capture_manifest
-    # (fixture workspaces, raw payloads), so per-file glob seeding is not
-    # sufficient - seed each lane family directory wholesale.
-    live_root = ROOT / _LANE_SUPPORT_ROOT
-    if not live_root.is_dir():
-        return
-    for family_dir in sorted(live_root.iterdir()):
-        if not family_dir.is_dir():
-            continue
-        for source in family_dir.rglob("*"):
-            relative = source.relative_to(live_root)
-            if _LANE_SUPPORT_EXCLUDED_DIRS.intersection(relative.parts):
-                continue
-            if not source.is_file():
-                continue
-            candidate = candidate_root / _LANE_SUPPORT_ROOT / relative
-            if candidate.exists() or candidate.is_symlink():
-                continue
-            candidate.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, candidate)
-
-
-def _mirror_checkout_docs_tmp_to_workspace(candidate_root: Path) -> None:
-    # Validator path resolution (path_refs) maps bare "docs_tmp/..." references
-    # to the WORKSPACE evidence root, while lane adapters resolve the same
-    # bytes checkout-locally with a strict post-resolve boundary check, so a
-    # symlink in either direction fails one side. Hardlink the seeded checkout
-    # estate into the candidate workspace root: both paths stay physically
-    # inside their boundary while sharing one copy. Existing entries (external
-    # "../docs_tmp" seeds) win.
-    def _mirror(source_dir: Path, mirror_dir: Path) -> None:
-        for child in sorted(source_dir.iterdir()):
-            mirrored = mirror_dir / child.name
-            if child.is_dir() and not child.is_symlink():
-                if not mirrored.is_symlink() and (mirrored.is_dir() or not mirrored.exists()):
-                    _mirror(child, mirrored)
-                continue
-            if mirrored.exists() or mirrored.is_symlink():
-                continue
-            mirror_dir.mkdir(parents=True, exist_ok=True)
-            if child.is_symlink():
-                # Recreate symlinks verbatim; os.link would follow them and
-                # hardlink the target, changing relative-link semantics.
-                mirrored.symlink_to(os.readlink(child))
-                continue
-            try:
-                os.link(child, mirrored)
-            except OSError:
-                shutil.copy2(child, mirrored, follow_symlinks=False)
-
-    seeded = candidate_root / "docs_tmp"
-    if seeded.is_dir():
-        _mirror(seeded, candidate_root.parent / "docs_tmp")
 
 
 def _prepare_candidate_root(candidate_root: Path, stages: Sequence[Stage]) -> None:
-    # Invariant: the candidate contains every tracked path plus every untracked
-    # read/write input explicitly declared by run_pipeline stages, and nothing
-    # else. Blanket copies admit stale venvs, worktrees, and other local state.
+    """Materialize exactly the staged checkout plus its verified immutable inputs."""
+
     _copy_tracked_checkout(candidate_root)
-    _seed_declared_checkout_reads(candidate_root, stages)
-    _seed_external_candidate_paths(candidate_root, stages)
-    _seed_lane_support_estate(candidate_root)
-    _mirror_checkout_docs_tmp_to_workspace(candidate_root)
+    bundle_root = candidate_root / "config/e4_lanes/evidence_inputs"
+    provision_immutable_inputs(
+        bundle_root / "e4_immutable_inputs.v1.zip",
+        bundle_root / "e4_immutable_inputs.v1.manifest.json",
+        repo_root=candidate_root,
+        workspace_root=candidate_root.parent,
+    )
+    if not any(_lane_defs_for_stage(stage) for stage in stages):
+        return
+
+    bootstrap = (
+        bundle_root
+        / "e4_regen_bootstrap/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    )
+    if not bootstrap.is_file():
+        raise FileNotFoundError(f"missing immutable regeneration bootstrap input: {bootstrap}")
+    _copy_path(
+        bootstrap,
+        candidate_root.parent
+        / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+    )
+
+
+def _accepted_path(candidate_root: Path, candidate_path: Path) -> Path:
+    """Map a candidate path lexically, without dereferencing symlinks."""
+
+    candidate_absolute = Path(os.path.abspath(candidate_path))
+    root_absolute = Path(os.path.abspath(candidate_root))
+    workspace_absolute = Path(os.path.abspath(candidate_root.parent))
+    try:
+        return ROOT / candidate_absolute.relative_to(root_absolute)
+    except ValueError:
+        return WORKSPACE / candidate_absolute.relative_to(workspace_absolute)
+
 
 
 def _write_set_entries(
@@ -1242,11 +1263,7 @@ def _write_set_entries(
             candidate_matches = set(candidate_pattern.parent.glob(candidate_pattern.name))
             accepted_matches = set(accepted_pattern.parent.glob(accepted_pattern.name))
             for source in candidate_matches:
-                destination = (
-                    ROOT / source.resolve().relative_to(candidate_root.resolve())
-                    if source.resolve().is_relative_to(candidate_root.resolve())
-                    else WORKSPACE / source.resolve().relative_to(candidate_root.parent.resolve())
-                )
+                destination = _accepted_path(candidate_root, source)
                 entries[destination] = source
             for destination in accepted_matches:
                 candidate = _candidate_path(candidate_root, destination)
@@ -1286,7 +1303,12 @@ def _promote_write_set(
         staged_path: Path | None = None
         if source is not None:
             staged_path = staged_root / str(index)
-            _copy_path(source, staged_path)
+            _copy_path(
+                source,
+                staged_path,
+                symlink_boundary=candidate_root.parent,
+                dereference_symlinks=True,
+            )
         staged.append((staged_path, destination, backup_root / str(index)))
 
     applied: list[tuple[Path, Path | None]] = []
@@ -1365,25 +1387,6 @@ def _run_regeneration_transaction(
 
 
 def _candidate_stage(stage: Stage) -> Stage:
-    if stage.stage_id == "source_index":
-        # Candidate seed stages prove regenerability into scratch; the frozen
-        # candidate-parent estate (seeded from the live workspace) is what the
-        # accepted capture pins bind, so it must not be overwritten pre-capture.
-        return replace(
-            stage,
-            argv=(*stage.argv, "--out", "tmp/e4_regen_seed/BB_E4_SOURCE_INDEX.json"),
-        )
-    if stage.stage_id == "ledger_seed":
-        return replace(
-            stage,
-            argv=(
-                *stage.argv,
-                "--out",
-                "tmp/e4_regen_seed/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
-                "--source-index",
-                "tmp/e4_regen_seed/BB_E4_SOURCE_INDEX.json",
-            ),
-        )
     if stage.stage_id != "north_star_proof_packets":
         return stage
     argv = list(stage.argv)

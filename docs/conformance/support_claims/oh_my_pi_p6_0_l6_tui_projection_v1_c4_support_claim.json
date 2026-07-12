@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:728d980eaf5201d2fef959a5440e2123aec2b8a7573645a1d4304d3c8966a3a5",
+    "catalog_revision": 12,
+    "segment_hash": "sha256:3a78af15d0aa9b85c031ea2d372a452c8a60f420161c377587a74974ad94fde3",
     "segment_id": "oh_my_pi_p6_0_l6_tui_projection",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
   },
   "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
   "claim_semantics": {
@@ -86,7 +86,7 @@
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_55bf4adc8ee7717b#sha256:ffb7952ed9cdbe7fba9486db6c65f5f2a0b6a0e6c9d115b0568823b423a46c47"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_55bf4adc8ee7717b#sha256:c61c8502286d07a7596e92f05e05b7893e5002630a05534940a1d1bf9641f557"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",

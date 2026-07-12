@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,7 +11,52 @@ from typing import Any
 import pytest
 
 from scripts.e4_parity import regen as front_door
+from scripts.e4_parity import build_source_index
 from scripts.e4_parity import regenerate_evidence as driver
+
+
+def test_stage_expansion_reloads_readiness_for_each_candidate_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    candidate_a = tmp_path / "candidate-a"
+    candidate_b = tmp_path / "candidate-b"
+    observed_workspaces: list[str] = []
+
+    class FakeReadiness:
+        @staticmethod
+        def expected_points() -> int:
+            return 100 if Path(driver.os.environ["BB_WORKSPACE_ROOT"]) == candidate_a else 200
+
+        @staticmethod
+        def _expected_target_support_claims() -> int:
+            return 10 if Path(driver.os.environ["BB_WORKSPACE_ROOT"]) == candidate_a else 20
+
+    fake_readiness = FakeReadiness()
+
+    def fake_reload(module: object) -> object:
+        assert module is fake_readiness
+        observed_workspaces.append(driver.os.environ["BB_WORKSPACE_ROOT"])
+        return module
+
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", "original-workspace")
+    monkeypatch.setattr(driver.importlib, "import_module", lambda _name: fake_readiness)
+    monkeypatch.setattr(driver.importlib, "reload", fake_reload)
+    stage = driver.Stage(
+        stage_id="execution_values",
+        phase="validators",
+        label="resolve candidate-local expected values",
+        argv=(driver.PYTHON, driver.EXPECTED_POINTS, driver.EXPECTED_CLAIMS),
+    )
+
+    assert stage.expanded_argv(
+        "PY", resolve_execution_values=True, workspace_root=candidate_a
+    ) == ["PY", "100", "10"]
+    assert stage.expanded_argv(
+        "PY", resolve_execution_values=True, workspace_root=candidate_b
+    ) == ["PY", "200", "20"]
+    assert observed_workspaces == [str(candidate_a), str(candidate_b)]
+    assert driver.os.environ["BB_WORKSPACE_ROOT"] == "original-workspace"
 
 
 def _synthetic_writing_stage(
@@ -32,6 +79,44 @@ def _synthetic_writing_stage(
         blocker=blocker,
         allowed_exit_codes=allowed_exit_codes,
     )
+
+@pytest.fixture(autouse=True)
+def _stub_candidate_immutable_provisioning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Synthetic transaction tests isolate candidate mechanics from the real 25 MB bundle."""
+
+    monkeypatch.setattr(driver, "provision_immutable_inputs", lambda *args, **kwargs: None)
+
+
+def test_support_claim_generator_prefers_checkout_modules_over_pythonpath(
+    tmp_path: Path,
+) -> None:
+    poison_root = tmp_path / "poison"
+    for relative in (
+        "scripts/__init__.py",
+        "scripts/e4_parity/__init__.py",
+        "scripts/e4_parity/validators/__init__.py",
+        "scripts/e4_parity/validators/hash_utils.py",
+    ):
+        path = poison_root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(poison_root)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "scripts/e4_parity/generate_support_claims.py",
+            "--help",
+        ],
+        cwd=driver.ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_stage_graph_is_topological_and_cataloged() -> None:
@@ -70,8 +155,44 @@ def test_stage_graph_is_topological_and_cataloged() -> None:
     assert lane_stages
     assert all(stage.phase == "lane_def_reverify" for stage in lane_stages)
     assert all(stage.note and "config/e4_lanes" in stage.note for stage in lane_stages)
-    assert positions["catalog_full"] < positions[lane_stages[0].stage_id]
-    assert positions[lane_stages[-1].stage_id] < positions["ct_scenarios"]
+    assert positions["support_claim_generation"] < positions[lane_stages[0].stage_id]
+    assert positions[lane_stages[-1].stage_id] < positions["catalog_full"]
+    assert positions["catalog_full"] < positions["ct_scenarios"]
+    north_star = next(
+        stage for stage in driver.STAGES if stage.stage_id == "north_star_proof_packets"
+    )
+    north_star_writes = driver._declared_stage_writes(north_star)
+    assert (
+        "docs/conformance/e4_target_support/claude_code_north_star_capture_v1"
+        in north_star_writes
+    )
+    assert all(
+        not write.startswith("tmp/e4_regen_capture/")
+        for stage in driver.STAGES
+        for write in stage.writes
+    )
+    pi_capture = next(
+        stage
+        for stage in driver.STAGES
+        if stage.stage_id == "pi_p5_cli_config_context_tool_surface"
+    )
+    assert (
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface"
+        not in pi_capture.writes
+    )
+    assert (
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json"
+        in pi_capture.writes
+    )
+    p66_capture = next(
+        stage
+        for stage in driver.STAGES
+        if stage.stage_id == "oh_my_pi_p66_task_job_subagent"
+    )
+    assert (
+        "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent"
+        not in p66_capture.writes
+    )
 
 
 def test_canonical_transaction_groups_isolate_candidate_rebind_and_final_c4() -> None:
@@ -83,6 +204,63 @@ def test_canonical_transaction_groups_isolate_candidate_rebind_and_final_c4() ->
     assert [stage.stage_id for stage in candidate_stages] == [
         stage.stage_id for stage in driver.STAGES
     ]
+    for stage_id in ("source_index", "ledger_seed"):
+        source_stage = next(stage for stage in driver.STAGES if stage.stage_id == stage_id)
+        candidate_stage = next(stage for stage in candidate_stages if stage.stage_id == stage_id)
+        assert candidate_stage.argv == source_stage.argv
+        assert candidate_stage.reads == source_stage.reads
+        assert candidate_stage.writes == source_stage.writes
+    source_index = next(stage for stage in candidate_stages if stage.stage_id == "source_index")
+    ledger_seed = next(stage for stage in candidate_stages if stage.stage_id == "ledger_seed")
+    assert source_index.depends_on == ()
+    assert ledger_seed.depends_on == ("oh_my_pi_p66_task_job_subagent",)
+    ledger_report = next(stage for stage in candidate_stages if stage.stage_id == "ledger_report")
+    catalog_stable = next(
+        stage for stage in candidate_stages if stage.stage_id == "catalog_stable_snapshot"
+    )
+    assert ledger_report.depends_on == ("ledger_seed",)
+    assert ledger_report.writes == (
+        "../docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_REPORT.json",
+    )
+    assert catalog_stable.depends_on == ("ledger_report",)
+    final_readiness = next(
+        stage for stage in candidate_stages if stage.stage_id == "final_readiness_packet"
+    )
+    assert set(final_readiness.writes) == {
+        "../docs_tmp/phase_15/BB_E4_COMPATIBILITY_MIGRATION_NOTES.md",
+        "../docs_tmp/phase_15/BB_E4_SCORE_SUBLEDGER.json",
+        "../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json",
+        "../docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json",
+        "../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json",
+        "../docs_tmp/phase_15/BB_E4_PRIMITIVE_FAMILY_READINESS_REPORT.json",
+        "../docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json",
+        "../docs_tmp/phase_15/BB_E4_FINAL_READINESS_REPORT.md",
+        "../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json",
+        "../docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json",
+        "../docs_tmp/phase_15/BB_E4_FINAL_ARTIFACT_FRESHNESS_MANIFEST.json",
+    }
+    source_freeze = next(
+        stage
+        for stage in candidate_stages
+        if stage.stage_id == "materialize_oh_my_pi_source_freeze"
+    )
+    pilot_lock = next(
+        stage
+        for stage in candidate_stages
+        if stage.stage_id == "materialize_oh_my_pi_p66_lane_lock"
+    )
+    pilot_capture = next(
+        stage
+        for stage in candidate_stages
+        if stage.stage_id == "oh_my_pi_p66_task_job_subagent"
+    )
+    assert source_freeze.writes == (
+        "../docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest",
+    )
+    assert pilot_lock.writes[-1] == (
+        "../docs_tmp/phase_20/derived/oh_my_pi_main_5356713e_extracted"
+    )
+    assert pilot_capture.depends_on == (pilot_lock.stage_id,)
     source_north_star = next(
         stage for stage in driver.STAGES if stage.stage_id == "north_star_proof_packets"
     )
@@ -102,6 +280,45 @@ def test_canonical_transaction_groups_isolate_candidate_rebind_and_final_c4() ->
     assert all(stage.phase != "validators" for stage in canonical_rebind_stages)
     assert final_c4_stages
     assert all(stage.phase == "validators" for stage in final_c4_stages)
+
+
+def test_every_workspace_static_report_is_bundled_or_regenerated() -> None:
+    role_registry = json.loads(
+        Path("docs/conformance/e4_report_roles.json").read_text(encoding="utf-8")
+    )
+    bundle_manifest = json.loads(
+        Path(
+            "config/e4_lanes/evidence_inputs/e4_immutable_inputs.v1.manifest.json"
+        ).read_text(encoding="utf-8")
+    )
+    bundled = {
+        str(row["destination"])
+        for row in bundle_manifest["members"]
+        if row["namespace"] == "workspace"
+    }
+    regenerated = {
+        path.removeprefix("../")
+        for stage in driver.STAGES
+        for path in driver._declared_stage_writes(stage)
+        if path.startswith("../docs_tmp/") and "*" not in path
+    }
+    workspace_static_reports = {
+        str(row["path"])
+        for row in role_registry["static_artifact_roles"]
+        if str(row["path"]).startswith("docs_tmp/")
+    }
+
+    assert workspace_static_reports <= bundled | regenerated
+    unbundled_generated_names = {
+        Path(path.removeprefix("../")).name
+        for stage in driver.STAGES
+        for path in driver._declared_stage_writes(stage)
+        if path.startswith("../docs_tmp/phase_15/")
+        and "*" not in path
+        and Path(path).suffix in {".json", ".md"}
+        and path.removeprefix("../") not in bundled
+    }
+    assert unbundled_generated_names <= build_source_index.GENERATED_NAMES
 
 def test_report_hash_freshness_only_runs_at_release_boundary() -> None:
     positions = {stage.stage_id: index for index, stage in enumerate(driver.STAGES)}
@@ -244,6 +461,52 @@ def test_lane_def_reverify_stages_refresh_their_declared_json_reports() -> None:
         json_out_index = stage.argv.index("--json-out")
         assert stage.writes == (stage.argv[json_out_index + 1],)
         assert "--check-only" not in stage.argv
+
+def test_capture_outputs_precede_catalog_and_no_capture_consumes_its_own_output() -> None:
+    positions = {stage.stage_id: index for index, stage in enumerate(driver.STAGES)}
+    capture_stages = [
+        stage
+        for stage in driver.STAGES
+        if stage.argv[1:2] == ("scripts/e4_parity/run_lane.py",)
+        and driver._arg_value(stage.argv, "--stage") == "capture"
+    ]
+    assert capture_stages
+    assert all(positions[stage.stage_id] < positions["catalog_stable_snapshot"] for stage in capture_stages)
+    for stage in capture_stages:
+        overlaps = [
+            (read, write)
+            for read in stage.reads
+            for write in stage.writes
+            if driver._write_patterns_overlap(read, write)
+        ]
+        for lane_def in driver._lane_defs_for_stage(stage):
+            for source in driver._lane_def_projection_sources(lane_def):
+                assert source in stage.reads
+                assert all(
+                    not driver._write_patterns_overlap(source, write)
+                    for write in stage.writes
+                )
+        assert overlaps == [], f"{stage.stage_id} consumes its own output: {overlaps}"
+
+    stable_catalog = next(
+        stage for stage in driver.STAGES if stage.stage_id == "catalog_stable_snapshot"
+    )
+    assert "--referenced-static-only" in stable_catalog.argv
+    excluded = {
+        stable_catalog.argv[index + 1]
+        for index, value in enumerate(stable_catalog.argv[:-1])
+        if value == "--exclude-lane-role"
+    }
+    assert excluded == {
+        "capability_registry",
+        "effective_config_graph",
+        "effective_tool_surface",
+        "evidence_manifest",
+        "node_gate",
+        "primitive_projection_manifest",
+        "support_claim",
+        "validator_output",
+    }
 
 
 
@@ -653,6 +916,56 @@ def test_run_pipeline_stops_on_unallowed_blocker_exit(
     assert calls == [["PY", "scripts/e4_parity/build_artifact_catalog.py"], ["PY", "scripts/e4_parity/build_artifact_catalog.py"], ["PY", "ct.py"]]
     assert "FAILED stage ct exit=2" in captured.err
     assert "schema error" in captured.err
+
+
+def test_promotion_preserves_logical_paths_for_symlinked_lane_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    accepted_workspace = tmp_path / "accepted"
+    accepted_root = accepted_workspace / "repo"
+    candidate_workspace = tmp_path / "candidate"
+    candidate_root = candidate_workspace / "repo"
+    scratch = candidate_root / "tmp/e4_regen_capture/claude_code_north_star_capture_v1"
+    scratch.mkdir(parents=True)
+    (scratch / "raw_capture_manifest.json").write_text("{}\n", encoding="utf-8")
+    logical = (
+        candidate_root
+        / "docs/conformance/e4_target_support/claude_code_north_star_capture_v1"
+    )
+    logical.parent.mkdir(parents=True)
+    logical.symlink_to(driver.os.path.relpath(scratch, logical.parent))
+    stage = next(
+        stage
+        for stage in driver.STAGES
+        if stage.stage_id == "north_star_proof_packets"
+    )
+    assert all(not write.startswith("tmp/e4_regen_capture/") for write in stage.writes)
+    monkeypatch.setattr(driver, "ROOT", accepted_root)
+    monkeypatch.setattr(driver, "WORKSPACE", accepted_workspace)
+
+    applied = driver._promote_write_set(
+        candidate_root,
+        (stage,),
+        tmp_path / "transaction",
+    )
+
+    accepted_logical = (
+        accepted_root
+        / "docs/conformance/e4_target_support/claude_code_north_star_capture_v1"
+    )
+    assert accepted_logical.is_dir()
+    assert not accepted_logical.is_symlink()
+    driver.shutil.rmtree(candidate_workspace)
+    assert (accepted_logical / "raw_capture_manifest.json").read_text(
+        encoding="utf-8"
+    ) == "{}\n"
+    promoted = {
+        destination.relative_to(accepted_root)
+        for destination, _backup in applied
+    }
+    assert Path("docs/conformance/e4_target_support/claude_code_north_star_capture_v1") in promoted
+    assert all(not path.as_posix().startswith("tmp/e4_regen_capture/") for path in promoted)
 
 
 def test_regeneration_transaction_validation_failure_preserves_accepted_write_set(
@@ -1168,40 +1481,110 @@ def test_prepare_candidate_root_preserves_dangling_symlinks_and_excludes_untrack
     ).exists()
 
 
-def test_prepare_candidate_root_seeds_bare_docs_tmp_checkout_local_with_workspace_mirror(
+def test_prepare_candidate_root_provisions_bundle_and_ignores_live_declared_reads(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    # Bare "docs_tmp/..." reads are checkout-local (lane adapter convention);
-    # when the checkout estate is absent they are provisioned from the
-    # workspace estate, and the seeded bytes are hardlink-mirrored beside the
-    # candidate root so validator workspace-level resolution sees the same
-    # single copy.
-    workspace = tmp_path / "workspace"
-    source_root = workspace / "sp2b_wt"
-    source_root.mkdir(parents=True)
-    workspace_input = workspace / "docs_tmp" / "phase_15" / "input.json"
-    workspace_input.parent.mkdir(parents=True)
-    workspace_input.write_text('{"source": "workspace"}\n')
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    workspace = tmp_path / "live-workspace"
+    ambient = workspace / "docs_tmp" / "phase_15" / "ambient.json"
+    ambient.parent.mkdir(parents=True)
+    ambient.write_text('{"must_not_copy": true}\n')
     candidate_root = tmp_path / "scratch" / "candidate"
     stage = driver.Stage(
-        stage_id="workspace_read",
+        stage_id="ambient_read",
         phase="test",
-        label="workspace read",
+        label="ambient read must not be seeded",
         argv=("PY",),
-        reads=("docs_tmp/phase_15/input.json",),
+        reads=("docs_tmp/phase_15/ambient.json",),
     )
+    calls: list[tuple[Path, Path, Path, Path]] = []
+
+    def fake_provision(
+        archive: Path,
+        manifest: Path,
+        *,
+        repo_root: Path,
+        workspace_root: Path,
+    ) -> None:
+        calls.append((archive, manifest, repo_root, workspace_root))
+        repo_input = repo_root / "provisioned" / "repo-input.json"
+        workspace_input = workspace_root / "docs_tmp" / "phase_15" / "workspace-input.json"
+        repo_input.parent.mkdir(parents=True)
+        workspace_input.parent.mkdir(parents=True)
+        repo_input.write_text('{"source": "bundle"}\n')
+        workspace_input.write_text('{"source": "bundle"}\n')
+
     monkeypatch.setattr(driver, "ROOT", source_root)
     monkeypatch.setattr(driver, "WORKSPACE", workspace)
     monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
+    monkeypatch.setattr(driver, "provision_immutable_inputs", fake_provision)
 
     driver._prepare_candidate_root(candidate_root, (stage,))
 
-    seeded = candidate_root / "docs_tmp" / "phase_15" / "input.json"
-    mirrored = candidate_root.parent / "docs_tmp" / "phase_15" / "input.json"
-    assert seeded.read_text() == '{"source": "workspace"}\n'
-    assert mirrored.read_text() == '{"source": "workspace"}\n'
-    assert seeded.stat().st_ino == mirrored.stat().st_ino
+    bundle_root = candidate_root / "config/e4_lanes/evidence_inputs"
+    assert calls == [
+        (
+            bundle_root / "e4_immutable_inputs.v1.zip",
+            bundle_root / "e4_immutable_inputs.v1.manifest.json",
+            candidate_root,
+            candidate_root.parent,
+        )
+    ]
+    assert (candidate_root / "provisioned/repo-input.json").read_text() == '{"source": "bundle"}\n'
+    assert (candidate_root.parent / "docs_tmp/phase_15/workspace-input.json").read_text() == (
+        '{"source": "bundle"}\n'
+    )
+    assert not (candidate_root / "docs_tmp/phase_15/ambient.json").exists()
+
+
+def test_prepare_candidate_root_installs_ledger_bootstrap_in_candidate_workspace(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "source"
+    source_root.mkdir()
+    candidate_root = tmp_path / "scratch" / "candidate"
+    lane_stage = next(
+        stage
+        for stage in driver.STAGES
+        if stage.stage_id == "oh_my_pi_p66_task_job_subagent"
+    )
+    bootstrap_payload = b'{"bootstrap": true}\n'
+
+    def fake_provision(
+        _archive: Path,
+        _manifest: Path,
+        *,
+        repo_root: Path,
+        workspace_root: Path,
+    ) -> None:
+        assert workspace_root == candidate_root.parent
+        bootstrap = (
+            repo_root
+            / "config/e4_lanes/evidence_inputs/e4_regen_bootstrap"
+            / "BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+        )
+        bootstrap.parent.mkdir(parents=True)
+        bootstrap.write_bytes(bootstrap_payload)
+
+    monkeypatch.setattr(driver, "ROOT", source_root)
+    monkeypatch.setattr(driver, "WORKSPACE", tmp_path)
+    monkeypatch.setattr(driver, "_tracked_checkout_paths", lambda: ())
+    monkeypatch.setattr(driver, "provision_immutable_inputs", fake_provision)
+
+    driver._prepare_candidate_root(candidate_root, (lane_stage,))
+
+    workspace_seed = (
+        candidate_root.parent
+        / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    )
+    assert workspace_seed.read_bytes() == bootstrap_payload
+    assert not (
+        candidate_root
+        / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    ).exists()
 
 
 def test_prepare_candidate_root_rejects_gitlink_without_copying_its_worktree(

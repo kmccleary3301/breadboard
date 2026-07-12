@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "P3.2 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715",
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:be22ac25be4212151fb120829a772bd8a2fdc27483e68148b059bc1e3bf66a06",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:2c7ee2ce521dce66a894f2f1a2e595c53648165801f64055ffc24343c73090b5",
+    "catalog_revision": 12,
+    "segment_hash": "sha256:6d7c6b4429a00cc9471221b022da622cc1f4548261cf056ae85c107d20f89dbc",
     "segment_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
   },
   "claim_id": "oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -48,7 +48,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:bc6b25c41f93fead81b463b7d11caacb62997e71a5c4a65dff658a0822603bca",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -72,11 +72,11 @@
     "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
     "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
   ],
-  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_2_context_resource_pack_compiler_v1#sha256:714a8588ed5968a1fb5499819674f4a6e3382d7fdc4e2f7761132ac33acdaba8",
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_2_context_resource_pack_compiler_v1#sha256:597a4f3b70b1fa198d37ddf2d54dcccc01f01fac807aa3b9bfd9ddae43f05590",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "non_target_accounting",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_e9ae27a72149301b#sha256:e1f17424ef36f87857a285737446abec8f99f9d60613849604d2b54683d624cb"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_e9ae27a72149301b#sha256:bede0c8f1f7f5655867701a5e6c733842dbe48ccaa7ad4bda6f6eb9db5e0e47b"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",
@@ -86,9 +86,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json#sha256:45ec480971434a3bea865bae377b918c686a47ec7107a41082b10d93dd95f5b7",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json#sha256:5f6b6d2fed7ecf149e25ef9c087b47cd02402fe7d2af397aa7919c2af270d856",
   "phase_label": "P3",
-  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:0c808af1ba7e021e869fd7825a20599510f884b5bd71cde7a84f777fcd48121f",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:4964c8a81c81fc094ed6d97752c4c76dcd8449262003fe90f8a8266631da175d",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",

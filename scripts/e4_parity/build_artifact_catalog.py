@@ -7,7 +7,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Collection, Iterable, Mapping, Sequence
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
@@ -29,6 +29,7 @@ DEFAULT_TOOLING_MANIFEST_PATH = ROOT / "docs" / "conformance" / "e4_tooling_mani
 DEFAULT_GENERATED_AT_UTC = "2026-07-03T00:00:00Z"
 CATALOG_V2_ID = "e4_artifact_catalog_v2"
 CHECKOUT_PREFIX = f"{ROOT.name}/"
+DEFAULT_ATOMIC_LEDGER_ROLE_ID = "e4_static:report/bb_e4_atomic_feature_ledger_seed_json"
 
 _ROLE_ALIASES: dict[str, str] = {
     "capture": "capture_ref",
@@ -706,7 +707,12 @@ def _lane_entry(
     )
 
 
-def _lane_entries(inventory: Mapping[str, Any], external_path_role_ids: Mapping[str, str]) -> list[dict[str, Any]]:
+def _lane_entries(
+    inventory: Mapping[str, Any],
+    external_path_role_ids: Mapping[str, str],
+    *,
+    excluded_role_keys: Collection[str] = (),
+) -> list[dict[str, Any]]:
     lanes = inventory.get("lanes", [])
     if not isinstance(lanes, list):
         raise ValueError("inventory lanes must be a list")
@@ -727,6 +733,8 @@ def _lane_entries(inventory: Mapping[str, Any], external_path_role_ids: Mapping[
         by_role = _manifest_artifact_by_role(manifest)
         path_role_ids = {**external_path_role_ids, **_path_to_role_id(lane, manifest)}
         for role_key, role_id in artifact_roles.items():
+            if role_key in excluded_role_keys:
+                continue
             if not isinstance(role_key, str) or not isinstance(role_id, str):
                 raise ValueError(f"lane {lane_id} artifact_roles entries must be strings")
             if role_key == "evidence_manifest":
@@ -762,6 +770,69 @@ def _lane_entries(inventory: Mapping[str, Any], external_path_role_ids: Mapping[
                 )
             )
     return entries
+
+
+def _excluded_lane_role_ids(
+    inventory: Mapping[str, Any],
+    excluded_role_keys: Collection[str],
+) -> frozenset[str]:
+    excluded_keys = set(excluded_role_keys)
+    if not excluded_keys:
+        return frozenset()
+    role_ids: set[str] = set()
+    lanes = inventory.get("lanes", [])
+    if not isinstance(lanes, list):
+        raise ValueError("inventory lanes must be a list")
+    for lane in lanes:
+        if not isinstance(lane, Mapping):
+            raise ValueError("inventory lane must be an object")
+        artifact_roles = lane.get("artifact_roles", {})
+        if not isinstance(artifact_roles, Mapping):
+            raise ValueError("inventory lane artifact_roles must be an object")
+        role_ids.update(
+            str(role_id)
+            for role_key, role_id in artifact_roles.items()
+            if role_key in excluded_keys and isinstance(role_id, str)
+        )
+    return frozenset(role_ids)
+
+
+def _prune_entries_derived_from_excluded_roles(
+    entries: Sequence[Mapping[str, Any]],
+    excluded_role_ids: Collection[str],
+) -> list[Mapping[str, Any]]:
+    removed = set(excluded_role_ids)
+    retained = list(entries)
+    while True:
+        newly_removed = {
+            str(entry["role_id"])
+            for entry in retained
+            if any(upstream in removed for upstream in entry.get("derived_from", []))
+        }
+        if not newly_removed:
+            return retained
+        removed.update(newly_removed)
+        retained = [entry for entry in retained if str(entry["role_id"]) not in newly_removed]
+
+
+def _support_claim_static_role_ids(inventory: Mapping[str, Any]) -> frozenset[str]:
+    lanes = inventory.get("lanes", [])
+    if not isinstance(lanes, list):
+        raise ValueError("inventory lanes must be a list")
+    for lane in lanes:
+        if not isinstance(lane, Mapping):
+            raise ValueError("inventory lane must be an object")
+        artifact_roles = lane.get("artifact_roles", {})
+        if not isinstance(artifact_roles, Mapping):
+            raise ValueError("inventory lane artifact_roles must be an object")
+        feature_ids = lane.get("ledger_feature_ids")
+        if (
+            isinstance(feature_ids, list)
+            and feature_ids
+            and "atomic_feature_ledger" not in artifact_roles
+        ):
+            return frozenset({DEFAULT_ATOMIC_LEDGER_ROLE_ID})
+    return frozenset()
 
 
 def _load_static_roles(report_roles: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -811,9 +882,15 @@ def _static_path_role_ids(report_roles: Mapping[str, Any]) -> dict[str, str]:
     return result
 
 
-def _static_entries(report_roles: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _static_entries(
+    report_roles: Mapping[str, Any],
+    *,
+    included_role_ids: Collection[str] | None = None,
+) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
     for role in _load_static_roles(report_roles):
+        if included_role_ids is not None and role.get("role_id") not in included_role_ids:
+            continue
         role_id = role.get("role_id")
         path = role.get("path")
         if not isinstance(role_id, str) or not role_id:
@@ -847,6 +924,46 @@ def _static_entries(report_roles: Mapping[str, Any]) -> list[dict[str, Any]]:
             )
         )
     return entries
+
+def _referenced_static_role_ids(
+    report_roles: Mapping[str, Any],
+    lane_entries: Sequence[Mapping[str, Any]],
+) -> frozenset[str]:
+    """Return the static-role closure required by the selected lane entries.
+
+    Bootstrap catalogs deliberately omit reports produced later in the
+    regeneration DAG. They retain only static source/config roles reached
+    from the selected lane artifacts, plus the catalog's two governing
+    configuration records.
+    """
+
+    static_roles = {
+        str(role["role_id"]): role
+        for role in _load_static_roles(report_roles)
+        if isinstance(role.get("role_id"), str) and role["role_id"]
+    }
+    required = {
+        "e4_static:config/e4_lane_inventory",
+        "e4_static:config/e4_report_roles",
+    } & static_roles.keys()
+    required.update(
+        str(upstream)
+        for entry in lane_entries
+        for upstream in entry.get("derived_from", [])
+        if upstream in static_roles
+    )
+
+    pending = list(required)
+    while pending:
+        role_id = pending.pop()
+        derived_from = static_roles[role_id].get("derived_from", [])
+        if not isinstance(derived_from, list):
+            raise ValueError(f"static artifact {role_id!r} derived_from must be a list")
+        for upstream in derived_from:
+            if upstream in static_roles and upstream not in required:
+                required.add(str(upstream))
+                pending.append(str(upstream))
+    return frozenset(required)
 
 def _static_script_roles(report_roles: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return sorted(
@@ -1014,6 +1131,8 @@ def build_catalog(
     generated_at_utc: str | None = None,
     write_bindings: bool = False,
     schema_version: str = "bb.e4.artifact_catalog.v2",
+    excluded_lane_roles: Collection[str] = (),
+    referenced_static_only: bool = False,
 ) -> dict[str, Any]:
     schema_version = _catalog_schema_version(schema_version)
     inventory_file = Path(inventory_path)
@@ -1031,8 +1150,28 @@ def build_catalog(
         _sync_support_claim_hash_bindings(inventory_path=inventory_file)
 
     timestamp = generated_at_utc or DEFAULT_GENERATED_AT_UTC
-    tooling_entry = _tooling_manifest_entry(report_roles, generated_at_utc=timestamp)
-    entries = [*_lane_entries(inventory, _static_path_role_ids(report_roles)), *_static_entries(report_roles)]
+    lane_entries = _lane_entries(
+        inventory,
+        _static_path_role_ids(report_roles),
+        excluded_role_keys=excluded_lane_roles,
+    )
+    lane_entries = _prune_entries_derived_from_excluded_roles(
+        lane_entries,
+        _excluded_lane_role_ids(inventory, excluded_lane_roles),
+    )
+    included_static_role_ids = (
+        _referenced_static_role_ids(report_roles, lane_entries)
+        | _support_claim_static_role_ids(inventory)
+        if referenced_static_only
+        else None
+    )
+    tooling_entry = (
+        None if referenced_static_only else _tooling_manifest_entry(report_roles, generated_at_utc=timestamp)
+    )
+    entries = [
+        *lane_entries,
+        *_static_entries(report_roles, included_role_ids=included_static_role_ids),
+    ]
     if tooling_entry is not None:
         entries.append(tooling_entry)
     entries = sorted(entries, key=lambda entry: str(entry["role_id"]))
@@ -1063,6 +1202,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--generated-at-utc", default=None)
     parser.add_argument("--write-bindings", action="store_true", help="refresh support-claim and evidence-manifest hash refs before cataloging")
+    parser.add_argument(
+        "--exclude-lane-role",
+        action="append",
+        default=[],
+        help="omit one lane artifact role key; repeat for bootstrap catalogs",
+    )
+    parser.add_argument(
+        "--referenced-static-only",
+        action="store_true",
+        help="include only static roles reached from selected lane entries and governing catalog configs",
+    )
     parser.add_argument("--schema-version", choices=("v2", "bb.e4.artifact_catalog.v2"), default="bb.e4.artifact_catalog.v2")
     parser.add_argument("--json", action="store_true", help="print catalog JSON to stdout instead of writing --output")
     args = parser.parse_args(argv)
@@ -1074,6 +1224,8 @@ def main(argv: list[str] | None = None) -> int:
         generated_at_utc=args.generated_at_utc,
         write_bindings=args.write_bindings,
         schema_version=args.schema_version,
+        excluded_lane_roles=args.exclude_lane_role,
+        referenced_static_only=args.referenced_static_only,
     )
     if args.json:
         print(json.dumps(catalog, indent=2, sort_keys=True))

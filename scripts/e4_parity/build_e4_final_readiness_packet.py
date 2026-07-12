@@ -35,6 +35,11 @@ except ReferenceResolutionError as exc:
 GENERATED_AT_UTC = "2026-07-03T09:15:00Z"
 P8_SCORE_ROW_ID = "score_p8_final_readiness_blocked_ready_handoff"
 BLOCKED_P8_POINTS = 35
+SCORE_AUTHORITY_POINTS = 1000
+SCORE_AUTHORITY_TARGET_CLAIMS = 10
+SCORE_AUTHORITY_NON_TARGET_CLAIMS = 8
+SCORE_AUTHORITY_REF = "docs_tmp/phase_16/BB_ER_PROGRESS.json#totals"
+SCORE_AUTHORITY_PATH = WORKSPACE / SCORE_AUTHORITY_REF.split("#", 1)[0]
 
 PHASE_ROOT = WORKSPACE / "docs_tmp" / "phase_15"
 EXEC_ROOT = PHASE_ROOT / "pro_requests" / "e4_breakthrough_20260629" / "execution"
@@ -141,8 +146,13 @@ def _accepted_lanes() -> tuple[dict[str, Any], ...]:
     return tuple(lane for lane in lanes if isinstance(lane, dict) and lane.get("status") == "accepted")
 
 
+def _scored_lanes() -> tuple[dict[str, Any], ...]:
+    """Return accepted lanes that participate in the Phase-16 score authority."""
+    return tuple(lane for lane in _accepted_lanes() if int(lane.get("points", 0)) > 0)
+
+
 def _lanes_by_kind(kind: str) -> tuple[dict[str, Any], ...]:
-    return tuple(lane for lane in _accepted_lanes() if lane.get("kind") == kind)
+    return tuple(lane for lane in _scored_lanes() if lane.get("kind") == kind)
 
 def _accepted_lane_points(kind: str | None = None) -> int:
     lanes = _accepted_lanes() if kind is None else _lanes_by_kind(kind)
@@ -264,6 +274,69 @@ def _expected_non_target_claims() -> int:
 
 def expected_points() -> int:
     return _projected_score_row_points_for_expected() + BLOCKED_P8_POINTS
+
+
+def _score_authority_source() -> dict[str, int]:
+    payload = load_json(SCORE_AUTHORITY_PATH)
+    if not isinstance(payload, Mapping):
+        raise RuntimeError(f"score authority must be an object: {SCORE_AUTHORITY_PATH}")
+    totals = payload.get("totals")
+    if not isinstance(totals, Mapping):
+        raise RuntimeError(f"score authority is missing totals: {SCORE_AUTHORITY_PATH}")
+    observed: dict[str, int] = {}
+    for source_key, output_key in (
+        ("points_total", "points_total"),
+        ("points_done", "points_done"),
+        ("points_blocked", "points_blocked"),
+    ):
+        value = totals.get(source_key)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RuntimeError(
+                f"score authority totals.{source_key} must be an integer: {SCORE_AUTHORITY_PATH}"
+            )
+        observed[output_key] = value
+    return observed
+
+
+def score_authority(
+    *,
+    expected_points_value: int = SCORE_AUTHORITY_POINTS,
+    expected_target_claims_value: int = SCORE_AUTHORITY_TARGET_CLAIMS,
+    expected_non_target_claims_value: int = SCORE_AUTHORITY_NON_TARGET_CLAIMS,
+) -> dict[str, Any]:
+    source_observed = _score_authority_source()
+    observed = {
+        "points": expected_points(),
+        "target_claims": _expected_target_support_claims(),
+        "non_target_claims": _expected_non_target_claims(),
+    }
+    expected = {
+        "points": expected_points_value,
+        "target_claims": expected_target_claims_value,
+        "non_target_claims": expected_non_target_claims_value,
+    }
+    source_ok = source_observed == {
+        "points_total": expected_points_value,
+        "points_done": expected_points_value,
+        "points_blocked": 0,
+    }
+    return {
+        "source_ref": SCORE_AUTHORITY_REF,
+        "source_sha256": _hash_utils.sha256_file(SCORE_AUTHORITY_PATH),
+        "source_observed": source_observed,
+        "expected": expected,
+        "observed": observed,
+        "ok": source_ok and observed == expected,
+    }
+
+
+def assert_score_authority() -> None:
+    authority = score_authority()
+    if not authority["ok"]:
+        raise RuntimeError(
+            f"readiness score drifted from {SCORE_AUTHORITY_REF}: "
+            f"expected {authority['expected']}, observed {authority['observed']}"
+        )
 
 
 def expected_target_support_points() -> int:
@@ -675,6 +748,22 @@ def _support_claim_count(payload: Mapping[str, Any]) -> int | None:
     return None
 
 
+def _point_bearing_claims(claims: object) -> list[Mapping[str, Any]]:
+    if not isinstance(claims, list):
+        return []
+    return [
+        claim
+        for claim in claims
+        if isinstance(claim, Mapping)
+        and isinstance(claim.get("points"), int)
+        and int(claim["points"]) > 0
+    ]
+
+
+def _point_bearing_claim_count(claims: object) -> int:
+    return len(_point_bearing_claims(claims))
+
+
 def _current_report_artifact_is_stale(path_ref: str) -> bool:
     path = _resolve_read_reference(path_ref)
     if not path.exists():
@@ -1077,16 +1166,17 @@ def update_terminal_manifest() -> dict[str, Any]:
     manifest["e4_score_before_after"] = dict(accepted_report["e4_score"])
     manifest["remaining_blockers"] = list(accepted_report.get("remaining_blockers", []))
     manifest["blocked_lanes"] = blocked_items()
+    scored_support_claims = _point_bearing_claims(accepted_report.get("accepted_support_claims", []))
     manifest["accepted_support_claim_refs"] = [
         str(claim["claim_ref"])
-        for claim in accepted_report.get("accepted_support_claims", [])
-        if isinstance(claim, Mapping) and isinstance(claim.get("claim_ref"), str)
+        for claim in scored_support_claims
+        if isinstance(claim.get("claim_ref"), str)
     ]
     manifest["accepted_non_target_claims"] = list(accepted_report.get("accepted_non_target_claims", []))
     manifest["accepted_non_target_claim_refs"] = [
         str(claim["claim_ref"])
         for claim in accepted_report.get("accepted_non_target_claims", [])
-        if isinstance(claim, Mapping) and isinstance(claim.get("claim_ref"), str)
+        if isinstance(claim.get("claim_ref"), str)
     ]
     manifest["accepted_validation_ref"] = ref(ACCEPTED_VALIDATION_PATH)
     manifest["accepted_validation_report_sha256"] = sha256_path(ACCEPTED_VALIDATION_PATH)
@@ -1164,7 +1254,9 @@ def update_validation_report() -> dict[str, Any]:
     score_errors = collect_score_subledger_errors(subledger_path=SCORE_SUBLEDGER_PATH, accepted_report_path=ACCEPTED_REPORT_PATH, repo_root=ROOT)
     add_check("accepted_report_points_1000", accepted_report.get("current_accepted_points") == expected_points(), observed=accepted_report.get("current_accepted_points"))
     add_check("accepted_report_target_claims_10", accepted_report.get("target_support_claims_accepted") == _expected_target_support_claims(), observed=accepted_report.get("target_support_claims_accepted"))
-    add_check("accepted_report_non_target_claims_8", len(accepted_report.get("accepted_non_target_claims", [])) == _expected_non_target_claims(), observed=len(accepted_report.get("accepted_non_target_claims", [])))
+    accepted_non_target_claims = accepted_report.get("accepted_non_target_claims", [])
+    accepted_non_target_claim_count = _point_bearing_claim_count(accepted_non_target_claims)
+    add_check("accepted_report_non_target_claims_8", accepted_non_target_claim_count == _expected_non_target_claims(), observed=accepted_non_target_claim_count)
     add_check("score_subledger_validator_ok", not score_errors, observed_errors=len(score_errors))
     for node_gate_path, role in c4_validator_paths():
         node_gate = load_json(node_gate_path)
@@ -1432,7 +1524,7 @@ def build() -> dict[str, Any]:
         "blocked_points": blocked_items_points(),
         "final_report": display(P8_REPORT_PATH),
         "final_manifest": display(P8_MANIFEST_PATH),
-        "accepted_support_claims": len(accepted_report.get("accepted_support_claims", [])),
+        "accepted_support_claims": _point_bearing_claim_count(accepted_report.get("accepted_support_claims", [])),
         "artifact_count": len(final_manifest["artifacts"]),
     }
 
@@ -1442,6 +1534,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     try:
+        assert_score_authority()
         report = build()
     except Exception as exc:
         if args.json:

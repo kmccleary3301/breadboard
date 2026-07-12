@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.e4_parity import regenerate_evidence as regen  # noqa: E402
+from scripts.e4_parity import build_e4_final_readiness_packet as final_readiness  # noqa: E402
 from scripts.e4_parity.validators.hash_utils import sha256_file, sha256_json  # noqa: E402
 FAILURE_CLASSES = (
     "pin_stale",
@@ -55,15 +56,21 @@ def _add_watch_path(paths: set[Path], path: Path) -> None:
 
 def _watch_set() -> list[Path]:
     paths: set[Path] = set()
+    _add_watch_path(paths, final_readiness.SCORE_AUTHORITY_PATH)
+    declared: list[str] = [value for stage in regen.STAGES for value in stage.writes]
     for stage in regen.STAGES:
-        for declared in stage.writes:
-            base = ROOT.parent if declared.startswith("../") else ROOT
-            pattern = declared[3:] if declared.startswith("../") else declared
-            if _is_glob(declared):
-                for path in base.glob(pattern):
-                    _add_watch_path(paths, path)
-            else:
-                _add_watch_path(paths, base / pattern)
+        for lane_def in regen._lane_defs_for_stage(stage):
+            artifacts_root = lane_def.get("artifacts_root")
+            if isinstance(artifacts_root, str):
+                declared.append(artifacts_root)
+    for value in dict.fromkeys(declared):
+        base = ROOT.parent if value.startswith("../") else ROOT
+        pattern = value[3:] if value.startswith("../") else value
+        if _is_glob(value):
+            for path in base.glob(pattern):
+                _add_watch_path(paths, path)
+        else:
+            _add_watch_path(paths, base / pattern)
     return sorted(paths, key=_display_path)
 
 
@@ -164,7 +171,33 @@ def _explain(args: argparse.Namespace) -> int:
         regen.print_explain(regen.STAGES, python=args.python)
     return 0
 
+def _score_authority(args: argparse.Namespace) -> dict[str, Any]:
+    return final_readiness.score_authority(
+        expected_points_value=args.expected_points,
+        expected_target_claims_value=args.expected_target_claims,
+        expected_non_target_claims_value=args.expected_non_target_claims,
+    )
+
+
 def _fixed_point(args: argparse.Namespace) -> int:
+    authority = _score_authority(args)
+    if not authority["ok"]:
+        payload = {
+            "schema_version": "bb.e4.fixed_point_report.v1",
+            "report_id": "e4_regen_fixed_point",
+            "generated_at_utc": regen.PINNED_GENERATED_AT_UTC,
+            "score_authority": authority,
+            "watch_set_size": 0,
+            "first_pass_snapshot_sha256": "sha256:" + ("0" * 64),
+            "second_pass_snapshot_sha256": "sha256:" + ("0" * 64),
+            "byte_identical": False,
+            "changed_paths": [],
+            "first_exit_code": 2,
+            "second_exit_code": 2,
+        }
+        _emit_json(payload, args.json)
+        return 1
+
     first_code, _first_results = regen.run_pipeline(regen.STAGES, python=args.python)
     first_snapshot = _snapshot_watch_set()
     second_code, _second_results = regen.run_pipeline(regen.STAGES, python=args.python)
@@ -175,6 +208,7 @@ def _fixed_point(args: argparse.Namespace) -> int:
         "schema_version": "bb.e4.fixed_point_report.v1",
         "report_id": "e4_regen_fixed_point",
         "generated_at_utc": regen.PINNED_GENERATED_AT_UTC,
+        "score_authority": authority,
         "watch_set_size": second_snapshot["watch_set_size"],
         "first_pass_snapshot_sha256": first_snapshot["snapshot_sha256"],
         "second_pass_snapshot_sha256": second_snapshot["snapshot_sha256"],
@@ -243,6 +277,9 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 
     fixed_point_parser = subparsers.add_parser("fixed-point", help="run twice and report fixed-point watch-set equality")
     _write_json_arg(fixed_point_parser)
+    fixed_point_parser.add_argument("--expected-points", type=int, default=1000)
+    fixed_point_parser.add_argument("--expected-target-claims", type=int, default=10)
+    fixed_point_parser.add_argument("--expected-non-target-claims", type=int, default=8)
     fixed_point_parser.set_defaults(func=_fixed_point)
 
     classify_parser = subparsers.add_parser("classify", help="classify a failed regen run JSON log")
