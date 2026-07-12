@@ -1408,6 +1408,12 @@ jobs:
           cache: npm
           cache-dependency-path: tui_skeleton/package-lock.json
 
+      - name: Build kernel contracts package
+        working-directory: sdk/ts-kernel-contracts
+        run: |
+          npm ci
+          npm run build
+
       - name: Install dependencies
         working-directory: tui_skeleton
         run: npm ci
@@ -1672,6 +1678,12 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: tui_skeleton/package-lock.json
+
+      - name: Build kernel contracts package
+        working-directory: sdk/ts-kernel-contracts
+        run: |
+          npm ci
+          npm run build
 
       - name: Install TUI dependencies
         working-directory: tui_skeleton

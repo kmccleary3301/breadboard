@@ -59,7 +59,7 @@ jobs:
       - name: Install minimal test deps
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest pyyaml
+          python -m pip install pytest pyyaml jsonschema
 
       - name: Run longrun-focused test suite
         run: |
