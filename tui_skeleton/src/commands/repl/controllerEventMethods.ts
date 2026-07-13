@@ -11,11 +11,26 @@ import { stripAnsi } from "../../repl/stringUtils.js"
 import { INLINE_THINKING_MARKER } from "../../repl/transcriptUtils.js"
 import type {
   CheckpointSummary,
+  CompletionState,
+  ConversationEntry,
   CTreeSnapshot,
   PermissionRequest,
   SkillCatalog,
   SkillSelection,
   SkillCatalogSources,
+  LiveSlotStatus,
+  ProviderCapabilitiesSnapshot,
+  RuntimeBehaviorFlags,
+  RuntimeTelemetry,
+  TaskEntry,
+  ThinkingArtifact,
+  ThinkingPreviewState,
+  TodoItem,
+  TodoStoreSnapshot,
+  ToolDisplayPayload,
+  ToolLogEntry,
+  ToolLogKind,
+  TranscriptPreferences,
   ThinkingMode,
   TodoUpdate,
   TodoUpdatePatch,
@@ -28,6 +43,7 @@ import {
   createThinkingPreviewState,
   finalizeThinkingArtifact,
   normalizeThinkingSignal,
+  type ActivityTransitionInput,
 } from "./controllerActivityRuntime.js"
 import { applyTaskEvent, emitSubagentToast, normalizeSubagentStatus, resolveSubagentStatus } from "./controllerEventTask.js"
 import { restartOwnedEngine } from "../../engine/engineSupervisor.js"
@@ -57,6 +73,165 @@ type CompletionView = {
   conversationLine?: string
   warningSlot?: { text: string; color?: string }
   errorNotice?: { message: string; detail?: string[] }
+}
+
+interface ClockContext {
+  readonly clock?: { now(): number }
+}
+
+interface PendingTimingContext extends ClockContext {
+  pendingStartedAt: number | null
+}
+
+interface PermissionRequestContext extends ClockContext {
+  readonly config?: { readonly permissionMode?: string | null }
+  readonly permissionMode?: string | null
+  normalizeScope?(value: unknown): "session" | "project" | "global"
+}
+
+interface ActivityStatusContext {
+  setActivityStatus?(status: string, transition?: Omit<ActivityTransitionInput, "label">): void
+}
+
+interface ThinkingPreferencesContext {
+  readonly runtimeFlags: RuntimeBehaviorFlags
+  readonly viewPrefs: Pick<TranscriptPreferences, "showReasoning">
+}
+
+interface ThinkingPreviewContext extends ClockContext, ThinkingPreferencesContext {
+  thinkingPreview: ThinkingPreviewState | null
+  bumpRuntimeTelemetry?(key: keyof RuntimeTelemetry, by?: number): void
+}
+
+interface ToolLogSettlementContext {
+  toolEvents: ToolLogEntry[]
+  readonly eventsScheduled: boolean
+  emitChange?(): void
+}
+
+interface CompletionSettlementContext
+  extends PendingTimingContext,
+    ThinkingPreviewContext,
+    ToolLogSettlementContext,
+    ActivityStatusContext {
+  completionReached: boolean
+  completionSeen: boolean
+  activePromptOutcomeUnresolved: boolean
+  lastCompletion: CompletionState | null
+  pendingResponse: boolean
+  thinkingInlineEntryId: string | null
+  thinkingArtifact: ThinkingArtifact | null
+  finalizeStreamingEntry(): void
+  clearStopRequest?(): void
+}
+
+interface TerminalErrorContext
+  extends PendingTimingContext,
+    ThinkingPreviewContext,
+    ToolLogSettlementContext,
+    ActivityStatusContext {
+  activePromptOutcomeUnresolved: boolean
+  pendingResponse: boolean
+  thinkingInlineEntryId: string | null
+  thinkingArtifact: ThinkingArtifact | null
+  finalizeStreamingEntry(): void
+  pushHint(message: string): void
+  addConversation(speaker: "system", text: string): void
+  setGuardrailNotice?(summary: string, detail?: string): void
+  addTool(
+    kind: ToolLogKind,
+    text: string,
+    status?: LiveSlotStatus,
+    options?: { readonly display?: ToolDisplayPayload | null },
+  ): ToolLogEntry
+}
+
+interface TranscriptNoticeLedgerContext {
+  __breadboardSeenTranscriptNoticeKeys?: Set<string>
+}
+
+interface PendingActivityContext extends ActivityStatusContext {
+  readonly pendingResponse: boolean
+}
+
+interface LifecycleToastContext extends ClockContext {
+  readonly runtimeFlags: RuntimeBehaviorFlags
+  lastLifecycleToastMessage: string | null
+  lastLifecycleToastAt: number
+  upsertLiveSlot?(
+    id: string,
+    text: string,
+    color?: string,
+    status?: LiveSlotStatus,
+    stickyMs?: number,
+    summary?: string,
+  ): void
+}
+
+interface ReasoningPeekContext {
+  readonly runtimeFlags: RuntimeBehaviorFlags
+  readonly lastThinkingPeekAt: number
+}
+
+interface EventTimestampContext extends ClockContext {
+  readonly currentEventSeq: number | null
+}
+
+interface InlineThinkingContext extends EventTimestampContext, ThinkingPreferencesContext {
+  readonly providerCapabilities: ProviderCapabilitiesSnapshot
+  thinkingInlineEntryId: string | null
+  conversation: ConversationEntry[]
+  nextConversationId?(): string
+}
+
+interface ConversationLookupContext {
+  readonly conversation: ReadonlyArray<ConversationEntry>
+}
+
+interface PromptOutcomeContext extends ConversationLookupContext {
+  readonly activePromptOutcomeUnresolved: boolean
+  readonly completionSeen: boolean
+  readonly lastCompletion: CompletionState | null
+}
+
+interface RecoveryTaskContext {
+  readonly tasks: ReadonlyArray<TaskEntry>
+  recoveryTaskSummaryKey: string | null
+  addTool(kind: "status", text: string, status?: "warning"): ToolLogEntry
+}
+
+
+interface TodoProjectionContext {
+  extractTodosFromPayload(payload: unknown): TodoItem[] | null
+}
+
+interface TodoScopeContext {
+  todoStoresByScope?: Record<string, TodoStoreSnapshot>
+  todoStoresPendingByScope?: Record<string, TodoStoreSnapshot>
+  todoStoresPendingDirtyByScope?: Record<string, boolean>
+  todoStoresPendingClearStaleByScope?: Record<string, boolean>
+  todoStoresPendingHintByScope?: Record<string, number>
+  todoStoresCoalesceTimersByScope?: Map<string, NodeJS.Timeout>
+  todoScopeOrder?: string[]
+  todoScopeLabelsByKey?: Record<string, string>
+  todoScopeStaleByKey?: Record<string, boolean>
+  todoSourceRevisionByScope?: Record<string, number>
+}
+
+interface TodoUpdateContext extends ClockContext, TodoProjectionContext, TodoScopeContext {
+  todoStoresByScope: Record<string, TodoStoreSnapshot>
+  todoStoresPendingByScope: Record<string, TodoStoreSnapshot>
+  todoStoresPendingDirtyByScope: Record<string, boolean>
+  todoStoresPendingClearStaleByScope: Record<string, boolean>
+  todoStoresPendingHintByScope: Record<string, number>
+  todoStoresCoalesceTimersByScope: Map<string, NodeJS.Timeout>
+  todoSourceRevisionByScope: Record<string, number>
+  listenerCount?(eventName: string): number
+  flushTodoCoalescedUpdates?(options?: { readonly scopeKey?: string; readonly emit?: boolean }): void
+}
+
+interface CumulativeAssistantContext extends ConversationLookupContext {
+  streamingEntryId: string | null
 }
 
 const MAX_SEEN_EVENT_IDS = 2000
@@ -115,15 +290,15 @@ const extractDurationMs = (payload: Record<string, unknown>): number | null => {
   return null
 }
 
-const clockNow = (controller: any): number => controller?.clock?.now?.() ?? Date.now()
+const clockNow = (controller: ClockContext): number => controller.clock?.now() ?? Date.now()
 
-const notePendingStart = (controller: { pendingStartedAt: number | null }): void => {
+const notePendingStart = (controller: PendingTimingContext): void => {
   if (controller.pendingStartedAt == null) {
     controller.pendingStartedAt = clockNow(controller)
   }
 }
 
-const takePendingDurationMs = (controller: { pendingStartedAt: number | null }): number | null => {
+const takePendingDurationMs = (controller: PendingTimingContext): number | null => {
   const startedAt = controller.pendingStartedAt
   controller.pendingStartedAt = null
   if (typeof startedAt === "number" && Number.isFinite(startedAt)) {
@@ -145,7 +320,7 @@ const extractNestedRecord = (
 }
 
 const extractPermissionScope = (
-  controller: { normalizeScope?: (value: unknown) => "session" | "project" | "global" },
+  controller: PermissionRequestContext,
   payload: Record<string, unknown>,
   action: Record<string, unknown> | null,
 ): "session" | "project" | "global" => {
@@ -172,7 +347,7 @@ const extractPermissionString = (
 }
 
 const buildPermissionRequest = (
-  controller: any,
+  controller: PermissionRequestContext,
   event: SessionEvent,
   requestId: string,
   payload: Record<string, unknown>,
@@ -247,7 +422,7 @@ const resolveThinkingMode = (controller: {
     ? "full"
     : "summary"
 
-const maybeStartThinkingPreview = (controller: any, mode: ThinkingMode, now = clockNow(controller)): void => {
+const maybeStartThinkingPreview = (controller: ThinkingPreviewContext, mode: ThinkingMode, now = clockNow(controller)): void => {
   if (controller.runtimeFlags?.thinkingPreviewEnabled === false) {
     controller.thinkingPreview = null
     return
@@ -261,7 +436,7 @@ const maybeStartThinkingPreview = (controller: any, mode: ThinkingMode, now = cl
 }
 
 const appendThinkingPreview = (
-  controller: any,
+  controller: ThinkingPreviewContext,
   signal: { kind: "delta" | "summary"; text: string; eventType: string },
   now = clockNow(controller),
 ): void => {
@@ -281,7 +456,7 @@ const appendThinkingPreview = (
   }
 }
 
-const closeThinkingPreview = (controller: any, now = clockNow(controller)): void => {
+const closeThinkingPreview = (controller: ThinkingPreviewContext, now = clockNow(controller)): void => {
   const current = controller.thinkingPreview
   if (!current || current.lifecycle === "closed") return
   controller.thinkingPreview = closeThinkingPreviewState(current, now)
@@ -297,7 +472,7 @@ const stripAssistantCompletionSentinel = (text: string): string => {
   return text.replace(COMPLETION_SENTINEL, "").replace(/\s+$/g, "")
 }
 
-const settleFromAssistantCompletionSentinel = (controller: any, eventType: string): void => {
+const settleFromAssistantCompletionSentinel = (controller: CompletionSettlementContext, eventType: string): void => {
   if (controller.completionSeen) return
   controller.finalizeStreamingEntry()
   controller.clearStopRequest?.()
@@ -328,7 +503,7 @@ const settleFromAssistantCompletionSentinel = (controller: any, eventType: strin
   })
 }
 
-const settlePendingToolLogEntries = (controller: any, status: "success" | "error"): void => {
+const settlePendingToolLogEntries = (controller: ToolLogSettlementContext, status: "success" | "error"): void => {
   if (!Array.isArray(controller.toolEvents)) return
   let changed = false
   controller.toolEvents = controller.toolEvents.map((entry: any) => {
@@ -340,7 +515,7 @@ const settlePendingToolLogEntries = (controller: any, status: "success" | "error
 }
 
 const surfaceTerminalError = (
-  controller: any,
+  controller: TerminalErrorContext,
   message: string,
   eventType: string,
   detail?: string[] | null,
@@ -447,7 +622,7 @@ const isStreamingFallbackTranscriptNotice = (notice: CtreeTranscriptNotice): boo
   notice.severity === "warning" &&
   /rejected streaming|streaming_disabled|response\.keep_alive|response\.created|Falling back to non-streaming|You exceeded your current quota/i.test(notice.message)
 
-const shouldSurfaceTranscriptNotice = (controller: any, notice: CtreeTranscriptNotice): boolean => {
+const shouldSurfaceTranscriptNotice = (controller: TranscriptNoticeLedgerContext, notice: CtreeTranscriptNotice): boolean => {
   const key = noticeKey(notice)
   const seen = controller.__breadboardSeenTranscriptNoticeKeys instanceof Set
     ? controller.__breadboardSeenTranscriptNoticeKeys
@@ -484,7 +659,7 @@ const extractCompletionErrorNotice = (payload: unknown): { message: string; deta
   return { message, detail: detail.length > 0 ? detail : undefined }
 }
 
-const markThinkingActive = (controller: any, eventType: string): void => {
+const markThinkingActive = (controller: ActivityStatusContext, eventType: string): void => {
   controller.setActivityStatus?.("Assistant thinking…", {
     to: "thinking",
     eventType,
@@ -492,7 +667,7 @@ const markThinkingActive = (controller: any, eventType: string): void => {
   })
 }
 
-const markAssistantResponding = (controller: any, eventType: string): void => {
+const markAssistantResponding = (controller: PendingActivityContext, eventType: string): void => {
   if (!controller.pendingResponse) return
   controller.setActivityStatus?.("Assistant responding…", {
     to: "responding",
@@ -501,7 +676,7 @@ const markAssistantResponding = (controller: any, eventType: string): void => {
   })
 }
 
-const maybeLifecycleToast = (controller: any, message: string, eventType: string): void => {
+const maybeLifecycleToast = (controller: LifecycleToastContext, message: string, eventType: string): void => {
   if (controller.runtimeFlags?.lifecycleToastsEnabled !== true) return
   const now = clockNow(controller)
   const cooldownMs = Math.max(300, Number(controller.runtimeFlags?.statusUpdateMs ?? 120))
@@ -525,19 +700,19 @@ const maybeLifecycleToast = (controller: any, message: string, eventType: string
 }
 
 
-const shouldThrottleReasoningPeek = (controller: any, now: number): boolean => {
+const shouldThrottleReasoningPeek = (controller: ReasoningPeekContext, now: number): boolean => {
   const cadenceMs = Math.max(50, Number(controller.runtimeFlags?.statusUpdateMs ?? 120))
   const lastUpdatedAt = Number(controller.lastThinkingPeekAt ?? 0)
   if (!Number.isFinite(lastUpdatedAt)) return false
   return now - lastUpdatedAt < cadenceMs
 }
 
-const resolveEventTimestamp = (controller: any): number => {
+const resolveEventTimestamp = (controller: EventTimestampContext): number => {
   const seq = controller.currentEventSeq
   return typeof seq === "number" && Number.isFinite(seq) ? seq : clockNow(controller)
 }
 
-const isInlineThinkingBlockEnabled = (controller: any): boolean => {
+const isInlineThinkingBlockEnabled = (controller: InlineThinkingContext): boolean => {
   const flags = controller.runtimeFlags ?? {}
   const capabilities = controller.providerCapabilities ?? {}
   if (flags.inlineThinkingBlockEnabled !== true) return false
@@ -547,7 +722,7 @@ const isInlineThinkingBlockEnabled = (controller: any): boolean => {
 }
 
 const appendInlineThinkingBlock = (
-  controller: any,
+  controller: InlineThinkingContext,
   signal: { kind: "delta" | "summary"; text: string },
 ): void => {
   if (!isInlineThinkingBlockEnabled(controller)) return
@@ -598,7 +773,7 @@ const appendInlineThinkingBlock = (
   controller.thinkingInlineEntryId = entry.id
 }
 
-const hasEquivalentFinalAssistantEntry = (controller: any, text: string): boolean => {
+const hasEquivalentFinalAssistantEntry = (controller: ConversationLookupContext, text: string): boolean => {
   const normalized = String(text ?? "").trim()
   if (!normalized) return false
   const conversation = Array.isArray(controller.conversation) ? controller.conversation : []
@@ -615,7 +790,7 @@ const hasEquivalentFinalAssistantEntry = (controller: any, text: string): boolea
   return false
 }
 
-const hasUnresolvedSubmittedPromptOutcome = (controller: any): boolean => {
+const hasUnresolvedSubmittedPromptOutcome = (controller: PromptOutcomeContext): boolean => {
   if (controller.activePromptOutcomeUnresolved === true) return true
   if (controller.completionSeen === true || controller.lastCompletion != null) return false
   const conversation = Array.isArray(controller.conversation) ? controller.conversation : []
@@ -632,7 +807,7 @@ const normalizeRecoveryTaskStatus = (value: unknown): string => {
   return raw || "unknown"
 }
 
-const maybeAddRecoveryTaskSummary = (controller: any): void => {
+const maybeAddRecoveryTaskSummary = (controller: RecoveryTaskContext): void => {
   const tasks = Array.isArray(controller.tasks) ? controller.tasks : []
   if (tasks.length === 0 || typeof controller.addTool !== "function") return
   const counts = new Map<string, number>()
@@ -732,13 +907,6 @@ const resolveTodoCoalesceMs = (): number => {
   return Math.max(0, Math.min(1000, Math.floor(parsed)))
 }
 
-export const markTodoScopesStale = (controller: any): void => {
-  const stale = controller.todoScopeStaleByKey
-  if (!stale || typeof stale !== "object") return
-  for (const key of Object.keys(stale)) {
-    stale[key] = true
-  }
-}
 
 const normalizeScopeKey = (value: string): string => {
   const trimmed = value.trim()
@@ -780,7 +948,7 @@ const parseTodoSourceRevision = (todoEnvelope: Record<string, unknown> | null): 
   return rev != null && Number.isFinite(rev) ? Math.floor(rev) : null
 }
 
-const ensureTodoScope = (controller: any, scopeKey: string, scopeLabel: string | null): void => {
+const ensureTodoScope = (controller: TodoScopeContext, scopeKey: string, scopeLabel: string | null): void => {
   const key = normalizeScopeKey(scopeKey)
   if (!controller.todoStoresByScope) {
     controller.todoStoresByScope = { [DEFAULT_TODO_SCOPE_KEY]: createEmptyTodoStore() }
@@ -832,7 +1000,7 @@ const ensureTodoScope = (controller: any, scopeKey: string, scopeLabel: string |
 }
 
 const extractProjectedTodoUpdate = (
-  controller: any,
+  controller: TodoProjectionContext,
   payload: Record<string, unknown>,
   at: number,
 ): { update: TodoUpdate; sourceRevision: number | null; scopeKey: string; scopeLabel: string | null } | null => {
@@ -914,7 +1082,7 @@ const extractProjectedTodoUpdate = (
   return null
 }
 
-const maybeApplyTodoUpdateFromPayload = (controller: any, payload: Record<string, unknown>): number | null => {
+const maybeApplyTodoUpdateFromPayload = (controller: TodoUpdateContext, payload: Record<string, unknown>): number | null => {
   const at = clockNow(controller)
   const projected = extractProjectedTodoUpdate(controller, payload, at)
   const hasExplicitTodo = Object.prototype.hasOwnProperty.call(payload, "todo") && payload.todo != null
@@ -1188,7 +1356,7 @@ const keepPendingDuringReconnect = () =>
         clearStreamStallTimer()
         if (warnOnReconnect && !warned) {
           this.pushHint("Reconnected to stream; some history may be missing.")
-          markTodoScopesStale(this)
+          this.markTodoScopesStale()
           warned = true
         }
         this.hasStreamedOnce = true
@@ -1287,7 +1455,7 @@ const keepPendingDuringReconnect = () =>
           this.pendingResponse = false
         }
         this.pushHint("Stream resume window exceeded; reconnecting without history.")
-        markTodoScopesStale(this)
+        this.markTodoScopesStale()
         if (this.ctreeTreeRequested && this.ctreeSource !== "disk") {
           this.pushHint("CTree resume window exceeded; switching to disk tree view.")
           void this.refreshCtreeTree({ source: "disk" })
@@ -2409,7 +2577,7 @@ export function normalizeAssistantText(this: any, text: string): string {
   return stripAssistantCompletionSentinel(text)
 }
 
-const rebindFinalAssistantEntryForCumulativeMessage = (controller: any, normalizedText: string): boolean => {
+const rebindFinalAssistantEntryForCumulativeMessage = (controller: CumulativeAssistantContext, normalizedText: string): boolean => {
   if (controller.streamingEntryId) return false
   const conversation = Array.isArray(controller.conversation) ? controller.conversation : []
   const lastEntry = conversation.length > 0 ? conversation[conversation.length - 1] : null
@@ -2437,7 +2605,7 @@ const isCompatibleCumulativeAssistantText = (previousText: string, nextText: str
   return next === previous || next.startsWith(previous) || previous.startsWith(next)
 }
 
-const shouldIgnoreStaleCumulativeAssistantMessage = (controller: any, normalizedText: string): boolean => {
+const shouldIgnoreStaleCumulativeAssistantMessage = (controller: CumulativeAssistantContext, normalizedText: string): boolean => {
   if (!controller.streamingEntryId) return false
   const conversation = Array.isArray(controller.conversation) ? controller.conversation : []
   const active = conversation.find((entry: { id: string }) => entry.id === controller.streamingEntryId)

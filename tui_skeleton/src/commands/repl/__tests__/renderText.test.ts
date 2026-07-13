@@ -67,6 +67,42 @@ describe("renderStateToText", () => {
     expect(snapshot).toContain("Use /help for commands.")
   })
 
+  it("preserves todo status marks in the text composer preview", () => {
+    const todos = [
+      { id: "todo", title: "Queued", status: "todo" },
+      { id: "progress", title: "Working", status: "in_progress" },
+      { id: "done", title: "Shipped", status: "done" },
+      { id: "blocked", title: "Waiting", status: "blocked" },
+      { id: "canceled", title: "Dropped", status: "canceled" },
+      { id: "other", title: "Unrecognized", status: "engine_specific" },
+    ]
+    const state: ReplState = {
+      ...baseState(),
+      todoStore: {
+        revision: 1,
+        updatedAt: 1,
+        itemsById: Object.fromEntries(todos.map((todo) => [todo.id, todo])),
+        order: todos.map((todo) => todo.id),
+      },
+      todos,
+    }
+
+    const snapshot = renderStateToText(state, {
+      includeHeader: false,
+      includeStatus: false,
+      includeComposer: true,
+      includeTodoPreview: true,
+      todoPreviewMaxItems: todos.length,
+    })
+
+    expect(snapshot).toContain("[ ] Queued")
+    expect(snapshot).toContain("[~] Working")
+    expect(snapshot).toContain("[x] Shipped")
+    expect(snapshot).toContain("[!] Waiting")
+    expect(snapshot).toContain("[-] Dropped")
+    expect(snapshot).toContain("[ ] Unrecognized")
+  })
+
   it("includes model menu entries when visible", () => {
     const state: ReplState = {
       ...baseState(),

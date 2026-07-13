@@ -28,6 +28,7 @@ import {
 import { loadTaskFocusTail } from "./taskFocusLoader.js"
 import { buildLaneDiagnosticsHeatmap } from "./diagnosticsHeatmap.js"
 import { todoStoreToList } from "../../../todos/todoStore.js"
+import { todoStatusPresentation } from "../../../todos/todoStatusPresentation.js"
 import { buildTranscriptViewerModel, type TranscriptAnchorKey } from "./transcriptViewerModel.js"
 import { buildTranscriptExportLines } from "../../../transcript/projection.js"
 
@@ -620,11 +621,11 @@ export const useReplViewPanels = (context: PanelsContext) => {
         rows.push({ kind: "item", label: item.title, status: item.status })
       }
     }
-    pushGroup("In Progress", todoGroups.in_progress, "in_progress")
-    pushGroup("Todo", todoGroups.todo, "todo")
-    pushGroup("Blocked", todoGroups.blocked, "blocked")
-    pushGroup("Done", todoGroups.done, "done")
-    pushGroup("Canceled", todoGroups.canceled, "canceled")
+    pushGroup(todoStatusPresentation("in_progress").label, todoGroups.in_progress, "in_progress")
+    pushGroup(todoStatusPresentation("todo").label, todoGroups.todo, "todo")
+    pushGroup(todoStatusPresentation("blocked").label, todoGroups.blocked, "blocked")
+    pushGroup(todoStatusPresentation("done").label, todoGroups.done, "done")
+    pushGroup(todoStatusPresentation("canceled").label, todoGroups.canceled, "canceled")
     return rows
   }, [todoGroups])
   const todoViewportRows = useMemo(() => Math.max(8, Math.min(18, Math.floor(rowCount * 0.45))), [rowCount])
