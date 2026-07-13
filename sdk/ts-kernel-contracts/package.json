@@ -12,6 +12,10 @@
     "./generated": {
       "types": "./dist/src/generated/index.d.ts",
       "default": "./dist/src/generated/index.js"
+    },
+    "./generated/types/bb.kernel_event.v2": {
+      "types": "./dist/src/generated/types/bb.kernel_event.v2.d.ts",
+      "default": "./dist/src/generated/types/bb.kernel_event.v2.js"
     }
   },
   "files": [

@@ -145,6 +145,16 @@ def _format_config_schema_error(error: Any) -> str:
     return f"agent config schema error at {_json_pointer(path)}: {error.message}"
 
 
+def _dotted_config_path(parts: Any) -> str:
+    dotted = ""
+    for part in parts:
+        if isinstance(part, int):
+            dotted += f"[{part}]"
+        else:
+            dotted += ("." if dotted else "") + str(part)
+    return dotted
+
+
 def _validate_agent_config_surface(doc: Dict[str, Any], schema_version: str | None = None) -> None:
     selected_schema_version = schema_version or _surface_schema_version(doc)
     errors = sorted(
@@ -152,7 +162,201 @@ def _validate_agent_config_surface(doc: Dict[str, Any], schema_version: str | No
         key=lambda item: (tuple(str(part) for part in item.absolute_path), item.message),
     )
     if errors:
-        raise ValueError(_format_config_schema_error(errors[0]))
+        error = errors[0]
+        rendered = _format_config_schema_error(error)
+        dotted_path = _dotted_config_path(error.absolute_path)
+        if dotted_path:
+            rendered = f"{rendered} [field {dotted_path}]"
+        raise ValueError(rendered)
+
+
+def _compat_mapping(parent: Mapping[str, Any], key: str, path: str) -> Mapping[str, Any] | None:
+    value = parent.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{path} must be a mapping when provided")
+    return value
+
+
+def _compat_bool(parent: Mapping[str, Any], key: str, path: str) -> None:
+    value = parent.get(key)
+    if value is not None and not isinstance(value, bool):
+        raise ValueError(f"{path} must be a boolean when provided")
+
+
+def _compat_int(
+    parent: Mapping[str, Any],
+    key: str,
+    path: str,
+    *,
+    positive: bool = False,
+) -> None:
+    value = parent.get(key)
+    if value is None:
+        return
+    try:
+        parsed = int(value)
+    except Exception as exc:
+        qualifier = "positive" if positive else "non-negative"
+        raise ValueError(f"{path} must be a {qualifier} integer when provided") from exc
+    if (positive and parsed <= 0) or (not positive and parsed < 0):
+        qualifier = "positive" if positive else "non-negative"
+        raise ValueError(f"{path} must be a {qualifier} integer when provided")
+
+
+def _compat_number(
+    parent: Mapping[str, Any],
+    key: str,
+    path: str,
+    *,
+    positive: bool = False,
+) -> None:
+    value = parent.get(key)
+    if value is None:
+        return
+    try:
+        parsed = float(value)
+    except Exception as exc:
+        comparison = "> 0" if positive else ">= 0"
+        raise ValueError(f"{path} must be numeric {comparison} when provided") from exc
+    if (positive and parsed <= 0) or (not positive and parsed < 0):
+        comparison = "> 0" if positive else ">= 0"
+        raise ValueError(f"{path} must be numeric {comparison} when provided")
+
+
+def _validate_schema_less_v2_compatibility(doc: Dict[str, Any]) -> None:
+    """Validate historical typed-v2 fields while retaining its open legacy surface."""
+    _validate_agent_config_surface(doc, "bb.agent_config_surface.v1")
+
+    features = _compat_mapping(doc, "features", "features")
+    rlm = _compat_mapping(features, "rlm", "features.rlm") if features is not None else None
+    if rlm is not None:
+        _compat_bool(rlm, "enabled", "features.rlm.enabled")
+        budget = _compat_mapping(rlm, "budget", "features.rlm.budget")
+        if budget is not None:
+            for key in ("max_depth", "max_subcalls", "max_total_tokens", "max_wallclock_seconds"):
+                _compat_int(budget, key, f"features.rlm.budget.{key}")
+            _compat_number(budget, "max_total_cost_usd", "features.rlm.budget.max_total_cost_usd")
+            per_branch = _compat_mapping(budget, "per_branch", "features.rlm.budget.per_branch")
+            if per_branch is not None:
+                for key in ("max_subcalls", "max_total_tokens"):
+                    _compat_int(per_branch, key, f"features.rlm.budget.per_branch.{key}")
+                _compat_number(
+                    per_branch,
+                    "max_total_cost_usd",
+                    "features.rlm.budget.per_branch.max_total_cost_usd",
+                )
+        blob_store = _compat_mapping(rlm, "blob_store", "features.rlm.blob_store")
+        if blob_store is not None:
+            for key in ("max_total_bytes", "max_blob_bytes", "mvi_excerpt_bytes"):
+                _compat_int(blob_store, key, f"features.rlm.blob_store.{key}")
+        subcall = _compat_mapping(rlm, "subcall", "features.rlm.subcall")
+        if subcall is not None:
+            _compat_int(subcall, "max_completion_tokens", "features.rlm.subcall.max_completion_tokens")
+            _compat_int(subcall, "retries", "features.rlm.subcall.retries")
+            _compat_number(subcall, "timeout_seconds", "features.rlm.subcall.timeout_seconds")
+        scheduling = _compat_mapping(rlm, "scheduling", "features.rlm.scheduling")
+        if scheduling is not None:
+            mode = scheduling.get("mode")
+            if mode is not None and str(mode) not in {"sync", "batch"}:
+                raise ValueError("features.rlm.scheduling.mode must be one of: sync, batch")
+            batch = _compat_mapping(scheduling, "batch", "features.rlm.scheduling.batch")
+            if batch is not None:
+                _compat_bool(batch, "enabled", "features.rlm.scheduling.batch.enabled")
+                _compat_bool(batch, "fail_fast", "features.rlm.scheduling.batch.fail_fast")
+                for key in ("max_concurrency", "max_concurrency_per_branch", "retries"):
+                    _compat_int(batch, key, f"features.rlm.scheduling.batch.{key}")
+                _compat_number(batch, "timeout_seconds", "features.rlm.scheduling.batch.timeout_seconds")
+        routing = _compat_mapping(rlm, "routing", "features.rlm.routing")
+        if routing is not None:
+            default_lane = routing.get("default_lane")
+            if default_lane is not None and str(default_lane) not in {
+                "tool_heavy",
+                "long_context",
+                "balanced",
+            }:
+                raise ValueError(
+                    "features.rlm.routing.default_lane must be one of: tool_heavy, long_context, balanced"
+                )
+            for key in ("long_context_prompt_chars", "long_context_blob_refs"):
+                _compat_int(routing, key, f"features.rlm.routing.{key}")
+
+    long_running = _compat_mapping(doc, "long_running", "long_running")
+    if long_running is None:
+        return
+    _compat_bool(long_running, "enabled", "long_running.enabled")
+    policy_profile = long_running.get("policy_profile")
+    if policy_profile is not None and str(policy_profile).strip().lower() not in {
+        "conservative",
+        "balanced",
+        "aggressive",
+    }:
+        raise ValueError("long_running.policy_profile must be one of: conservative, balanced, aggressive")
+    reset_policy = long_running.get("reset_policy")
+    if reset_policy is not None and str(reset_policy) not in {"fresh", "compact", "continue"}:
+        raise ValueError("long_running.reset_policy must be one of: fresh, compact, continue")
+    budgets = _compat_mapping(long_running, "budgets", "long_running.budgets")
+    if budgets is not None:
+        token_key = "total_tokens" if "total_tokens" in budgets else "max_total_tokens"
+        cost_key = "total_cost_usd" if "total_cost_usd" in budgets else "max_total_cost_usd"
+        _compat_int(budgets, token_key, "long_running.budgets.total_tokens")
+        _compat_number(budgets, cost_key, "long_running.budgets.total_cost_usd")
+    episode = _compat_mapping(long_running, "episode", "long_running.episode")
+    if episode is not None:
+        _compat_int(
+            episode,
+            "max_steps_override",
+            "long_running.episode.max_steps_override",
+            positive=True,
+        )
+    recovery = _compat_mapping(long_running, "recovery", "long_running.recovery")
+    if recovery is not None:
+        _compat_number(recovery, "backoff_base_seconds", "long_running.recovery.backoff_base_seconds")
+        _compat_number(recovery, "backoff_max_seconds", "long_running.recovery.backoff_max_seconds")
+        _compat_bool(
+            recovery,
+            "backoff_disable_jitter",
+            "long_running.recovery.backoff_disable_jitter",
+        )
+        _compat_int(
+            recovery,
+            "no_progress_signature_repeats",
+            "long_running.recovery.no_progress_signature_repeats",
+        )
+    observability = _compat_mapping(long_running, "observability", "long_running.observability")
+    if observability is not None:
+        _compat_bool(
+            observability,
+            "emit_macro_events",
+            "long_running.observability.emit_macro_events",
+        )
+    reviewer = _compat_mapping(long_running, "reviewer", "long_running.reviewer")
+    if reviewer is not None:
+        _compat_bool(reviewer, "enabled", "long_running.reviewer.enabled")
+        mode = reviewer.get("mode")
+        if mode is not None and str(mode) != "read_only":
+            raise ValueError("long_running.reviewer.mode must be read_only when provided")
+    resume = _compat_mapping(long_running, "resume", "long_running.resume")
+    if resume is not None:
+        _compat_bool(resume, "enabled", "long_running.resume.enabled")
+        state_path = resume.get("state_path")
+        if state_path is not None and not isinstance(state_path, str):
+            raise ValueError("long_running.resume.state_path must be a string when provided")
+    verification = _compat_mapping(long_running, "verification", "long_running.verification")
+    if verification is not None and verification.get("tiers") is not None:
+        tiers = verification["tiers"]
+        if not isinstance(tiers, list):
+            raise ValueError("long_running.verification.tiers must be a list when provided")
+        for index, tier in enumerate(tiers):
+            path = f"long_running.verification.tiers[{index}]"
+            if not isinstance(tier, Mapping):
+                raise ValueError(f"{path} must be a mapping")
+            commands = tier.get("commands")
+            if not isinstance(commands, list) or not commands:
+                raise ValueError(f"{path}.commands must be a non-empty list")
+            _compat_number(tier, "timeout_seconds", f"{path}.timeout_seconds", positive=True)
+            _compat_bool(tier, "hard_fail", f"{path}.hard_fail")
 
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -282,8 +486,14 @@ def build_config_view(config_path_str: str) -> ConfigView:
         runtime_doc = _normalize_for_runtime(effective_doc)
     else:
         if _has_agent_config_version_2(effective_doc):
-            _validate_agent_config_surface(effective_doc, "bb.agent_config_surface.v1")
-        runtime_doc = effective_doc
+            if _env_truthy("AGENT_SCHEMA_V2_ENABLED"):
+                _validate_schema_less_v2_compatibility(effective_doc)
+                runtime_doc = _normalize_for_runtime(effective_doc)
+            else:
+                _validate_agent_config_surface(effective_doc, "bb.agent_config_surface.v1")
+                runtime_doc = effective_doc
+        else:
+            runtime_doc = effective_doc
 
     layers = _config_graph_layers(raw, config_path)
     graph = compile_effective_config_graph(
@@ -440,8 +650,19 @@ def load_agent_config(config_path_str: str) -> Dict[str, Any]:
         _validate_v2(doc)
         legacy_doc = _normalize_for_runtime(doc)
     else:
-        # Schema-less legacy YAML without version remains raw under config authority; version:2 agent configs resolve like ConfigView.
-        legacy_doc = doc if _has_agent_config_version_2(doc) else raw
+        # The historical opt-in validates schema-less version:2 configs against
+        # the typed surface while preserving their schema-less runtime shape.
+        if _has_agent_config_version_2(doc) and _env_truthy("AGENT_SCHEMA_V2_ENABLED"):
+            _validate_schema_less_v2_compatibility(doc)
+            legacy_doc = _normalize_for_runtime(doc)
+        else:
+            legacy_doc = doc if _has_agent_config_version_2(doc) else raw
+    if (
+        surface_schema_version == "bb.agent_config_surface.v1"
+        and not _has_agent_config_version_2(doc)
+        and not raw.get("extends")
+    ):
+        return raw
 
     authority = _default_config_authority()
     active_logger = logging.getLogger(__name__)

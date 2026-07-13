@@ -268,7 +268,7 @@ function emitSchemaReadme(entries: SchemaEntry[], packs: PackEntry[], tiers: Map
     "",
     "This directory contains machine-readable schemas for the shared BreadBoard kernel contract program.",
     "",
-    "Schemas are grouped by `contracts/kernel/packs.v1.json`; the three Phase 20 governance schemas remain registry-only so pack membership does not change.",
+    "Schemas are grouped by `contracts/kernel/packs.v1.json`; registry-only governance schemas are listed separately.",
     "",
     "A schema appearing here means:",
     "",
@@ -314,23 +314,29 @@ function emitSchemaReadme(entries: SchemaEntry[], packs: PackEntry[], tiers: Map
     }
   }
 
-  lines.push(
-    "",
-    "### phase20_registry",
-    "",
-    "Phase 20 governance schemas are classified without changing pack membership.",
-    "",
-    "Status: `active`",
-    "",
-    "| Schema | Title | Tier |",
-    "| --- | --- | --- |",
-  )
-  for (const filename of Object.keys(PHASE20_UNPACKED_SCHEMAS).sort((a, b) => a.localeCompare(b))) {
-    const entry = entriesByFilename.get(filename)
-    if (entry === undefined) {
-      throw new Error(`Missing Phase 20 schema ${filename}`)
+  const packedSchemaFilenames = new Set(packs.flatMap((pack) => pack.schemaFilenames))
+  const registryOnlySchemaFilenames = Object.keys(PHASE20_UNPACKED_SCHEMAS)
+    .filter((filename) => !packedSchemaFilenames.has(filename))
+    .sort((a, b) => a.localeCompare(b))
+  if (registryOnlySchemaFilenames.length > 0) {
+    lines.push(
+      "",
+      "### phase20_registry",
+      "",
+      "Phase 20 governance schemas are classified without changing pack membership.",
+      "",
+      "Status: `active`",
+      "",
+      "| Schema | Title | Tier |",
+      "| --- | --- | --- |",
+    )
+    for (const filename of registryOnlySchemaFilenames) {
+      const entry = entriesByFilename.get(filename)
+      if (entry === undefined) {
+        throw new Error(`Missing Phase 20 schema ${filename}`)
+      }
+      appendTableRow(entry)
     }
-    appendTableRow(entry)
   }
 
   writeFileSync(SCHEMA_README, `${lines.join("\n")}\n`, "utf8")

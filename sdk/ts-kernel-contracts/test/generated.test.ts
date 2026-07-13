@@ -32,6 +32,9 @@ function schemaKeyForExample(exampleFile: string, example: Record<string, unknow
   if (exampleFile === "environment_selector_minimal.json") {
     return "https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v1.schema.json"
   }
+  if (exampleFile === "e4_common_usage.json") {
+    return "https://breadboard.dev/contracts/kernel/schemas/bb.e4.common.v1.schema.json"
+  }
   if (exampleFile === "kernel_common_usage.json") {
     return "https://breadboard.dev/contracts/kernel/schemas/bb.kernel.common.v1.schema.json"
   }

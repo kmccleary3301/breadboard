@@ -33,6 +33,13 @@ def _write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+@pytest.fixture(autouse=True)
+def _use_synthetic_score_subledger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    score_subledger = tmp_path / "BB_E4_SCORE_SUBLEDGER.json"
+    _write_json(score_subledger, {"score_rows": []})
+    monkeypatch.setattr(builder, "SCORE_SUBLEDGER_PATH", score_subledger)
+
+
 def _blocked_ct_artifacts(tmp_path: Path) -> dict[str, Path]:
     paths = {
         "result": tmp_path / "ct_scenarios_result_e4_1000.json",
