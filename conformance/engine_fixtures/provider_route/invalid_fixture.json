@@ -1,0 +1,88 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.provider_route.v1",
+  "fixture_family": "provider_route",
+  "fixture_id": "provider_route_invalid_required_contract",
+  "notes": "Invalid provider_route fixture proving schema rejection.",
+  "reference_output": {
+    "auth_method_ref": "auth-method://openai/api-key-default",
+    "base_url_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "cost_usage_refs": {
+      "billing_scope_ref": "billing-scope://workspace-default",
+      "estimate_ref": "usage-estimate://route_primary_openai_gpt5",
+      "usage_ref": "usage://exchange_px_001"
+    },
+    "evidence_refs": [
+      "evidence://routing/primary-selection"
+    ],
+    "fallback_chain": [
+      {
+        "eligible": true,
+        "fallback_index": 0,
+        "model": "gpt-5",
+        "provider_id": "provider_openai_primary",
+        "reason": "selected",
+        "route_ref": "route_primary_openai_gpt5"
+      },
+      {
+        "eligible": true,
+        "fallback_index": 1,
+        "model": "claude-sonnet-4-5",
+        "provider_id": "provider_anthropic_secondary",
+        "reason": "capacity_fallback",
+        "route_ref": "route_fallback_anthropic_sonnet"
+      }
+    ],
+    "provider_exchange_refs": [
+      "provider_exchange:px_001"
+    ],
+    "resolved": {
+      "model": "gpt-5",
+      "model_revision": null,
+      "provider_family": "openai",
+      "provider_id": "provider_openai_primary",
+      "runtime_id": "openai_responses"
+    },
+    "role": "invalid-role",
+    "route_id": "route_primary_openai_gpt5",
+    "route_suffix": "/v1/responses",
+    "schema_version": "bb.provider_route.v1",
+    "selected_fallback_index": 0,
+    "selector": {
+      "model_selector": "gpt-5",
+      "model_visible": true,
+      "provider_selector": "openai",
+      "provider_visible": false,
+      "selector_id": "selector_default_chat",
+      "source": "config"
+    },
+    "service_tier": "default",
+    "thinking": {
+      "budget_ref": "budget://thinking/default",
+      "effort": "medium",
+      "enabled": true,
+      "model_visible": false,
+      "provider_visible": true
+    },
+    "visibility": {
+      "host_only_fields": [
+        "base_url_hash",
+        "auth_method_ref"
+      ],
+      "model_visible_fields": [
+        "selector.model_selector",
+        "role",
+        "service_tier"
+      ],
+      "provider_visible_fields": [
+        "resolved.model",
+        "thinking.effort",
+        "route_suffix"
+      ],
+      "redacted_fields": [
+        "auth_material"
+      ]
+    }
+  },
+  "support_tier": "draft-shape"
+}

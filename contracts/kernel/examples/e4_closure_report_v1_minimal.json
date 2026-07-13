@@ -1,0 +1,28 @@
+{
+  "schema_version": "bb.e4.closure_report.v1",
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "sections": {
+    "score": {
+      "ok": true,
+      "errors": [],
+      "gate_errors": [],
+      "pin_stale_count": 0,
+      "semantic_count": 0,
+      "error_count": 0
+    },
+    "readiness": {
+      "ok": true,
+      "errors": [],
+      "gate_errors": [],
+      "pin_stale_count": 0,
+      "semantic_count": 0,
+      "error_count": 0
+    }
+  },
+  "errors": [],
+  "gate_errors": [],
+  "pin_stale_count": 0,
+  "semantic_count": 0,
+  "error_count": 0,
+  "ok": true
+}

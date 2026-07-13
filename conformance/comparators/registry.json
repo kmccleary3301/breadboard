@@ -1,0 +1,109 @@
+{
+  "comparators": [
+    {
+      "comparator_class": "deterministic_replay",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.oh_my_pi"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "oh_my_pi_p3_1_effective_config_graph_compiler",
+        "oh_my_pi_p3_2_context_resource_pack_compiler",
+        "oh_my_pi_p3_3_capability_registry_compiler",
+        "oh_my_pi_p3_4_extension_hook_execution_compiler",
+        "oh_my_pi_p3_5_resource_blob_compiler",
+        "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+        "oh_my_pi_p3_7_memory_work_compiler",
+        "oh_my_pi_p3_8_projection_broker_adapter",
+        "oh_my_pi_p6_0_l1_config_context_tool_surface",
+        "oh_my_pi_p6_0_l2_tool_execution",
+        "oh_my_pi_p6_0_l3_command_network_hook",
+        "oh_my_pi_p6_0_l4_mcp_browser_resource",
+        "oh_my_pi_p6_0_l5_memory_compaction",
+        "oh_my_pi_p6_0_l6_tui_projection",
+        "oh_my_pi_p6_6_task_job_subagent"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    },
+    {
+      "comparator_class": "deterministic_replay",
+      "comparator_id": "pi_stored_report_replay",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.pi"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "pi_p5_l1_cli_config_context_tool_surface",
+        "pi_p5_l2_extension_session_residual"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    },
+    {
+      "comparator_class": "deterministic_replay",
+      "comparator_id": "codex_stored_report_replay",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.codex_cli"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "codex_cli_e4_capture_probe_v1"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    },
+    {
+      "comparator_class": "semantic_replay",
+      "comparator_id": "semantic_replay_v1",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.semantic_replay"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "semantic_replay_oh_my_pi_p6_6_task_job_subagent"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    },
+    {
+      "comparator_class": "deterministic_replay",
+      "comparator_id": "north_star_stored_report_replay",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.stored_report"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "claude_code_north_star_capture_v1",
+        "opencode_north_star_capture_v1",
+        "breadboard_self_runtime_records_v1"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    }
+  ],
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "registry_id": "e4_comparator_registry_v1",
+  "schema_version": "bb.e4.comparator_registry.v1"
+}

@@ -1,0 +1,202 @@
+{
+  "acceptance_rationale": "The governed claim is limited to the exact config, lane, run, Codex CLI version, gpt-5.5 model, and read-only sandbox named in scope. The source packet has a clean secret scan, raw capture, replay normalization, comparator pass, parity result, and packet-local evidence manifest hashes.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json#sha256:c22cddc606d25a4e4720d812bf8b162e802240b1859c9ab735fde872926b90eb",
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 8,
+    "segment_hash": "sha256:36bcbd127695562b4baccaa262fb38309f2ac1e9c3e63c994799f7f8d24454e4",
+    "segment_id": "codex_cli_e4_capture_probe_v1",
+    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+  },
+  "claim_id": "codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "replay_capture_raw_has_no_error_events",
+        "comparator_assertion_ids": [
+          "raw_has_no_error_events"
+        ],
+        "description": "raw has no error events"
+      },
+      {
+        "behavior_id": "replay_capture_raw_thread_started_once",
+        "comparator_assertion_ids": [
+          "raw_thread_started_once"
+        ],
+        "description": "raw thread started once"
+      },
+      {
+        "behavior_id": "replay_capture_raw_turn_completed_once",
+        "comparator_assertion_ids": [
+          "raw_turn_completed_once"
+        ],
+        "description": "raw turn completed once"
+      },
+      {
+        "behavior_id": "replay_capture_raw_one_completed_command",
+        "comparator_assertion_ids": [
+          "raw_one_completed_command"
+        ],
+        "description": "raw one completed command"
+      },
+      {
+        "behavior_id": "replay_capture_raw_command_is_pwd",
+        "comparator_assertion_ids": [
+          "raw_command_is_pwd"
+        ],
+        "description": "raw command is pwd"
+      },
+      {
+        "behavior_id": "replay_capture_raw_command_exit_zero",
+        "comparator_assertion_ids": [
+          "raw_command_exit_zero"
+        ],
+        "description": "raw command exit zero"
+      },
+      {
+        "behavior_id": "replay_capture_raw_command_output_workspace",
+        "comparator_assertion_ids": [
+          "raw_command_output_workspace"
+        ],
+        "description": "raw command output workspace"
+      },
+      {
+        "behavior_id": "replay_capture_raw_agent_answer_expected",
+        "comparator_assertion_ids": [
+          "raw_agent_answer_expected"
+        ],
+        "description": "raw agent answer expected"
+      },
+      {
+        "behavior_id": "replay_capture_wrapper_exit_zero",
+        "comparator_assertion_ids": [
+          "wrapper_exit_zero"
+        ],
+        "description": "wrapper exit zero"
+      },
+      {
+        "behavior_id": "replay_capture_replay_has_user_and_assistant",
+        "comparator_assertion_ids": [
+          "replay_has_user_and_assistant"
+        ],
+        "description": "replay has user and assistant"
+      },
+      {
+        "behavior_id": "replay_capture_replay_text_matches_raw",
+        "comparator_assertion_ids": [
+          "replay_text_matches_raw"
+        ],
+        "description": "replay text matches raw"
+      },
+      {
+        "behavior_id": "replay_capture_replay_one_shell_tool",
+        "comparator_assertion_ids": [
+          "replay_one_shell_tool"
+        ],
+        "description": "replay one shell tool"
+      },
+      {
+        "behavior_id": "replay_capture_replay_tool_matches_raw_command",
+        "comparator_assertion_ids": [
+          "replay_tool_matches_raw_command"
+        ],
+        "description": "replay tool matches raw command"
+      },
+      {
+        "behavior_id": "replay_capture_replay_tool_output_matches_raw",
+        "comparator_assertion_ids": [
+          "replay_tool_output_matches_raw"
+        ],
+        "description": "replay tool output matches raw"
+      },
+      {
+        "behavior_id": "replay_capture_metadata_pins_codex_gpt55",
+        "comparator_assertion_ids": [
+          "metadata_pins_codex_gpt55"
+        ],
+        "description": "metadata pins codex gpt55"
+      },
+      {
+        "behavior_id": "replay_capture_metadata_read_only_sandbox",
+        "comparator_assertion_ids": [
+          "metadata_read_only_sandbox"
+        ],
+        "description": "metadata read only sandbox"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json#sha256:c408077792bcdc8cdd7277dc603e4bc800cd17239f7ddf8d6261157a8b941d29",
+  "evidence_manifest_ref": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "provider_authenticated",
+      "ui_parity",
+      "write_enabled"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "opencode",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Codex CLI support claim is made from this micro-lane.",
+    "No OMP, Pi, OpenCode, Claude, browser, provider-parity, UI-parity, or general P7 support claim is made.",
+    "No claim is made for write-enabled or danger-full-access sandbox behavior."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#codex_cli_gpt55_e4_capture_probe_v1#sha256:ae98e65717d03a2d451e65db2b7c7693f77d9786686f8370b888ac52e41c6085",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "target_support",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_79951d1fdd8a3937#sha256:a58ac21f12c7b0aa7db3bee0220f3cc3e15dd7263006ca5f199040d034cd0ca2"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/parity_results.jsonl#sha256:a87a2ed2f94233db521b2b198cfd7fef6056161622d19750e643bf17ede8a6d1",
+  "phase_label": "P7",
+  "raw_source_ref": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/raw_capture_manifest.json#sha256:63e4b572935bbbae03851b5471f283511aab216d21f778785e77edc26959a290",
+  "replay_ref": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/bb_replay_result.json#sha256:457d9c20d86c4e071e537fb9eb2e492f92e5aeb4f0701971e1ffcc54e936658f",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "codex_cli_gpt55_e4_capture_probe_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p7_codex_gpt55_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "schema_version": "bb.e4.support_claim.v4",
+  "scope": {
+    "config_id": "codex_cli_gpt55_e4_capture_probe_v1",
+    "lane_id": "codex_cli_e4_capture_probe_v1",
+    "provider_model": "gpt-5.5",
+    "run_id": "20260630_codex_gpt55_capture_probe",
+    "sandbox_mode": "read-only",
+    "target_family": "codex",
+    "target_version": "codex-cli 0.139.0"
+  },
+  "secret_scan_ref": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json#sha256:02ce7bff97694bd2571c2b3161ae049742e9be8290463f26891c3685a4c61ebf",
+  "summary": "Codex CLI 0.139.0 with model gpt-5.5 produced one read-only raw target capture, a BreadBoard replay artifact, and a comparator pass for the capture-probe lane.",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/c4_validation_report.json#sha256:8e794527c8d964c138ea80e93bdf5d230f7bc66863f0a39a37e38dfec014398c"
+  ]
+}

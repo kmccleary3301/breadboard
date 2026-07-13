@@ -3,21 +3,11 @@ import os from "node:os"
 import path from "node:path"
 import { parse } from "yaml"
 import { resolveAsciiOnly, resolveColorMode } from "../repl/designSystem.js"
+import { parseBooleanLikeValue } from "../utils/envBoolean.js"
 import { BUILTIN_TUI_PRESETS, DEFAULT_RESOLVED_TUI_CONFIG, DEFAULT_TUI_PRESET, isBuiltinPreset } from "./presets.js"
 import { formatValidationIssues, validateTuiConfigInput } from "./schema.js"
 import type { ResolvedTuiConfig, ResolvedTuiConfigOptions, TuiConfigInput, TuiPresetId } from "./types.js"
 
-const BOOL_TRUE = new Set(["1", "true", "yes", "on"])
-const BOOL_FALSE = new Set(["0", "false", "no", "off"])
-
-const parseBooleanLike = (value: unknown): boolean | null => {
-  if (typeof value === "boolean") return value
-  if (typeof value !== "string") return null
-  const normalized = value.trim().toLowerCase()
-  if (BOOL_TRUE.has(normalized)) return true
-  if (BOOL_FALSE.has(normalized)) return false
-  return null
-}
 
 const mergeConfigInput = (base: TuiConfigInput, patch: TuiConfigInput): TuiConfigInput => ({
   ...base,
@@ -92,7 +82,7 @@ const envConfigLayer = (): TuiConfigInput => {
   if (process.env.BREADBOARD_TUI_LANDING_BORDER_STYLE?.trim()) {
     landing.borderStyle = process.env.BREADBOARD_TUI_LANDING_BORDER_STYLE.trim() as any
   }
-  const envAsciiArt = parseBooleanLike(process.env.BREADBOARD_TUI_LANDING_ASCII_ART)
+  const envAsciiArt = parseBooleanLikeValue(process.env.BREADBOARD_TUI_LANDING_ASCII_ART)
   if (envAsciiArt != null) landing.showAsciiArt = envAsciiArt
   if (process.env.BREADBOARD_TUI_PROMPT_PREFIX?.trim()) composer.promptPrefix = process.env.BREADBOARD_TUI_PROMPT_PREFIX
   if (process.env.BREADBOARD_TUI_INPUT_PLACEHOLDER?.trim()) {
@@ -106,16 +96,16 @@ const envConfigLayer = (): TuiConfigInput => {
   }
   if (process.env.BREADBOARD_TUI_STATUS_POSITION?.trim()) statusLine.position = process.env.BREADBOARD_TUI_STATUS_POSITION as any
   if (process.env.BREADBOARD_TUI_STATUS_ALIGN?.trim()) statusLine.align = process.env.BREADBOARD_TUI_STATUS_ALIGN as any
-  const envStatusPending = parseBooleanLike(process.env.BREADBOARD_TUI_STATUS_PENDING)
+  const envStatusPending = parseBooleanLikeValue(process.env.BREADBOARD_TUI_STATUS_PENDING)
   if (envStatusPending != null) statusLine.showWhenPending = envStatusPending
-  const envStatusComplete = parseBooleanLike(process.env.BREADBOARD_TUI_STATUS_COMPLETE)
+  const envStatusComplete = parseBooleanLikeValue(process.env.BREADBOARD_TUI_STATUS_COMPLETE)
   if (envStatusComplete != null) statusLine.showOnComplete = envStatusComplete
   if (process.env.BREADBOARD_TUI_STATUS_ACTIVE_TEXT?.trim()) statusLine.activeText = process.env.BREADBOARD_TUI_STATUS_ACTIVE_TEXT
   if (process.env.BREADBOARD_TUI_STATUS_COMPLETION_TEMPLATE?.trim()) {
     statusLine.completionTemplate = process.env.BREADBOARD_TUI_STATUS_COMPLETION_TEMPLATE
   }
   if (process.env.BREADBOARD_TUI_COLOR_MODE?.trim()) display.colorMode = process.env.BREADBOARD_TUI_COLOR_MODE as any
-  const envAsciiOnly = parseBooleanLike(process.env.BREADBOARD_TUI_ASCII_ONLY)
+  const envAsciiOnly = parseBooleanLikeValue(process.env.BREADBOARD_TUI_ASCII_ONLY)
   if (envAsciiOnly != null) display.asciiOnly = envAsciiOnly
   if (process.env.BREADBOARD_TUI_SHIKI_THEME?.trim()) markdown.shikiTheme = process.env.BREADBOARD_TUI_SHIKI_THEME
   if (process.env.BREADBOARD_TUI_DIFF_PREVIEW_MAX_LINES?.trim()) {
@@ -141,15 +131,15 @@ const envConfigLayer = (): TuiConfigInput => {
   if (process.env.BREADBOARD_TUI_DIFF_DELETE_TEXT?.trim()) diffColors.deleteText = process.env.BREADBOARD_TUI_DIFF_DELETE_TEXT
   if (process.env.BREADBOARD_TUI_DIFF_HUNK_TEXT?.trim()) diffColors.hunkText = process.env.BREADBOARD_TUI_DIFF_HUNK_TEXT
   if (process.env.BREADBOARD_TUI_DIFF_META_TEXT?.trim()) diffColors.metaText = process.env.BREADBOARD_TUI_DIFF_META_TEXT
-  const envSubagentsEnabled = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_ENABLED)
+  const envSubagentsEnabled = parseBooleanLikeValue(process.env.BREADBOARD_TUI_SUBAGENTS_ENABLED)
   if (envSubagentsEnabled != null) subagents.enabled = envSubagentsEnabled
-  const envSubagentsStrip = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED)
+  const envSubagentsStrip = parseBooleanLikeValue(process.env.BREADBOARD_TUI_SUBAGENTS_STRIP_ENABLED)
   if (envSubagentsStrip != null) subagents.stripEnabled = envSubagentsStrip
-  const envSubagentsToasts = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED)
+  const envSubagentsToasts = parseBooleanLikeValue(process.env.BREADBOARD_TUI_SUBAGENTS_TOASTS_ENABLED)
   if (envSubagentsToasts != null) subagents.toastsEnabled = envSubagentsToasts
-  const envSubagentsTaskboard = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED)
+  const envSubagentsTaskboard = parseBooleanLikeValue(process.env.BREADBOARD_TUI_SUBAGENTS_TASKBOARD_ENABLED)
   if (envSubagentsTaskboard != null) subagents.taskboardEnabled = envSubagentsTaskboard
-  const envSubagentsFocus = parseBooleanLike(process.env.BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED)
+  const envSubagentsFocus = parseBooleanLikeValue(process.env.BREADBOARD_TUI_SUBAGENTS_FOCUS_ENABLED)
   if (envSubagentsFocus != null) subagents.focusEnabled = envSubagentsFocus
   if (process.env.BREADBOARD_TUI_SUBAGENTS_FOCUS_MODE?.trim()) {
     subagents.focusMode = process.env.BREADBOARD_TUI_SUBAGENTS_FOCUS_MODE.trim() as any
@@ -196,7 +186,7 @@ export const formatConfiguredCompletionLine = (config: ResolvedTuiConfig, durati
   renderTemplate(config.statusLine.completionTemplate, duration)
 
 export const resolveTuiConfig = async (options: ResolvedTuiConfigOptions): Promise<ResolvedTuiConfig> => {
-  const strictFromEnv = parseBooleanLike(process.env.BREADBOARD_TUI_CONFIG_STRICT)
+  const strictFromEnv = parseBooleanLikeValue(process.env.BREADBOARD_TUI_CONFIG_STRICT)
   const strict = options.cliStrict ?? strictFromEnv ?? false
   const warnings: string[] = []
   const sources: string[] = ["defaults"]

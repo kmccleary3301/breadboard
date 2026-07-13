@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
+from ..compilation.tool_registry import guardrail_names_for
+
 from .manager import GuardrailDefinition, GuardrailPromptRenderer, GuardrailHandlerRegistry
 
 
@@ -31,31 +33,22 @@ class BaseGuardrailHandler:
 class WorkspaceContextGuardHandler(BaseGuardrailHandler):
     guard_type = "workspace_context"
 
-    LIST_TOOLS = {"list", "list_dir"}
-    READ_TOOLS = {"read", "read_file"}
-    BASH_TOOLS = {"bash", "run_shell"}
-    EDIT_TOOLS = {
-        "patch",
-        "write",
-        "create_file",
-        "create_file_from_block",
-        "apply_unified_patch",
-        "apply_search_replace",
-    }
-    TODO_TOOLS = {
-        "todowrite",
-        "todo.write_board",
-        "todo.create",
-        "todo.update",
-        "todo.list",
-    }
+    LIST_TOOLS: set[str] = set()
+    READ_TOOLS: set[str] = set()
+    BASH_TOOLS: set[str] = set()
+    EDIT_TOOLS: set[str] = set()
+    TODO_TOOLS: set[str] = set()
 
     def __init__(self, definition: GuardrailDefinition, renderer: GuardrailPromptRenderer, config: Dict[str, Any]):
         super().__init__(definition, renderer, config)
         self.require_exploration = bool(self.parameters.get("require_exploration_before_edit"))
         self.require_read = bool(self.parameters.get("require_read_before_edit"))
         self.require_progress = bool(self.parameters.get("require_progress_before_todo_updates"))
-
+        self.list_tools = guardrail_names_for(config, "list")
+        self.read_tools = guardrail_names_for(config, "read")
+        self.bash_tools = guardrail_names_for(config, "bash")
+        self.edit_tools = guardrail_names_for(config, "edit")
+        self.todo_tools = guardrail_names_for(config, "todo")
     def _mark_initialized(self, session_state: Any) -> None:
         session_state.set_provider_metadata("workspace_context_required", False)
         session_state.set_provider_metadata("workspace_context_initialized", True)
@@ -72,14 +65,14 @@ class WorkspaceContextGuardHandler(BaseGuardrailHandler):
         initialized = bool(session_state.get_provider_metadata("workspace_context_initialized"))
         pending_read = bool(session_state.get_provider_metadata("workspace_pending_read"))
 
-        if normalized_fn in self.READ_TOOLS or normalized_fn in self.BASH_TOOLS:
+        if normalized_fn in self.read_tools or normalized_fn in self.bash_tools:
             self._mark_initialized(session_state)
             session_state.set_provider_metadata("workspace_pending_read", False)
             session_state.set_provider_metadata("workspace_pending_todo_update_allowed", True)
             session_state.set_provider_metadata("todo_updates_since_progress", 0)
             return None
 
-        if normalized_fn in self.LIST_TOOLS:
+        if normalized_fn in self.list_tools:
             if self.require_exploration or not initialized or required:
                 self._mark_initialized(session_state)
             if not self.require_progress:
@@ -87,7 +80,7 @@ class WorkspaceContextGuardHandler(BaseGuardrailHandler):
             session_state.set_provider_metadata("todo_updates_since_progress", 0)
             return None
 
-        if normalized_fn in self.EDIT_TOOLS:
+        if normalized_fn in self.edit_tools:
             if self.require_read and pending_read:
                 return self.render(
                     "require_read_before_edit",
@@ -103,7 +96,7 @@ class WorkspaceContextGuardHandler(BaseGuardrailHandler):
             session_state.set_provider_metadata("todo_updates_since_progress", 0)
             return None
 
-        if normalized_fn in self.TODO_TOOLS and not initialized:
+        if normalized_fn in self.todo_tools and not initialized:
             session_state.set_provider_metadata("workspace_context_required", True)
             if session_state.get_provider_metadata("plan_mode_disabled"):
                 return self.render(
@@ -112,7 +105,7 @@ class WorkspaceContextGuardHandler(BaseGuardrailHandler):
                 )
 
         if self.require_exploration and (required or not initialized):
-            if normalized_fn in self.TODO_TOOLS:
+            if normalized_fn in self.todo_tools:
                 return None
             return self.render(
                 "require_exploration",
@@ -132,24 +125,19 @@ class WorkspaceContextGuardHandler(BaseGuardrailHandler):
 class TodoRateLimitGuardHandler(BaseGuardrailHandler):
     guard_type = "todo_rate_limit"
 
-    TODO_TOOLS = {
-        "todowrite",
-        "todo.write_board",
-        "todo.create",
-        "todo.update",
-        "todo.list",
-    }
+    TODO_TOOLS: set[str] = set()
 
     def __init__(self, definition: GuardrailDefinition, renderer: GuardrailPromptRenderer, config: Dict[str, Any]):
         super().__init__(definition, renderer, config)
         self.enabled = bool(self.parameters.get("enabled", True))
         self.limit = int(self.parameters.get("todo_updates_before_progress") or 0)
+        self.todo_tools = guardrail_names_for(config, "todo")
 
     def preflight(self, session_state: Any, parsed_call: Any) -> Optional[str]:
         if not self.enabled:
             return None
         fn = (getattr(parsed_call, "function", "") or "").lower()
-        if fn not in self.TODO_TOOLS:
+        if fn not in self.todo_tools:
             return None
         if not session_state.get_provider_metadata("plan_mode_disabled"):
             return None

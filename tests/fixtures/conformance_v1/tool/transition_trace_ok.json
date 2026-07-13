@@ -1,0 +1,17 @@
+{
+  "events": [
+    {
+      "state": "queued",
+      "tool_call_id": "call_1"
+    },
+    {
+      "state": "running",
+      "tool_call_id": "call_1"
+    },
+    {
+      "state": "completed",
+      "tool_call_id": "call_1"
+    }
+  ],
+  "schema_version": "bb.ct.tool.transition_trace.fixture.v1"
+}

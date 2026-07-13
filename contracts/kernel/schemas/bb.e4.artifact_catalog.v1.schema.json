@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.artifact_catalog.v1.schema.json",
+  "title": "BreadBoard E4 artifact catalog V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "catalog_id",
+    "generated_at_utc",
+    "revision",
+    "entries",
+    "integrity"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.artifact_catalog.v1"
+    },
+    "catalog_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Content-versioned monotonic revision of the catalog's role-keyed stable evidence subset; unchanged by claim-derived entry churn. Unchanged stable evidence subset ⇒ unchanged revision."
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role_id",
+          "path",
+          "sha256",
+          "bytes",
+          "exists",
+          "artifact_kind",
+          "derived_from",
+          "generated_by"
+        ],
+        "properties": {
+          "role_id": {
+            "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier",
+            "description": "Stable logical key, e.g. 'oh_my_pi_p6_0_l4:capture'. Unique across entries (validator-enforced; JSON Schema cannot express it)."
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Repo-root-relative for checkout files; 'docs_tmp/...' allowed for plan-root artifacts."
+          },
+          "sha256": {
+            "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "artifact_kind": {
+            "enum": [
+              "freeze",
+              "capture",
+              "raw_source",
+              "replay",
+              "comparator",
+              "parity_results",
+              "secret_scan",
+              "support_claim",
+              "evidence_manifest",
+              "node_gate",
+              "ledger",
+              "score_row",
+              "report",
+              "schema",
+              "script",
+              "fixture",
+              "config",
+              "other"
+            ]
+          },
+          "lane_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "media_type": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "derived_from": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "role_ids of inputs."
+          },
+          "generated_by": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Producing script path, or 'manual'."
+          }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entry_count",
+        "entries_hash"
+      ],
+      "properties": {
+        "entry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "entries_hash": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256",
+          "description": "sha256 of canonical JSON bytes of the full entries array."
+        },
+        "stable_entries_hash": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/digest_sha256",
+          "description": "sha256 of canonical JSON bytes of catalog entries classified stable by explicit lane-role-suffix and e4_static role-id rules. Optional for v1 compatibility; support-claim v2 catalog_binding uses it to avoid the claim<->catalog whole-file hash cycle."
+        }
+      }
+    }
+  }
+}

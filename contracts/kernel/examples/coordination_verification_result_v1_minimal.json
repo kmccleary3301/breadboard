@@ -1,0 +1,10 @@
+{
+  "schema_version": "bb.coordination_verification_result.v1",
+  "status": "pass",
+  "subject_signal_id": "example",
+  "subject_task_id": "example",
+  "validator_task_id": "example",
+  "verification_artifact_refs": [
+    "example"
+  ]
+}

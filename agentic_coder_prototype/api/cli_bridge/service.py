@@ -44,9 +44,10 @@ from .registry import SessionRecord, SessionRegistry
 from .session_runner import SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from ...compilation.v2_loader import load_agent_config
+from ...compilation.effective_operation_policy import policy_pack_for_config_authority
+from .runtime_emission import default_runtime_record_root, emit_session_start_records, primitive_emission_enabled
 from ...provider import runtime_codex as runtime_codex_module
 from ...provider_routing import provider_router
-from ...permissions.policy_pack import PolicyPack
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,10 @@ class SessionService:
         if self._bridge_chaos:
             metadata.setdefault("bridgeChaos", self._bridge_chaos)
         metadata.setdefault("config_path", request.config_path)
+        if primitive_emission_enabled():
+            emitted_paths = emit_session_start_records(session_id=session_id, request=request)
+            metadata.setdefault("runtime_records", emitted_paths)
+            metadata.setdefault("runtime_record_dir", str(default_runtime_record_root() / session_id))
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata)
         await self.registry.create(record)
         await self._ensure_dispatcher(record)
@@ -292,6 +297,59 @@ class SessionService:
 
     async def list_sessions(self):
         return await self.registry.list()
+
+    async def list_session_records(
+        self,
+        session_id: str,
+        *,
+        schema_version: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> dict[str, Any]:
+        record = await self.ensure_session(session_id)
+        metadata = record.metadata if isinstance(record.metadata, dict) else {}
+        runtime_dir_raw = metadata.get("runtime_record_dir")
+        runtime_dir = Path(str(runtime_dir_raw)) if runtime_dir_raw else default_runtime_record_root() / session_id
+        records_dir = runtime_dir / "records"
+        rows: list[dict[str, Any]] = []
+        if records_dir.is_dir():
+            for path in sorted(records_dir.glob("*.jsonl")):
+                try:
+                    lines = path.read_text(encoding="utf-8").splitlines()
+                except OSError:
+                    continue
+                for line_no, line in enumerate(lines, start=1):
+                    if not line.strip():
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    row_record = payload.get("record") if isinstance(payload, dict) and isinstance(payload.get("record"), dict) else payload
+                    row_schema = None
+                    if isinstance(row_record, dict):
+                        row_schema = row_record.get("schema_version")
+                    if row_schema is None and isinstance(payload, dict):
+                        row_schema = payload.get("schema_version")
+                    if schema_version and row_schema != schema_version:
+                        continue
+                    rows.append(
+                        {
+                            "schema_version": row_schema,
+                            "path": str(path),
+                            "line": line_no,
+                            "record": row_record,
+                        }
+                    )
+        safe_offset = max(0, int(offset))
+        safe_limit = max(1, min(int(limit), 1000))
+        return {
+            "session_id": session_id,
+            "records": rows[safe_offset : safe_offset + safe_limit],
+            "offset": safe_offset,
+            "limit": safe_limit,
+            "total": len(rows),
+        }
 
     async def list_skills(self, session_id: str) -> SkillCatalogResponse:
         record = await self.ensure_session(session_id)
@@ -674,7 +732,12 @@ class SessionService:
             if normalized:
                 entries.append(normalized)
 
-        policy = PolicyPack.from_config(config)
+        policy = policy_pack_for_config_authority(
+            config,
+            session_id="model_catalog",
+            config_path=config_path,
+            logger=logger,
+        )
         if policy.model_allowlist is not None or policy.model_denylist:
             entries = [entry for entry in entries if policy.is_model_allowed(entry.id)]
             if default_model and not policy.is_model_allowed(str(default_model)):

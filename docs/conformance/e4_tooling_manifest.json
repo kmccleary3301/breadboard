@@ -1,0 +1,90 @@
+{
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "schema_version": "bb.e4.tooling_manifest.v1",
+  "scripts": [
+    {
+      "bytes": 4642,
+      "path": "scripts/e4_parity/adapters/accepted_artifact_materialize.py",
+      "role_id": "e4_static:script/accepted_artifact_materialize_adapter",
+      "sha256": "sha256:1e08cc4b20e3f9f861488b240ebc2e482ef5fa8162d3d2cbe4c242378f8a26bf"
+    },
+    {
+      "bytes": 33133,
+      "path": "scripts/e4_parity/build_artifact_catalog.py",
+      "role_id": "e4_static:script/build_artifact_catalog",
+      "sha256": "sha256:d0c404cc6a6d2a591cbbb4c267f36fa2767ae08c8c24d7d271951bf4d6a80c20"
+    },
+    {
+      "bytes": 70028,
+      "path": "scripts/e4_parity/build_e4_final_readiness_packet.py",
+      "role_id": "e4_static:script/build_e4_final_readiness_packet",
+      "sha256": "sha256:72269e16ace718dba3a4e68ff3b060ed1ea53e0a906dce1d4a7541172f235b73"
+    },
+    {
+      "bytes": 32206,
+      "path": "scripts/e4_parity/build_primitive_projection.py",
+      "role_id": "e4_static:script/build_primitive_projection",
+      "sha256": "sha256:7d23eafa273d4058e7a3362f712dc84d4dfcce2a3645d0bc4febc6264f304d5e"
+    },
+    {
+      "bytes": 8227,
+      "path": "scripts/e4_parity/build_source_index.py",
+      "role_id": "e4_static:script/build_source_index",
+      "sha256": "sha256:eb33c3931c808123eb88e9a61ff74e21d7c65edd9a3efe1868a948bac410cb1c"
+    },
+    {
+      "bytes": 53606,
+      "path": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+      "role_id": "e4_static:script/oh_my_pi_compiler_capture_adapter",
+      "sha256": "sha256:f5a301f4de0f72c78dac5775c3de0ef797c1a2472b3ce33bdf4b8b444b3c9037"
+    },
+    {
+      "bytes": 52852,
+      "path": "scripts/e4_parity/adapters/pi_p5_l1_capture.py",
+      "role_id": "e4_static:script/pi_p5_l1_capture_adapter",
+      "sha256": "sha256:83ba2212147904d5ab25a2f096610b01d274ca9eaec795d933ae043e3530e25c"
+    },
+    {
+      "bytes": 63533,
+      "path": "scripts/e4_parity/adapters/pi_p5_l2_capture.py",
+      "role_id": "e4_static:script/pi_p5_l2_capture_adapter",
+      "sha256": "sha256:a258ee8b9258130a32dbe1bb4787592ed27ea16904102eb83325e5956af6cb1a"
+    },
+    {
+      "bytes": 57517,
+      "path": "scripts/e4_parity/regenerate_evidence.py",
+      "role_id": "e4_static:script/regenerate_evidence",
+      "sha256": "sha256:cc0c0d4092e047a53c9ecd6727277f9bae8c6e64d0f1fef4ad435d438db9b3ea"
+    },
+    {
+      "bytes": 7594,
+      "path": "scripts/e4_parity/report_atomic_feature_ledger.py",
+      "role_id": "e4_static:script/report_atomic_feature_ledger",
+      "sha256": "sha256:e59540b1d2e3dfd6cab3531d84c9b76c3d37f5f5444dcdc5b1c1c1fb24a6440c"
+    },
+    {
+      "bytes": 30877,
+      "path": "scripts/e4_parity/scaffold_e4_target_lane.py",
+      "role_id": "e4_static:script/scaffold_e4_target_lane",
+      "sha256": "sha256:ba664d480c6d2385e68592bee5c95c933a8d00107535fa7c0a469a9897059170"
+    },
+    {
+      "bytes": 51397,
+      "path": "scripts/e4_parity/seed_atomic_feature_ledger.py",
+      "role_id": "e4_static:script/seed_atomic_feature_ledger",
+      "sha256": "sha256:2a5f35a422e26f8bc152fec1d3d3aafb963ac578cd8242d52e101361136e9ab4"
+    },
+    {
+      "bytes": 8199,
+      "path": "scripts/e4_parity/validate_atomic_feature_ledger.py",
+      "role_id": "e4_static:script/validate_atomic_feature_ledger",
+      "sha256": "sha256:e02a7e5dbbf07859436220cb3be50452109ef04cfbc7a815e794903fafb4a3e1"
+    },
+    {
+      "bytes": 37201,
+      "path": "scripts/e4_parity/validate_e4_report_hash_freshness.py",
+      "role_id": "e4_static:script/validate_e4_report_hash_freshness",
+      "sha256": "sha256:111e1a869434ad08931efb6b498f54ffe8db4c15c243c09ef42a4e4fff3f6423"
+    }
+  ]
+}

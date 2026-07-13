@@ -1,0 +1,261 @@
+{
+  "schema_version": "bb.e4.lane_def.v2",
+  "lane_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
+  "config_id": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+  "target_family": "oh_my_pi",
+  "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "package_ref": null,
+  "kind": "non_target_accounting",
+  "status": "accepted",
+  "points": 25,
+  "capture": {
+    "strategy": "adapter",
+    "argv": null,
+    "inputs": [
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_probe_output.json",
+      "agent_configs/misc/oh_my_pi_p6_0_l1_config_context_tool_surface_v1.yaml",
+      "agent_configs/misc/oh_my_pi_p6_0_l2_tool_execution_v1.yaml",
+      "agentic_coder_prototype/compilation/effective_config_graph.py",
+      "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+      "scripts/e4_parity/adapters/oh_my_pi_p3_1_projection.py",
+      "scripts/e4_parity/build_primitive_projection.py",
+      "tests/compilation/test_effective_config_graph.py",
+      "contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json"
+    ],
+    "workspace_template": null,
+    "adapter": "oh_my_pi_compiler_capture"
+  },
+  "normalize": {
+    "translator": "identity",
+    "mode": "identity",
+    "config": {
+      "record_builders": [
+        {
+          "id": "p3_1_capability_registry",
+          "schema_version": "bb.capability_registry.v1",
+          "source": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+          "projection": "p3_1_capability_registry",
+          "records": [
+            "capability_registry"
+          ]
+        },
+        {
+          "id": "p3_1_effective_config_graph",
+          "schema_version": "bb.effective_config_graph.v1",
+          "source": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_probe_output.json",
+          "projection": "p3_1_effective_config_graph",
+          "records": [
+            "effective_config_graph"
+          ]
+        },
+        {
+          "id": "p3_1_effective_tool_surface",
+          "schema_version": "bb.effective_tool_surface.v1",
+          "source": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+          "projection": "p3_1_effective_tool_surface",
+          "records": [
+            "effective_tool_surface"
+          ]
+        }
+      ],
+      "roles": {
+        "effective_config_graph": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/effective_config_graph.v1.json",
+        "capability_registry": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/capability_registry.v1.json",
+        "primitive_projection_manifest": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/primitive_projection_manifest.v1.json",
+        "effective_tool_surface": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/effective_tool_surface.v1.json",
+        "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/raw_capture_manifest.json",
+        "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json",
+        "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json"
+      }
+    }
+  },
+  "replay": {
+    "mode": "stored",
+    "artifacts": [
+      "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json"
+    ],
+    "session": null,
+    "comparator_class": "semantic"
+  },
+  "compare": {
+    "comparator": "oh_my_pi_stored_report_replay",
+    "config": {
+      "assertions": [
+        {
+          "id": "ok_true",
+          "path": "ok",
+          "op": "equals",
+          "value": true,
+          "description": "comparator report is ok"
+        },
+        {
+          "id": "no_errors",
+          "path": "errors",
+          "op": "length_equals",
+          "value": 0,
+          "description": "comparator report has no errors"
+        },
+        {
+          "id": "config_id_matches",
+          "path": "claimed_scope.config_id",
+          "op": "equals",
+          "value": "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+          "description": "claimed config id matches lane"
+        },
+        {
+          "id": "lane_id_matches",
+          "path": "claimed_scope.lane_id",
+          "op": "equals",
+          "value": "oh_my_pi_p3_1_effective_config_graph_compiler",
+          "description": "claimed lane id matches lane"
+        },
+        {
+          "id": "phase_matches",
+          "path": "claimed_scope.phase",
+          "op": "equals",
+          "value": "P3",
+          "description": "claimed phase is P3"
+        },
+        {
+          "id": "p3_item_matches",
+          "path": "claimed_scope.p3_item",
+          "op": "equals",
+          "value": "P3.1",
+          "description": "claimed item is P3.1"
+        },
+        {
+          "id": "provider_model_matches",
+          "path": "claimed_scope.provider_model",
+          "op": "equals",
+          "value": "no-provider",
+          "description": "claimed provider model remains provider-free"
+        },
+        {
+          "id": "sandbox_mode_matches",
+          "path": "claimed_scope.sandbox_mode",
+          "op": "equals",
+          "value": "read-only",
+          "description": "claimed sandbox mode remains read-only"
+        }
+      ]
+    }
+  },
+  "claim": {
+    "scope": {
+      "behaviors": [
+        "bb.effective_config_graph.v1"
+      ],
+      "surfaces": [
+        "P3 exact-scope C4 support chain"
+      ]
+    },
+    "exclusions": []
+  },
+  "ct": {
+    "description": "Oh-My-Pi 16.2.13 P3.1 effective config graph compiler exact-scope C4 chain validation.",
+    "timeout_seconds": 180,
+    "test_id": "CT-P3-OHMYPI-P31-EFFECTIVE-CONFIG-GRAPH-C4"
+  },
+  "artifacts_root": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p3_1_effective_config_graph_compiler_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "run": {
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "provider_model": "no-provider",
+    "sandbox_mode": "read-only"
+  },
+  "provenance": {
+    "provenance_kind": "git_commit",
+    "upstream_repo": "https://github.com/can1357/oh-my-pi",
+    "upstream_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "upstream_commit_date": "2026-07-01T18:03:42Z",
+    "upstream_release_label": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "source_paths": [
+      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json",
+      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_probe_output.json",
+      "agent_configs/misc/oh_my_pi_p6_0_l1_config_context_tool_surface_v1.yaml",
+      "agent_configs/misc/oh_my_pi_p6_0_l2_tool_execution_v1.yaml",
+      "agentic_coder_prototype/compilation/effective_config_graph.py",
+      "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+      "scripts/e4_parity/adapters/oh_my_pi_p3_1_projection.py",
+      "scripts/e4_parity/build_primitive_projection.py",
+      "tests/compilation/test_effective_config_graph.py"
+    ]
+  },
+  "acceptance": {
+    "behavior_family": "effective_config_graph",
+    "semantic_key": "oh_my_pi_p3_1_effective_config_graph_compiler",
+    "target": "oh_my_pi",
+    "assertions": [
+      {
+        "id": "schema_version",
+        "description": "effective config graph schema version"
+      },
+      {
+        "id": "graph_id",
+        "description": "effective config graph id"
+      },
+      {
+        "id": "target_family",
+        "description": "target family is Oh-My-Pi"
+      },
+      {
+        "id": "target_version",
+        "description": "target version is the frozen Oh-My-Pi release"
+      },
+      {
+        "id": "provider_model",
+        "description": "provider model remains no-provider"
+      },
+      {
+        "id": "sandbox_mode",
+        "description": "sandbox mode remains read-only"
+      },
+      {
+        "id": "l1_run_id",
+        "description": "source L1 run id is preserved"
+      },
+      {
+        "id": "l1_runtime_source_layer",
+        "description": "L1 target probe source layer is preserved"
+      },
+      {
+        "id": "graph_hash_current",
+        "description": "graph hash is current"
+      },
+      {
+        "id": "projection_contract_validated",
+        "description": "projection contract validates"
+      },
+      {
+        "id": "compiler_tests_present",
+        "description": "compiler tests are present"
+      }
+    ]
+  },
+  "metadata": {
+    "legacy_inventory_ct_test_id": "CT-P3-OHMYPI-P31-EFFECTIVE-CONFIG-GRAPH-C4"
+  }
+}

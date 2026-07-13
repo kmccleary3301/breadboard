@@ -1,0 +1,23 @@
+schema_version: bb.e4.pi_p5_lane_config.v1
+config_id: pi_p5_l1_cli_config_context_tool_surface_v1
+lane_id: pi_p5_l1_cli_config_context_tool_surface
+phase: P5
+p5_items:
+- P5.1
+- P5.2-subset
+- P5.3-subset
+- P5.4
+- P5.7
+- P5.8
+target_family: pi
+target_version: '@mariozechner/pi-coding-agent@0.57.1'
+provider_model: no-provider
+sandbox_mode: read-only-no-secret
+claim_scope: No-secret Pi CLI/module capture for settings merge/runtime override/writeback, context ordering, system/append
+  prompts, and declared tool surfaces.
+exclusions:
+- extension hooks
+- session resume/fork
+- provider-authenticated inference
+- model response quality
+- broad Pi customization parity

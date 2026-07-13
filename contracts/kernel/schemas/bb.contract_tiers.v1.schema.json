@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json",
+  "title": "Consumer-backed tier registry for the published contract estate",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "registry_id", "baseline_sha", "tiers", "entries"],
+  "properties": {
+    "schema_version": { "const": "bb.contract_tiers.v1" },
+    "registry_id": { "const": "contract_tiers" },
+    "baseline_sha": { "type": "string", "$comment": "repo commit the census was taken against" },
+    "tiers": { "const": ["runtime_protocol", "config_algebra", "host_protocol", "evidence", "frozen_legacy"] },
+    "entries": { "type": "array", "items": {
+      "type": "object", "additionalProperties": false, "required": ["schema_id", "tier", "consumers", "disposition"],
+      "properties": {
+        "schema_id": { "type": "string", "pattern": "^bb\\.[a-z0-9_.]+\\.v[0-9]+$" },
+        "tier": { "enum": ["runtime_protocol", "config_algebra", "host_protocol", "evidence", "frozen_legacy"] },
+        "consumers": { "type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["kind", "path"],
+          "properties": { "kind": { "enum": ["runtime_emission", "loader", "api", "sdk", "evidence_machinery", "tests"] },
+                          "path": { "type": "string" } } } },
+        "disposition": { "enum": ["keep", "freeze", "supersede"] },
+        "superseded_by": { "type": ["string", "null"] },
+        "notes": { "type": "string" }
+      } } }
+  }
+}

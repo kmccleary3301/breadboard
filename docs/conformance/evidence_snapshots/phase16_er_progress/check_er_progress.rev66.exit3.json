@@ -1,0 +1,32 @@
+{
+  "error_count": 1,
+  "errors": [
+    "[PIN_STALE] artifact_hash_mismatch label=J.5.evidence[0] expected='sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1' got='current'; remedy=Regenerate the affected E4 evidence and rebind support claims with scripts/e4_parity/regenerate_evidence.py.; message=J.5.evidence[0]: sha256 sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1 != current sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803"
+  ],
+  "gate_errors": [
+    {
+      "blame": [],
+      "code": "artifact_hash_mismatch",
+      "expected": "sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1",
+      "gate": "er_progress",
+      "got": "current",
+      "klass": "pin_stale",
+      "message": "J.5.evidence[0]: sha256 sha256:a001fe69e45fdf9f0de64e0012f54b27845e12fa3373178d9f04a3d372f5f3a1 != current sha256:ab3c4753b8eb1a7ca56b86ecaff12367f78e7191ac6ea4aaf727db3ef7928803",
+      "remedy": "Regenerate the affected E4 evidence and rebind support claims with scripts/e4_parity/regenerate_evidence.py.",
+      "subject": {
+        "label": "J.5.evidence[0]"
+      }
+    }
+  ],
+  "ok": false,
+  "pin_policy": "v1",
+  "pin_stale_count": 1,
+  "points_done": 1000,
+  "points_total": 1000,
+  "progress_path": "docs_tmp/phase_16/BB_ER_PROGRESS.json",
+  "revision": 66,
+  "schema_path": "sp7_wt/contracts/kernel/schemas/bb.er.progress.v1.schema.json",
+  "schema_version": "bb.er.progress_check_report.v1",
+  "semantic_count": 0,
+  "verify_hashes": true
+}

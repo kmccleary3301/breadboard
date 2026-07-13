@@ -48,7 +48,7 @@ export interface AiSdkTransportState {
 function extractAssistantText(result: BackboneTurnResult): string {
   const lastAssistant = [...result.transcript.items]
     .reverse()
-    .find((item) => item.kind === "assistant_message" && item.visibility === "model")
+    .find((item) => item.kind === "assistant_message" && item.visibility.model_visible)
   return ((lastAssistant?.content ?? {}) as { text?: string }).text ?? ""
 }
 

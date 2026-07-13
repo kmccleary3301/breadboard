@@ -1,0 +1,96 @@
+schema_version: bb.env_package.v1alpha
+package_id: bb.math_console_toy.v1alpha
+version: 0.1.0
+package_hash: sha256:dae346419318191efbcdaff56222b2ea7d1dde7a83191abef28df76f0d5c8aca
+provenance:
+  created_at: "2026-06-17"
+  license: internal-dev-only
+  source_usage_policy: runnable-debug-only
+  contamination_scope: train_visible
+  source_refs: []
+  source_hashes:
+    fixture: sha256:math-console-toy
+tasksets:
+  - taskset_id: math_console_toy
+    source_kind: local_math_fixture
+    source_hash: sha256:math-console-toy-taskset
+    task_id_field: task_id
+    prompt_fields:
+      - prompt
+    allowed_splits:
+      - train_probe
+splits:
+  train_probe:
+    split_id: train_probe
+    split_type: train
+    taskset_id: math_console_toy
+    selector:
+      task_ids:
+        - math_toy_001
+    split_hash: sha256:math-console-toy-train-probe
+    immutable: true
+    optimizer_visible: false
+    trainer_visible: false
+    protected: false
+harness:
+  harness_id: bb.math_console_toy
+  interaction_mode: multi_turn
+  observation_schema:
+    kind: messages
+  action_schema:
+    kind: python_snippet
+  termination:
+    on_tool: submit_answer
+  tools:
+    - python
+    - submit_answer
+  max_turns: 4
+  hidden_state_policy: never_visible
+runtime:
+  backend: local_process
+  isolation_level: trusted_dev
+  agent_user: sandbox
+  network: none
+  secrets_policy: ambient_forbidden
+  pool_key_fields:
+    - backend
+    - package_id
+verifier:
+  verifier_id: math_console_toy_exact
+  kind: exact_match
+  code_hash: sha256:math-console-toy-verifier
+  input_contract:
+    requires:
+      - answer
+  output_contract:
+    reward: float
+  isolated_from_agent: true
+  rerun_policy:
+    required_for_promotion: false
+reward:
+  reward_id: math_console_toy_reward
+  kind: binary
+  terminal_reward: true
+renderer:
+  renderer_id: identity_renderer
+  tokenizer_hash: sha256:identity-tokenizer
+  chat_template_hash: sha256:identity-template
+  bridge_to_next_turn_required: true
+  mask_contract:
+    loss_mask_required: true
+hardening: null
+replay:
+  replay_required: true
+  live_replay_parity_required: true
+exports:
+  allowed_formats:
+    - bb_graph
+    - jsonl_transition
+  trainable: false
+  requires_token_records: true
+  requires_replay_pass: true
+  support_level: experimental
+  trainability_status: debug_only
+  trainability_blockers:
+    - toy_fixture_not_training_data
+  support_evidence_refs: []

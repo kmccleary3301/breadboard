@@ -1,0 +1,130 @@
+{
+  "schema_version": "bb.e4.target_coverage.v1",
+  "target_family": "claude_code",
+  "frozen_target_versions": [
+    "claude-code-frozen-target-pending"
+  ],
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "rows": [
+    {
+      "behavior_family": "config_graph",
+      "behavior_id": "claude_code_config_graph",
+      "description": "No accepted D3 target-support row mapped for claude_code config_graph.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "context_pack",
+      "behavior_id": "claude_code_context_pack",
+      "description": "No accepted D3 target-support row mapped for claude_code context_pack.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "capability_surface",
+      "behavior_id": "claude_code_capability_surface",
+      "description": "No accepted D3 target-support row mapped for claude_code capability_surface.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "tool_execution",
+      "behavior_id": "claude_code_tool_execution",
+      "description": "No accepted D3 target-support row mapped for claude_code tool_execution.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "command_network_policy",
+      "behavior_id": "claude_code_command_network_policy",
+      "description": "No accepted D3 target-support row mapped for claude_code command_network_policy.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "protocol_sessions",
+      "behavior_id": "claude_code_protocol_sessions",
+      "description": "No accepted D3 target-support row mapped for claude_code protocol_sessions.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "resource_access",
+      "behavior_id": "claude_code_resource_access",
+      "description": "No accepted D3 target-support row mapped for claude_code resource_access.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "provider_routing",
+      "behavior_id": "claude_code_provider_routing",
+      "description": "No accepted D3 target-support row mapped for claude_code provider_routing.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "memory_compaction",
+      "behavior_id": "claude_code_memory_compaction",
+      "description": "No accepted D3 target-support row mapped for claude_code memory_compaction.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "work_items",
+      "behavior_id": "claude_code_work_items",
+      "description": "No accepted D3 target-support row mapped for claude_code work_items.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "side_effects",
+      "behavior_id": "claude_code_side_effects",
+      "description": "No accepted D3 target-support row mapped for claude_code side_effects.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "projection_ui",
+      "behavior_id": "claude_code_projection_ui",
+      "description": "No accepted D3 target-support row mapped for claude_code projection_ui.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "session_persistence",
+      "behavior_id": "claude_code_session_persistence",
+      "description": "No accepted D3 target-support row mapped for claude_code session_persistence.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "replay_capture",
+      "behavior_id": "claude_code_replay_capture",
+      "description": "No accepted D3 target-support row mapped for claude_code replay_capture.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "other",
+      "behavior_id": "claude_code_other",
+      "description": "No accepted D3 target-support row mapped for claude_code other.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    }
+  ]
+}

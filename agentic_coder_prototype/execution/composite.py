@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, List
+from uuid import uuid4
 
 from ..core.core import BaseToolDialect, ToolDefinition, ToolCallParsed
 
@@ -85,11 +86,17 @@ class CompositeToolCaller:
 
             call_id = None
             try:
-                call_id = getattr(call, "call_id", None)
+                call_id = getattr(call, "call_id", None) or getattr(call, "id", None)
             except Exception:
                 call_id = None
-            if call_id is not None:
+            if call_id is None:
+                call_id = f"tool-call-{uuid4()}"
+            else:
                 call_id = str(call_id)
+            try:
+                setattr(call, "id", call_id)
+            except Exception:
+                pass
 
             dialect = None
             try:
@@ -123,6 +130,9 @@ class CompositeToolCaller:
                         },
                     }
                     emit("tool_call", {"call": tool_call_payload}, turn=turn_hint)
+                    primitive = getattr(session_state, "emit_tool_call_primitive", None)
+                    if callable(primitive):
+                        primitive({"id": call_id, "function": name, "arguments": arguments}, "declared")
             except Exception:
                 pass
 

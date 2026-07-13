@@ -1,0 +1,172 @@
+{
+  "assertions": [
+    {
+      "assertion_id": "runtime_records_manifest_present",
+      "expected": {
+        "description": "runtime records manifest is present",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "runtime_records_manifest_present",
+      "observed": {
+        "description": "runtime records manifest is present",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "status": "passed"
+    },
+    {
+      "assertion_id": "kernel_event_stream_present",
+      "expected": {
+        "description": "kernel event stream is present",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "kernel_event_stream_present",
+      "observed": {
+        "description": "kernel event stream is present",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "status": "passed"
+    },
+    {
+      "assertion_id": "strict_mode_quarantine_zero",
+      "expected": {
+        "description": "strict mode has zero quarantine",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "strict_mode_quarantine_zero",
+      "observed": {
+        "description": "strict mode has zero quarantine",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "status": "passed"
+    },
+    {
+      "assertion_id": "session_transcript_stream_present",
+      "expected": {
+        "description": "session transcript stream is present",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "session_transcript_stream_present",
+      "observed": {
+        "description": "session transcript stream is present",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "status": "passed"
+    },
+    {
+      "assertion_id": "replay_transcript_digest_matches_manifest",
+      "expected": {
+        "description": "replay transcript digest matches manifest",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "replay_transcript_digest_matches_manifest",
+      "observed": {
+        "description": "replay transcript digest matches manifest",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "status": "passed"
+    },
+    {
+      "assertion_id": "self_capture_schema_count",
+      "expected": {
+        "description": "self capture emitted kernel_event records",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "self_capture_schema_count",
+      "observed": {
+        "description": "self capture emitted kernel_event records",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "status": "passed"
+    }
+  ],
+  "comparator_id": "north_star_stored_report_replay",
+  "config_id": "breadboard_self_runtime_records_v1",
+  "details": [
+    {
+      "detail": {
+        "description": "runtime records manifest is present",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "runtime_records_manifest_present",
+      "passed": true
+    },
+    {
+      "detail": {
+        "description": "kernel event stream is present",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "kernel_event_stream_present",
+      "passed": true
+    },
+    {
+      "detail": {
+        "description": "strict mode has zero quarantine",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "strict_mode_quarantine_zero",
+      "passed": true
+    },
+    {
+      "detail": {
+        "description": "session transcript stream is present",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "session_transcript_stream_present",
+      "passed": true
+    },
+    {
+      "detail": {
+        "description": "replay transcript digest matches manifest",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "replay_transcript_digest_matches_manifest",
+      "passed": true
+    },
+    {
+      "detail": {
+        "description": "self capture emitted kernel_event records",
+        "lane_id": "breadboard_self_runtime_records_v1",
+        "passed": true
+      },
+      "name": "self_capture_schema_count",
+      "passed": true
+    }
+  ],
+  "failed": 0,
+  "generated_at_utc": "2026-07-07T03:00:00Z",
+  "input_hashes": {
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json": "sha256:8befe2bb74f12f234743c70a1bf21dd6ec4cc6e6ac37ce8abedf3c12a97842d1",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json": "sha256:1fc80918a10c6332a70d5c18f82cdecef466b8e7e4fbea7bd19f210c16a29fb1",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json": "sha256:647d98abfa68c3b6b6a0858fa3c27bc2ec72d49cd7c9546281bc466787cc3d40"
+  },
+  "lane_id": "breadboard_self_runtime_records_v1",
+  "passed": 6,
+  "schema_version": "bb.e4.comparator_report.v1",
+  "scope": {
+    "config_id": "breadboard_self_runtime_records_v1",
+    "lane_id": "breadboard_self_runtime_records_v1",
+    "provider_model": "no-provider",
+    "run_id": "20260707_north_star_breadboard_self_capture",
+    "sandbox_mode": "strict runtime_records self-capture",
+    "target_family": "breadboard",
+    "target_version": "breadboard runtime_records strict kernel emission"
+  },
+  "warned": 0
+}

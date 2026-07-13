@@ -1,0 +1,74 @@
+{
+  "artifacts": [
+    {
+      "path": "config/e4_target_freeze_manifest.yaml",
+      "role": "freeze_manifest",
+      "sha256": "sha256:174e576085fc185b2c8e78b3f934a9aa6469bd96c011e892cf654cfb559853e7"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json",
+      "role": "capture_ref",
+      "sha256": "sha256:bddbcf8b317dd599b55c3d84f9c6fea16c1443c366fa74e3ce26e150122f22a5"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json#sha256:bddbcf8b317dd599b55c3d84f9c6fea16c1443c366fa74e3ce26e150122f22a5"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/bb_replay_result.json",
+      "role": "replay_ref",
+      "sha256": "sha256:edb29da6dfc858a72b8acd3faf86ae20366d2c1385db885e3e81899fe5789800"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json#sha256:bddbcf8b317dd599b55c3d84f9c6fea16c1443c366fa74e3ce26e150122f22a5",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/bb_replay_result.json#sha256:edb29da6dfc858a72b8acd3faf86ae20366d2c1385db885e3e81899fe5789800"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json",
+      "role": "comparator_ref",
+      "sha256": "sha256:954f4ef6112d537917384c257a6cb146266409f1c285c2606c5ef1698528ca54"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json#sha256:954f4ef6112d537917384c257a6cb146266409f1c285c2606c5ef1698528ca54"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/parity_results.json",
+      "role": "parity_results",
+      "sha256": "sha256:9cbc75f9be478221d3c9ca8db9d67ab60c95eb47335dd0dee2e038ceb2a63b67"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/secret_scan_report.json",
+      "role": "secret_scan_report",
+      "sha256": "sha256:77db9c0c1d61b7837f9b188b25114fd2cb17ffae317aadd57097d7de9a2f1e15"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/prevalidation_report.json",
+      "role": "validator_output",
+      "sha256": "sha256:936143afb98bb1b5a21481d3fa46f4c3393a5b3dfe8106aadf668f4043991559"
+    },
+    {
+      "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+      "role": "support_claim_ref",
+      "sha256": "sha256:731826ccd3147aea979fea1e72305ce2d8ad05cbf048ccdaef57769ccd83536d"
+    },
+    {
+      "bytes": 124871,
+      "exists": true,
+      "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+      "role": "atomic_feature_ledger",
+      "sha256": "sha256:684e34783e8fb14cb34a92b2305a56efcbd917770ecf0116eed793ac6ecef939"
+    }
+  ],
+  "claim_id": "oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim",
+  "config_id": "oh_my_pi_p6_0_l3_command_network_hook_v1",
+  "forbidden_roots_checked": [
+    "scratch",
+    "tmp",
+    "scratch_runs",
+    "/shared_folders"
+  ],
+  "generated_at_utc": "2026-07-02T23:06:29Z",
+  "hash_algorithm": "sha256",
+  "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+  "manifest_scope_note": "Every governed artifact for this oh_my_pi_p6_0_l3_command_network_hook C4 chain is packet-local canonical repo evidence, source-freeze evidence under docs_tmp/phase_15/source_freezes, or a named target command/probe artifact. Scratch/tmp/shared roots are not promotion evidence.",
+  "schema_version": "bb.e4.evidence_manifest.v1"
+}

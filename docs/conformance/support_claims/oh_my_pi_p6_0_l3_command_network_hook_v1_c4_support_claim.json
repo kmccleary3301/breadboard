@@ -1,0 +1,125 @@
+{
+  "acceptance_rationale": "The governed claim is limited to the exact config, lane, run, Oh-My-Pi coding-agent version, and provider-free read-only sandbox named in the evidence. The packet contains raw command reports, replay normalization, comparator pass, parity result, packet-local secret scan, validator-output hashes, and ledger-row freshness.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json#sha256:bddbcf8b317dd599b55c3d84f9c6fea16c1443c366fa74e3ce26e150122f22a5",
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 8,
+    "segment_hash": "sha256:3a0ae053834b3aa77278b4566d735b3268d1bdd6d085efe8a9daffcfd8fac5d0",
+    "segment_id": "oh_my_pi_p6_0_l3_command_network_hook",
+    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+  },
+  "claim_id": "oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "command_network_policy_scope_matches_exact_claim",
+        "comparator_assertion_ids": [
+          "scope_matches_exact_claim"
+        ],
+        "description": "scope matches exact claim"
+      },
+      {
+        "behavior_id": "command_network_policy_commands_exit_zero",
+        "comparator_assertion_ids": [
+          "commands_exit_zero"
+        ],
+        "description": "commands exit zero"
+      },
+      {
+        "behavior_id": "command_network_policy_hook_network_gate_exercised",
+        "comparator_assertion_ids": [
+          "hook_network_gate_exercised"
+        ],
+        "description": "hook network gate exercised"
+      },
+      {
+        "behavior_id": "command_network_policy_provider_network_scope_limited",
+        "comparator_assertion_ids": [
+          "provider_network_scope_limited"
+        ],
+        "description": "provider network scope limited"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json#sha256:954f4ef6112d537917384c257a6cb146266409f1c285c2606c5ef1698528ca54",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "mcp",
+      "model_inference",
+      "network",
+      "provider_authenticated",
+      "ui_parity",
+      "write_enabled"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "codex",
+      "opencode",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Oh-My-Pi or OMP support claim is made from this micro-lane.",
+    "No Pi, Opencode, OpenCode, Codex, Claude, provider-parity, UI-parity, memory, task/agent-routing, or general P6/P7 support claim is made.",
+    "No write-enabled, provider-authenticated, or danger-full-access sandbox behavior is claimed.",
+    "No claim is made for provider endpoints, web search execution, external SaaS APIs, or model inference.",
+    "No general outbound network isolation claim is made; network evidence is limited to one packet-local hook gate that blocks a network-shaped bash command before the wrapped tool executes.",
+    "No MCP, browser automation, or resource-session support claim is made from this L3 packet."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p6_0_l3_command_network_hook_v1#sha256:174e576085fc185b2c8e78b3f934a9aa6469bd96c011e892cf654cfb559853e7",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "target_support",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_33a6210bdc129f5b#sha256:d00867c7dbe06f090e980a7fd1ffd2f6266b21e34ebce8d6375c84c1cac54286"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/parity_results.json#sha256:9cbc75f9be478221d3c9ca8db9d67ab60c95eb47335dd0dee2e038ceb2a63b67",
+  "phase_label": "P6",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/bb_replay_result.json#sha256:edb29da6dfc858a72b8acd3faf86ae20366d2c1385db885e3e81899fe5789800",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p6_0_l3_command_network_hook_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l3_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "schema_version": "bb.e4.support_claim.v4",
+  "scope": {
+    "config_id": "oh_my_pi_p6_0_l3_command_network_hook_v1",
+    "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l3_capture",
+    "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/secret_scan_report.json#sha256:77db9c0c1d61b7837f9b188b25114fd2cb17ffae317aadd57097d7de9a2f1e15",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "Oh-My-Pi 16.2.13 provider-free local command execution, custom command execution, hook loading, hook command execution, and hook-gated network-shaped bash blocking are accepted only for the named P6.0-L3 lane, run, config, target version, and read-only sandbox scope.",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/prevalidation_report.json#sha256:936143afb98bb1b5a21481d3fa46f4c3393a5b3dfe8106aadf668f4043991559"
+  ]
+}

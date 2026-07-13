@@ -1,0 +1,40 @@
+{
+  "fixture_family": "extension_hook_execution",
+  "fixture_id": "extension_hook_execution_minimal",
+  "support_tier": "draft-shape",
+  "supportTier": "draft-shape",
+  "comparator_class": "shape-equal",
+  "comparatorClass": "shape-equal",
+  "contract": "bb.extension_hook_execution.v1",
+  "reference_output": {
+    "schema_version": "bb.extension_hook_execution.v1",
+    "execution_id": "hook_exec_001",
+    "hook_id": "hook_policy_review",
+    "hook_type": "policy",
+    "event": {
+      "event_id": "event_resource_read_001",
+      "event_type": "resource.access.requested",
+      "event_ref": "bb.resource_access.v1:access_workspace_main",
+      "emitted_at": "2026-03-08T00:00:01Z",
+      "resource_refs": ["bb.resource_ref.v1:workspace_main"]
+    },
+    "status": "completed",
+    "started_at": "2026-03-08T00:00:01Z",
+    "duration_ms": 12,
+    "effects": [
+      {
+        "effect_id": "effect_access_allowed",
+        "effect_type": "resource_access",
+        "effect_ref": "bb.resource_access.v1:access_workspace_main",
+        "status": "applied"
+      }
+    ],
+    "model_provider_visibility": {
+      "model_visible": true,
+      "provider_visible": false,
+      "model_render_ref": "bb.tool_model_render.v1:render_resource_access_001",
+      "provider_exchange_ref": null
+    },
+    "error": null
+  }
+}

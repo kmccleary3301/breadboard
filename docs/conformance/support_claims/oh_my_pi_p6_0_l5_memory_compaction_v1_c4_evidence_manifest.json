@@ -1,0 +1,93 @@
+{
+  "artifacts": [
+    {
+      "path": "config/e4_target_freeze_manifest.yaml",
+      "role": "freeze_manifest",
+      "sha256": "sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json",
+      "role": "capture_ref",
+      "sha256": "sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json",
+      "role": "replay_ref",
+      "sha256": "sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/bb_replay_result.json#sha256:88f7b3663b0b89d80e561e5f9d8506cc60e9f456836beac773b4247a59358f1a",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json#sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f",
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json#sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json",
+      "role": "comparator_ref",
+      "sha256": "sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/comparator_report.json#sha256:626131c725665bf4a95806d91a0ceaa96739546dbbc971609c977404fa2f2064"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/parity_results.json",
+      "role": "parity_results",
+      "sha256": "sha256:9766c59f5fdc954b37e6048e40e0dde8f38eeec81aa77e0d7dad618a59ae209c"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/secret_scan_report.json",
+      "role": "secret_scan_report",
+      "sha256": "sha256:28bbf8b3a8568de2686d79eafcc9b9a19e62606b1e760c6b7303a7fcb70775a5"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/prevalidation_report.json",
+      "role": "validator_output",
+      "sha256": "sha256:d63d77e69a664d05bddf88d39d08dc201d77db373161a05e8f051262bbedf00f"
+    },
+    {
+      "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+      "role": "support_claim_ref",
+      "sha256": "sha256:099d8d89639267a22aca216e01d0625fe13786e6217340e2c745330c138ccbc3"
+    },
+    {
+      "bytes": 124871,
+      "exists": true,
+      "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+      "role": "atomic_feature_ledger",
+      "sha256": "sha256:684e34783e8fb14cb34a92b2305a56efcbd917770ecf0116eed793ac6ecef939"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",
+      "role": "memory_compaction_plan",
+      "sha256": "sha256:297fad63b9eaed4c2fe6d0846651af235b55d95f658578821fa7a970d959529f"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/transcript_continuation_patch.v1.json",
+      "role": "transcript_continuation_patch",
+      "sha256": "sha256:1c64ffa93a4da542425608d66f8edd3c2fc3e8316a40504d9d0c60f66471d976"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
+      "role": "target_probe_output",
+      "sha256": "sha256:6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3"
+    }
+  ],
+  "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
+  "config_id": "oh_my_pi_p6_0_l5_memory_compaction_v1",
+  "forbidden_roots_checked": [
+    "scratch",
+    "tmp",
+    "scratch_runs",
+    "/shared_folders"
+  ],
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "hash_algorithm": "sha256",
+  "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+  "manifest_scope_note": "Every governed artifact for this oh_my_pi_p6_0_l5_memory_compaction C4 chain is packet-local canonical repo evidence, source-freeze evidence under docs_tmp/phase_15/source_freezes, or a named target command/probe artifact. Scratch/tmp/shared roots are not promotion evidence.",
+  "schema_version": "bb.e4.evidence_manifest.v1"
+}

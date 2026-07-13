@@ -11,17 +11,13 @@ by creating side-by-side, versioned E4 config files.
 
 ## 1) Capture fresh harness goldens
 
-Recommended (single orchestration command):
+Run the checked-in capture wrappers directly. This repo does not currently ship
+a single `scripts/capture_e4_target_goldens.sh` orchestration wrapper.
 
-```bash
-cd breadboard_repo
-bash scripts/capture_e4_target_goldens.sh \
-  --run-id-prefix e4_refresh_YYYYMMDD_bundle \
-  --codex-model gpt-5-codex \
-  --claude-model haiku \
-  --opencode-model openai/gpt-5.1-codex-mini \
-  --include-codex-subagents
-```
+Codex examples intentionally do not force a model. Use the configured Codex CLI
+default, or pass a model only after `codex debug models` lists it for the
+authenticated account. For `scripts/capture_codex_golden.sh`, the explicit flag
+is `--model gpt-5.5`.
 
 Optional Codex MVI refresh lane (same tranche):
 
@@ -30,7 +26,6 @@ cd breadboard_repo
 bash scripts/capture_codex_golden.sh \
   --scenario codex_mvi_patch_v2 \
   --prompt-file misc/codex_cli_tests/prompts/codex_mvi_patch_prompt.md \
-  --model gpt-5-codex \
   --run-id e4_refresh_YYYYMMDD_bundle_codex_mvi_patch_v2
 ```
 
@@ -40,16 +35,14 @@ bash scripts/capture_codex_golden.sh \
 cd breadboard_repo
 bash scripts/capture_codex_golden.sh \
   --scenario codex_subagent_sync_v1 \
-  --prompt-file misc/codex_cli_tests/prompts/codex_subagent_sync_prompt.md \
-  --model gpt-5-codex
+  --prompt-file misc/codex_cli_tests/prompts/codex_subagent_sync_prompt.md
 ```
 
 ```bash
 cd breadboard_repo
 bash scripts/capture_codex_golden.sh \
   --scenario codex_subagent_async_v1 \
-  --prompt-file misc/codex_cli_tests/prompts/codex_subagent_async_prompt.md \
-  --model gpt-5-codex
+  --prompt-file misc/codex_cli_tests/prompts/codex_subagent_async_prompt.md
 ```
 
 ### Claude Code

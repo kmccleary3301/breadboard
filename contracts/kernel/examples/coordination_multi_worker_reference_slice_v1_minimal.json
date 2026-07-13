@@ -1,0 +1,40 @@
+{
+  "events": [
+    {
+      "agent_id": "example",
+      "event_id": 1,
+      "payload": {},
+      "type": "example"
+    }
+  ],
+  "reducer_signal": {
+    "code": "example",
+    "schema_version": "bb.signal.v1",
+    "signal_id": "example",
+    "status": "accepted",
+    "task_id": "example"
+  },
+  "reducer_task_id": "example",
+  "review_verdict": {
+    "schema_version": "bb.review_verdict.v1",
+    "subject": {},
+    "verdict_code": "example",
+    "verdict_id": "example"
+  },
+  "scenario_id": "example",
+  "schema_version": "bb.coordination_multi_worker_reference_slice.v1",
+  "shard_signals": [
+    {
+      "code": "example",
+      "schema_version": "bb.signal.v1",
+      "signal_id": "example",
+      "status": "accepted",
+      "task_id": "example"
+    }
+  ],
+  "shard_task_ids": [
+    "example",
+    "example"
+  ],
+  "supervisor_task_id": "example"
+}

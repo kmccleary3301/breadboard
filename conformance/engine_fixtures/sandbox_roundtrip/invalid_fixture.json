@@ -1,0 +1,34 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.sandbox_request.v1",
+  "fixture_family": "sandbox_roundtrip",
+  "fixture_id": "sandbox_roundtrip_invalid_missing_request_id",
+  "invalid_reason": "Removes required reference_output field 'request_id' from bb.sandbox_request.v1.",
+  "reference_output": {
+    "capability_id": "cap_local_patch",
+    "command": [
+      "bash",
+      "-lc",
+      "rg --files | head"
+    ],
+    "evidence_mode": "replay_strict",
+    "image_ref": "docker://breadboard/base:latest",
+    "metadata": {
+      "tool_name": "shell"
+    },
+    "network_policy": {
+      "allow": []
+    },
+    "placement_class": "local_oci",
+    "rootfs_ref": null,
+    "schema_version": "bb.sandbox_request.v1",
+    "secret_refs": [
+      "secret://openai/api-key"
+    ],
+    "snapshot_ref": null,
+    "timeout_seconds": 30,
+    "workspace_ref": "workspace://repo/main"
+  },
+  "source_fixture": "sandbox_roundtrip/minimal_fixture.json",
+  "support_tier": "draft-shape"
+}

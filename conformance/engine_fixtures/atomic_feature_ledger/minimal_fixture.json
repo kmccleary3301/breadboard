@@ -1,0 +1,30 @@
+{
+  "fixture_family": "atomic_feature_ledger",
+  "fixture_id": "atomic_feature_ledger_minimal",
+  "comparator_class": "shape-equal",
+  "support_tier": "draft-shape",
+  "contract": "bb.atomic_feature_ledger.v1",
+  "reference_output": {
+    "schema_version": "bb.atomic_feature_ledger.v1",
+    "feature_id": "feat_pi_config_global_project_merge",
+    "dedupe_key": "pi/config/settings_global_project_merge/model_visible_yes/stateful_yes",
+    "target": "pi",
+    "family": "config",
+    "claim_type": "source",
+    "evidence_tier": "C2",
+    "source_refs": [
+      "source:pi/settings-manager.ts:10-80"
+    ],
+    "model_visible": true,
+    "stateful": true,
+    "breadboard_mapping": {
+      "primitive": "bb.effective_config_graph.v1",
+      "support": "partial",
+      "truth_scope": "kernel_truth"
+    },
+    "gap_kind": "evidence",
+    "fixture_refs": [],
+    "e4_row_ref": null,
+    "promotion_state": "candidate"
+  }
+}

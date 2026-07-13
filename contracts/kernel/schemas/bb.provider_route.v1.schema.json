@@ -1,0 +1,450 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.provider_route.v1.schema.json",
+  "title": "BreadBoard provider route V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "route_id",
+    "selector",
+    "role",
+    "thinking",
+    "route_suffix",
+    "resolved",
+    "base_url_hash",
+    "auth_method_ref",
+    "fallback_chain",
+    "selected_fallback_index",
+    "service_tier",
+    "cost_usage_refs",
+    "provider_exchange_refs",
+    "visibility",
+    "evidence_refs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.provider_route.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "route_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the route.",
+      "examples": [
+        "route_example"
+      ]
+    },
+    "selector": {
+      "$ref": "#/$defs/selector",
+      "description": "Selector record for this primitive."
+    },
+    "role": {
+      "enum": [
+        "primary",
+        "fallback",
+        "routing_probe",
+        "embedding",
+        "reranking",
+        "policy_check"
+      ],
+      "description": "Allowed role value."
+    },
+    "thinking": {
+      "$ref": "#/$defs/thinking",
+      "description": "Thinking record for this primitive."
+    },
+    "route_suffix": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Route suffix value for this primitive."
+    },
+    "resolved": {
+      "$ref": "#/$defs/resolved_route",
+      "description": "Resolved record for this primitive."
+    },
+    "base_url_hash": {
+      "$ref": "#/$defs/sha256_hash",
+      "description": "SHA-256 digest for the base url hash.",
+      "examples": [
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "auth_method_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Reference to the auth method.",
+      "examples": [
+        "docs/conformance/auth_method_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "fallback_chain": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fallback_entry",
+        "description": "One entry in fallback chain."
+      },
+      "description": "Ordered fallback chain entries."
+    },
+    "selected_fallback_index": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Selected fallback index value for this primitive."
+    },
+    "service_tier": {
+      "enum": [
+        "default",
+        "flex",
+        "priority",
+        "batch",
+        "free",
+        "enterprise"
+      ],
+      "description": "Allowed service tier value."
+    },
+    "cost_usage_refs": {
+      "$ref": "#/$defs/cost_usage_refs",
+      "description": "References to the cost usage entries.",
+      "examples": [
+        [
+          "docs/conformance/cost_usage.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "provider_exchange_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in provider exchange refs.",
+        "examples": [
+          [
+            "docs/conformance/provider_exchange.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the provider exchange entries.",
+      "examples": [
+        [
+          "docs/conformance/provider_exchange.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "visibility": {
+      "$ref": "#/$defs/visibility",
+      "description": "Visibility record for this primitive."
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "description": "One entry in evidence refs.",
+        "examples": [
+          [
+            "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the evidence entries.",
+      "examples": [
+        [
+          "docs/conformance/evidence.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "sha256_hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selector_id",
+        "model_selector",
+        "provider_selector",
+        "source",
+        "model_visible",
+        "provider_visible"
+      ],
+      "properties": {
+        "selector_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the selector.",
+          "examples": [
+            "selector_example"
+          ]
+        },
+        "model_selector": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model selector value for this primitive."
+        },
+        "provider_selector": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Provider selector value for this primitive."
+        },
+        "source": {
+          "enum": [
+            "config",
+            "policy",
+            "request",
+            "runtime",
+            "fallback"
+          ],
+          "description": "Allowed source value."
+        },
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        }
+      }
+    },
+    "thinking": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled",
+        "budget_ref",
+        "effort",
+        "model_visible",
+        "provider_visible"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Boolean flag for an enabled state."
+        },
+        "budget_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the budget.",
+          "examples": [
+            "docs/conformance/budget_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "effort": {
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "provider_default"
+          ],
+          "description": "Allowed effort value."
+        },
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        }
+      }
+    },
+    "resolved_route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_id",
+        "provider_family",
+        "runtime_id",
+        "model",
+        "model_revision"
+      ],
+      "properties": {
+        "provider_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the provider.",
+          "examples": [
+            "provider_example"
+          ]
+        },
+        "provider_family": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Provider family value for this primitive."
+        },
+        "runtime_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the runtime.",
+          "examples": [
+            "runtime_example"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model value for this primitive."
+        },
+        "model_revision": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Model revision value for this primitive."
+        }
+      }
+    },
+    "fallback_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fallback_index",
+        "route_ref",
+        "provider_id",
+        "model",
+        "eligible",
+        "reason"
+      ],
+      "properties": {
+        "fallback_index": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Fallback index value for this primitive."
+        },
+        "route_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the route.",
+          "examples": [
+            "docs/conformance/route_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "provider_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the provider.",
+          "examples": [
+            "provider_example"
+          ]
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model value for this primitive."
+        },
+        "eligible": {
+          "type": "boolean",
+          "description": "Eligible value for this primitive."
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reason value for this primitive."
+        }
+      }
+    },
+    "cost_usage_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "estimate_ref",
+        "usage_ref",
+        "billing_scope_ref"
+      ],
+      "properties": {
+        "estimate_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the estimate.",
+          "examples": [
+            "docs/conformance/estimate_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "usage_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the usage.",
+          "examples": [
+            "docs/conformance/usage_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "billing_scope_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the billing scope.",
+          "examples": [
+            "docs/conformance/billing_scope_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    },
+    "visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible_fields",
+        "provider_visible_fields",
+        "host_only_fields",
+        "redacted_fields"
+      ],
+      "properties": {
+        "model_visible_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in model visible fields."
+          },
+          "description": "Ordered model visible fields entries."
+        },
+        "provider_visible_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in provider visible fields."
+          },
+          "description": "Ordered provider visible fields entries."
+        },
+        "host_only_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in host only fields."
+          },
+          "description": "Ordered host only fields entries."
+        },
+        "redacted_fields": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in redacted fields."
+          },
+          "description": "Ordered redacted fields entries."
+        }
+      }
+    }
+  }
+}

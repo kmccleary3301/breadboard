@@ -4,6 +4,7 @@ import { existsSync } from "node:fs"
 import type { HealthResponse } from "../api/types.js"
 import { DEFAULT_CONFIG_PATH, loadAppConfig } from "../config/appConfig.js"
 import { getUserConfigPath } from "../config/userConfig.js"
+import { resolveAuthToken } from "../config/authTokenProvider.js"
 import { resolveBreadboardRepoPath } from "../utils/paths.js"
 import { shutdownEngine } from "../engine/engineSupervisor.js"
 import { getCliApi, reportApiFailure } from "./commandRuntime.js"
@@ -21,6 +22,8 @@ const maskToken = (token?: string): string => {
   return `${token.slice(0, 3)}…${token.slice(-3)}`
 }
 
+export const resolveDoctorAuthLabel = async (baseUrl: string): Promise<string> => maskToken(await resolveAuthToken(baseUrl))
+
 export const doctorCommand = Command.make(
   "doctor",
   {
@@ -36,7 +39,7 @@ export const doctorCommand = Command.make(
 
       const headerLines = [
         `Base URL: ${appConfig.baseUrl}`,
-        `Auth token: ${maskToken(appConfig.authToken)}`,
+        `Auth token: ${await resolveDoctorAuthLabel(appConfig.baseUrl)}`,
         `User config: ${userConfigPath}`,
         `Config path: ${configPath}${configExists ? "" : " (missing)"}`,
       ]

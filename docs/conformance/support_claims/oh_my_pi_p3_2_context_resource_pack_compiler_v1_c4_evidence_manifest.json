@@ -1,0 +1,89 @@
+{
+  "artifacts": [
+    {
+      "path": "config/e4_target_freeze_manifest.yaml",
+      "role": "freeze_manifest",
+      "sha256": "sha256:714a8588ed5968a1fb5499819674f4a6e3382d7fdc4e2f7761132ac33acdaba8"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json",
+      "role": "capture_ref",
+      "sha256": "sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/compiled_records.json#sha256:cc5b2cd4e4a7679d1599081d3c93f17505f1ca66679092ccf414c8560081d163"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json",
+      "role": "replay_ref",
+      "sha256": "sha256:0c808af1ba7e021e869fd7825a20599510f884b5bd71cde7a84f777fcd48121f"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json#sha256:302c57fde6e34feee3a81c1165df8dbaf40614dbb2e2016e6ff24ae0ee8a5715",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json#sha256:0c808af1ba7e021e869fd7825a20599510f884b5bd71cde7a84f777fcd48121f",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/compiled_records.json#sha256:cc5b2cd4e4a7679d1599081d3c93f17505f1ca66679092ccf414c8560081d163"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json",
+      "role": "comparator_ref",
+      "sha256": "sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72"
+    },
+    {
+      "path": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+      "role": "support_claim_ref",
+      "sha256": "sha256:234005f505cbdcb160b0679bba0464116c8153b3e217c16c38ba03d6d0670ef0"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json#sha256:dc69b9e5a07588cc131b0b36599d3489ba0faaf1e9131ea3d6f38e8b64e5ae72"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json",
+      "role": "parity_results",
+      "sha256": "sha256:45ec480971434a3bea865bae377b918c686a47ec7107a41082b10d93dd95f5b7"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/secret_scan_report.json",
+      "role": "secret_scan_report",
+      "sha256": "sha256:2b67f284c84f11e2d589be24b7ecf248a96a55588795ee985ca37e8ba4ee9b5c"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/prevalidation_report.json",
+      "role": "validator_output",
+      "sha256": "sha256:71763ce363824a6203828cfc54117d996412b2fcf367ac354845af907aa93227"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/compiled_records.json",
+      "role": "compiled_records",
+      "sha256": "sha256:cc5b2cd4e4a7679d1599081d3c93f17505f1ca66679092ccf414c8560081d163"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/schema_validation_report.json",
+      "role": "schema_validation",
+      "sha256": "sha256:70621a22cccd62c9155d01c1e39644f9c2b8af07e06c65a2bde870e1c45e3482"
+    },
+    {
+      "path": "agent_configs/misc/oh_my_pi_p3_2_context_resource_pack_compiler_v1.yaml",
+      "role": "agent_config",
+      "sha256": "sha256:a466f2b15b084d6799a72eb892a726e4273b9f8d4e39964f7f29d18cea046841"
+    },
+    {
+      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "role": "source_freeze",
+      "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
+    }
+  ],
+  "claim_id": "oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim",
+  "config_id": "oh_my_pi_p3_2_context_resource_pack_compiler_v1",
+  "forbidden_roots_checked": [
+    "scratch",
+    "tmp",
+    "scratch_runs",
+    "/shared_folders"
+  ],
+  "generated_at_utc": "2026-07-03T07:30:00Z",
+  "hash_algorithm": "sha256",
+  "lane_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
+  "manifest_scope_note": "Every governed artifact for this P3.2 helper/runtime C4 chain is canonical repo evidence or source-freeze evidence under docs_tmp/phase_15/source_freezes. Scratch/tmp/shared roots are not promotion evidence.",
+  "schema_version": "bb.e4.evidence_manifest.v1"
+}

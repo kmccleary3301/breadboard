@@ -2,6 +2,7 @@ import type {
   EffectiveToolSurfaceV1,
   CoordinationInspectionSnapshotV1,
   KernelEventV1,
+  KernelEventV2,
   TerminalInteractionV1,
   TerminalOutputDeltaV1,
   TerminalSessionDescriptorV1,
@@ -9,6 +10,7 @@ import type {
   RunRequestV1,
   SessionTranscriptV1,
   SessionTranscriptV1Item,
+  SessionTranscriptV2,
   TerminalCleanupResultV1,
   TerminalRegistrySnapshotV1,
   ToolBindingV1,
@@ -60,7 +62,10 @@ export interface ProviderTurnInput {
   readonly request: RunRequestV1
   readonly providerExchange: ProviderExchangeV1
   readonly assistantText: string
-  readonly existingTranscript?: SessionTranscriptV1 | Array<Record<string, unknown> | SessionTranscriptV1Item>
+  readonly existingTranscript?:
+    | SessionTranscriptV1
+    | SessionTranscriptV2
+    | Array<Record<string, unknown> | SessionTranscriptV1Item | SessionTranscriptV2["items"][number]>
 }
 
 export interface ToolTurnInput {
@@ -75,8 +80,8 @@ export interface BackboneTurnResult {
   readonly supportClaim: SupportClaim
   readonly projectionProfile: ProjectionProfile
   readonly runContextId: string
-  readonly transcript: SessionTranscriptV1
-  readonly events: readonly KernelEventV1[]
+  readonly transcript: SessionTranscriptV2
+  readonly events: readonly KernelEventV2[]
   readonly coordinationInspection: CoordinationInspectionSnapshotV1
   readonly providerTurn?: ProviderTextTurnResult
   readonly driverTurn?: DriverMediatedToolTurnResult
@@ -243,7 +248,7 @@ export interface EffectiveToolSurfaceResolutionInput extends EffectiveToolSurfac
 }
 
 export interface BackboneTerminalApi {
-  reduceRegistry(events: readonly KernelEventV1[]): TerminalRegistrySnapshotV1
+  reduceRegistry(events: readonly (KernelEventV1 | KernelEventV2)[]): TerminalRegistrySnapshotV1
   buildCleanupResult(input: TerminalCleanupInput): TerminalCleanupResultV1
   classify(input: { executionProfileId?: ExecutionProfileId }): SupportClaim
   start(input: BackboneTerminalStartInput): Promise<BackboneTerminalStartResult>
@@ -264,7 +269,7 @@ export interface BackboneToolSurfaceApi {
 
 export interface CoordinationInspectionInput {
   readonly snapshot?: CoordinationInspectionSnapshotV1 | null
-  readonly events?: readonly KernelEventV1[]
+  readonly events?: readonly (KernelEventV1 | KernelEventV2)[]
 }
 
 export interface BackboneSession {

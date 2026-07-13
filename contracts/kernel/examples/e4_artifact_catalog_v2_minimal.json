@@ -1,0 +1,34 @@
+{
+  "schema_version": "bb.e4.artifact_catalog.v2",
+  "catalog_id": "e4_artifact_catalog_v2_example",
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "revision": 1,
+  "entries": [
+    {
+      "role_id": "example_lane_capture",
+      "path": "docs/conformance/e4_target_support/example/capture.json",
+      "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "bytes": 0,
+      "exists": false,
+      "artifact_kind": "capture",
+      "lane_id": "example_lane_v1",
+      "media_type": "application/json",
+      "derived_from": [],
+      "generated_by": "manual"
+    }
+  ],
+  "segments": [
+    {
+      "segment_id": "example_lane_v1",
+      "entry_count": 1,
+      "entries_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "stable_entries_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "integrity": {
+    "entry_count": 1,
+    "entries_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "stable_entries_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "segments_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

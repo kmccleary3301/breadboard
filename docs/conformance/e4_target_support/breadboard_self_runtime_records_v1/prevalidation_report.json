@@ -1,0 +1,26 @@
+{
+  "accepted": true,
+  "checks": [
+    {
+      "name": "canonical_paths_only",
+      "passed": true
+    },
+    {
+      "name": "source_hashes_current",
+      "passed": true
+    },
+    {
+      "name": "machine_comparator_assertions",
+      "passed": true
+    },
+    {
+      "name": "secret_scan",
+      "passed": true
+    }
+  ],
+  "config_id": "breadboard_self_runtime_records_v1",
+  "generated_at_utc": "2026-07-07T03:00:00Z",
+  "lane_id": "breadboard_self_runtime_records_v1",
+  "ok": true,
+  "schema_version": "bb.e4.prevalidation_report.v1"
+}

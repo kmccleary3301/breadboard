@@ -1,0 +1,11 @@
+{
+  "schema": "bb.packet_reviewer_evidence.v1",
+  "packet": "SP2b",
+  "verdict": "approved",
+  "reviewed_sha": "ffceba6b9aef3fb90f85b56202647fc6899943ac",
+  "reviewer": "ReviewSP2b (loop-reviewer)",
+  "provenance": "orchestrator-materialized transcription of reviewer IRC verdict [152be8fd6741dec4]; transcript at history://ReviewSP2b",
+  "initial_verdict": "changes_requested @ 9df0ae4a (2 P2 blockers: silent skip of missing tracked entries; regular-file mode type confusion incl. parent-symlink traversal)",
+  "final_summary": "Index object IDs retained; regular/symlink content materialized via cat-file, eliminating both prior blockers. New deleted-checkout, directory-shadow, and parent-symlink regressions pin the fixes. Independent focused suite: 48 passed, 4 warnings in 5.54s. Cumulative diff confined to the two packet files.",
+  "produced_at_utc": "2026-07-11T18:27:20Z"
+}

@@ -1,0 +1,1894 @@
+{
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "guardrail_override": {
+      "additionalProperties": false,
+      "properties": {
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "abort_after_turns": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "blocked_patterns": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "emit_event": {
+              "type": "boolean"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "require_exploration_before_edit": {
+              "type": "boolean"
+            },
+            "require_progress_before_todo_updates": {
+              "type": "boolean"
+            },
+            "require_read_before_edit": {
+              "type": "boolean"
+            },
+            "todo_updates_before_progress": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "warn_after_turns": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "warnings_before_abort": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "strategy": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "templates": {
+          "additionalProperties": false,
+          "properties": {
+            "abort": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "plan_only_todo": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "require_exploration": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "require_read_before_edit": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "validation": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "warn": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "warning": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "team_agent": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "additionalProperties": false,
+          "properties": {
+            "allow_spawn": {
+              "type": "boolean"
+            },
+            "description": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "read_only": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "config_ref": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "entrypoint": {
+          "type": "boolean"
+        },
+        "role": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "team_config": {
+      "additionalProperties": false,
+      "properties": {
+        "team": {
+          "additionalProperties": false,
+          "properties": {
+            "agents": {
+              "additionalProperties": {
+                "$ref": "#/$defs/team_agent"
+              },
+              "properties": {},
+              "type": "object"
+            },
+            "budgets": {
+              "additionalProperties": false,
+              "properties": {
+                "cost_usd_max": {
+                  "minimum": 0,
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "per_agent": {
+                  "additionalProperties": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "cost_usd_max": {
+                        "minimum": 0,
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "wall_clock_s_max": {
+                        "minimum": 0,
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "properties": {},
+                  "type": "object"
+                },
+                "wall_clock_s_max": {
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "bus": {
+              "additionalProperties": false,
+              "properties": {
+                "model_visible_topics": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "retention": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "max_age_seconds": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "max_events": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "coordination": {
+              "additionalProperties": false,
+              "properties": {
+                "done": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "require_all_required_refs": {
+                      "type": "boolean"
+                    },
+                    "require_deliverable_refs": {
+                      "type": "boolean"
+                    },
+                    "require_no_open_required_children": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                },
+                "intervention": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "host_allowed_actions": {
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "require_evidence_refs": {
+                      "type": "boolean"
+                    },
+                    "require_supervisor_escalate": {
+                      "type": "boolean"
+                    },
+                    "support_claim_limited_actions": {
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "legacy_completion_sources": {
+                  "items": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "merge": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "reducer_result_contract": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                },
+                "mission_owner_role": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "preserve_legacy_wake_conditions": {
+                  "type": "boolean"
+                },
+                "review": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "allowed_blocked_actions": {
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "allowed_reviewer_roles": {
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "explicit_verdicts": {
+                      "type": "boolean"
+                    },
+                    "no_progress_action": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "retryable_failure_action": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "verification_result_contract": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "orchestration": {
+              "additionalProperties": false,
+              "properties": {
+                "join_policy": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "default": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "scheduler": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "kind": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "max_concurrent_agents": {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    "ordering": {
+                      "additionalProperties": false,
+                      "properties": {},
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "spawn_protocol": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "args_schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "async": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "ack_fields": {
+                          "items": {
+                            "minLength": 1,
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "wakeup": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "inject_as": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "inject_to": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "template_ref": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "type": "object"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "result_schema_ref": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "tool_name": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "team_id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "topology": {
+              "additionalProperties": false,
+              "properties": {
+                "edges": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "from": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "mode": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "modes": {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "source": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "target": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "to": {
+                        "minLength": 1,
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "version": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "workspace": {
+              "additionalProperties": false,
+              "properties": {
+                "isolation": {
+                  "additionalProperties": false,
+                  "properties": {},
+                  "type": "object"
+                },
+                "sharing": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "default": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "write_lock": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "completion": {
+      "additionalProperties": false,
+      "properties": {
+        "allow_content_only_completion": {
+          "type": "boolean"
+        },
+        "allow_zero_tool_completion": {
+          "type": "boolean"
+        },
+        "build_guard": {
+          "additionalProperties": false,
+          "properties": {
+            "require_run_shell": {
+              "type": "boolean"
+            },
+            "require_successful_tests": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "confidence_threshold": {
+          "type": "number"
+        },
+        "confirmations": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "done_markers": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "natural_finish": {
+          "additionalProperties": false,
+          "properties": {
+            "idle_turn_limit": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "no_tool_turns_threshold": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "primary": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "provider_signals": {
+          "type": "boolean"
+        },
+        "status_signals": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "text_sentinels": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tool_finish": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "concurrency": {
+      "additionalProperties": false,
+      "properties": {
+        "at_most_one_of": {
+          "items": {
+            "oneOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "groups": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "barrier_after": {
+                "oneOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                ]
+              },
+              "match_tools": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "max_parallel": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "nonblocking_tools": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "dossier": {
+      "additionalProperties": true,
+      "description": "Non-normative dossier commentary (L7). Generators, loaders, and validators MUST NOT read this field.",
+      "type": "object"
+    },
+    "enhanced_tools": {
+      "additionalProperties": false,
+      "properties": {
+        "diff_policy": {
+          "additionalProperties": false,
+          "properties": {
+            "patch_splitting": {
+              "additionalProperties": false,
+              "properties": {
+                "max_files_per_patch": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "on_violation": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "policy": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "validation_message": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "lsp_integration": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "validation": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "rule_config": {
+              "additionalProperties": false,
+              "properties": {
+                "one_bash_per_turn": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "disabled": {
+                      "type": "boolean"
+                    },
+                    "turn_window_seconds": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "read_before_edit": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "max_age_seconds": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "mode": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "require_fresh_read": {
+                      "type": "boolean"
+                    },
+                    "strictness": {
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "rules": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "features": {
+      "additionalProperties": false,
+      "properties": {
+        "plan": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        "rlm": {
+          "additionalProperties": false,
+          "properties": {
+            "blob_store": {
+              "additionalProperties": false,
+              "properties": {
+                "max_blob_bytes": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "max_total_bytes": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "mvi_excerpt_bytes": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "budget": {
+              "additionalProperties": false,
+              "properties": {
+                "max_depth": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "max_subcalls": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "max_total_cost_usd": {
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "max_total_tokens": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "max_wallclock_seconds": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "per_branch": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "max_subcalls": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "max_total_cost_usd": {
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "max_total_tokens": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "routing": {
+              "additionalProperties": false,
+              "properties": {
+                "default_lane": {
+                  "enum": [
+                    "tool_heavy",
+                    "long_context",
+                    "balanced"
+                  ]
+                },
+                "long_context_blob_refs": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "long_context_prompt_chars": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "scheduling": {
+              "additionalProperties": false,
+              "properties": {
+                "batch": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "fail_fast": {
+                      "type": "boolean"
+                    },
+                    "max_concurrency": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "max_concurrency_per_branch": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "retries": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "timeout_seconds": {
+                      "minimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "mode": {
+                  "enum": [
+                    "sync",
+                    "batch"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "subcall": {
+              "additionalProperties": false,
+              "properties": {
+                "max_completion_tokens": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "retries": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "timeout_seconds": {
+                  "minimum": 0,
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "todos": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "reset_streak_on_todo": {
+              "type": "boolean"
+            },
+            "strict": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "guardrails": {
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "overrides": {
+          "additionalProperties": {
+            "$ref": "#/$defs/guardrail_override"
+          },
+          "properties": {},
+          "type": "object"
+        },
+        "plan_bootstrap": {
+          "additionalProperties": false,
+          "properties": {
+            "max_turns": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "seed_file": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "strategy": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "warmup_turns": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "long_running": {
+      "additionalProperties": false,
+      "properties": {
+        "budgets": {
+          "additionalProperties": false,
+          "properties": {
+            "max_total_cost_usd": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "max_total_tokens": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total_cost_usd": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "total_episodes": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total_tokens": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "wall_clock_s": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "controller": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "episode": {
+          "additionalProperties": false,
+          "properties": {
+            "max_steps_override": {
+              "minimum": 1,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "observability": {
+          "additionalProperties": false,
+          "properties": {
+            "emit_macro_events": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "queue": {
+          "additionalProperties": false,
+          "properties": {
+            "backend": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "recovery": {
+          "additionalProperties": false,
+          "properties": {
+            "backoff_base_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "backoff_disable_jitter": {
+              "type": "boolean"
+            },
+            "backoff_max_seconds": {
+              "minimum": 0,
+              "type": "number"
+            },
+            "no_progress_signature_repeats": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "reset_policy": {
+          "enum": [
+            "fresh",
+            "compact",
+            "continue"
+          ]
+        },
+        "resume": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "state_path": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "reviewer": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "mode": {
+              "const": "read_only"
+            }
+          },
+          "type": "object"
+        },
+        "verification": {
+          "additionalProperties": false,
+          "properties": {
+            "tiers": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "commands": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "hard_fail": {
+                    "type": "boolean"
+                  },
+                  "name": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "timeout_seconds": {
+                    "exclusiveMinimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "commands"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "loop": {
+      "additionalProperties": false,
+      "properties": {
+        "guardrails": {
+          "additionalProperties": false,
+          "properties": {
+            "zero_tool_watchdog": {
+              "additionalProperties": false,
+              "properties": {
+                "abort_after_turns": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "emit_event": {
+                  "type": "boolean"
+                },
+                "warn_after_turns": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "plan_turn_limit": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sequence": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "if": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "mode": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "then": {
+                "additionalProperties": false,
+                "properties": {
+                  "mode": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "turn_strategy": {
+          "additionalProperties": false,
+          "properties": {
+            "allow_multiple_per_turn": {
+              "type": "boolean"
+            },
+            "flow": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "relay": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "sequence"
+      ],
+      "type": "object"
+    },
+    "modes": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "tools_disabled": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tools_enabled": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "multi_agent": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "event_log_path": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "team_config": {
+          "$ref": "#/$defs/team_config"
+        }
+      },
+      "type": "object"
+    },
+    "permissions": {
+      "additionalProperties": false,
+      "properties": {
+        "edit": {
+          "additionalProperties": false,
+          "properties": {
+            "default": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "options": {
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "shell": {
+          "additionalProperties": false,
+          "properties": {
+            "allow": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "ask": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "default": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "deny": {
+              "items": {
+                "oneOf": [
+                  {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "type": "object"
+                  }
+                ]
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "prompts": {
+      "additionalProperties": false,
+      "properties": {
+        "environment": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "file_limit": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "format": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "injection": {
+          "additionalProperties": false,
+          "properties": {
+            "per_turn_order": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "system_order": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        "packs": {
+          "additionalProperties": false,
+          "properties": {
+            "base": {
+              "additionalProperties": false,
+              "properties": {
+                "builder": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "compact": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "plan": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "system": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "tools_catalog_full": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "tools_catalog_short": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "tool_prompt_mode": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "tool_prompt_synthesis": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "provider_tools": {
+      "additionalProperties": false,
+      "properties": {
+        "anthropic": {
+          "additionalProperties": false,
+          "properties": {
+            "max_output_tokens": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "prompt_cache": {
+              "additionalProperties": false,
+              "properties": {
+                "apply_to_system": {
+                  "type": "boolean"
+                },
+                "beta_header": {
+                  "minLength": 1,
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "cache_control": {
+                  "oneOf": [
+                    {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "ttl": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": {
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "rate_limit": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "fallback_cooldown_seconds": {
+                  "type": "number"
+                },
+                "max_retries": {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "min_wait_seconds": {
+                  "type": "number"
+                },
+                "retry_base_seconds": {
+                  "type": "number"
+                },
+                "retry_jitter_seconds": {
+                  "type": "number"
+                },
+                "retry_max_seconds": {
+                  "type": "number"
+                },
+                "token_buffer": {
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "stream": {
+              "type": "boolean"
+            },
+            "system_reminders": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "todowrite_nudge_after_tool_results": {
+                  "oneOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "usd_budget_limit": {
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "temperature": {
+              "type": "number"
+            },
+            "tool_choice": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "turn_delay_seconds": {
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "api_variant": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "responses_stateful": {
+          "type": "boolean"
+        },
+        "responses_use_developer_role": {
+          "type": "boolean"
+        },
+        "suppress_prompts": {
+          "type": "boolean"
+        },
+        "tool_choice": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "use_native": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "providers": {
+      "additionalProperties": false,
+      "properties": {
+        "default_model": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "models": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "adapter": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "id": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "params": {
+                "additionalProperties": false,
+                "properties": {
+                  "max_output_tokens": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "temperature": {
+                    "type": "number"
+                  },
+                  "tool_use": {
+                    "type": "boolean"
+                  },
+                  "top_p": {
+                    "type": "number"
+                  }
+                },
+                "type": "object"
+              },
+              "routing": {
+                "additionalProperties": false,
+                "properties": {
+                  "fallback_models": {
+                    "items": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "id",
+              "adapter"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "routing": {
+          "additionalProperties": false,
+          "properties": {
+            "disable_native_tools_on_probe_failure": {
+              "type": "boolean"
+            },
+            "disable_stream_on_probe_failure": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "stream_responses": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "default_model",
+        "models"
+      ],
+      "type": "object"
+    },
+    "replay": {
+      "additionalProperties": false,
+      "properties": {
+        "compare_tool_outputs": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "fail_on_tool_output_mismatch": {
+          "type": "boolean"
+        },
+        "preserve_tool_names": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "schema_version": {
+      "const": "bb.agent_config_surface.v2"
+    },
+    "tools": {
+      "additionalProperties": false,
+      "properties": {
+        "aliases": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "properties": {},
+              "type": "object"
+            }
+          ]
+        },
+        "dialects": {
+          "additionalProperties": false,
+          "properties": {
+            "preference": {
+              "additionalProperties": false,
+              "properties": {
+                "by_model": {
+                  "additionalProperties": {
+                    "oneOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "order": {
+                            "items": {
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "type": "array"
+                          }
+                        },
+                        "required": [
+                          "order"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "properties": {},
+                  "type": "object"
+                },
+                "default": {
+                  "oneOf": [
+                    {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    {
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "selection": {
+              "additionalProperties": false,
+              "properties": {
+                "by_model": {
+                  "additionalProperties": {
+                    "oneOf": [
+                      {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      {
+                        "items": {
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    ]
+                  },
+                  "properties": {},
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "mark_task_complete": {
+          "type": "boolean"
+        },
+        "registry": {
+          "additionalProperties": false,
+          "properties": {
+            "include": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "paths": {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "turn_strategy": {
+      "additionalProperties": false,
+      "properties": {
+        "flow": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "version": {
+      "const": 2
+    },
+    "workspace": {
+      "additionalProperties": false,
+      "properties": {
+        "mirror": {
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "mode": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "path": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "root": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "sandbox": {
+          "additionalProperties": false,
+          "properties": {
+            "driver": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "root"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "version",
+    "workspace",
+    "providers",
+    "modes",
+    "loop"
+  ],
+  "title": "BreadBoard Agent Config YAML Surface V2",
+  "type": "object"
+}

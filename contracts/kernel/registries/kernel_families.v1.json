@@ -1,0 +1,865 @@
+{
+  "entries": [
+    {
+      "description": "agent_config_surface contract family.",
+      "id": "agent_config_surface",
+      "metadata": {
+        "schema_versions": [
+          "bb.agent_config_surface.v1",
+          "bb.agent_config_surface.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "atomic_feature_ledger contract family.",
+      "id": "atomic_feature_ledger",
+      "metadata": {
+        "schema_versions": [
+          "bb.atomic_feature_ledger.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Backbone API family reserved until a machine-readable schema is introduced.",
+      "id": "backbone_api",
+      "metadata": {
+        "schema_versions": []
+      },
+      "status": "reserved"
+    },
+    {
+      "description": "blob_ref contract family.",
+      "id": "blob_ref",
+      "metadata": {
+        "schema_versions": [
+          "bb.blob_ref.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "capability_registry contract family.",
+      "id": "capability_registry",
+      "metadata": {
+        "schema_versions": [
+          "bb.capability_registry.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "checkpoint_metadata contract family.",
+      "id": "checkpoint_metadata",
+      "metadata": {
+        "schema_versions": [
+          "bb.checkpoint_metadata.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Agent config explanation contract family.",
+      "id": "config_explanation",
+      "metadata": {
+        "schema_versions": [
+          "bb.config_explanation.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "config_mutation_record contract family.",
+      "id": "config_mutation_record",
+      "metadata": {
+        "schema_versions": [
+          "bb.config_mutation_record.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Conformance evidence family reserved until a dedicated schema exists.",
+      "id": "conformance_evidence",
+      "metadata": {
+        "schema_versions": []
+      },
+      "status": "reserved"
+    },
+    {
+      "description": "context_resource_pack contract family.",
+      "id": "context_resource_pack",
+      "metadata": {
+        "schema_versions": [
+          "bb.context_resource_pack.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "contract_tiers contract family.",
+      "id": "contract_tiers",
+      "metadata": {
+        "schema_versions": [
+          "bb.contract_tiers.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "coordination_delegated_verification_reference_slice contract family.",
+      "id": "coordination_delegated_verification_reference_slice",
+      "metadata": {
+        "schema_versions": [
+          "bb.coordination_delegated_verification_reference_slice.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "coordination_intervention_reference_slice contract family.",
+      "id": "coordination_intervention_reference_slice",
+      "metadata": {
+        "schema_versions": [
+          "bb.coordination_intervention_reference_slice.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "coordination_longrun_reference_slice contract family.",
+      "id": "coordination_longrun_reference_slice",
+      "metadata": {
+        "schema_versions": [
+          "bb.coordination_longrun_reference_slice.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "coordination_multi_worker_reference_slice contract family.",
+      "id": "coordination_multi_worker_reference_slice",
+      "metadata": {
+        "schema_versions": [
+          "bb.coordination_multi_worker_reference_slice.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "coordination_pack contract family.",
+      "id": "coordination_pack",
+      "metadata": {
+        "schema_versions": [
+          "bb.coordination_pack.v3"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "coordination_reference_slice contract family.",
+      "id": "coordination_reference_slice",
+      "metadata": {
+        "schema_versions": [
+          "bb.coordination_reference_slice.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "coordination_slice contract family.",
+      "id": "coordination_slice",
+      "metadata": {
+        "schema_versions": [
+          "bb.coordination_slice.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "coordination_verification_result contract family.",
+      "id": "coordination_verification_result",
+      "metadata": {
+        "schema_versions": [
+          "bb.coordination_verification_result.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "directive contract family.",
+      "id": "directive",
+      "metadata": {
+        "schema_versions": [
+          "bb.directive.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "distributed_task_descriptor contract family.",
+      "id": "distributed_task_descriptor",
+      "metadata": {
+        "schema_versions": [
+          "bb.distributed_task_descriptor.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_artifact_catalog contract family.",
+      "id": "e4_artifact_catalog",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.artifact_catalog.v1",
+          "bb.e4.artifact_catalog.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_closure_report contract family.",
+      "id": "e4_closure_report",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.closure_report.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "E4 shared definition contracts used by evidence-pack schemas.",
+      "id": "e4_common",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.common.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_comparator_registry contract family.",
+      "id": "e4_comparator_registry",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.comparator_registry.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_fixed_point_report contract family.",
+      "id": "e4_fixed_point_report",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.fixed_point_report.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "E4 lane definition contract family.",
+      "id": "e4_lane_definition",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.lane_def.v1",
+          "bb.e4.lane_def.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_lane_inventory contract family.",
+      "id": "e4_lane_inventory",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.lane_inventory.v1",
+          "bb.e4.lane_inventory.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_lane_lock contract family.",
+      "id": "e4_lane_lock",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.lane_lock.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_lane_manifest contract family.",
+      "id": "e4_lane_manifest",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.lane_manifest.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_regen_failure_classification contract family.",
+      "id": "e4_regen_failure_classification",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.regen_failure_classification.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_regen_plan contract family.",
+      "id": "e4_regen_plan",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.regen_plan.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "e4_target_coverage contract family.",
+      "id": "e4_target_coverage",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.target_coverage.v1",
+          "bb.e4.target_coverage.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "effective_config_graph contract family.",
+      "id": "effective_config_graph",
+      "metadata": {
+        "schema_versions": [
+          "bb.effective_config_graph.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "effective_operation_policy contract family.",
+      "id": "effective_operation_policy",
+      "metadata": {
+        "schema_versions": [
+          "bb.effective_operation_policy.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "effective_tool_surface contract family.",
+      "id": "effective_tool_surface",
+      "metadata": {
+        "schema_versions": [
+          "bb.effective_tool_surface.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "environment_selector contract family.",
+      "id": "environment_selector",
+      "metadata": {
+        "schema_versions": [
+          "bb.environment_selector.v1",
+          "bb.environment_selector.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "er_progress contract family.",
+      "id": "er_progress",
+      "metadata": {
+        "schema_versions": [
+          "bb.er.progress.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "execution_capability contract family.",
+      "id": "execution_capability",
+      "metadata": {
+        "schema_versions": [
+          "bb.execution_capability.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Execution driver policy and evidence expectations family reserved until a dedicated schema exists.",
+      "id": "execution_driver_policy_evidence",
+      "metadata": {
+        "schema_versions": []
+      },
+      "status": "reserved"
+    },
+    {
+      "description": "execution_placement contract family.",
+      "id": "execution_placement",
+      "metadata": {
+        "schema_versions": [
+          "bb.execution_placement.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "external_protocol_session contract family.",
+      "id": "external_protocol_session",
+      "metadata": {
+        "schema_versions": [
+          "bb.external_protocol_session.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Host-kit boundaries family reserved until a dedicated schema exists.",
+      "id": "host_kit_boundaries",
+      "metadata": {
+        "schema_versions": []
+      },
+      "status": "reserved"
+    },
+    {
+      "description": "Import/export session family reserved until a dedicated schema exists.",
+      "id": "import_export_session",
+      "metadata": {
+        "schema_versions": []
+      },
+      "status": "reserved"
+    },
+    {
+      "description": "Kernel event log contract family.",
+      "id": "kernel_event_log",
+      "metadata": {
+        "schema_versions": [
+          "bb.kernel_event.v1",
+          "bb.kernel_event.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "E4 lane validation report contract family.",
+      "id": "lane_validation_report",
+      "metadata": {
+        "schema_versions": [
+          "bb.lane_validation_report.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "memory_compaction_plan contract family.",
+      "id": "memory_compaction_plan",
+      "metadata": {
+        "schema_versions": [
+          "bb.memory_compaction_plan.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Middleware and hook lifecycle family.",
+      "id": "middleware_hook_lifecycle",
+      "metadata": {
+        "schema_versions": [
+          "bb.extension_hook_execution.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "permission contract family.",
+      "id": "permission",
+      "metadata": {
+        "schema_versions": [
+          "bb.permission.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Projection adapter boundaries family reserved until a dedicated schema exists.",
+      "id": "projection_adapter_boundaries",
+      "metadata": {
+        "schema_versions": []
+      },
+      "status": "reserved"
+    },
+    {
+      "description": "projection_event contract family.",
+      "id": "projection_event",
+      "metadata": {
+        "schema_versions": [
+          "bb.projection_event.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Projection profile family reserved until a dedicated schema exists.",
+      "id": "projection_profile",
+      "metadata": {
+        "schema_versions": []
+      },
+      "status": "reserved"
+    },
+    {
+      "description": "provider_exchange contract family.",
+      "id": "provider_exchange",
+      "metadata": {
+        "schema_versions": [
+          "bb.provider_exchange.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "provider_route contract family.",
+      "id": "provider_route",
+      "metadata": {
+        "schema_versions": [
+          "bb.provider_route.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "registry contract family.",
+      "id": "registry",
+      "metadata": {
+        "schema_versions": [
+          "bb.registry.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Replay session family.",
+      "id": "replay_session",
+      "metadata": {
+        "schema_versions": [
+          "bb.replay_session.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "resource_access contract family.",
+      "id": "resource_access",
+      "metadata": {
+        "schema_versions": [
+          "bb.resource_access.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "resource_ref contract family.",
+      "id": "resource_ref",
+      "metadata": {
+        "schema_versions": [
+          "bb.resource_ref.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "review_verdict contract family.",
+      "id": "review_verdict",
+      "metadata": {
+        "schema_versions": [
+          "bb.review_verdict.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Run context contract family.",
+      "id": "run_context",
+      "metadata": {
+        "schema_versions": [
+          "bb.run_context.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Run request contract family.",
+      "id": "run_request",
+      "metadata": {
+        "schema_versions": [
+          "bb.run_request.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "sandbox_request contract family.",
+      "id": "sandbox_request",
+      "metadata": {
+        "schema_versions": [
+          "bb.sandbox_request.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "sandbox_result contract family.",
+      "id": "sandbox_result",
+      "metadata": {
+        "schema_versions": [
+          "bb.sandbox_result.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Schema lifecycle contract family.",
+      "id": "schema_lifecycle",
+      "metadata": {
+        "schema_versions": [
+          "bb.schema_lifecycle.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Session/transcript snapshot contract family.",
+      "id": "session_transcript_snapshot",
+      "metadata": {
+        "schema_versions": [
+          "bb.session_transcript.v1",
+          "bb.session_transcript.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "side_effect_broker contract family.",
+      "id": "side_effect_broker",
+      "metadata": {
+        "schema_versions": [
+          "bb.side_effect_broker.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "signal contract family.",
+      "id": "signal",
+      "metadata": {
+        "schema_versions": [
+          "bb.signal.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Evidence-backed E4 support claim family.",
+      "id": "support_claim",
+      "metadata": {
+        "schema_versions": [
+          "bb.e4.support_claim.v1",
+          "bb.e4.support_claim.v2",
+          "bb.e4.support_claim.v3",
+          "bb.e4.support_claim.v4"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "task contract family.",
+      "id": "task",
+      "metadata": {
+        "schema_versions": [
+          "bb.task.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "terminal_cleanup_result contract family.",
+      "id": "terminal_cleanup_result",
+      "metadata": {
+        "schema_versions": [
+          "bb.terminal_cleanup_result.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "terminal_interaction contract family.",
+      "id": "terminal_interaction",
+      "metadata": {
+        "schema_versions": [
+          "bb.terminal_interaction.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "terminal_output_delta contract family.",
+      "id": "terminal_output_delta",
+      "metadata": {
+        "schema_versions": [
+          "bb.terminal_output_delta.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "terminal_registry_snapshot contract family.",
+      "id": "terminal_registry_snapshot",
+      "metadata": {
+        "schema_versions": [
+          "bb.terminal_registry_snapshot.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "terminal_session_descriptor contract family.",
+      "id": "terminal_session_descriptor",
+      "metadata": {
+        "schema_versions": [
+          "bb.terminal_session_descriptor.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "terminal_session_end contract family.",
+      "id": "terminal_session_end",
+      "metadata": {
+        "schema_versions": [
+          "bb.terminal_session_end.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "tool_binding contract family.",
+      "id": "tool_binding",
+      "metadata": {
+        "schema_versions": [
+          "bb.tool_binding.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "tool_call contract family.",
+      "id": "tool_call",
+      "metadata": {
+        "schema_versions": [
+          "bb.tool_call.v1",
+          "bb.tool_call.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "tool_execution_outcome contract family.",
+      "id": "tool_execution_outcome",
+      "metadata": {
+        "schema_versions": [
+          "bb.tool_execution_outcome.v1",
+          "bb.tool_execution_outcome.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Tool model-render family.",
+      "id": "tool_render",
+      "metadata": {
+        "schema_versions": [
+          "bb.tool_model_render.v1",
+          "bb.tool_model_render.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "tool_spec contract family.",
+      "id": "tool_spec",
+      "metadata": {
+        "schema_versions": [
+          "bb.tool_spec.v1",
+          "bb.tool_spec.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Tool-scoped support claim family.",
+      "id": "tool_support_claim",
+      "metadata": {
+        "schema_versions": [
+          "bb.tool_support_claim.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Transcript continuation patch family.",
+      "id": "transcript_continuation_patch",
+      "metadata": {
+        "schema_versions": [
+          "bb.transcript_continuation_patch.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Unsupported-case taxonomy family.",
+      "id": "unsupported_case_taxonomy",
+      "metadata": {
+        "schema_versions": [
+          "bb.unsupported_case.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "wake_subscription contract family.",
+      "id": "wake_subscription",
+      "metadata": {
+        "schema_versions": [
+          "bb.wake_subscription.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "work_item contract family.",
+      "id": "work_item",
+      "metadata": {
+        "schema_versions": [
+          "bb.work_item.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Workspace layer and artifact shaping family reserved until a dedicated schema exists.",
+      "id": "workspace_layer_artifact_shaping",
+      "metadata": {
+        "schema_versions": []
+      },
+      "status": "reserved"
+    }
+  ],
+  "registry_id": "kernel_families",
+  "schema_version": "bb.registry.v1"
+}

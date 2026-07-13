@@ -1,0 +1,16 @@
+{
+  "error_count": 0,
+  "errors": [],
+  "gate_errors": [],
+  "ok": true,
+  "pin_policy": "v1",
+  "pin_stale_count": 0,
+  "points_done": 1000,
+  "points_total": 1000,
+  "progress_path": "docs_tmp/phase_16/BB_ER_PROGRESS.json",
+  "revision": 68,
+  "schema_path": "breadboard_repo_integration_main_20260326/contracts/kernel/schemas/bb.er.progress.v1.schema.json",
+  "schema_version": "bb.er.progress_check_report.v1",
+  "semantic_count": 0,
+  "verify_hashes": true
+}

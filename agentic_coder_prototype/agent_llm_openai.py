@@ -36,6 +36,7 @@ from .execution.dialect_manager import DialectManager
 from .execution.agent_executor import AgentToolExecutor
 from .compilation.system_prompt_compiler import get_compiler
 from .compilation.v2_loader import load_agent_config
+from .compilation.tool_registry import registry_from_config
 from .provider.ir import IRFinish, IRDeltaEvent
 from .provider.routing import provider_router
 from .provider import provider_adapter_manager
@@ -68,35 +69,19 @@ from .provider import normalize_provider_result
 from .provider.metrics import ProviderMetricsCollector
 from .guardrail import GuardrailCoordinator, GuardrailOrchestrator
 from .conductor.components import (
-    apply_cache_control_to_initial_user_prompt,
-    apply_cache_control_to_tool_messages,
     apply_capability_tool_overrides,
     apply_streaming_policy_for_turn,
-    append_text_block,
     build_prompt_summary,
     capture_turn_diagnostics,
-    completion_tool_config_enabled,
-    ensure_completion_tool,
     get_capability_probe_result,
-    maybe_run_plan_bootstrap,
     get_model_routing_preferences,
     get_prompt_cache_control,
-    should_require_build_guard,
-    is_read_only_tool,
-    get_default_tool_definitions,
     initialize_config_validator,
     initialize_enhanced_executor,
     initialize_guardrail_config,
     initialize_yaml_tools,
-    inject_cache_control_into_message,
     log_routing_event,
-    normalize_assistant_text,
-    prepare_concurrency_policy,
-    record_lsp_reward_metrics,
-    record_test_reward_metric,
-    register_prompt_hash,
     should_require_workspace_tool_usage,
-    tool_defs_from_yaml,
     write_env_fingerprint,
     write_workspace_manifest,
 )
@@ -122,56 +107,9 @@ from .skills.registry import (
     apply_skill_selection,
 )
 from .skills.executor import execute_graph_skill
-from .conductor.patching import (
-    apply_patch_operations_direct,
-    convert_patch_to_unified,
-    count_diff_hunks,
-    emit_patch_policy_violation,
-    expand_multi_file_patches,
-    fetch_workspace_text,
-    normalize_patch_block,
-    normalize_workspace_path,
-    record_diff_metrics,
-    split_patch_blocks,
-    synthesize_patch_blocks,
-    retry_diff_with_aider,
-    validate_structural_artifacts,
-)
-from .conductor.loop import run_main_loop
+from .conductor.patching import retry_diff_with_aider
 from .conductor.bootstrap import bootstrap_conductor, prepare_workspace
-from .conductor.components import write_env_fingerprint
-from .conductor.modes import (
-    add_enhanced_message_fields,
-    adjust_tool_prompt_mode,
-    apply_preference_order,
-    apply_selection_legacy,
-    apply_turn_strategy_from_loop,
-    apply_v2_dialect_selection,
-    create_dialect_mapping,
-    get_model_response,
-    get_native_preference_hint,
-    setup_native_tools,
-    setup_tool_prompts,
-)
-from .conductor.execution import (
-    build_exec_func,
-    execute_agent_calls,
-    build_turn_context,
-    summarize_execution_results,
-    emit_turn_snapshot,
-    hydrate_turn_context_signals,
-    finalize_turn_context_snapshot,
-    apply_turn_guards,
-    handle_blocked_calls,
-    resolve_replay_todo_placeholders,
-    maybe_transition_plan_mode,
-    handle_native_tool_calls,
-    handle_text_tool_calls,
-    legacy_message_view,
-    log_provider_message,
-    process_model_output,
-    retry_with_fallback,
-)
+from .conductor.facade_methods import OpenAIConductorFacadeMethods
 from .todo import TodoManager, TodoStore
 from .todo.store import TODO_OPEN_STATUSES
 from .replay import ReplaySession, load_replay_session
@@ -367,8 +305,16 @@ def _dump_tool_defs(tool_defs: List[ToolDefinition]) -> List[Dict[str, Any]]:
 
 
 @ray.remote
-class OpenAIConductor:
-    def __init__(self, workspace: str, image: str = "python-dev:latest", config: Optional[Dict[str, Any]] = None, *, local_mode: bool = False) -> None:
+class OpenAIConductor(OpenAIConductorFacadeMethods):
+    def __init__(
+        self,
+        workspace: str,
+        image: str = "python-dev:latest",
+        config: Optional[Dict[str, Any]] = None,
+        *,
+        local_mode: bool = False,
+        prompt_base_dirs: Optional[List[Path]] = None,
+    ) -> None:
         """Initialize conductor with workspace, image, and configuration."""
         self._bootstrap_openai_env_from_runtime_config(config if isinstance(config, dict) else None)
         bootstrap_conductor(
@@ -381,6 +327,7 @@ class OpenAIConductor:
             zero_tool_abort_message=ZERO_TOOL_ABORT_MESSAGE,
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
         )
+        self._prompt_base_dirs = list(prompt_base_dirs or [])
         # Stop requests are session-scoped and should only affect the current run.
         self._stop_requested = False
         # Runtime-only reference used for streaming task events (e.g., async subagent completions).
@@ -790,6 +737,7 @@ class OpenAIConductor:
                 image=str(getattr(self, "image", "python-dev:latest")),
                 config=cfg_copy,
                 local_mode=True,
+                prompt_base_dirs=list(getattr(self, "_prompt_base_dirs", [])),
             )
             return child.run_agentic_loop(
                 "",
@@ -2526,79 +2474,10 @@ class OpenAIConductor:
         except Exception:
             return tool_defs
 
-    def _apply_turn_strategy_from_loop(self) -> None:
-        apply_turn_strategy_from_loop(self)
-
-    def _get_prompt_cache_control(self) -> Optional[Dict[str, Any]]:
-        provider_cfg = getattr(self, "_provider_tools_effective", None) or (self.config.get("provider_tools") or {})
-        return get_prompt_cache_control({"provider_tools": provider_cfg})
-
-    def _apply_cache_control_to_initial_user_prompt(
-        self,
-        messages: List[Dict[str, Any]],
-        cache_control: Dict[str, Any],
-    ) -> None:
-        apply_cache_control_to_initial_user_prompt(messages, cache_control)
-
-    def _inject_cache_control_into_message(
-        self,
-        message: Dict[str, Any],
-        cache_control: Dict[str, Any],
-    ) -> None:
-        inject_cache_control_into_message(message, cache_control)
-
-    def _append_text_block(self, message: Dict[str, Any], text: str) -> None:
-        append_text_block(message, text)
-
-    def _apply_cache_control_to_tool_messages(
-        self,
-        messages: List[Dict[str, Any]],
-        cache_control: Dict[str, Any],
-    ) -> None:
-        apply_cache_control_to_tool_messages(messages, cache_control)
-
-    def _prepare_concurrency_policy(self) -> Dict[str, Any]:
-        return prepare_concurrency_policy(self.config)
-
-    def _tool_defs_from_yaml(self) -> Optional[List[ToolDefinition]]:
-        return tool_defs_from_yaml(self)
-
-    def _completion_tool_config_enabled(self) -> bool:
-        return completion_tool_config_enabled(self.config)
-
-    def _ensure_completion_tool(self, tool_defs: List[ToolDefinition]) -> List[ToolDefinition]:
-        """Ensure mark_task_complete tool is present in the tool definitions."""
-        return ensure_completion_tool(tool_defs)
-
-    @staticmethod
-    def _is_read_only_tool(tool_name: str) -> bool:
-        """Classify tools that only inspect state (used for completion heuristics)."""
-        return is_read_only_tool(tool_name)
-
-    @staticmethod
-    def _normalize_assistant_text(text: Optional[str]) -> str:
-        return normalize_assistant_text(text)
 
     def _dump_tool_defs(self, tool_defs: List[ToolDefinition]) -> List[Dict[str, Any]]:
         return _dump_tool_defs(tool_defs)
 
-    def _record_lsp_reward_metrics(
-        self,
-        session_state: SessionState,
-        turn_index: int,
-    ) -> None:
-        record_lsp_reward_metrics(self, session_state, turn_index)
-
-    def _record_test_reward_metric(
-        self,
-        session_state: SessionState,
-        turn_index: int,
-        success_value: Optional[float],
-    ) -> None:
-        record_test_reward_metric(session_state, turn_index, success_value)
-
-    def _register_prompt_hash(self, prompt_type: str, content: Optional[str], turn_index: Optional[int] = None) -> None:
-        register_prompt_hash(self, prompt_type, content, turn_index)
 
     def _build_prompt_summary(self) -> Optional[Dict[str, Any]]:
         return build_prompt_summary(self)
@@ -4368,61 +4247,10 @@ class OpenAIConductor:
             pass
         return diag
 
-    def _maybe_run_plan_bootstrap(self, session_state: SessionState, markdown_logger: Optional[MarkdownLogger] = None) -> None:
-        maybe_run_plan_bootstrap(self, session_state, markdown_logger)
-
-    def _should_require_build_guard(self, user_prompt: str) -> bool:
-        return should_require_build_guard(self, user_prompt)
 
     def _todo_config(self) -> Dict[str, Any]:
         return self.guardrail_coordinator.todo_config()
 
-    def _build_turn_context(self, session_state: SessionState, parsed_calls: List[Any]) -> TurnContext:
-        return build_turn_context(self, session_state, parsed_calls)
-
-    def _summarize_execution_results(
-        self,
-        turn_ctx: TurnContext,
-        executed_results: List[Any],
-        session_state: SessionState,
-        turn_index_int: Optional[int],
-    ) -> Tuple[List[Dict[str, Any]], Optional[float]]:
-        return summarize_execution_results(self, turn_ctx, executed_results, session_state, turn_index_int)
-
-    def _emit_turn_snapshot(self, session_state: SessionState, turn_ctx: TurnContext) -> None:
-        emit_turn_snapshot(self, session_state, turn_ctx)
-
-    def _hydrate_turn_context_signals(
-        self,
-        session_state: SessionState,
-        turn_ctx: TurnContext,
-    ) -> None:
-        hydrate_turn_context_signals(session_state, turn_ctx)
-
-    def _finalize_turn_context_snapshot(
-        self,
-        session_state: SessionState,
-        turn_ctx: TurnContext,
-        turn_index: Optional[int],
-    ) -> None:
-        finalize_turn_context_snapshot(self, session_state, turn_ctx, turn_index)
-
-    def _apply_turn_guards(self, turn_ctx: TurnContext, session_state: SessionState) -> List[Any]:
-        return apply_turn_guards(self, turn_ctx, session_state)
-
-    def _handle_blocked_calls(
-        self,
-        turn_ctx: TurnContext,
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-    ) -> None:
-        handle_blocked_calls(self, turn_ctx, session_state, markdown_logger)
-
-    def _resolve_replay_todo_placeholders(self, session_state: SessionState, parsed_call: Any) -> None:
-        resolve_replay_todo_placeholders(self, session_state, parsed_call)
-
-    def _maybe_transition_plan_mode(self, session_state: SessionState, markdown_logger: Optional[MarkdownLogger] = None) -> None:
-        maybe_transition_plan_mode(self, session_state, markdown_logger)
 
     def _prompts_config_with_todos(self) -> Dict[str, Any]:
         todos_cfg = self._todo_config()
@@ -4520,76 +4348,6 @@ class OpenAIConductor:
         except Exception:
             pass
 
-    @staticmethod
-    def _count_diff_hunks(text: Optional[str]) -> int:
-        return count_diff_hunks(text)
-
-    @staticmethod
-    def _split_patch_blocks(patch_text: str) -> List[str]:
-        return split_patch_blocks(patch_text)
-
-    def _normalize_patch_block(self, block_text: str) -> str:
-        """Wrap loose OpenCode patch snippets with sentinel markers."""
-        return normalize_patch_block(block_text)
-
-    def _fetch_workspace_text(self, path: str) -> str:
-        """Best-effort read helper for converting OpenCode patches."""
-        return fetch_workspace_text(self, path)
-
-    def _convert_patch_to_unified(self, patch_text: str) -> Optional[str]:
-        """Convert OpenCode patch text to a unified diff for legacy executors."""
-        return convert_patch_to_unified(self, patch_text)
-
-    def _apply_patch_operations_direct(self, patch_text: str) -> Optional[Dict[str, Any]]:
-        """Fallback handler that directly applies simple add-file operations."""
-        return apply_patch_operations_direct(self, patch_text)
-
-    def _expand_multi_file_patches(
-        self,
-        parsed_calls: List[Any],
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-    ) -> List[Any]:
-        return expand_multi_file_patches(self, parsed_calls, session_state, markdown_logger)
-
-    def _emit_patch_policy_violation(
-        self,
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-        *,
-        chunk_count: int,
-        policy_mode: str,
-        validation_message: Optional[str],
-    ) -> None:
-        """Emit a validation error when multi-file patch policy is violated."""
-        emit_patch_policy_violation(
-            self,
-            session_state,
-            markdown_logger,
-            chunk_count=chunk_count,
-            policy_mode=policy_mode,
-            validation_message=validation_message,
-        )
-
-    def _validate_structural_artifacts(self, session_state: SessionState) -> List[str]:
-        """Perform lightweight structural checks on key workspace artifacts."""
-        return validate_structural_artifacts(self, session_state)
-
-    def _record_diff_metrics(
-        self,
-        tool_call: Any,
-        result: Dict[str, Any],
-        *,
-        session_state: Optional[SessionState] = None,
-        turn_index: Optional[int] = None,
-    ) -> None:
-        record_diff_metrics(
-            self,
-            tool_call,
-            result,
-            session_state=session_state,
-            turn_index=turn_index,
-        )
 
     def create_file(self, path: str) -> Dict[str, Any]:
         return self._ray_get(self.sandbox.write_text.remote(path, ""))
@@ -4687,33 +4445,13 @@ class OpenAIConductor:
     def vcs(self, request: Dict[str, Any]) -> Dict[str, Any]:
         return self._ray_get(self.sandbox.vcs.remote(request))
 
-    def _normalize_workspace_path(self, path_in: str) -> str:
-        """Normalize a tool-supplied path so it stays within the workspace root."""
-        return normalize_workspace_path(self, path_in)
     
     def _exec_raw(self, tool_call: Dict[str, Any], *, _skip_skill: bool = False) -> Dict[str, Any]:
         """Raw tool execution without enhanced features (for compatibility)"""
         name = tool_call["function"]
         args = tool_call["arguments"]
 
-        # Normalize common aliases used by provider tool names
-        normalized = name.lower()
-        if normalized == "bash":
-            normalized = "run_shell"
-        elif normalized == "shell_command":
-            normalized = "run_shell"
-        elif normalized == "list":
-            normalized = "list_dir"
-        elif normalized == "read":
-            normalized = "read_file"
-        elif normalized == "write":
-            normalized = "create_file_from_block"
-        elif normalized == "apply_patch":
-            normalized = "apply_unified_patch"
-        elif normalized == "todowrite":
-            normalized = "todo.write_board"
-        elif normalized == "todoread":
-            normalized = "todo.list"
+        normalized = registry_from_config(getattr(self, "config", None)).resolve_name(name.lower())
 
         if normalized.startswith("mcp."):
             return self._handle_mcp_tool(tool_call)
@@ -5019,6 +4757,8 @@ class OpenAIConductor:
         permission_queue: Optional[Any] = None,
         control_queue: Optional[Any] = None,
         context: Optional[Dict[str, Any]] = None,
+        kernel_emitter_run_dir: Optional[str] = None,
+        kernel_emitter_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         # Clear any prior stop request from earlier runs (Esc in the TUI should only
         # interrupt the current in-flight run, not permanently disable the session).
@@ -5033,8 +4773,32 @@ class OpenAIConductor:
                     pass
             emitter = queue_emitter
         self.todo_manager = None
-        session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter)
+        kernel_emitter = None
+        if kernel_emitter_run_dir:
+            try:
+                from pathlib import Path as _Path
+
+                from .runtime.kernel_emitter import JsonlKernelEmitter
+
+                mode = str(kernel_emitter_mode or "strict").strip().lower()
+                if mode not in {"strict", "quarantine", "off"}:
+                    mode = "strict"
+                kernel_emitter = JsonlKernelEmitter(_Path(kernel_emitter_run_dir), mode=mode)  # type: ignore[arg-type]
+            except Exception:
+                kernel_emitter = None
+        session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter, kernel_emitter=kernel_emitter)
         self._active_session_state = session_state
+        kernel_emitter_closed = False
+
+        def _close_kernel_emitter(reason: str = "session_end") -> None:
+            nonlocal kernel_emitter_closed
+            if kernel_emitter is None or kernel_emitter_closed:
+                return
+            try:
+                session_state.emit_session_transcript_snapshot(reason=reason)
+            finally:
+                kernel_emitter.close()
+                kernel_emitter_closed = True
         try:
             session_state.record_lifecycle_event(
                 "session_started",
@@ -5439,6 +5203,7 @@ class OpenAIConductor:
                     tool_defs,
                     active_dialect_names,
                     extra_blocks=extra_blocks,
+                    prompt_base_dirs=list(getattr(self, "_prompt_base_dirs", [])),
                 )
                 session_state.set_provider_metadata("current_mode", mode_name)
                 system_prompt = v2.get("system") or system_prompt
@@ -5813,6 +5578,10 @@ class OpenAIConductor:
             except Exception:
                 pass
             self._active_telemetry_logger = None
+            try:
+                _close_kernel_emitter("session_error" if run_loop_error is not None else "session_end")
+            except Exception:
+                pass
             self._active_session_state = None
         # Defensive: always return a dict result
         if not isinstance(run_result, dict):
@@ -5881,6 +5650,10 @@ class OpenAIConductor:
             except Exception:
                 pass
 
+        try:
+            _close_kernel_emitter("session_end")
+        except Exception:
+            pass
         return run_result
     
     def _persist_final_workspace(self) -> None:
@@ -5973,121 +5746,6 @@ class OpenAIConductor:
         except Exception:
             pass
 
-    def _get_default_tool_definitions(self) -> List[ToolDefinition]:
-        return get_default_tool_definitions()
-    
-    def _create_dialect_mapping(self) -> Dict[str, Any]:
-        return create_dialect_mapping()
-
-    def _apply_v2_dialect_selection(self, current: List[str], model_id: str, tool_defs: List[ToolDefinition]) -> List[str]:
-        return apply_v2_dialect_selection(self, current, model_id, tool_defs)
-
-    def _apply_selection_legacy(
-        self,
-        current: List[str],
-        model_id: str,
-        tool_defs: List[ToolDefinition],
-        selection_cfg: Dict[str, Any],
-    ) -> List[str]:
-        return apply_selection_legacy(current, model_id, tool_defs, selection_cfg)
-
-    def _apply_preference_order(
-        self,
-        base_order: List[str],
-        model_id: str,
-        tool_defs: List[ToolDefinition],
-        preference_cfg: Dict[str, Any],
-    ) -> Tuple[List[str], Optional[bool]]:
-        return apply_preference_order(base_order, model_id, tool_defs, preference_cfg)
-
-    def _get_native_preference_hint(self) -> Optional[bool]:
-        return get_native_preference_hint(self)
-
-    def _setup_native_tools(self, model: str, use_native_tools: bool) -> bool:
-        return setup_native_tools(self, model, use_native_tools)
-    
-    def _adjust_tool_prompt_mode(self, tool_prompt_mode: str, will_use_native_tools: bool) -> str:
-        return adjust_tool_prompt_mode(self, tool_prompt_mode, will_use_native_tools)
-    
-    def _setup_tool_prompts(
-        self, 
-        tool_prompt_mode: str, 
-        tool_defs: List[ToolDefinition], 
-        active_dialect_names: List[str],
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-        caller
-    ) -> str:
-        return setup_tool_prompts(
-            self,
-            tool_prompt_mode,
-            tool_defs,
-            active_dialect_names,
-            session_state,
-            markdown_logger,
-            caller,
-        )
-    
-    def _add_enhanced_message_fields(
-        self,
-        tool_prompt_mode: str,
-        tool_defs: List[ToolDefinition],
-        active_dialect_names: List[str],
-        session_state: SessionState,
-        will_use_native_tools: bool,
-        local_tools_prompt: str,
-        user_prompt: str
-    ):
-        add_enhanced_message_fields(
-            self,
-            tool_prompt_mode,
-            tool_defs,
-            active_dialect_names,
-            session_state,
-            will_use_native_tools,
-            local_tools_prompt,
-            user_prompt,
-        )
-    
-    def _run_main_loop(
-        self,
-        runtime,
-        client,
-        model: str,
-        max_steps: int,
-        output_json_path: str,
-        tool_prompt_mode: str,
-        tool_defs: List[ToolDefinition],
-        active_dialect_names: List[str],
-        caller,
-        session_state: SessionState,
-        completion_detector: CompletionDetector,
-        markdown_logger: MarkdownLogger,
-        error_handler: ErrorHandler,
-        stream_responses: bool,
-        local_tools_prompt: str,
-        client_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Main loop delegated to conductor_loop.run_main_loop for readability."""
-        return run_main_loop(
-            self,
-            runtime,
-            client,
-            model,
-            max_steps,
-            output_json_path,
-            tool_prompt_mode,
-            tool_defs,
-            active_dialect_names,
-            caller,
-            session_state,
-            completion_detector,
-            markdown_logger,
-            error_handler,
-            stream_responses,
-            local_tools_prompt,
-            client_config,
-        )
 
     def _persist_error_artifacts(self, turn_index: int, payload: Dict[str, Any]) -> None:
         """Persist error payload and associated diagnostics artifacts."""
@@ -6128,37 +5786,6 @@ class OpenAIConductor:
         except Exception:
             pass
 
-    def _retry_with_fallback(
-        self,
-        runtime,
-        client,
-        model: str,
-        messages: List[Dict[str, Any]],
-        tools_schema: Optional[List[Dict[str, Any]]],
-        runtime_context: ProviderRuntimeContext,
-        *,
-        stream_responses: bool,
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-        attempted: List[Tuple[str, bool, Optional[str]]],
-        last_error: Optional[ProviderRuntimeError],
-    ) -> Optional[ProviderResult]:
-        return retry_with_fallback(
-            self,
-            runtime,
-            client,
-            model,
-            messages,
-            tools_schema,
-            runtime_context,
-            stream_responses=stream_responses,
-            session_state=session_state,
-            markdown_logger=markdown_logger,
-            attempted=attempted,
-            last_error=last_error,
-            provider_router_override=provider_router,
-            provider_registry_override=provider_registry,
-        )
 
     def _ensure_capability_probes(self, session_state: SessionState, markdown_logger: MarkdownLogger) -> None:
         if self._capability_probes_ran:
@@ -6206,136 +5833,6 @@ class OpenAIConductor:
             route_id=getattr(self, "_current_route_id", None),
         )
 
-    def _build_exec_func(self, session_state: SessionState) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
-        return build_exec_func(self, session_state)
-
-    def _execute_agent_calls(
-        self,
-        parsed_calls: List[Any],
-        exec_func: Callable[[Dict[str, Any]], Dict[str, Any]],
-        session_state: SessionState,
-        *,
-        transcript_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
-        policy_bypass: bool = False,
-    ) -> Tuple[List[Any], int, Optional[Dict[str, Any]], Dict[str, Any]]:
-        return execute_agent_calls(
-            self,
-            parsed_calls,
-            exec_func,
-            session_state,
-            transcript_callback=transcript_callback,
-            policy_bypass=policy_bypass,
-        )
-    
-    def _get_model_response(
-        self,
-        runtime,
-        client,
-        model: str,
-        tool_prompt_mode: str,
-        tool_defs: List[ToolDefinition],
-        active_dialect_names: List[str],
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-        stream_responses: bool,
-        local_tools_prompt: str,
-        client_config: Dict[str, Any],
-    ) -> ProviderResult:
-        return get_model_response(
-            self,
-            runtime,
-            client,
-            model,
-            tool_prompt_mode,
-            tool_defs,
-            active_dialect_names,
-            session_state,
-            markdown_logger,
-            stream_responses,
-            local_tools_prompt,
-            client_config,
-        )
-    
-    def _legacy_message_view(self, provider_message: ProviderMessage) -> SimpleNamespace:
-        return legacy_message_view(provider_message)
-
-    def _log_provider_message(
-        self,
-        provider_message: ProviderMessage,
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-        stream_responses: bool,
-    ) -> None:
-        log_provider_message(self, provider_message, session_state, markdown_logger, stream_responses)
-    
-    def _process_model_output(
-        self,
-        provider_message: ProviderMessage,
-        caller,
-        tool_defs: List[ToolDefinition],
-        session_state: SessionState,
-        completion_detector: CompletionDetector,
-        markdown_logger: MarkdownLogger,
-        error_handler: ErrorHandler,
-        stream_responses: bool,
-        model: str,
-    ) -> bool:
-        return process_model_output(
-            self,
-            provider_message,
-            caller,
-            tool_defs,
-            session_state,
-            completion_detector,
-            markdown_logger,
-            error_handler,
-            stream_responses,
-            model,
-        )
-    
-    def _handle_text_tool_calls(
-        self,
-        msg,
-        caller,
-        tool_defs: List[ToolDefinition],
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-        error_handler: ErrorHandler,
-        stream_responses: bool
-    ) -> bool:
-        return handle_text_tool_calls(
-            self,
-            msg,
-            caller,
-            tool_defs,
-            session_state,
-            markdown_logger,
-            error_handler,
-            stream_responses,
-        )
-
-    def _synthesize_patch_blocks(self, message_text: Optional[str]) -> List[str]:
-        """Extract raw patch/diff blocks from assistant text."""
-        return synthesize_patch_blocks(message_text)
-    
-    def _handle_native_tool_calls(
-        self,
-        msg,
-        session_state: SessionState,
-        markdown_logger: MarkdownLogger,
-        error_handler: ErrorHandler,
-        stream_responses: bool,
-        model: str
-    ) -> bool:
-        return handle_native_tool_calls(
-            self,
-            msg,
-            session_state,
-            markdown_logger,
-            error_handler,
-            stream_responses,
-            model,
-        )
     def _retry_diff_with_aider(self, patch_text: str) -> Optional[Dict[str, Any]]:
         payload = retry_diff_with_aider(patch_text)
         if not payload:

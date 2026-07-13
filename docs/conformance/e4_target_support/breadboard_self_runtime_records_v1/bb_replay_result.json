@@ -1,0 +1,50 @@
+{
+  "config_id": "breadboard_self_runtime_records_v1",
+  "errors": [],
+  "exit_status": "passed",
+  "generated_at_utc": "2026-07-07T03:00:00Z",
+  "input_hashes": {
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json": "sha256:1fc80918a10c6332a70d5c18f82cdecef466b8e7e4fbea7bd19f210c16a29fb1",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json": "sha256:691e22260f4a083e88469c155658afa0e4681a83b2e2f68f199abca8147c7548",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl": "sha256:4a4fe71c21e31c96bbc0213858c01575973f9ef8f5a2993b358fc5fdc0b41758",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl": "sha256:69d87afbc361a40cb3b7e35e2aeb7c3df1203c199ed8cb93dd1aa798ae006032",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json": "sha256:647d98abfa68c3b6b6a0858fa3c27bc2ec72d49cd7c9546281bc466787cc3d40"
+  },
+  "lane_id": "breadboard_self_runtime_records_v1",
+  "replay_session_from_records": {
+    "final_transcript_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "manifest_transcript_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "ok": true,
+    "reconstructed_items": 1,
+    "transcript_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "validated_record_count": 25
+  },
+  "replayed_records": [
+    {
+      "name": "runtime_records_manifest_present",
+      "status": "passed"
+    },
+    {
+      "name": "kernel_event_stream_present",
+      "status": "passed"
+    },
+    {
+      "name": "strict_mode_quarantine_zero",
+      "status": "passed"
+    },
+    {
+      "name": "session_transcript_stream_present",
+      "status": "passed"
+    },
+    {
+      "name": "replay_transcript_digest_matches_manifest",
+      "status": "passed"
+    },
+    {
+      "name": "self_capture_schema_count",
+      "status": "passed"
+    }
+  ],
+  "schema_version": "bb.e4.bb_replay_result.v1",
+  "warnings": []
+}

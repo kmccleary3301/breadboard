@@ -1,0 +1,89 @@
+{
+  "artifacts": [
+    {
+      "path": "config/e4_target_freeze_manifest.yaml",
+      "role": "freeze_manifest",
+      "sha256": "sha256:47986b7c5a0718fa8121263fc1ba090d9cf62987e79d0a42da6a21ba4c0ce210"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json",
+      "role": "capture_ref",
+      "sha256": "sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/compiled_records.json#sha256:f4937dc781e178f6b6af004e8be94be62002ee22ba2455c12e217ab30a4ef8ec"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json",
+      "role": "replay_ref",
+      "sha256": "sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json#sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/compiled_records.json#sha256:f4937dc781e178f6b6af004e8be94be62002ee22ba2455c12e217ab30a4ef8ec"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json",
+      "role": "comparator_ref",
+      "sha256": "sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb"
+    },
+    {
+      "path": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
+      "role": "support_claim_ref",
+      "sha256": "sha256:a7ceaf4700ace6e9aa7dbce8ab7ed10f86bab734c9a4b50994c89ee93ec89e56"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json#sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb"
+      ],
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json",
+      "role": "parity_results",
+      "sha256": "sha256:014a27b3d4f220e39ed3de6efaef9e90c0390b8b45b900ca22cb6f204258dd63"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/secret_scan_report.json",
+      "role": "secret_scan_report",
+      "sha256": "sha256:db5d08564722e9f50ad031144f223ca248a08f46c923f6afdf64372d8e3d85da"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/prevalidation_report.json",
+      "role": "validator_output",
+      "sha256": "sha256:d8fade10acd59cd7041327d4af8087a65856e4dd8675c1119182db9a195a3dc4"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/compiled_records.json",
+      "role": "compiled_records",
+      "sha256": "sha256:f4937dc781e178f6b6af004e8be94be62002ee22ba2455c12e217ab30a4ef8ec"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/schema_validation_report.json",
+      "role": "schema_validation",
+      "sha256": "sha256:c3044a3f80aec7a0e14cbb5d83dc5f3fa1d8341fc89512eed85c017a07e88c12"
+    },
+    {
+      "path": "agent_configs/misc/oh_my_pi_p3_8_projection_broker_adapter_v1.yaml",
+      "role": "agent_config",
+      "sha256": "sha256:c0a2df72a80d705c4b2fdbfd19ce510c78710e45524585a33e22f831c802d40d"
+    },
+    {
+      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "role": "source_freeze",
+      "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
+    }
+  ],
+  "claim_id": "oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim",
+  "config_id": "oh_my_pi_p3_8_projection_broker_adapter_v1",
+  "forbidden_roots_checked": [
+    "scratch",
+    "tmp",
+    "scratch_runs",
+    "/shared_folders"
+  ],
+  "generated_at_utc": "2026-07-03T07:30:00Z",
+  "hash_algorithm": "sha256",
+  "lane_id": "oh_my_pi_p3_8_projection_broker_adapter",
+  "manifest_scope_note": "Every governed artifact for this P3.8 helper/runtime C4 chain is canonical repo evidence or source-freeze evidence under docs_tmp/phase_15/source_freezes. Scratch/tmp/shared roots are not promotion evidence.",
+  "schema_version": "bb.e4.evidence_manifest.v1"
+}

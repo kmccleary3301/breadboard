@@ -1,0 +1,515 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v1.schema.json",
+  "title": "BreadBoard work item V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "work_item_id",
+    "identity",
+    "delegation",
+    "state",
+    "owner",
+    "assignee",
+    "input_artifact_refs",
+    "output_artifact_refs",
+    "cancellation_policy",
+    "resume_policy",
+    "visibility"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.work_item.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "work_item_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the work item.",
+      "examples": [
+        "work_item_example"
+      ]
+    },
+    "identity": {
+      "$ref": "#/$defs/identity",
+      "description": "Identity record for this primitive."
+    },
+    "delegation": {
+      "$ref": "#/$defs/delegation",
+      "description": "Delegation record for this primitive."
+    },
+    "state": {
+      "$ref": "#/$defs/state",
+      "description": "State record for this primitive."
+    },
+    "owner": {
+      "$ref": "#/$defs/actor_ref",
+      "description": "Owner record for this primitive."
+    },
+    "assignee": {
+      "$ref": "#/$defs/actor_ref",
+      "description": "Assignee record for this primitive."
+    },
+    "input_artifact_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact_ref",
+        "description": "One entry in input artifact refs.",
+        "examples": [
+          [
+            "docs/conformance/input_artifact.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the input artifact entries.",
+      "examples": [
+        [
+          "docs/conformance/input_artifact.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "output_artifact_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact_ref",
+        "description": "One entry in output artifact refs.",
+        "examples": [
+          [
+            "docs/conformance/output_artifact.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        ]
+      },
+      "description": "References to the output artifact entries.",
+      "examples": [
+        [
+          "docs/conformance/output_artifact.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        ]
+      ]
+    },
+    "cancellation_policy": {
+      "$ref": "#/$defs/cancellation_policy",
+      "description": "Cancellation policy record for this primitive."
+    },
+    "resume_policy": {
+      "$ref": "#/$defs/resume_policy",
+      "description": "Resume policy record for this primitive."
+    },
+    "visibility": {
+      "$ref": "#/$defs/visibility",
+      "description": "Visibility record for this primitive."
+    },
+    "provider_route_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "bb.provider_route.v1 record ref governing this work item's model access.",
+      "examples": [
+        "docs/conformance/provider_route_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "operation_policy_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "bb.effective_operation_policy.v1 record ref in force for this work item.",
+      "examples": [
+        "docs/conformance/operation_policy_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ]
+    },
+    "budget": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "token_budget": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Numeric value for a token budget."
+        },
+        "cost_budget_usd": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Numeric value for a cost budget usd."
+        },
+        "wall_time_seconds": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Numeric value for a wall time seconds."
+        }
+      },
+      "description": "Budget value for this primitive."
+    },
+    "isolation": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Execution isolation label (e.g. 'none', 'worktree', 'sandbox', 'container')."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible",
+        "provider_visible",
+        "host_visible"
+      ],
+      "properties": {
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        },
+        "host_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a host visible state."
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "task_id",
+        "task_kind",
+        "subagent_id",
+        "distributed_task_id",
+        "correlation_id"
+      ],
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the task.",
+          "examples": [
+            "task_example"
+          ]
+        },
+        "task_kind": {
+          "enum": [
+            "turn",
+            "step",
+            "task",
+            "subagent",
+            "distributed_task",
+            "background",
+            "workflow",
+            "longrun_goal",
+            "workflow_objective"
+          ],
+          "description": "Allowed task kind value."
+        },
+        "subagent_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Stable identifier for the subagent.",
+          "examples": [
+            "subagent_example"
+          ]
+        },
+        "distributed_task_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Stable identifier for the distributed task.",
+          "examples": [
+            "distributed_task_example"
+          ]
+        },
+        "correlation_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Stable identifier for the correlation.",
+          "examples": [
+            "correlation_example"
+          ]
+        }
+      }
+    },
+    "delegation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parent_work_item_id",
+        "parent_task_id",
+        "delegated_by",
+        "delegation_ref"
+      ],
+      "properties": {
+        "parent_work_item_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Stable identifier for the parent work item.",
+          "examples": [
+            "parent_work_item_example"
+          ]
+        },
+        "parent_task_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Stable identifier for the parent task.",
+          "examples": [
+            "parent_task_example"
+          ]
+        },
+        "delegated_by": {
+          "$ref": "#/$defs/actor_ref",
+          "description": "Delegated by record for this primitive."
+        },
+        "delegation_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the delegation.",
+          "examples": [
+            "docs/conformance/delegation_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    },
+    "state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "entered_at",
+        "reason",
+        "checkpoint_ref"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "queued",
+            "running",
+            "blocked",
+            "waiting",
+            "completed",
+            "failed",
+            "cancelled",
+            "paused"
+          ],
+          "description": "Allowed status value."
+        },
+        "entered_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC timestamp for the entered at event.",
+          "examples": [
+            "2026-07-04T00:00:00Z"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reason value for this primitive."
+        },
+        "checkpoint_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the checkpoint.",
+          "examples": [
+            "docs/conformance/checkpoint_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    },
+    "actor_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actor_kind",
+        "actor_id"
+      ],
+      "properties": {
+        "actor_kind": {
+          "enum": [
+            "user",
+            "agent",
+            "subagent",
+            "host",
+            "provider",
+            "system",
+            "service"
+          ],
+          "description": "Allowed actor kind value."
+        },
+        "actor_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the actor.",
+          "examples": [
+            "actor_example"
+          ]
+        }
+      }
+    },
+    "artifact_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref",
+        "artifact_kind",
+        "visibility"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the ref.",
+          "examples": [
+            "docs/conformance/ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "artifact_kind": {
+          "enum": [
+            "prompt",
+            "resource",
+            "blob",
+            "transcript",
+            "tool_result",
+            "report",
+            "checkpoint"
+          ],
+          "description": "Allowed artifact kind value."
+        },
+        "visibility": {
+          "$ref": "#/$defs/visibility",
+          "description": "Visibility record for this primitive."
+        }
+      }
+    },
+    "cancellation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "cancellable_by",
+        "propagate_to_children",
+        "on_cancel"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "not_cancellable",
+            "cooperative",
+            "immediate",
+            "deadline"
+          ],
+          "description": "Allowed mode value."
+        },
+        "cancellable_by": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/actor_ref",
+            "description": "One entry in cancellable by."
+          },
+          "description": "Ordered cancellable by entries."
+        },
+        "propagate_to_children": {
+          "type": "boolean",
+          "description": "Propagate to children value for this primitive."
+        },
+        "on_cancel": {
+          "enum": [
+            "discard_outputs",
+            "keep_partial_outputs",
+            "checkpoint_then_stop"
+          ],
+          "description": "Allowed on cancel value."
+        }
+      }
+    },
+    "resume_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "resume_from_ref",
+        "requires_approval",
+        "wake_refs"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "not_resumable",
+            "checkpoint",
+            "replay",
+            "manual",
+            "signal"
+          ],
+          "description": "Allowed mode value."
+        },
+        "resume_from_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the resume from.",
+          "examples": [
+            "docs/conformance/resume_from_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "requires_approval": {
+          "type": "boolean",
+          "description": "Requires approval value for this primitive."
+        },
+        "wake_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "description": "One entry in wake refs.",
+            "examples": [
+              [
+                "docs/conformance/wake.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the wake entries.",
+          "examples": [
+            [
+              "docs/conformance/wake.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        }
+      }
+    }
+  }
+}

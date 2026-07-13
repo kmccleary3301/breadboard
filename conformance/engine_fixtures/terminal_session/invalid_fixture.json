@@ -1,0 +1,20 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.terminal_session_descriptor.v1",
+  "fixture_family": "terminal_session",
+  "fixture_id": "terminal_session_invalid_missing_terminal_session_id",
+  "invalid_reason": "Removes required reference_output field 'terminal_session_id' from bb.terminal_session_descriptor.v1.",
+  "reference_output": {
+    "command": [
+      "/bin/bash",
+      "-lc",
+      "sleep 30"
+    ],
+    "continuation_scope": "model",
+    "persistence_scope": "thread",
+    "schema_version": "bb.terminal_session_descriptor.v1",
+    "stream_mode": "pipes"
+  },
+  "source_fixture": "terminal_session/minimal_start_fixture.json",
+  "support_tier": "draft-shape"
+}

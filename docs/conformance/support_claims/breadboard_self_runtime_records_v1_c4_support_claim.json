@@ -1,0 +1,131 @@
+{
+  "acceptance_rationale": "The packet binds freeze row, capture, replay, comparator, secret-scan, parity, ledger row, and prevalidation artifacts under canonical roots; comparator rerun is deterministic over current input hashes.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:1fc80918a10c6332a70d5c18f82cdecef466b8e7e4fbea7bd19f210c16a29fb1",
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 8,
+    "segment_hash": "sha256:4533ad7e787b641bb2a3258a426e19cd19cc94a00c9c7f74b6ad316757624589",
+    "segment_id": "breadboard_self_runtime_records_v1",
+    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+  },
+  "claim_id": "breadboard_self_runtime_records_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "replay_session_from_records_runtime_records_manifest_present",
+        "comparator_assertion_ids": [
+          "runtime_records_manifest_present"
+        ],
+        "description": "runtime records manifest present"
+      },
+      {
+        "behavior_id": "replay_session_from_records_kernel_event_stream_present",
+        "comparator_assertion_ids": [
+          "kernel_event_stream_present"
+        ],
+        "description": "kernel event stream present"
+      },
+      {
+        "behavior_id": "replay_session_from_records_strict_mode_quarantine_zero",
+        "comparator_assertion_ids": [
+          "strict_mode_quarantine_zero"
+        ],
+        "description": "strict mode quarantine zero"
+      },
+      {
+        "behavior_id": "replay_session_from_records_session_transcript_stream_present",
+        "comparator_assertion_ids": [
+          "session_transcript_stream_present"
+        ],
+        "description": "session transcript stream present"
+      },
+      {
+        "behavior_id": "replay_session_from_records_replay_transcript_digest_matches_manifest",
+        "comparator_assertion_ids": [
+          "replay_transcript_digest_matches_manifest"
+        ],
+        "description": "replay transcript digest matches manifest"
+      },
+      {
+        "behavior_id": "replay_session_from_records_self_capture_schema_count",
+        "comparator_assertion_ids": [
+          "self_capture_schema_count"
+        ],
+        "description": "self capture schema count"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json#sha256:70c75b4aaeaac3531eccd55377e87d52851729b99b78bcebab979da3b2f731af",
+  "evidence_manifest_ref": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "final_readiness",
+      "model_inference",
+      "network",
+      "provider_authenticated",
+      "ui_parity",
+      "write_enabled"
+    ],
+    "excluded_families": [
+      "all_other_families"
+    ]
+  },
+  "exclusions": [
+    "No broad breadboard target-family support claim is made from this exact north-star micro-lane.",
+    "No provider-authenticated inference, network, browser, write-enabled, danger-full-access, UI-parity, or final-readiness behavior is claimed.",
+    "No claim is made for any other target family or any surface outside the named config, run, target version, provider model, and sandbox mode."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#breadboard_self_runtime_records_v1#sha256:0012ab5d22f6d66e293487126246d97207fd0f47759c78d4a7b58df4ae8c3987",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "non_target_accounting",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_e7bfda921c4e30ed#sha256:6a37e776d9256447b1c947fdfab958fecdad6c4f3912d51c0f1c1968b09e6fae"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v4"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/parity_results.json#sha256:3d3ed4eae27ec1a3b4dc76bf6ad884e8f6c7f5169c1879ecb409cd2e08c5a2b4",
+  "phase_label": "WS-J",
+  "replay_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json#sha256:8befe2bb74f12f234743c70a1bf21dd6ec4cc6e6ac37ce8abedf3c12a97842d1",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "breadboard_self_runtime_records_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_north_star_breadboard_self_runtime_records_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "schema_version": "bb.e4.support_claim.v4",
+  "scope": {
+    "config_id": "breadboard_self_runtime_records_v1",
+    "lane_id": "breadboard_self_runtime_records_v1",
+    "provider_model": "no-provider",
+    "run_id": "20260707_north_star_breadboard_self_capture",
+    "sandbox_mode": "strict runtime_records self-capture",
+    "target_family": "breadboard",
+    "target_version": "breadboard runtime_records strict kernel emission"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/secret_scan_report.json#sha256:51dadeeef93af475d55d4572c6ecd2410caef277c5a49779fe8313b343b58728",
+  "summary": "breadboard runtime_records strict kernel emission north-star exact-scope evidence packet is accepted for breadboard_self_runtime_records_v1 only.",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/prevalidation_report.json#sha256:4cc5c38059adbadd0df9f6408612f252e1b1ed771c4a01e3a4c95530f659978c"
+  ]
+}

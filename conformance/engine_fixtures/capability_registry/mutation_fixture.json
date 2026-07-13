@@ -1,0 +1,10 @@
+{
+  "comparatorClass": "shape-equal",
+  "comparator_class": "shape-equal",
+  "contract": "bb.capability_registry.v1",
+  "example_ref": "../../../contracts/kernel/examples/capability_registry_mutation_delta.json",
+  "fixture_family": "capability_registry",
+  "fixture_id": "capability_registry_mutation_delta",
+  "supportTier": "draft-shape",
+  "support_tier": "draft-shape"
+}

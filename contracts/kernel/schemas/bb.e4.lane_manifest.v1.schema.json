@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
+  "title": "BreadBoard E4 lane manifest (author-owned conformance intent; digests live in bb.e4.lane_lock.v1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "lane_id", "config_id", "target", "kind", "capture", "normalize", "replay", "compare", "claim", "artifacts_root"],
+  "properties": {
+    "schema_version": { "const": "bb.e4.lane_manifest.v1" },
+    "lane_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+    "config_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*$" },
+    "title": { "type": "string", "maxLength": 200 },
+    "agent_config_ref": { "type": ["string", "null"], "$comment": "repo-relative path to the bb.agent_config_surface.v2 document exercised by this lane, when the lane proves a BreadBoard-authored harness; null for external targets" },
+    "kind": { "enum": ["target_support", "self_runtime", "probe"] },
+    "status": { "enum": ["draft", "candidate", "accepted"] },
+    "points": { "type": "integer", "minimum": 0 },
+    "target": {
+      "type": "object", "additionalProperties": false, "required": ["family", "version"],
+      "properties": {
+        "family": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+        "version": { "type": "string", "minLength": 1 },
+        "package_ref": { "type": ["string", "null"] },
+        "source_freeze_ref": { "type": ["string", "null"], "$comment": "repo-relative path only; its digest is resolved into the lock" }
+      }
+    },
+    "capture": {
+      "type": "object", "additionalProperties": false, "required": ["strategy"],
+      "properties": {
+        "strategy": { "enum": ["adapter", "probe_argv", "replay_dump", "runtime_records"] },
+        "adapter": { "type": ["string", "null"], "pattern": "^[a-z0-9][a-z0-9_]*$" },
+        "argv": { "type": ["array", "null"], "items": { "type": "string" } },
+        "inputs": { "type": "array", "items": { "type": "string" }, "$comment": "repo-relative paths; digests resolved into lock.resolved_inputs" },
+        "workspace_template": { "type": ["string", "null"] }
+      },
+      "allOf": [
+        { "if": { "properties": { "strategy": { "const": "adapter" } } }, "then": { "required": ["adapter"], "properties": { "adapter": { "type": "string" } } } },
+        { "if": { "properties": { "strategy": { "const": "probe_argv" } } }, "then": { "required": ["argv"], "properties": { "argv": { "type": "array" } } } }
+      ]
+    },
+    "normalize": {
+      "type": "object", "additionalProperties": false, "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["identity", "translate"] },
+        "translator": { "type": ["string", "null"] },
+        "record_builders": { "type": "array", "items": { "type": "object" } },
+        "projection_constants": { "type": "object" },
+        "required_records": { "type": "array", "items": { "type": "string" } },
+        "required_roles": { "type": "array", "items": { "type": "string" } },
+        "record_roles": { "type": "object", "additionalProperties": { "type": "string" } },
+        "record_envelopes": { "type": "object", "additionalProperties": { "type": "object" } },
+        "role_aliases": { "type": "object", "additionalProperties": { "type": "string" } },
+        "auto_bind_role_refs": { "type": "boolean" },
+        "scope_observation_labels": { "type": "array", "items": { "type": "string" } }
+      },
+      "allOf": [ { "if": { "properties": { "mode": { "const": "translate" } } }, "then": { "required": ["translator"] } } ]
+    },
+    "replay": {
+      "type": "object", "additionalProperties": false, "required": ["mode", "comparator_class"],
+      "properties": { "mode": { "enum": ["stored"], "$comment": "Phase 20 scope: stored replay ONLY. No executable replay provider exists in the tree (verified at plan time); adding an 'executed' mode is a post-campaign schema relaxation gated on a real provider + tests, via SPEC_AMENDMENTS.md." }, "comparator_class": { "type": "string" } }
+    },
+    "compare": {
+      "type": "object", "additionalProperties": false, "required": ["comparator"],
+      "properties": {
+        "comparator": { "type": "string" },
+        "assertions": { "type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["assertion_id", "kind", "description"],
+          "properties": {
+            "assertion_id": { "type": "string" }, "kind": { "type": "string" }, "description": { "type": "string" },
+            "record_selector": { "type": "object" }, "expect": {}
+          } } }
+      }
+    },
+    "claim": {
+      "type": "object", "additionalProperties": false, "required": ["scope", "exclusions"],
+      "properties": {
+        "scope": { "type": "object", "additionalProperties": false, "required": ["behaviors"],
+          "properties": { "behaviors": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+                          "surfaces": { "type": "array", "items": { "type": "string" } } } },
+        "exclusions": { "type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["id", "reason"],
+          "properties": { "id": { "type": "string" }, "reason": { "type": "string" } } } }
+      }
+    },
+    "ct": { "type": "object", "additionalProperties": false,
+      "properties": { "description": { "type": "string" }, "timeout_seconds": { "type": "integer", "minimum": 1 },
+                      "test_id": { "type": ["string", "null"] } } },
+    "acceptance": { "type": "object", "additionalProperties": false,
+      "required": ["behavior_family", "semantic_key", "assertions"],
+      "properties": {
+        "behavior_family": { "type": "string" },
+        "semantic_key": { "type": "string" },
+        "target": { "type": ["string", "null"] },
+        "assertions": { "type": "array", "minItems": 1, "items": {
+          "type": "object", "additionalProperties": false, "required": ["id", "description"],
+          "properties": { "id": { "type": "string" }, "description": { "type": "string" } }
+        } }
+      } },
+    "reverify_command": { "type": "object", "additionalProperties": false, "required": ["argv"],
+      "properties": { "argv": { "type": "array", "minItems": 1, "items": { "type": "string" } }, "cwd": { "type": "string" } } },
+    "artifacts_root": { "type": "string" },
+    "notes": { "type": "string" }
+  }
+}

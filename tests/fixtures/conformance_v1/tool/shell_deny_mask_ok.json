@@ -1,0 +1,16 @@
+{
+  "decisions": [
+    {
+      "command": "python --version",
+      "expected_decision": "allow",
+      "observed_decision": "allow"
+    },
+    {
+      "command": "rm -rf /tmp/project",
+      "expected_decision": "deny",
+      "observed_decision": "deny",
+      "reason": "destructive"
+    }
+  ],
+  "schema_version": "bb.ct.tool.shell_deny_mask.fixture.v1"
+}

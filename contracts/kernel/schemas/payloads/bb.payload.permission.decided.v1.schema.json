@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/payloads/bb.payload.permission.decided.v1.schema.json",
+  "title": "BreadBoard Kernel Event Payload permission.decided V1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "request_id": {
+      "type": "string"
+    },
+    "response": true,
+    "responses": {
+      "type": "object"
+    },
+    "decision": {
+      "type": "string"
+    }
+  }
+}

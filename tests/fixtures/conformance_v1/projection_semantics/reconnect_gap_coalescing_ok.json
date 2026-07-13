@@ -1,0 +1,49 @@
+{
+  "coalesced_batches": [
+    [
+      "evt3",
+      "evt6"
+    ],
+    [
+      "evt7"
+    ]
+  ],
+  "expected_output": {
+    "batch_count": 2,
+    "gap_distance": 3,
+    "initial_count": 2,
+    "max_batch_size_observed": 2,
+    "resumed_count": 3,
+    "violation_count": 0
+  },
+  "gap_distance": 3,
+  "gap_events": [
+    {
+      "next_available_seq": 6
+    }
+  ],
+  "initial_events": [
+    {
+      "id": "evt1",
+      "seq": 1
+    },
+    {
+      "id": "evt2",
+      "seq": 2
+    }
+  ],
+  "resumed_events": [
+    {
+      "id": "evt3",
+      "seq": 3
+    },
+    {
+      "id": "evt6",
+      "seq": 6
+    },
+    {
+      "id": "evt7",
+      "seq": 7
+    }
+  ]
+}

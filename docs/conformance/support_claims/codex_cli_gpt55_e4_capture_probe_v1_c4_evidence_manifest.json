@@ -1,0 +1,83 @@
+{
+  "artifacts": [
+    {
+      "path": "config/e4_target_freeze_manifest.yaml",
+      "role": "freeze_manifest",
+      "sha256": "sha256:ae98e65717d03a2d451e65db2b7c7693f77d9786686f8370b888ac52e41c6085"
+    },
+    {
+      "path": "agent_configs/misc/codex_cli_gpt55_e4_capture_probe_v1.yaml",
+      "role": "target_config",
+      "sha256": "sha256:db884c20e447d5e24de98fe3c2a62d4bbf937be349d18bd376c7c4d6b4e2b5c1"
+    },
+    {
+      "derived_from": [
+        "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/raw_capture_manifest.json#sha256:63e4b572935bbbae03851b5471f283511aab216d21f778785e77edc26959a290",
+        "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/rollout.jsonl#sha256:dc0ec56754df8e0d7f9cd677f924c32a271a1eb044fa482a0b61d6a8f86a0efe"
+      ],
+      "path": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json",
+      "role": "capture_ref",
+      "sha256": "sha256:c22cddc606d25a4e4720d812bf8b162e802240b1859c9ab735fde872926b90eb"
+    },
+    {
+      "derived_from": [
+        "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/bb_replay_result.json#sha256:fde6ac26911712730596451b8fbe3a36ed38239d5bae545c1cda0388bb53d7bd",
+        "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/exports/replay_session.json#sha256:87b541250e075323afe362685221532c5806c8e95751dd13ec27eb4e5c7e1e78"
+      ],
+      "path": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/bb_replay_result.json",
+      "role": "replay_ref",
+      "sha256": "sha256:457d9c20d86c4e071e537fb9eb2e492f92e5aeb4f0701971e1ffcc54e936658f"
+    },
+    {
+      "derived_from": [
+        "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/comparator_report.json#sha256:9ccc8578ae4b97e814ba9ef682dea185eeb376f55ee3316ed8bd56d1cb0fdcd8"
+      ],
+      "path": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json",
+      "role": "comparator_ref",
+      "sha256": "sha256:c408077792bcdc8cdd7277dc603e4bc800cd17239f7ddf8d6261157a8b941d29"
+    },
+    {
+      "path": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+      "role": "support_claim_ref",
+      "sha256": "sha256:298988e35b75461168ae6b0f63d57e642e5c7de8313d7ee331731e78e89b2ef5"
+    },
+    {
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json",
+      "role": "secret_scan_report",
+      "sha256": "sha256:02ce7bff97694bd2571c2b3161ae049742e9be8290463f26891c3685a4c61ebf"
+    },
+    {
+      "path": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/parity_results.jsonl",
+      "role": "parity_results",
+      "sha256": "sha256:a87a2ed2f94233db521b2b198cfd7fef6056161622d19750e643bf17ede8a6d1"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/c4_validation_report.json",
+      "role": "validator_output",
+      "sha256": "sha256:8e794527c8d964c138ea80e93bdf5d230f7bc66863f0a39a37e38dfec014398c"
+    },
+    {
+      "bytes": 124871,
+      "exists": true,
+      "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+      "role": "atomic_feature_ledger",
+      "sha256": "sha256:684e34783e8fb14cb34a92b2305a56efcbd917770ecf0116eed793ac6ecef939"
+    }
+  ],
+  "claim_id": "codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim",
+  "config_id": "codex_cli_gpt55_e4_capture_probe_v1",
+  "forbidden_roots_checked": [
+    "scratch",
+    "tmp",
+    "scratch_runs",
+    "/shared_folders"
+  ],
+  "generated_at_utc": "2026-07-02T23:06:29Z",
+  "lane_id": "codex_cli_e4_capture_probe_v1",
+  "manifest_scope_note": "Every governed artifact in this exact C4 chain is hashed. Secret scan excludes itself and this manifest; final validation scans all referenced files live.",
+  "run_id": "20260630_codex_gpt55_capture_probe",
+  "schema_version": "bb.e4.evidence_manifest.v1",
+  "secret_scan_ref": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json#sha256:02ce7bff97694bd2571c2b3161ae049742e9be8290463f26891c3685a4c61ebf",
+  "self_hash_excluded": true,
+  "source_packet_manifest_ref": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/evidence_manifest.json#sha256:ee7d5b910a3a01f317daab46af6c51bcd7017341b24e57f32e3d8e6efe0b93d9"
+}

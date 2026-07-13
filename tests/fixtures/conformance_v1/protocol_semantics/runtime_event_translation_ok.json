@@ -1,0 +1,53 @@
+{
+  "cases": [
+    {
+      "expected_event": {
+        "event_type": "session.started",
+        "sequence": 1,
+        "session_id": "sess_proto"
+      },
+      "runtime_event": {
+        "event_type": "session.started",
+        "sequence": 1,
+        "session_id": "sess_proto"
+      }
+    },
+    {
+      "expected_event": {
+        "event_type": "tool.requested",
+        "sequence": 2,
+        "session_id": "sess_proto"
+      },
+      "runtime_event": {
+        "event_type": "tool.requested",
+        "sequence": 2,
+        "session_id": "sess_proto"
+      }
+    },
+    {
+      "expected_event": {
+        "event_type": "tool.completed",
+        "sequence": 3,
+        "session_id": "sess_proto"
+      },
+      "runtime_event": {
+        "event_type": "tool.completed",
+        "sequence": 3,
+        "session_id": "sess_proto"
+      }
+    },
+    {
+      "expected_event": {
+        "event_type": "session.completed",
+        "sequence": 4,
+        "session_id": "sess_proto"
+      },
+      "runtime_event": {
+        "event_type": "session.completed",
+        "sequence": 4,
+        "session_id": "sess_proto"
+      }
+    }
+  ],
+  "schema_version": "bb.ct.protocol.runtime_event_translation.fixture.v1"
+}

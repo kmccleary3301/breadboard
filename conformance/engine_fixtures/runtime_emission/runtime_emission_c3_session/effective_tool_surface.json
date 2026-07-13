@@ -1,0 +1,13 @@
+{
+  "binding_ids": [
+    "binding.tool.defs_dir_.._implementations_tools_defs"
+  ],
+  "hidden_tool_ids": [],
+  "projection_profile_id": "runtime_session_start",
+  "schema_version": "bb.effective_tool_surface.v1",
+  "surface_hash": "sha256:615393b7162ffd7ab4d2d6eaddb539258c4c7a630d0de467a08e549a9d64a992",
+  "surface_id": "runtime_emission_c3_session_effective_tool_surface",
+  "tool_ids": [
+    "tool.defs_dir_.._implementations_tools_defs"
+  ]
+}

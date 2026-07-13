@@ -1,0 +1,476 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json",
+  "title": "BreadBoard E4 lane definition V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "lane_id",
+    "config_id",
+    "target_family",
+    "target_version",
+    "kind",
+    "status",
+    "points",
+    "capture",
+    "normalize",
+    "replay",
+    "compare",
+    "claim",
+    "artifacts_root"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.lane_def.v2"
+    },
+    "lane_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "config_id": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "target_family": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_]*$"
+    },
+    "target_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "package_ref": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "kind": {
+      "enum": [
+        "target_support",
+        "non_target_accounting",
+        "infrastructure"
+      ]
+    },
+    "status": {
+      "enum": [
+        "planned",
+        "captured",
+        "replayed",
+        "compared",
+        "claimed",
+        "accepted",
+        "blocked",
+        "superseded",
+        "scaffolded"
+      ]
+    },
+    "points": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "capture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "inputs"
+      ],
+      "properties": {
+        "strategy": {
+          "enum": [
+            "probe_argv",
+            "tmux_scripted",
+            "replay_dump",
+            "runtime_records",
+            "adapter"
+          ]
+        },
+        "argv": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "workspace_template": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "adapter": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "$comment": "Required when strategy == adapter. MUST be an active id of kind capture_adapter in contracts/kernel/registries/e4_adapters.v1.json."
+        }
+      }
+    },
+    "normalize": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "translator",
+        "config"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "identity",
+            "translate"
+          ]
+        },
+        "translator": {
+          "type": "string",
+          "minLength": 1,
+          "$comment": "MUST be an active id of kind translator in contracts/kernel/registries/e4_adapters.v1.json (loader-enforced)."
+        },
+        "config": {
+          "$ref": "#/$defs/freeform_object"
+        }
+      }
+    },
+    "replay": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "artifacts",
+        "session",
+        "comparator_class"
+      ],
+      "properties": {
+        "mode": {
+          "const": "stored"
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "session": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "comparator_class": {
+          "enum": [
+            "byte",
+            "semantic"
+          ]
+        }
+      }
+    },
+    "compare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "comparator",
+        "config"
+      ],
+      "properties": {
+        "comparator": {
+          "type": "string",
+          "minLength": 1,
+          "$comment": "MUST be an active id of kind comparator in contracts/kernel/registries/e4_adapters.v1.json (loader-enforced)."
+        },
+        "config": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "assertions": {
+              "type": "array",
+              "items": {
+                "$ref": "bb.e4.common.v1.schema.json#/$defs/typed_assertion"
+              }
+            }
+          }
+        }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "exclusions"
+      ],
+      "properties": {
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "behaviors",
+            "surfaces"
+          ],
+          "properties": {
+            "behaviors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "surfaces": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "ct": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "test_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "artifacts_root": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reverify_command": {
+      "anyOf": [
+        {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/argv_command"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "$comment": "Non-normative (L7). Generators and validators MUST NOT read this field; enforced by tests/e4_parity/test_lane_def_metadata_non_normative.py."
+    },
+    "run": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "provider_model",
+        "sandbox_mode"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider_model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sandbox_mode": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "provenance": {
+      "oneOf": [
+        {
+          "$ref": "bb.e4.common.v1.schema.json#/$defs/provenance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "$comment": "null is permitted ONLY when target_family == 'breadboard' (self lanes). Enforced by generators and c4_chain."
+    },
+    "acceptance": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "behavior_family",
+        "semantic_key",
+        "assertions"
+      ],
+      "properties": {
+        "behavior_family": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+        },
+        "semantic_key": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+        },
+        "target": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "assertions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "description"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+              },
+              "description": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          },
+          "$comment": "Acceptance assertions are REFERENCES matching current accepted-lane semantics: each id resolves to a comparator assertion id (claim_semantics linkage). Machine-checkable typed_assertions live in compare.config.assertions."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "freeform_object": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "json_assertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "equals": true,
+        "length_equals": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "equals"
+          ]
+        },
+        {
+          "required": [
+            "length_equals"
+          ]
+        }
+      ]
+    }
+  },
+  "$comment": "Supersedes bb.e4.lane_def.v1 for new and migrated lanes. v1 remains loadable for unmigrated lanes. v2 lifts run/provenance/acceptance out of non-normative metadata into validated fields, replaces legacy_builder with adapter capture, and types assertions via bb.e4.common.v1.",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "accepted",
+              "claimed"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "run",
+          "acceptance",
+          "provenance"
+        ],
+        "properties": {
+          "run": {
+            "type": "object"
+          },
+          "acceptance": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capture": {
+            "properties": {
+              "strategy": {
+                "const": "adapter"
+              }
+            },
+            "required": [
+              "strategy"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "capture": {
+            "required": [
+              "strategy",
+              "inputs",
+              "adapter"
+            ],
+            "properties": {
+              "adapter": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

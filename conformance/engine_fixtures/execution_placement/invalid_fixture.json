@@ -1,0 +1,21 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.execution_placement.v1",
+  "fixture_family": "execution_placement",
+  "fixture_id": "execution_placement_invalid_missing_placement_id",
+  "invalid_reason": "Removes required reference_output field 'placement_id' from bb.execution_placement.v1.",
+  "reference_output": {
+    "capability_id": "cap:openclaw:remote_tool",
+    "downgrade_reason": null,
+    "metadata": {
+      "driver_family": "remote",
+      "host": "openclaw"
+    },
+    "placement_class": "remote_worker",
+    "runtime_id": "breadboard.ts-execution-driver-remote",
+    "satisfied_security_tier": "multi_tenant",
+    "schema_version": "bb.execution_placement.v1"
+  },
+  "source_fixture": "execution_placement/reference_fixture.json",
+  "support_tier": "draft-semantic"
+}

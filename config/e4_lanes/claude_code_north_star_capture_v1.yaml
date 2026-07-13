@@ -1,0 +1,87 @@
+schema_version: bb.e4.lane_def.v2
+lane_id: claude_code_north_star_capture_v1
+config_id: claude_code_haiku45_north_star_capture_v1
+target_family: claude_code
+target_version: claude-code 2.1.63
+package_ref: config/e4_targets/claude_code/2.1.63
+kind: target_support
+status: accepted
+points: 30
+capture:
+  strategy: replay_dump
+  argv: null
+  inputs:
+    - config/e4_targets/claude_code/2.1.63
+    - agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
+  workspace_template: null
+normalize:
+  translator: identity
+  mode: identity
+  config: {}
+replay:
+  mode: stored
+  artifacts:
+    - docs/conformance/e4_target_support/claude_code_north_star_capture_v1/bb_replay_result.json
+  session: null
+  comparator_class: semantic
+compare:
+  comparator: north_star_stored_report_replay
+  config:
+    assertions:
+      - id: ok_true
+        path: ok
+        op: equals
+        value: true
+claim:
+  scope:
+    behaviors:
+      - bb.replay_session.v1
+    surfaces:
+      - WS-J exact-scope Claude Code package capture
+  exclusions:
+    - broad target-family support
+artifacts_root: docs/conformance/e4_target_support/claude_code_north_star_capture_v1
+reverify_command:
+  argv:
+    - .venv/bin/python
+    - scripts/validate_e4_c4_chain.py
+    - --config-id
+    - claude_code_haiku45_north_star_capture_v1
+    - --support-claim
+    - docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json
+    - --evidence-manifest
+    - docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json
+    - --json-out
+    - artifacts/conformance/node_gate/ct_north_star_claude_code_capture_c4_chain.json
+    - --check-only
+  cwd: .
+ct:
+  test_id: CT-NORTH-STAR-CLAUDE-CODE-CAPTURE-C4
+run:
+  run_id: 20260707_north_star_claude_code_capture
+  provider_model: anthropic/claude-haiku-4-5-20251001
+  sandbox_mode: read-only static package capture
+provenance:
+  upstream_repo: https://github.com/anthropics/claude-code.git
+  upstream_commit: 9582ad480f687bbeaf0025852ac4f020b07f20bb
+  upstream_commit_date: "2026-03-05T00:25:31+00:00"
+  upstream_release_label: claude-code@snapshot-2026-03-04
+  source_paths:
+    - agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml
+    - config/e4_targets/claude_code/2.1.63/haiku45_harness.yaml
+    - config/e4_targets/claude_code/2.1.63/README.md
+    - config/e4_targets/claude_code/2.1.63/prompts/system-vendor-logged.prompt.md
+    - config/e4_targets/claude_code/2.1.63/refs/settings-bash-sandbox.json
+acceptance:
+  behavior_family: replay_capture
+  semantic_key: north_star_claude_code_package_capture
+  target: claude
+  assertions:
+    - id: target_config_present
+      description: target config is present
+    - id: package_ref_present
+      description: package reference tree is present
+    - id: pinned_target_version
+      description: target version is pinned
+    - id: read_only_scope_declared
+      description: read-only scope is declared

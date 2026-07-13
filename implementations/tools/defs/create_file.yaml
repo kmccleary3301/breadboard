@@ -2,6 +2,14 @@ id: create_file
 name: create_file
 description: Create an empty file (touch). For contents, use diff or create_file_from_block
 type_id: python
+binding:
+  module: agentic_coder_prototype.tools.files
+  callable: create_file
+classification:
+  blocking: true
+  readonly: false
+  guardrail_class: edit
+  guardrail_sets: [edit]
 manipulations:
   - file.write
 syntax_formats_supported: [native_function_calling, json_block]

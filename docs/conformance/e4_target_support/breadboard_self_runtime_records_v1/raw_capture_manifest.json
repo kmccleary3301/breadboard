@@ -1,0 +1,29 @@
+{
+  "accepted_as_capture_ref": true,
+  "capture_class": "real_agentic_coder_runtime_records",
+  "config_id": "breadboard_self_runtime_records_v1",
+  "generated_at_utc": "2026-07-07T03:00:00Z",
+  "lane_id": "breadboard_self_runtime_records_v1",
+  "lineage_rationale": "Canonical north-star packet generated from checked-in target package/config evidence; BreadBoard self-capture runs AgenticCoder with JsonlKernelEmitter strict runtime records and normalizes the transcript from emitted kernel events.",
+  "provider_model": "no-provider",
+  "raw_source_status": "real_agentic_coder_capture_normalized_from_kernel_events",
+  "run_id": "20260707_north_star_breadboard_self_capture",
+  "sandbox_mode": "strict runtime_records self-capture",
+  "schema_version": "bb.e4.raw_capture_manifest.v1",
+  "source_artifacts": [
+    "agent_configs/atp_hilbert_like_gpt54_v1.yaml",
+    "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl"
+  ],
+  "source_hashes": {
+    "agent_configs/atp_hilbert_like_gpt54_v1.yaml": "sha256:210358b767fae2ba93f7c22100980b4335c99456b8d29fe2fabbf665972fc470",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json": "sha256:691e22260f4a083e88469c155658afa0e4681a83b2e2f68f199abca8147c7548",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl": "sha256:4a4fe71c21e31c96bbc0213858c01575973f9ef8f5a2993b358fc5fdc0b41758",
+    "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl": "sha256:69d87afbc361a40cb3b7e35e2aeb7c3df1203c199ed8cb93dd1aa798ae006032",
+    "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json": "sha256:bbc59d2101b1f0aeadc325634e0d5afba2ddd674ae1abbac7e217f2765792b85"
+  },
+  "target_family": "breadboard",
+  "target_version": "breadboard runtime_records strict kernel emission"
+}

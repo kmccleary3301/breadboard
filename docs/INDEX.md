@@ -52,7 +52,7 @@ If you are new, start at the row that fits your situation and follow it forward.
 
 Tracked `docs/` is now split intentionally:
 
-- public durable docs live under `getting-started/`, `guides/`, `reference/`, and the existing stable subtrees such as `contracts/`, `conformance/`, `concepts/`, and `media/`
+- public durable docs live under `getting-started/`, `guides/`, `reference/`, `authoring/`, and the existing stable subtrees such as `contracts/`, `conformance/`, `concepts/`, and `media/`
 - maintainer-facing tracked material belongs under `internals/`
 - preserved tracked historical records belong under `archive/`
 - local planning, tranche notes, and research archaeology belong in `docs_tmp/` and are intentionally off the public docs path
@@ -71,11 +71,15 @@ Tracked `docs/` is now split intentionally:
 | [ci/QUICKSTART_SAFE_VALIDATION_20260217.md](ci/QUICKSTART_SAFE_VALIDATION_20260217.md) | CI-validated quickstart run record |
 
 ### Operator and maintainer workflows
+Use `bbh harness ...` for product harness configs and `bbh lane ...` for E4 conformance manifests. The authoring guide covers init, validation, explanation, local runs, lock checks, and capture.
+
 
 | Doc | What it covers |
 |-----|----------------|
 | [guides/OPERATOR_SCRIPT_SURFACE.md](guides/OPERATOR_SCRIPT_SURFACE.md) | How to choose the right canonical script family and entrypoint for setup, ops, release, migration, and parity work |
 | [reference/SCRIPTS_INDEX.md](reference/SCRIPTS_INDEX.md) | Stable categorized script taxonomy and machine-readable inventory entrypoint |
+| [authoring/AGENT_CONFIG_AUTHORING.md](authoring/AGENT_CONFIG_AUTHORING.md) | `bbh` walkthrough for a v2 agent config: init, validate, explain, local run, lane lock, and capture |
+| [DIRECTION_CHARTER.md](DIRECTION_CHARTER.md) | BreadBoard's durable product boundary, falsifiable thesis, contract tiers, layering, and change discipline |
 
 ### Contracts and surfaces
 

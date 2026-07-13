@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.extension_hook_execution.v1.schema.json",
+  "title": "BreadBoard extension hook execution V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "execution_id",
+    "hook_id",
+    "hook_type",
+    "event",
+    "status",
+    "started_at",
+    "duration_ms",
+    "effects",
+    "model_provider_visibility"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.extension_hook_execution.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the execution.",
+      "examples": [
+        "execution_example"
+      ]
+    },
+    "hook_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable identifier for the hook.",
+      "examples": [
+        "hook_example"
+      ]
+    },
+    "hook_type": {
+      "enum": [
+        "pre_model",
+        "post_model",
+        "pre_tool",
+        "post_tool",
+        "resource_resolver",
+        "policy",
+        "telemetry"
+      ],
+      "description": "Allowed hook type value."
+    },
+    "event": {
+      "$ref": "#/$defs/hook_event",
+      "description": "Event record for this primitive."
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "failed",
+        "skipped",
+        "cancelled"
+      ],
+      "description": "Allowed status value."
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "UTC timestamp for the started at event.",
+      "examples": [
+        "2026-07-04T00:00:00Z"
+      ]
+    },
+    "duration_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Numeric value for a duration ms."
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/hook_effect",
+        "description": "One entry in effects."
+      },
+      "description": "Ordered effects entries."
+    },
+    "model_provider_visibility": {
+      "$ref": "#/$defs/model_provider_visibility",
+      "description": "Model provider visibility record for this primitive."
+    },
+    "error": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": true,
+      "description": "Error value for this primitive."
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata",
+      "description": "Additional structured data for the metadata."
+    }
+  },
+  "$defs": {
+    "hook_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "event_type",
+        "event_ref",
+        "emitted_at"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the event.",
+          "examples": [
+            "event_example"
+          ]
+        },
+        "event_type": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Event type value for this primitive."
+        },
+        "event_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reference to the event.",
+          "examples": [
+            "docs/conformance/event_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "emitted_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC timestamp for the emitted at event.",
+          "examples": [
+            "2026-07-04T00:00:00Z"
+          ]
+        },
+        "resource_refs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "description": "One entry in resource refs.",
+            "examples": [
+              [
+                "docs/conformance/resource.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+              ]
+            ]
+          },
+          "description": "References to the resource entries.",
+          "examples": [
+            [
+              "docs/conformance/resource.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            ]
+          ]
+        }
+      }
+    },
+    "hook_effect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "effect_id",
+        "effect_type",
+        "effect_ref",
+        "status"
+      ],
+      "properties": {
+        "effect_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Stable identifier for the effect.",
+          "examples": [
+            "effect_example"
+          ]
+        },
+        "effect_type": {
+          "enum": [
+            "resource_access",
+            "capability_exposure",
+            "tool_surface_patch",
+            "signal",
+            "log",
+            "none"
+          ],
+          "description": "Allowed effect type value."
+        },
+        "effect_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the effect.",
+          "examples": [
+            "docs/conformance/effect_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "status": {
+          "enum": [
+            "applied",
+            "suppressed",
+            "failed",
+            "pending"
+          ],
+          "description": "Allowed status value."
+        }
+      }
+    },
+    "model_provider_visibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model_visible",
+        "provider_visible"
+      ],
+      "properties": {
+        "model_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a model visible state."
+        },
+        "provider_visible": {
+          "type": "boolean",
+          "description": "Boolean flag for a provider visible state."
+        },
+        "model_render_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the model render.",
+          "examples": [
+            "docs/conformance/model_render_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        },
+        "provider_exchange_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reference to the provider exchange.",
+          "examples": [
+            "docs/conformance/provider_exchange_ref.json#sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          ]
+        }
+      }
+    }
+  }
+}

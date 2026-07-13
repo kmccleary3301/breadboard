@@ -12,8 +12,11 @@ import type {
   DirectiveCodeV1,
   EffectiveToolSurfaceV1,
   ReviewVerdictCodeV1,
+  KernelEventV1,
+  KernelEventV2,
   SessionTranscriptV1,
   SessionTranscriptV1Item,
+  SessionTranscriptV2,
   SignalCodeV1,
   TerminalCleanupResultV1,
   UnsupportedCaseV1,
@@ -21,7 +24,15 @@ import type {
   TerminalRegistrySnapshotV1,
   TerminalSessionDescriptorV1,
 } from "@breadboard/kernel-contracts"
-import type { TerminalOutputShape, TerminalSessionEndShape, Workspace, WorkspaceArtifactRef } from "@breadboard/workspace"
+import type {
+  ExecutionProfileId,
+  TerminalOutputShape,
+  TerminalSessionEndShape,
+  Workspace,
+  WorkspaceArtifactRef,
+} from "@breadboard/workspace"
+
+type SessionTranscriptV2Item = SessionTranscriptV2["items"][number]
 
 export type HostKitMode = "supported" | "fallback"
 
@@ -65,7 +76,8 @@ export interface HostKitOptions<Request, Result, Invocation> {
 
 export type HostManagedTranscript =
   | SessionTranscriptV1
-  | Array<Record<string, unknown> | SessionTranscriptV1Item>
+  | SessionTranscriptV2
+  | Array<Record<string, unknown> | SessionTranscriptV1Item | SessionTranscriptV2Item>
 
 export interface ProviderHostSessionProjectContext<ProjectionState> {
   readonly previousState: ProjectionState | null
@@ -266,14 +278,14 @@ export interface ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
   classifyProviderTurn(input: Input): SupportClaim
   runProviderTurn(input: Input): Promise<ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput>>
   continueProviderTurn(input: Input): Promise<ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput>>
-  readonly transcript: SessionTranscriptV1 | null
+  readonly transcript: SessionTranscriptV2 | null
   readonly projectionState: ProjectionState | null
 }
 
 export interface ProviderHostSessionOptions<Input, ProjectionState, ProjectionOutput> {
   readonly backboneSession: BackboneSession
-  readonly buildInput: (input: Input, transcript: SessionTranscriptV1 | null) => ProviderTurnInput
-  readonly initialTranscript?: SessionTranscriptV1 | null
+  readonly buildInput: (input: Input, transcript: SessionTranscriptV2 | null) => ProviderTurnInput
+  readonly initialTranscript?: SessionTranscriptV1 | SessionTranscriptV2 | null
   readonly initialProjectionState?: ProjectionState | null
   readonly projectTurn?: (
     turn: BackboneTurnResult,
@@ -431,7 +443,7 @@ export function resolveProviderHostTurnView<ProjectionState, ProjectionOutput>(o
  * Build a host-facing transcript projection from any transcript-bearing turn/result shape.
  */
 export function buildHostTranscriptProjection(source: {
-  readonly transcript: SessionTranscriptV1
+  readonly transcript: SessionTranscriptV1 | SessionTranscriptV2
 }): HostTranscriptProjection {
   const entries: Array<
     | { kind: "assistant_text"; text: string }
@@ -441,7 +453,10 @@ export function buildHostTranscriptProjection(source: {
   const toolPreviews: string[] = []
 
   for (const item of source.transcript.items) {
-    if (item.kind === "assistant_message" && item.visibility === "model") {
+    const modelVisible = typeof item.visibility === "string"
+      ? item.visibility === "model"
+      : item.visibility.model_visible
+    if (item.kind === "assistant_message" && modelVisible) {
       const text = ((item.content ?? {}) as { text?: string }).text
       if (typeof text === "string" && text.length > 0) {
         entries.push({ kind: "assistant_text", text })
@@ -500,7 +515,7 @@ export async function emitHostProjectionCallbacks(
  * Normalize the common envelope many hosts need: transcript projection plus a host-shaped result.
  */
 export function buildHostProjectionEnvelope<Result>(options: {
-  readonly transcriptSource: { readonly transcript: SessionTranscriptV1 }
+  readonly transcriptSource: { readonly transcript: SessionTranscriptV1 | SessionTranscriptV2 }
   readonly result: Result
 }): HostProjectionEnvelope<Result> {
   return {
@@ -854,7 +869,7 @@ export function buildEffectiveToolSurfaceSupportSummaryView(
  */
 export function buildBackboneTerminalRegistryView(
   session: BackboneSession,
-  events: readonly import("@breadboard/kernel-contracts").KernelEventV1[],
+  events: readonly (KernelEventV1 | KernelEventV2)[],
 ): HostTerminalRegistryView {
   const support = buildTerminalSupportSummaryView(session.terminals.classify({}))
   return buildTerminalRegistryView(session.terminals.reduceRegistry(events), { support })
@@ -862,7 +877,7 @@ export function buildBackboneTerminalRegistryView(
 
 export async function buildBackboneLiveTerminalRegistryView(
   session: BackboneSession,
-  input?: { executionProfileId?: import("@breadboard/workspace").ExecutionProfileId },
+  input?: { executionProfileId?: ExecutionProfileId },
 ): Promise<HostTerminalRegistryView | null> {
   const result = await session.terminals.listViews(input)
   const support = buildTerminalSupportSummaryView(result.supportClaim)
@@ -927,6 +942,92 @@ export function buildBackboneEffectiveToolSurfaceSupportSummaryView(
   )
 }
 
+function normalizeHostTranscriptVisibility(
+  visibility: unknown,
+): SessionTranscriptV2Item["visibility"] {
+  if (visibility && typeof visibility === "object") {
+    const value = visibility as Partial<SessionTranscriptV2Item["visibility"]>
+    const redactionState = value.redaction_state === "redacted"
+      || value.redaction_state === "summarized"
+      || value.redaction_state === "elided"
+      ? value.redaction_state
+      : "none"
+    return {
+      model_visible: value.model_visible === true,
+      provider_visible: value.provider_visible === true,
+      host_visible: value.host_visible === true,
+      redaction_state: redactionState,
+    }
+  }
+  return visibility === "model"
+    ? { model_visible: true, provider_visible: true, host_visible: true, redaction_state: "none" }
+    : { model_visible: false, provider_visible: false, host_visible: true, redaction_state: "none" }
+}
+
+function normalizeHostManagedTranscriptItem(
+  item: Record<string, unknown> | SessionTranscriptV1Item | SessionTranscriptV2Item,
+): SessionTranscriptV2Item {
+  const record = item as Record<string, unknown>
+  if (typeof record.kind === "string" && "visibility" in record) {
+    const provenance = record.provenance && typeof record.provenance === "object"
+      ? record.provenance as Record<string, unknown>
+      : null
+    const normalized: SessionTranscriptV2Item = {
+      kind: record.kind,
+      visibility: normalizeHostTranscriptVisibility(record.visibility),
+      content: "content" in record ? record.content : null,
+      content_schema_version:
+        typeof record.content_schema_version === "string" ? record.content_schema_version : null,
+      provenance: {
+        source: "import",
+        source_ref:
+          typeof provenance?.source_ref === "string"
+            ? provenance.source_ref
+            : typeof provenance?.source === "string"
+              ? provenance.source
+              : null,
+      },
+    }
+    const callId = typeof record.call_id === "string" ? record.call_id : record.callId
+    if (typeof callId === "string") normalized.call_id = callId
+    const eventId = typeof record.event_id === "string"
+      ? record.event_id
+      : (record.eventId ?? provenance?.eventId)
+    if (typeof eventId === "string") normalized.event_id = eventId
+    if (typeof record.seq === "number") normalized.seq = record.seq
+    if (record.metadata && typeof record.metadata === "object") {
+      normalized.metadata = { ...(record.metadata as Record<string, unknown>) }
+    }
+    return normalized
+  }
+
+  const entries = Object.entries(record)
+  if (entries.length === 1) {
+    const [legacyKind, content] = entries[0]
+    const kind = legacyKind === "assistant"
+      ? "assistant_message"
+      : legacyKind === "user"
+        ? "user_message"
+        : legacyKind
+    const modelVisible = legacyKind === "assistant" || legacyKind === "user"
+    return {
+      kind,
+      visibility: normalizeHostTranscriptVisibility(modelVisible ? "model" : "host"),
+      content,
+      content_schema_version: null,
+      provenance: { source: "import", source_ref: `legacy_transcript_entry:${legacyKind}` },
+    }
+  }
+
+  return {
+    kind: "annotation",
+    visibility: normalizeHostTranscriptVisibility("host"),
+    content: { ...record },
+    content_schema_version: null,
+    provenance: { source: "import", source_ref: "legacy_transcript_entry:multi_key" },
+  }
+}
+
 /**
  * Normalize a host-managed transcript input into the canonical transcript envelope used by the
  * session helper. Hosts may retain looser local item typing, but this helper pins the shape at
@@ -935,18 +1036,31 @@ export function buildBackboneEffectiveToolSurfaceSupportSummaryView(
 export function normalizeHostManagedTranscript(
   sessionId: string,
   transcript: HostManagedTranscript | null | undefined,
-): SessionTranscriptV1 | null {
+): SessionTranscriptV2 | null {
   if (!transcript) {
     return null
   }
   if (Array.isArray(transcript)) {
     return {
-      schemaVersion: "bb.session_transcript.v1",
-      sessionId,
-      items: transcript as SessionTranscriptV1Item[],
+      schema_version: "bb.session_transcript.v2",
+      session_id: sessionId,
+      items: transcript.map(normalizeHostManagedTranscriptItem),
     }
   }
-  return transcript
+  if (transcript.schema_version === "bb.session_transcript.v2") {
+    return transcript as SessionTranscriptV2
+  }
+  const legacyTranscript = transcript as SessionTranscriptV1
+  return {
+    schema_version: "bb.session_transcript.v2",
+    session_id: legacyTranscript.sessionId,
+    ...(typeof legacyTranscript.runId === "string" ? { run_id: legacyTranscript.runId } : {}),
+    ...(typeof legacyTranscript.eventCursor === "number" || legacyTranscript.eventCursor === null
+      ? { event_cursor: legacyTranscript.eventCursor }
+      : {}),
+    items: legacyTranscript.items.map(normalizeHostManagedTranscriptItem),
+    ...(legacyTranscript.metadata ? { metadata: { ...legacyTranscript.metadata } } : {}),
+  }
 }
 
 /**
@@ -956,7 +1070,15 @@ export function normalizeHostManagedTranscript(
 export function createProviderHostSession<Input, ProjectionState, ProjectionOutput>(
   options: ProviderHostSessionOptions<Input, ProjectionState, ProjectionOutput>,
 ): ProviderHostSession<Input, ProjectionState, ProjectionOutput> {
-  let transcript: SessionTranscriptV1 | null = options.initialTranscript ?? null
+  const initialTranscript = options.initialTranscript
+  let transcript: SessionTranscriptV2 | null = initialTranscript
+    ? normalizeHostManagedTranscript(
+        initialTranscript.schema_version === "bb.session_transcript.v2"
+          ? (initialTranscript as SessionTranscriptV2).session_id
+          : (initialTranscript as SessionTranscriptV1).sessionId,
+        initialTranscript,
+      )
+    : null
   let projectionState: ProjectionState | null = options.initialProjectionState ?? null
 
   async function run(
@@ -996,7 +1118,7 @@ export function createProviderHostSession<Input, ProjectionState, ProjectionOutp
     continueProviderTurn(input: Input): Promise<ProviderHostSessionTurnResult<ProjectionState, ProjectionOutput>> {
       return run(input, true)
     },
-    get transcript(): SessionTranscriptV1 | null {
+    get transcript(): SessionTranscriptV2 | null {
       return transcript
     },
     get projectionState(): ProjectionState | null {

@@ -1,0 +1,81 @@
+{
+  "$defs": {
+    "entry": {
+      "additionalProperties": false,
+      "properties": {
+        "default_for_generation": {
+          "type": "boolean"
+        },
+        "family": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+        },
+        "lifecycle": {
+          "enum": [
+            "active_production",
+            "validate_only",
+            "frozen_accepted_evidence",
+            "deprecated_no_consumers"
+          ]
+        },
+        "notes": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "schema_id": {
+          "$ref": "#/$defs/schema_id"
+        },
+        "superseded_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/schema_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_id",
+        "family",
+        "lifecycle",
+        "default_for_generation",
+        "superseded_by"
+      ],
+      "type": "object"
+    },
+    "schema_id": {
+      "pattern": "^bb\\.[a-z0-9_.]+\\.v[0-9]+$",
+      "type": "string"
+    }
+  },
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.schema_lifecycle.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/entry"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "registry_id": {
+      "const": "schema_lifecycle"
+    },
+    "schema_version": {
+      "const": "bb.schema_lifecycle.v1"
+    }
+  },
+  "required": [
+    "schema_version",
+    "registry_id",
+    "generated_at_utc",
+    "entries"
+  ],
+  "title": "BreadBoard schema lifecycle registry V1",
+  "type": "object"
+}

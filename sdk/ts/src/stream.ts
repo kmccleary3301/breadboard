@@ -70,7 +70,7 @@ export const streamSessionEvents = async function* (
 ): AsyncGenerator<SessionEvent, void, void> {
   const { config } = options
   const url = new URL(
-    `/sessions/${sessionId}/events`,
+    `/v1/sessions/${sessionId}/events`,
     config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`,
   )
   if (options.query) {

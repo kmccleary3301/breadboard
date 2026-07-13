@@ -1,0 +1,124 @@
+{
+  "acceptance_rationale": "P3.7 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72",
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 8,
+    "segment_hash": "sha256:5123526b9018df862e0afc6400d8c60b9a7a60e78be5a18862201fbde881e6ec",
+    "segment_id": "oh_my_pi_p3_7_memory_work_compiler",
+    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+  },
+  "claim_id": "oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "memory_compaction_schema_validation_passed",
+        "comparator_assertion_ids": [
+          "schema_validation_passed"
+        ],
+        "description": "schema validation passed"
+      },
+      {
+        "behavior_id": "memory_compaction_primary_primitive_present",
+        "comparator_assertion_ids": [
+          "primary_primitive_present"
+        ],
+        "description": "primary primitive present"
+      },
+      {
+        "behavior_id": "memory_compaction_work_checkpoint_refs_memory_plan",
+        "comparator_assertion_ids": [
+          "work_checkpoint_refs_memory_plan"
+        ],
+        "description": "work checkpoint refs memory plan"
+      },
+      {
+        "behavior_id": "memory_compaction_memory_plan_has_transcript_and_summary",
+        "comparator_assertion_ids": [
+          "memory_plan_has_transcript_and_summary"
+        ],
+        "description": "memory plan has transcript and summary"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01",
+  "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "browser",
+      "danger_full_access",
+      "final_readiness",
+      "mcp",
+      "model_inference",
+      "network",
+      "provider_authenticated",
+      "ui_parity"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "pi"
+    ]
+  },
+  "exclusions": [
+    "No broad Oh-My-Pi, OMP, Pi, provider-parity, UI, final-readiness, or target-customization support claim is made from this P3.7 helper/runtime lane.",
+    "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
+    "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:eb8e4807da21d37e88280deb188f533d5e789e66196246e7c7417347c486dac5",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "non_target_accounting",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_b650fa627d57aa92#sha256:66a5ee34199be19b992ec9cabbeed31b3940c1d18eda943c5e8214362cca88c1"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
+    "legacy_scope": {
+      "p3_item": "P3.7",
+      "phase": "P3"
+    },
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json#sha256:ce16682d0bd3a14e4f777aa796cb000181552ac13bf2f088346641fe03b0b037",
+  "phase_label": "P3",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "oh_my_pi_p3_7_memory_work_compiler_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "schema_version": "bb.e4.support_claim.v4",
+  "scope": {
+    "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+    "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/secret_scan_report.json#sha256:2173d93d68a7a1d6348c3f99b44fdca88f67129d51da94942f3e36f2de04ba57",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json#sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a",
+  "summary": "BreadBoard P3.7 memory/work compiler support is accepted only for checkpoint-backed memory plan and work-item lifecycle records in the named helper/runtime fixture.",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/prevalidation_report.json#sha256:1eee90f7fc5558e828a0864f53795bfc2cd71c83a449298f92c6f3aa78d031f4"
+  ]
+}

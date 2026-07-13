@@ -2,6 +2,17 @@ id: apply_unified_patch
 name: apply_unified_patch
 description: Apply a unified-diff patch (edits/additions/deletions) to files
 type_id: python
+binding:
+  module: agentic_coder_prototype.tools.patch
+  callable: apply_unified_patch
+aliases:
+  - apply_patch
+  - patch
+classification:
+  blocking: true
+  readonly: false
+  guardrail_class: edit
+  guardrail_sets: [edit]
 manipulations:
   - diff.apply
 syntax_formats_supported: [unified_diff, json_block]

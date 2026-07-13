@@ -1,0 +1,132 @@
+{
+  "schema_version": "bb.e4.target_coverage.v1",
+  "target_family": "pi",
+  "frozen_target_versions": [
+    "pi-p5-freeze"
+  ],
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "rows": [
+    {
+      "behavior_family": "config_graph",
+      "behavior_id": "pi_config_graph",
+      "description": "No accepted D3 target-support row mapped for pi config_graph.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "context_pack",
+      "behavior_id": "pi_context_pack",
+      "description": "No accepted D3 target-support row mapped for pi context_pack.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "capability_surface",
+      "behavior_id": "pi_capability_surface",
+      "description": "No accepted D3 target-support row mapped for pi capability_surface.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "tool_execution",
+      "behavior_id": "pi_tool_execution",
+      "description": "No accepted D3 target-support row mapped for pi tool_execution.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "command_network_policy",
+      "behavior_id": "pi_command_network_policy",
+      "description": "No accepted D3 target-support row mapped for pi command_network_policy.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "protocol_sessions",
+      "behavior_id": "pi_protocol_sessions",
+      "description": "No accepted D3 target-support row mapped for pi protocol_sessions.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "resource_access",
+      "behavior_id": "pi_resource_access",
+      "description": "No accepted D3 target-support row mapped for pi resource_access.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "provider_routing",
+      "behavior_id": "pi_provider_routing",
+      "description": "No accepted D3 target-support row mapped for pi provider_routing.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "memory_compaction",
+      "behavior_id": "pi_memory_compaction",
+      "description": "No accepted D3 target-support row mapped for pi memory_compaction.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "work_items",
+      "behavior_id": "pi_work_items",
+      "description": "No accepted D3 target-support row mapped for pi work_items.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "side_effects",
+      "behavior_id": "pi_side_effects",
+      "description": "No accepted D3 target-support row mapped for pi side_effects.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "projection_ui",
+      "behavior_id": "pi_projection_ui",
+      "description": "No accepted D3 target-support row mapped for pi projection_ui.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "session_persistence",
+      "behavior_id": "pi_session_persistence",
+      "description": "Accepted D3 inventory rows mapped for pi session_persistence.",
+      "status": "c4_accepted",
+      "claim_refs": [
+        "breadboard_repo_integration_main_20260326/docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json"
+      ],
+      "blocked_reason": null
+    },
+    {
+      "behavior_family": "replay_capture",
+      "behavior_id": "pi_replay_capture",
+      "description": "No accepted D3 target-support row mapped for pi replay_capture.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    },
+    {
+      "behavior_family": "other",
+      "behavior_id": "pi_other",
+      "description": "No accepted D3 target-support row mapped for pi other.",
+      "status": "not_started",
+      "claim_refs": [],
+      "blocked_reason": "No accepted D3 target-support lane in current inventory."
+    }
+  ]
+}

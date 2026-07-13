@@ -1,3 +1,48 @@
+import type {
+  CTreeSnapshotResponse as GeneratedCTreeSnapshotResponse,
+  E4CatalogBinding as GeneratedE4CatalogBinding,
+  E4CatalogBindingSegment as GeneratedE4CatalogBindingSegment,
+  E4CatalogEntry as GeneratedE4CatalogEntry,
+  E4CatalogPage as GeneratedE4CatalogPage,
+  E4ClaimDetail as GeneratedE4ClaimDetail,
+  E4ClaimList as GeneratedE4ClaimList,
+  E4CoverageMatrix as GeneratedE4CoverageMatrix,
+  E4Health as GeneratedE4Health,
+  E4Lane as GeneratedE4Lane,
+  E4LaneDetail as GeneratedE4LaneDetail,
+  E4LaneList as GeneratedE4LaneList,
+  E4LedgerRow as GeneratedE4LedgerRow,
+  E4LedgerRows as GeneratedE4LedgerRows,
+  E4RecordEnvelope as GeneratedE4RecordEnvelope,
+  E4RecordList as GeneratedE4RecordList,
+  E4ResolvedArtifact as GeneratedE4ResolvedArtifact,
+  E4ReverifyRequest as GeneratedE4ReverifyRequest,
+  E4ReverifyResult as GeneratedE4ReverifyResult,
+  E4SchemaInfo as GeneratedE4SchemaInfo,
+  E4SchemaList as GeneratedE4SchemaList,
+  E4SupportClaim as GeneratedE4SupportClaim,
+  ErrorResponse as GeneratedErrorResponse,
+  ModelCatalogEntry as GeneratedModelCatalogEntry,
+  ModelCatalogResponse as GeneratedModelCatalogResponse,
+  ProviderAuthAttachRequest as GeneratedProviderAuthAttachRequest,
+  ProviderAuthAttachResponse as GeneratedProviderAuthAttachResponse,
+  ProviderAuthDetachRequest as GeneratedProviderAuthDetachRequest,
+  ProviderAuthDetachResponse as GeneratedProviderAuthDetachResponse,
+  ProviderAuthStatusItem as GeneratedProviderAuthStatusItem,
+  ProviderAuthStatusResponse as GeneratedProviderAuthStatusResponse,
+  RegistryInfo as GeneratedRegistryInfo,
+  RegistryList as GeneratedRegistryList,
+  SessionCommandResponse as GeneratedSessionCommandResponse,
+  SessionCreateRequest as GeneratedSessionCreateRequest,
+  SessionCreateResponse as GeneratedSessionCreateResponse,
+  SessionFileContent as GeneratedSessionFileContent,
+  SessionFileInfo as GeneratedSessionFileInfo,
+  SessionInputResponse as GeneratedSessionInputResponse,
+  SessionSummary as GeneratedSessionSummary,
+  SkillCatalogResponse as GeneratedSkillCatalogResponse,
+} from "./generated/openapi-types.js"
+import type { KernelEventV2 } from "@breadboard/kernel-contracts/generated/types/bb.kernel_event.v2"
+
 export type EventType =
   | "stream.hello"
   | "stream.gap"
@@ -73,19 +118,49 @@ export interface SessionEvent<TPayload = Record<string, unknown>> {
   readonly payload: TPayload
 }
 
-export interface SessionFileInfo {
-  readonly path: string
-  readonly type: "file" | "directory"
-  readonly size?: number
-  readonly updated_at?: string
+export type CTreeSnapshotResponse = GeneratedCTreeSnapshotResponse
+export type E4CatalogBinding = GeneratedE4CatalogBinding
+export type E4CatalogBindingSegment = GeneratedE4CatalogBindingSegment
+export type E4CatalogEntry = GeneratedE4CatalogEntry
+export type E4CatalogPage = GeneratedE4CatalogPage
+export type E4ClaimDetail = GeneratedE4ClaimDetail
+export type E4ClaimList = GeneratedE4ClaimList
+export type E4CoverageMatrix = GeneratedE4CoverageMatrix
+export type E4Health = GeneratedE4Health
+export type E4Lane = GeneratedE4Lane
+export type E4LaneDetail = GeneratedE4LaneDetail
+export type E4LaneList = GeneratedE4LaneList
+export type E4LedgerRow = GeneratedE4LedgerRow
+export type E4LedgerRows = GeneratedE4LedgerRows
+export type E4RecordEnvelope = GeneratedE4RecordEnvelope & {
+  readonly record: KernelEventV2 | Record<string, unknown>
 }
-
-export interface SessionFileContent {
-  readonly path: string
-  readonly content: string
-  readonly truncated?: boolean
-  readonly total_bytes?: number
-}
+export type E4RecordList = GeneratedE4RecordList
+export type E4ResolvedArtifact = GeneratedE4ResolvedArtifact
+export type E4ReverifyRequest = GeneratedE4ReverifyRequest
+export type E4ReverifyResult = GeneratedE4ReverifyResult
+export type E4SchemaInfo = GeneratedE4SchemaInfo
+export type E4SchemaList = GeneratedE4SchemaList
+export type E4SupportClaim = GeneratedE4SupportClaim
+export type ErrorResponse = GeneratedErrorResponse
+export type ModelCatalogEntry = GeneratedModelCatalogEntry
+export type ModelCatalogResponse = GeneratedModelCatalogResponse
+export type ProviderAuthAttachRequest = GeneratedProviderAuthAttachRequest
+export type ProviderAuthAttachResponse = GeneratedProviderAuthAttachResponse
+export type ProviderAuthDetachRequest = GeneratedProviderAuthDetachRequest
+export type ProviderAuthDetachResponse = GeneratedProviderAuthDetachResponse
+export type ProviderAuthStatusItem = GeneratedProviderAuthStatusItem
+export type ProviderAuthStatusResponse = GeneratedProviderAuthStatusResponse
+export type RegistryInfo = GeneratedRegistryInfo
+export type RegistryList = GeneratedRegistryList
+export type SessionCommandResponse = GeneratedSessionCommandResponse
+export type SessionCreateRequest = GeneratedSessionCreateRequest
+export type SessionCreateResponse = GeneratedSessionCreateResponse
+export type SessionFileContent = GeneratedSessionFileContent
+export type SessionFileInfo = GeneratedSessionFileInfo
+export type SessionInputResponse = GeneratedSessionInputResponse
+export type SessionSummary = GeneratedSessionSummary
+export type SkillCatalogResponse = GeneratedSkillCatalogResponse
 
 export interface HealthResponse {
   readonly status: string
@@ -141,23 +216,6 @@ export interface EngineStatusResponse {
   } | null
 }
 
-export interface ModelCatalogEntry {
-  readonly id: string
-  readonly adapter?: string | null
-  readonly provider?: string | null
-  readonly name?: string | null
-  readonly context_length?: number | null
-  readonly params?: Record<string, unknown> | null
-  readonly routing?: Record<string, unknown> | null
-  readonly metadata?: Record<string, unknown> | null
-}
-
-export interface ModelCatalogResponse {
-  readonly models: ModelCatalogEntry[]
-  readonly default_model?: string | null
-  readonly config_path?: string | null
-}
-
 export type SkillType = "prompt" | "graph"
 
 export interface SkillEntry {
@@ -195,12 +253,6 @@ export interface SkillCatalog {
   readonly graph_skills?: Array<Record<string, unknown>>
 }
 
-export interface SkillCatalogResponse {
-  readonly catalog: SkillCatalog
-  readonly selection?: SkillSelection | null
-  readonly sources?: Record<string, unknown> | null
-}
-
 export interface CTreeNode {
   readonly id: string
   readonly digest: string
@@ -224,15 +276,6 @@ export interface CTreeNodeEventPayload {
 
 export interface CTreeSnapshotEventPayload {
   readonly snapshot: Record<string, unknown> | null
-  readonly compiler?: Record<string, unknown> | null
-  readonly collapse?: Record<string, unknown> | null
-  readonly runner?: Record<string, unknown> | null
-  readonly hash_summary?: Record<string, unknown> | null
-  readonly last_node?: CTreeNode | Record<string, unknown> | null
-}
-
-export interface CTreeSnapshotResponse {
-  readonly snapshot?: CTreeSnapshotSummary | Record<string, unknown> | null
   readonly compiler?: Record<string, unknown> | null
   readonly collapse?: Record<string, unknown> | null
   readonly runner?: Record<string, unknown> | null
@@ -292,42 +335,6 @@ export interface SessionArtifactInfo {
   readonly size?: number
 }
 
-export interface SessionCreateRequest {
-  readonly config_path: string
-  readonly task: string
-  readonly overrides?: Record<string, unknown>
-  readonly metadata?: Record<string, unknown>
-  readonly workspace?: string
-  readonly max_steps?: number
-  readonly permission_mode?: string
-  readonly stream?: boolean
-}
-
-export interface SessionCreateResponse {
-  readonly session_id: string
-  readonly status: string
-  readonly created_at: string
-  readonly logging_dir?: string | null
-}
-
-export interface SessionSummary {
-  readonly session_id: string
-  readonly status: string
-  readonly created_at: string
-  readonly last_activity_at: string
-  readonly model?: string | null
-  readonly mode?: string | null
-  readonly completion_summary?: Record<string, unknown> | null
-  readonly reward_summary?: Record<string, unknown> | null
-  readonly logging_dir?: string | null
-  readonly metadata?: Record<string, unknown> | null
-}
-
-export interface ErrorResponse {
-  readonly message: string
-  readonly detail?: Record<string, unknown>
-}
-
 export interface ProviderAuthMaterialRequest {
   readonly provider_id: string
   readonly alias?: string
@@ -341,43 +348,75 @@ export interface ProviderAuthMaterialRequest {
   readonly is_subscription_plan?: boolean
 }
 
-export interface ProviderAuthAttachRequest {
-  readonly material: ProviderAuthMaterialRequest
-  readonly required_profile?: Record<string, unknown> | null
-  readonly config_path?: string
-  readonly overrides?: Record<string, unknown> | null
+export interface E4ApiErrorEnvelope {
+  readonly error: string
+  readonly detail?: string | null
+  readonly path?: string | null
 }
 
-export interface ProviderAuthAttachResponse {
-  readonly ok?: boolean
-  readonly detail?: Record<string, unknown> | null
+export interface SessionKernelRecordEnvelope {
+  readonly schema_version: string | null
+  readonly path: string
+  readonly line: number
+  readonly record: KernelEventV2 | Record<string, unknown>
 }
 
-export interface ProviderAuthDetachRequest {
-  readonly provider_id: string
-  readonly alias?: string
+export interface SessionKernelRecordList {
+  readonly session_id: string
+  readonly records: SessionKernelRecordEnvelope[]
+  readonly offset: number
+  readonly limit: number
+  readonly total: number
 }
 
-export interface ProviderAuthDetachResponse {
-  readonly ok?: boolean
+export interface RlRunSubmitRequest {
+  readonly run_id: string
+  readonly tenant_id: string
+  readonly workspace_id: string
+  readonly env_package_ref: string
+  readonly target_run_id: string
+  readonly requested_tasks?: number
+  readonly requested_gpus?: number
+  readonly requested_budget_usd?: number
+  readonly requested_duration_seconds?: number
+  readonly metadata?: Record<string, unknown>
 }
 
-export interface ProviderAuthStatusItem {
-  readonly provider_id: string
-  readonly alias?: string | null
-  readonly has_api_key?: boolean
-  readonly header_keys?: string[]
-  readonly base_url?: string | null
-  readonly routing_keys?: string[]
-  readonly issued_at_ms?: number | null
-  readonly expires_at_ms?: number | null
-  readonly expires_in_ms?: number | null
-  readonly is_subscription_plan?: boolean
-  readonly required_profile?: Record<string, unknown> | null
+export interface RlRunStatus {
+  readonly run_id: string
+  readonly state: string
+  readonly target_run_id: string
+  readonly accepted: boolean
+  readonly cancellation_state: string
+  readonly reason?: string
 }
 
-export interface ProviderAuthStatusResponse {
-  readonly attached: ProviderAuthStatusItem[]
+export interface RlStreamEvent {
+  readonly sequence: number
+  readonly run_id: string
+  readonly event_type: string
+  readonly state: string
+  readonly message: string
+  readonly target_run_id: string
+  readonly payload: Record<string, unknown>
+}
+
+export interface RlArtifact {
+  readonly artifact_id: string
+  readonly relative_path: string
+  readonly sha256: string
+  readonly bytes: number
+  readonly egress_allowed: boolean
+}
+
+export interface RlAuditReport {
+  readonly run_id: string
+  readonly tenant_id: string
+  readonly workspace_id: string
+  readonly target_run_id: string
+  readonly state: string
+  readonly persistent_store: string
+  readonly scorecard_update_allowed: boolean
 }
 
 export interface ApiError extends Error {

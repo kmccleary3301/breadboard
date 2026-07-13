@@ -1,6 +1,6 @@
 import { loadAppConfig, type AppConfig } from "../config/appConfig.js"
 import { ApiClient } from "../api/client.js"
-import { streamSessionEvents } from "../api/stream.js"
+import { openEventStream, streamSessionEvents, type EventStreamHandlers, type EventStreamHandle } from "../api/stream.js"
 import type { AttachmentUploadPayload } from "../api/client.js"
 import type { SessionEvent } from "../api/types.js"
 
@@ -18,11 +18,16 @@ export class CliSdkProvider {
   }
 
   stream(sessionId: string, options: { signal?: AbortSignal; lastEventId?: string }) {
-    const config = loadAppConfig()
     return streamSessionEvents(sessionId, {
       signal: options.signal,
       lastEventId: options.lastEventId,
-      config,
+    })
+  }
+
+  openEventStream(sessionId: string, handlers: EventStreamHandlers, options: { signal?: AbortSignal; lastEventId?: string } = {}): EventStreamHandle {
+    return openEventStream(sessionId, handlers, {
+      signal: options.signal,
+      lastEventId: options.lastEventId,
     })
   }
 

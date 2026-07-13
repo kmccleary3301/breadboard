@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "breadboard-harness-cli"
+version = "0.0.0"
+description = "BreadBoard harness authoring front door"
+requires-python = ">=3.10"
+
+[project.scripts]
+bbh = "scripts.breadboard_cli:main"
+
+[tool.setuptools]
+packages = ["scripts", "agentic_coder_prototype", "breadboard_sdk", "breadboard", "conformance"]
+py-modules = ["adaptive_iter"]

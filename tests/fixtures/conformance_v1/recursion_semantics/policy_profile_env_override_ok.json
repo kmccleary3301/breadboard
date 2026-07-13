@@ -1,0 +1,16 @@
+{
+  "config": {
+    "long_running": {
+      "enabled": true,
+      "policy_profile": "aggressive"
+    }
+  },
+  "default_profile": "balanced",
+  "env": {
+    "BREADBOARD_LONGRUN_POLICY_PROFILE": "conservative"
+  },
+  "expected": {
+    "actual": "conservative"
+  },
+  "schema_version": "bb.ct.longrun.policy_profile_env_override.fixture.v1"
+}

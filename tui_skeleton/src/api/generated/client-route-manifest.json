@@ -1,0 +1,174 @@
+{
+  "schema_version": "bb.tui_api_client_routes.v1",
+  "generated_from": "docs/contracts/cli_bridge/openapi.json + src/api/client.ts wrapper surface",
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/health"
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{}/ctrees/disk"
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{}/ctrees/events"
+    },
+    {
+      "method": "GET",
+      "path": "/sessions/{}/ctrees/tree"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/catalog"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/catalog/binding"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/claims"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/claims/{}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/e4/claims/{}/reverify"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/coverage/{}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/lanes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/lanes/{}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/ledger/rows"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/records"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/e4/schemas"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/models"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/provider-auth/attach"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/provider-auth/detach"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/provider-auth/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/registries"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/registries/{}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/rl/runs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/rl/runs/{}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/rl/runs/{}/artifacts"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/rl/runs/{}/audit"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/rl/runs/{}/cancel"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/rl/runs/{}/events"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/rl/runs/{}/replay/{}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sessions"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/sessions/{}"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sessions/{}/command"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}/ctrees"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}/download"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}/files/content"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sessions/{}/input"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}/records"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/sessions/{}/skills"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/status"
+    }
+  ]
+}

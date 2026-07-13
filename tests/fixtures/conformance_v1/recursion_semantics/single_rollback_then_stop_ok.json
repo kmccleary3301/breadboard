@@ -1,0 +1,13 @@
+{
+  "expected": {
+    "actual_episodes_run": 2,
+    "actual_rollback_used": true,
+    "actual_stop_reason": "retry_budget_reached"
+  },
+  "run": {
+    "episodes_run": 2,
+    "rollback_used": true,
+    "stop_reason": "retry_budget_reached"
+  },
+  "schema_version": "bb.ct.longrun.single_rollback_then_stop.fixture.v1"
+}

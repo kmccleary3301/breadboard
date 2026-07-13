@@ -12,6 +12,7 @@ import { buildPickerWindow, resolvePickerLayout, type PickerModel } from "../../
 import { buildConfirmModal, buildShortcutsModal } from "./modalBasics.js"
 import { SheetModal } from "./SheetModal.js"
 import { formatTodoModalRowLabel } from "./todoCheckbox.js"
+import { parseBooleanEnv } from "../../../../utils/envBoolean.js"
 import { buildPickerPanelProjection, pickerRowToSelectPanelRow } from "./pickerPanelAdapter.js"
 import {
   countTaskRowsByStatusGroup,
@@ -37,10 +38,9 @@ export type TasksOverlayContract = {
   readonly hintLines: ReadonlyArray<SelectPanelLine>
 }
 
-const SUBAGENT_DIAGNOSTIC_HEATMAP_ENABLED = ["1", "true", "yes", "on"].includes(
-  String(process.env.BREADBOARD_SUBAGENTS_DIAGNOSTIC_HEATMAP ?? "")
-    .trim()
-    .toLowerCase(),
+const SUBAGENT_DIAGNOSTIC_HEATMAP_ENABLED = parseBooleanEnv(
+  process.env.BREADBOARD_SUBAGENTS_DIAGNOSTIC_HEATMAP,
+  false,
 )
 
 const summarizeTodoStatuses = (todos: ReadonlyArray<{ status?: string }>): string => {

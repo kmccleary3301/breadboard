@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v2.schema.json",
+  "title": "BreadBoard Tool Spec V2",
+  "type": "object",
+  "$comment": "Supersedes bb.tool_spec.v1. v1 is frozen for accepted evidence. Migration map: docs/contracts/CONTRACT_CONVENTIONS.md#v1-to-v2-runtime-records.",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "description",
+    "input_schema"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.tool_spec.v2"
+    },
+    "name": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+    },
+    "description": {
+      "type": "string",
+      "minLength": 1
+    },
+    "input_schema": {
+      "type": "object"
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+      }
+    },
+    "output_schema": {
+      "type": "object"
+    },
+    "approval_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "never",
+            "on_request",
+            "always",
+            "policy"
+          ]
+        },
+        "policy_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "visibility": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/visibility"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "builtin",
+            "config",
+            "mcp",
+            "extension",
+            "live"
+          ]
+        },
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        }
+      }
+    },
+    "capability_tags": {
+      "type": "array",
+      "items": {
+        "$ref": "bb.kernel.common.v1.schema.json#/$defs/identifier"
+      }
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  }
+}

@@ -11,7 +11,8 @@ import { stdin as input, stdout as output } from "node:process"
 import { createApiClient, ApiError } from "../api/client.js"
 import type { ProviderAuthStatusResponse } from "../api/types.js"
 import { DEFAULT_CONFIG_PATH, loadAppConfig } from "../config/appConfig.js"
-import { resolveAuthToken } from "../config/authTokenProvider.js"
+import { clearKeychainAuthForBaseUrl, resolveAuthToken, resolveKeychainAccounts } from "../config/authTokenProvider.js"
+import { normalizeBaseUrl } from "../config/baseUrl.js"
 import { getUserConfigPath, loadUserConfigSync, writeUserConfig } from "../config/userConfig.js"
 import { deleteKeychainAuthToken, getKeychainAuthToken, isKeychainAvailable, setKeychainAuthToken } from "../config/keychain.js"
 import { ensureEngine } from "../engine/engineSupervisor.js"
@@ -69,22 +70,10 @@ const cInfo = (value: string) => chalk.hex(COLORS.info)(value)
 const cMuted = (value: string) => chalk.hex(COLORS.muted)(value)
 const cTitle = (value: string) => chalk.hex(COLORS.title)(value)
 
-const normalizeUrl = (value: string): string => {
-  const trimmed = value.trim()
-  if (!trimmed) {
-    throw new Error("URL is empty.")
-  }
-  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`
-  const parsed = new URL(withScheme)
-  if (!parsed.hostname) {
-    throw new Error(`Invalid URL: ${value}`)
-  }
-  return parsed.toString().replace(/\/$/, "")
-}
 
 const resolveBaseUrl = (override: Option.Option<string>): string => {
   const raw = Option.getOrNull(override)
-  if (raw) return normalizeUrl(raw)
+  if (raw) return normalizeBaseUrl(raw)
   return loadAppConfig().baseUrl
 }
 
@@ -346,10 +335,24 @@ const providerStatus = async (baseUrl: string): Promise<ProviderAuthStatusRespon
 const labelState = (label: string, set: boolean): string =>
   `${label}: ${set ? cOk("set") : cMuted("unset")}`
 
+const resolveAuthKeychainAccounts = (baseUrl: string, authTokenRef?: string): string[] => {
+  const explicitAccounts = resolveKeychainAccounts(baseUrl, authTokenRef)
+  return explicitAccounts.length > 0 ? explicitAccounts : resolveKeychainAccounts(baseUrl, "keychain")
+}
+
+
+const getFirstKeychainAuthToken = async (accounts: readonly string[]): Promise<string | undefined> => {
+  for (const account of accounts) {
+    const token = await getKeychainAuthToken(account)
+    if (token) return token
+  }
+  return undefined
+}
+
 const printAuthStatus = async (baseUrl: string): Promise<void> => {
   const user = loadUserConfigSync()
   const envToken = process.env.BREADBOARD_API_TOKEN?.trim()
-  const keychainToken = await getKeychainAuthToken(baseUrl)
+  const keychainToken = await getFirstKeychainAuthToken(resolveAuthKeychainAccounts(baseUrl, user.authTokenRef))
   const keychainOk = await isKeychainAvailable()
   const codexStore = await readCodexSubscriptionStore()
   const codexFallbackToken = codexStore.by_base_url[baseUrl]?.token?.trim()
@@ -564,7 +567,7 @@ const authSetCommand = Command.make(
       }
       await setKeychainAuthToken(baseUrl, token)
       const existing = loadUserConfigSync()
-      const next = { ...existing, baseUrl, authTokenRef: `keychain:${baseUrl}` }
+      const next = { ...existing, baseUrl, authTokenRef: "keychain" }
       delete (next as { authToken?: string }).authToken
       await writeUserConfig(next)
       console.log(cOk("Stored API token in keychain."))
@@ -573,6 +576,13 @@ const authSetCommand = Command.make(
     }),
 )
 
+const clearAuthForBaseUrl = async (baseUrl: string): Promise<void> => {
+  const removed = await clearKeychainAuthForBaseUrl(baseUrl)
+  console.log(removed ? cOk("Keychain entry removed.") : cMuted("No keychain entry found."))
+  console.log(`${cInfo("Base URL")}: ${baseUrl}`)
+  console.log(`${cInfo("Config")}: ${getUserConfigPath()}`)
+}
+
 const authClearCommand = Command.make(
   "clear",
   {
@@ -580,17 +590,7 @@ const authClearCommand = Command.make(
   },
   ({ url }) =>
     Effect.tryPromise(async () => {
-      const baseUrl = resolveBaseUrl(url)
-      const removed = await deleteKeychainAuthToken(baseUrl)
-      const existing = loadUserConfigSync()
-      const next = { ...existing }
-      if (next.authTokenRef?.startsWith("keychain:")) {
-        delete (next as { authTokenRef?: string }).authTokenRef
-      }
-      await writeUserConfig(next)
-      console.log(removed ? cOk("Keychain entry removed.") : cMuted("No keychain entry found."))
-      console.log(`${cInfo("Base URL")}: ${baseUrl}`)
-      console.log(`${cInfo("Config")}: ${getUserConfigPath()}`)
+      await clearAuthForBaseUrl(resolveBaseUrl(url))
     }),
 )
 

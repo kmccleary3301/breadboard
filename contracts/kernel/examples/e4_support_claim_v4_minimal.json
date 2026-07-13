@@ -1,0 +1,69 @@
+{
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/lane_alpha/raw_capture_manifest.json#sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 7,
+    "segment_hash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "segment_id": "lane_alpha",
+    "shared_segment_hash": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "claim_id": "claim_alpha",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "behavior_alpha",
+        "comparator_assertion_ids": [
+          "scope_match"
+        ],
+        "description": "the comparator proves the exact scoped behavior"
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/lane_alpha/comparator_report.json#sha256:7777777777777777777777777777777777777777777777777777777777777777",
+  "evidence_manifest_ref": "docs/conformance/support_claims/lane_alpha_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity"
+    ],
+    "excluded_families": [
+      "all_other_families",
+      "future_agent_family"
+    ],
+    "excluded_lanes": [],
+    "excluded_provider_modes": [],
+    "excluded_sandbox_modes": []
+  },
+  "exclusions": [
+    "No broad target-family support claim is made."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#config_alpha#sha256:4444444444444444444444444444444444444444444444444444444444444444",
+  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "kind": "target_support",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_alpha#sha256:9999999999999999999999999999999999999999999999999999999999999999"
+  ],
+  "replay_ref": "docs/conformance/e4_target_support/lane_alpha/bb_replay_result.json#sha256:6666666666666666666666666666666666666666666666666666666666666666",
+  "reverify_command": {
+    "argv": [
+      "python",
+      "scripts/validate_e4_c4_chain.py",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "schema_version": "bb.e4.support_claim.v4",
+  "scope": {
+    "config_id": "config_alpha",
+    "lane_id": "lane_alpha",
+    "provider_model": "provider-alpha",
+    "run_id": "run_alpha",
+    "sandbox_mode": "sandbox-alpha",
+    "target_family": "oh_my_pi",
+    "target_version": "target-alpha"
+  },
+  "summary": "Fixture C4 support claim for one exact lane scope.",
+  "validation_refs": [
+    "artifacts/conformance/node_gate/ct_lane_alpha_c4_chain.json#sha256:8888888888888888888888888888888888888888888888888888888888888888"
+  ]
+}

@@ -1,0 +1,50 @@
+extends: base_v2.yaml
+
+profile:
+  name: oh-my-pi-p6-0-l4-mcp-browser-resource-v1
+
+providers:
+  default_model: no-provider
+  models: []
+
+provider_tools:
+  use_native: true
+  suppress_prompts: true
+
+features:
+  plan: false
+  todos:
+    enabled: false
+
+prompts:
+  packs:
+    base:
+      system: docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.omp/SYSTEM.md
+      plan: docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.omp/SYSTEM.md
+      builder: docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.omp/SYSTEM.md
+      compact: docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.omp/SYSTEM.md
+      tools_catalog_full: docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.omp/SYSTEM.md
+      tools_catalog_short: docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.omp/SYSTEM.md
+  tool_prompt_synthesis:
+    enabled: false
+
+browser:
+  enabled: true
+
+mcp:
+  enabled: true
+  enable_project_config: true
+  filter_browser_when_native_browser_enabled: true
+
+tools:
+  registry:
+    paths:
+      - docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.mcp.json
+    include:
+      - mcp__p6-resource_fixture_echo
+  aliases:
+    browser-resource: mcp__p6-resource_fixture_echo
+
+concurrency:
+  at_most_one_of:
+    - bash

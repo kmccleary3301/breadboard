@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v2.schema.json",
+  "title": "BreadBoard Kernel Event V2",
+  "type": "object",
+  "$comment": "Supersedes bb.kernel_event.v1. v1 is frozen for accepted evidence. Migration map: docs/contracts/CONTRACT_CONVENTIONS.md#v1-to-v2-runtime-records.",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "event_id",
+    "run_id",
+    "session_id",
+    "seq",
+    "occurred_at_utc",
+    "actor",
+    "visibility",
+    "kind",
+    "payload",
+    "payload_schema_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.kernel_event.v2"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "turn_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "step_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "call_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "caused_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "seq": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "occurred_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "actor": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/actor_ref"
+    },
+    "visibility": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/visibility"
+    },
+    "kind": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)*$"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "payload_schema_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "record_refs": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/evidence_refs"
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  }
+}

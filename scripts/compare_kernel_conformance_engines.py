@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.validate_engine_conformance_manifest import main as validate_manifest_main
-from scripts.validate_kernel_contract_fixtures import _validate_manifest_and_fixtures
+from scripts.release.validate_kernel_contract_fixtures import _validate_manifest_and_fixtures
 
 
 def _python_summary() -> Dict[str, Any]:

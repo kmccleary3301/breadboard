@@ -1,0 +1,29 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.session_transcript.v1",
+  "fixture_family": "session_transcript",
+  "fixture_id": "session_transcript_invalid_missing_schemaVersion",
+  "invalid_reason": "Removes required reference_output field 'schemaVersion' from bb.session_transcript.v1.",
+  "reference_output": {
+    "eventCursor": 1,
+    "items": [
+      {
+        "content": {
+          "text": "hello"
+        },
+        "kind": "assistant_message",
+        "provenance": {
+          "source": "reference-fixture"
+        },
+        "visibility": "model"
+      }
+    ],
+    "metadata": {
+      "source": "python_reference"
+    },
+    "runId": "run-ref-1",
+    "sessionId": "sess-ref-1"
+  },
+  "source_fixture": "session_transcript/reference_fixture.json",
+  "support_tier": "reference-engine"
+}

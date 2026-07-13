@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v2.schema.json",
+  "title": "BreadBoard E4 target coverage matrix V2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "target_family",
+    "frozen_target_versions",
+    "generated_at_utc",
+    "rows"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.e4.target_coverage.v2"
+    },
+    "target_family": {
+      "$comment": "Registry key in contracts/kernel/registries/target_families.v1.json (bb.registry.v1).",
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9_.:/-]*$"
+    },
+    "frozen_target_versions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "generated_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "rows": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "behavior_family",
+          "behavior_id",
+          "description",
+          "status",
+          "claim_refs"
+        ],
+        "properties": {
+          "behavior_family": {
+            "enum": [
+              "config_graph",
+              "context_pack",
+              "capability_surface",
+              "tool_execution",
+              "command_network_policy",
+              "protocol_sessions",
+              "resource_access",
+              "provider_routing",
+              "memory_compaction",
+              "work_items",
+              "side_effects",
+              "projection_ui",
+              "session_persistence",
+              "replay_capture",
+              "other"
+            ]
+          },
+          "behavior_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "enum": [
+              "not_started",
+              "c1",
+              "c2",
+              "c3",
+              "c4_accepted",
+              "blocked",
+              "out_of_scope"
+            ]
+          },
+          "claim_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "blocked_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    }
+  }
+}

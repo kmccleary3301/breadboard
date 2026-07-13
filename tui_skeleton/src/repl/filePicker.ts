@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs"
 import { resolveBreadboardPath } from "../utils/paths.js"
+import { parseBooleanEnv } from "../utils/envBoolean.js"
 
 export type FilePickerMode = "tree" | "fuzzy" | "hybrid"
 
@@ -17,13 +18,6 @@ export interface FilePickerConfig {
   readonly indexConcurrency: number
 }
 
-const parseBooleanEnv = (value: string | undefined, fallback: boolean): boolean => {
-  if (value == null) return fallback
-  const normalized = value.trim().toLowerCase()
-  if (["1", "true", "yes", "on"].includes(normalized)) return true
-  if (["0", "false", "no", "off"].includes(normalized)) return false
-  return fallback
-}
 
 const parseNumberEnv = (value: string | undefined, fallback: number): number => {
   if (value == null) return fallback

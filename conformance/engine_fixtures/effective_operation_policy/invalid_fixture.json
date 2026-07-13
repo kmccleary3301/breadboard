@@ -1,0 +1,211 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.effective_operation_policy.v1",
+  "fixture_family": "effective_operation_policy",
+  "fixture_id": "effective_operation_policy_invalid_required_contract",
+  "notes": "Invalid effective_operation_policy fixture proving schema rejection.",
+  "reference_output": {
+    "applies_to": {
+      "operation_id": "operation_chat_with_tools_001",
+      "principal_ref": "principal://user/local",
+      "provider_route_ref": "provider_route:route_primary_openai_gpt5",
+      "run_id": "run_001"
+    },
+    "approvals": {
+      "approval_refs": [
+        "approval://workspace/default"
+      ],
+      "approver_scope": "workspace-owner",
+      "evidence_refs": [
+        "evidence://policy/approvals"
+      ],
+      "mode": "on_demand"
+    },
+    "budgets": {
+      "cost_budget_usd": 25.0,
+      "token_budget": 200000,
+      "wall_time_seconds": 7200
+    },
+    "command_policy": {
+      "default_decision": "ask",
+      "evidence_refs": [
+        "evidence://policy/command"
+      ],
+      "rules": [
+        {
+          "approval_required": false,
+          "decision": "allow",
+          "evidence_refs": [
+            "evidence://policy/command-safe-readonly"
+          ],
+          "match": {
+            "kind": "argv_prefix",
+            "pattern": "git status",
+            "scope_ref": "workspace://default"
+          },
+          "redaction_ref": null,
+          "rule_id": "command_safe_readonly"
+        }
+      ],
+      "surface": "command"
+    },
+    "conditional_rules": [
+      {
+        "condition_ref": "condition://network-bytes-over-budget",
+        "evidence_refs": [
+          "evidence://policy/conditional-network-budget"
+        ],
+        "rule_id": "require_approval_for_large_network",
+        "when_false": "allow",
+        "when_true": "ask"
+      }
+    ],
+    "enforcement_evidence_refs": [
+      "evidence://policy/enforcement/default"
+    ],
+    "file_policy": {
+      "default_decision": "ask",
+      "evidence_refs": [
+        "evidence://policy/file"
+      ],
+      "rules": [
+        {
+          "approval_required": false,
+          "decision": "allow",
+          "evidence_refs": [
+            "evidence://policy/file-workspace-read"
+          ],
+          "match": {
+            "kind": "path_prefix",
+            "pattern": "/workspace",
+            "scope_ref": "workspace://default"
+          },
+          "redaction_ref": null,
+          "rule_id": "file_workspace_read"
+        }
+      ],
+      "surface": "file"
+    },
+    "network_policy": {
+      "default_decision": "deny",
+      "evidence_refs": [
+        "evidence://policy/network"
+      ],
+      "rules": [
+        {
+          "approval_required": false,
+          "decision": "allow",
+          "evidence_refs": [
+            "evidence://policy/network-provider-api"
+          ],
+          "match": {
+            "kind": "endpoint_hash",
+            "pattern": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "scope_ref": "provider://openai"
+          },
+          "redaction_ref": "redaction://network/provider-url",
+          "rule_id": "network_provider_api"
+        }
+      ],
+      "surface": "network"
+    },
+    "placement_refs": [
+      "placement://local-process/default"
+    ],
+    "policy_id": "policy_workspace_default",
+    "redaction_visibility": {
+      "host_only_paths": [
+        "approvals.approval_refs",
+        "sandbox_refs"
+      ],
+      "model_visible_paths": [
+        "command_policy.default_decision",
+        "tool_policy.default_decision"
+      ],
+      "provider_visible_paths": [
+        "budgets.token_budget"
+      ],
+      "redacted_paths": [
+        "auth_material",
+        "network_policy.rules[0].match.pattern"
+      ],
+      "redaction_policy_refs": [
+        "redaction://default-secrets"
+      ]
+    },
+    "resource_policy": {
+      "default_decision": "ask",
+      "evidence_refs": [
+        "evidence://policy/resource"
+      ],
+      "rules": [
+        {
+          "approval_required": false,
+          "decision": "allow",
+          "evidence_refs": [
+            "evidence://policy/resource-blob-project"
+          ],
+          "match": {
+            "kind": "resource_scheme",
+            "pattern": "bb+blob",
+            "scope_ref": "project://default"
+          },
+          "redaction_ref": null,
+          "rule_id": "resource_blob_project"
+        }
+      ],
+      "surface": "resource"
+    },
+    "sandbox_refs": [
+      "sandbox://local/default"
+    ],
+    "schema_version": "bb.effective_operation_policy.v1",
+    "side_effect_policy": {
+      "default_decision": "ask",
+      "evidence_refs": [
+        "evidence://policy/side-effect"
+      ],
+      "rules": [
+        {
+          "approval_required": true,
+          "decision": "deny",
+          "evidence_refs": [
+            "evidence://policy/no-external-write"
+          ],
+          "match": {
+            "kind": "effect_class",
+            "pattern": "external_write",
+            "scope_ref": null
+          },
+          "redaction_ref": null,
+          "rule_id": "side_effect_no_external_write"
+        }
+      ],
+      "surface": "side_effect"
+    },
+    "tool_policy": {
+      "default_decision": "ask",
+      "evidence_refs": [
+        "evidence://policy/tool"
+      ],
+      "rules": [
+        {
+          "approval_required": false,
+          "decision": "allow",
+          "evidence_refs": [
+            "evidence://policy/tool-read-only"
+          ],
+          "match": {
+            "kind": "tool_id",
+            "pattern": "tool.read",
+            "scope_ref": "tool-surface://default"
+          },
+          "redaction_ref": null,
+          "rule_id": "tool_read_only"
+        }
+      ],
+      "surface": "tool"
+    }
+  },
+  "support_tier": "draft-shape"
+}

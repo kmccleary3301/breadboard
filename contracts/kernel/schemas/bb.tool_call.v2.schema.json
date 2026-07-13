@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.tool_call.v2.schema.json",
+  "title": "BreadBoard Tool Call V2",
+  "type": "object",
+  "$comment": "Supersedes bb.tool_call.v1. v1 is frozen for accepted evidence. Migration map: docs/contracts/CONTRACT_CONVENTIONS.md#v1-to-v2-runtime-records.",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "call_id",
+    "tool_name",
+    "args",
+    "state",
+    "requested_at_utc",
+    "actor",
+    "visibility"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.tool_call.v2"
+    },
+    "call_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "args": {
+      "type": "object"
+    },
+    "state": {
+      "enum": [
+        "declared",
+        "args_validated",
+        "approval_requested",
+        "approved",
+        "denied",
+        "scheduled",
+        "executing",
+        "partial_update",
+        "completed",
+        "failed",
+        "timed_out",
+        "cancelled"
+      ]
+    },
+    "requested_at_utc": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+    },
+    "actor": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/actor_ref"
+    },
+    "visibility": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/visibility"
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "turn_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "step_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent_call_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tool_spec_ref": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision"
+      ],
+      "properties": {
+        "decision": {
+          "enum": [
+            "approved",
+            "denied",
+            "auto_approved",
+            "not_required"
+          ]
+        },
+        "decided_by": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/actor_ref"
+        },
+        "policy_ref": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
+        },
+        "decided_at_utc": {
+          "$ref": "bb.kernel.common.v1.schema.json#/$defs/timestamp_utc"
+        }
+      }
+    },
+    "metadata": {
+      "$ref": "bb.kernel.common.v1.schema.json#/$defs/metadata"
+    }
+  }
+}

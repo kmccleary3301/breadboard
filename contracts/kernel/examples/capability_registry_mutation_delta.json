@@ -1,0 +1,166 @@
+{
+  "basis_registry_ref": "bb.capability_registry.v1:registry_session_omp_capability_delta#rev=1",
+  "capabilities": [
+    {
+      "capability_id": "cap_omp_hook_pre_read_policy",
+      "capability_type": "extension_hook",
+      "discovery": {
+        "discovered_at": "2026-03-08T00:00:00Z",
+        "evidence_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/capability/hook.ts:1-40",
+        "mode": "runtime_probe",
+        "state": "discovered"
+      },
+      "exposure": {
+        "mode": "host_only",
+        "model_visible": false,
+        "reason": "The pre-tool hook can block host execution but is not directly callable by the model.",
+        "state": "hidden",
+        "surface_refs": []
+      },
+      "metadata": {
+        "extension_id": "hook:pre:Read:policy",
+        "hook_type": "pre",
+        "source_path": ".claude/hooks/pre/read-policy.ts",
+        "tool": "Read"
+      },
+      "name": "pre:Read policy hook",
+      "provider": {
+        "provider_id": "oh-my-pi.pi-coding-agent",
+        "version": "16.2.13"
+      },
+      "scopes": [
+        "hook:tool_call",
+        "tool:Read"
+      ],
+      "visibility": "host_only"
+    },
+    {
+      "capability_id": "cap_omp_custom_tool_review",
+      "capability_type": "tool",
+      "discovery": {
+        "discovered_at": "2026-03-08T00:00:00Z",
+        "evidence_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/extensibility/custom-tools/loader.ts:1-260",
+        "mode": "runtime_probe",
+        "state": "discovered"
+      },
+      "exposure": {
+        "mode": "model_visible",
+        "model_visible": true,
+        "reason": "The custom tool is available through the resolved active tool surface.",
+        "state": "exposed",
+        "surface_refs": [
+          "surface_omp_active_tools"
+        ]
+      },
+      "metadata": {
+        "extension_id": "tool:review",
+        "source_kind": "custom_tool",
+        "source_path": ".claude/tools/review.ts"
+      },
+      "name": "review",
+      "provider": {
+        "provider_id": "oh-my-pi.pi-coding-agent",
+        "version": "16.2.13"
+      },
+      "scopes": [
+        "tool:execute"
+      ],
+      "visibility": "model_visible"
+    }
+  ],
+  "generated_at": "2026-03-08T00:00:00Z",
+  "mutation_log": [
+    {
+      "affected_capability_ids": [
+        "cap_omp_hook_pre_read_policy"
+      ],
+      "after_ref": "cap_omp_hook_pre_read_policy",
+      "basis_ref": "bb.capability_registry.v1:registry_session_omp_capability_delta#rev=1",
+      "details": {
+        "hook_key": "pre:Read:policy"
+      },
+      "mutation_id": "mut_001_discover_hook_pre_read",
+      "occurred_at": "2026-03-08T00:00:00Z",
+      "operation": "discover",
+      "outcome": "applied",
+      "phase": "discovery",
+      "reason": "Hook capability discovery uses hook type, tool, and name as the stable key.",
+      "source": {
+        "source_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/capability/hook.ts:1-40",
+        "source_type": "runtime_probe"
+      },
+      "target_ref": "hook:pre:Read:policy",
+      "target_type": "extension_hook"
+    },
+    {
+      "affected_capability_ids": [
+        "cap_omp_custom_tool_review"
+      ],
+      "after_ref": "cap_omp_custom_tool_review",
+      "basis_ref": "bb.capability_registry.v1:registry_session_omp_capability_delta#rev=1",
+      "details": {
+        "tool_key": "review"
+      },
+      "mutation_id": "mut_002_register_custom_tool_review",
+      "occurred_at": "2026-03-08T00:00:00Z",
+      "operation": "register",
+      "outcome": "applied",
+      "phase": "registration",
+      "reason": "Custom tool discovery registers a named tool when the name does not collide.",
+      "source": {
+        "source_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/extensibility/custom-tools/loader.ts:1-260",
+        "source_type": "extension_api"
+      },
+      "target_ref": "tool:review",
+      "target_type": "tool"
+    },
+    {
+      "affected_capability_ids": [],
+      "basis_ref": "bb.capability_registry.v1:registry_session_omp_capability_delta#rev=1",
+      "before_ref": "builtin:tool:edit",
+      "details": {
+        "conflict_key": "edit"
+      },
+      "mutation_id": "mut_003_reject_tool_edit_conflict",
+      "occurred_at": "2026-03-08T00:00:00Z",
+      "operation": "conflict_rejected",
+      "outcome": "rejected",
+      "phase": "resolution",
+      "reason": "A custom tool name that matches a built-in tool is rejected during custom-tool loading.",
+      "source": {
+        "source_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/extensibility/custom-tools/loader.ts:1-260",
+        "source_type": "runtime_probe"
+      },
+      "target_ref": "tool:edit",
+      "target_type": "tool"
+    },
+    {
+      "affected_capability_ids": [],
+      "after_ref": "project:slash-command:green",
+      "basis_ref": "bb.capability_registry.v1:registry_session_omp_capability_delta#rev=1",
+      "before_ref": "bundled:slash-command:green",
+      "details": {
+        "command_name": "green"
+      },
+      "mutation_id": "mut_004_override_bundled_green_command",
+      "occurred_at": "2026-03-08T00:00:00Z",
+      "operation": "override",
+      "outcome": "applied",
+      "phase": "resolution",
+      "reason": "User or project custom commands replace bundled commands with the same name.",
+      "source": {
+        "source_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/extensibility/custom-commands/loader.ts:1-240",
+        "source_type": "runtime_probe"
+      },
+      "target_ref": "slash-command:green",
+      "target_type": "slash_command"
+    }
+  ],
+  "registry_id": "registry_session_omp_capability_delta",
+  "registry_revision": 2,
+  "schema_version": "bb.capability_registry.v1",
+  "subject": {
+    "environment_id": "oh_my_pi_source_freeze_5356713e",
+    "run_id": null
+  }
+}

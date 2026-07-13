@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence, List, Tuple
 
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from agentic_coder_prototype.compilation.effective_operation_policy import policy_pack_for_config_authority
 from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointManager
 from agentic_coder_prototype.skills.registry import (
     load_skills,
@@ -22,7 +23,6 @@ from agentic_coder_prototype.skills.registry import (
     apply_skill_selection,
 )
 from agentic_coder_prototype.plugins.loader import discover_plugin_manifests, plugin_snapshot
-from agentic_coder_prototype.permissions.policy_pack import PolicyPack
 from agentic_coder_prototype.guardrail import GuardrailCoordinator
 from agentic_coder_prototype.permissions import (
     build_permission_overrides,
@@ -31,8 +31,14 @@ from agentic_coder_prototype.permissions import (
 )
 from agentic_coder_prototype.todo import TodoStore
 from agentic_coder_prototype.todo.projection import project_store_snapshot_to_tui_envelope
+from agentic_coder_prototype.state.session_state import (
+    AUDIT_ONLY_RUNTIME_EVENT_TYPES,
+    CANONICAL_KERNEL_EVENT_TYPES,
+    PROJECTION_ONLY_RUNTIME_EVENT_TYPES,
+)
 
 from .events import EventType, SessionEvent
+from .event_normalization import normalize_task_event_payload
 from .models import SessionCreateRequest, SessionStatus
 from .registry import SessionRecord, SessionRegistry
 
@@ -96,20 +102,23 @@ RuntimeEventContract = Dict[str, Optional[str]]
 TranslatedRuntimeEvent = Tuple[EventType, Dict[str, Any], Optional[int], RuntimeEventContract]
 
 
-def _pop_runtime_event_contract(payload: Dict[str, Any]) -> RuntimeEventContract:
-    raw = payload.pop("_bb_event_contract", None)
-    if not isinstance(raw, dict):
-        return {}
-    return {
-        "classification": str(raw.get("classification")) if raw.get("classification") is not None else None,
-        "family": str(raw.get("family")) if raw.get("family") is not None else None,
-        "actor": str(raw.get("actor")) if raw.get("actor") is not None else None,
-        "visibility": str(raw.get("visibility")) if raw.get("visibility") is not None else None,
-    }
 
 
 def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
     event_name = str(event_type or "")
+    for registry, classification in (
+        (CANONICAL_KERNEL_EVENT_TYPES, "canonical"),
+        (PROJECTION_ONLY_RUNTIME_EVENT_TYPES, "projection_only"),
+        (AUDIT_ONLY_RUNTIME_EVENT_TYPES, "audit_only"),
+    ):
+        metadata = registry.get(event_name)
+        if metadata is not None:
+            return {
+                "classification": classification,
+                "family": metadata["family"],
+                "actor": metadata["actor"],
+                "visibility": metadata["visibility"],
+            }
     if event_name in {"assistant_message", "assistant_delta", "assistant.message.start", "assistant.message.delta", "assistant.message.end"}:
         return {"classification": "bridge_stream", "family": "message.assistant", "actor": "engine", "visibility": "transcript"}
     if event_name == "user_message":
@@ -125,18 +134,6 @@ def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
     return {"classification": "legacy_unclassified", "family": "legacy.unclassified", "actor": "engine", "visibility": "audit"}
 
 
-def _effective_runtime_event_contract(event_type: str, contract: RuntimeEventContract) -> RuntimeEventContract:
-    default = _default_runtime_event_contract(event_type)
-    if not contract:
-        return default
-    if contract.get("classification") == "legacy_unclassified" and contract.get("visibility") == "audit":
-        return default
-    return {
-        "classification": contract.get("classification") or default.get("classification"),
-        "family": contract.get("family") or default.get("family"),
-        "actor": contract.get("actor") or default.get("actor"),
-        "visibility": contract.get("visibility") or default.get("visibility"),
-    }
 
 
 class SessionRunner:
@@ -176,7 +173,8 @@ class SessionRunner:
         self._accepted_task_texts: List[str] = []
 
         # Live overrides updated via commands
-        initial_metadata = dict(request.metadata or {})
+        initial_metadata = dict(self.session.metadata or {})
+        initial_metadata.update(dict(request.metadata or {}))
         self.session.metadata = initial_metadata
         self._model_override: Optional[str] = initial_metadata.get("model")
         self._mode: Optional[str] = initial_metadata.get("mode")
@@ -459,7 +457,12 @@ class SessionRunner:
                     cfg = dict(getattr(self._agent, "config", {}) or {}) if self._agent else load_agent_config(self.request.config_path)
                 except Exception:
                     cfg = {}
-                policy = PolicyPack.from_config(cfg)
+                policy = policy_pack_for_config_authority(
+                    cfg,
+                    session_id=self.session.session_id,
+                    config_path=self.request.config_path,
+                    logger=logger,
+                )
                 if (policy.model_allowlist is not None or policy.model_denylist) and not policy.is_model_allowed(model_value.strip()):
                     raise ValueError(f"set_model denied by policy: {model_value.strip()}")
                 self._model_override = model_value.strip()
@@ -1222,6 +1225,25 @@ class SessionRunner:
                         task_context["task_type"] = self.session.metadata.get("task_type")
             except Exception:
                 task_context = {}
+            kernel_emitter_run_dir = None
+            kernel_emitter_mode = None
+            try:
+                meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+                runtime_records = meta.get("runtime_records") if isinstance(meta, dict) else None
+                runtime_dir = meta.get("runtime_record_dir") if isinstance(meta, dict) else None
+                if runtime_dir:
+                    kernel_emitter_run_dir = runtime_dir
+                elif isinstance(runtime_records, dict):
+                    config_plane_stream = runtime_records.get("config_plane_stream")
+                    if config_plane_stream:
+                        kernel_emitter_run_dir = str(Path(config_plane_stream).resolve().parents[1])
+                if kernel_emitter_run_dir:
+                    from agentic_coder_prototype.runtime.kernel_emitter import primitive_emission_mode
+
+                    kernel_emitter_mode = primitive_emission_mode("strict")
+            except Exception:
+                kernel_emitter_run_dir = None
+                kernel_emitter_mode = None
             result = self._agent.run_task(  # type: ignore[call-arg]
                 task_text,
                 max_iterations=self.request.max_steps,
@@ -1231,6 +1253,8 @@ class SessionRunner:
                 permission_queue=permission_queue,
                 control_queue=control_queue,
                 context=task_context if task_context else None,
+                kernel_emitter_run_dir=str(kernel_emitter_run_dir) if kernel_emitter_run_dir else None,
+                kernel_emitter_mode=str(kernel_emitter_mode) if kernel_emitter_mode else None,
             )
             run_task_completed_at = time.monotonic()
         finally:
@@ -1789,128 +1813,10 @@ class SessionRunner:
         return normalized
 
     def _normalize_task_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        normalized = dict(payload or {})
-        kind = str(normalized.get("kind") or "").strip().lower()
-        is_subagent_event = bool(
-            str(normalized.get("subagent_type") or normalized.get("subagentType") or "").strip()
-            or kind.startswith("subagent_")
-            or kind.startswith("background_task")
+        return normalize_task_event_payload(
+            payload,
+            parent_session_id=getattr(self.session, "session_id", None),
         )
-        if "taskId" in normalized and "task_id" not in normalized:
-            normalized["task_id"] = normalized.get("taskId")
-        if "subagentType" in normalized and "subagent_type" not in normalized:
-            normalized["subagent_type"] = normalized.get("subagentType")
-        if "artifactPath" in normalized and "artifact_path" not in normalized:
-            normalized["artifact_path"] = normalized.get("artifactPath")
-        artifact = normalized.get("artifact")
-        if "artifact_path" not in normalized and isinstance(artifact, dict):
-            path = artifact.get("path") or artifact.get("artifact_path")
-            if path:
-                normalized["artifact_path"] = path
-        artifact_ref = self._extract_artifact_ref(normalized)
-        if artifact_ref is not None:
-            normalized["artifact_ref"] = artifact_ref
-        if "description" not in normalized:
-            for key in ("description", "title", "summary"):
-                value = normalized.get(key)
-                if value:
-                    normalized["description"] = str(value)
-                    break
-        if "status" not in normalized:
-            kind = str(normalized.get("kind") or "").lower()
-            status_map = {
-                "subagent_spawned": "running",
-                "subagent_started": "running",
-                "subagent_completed": "completed",
-                "subagent_failed": "failed",
-            }
-            status = status_map.get(kind)
-            if status:
-                normalized["status"] = status
-        if "timestamp" not in normalized:
-            for key in ("timestamp", "created_at", "completed_at", "ts"):
-                value = normalized.get(key)
-                if isinstance(value, (int, float)):
-                    normalized["timestamp"] = value
-                    break
-            else:
-                normalized["timestamp"] = time.time()
-        if "parentTaskId" in normalized and "parent_task_id" not in normalized:
-            normalized["parent_task_id"] = normalized.get("parentTaskId")
-        if "treePath" in normalized and "tree_path" not in normalized:
-            normalized["tree_path"] = normalized.get("treePath")
-        if "taskDepth" in normalized and "depth" not in normalized:
-            normalized["depth"] = normalized.get("taskDepth")
-        if "taskPriority" in normalized and "priority" not in normalized:
-            normalized["priority"] = normalized.get("taskPriority")
-        if "sessionId" in normalized and "task_session_id" not in normalized:
-            normalized["task_session_id"] = normalized.get("sessionId")
-
-        child_session_id = (
-            normalized.get("child_session_id")
-            or normalized.get("childSessionId")
-            or normalized.get("subagent_session_id")
-            or normalized.get("subagentSessionId")
-            or normalized.get("task_session_id")
-            or normalized.get("sessionId")
-        )
-        child_session_id_str = str(child_session_id).strip() if child_session_id is not None else ""
-        if child_session_id_str and (is_subagent_event or "child_session_id" in normalized or "childSessionId" in normalized):
-            normalized.setdefault("child_session_id", child_session_id_str)
-            normalized.setdefault("subagent_session_id", child_session_id_str)
-
-        parent_session_id = normalized.get("parent_session_id") or normalized.get("parentSessionId")
-        parent_session_id_str = str(parent_session_id).strip() if parent_session_id is not None else ""
-        if not parent_session_id_str and is_subagent_event:
-            parent_session_id_str = str(getattr(self.session, "session_id", "") or "").strip()
-        if parent_session_id_str:
-            normalized.setdefault("parent_session_id", parent_session_id_str)
-
-        child_label = (
-            normalized.get("child_session_label")
-            or normalized.get("childSessionLabel")
-            or normalized.get("subagent_label")
-            or normalized.get("subagentLabel")
-            or normalized.get("lane_label")
-            or normalized.get("laneLabel")
-            or normalized.get("subagent_type")
-            or normalized.get("description")
-        )
-        child_label_str = str(child_label).strip() if child_label is not None else ""
-        if child_label_str and (is_subagent_event or child_session_id_str):
-            normalized.setdefault("child_session_label", child_label_str)
-            normalized.setdefault("subagent_label", child_label_str)
-
-        lane_id = normalized.get("lane_id") or normalized.get("laneId")
-        lane_id_str = str(lane_id).strip() if lane_id is not None else ""
-        if not lane_id_str:
-            lane_id_str = str(
-                normalized.get("subagent_type")
-                or normalized.get("task_id")
-                or normalized.get("child_session_id")
-                or ""
-            ).strip()
-        if lane_id_str:
-            normalized.setdefault("lane_id", lane_id_str)
-
-        lane_label = normalized.get("lane_label") or normalized.get("laneLabel")
-        lane_label_str = str(lane_label).strip() if lane_label is not None else ""
-        if not lane_label_str:
-            lane_label_str = str(
-                normalized.get("subagent_type")
-                or normalized.get("child_session_label")
-                or normalized.get("description")
-                or ""
-            ).strip()
-        if lane_label_str:
-            normalized.setdefault("lane_label", lane_label_str)
-
-        task_id = normalized.get("task_id") or normalized.get("id")
-        if task_id and "tree_path" not in normalized:
-            normalized["tree_path"] = f"task/{task_id}"
-        if "depth" not in normalized:
-            normalized["depth"] = 0
-        return normalized
 
     def _translate_runtime_event(
         self,
@@ -1961,7 +1867,7 @@ class SessionRunner:
             return None
 
         normalized_payload: Dict[str, Any] = dict(payload or {})
-        event_contract = _effective_runtime_event_contract(event_type, _pop_runtime_event_contract(normalized_payload))
+        event_contract = _default_runtime_event_contract(event_type)
         if event_type == "todo_event":
             try:
                 todo_update = normalized_payload.get("todo")

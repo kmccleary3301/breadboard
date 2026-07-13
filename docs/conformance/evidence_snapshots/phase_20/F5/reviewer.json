@@ -1,0 +1,22 @@
+{
+  "verdict": "approved",
+  "reviewed_sha": "0def21d547ac65ee6e9d0ec042fb54171cbda5ff",
+  "reviewer": "ReviewF5 (loop-reviewer)",
+  "provenance": "orchestrator-materialized transcription; authoritative yield at agent://ReviewF5",
+  "evidence_binding": {
+    "implementer_json_sha256": "d3834e2fb90491e51969226243f8d2764a009fef2b8e1b9476ce21cce685bc8f",
+    "named_in_verdict": true
+  },
+  "checks": {
+    "ledger_tracked_ok": true,
+    "resolution_accounting_ok": "312 resolved/182 exact tombstones, >=10 substantively spot-checked",
+    "five_stage_ok": true,
+    "c4_ok": true,
+    "focused_tests_ok": "49 passed",
+    "j5_routing_ok": true,
+    "no_scope_creep": true,
+    "provenance_note_ok": true
+  },
+  "summary": "Tracked ledger blob b3ceb260 hashes to 908cd376 from commit bytes; exhaustive resolver test enforces exact per-reference tombstones; five-stage flow exit 0 in reviewer-created detached worktree; direct C4 pass; zero-delta vs pre-rebase 1423c0cd byte-identical ledger.",
+  "findings": []
+}

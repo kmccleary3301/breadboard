@@ -1,0 +1,20 @@
+{
+  "verdict": "approved",
+  "reviewed_sha": "4210f02e4627bfb22b0566588167c6462c1e3213",
+  "reviewer": "ReviewSP2 (loop-reviewer)",
+  "provenance": "orchestrator-materialized transcription; authoritative yield at agent://ReviewSP2",
+  "evidence_binding": {
+    "implementer_json_sha256": "5215b003d2901175a33cf067d7a8d921d1b6f8f869a1344c447e4439545d0c56",
+    "named_in_verdict": true
+  },
+  "checks": {
+    "sideband_fix_ok": true,
+    "classification_passthrough_ok": true,
+    "regen_rollback_ok": true,
+    "no_scope_creep": true,
+    "deferred_items_legit": true,
+    "residual_dual_emit_test": "passed"
+  },
+  "summary": "Registry-driven classification passthrough proven (session_state.py:28-35,256-260,293-305; session_runner.py:34-38,107-121,1870); old divergent defaults unreachable; regen backups retained until final C4 with rollback on all failure paths (regenerate_evidence.py:1022-1117) + 5 focused simulations; exact test-count matches (20/2/41); fixed-point + WS-J regen legitimately integration-scoped.",
+  "findings": []
+}

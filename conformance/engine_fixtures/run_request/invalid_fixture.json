@@ -1,0 +1,26 @@
+{
+  "comparator_class": "normalized-trace-equal",
+  "contract": "bb.run_request.v1",
+  "fixture_family": "run_request",
+  "fixture_id": "run_request_invalid_missing_request_id",
+  "invalid_reason": "Removes required reference_output field 'request_id' from bb.run_request.v1.",
+  "reference_output": {
+    "config_ref": "agent_configs/codex_0-107-0_e4_3-6-2026.yaml",
+    "entry_mode": "interactive",
+    "metadata": {
+      "source": "python_reference"
+    },
+    "requested_execution": {
+      "mode": "foreground"
+    },
+    "requested_features": {
+      "todos": true
+    },
+    "requested_model": "openai/gpt-5.2",
+    "schema_version": "bb.run_request.v1",
+    "task": "hello world",
+    "workspace_root": "/tmp/ws"
+  },
+  "source_fixture": "run_request/reference_fixture.json",
+  "support_tier": "reference-engine"
+}

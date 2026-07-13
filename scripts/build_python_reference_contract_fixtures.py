@@ -23,6 +23,7 @@ from agentic_coder_prototype.orchestration.schema import TeamConfig
 from agentic_coder_prototype.provider import ProviderInvoker
 from agentic_coder_prototype.provider.runtime import ProviderResult
 from agentic_coder_prototype.state.session_state import SessionState
+from scripts.e4_parity.validators.registries import schema_generation_default
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_ROOT = ROOT / "conformance" / "engine_fixtures"
@@ -1250,17 +1251,18 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
         seq=1,
     )
     kernel_contract = {
-        "schemaVersion": "bb.kernel_event.v1",
-        "eventId": "evt-ref-1",
-        "runId": "run-ref-1",
-        "sessionId": kernel_record["session_id"],
+        "schema_version": schema_generation_default("kernel_event_log"),
+        "event_id": "evt-ref-1",
+        "run_id": "run-ref-1",
+        "session_id": kernel_record["session_id"],
         "seq": kernel_record["seq"],
-        "ts": "2026-03-08T00:00:00Z",
-        "actor": "engine",
-        "visibility": "host",
+        "occurred_at_utc": "2026-03-08T00:00:00Z",
+        "actor": {"actor_kind": "agent", "actor_id": "python_reference"},
+        "visibility": {"model_visible": False, "provider_visible": False, "host_visible": True},
         "kind": kernel_record["type"],
         "payload": kernel_record["payload"],
-        "turnId": "turn-1",
+        "payload_schema_version": None,
+        "turn_id": "turn-1",
     }
 
     state.add_transcript_entry(
@@ -1272,11 +1274,21 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
         }
     )
     transcript_contract = {
-        "schemaVersion": "bb.session_transcript.v1",
-        "sessionId": "sess-ref-1",
-        "runId": "run-ref-1",
-        "eventCursor": 1,
-        "items": state.derive_transcript_contract_items(),
+        "schema_version": schema_generation_default("session_transcript_snapshot"),
+        "session_id": "sess-ref-1",
+        "run_id": "run-ref-1",
+        "event_cursor": 1,
+        "items": [
+            {
+                "kind": "assistant_message",
+                "visibility": {"model_visible": True, "provider_visible": True, "host_visible": True},
+                "content": {"text": "hello"},
+                "content_schema_version": None,
+                "event_id": "evt-ref-1",
+                "seq": 1,
+                "provenance": {"source": "fixture", "source_ref": "python_reference"},
+            }
+        ],
         "metadata": {"source": "python_reference"},
     }
 
@@ -1431,19 +1443,20 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
 
     outcome = build_tool_execution_outcome_record("run_shell", {"stdout": "hi", "exit_code": 0})
     tool_execution_contract = {
-        "schemaVersion": "bb.tool_execution_outcome.v1",
-        "callId": "call-run-shell-1",
-        "terminalState": outcome["terminal_state"],
+        "schema_version": schema_generation_default("tool_execution_outcome"),
+        "call_id": "call-run-shell-1",
+        "terminal_state": outcome["terminal_state"],
+        "completed_at_utc": "2026-03-08T00:00:00Z",
         "result": outcome["raw"],
         "metadata": {"tool": outcome["tool"], "ok": outcome["ok"]},
     }
     render = build_tool_model_render_record("run_shell", {"stdout": "hi", "exit_code": 0})
     tool_render_contract = {
-        "schemaVersion": "bb.tool_model_render.v1",
-        "callId": "call-run-shell-1",
-        "parts": [render],
-        "visibility": "model",
-        "truncation": {"applied": bool(render["truncated"]), "max_preview_chars": 120},
+        "schema_version": schema_generation_default("tool_render"),
+        "call_id": "call-run-shell-1",
+        "parts": [{"part_kind": "text", "content": render["preview"], "truncated": bool(render["truncated"])}],
+        "visibility": {"model_visible": True, "provider_visible": True, "host_visible": True},
+        "truncation": {"truncated": bool(render["truncated"])},
         "metadata": {"tool": render["tool"], "terminal_state": render["terminal_state"]},
     }
 
@@ -1456,18 +1469,19 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
         {"error": "blocked by policy", "guardrail": "workspace_guard_violation"},
     )
     tool_denied_execution_contract = {
-        "schemaVersion": "bb.tool_execution_outcome.v1",
-        "callId": "call-run-shell-denied-1",
-        "terminalState": denied_outcome["terminal_state"],
+        "schema_version": schema_generation_default("tool_execution_outcome"),
+        "call_id": "call-run-shell-denied-1",
+        "terminal_state": denied_outcome["terminal_state"],
+        "completed_at_utc": "2026-03-08T00:00:00Z",
         "result": denied_outcome["raw"],
         "metadata": {"tool": denied_outcome["tool"], "ok": denied_outcome["ok"]},
     }
     tool_denied_render_contract = {
-        "schemaVersion": "bb.tool_model_render.v1",
-        "callId": "call-run-shell-denied-1",
-        "parts": [denied_render],
-        "visibility": "model",
-        "truncation": {"applied": bool(denied_render["truncated"]), "max_preview_chars": 120},
+        "schema_version": schema_generation_default("tool_render"),
+        "call_id": "call-run-shell-denied-1",
+        "parts": [{"part_kind": "error", "content": denied_render["preview"], "truncated": bool(denied_render["truncated"])}],
+        "visibility": {"model_visible": True, "provider_visible": True, "host_visible": True},
+        "truncation": {"truncated": bool(denied_render["truncated"])},
         "metadata": {"tool": denied_render["tool"], "terminal_state": denied_render["terminal_state"]},
     }
 
@@ -1511,7 +1525,7 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
             "fixture_id": "kernel_event_python_reference",
             "comparator_class": "normalized-trace-equal",
             "support_tier": "reference-engine",
-            "contract": "bb.kernel_event.v1",
+            "contract": schema_generation_default("kernel_event_log"),
             "reference_output": kernel_contract,
         },
         "session_transcript/reference_fixture.json": {
@@ -1519,7 +1533,7 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
             "fixture_id": "session_transcript_python_reference",
             "comparator_class": "normalized-trace-equal",
             "support_tier": "reference-engine",
-            "contract": "bb.session_transcript.v1",
+            "contract": schema_generation_default("session_transcript_snapshot"),
             "reference_output": transcript_contract,
         },
         "permission/reference_fixture.json": {
@@ -1567,7 +1581,7 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
             "fixture_id": "tool_execution_python_reference",
             "comparator_class": "normalized-trace-equal",
             "support_tier": "reference-engine",
-            "contract": "bb.tool_execution_outcome.v1",
+            "contract": schema_generation_default("tool_execution_outcome"),
             "reference_output": tool_execution_contract,
         },
         "tool_lifecycle/reference_render_fixture.json": {
@@ -1575,7 +1589,7 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
             "fixture_id": "tool_render_python_reference",
             "comparator_class": "model-visible-equal",
             "support_tier": "reference-engine",
-            "contract": "bb.tool_model_render.v1",
+            "contract": schema_generation_default("tool_render"),
             "reference_output": tool_render_contract,
         },
         "tool_lifecycle/reference_denied_execution_fixture.json": {
@@ -1583,7 +1597,7 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
             "fixture_id": "tool_execution_denied_python_reference",
             "comparator_class": "normalized-trace-equal",
             "support_tier": "reference-engine",
-            "contract": "bb.tool_execution_outcome.v1",
+            "contract": schema_generation_default("tool_execution_outcome"),
             "reference_output": tool_denied_execution_contract,
         },
         "tool_lifecycle/reference_denied_render_fixture.json": {
@@ -1591,7 +1605,7 @@ def build_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
             "fixture_id": "tool_render_denied_python_reference",
             "comparator_class": "model-visible-equal",
             "support_tier": "reference-engine",
-            "contract": "bb.tool_model_render.v1",
+            "contract": schema_generation_default("tool_render"),
             "reference_output": tool_denied_render_contract,
         },
         "task_subagent/reference_background_fixture.json": {

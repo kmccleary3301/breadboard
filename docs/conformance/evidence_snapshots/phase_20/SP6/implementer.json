@@ -1,0 +1,410 @@
+{
+  "after_at_head": {
+    "base_only_failed_test_ids": [
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p6_6_task_job_subagent-p6_6_task_job_subagent-_mutate_p66]"
+    ],
+    "failed_count": 50,
+    "failed_id_subset_of_base": true,
+    "failed_test_ids": [
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_claim_entry_churn_reaches_revision_fixed_point",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_defaults_to_v2_and_rejects_v1",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_increments_revision_once_for_stable_existing_entry_change",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_is_deterministic_valid_and_covers_lane_and_static_roles",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_keeps_revision_for_derived_only_existing_entry_change",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_rejects_unregistered_derived_from_paths",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_validates_with_finalize_record",
+      "tests.e4_parity.test_build_artifact_catalog::test_static_script_entries_are_derived_and_recorded_in_tooling_manifest",
+      "tests.e4_parity.test_build_artifact_catalog::test_support_claim_hash_binding_sync_is_opt_in",
+      "tests.e4_parity.test_build_artifact_catalog::test_write_bindings_refreshes_node_gate_hashes_after_evidence_manifest_sync",
+      "tests.e4_parity.test_build_artifact_catalog_a6::test_catalog_cli_without_write_bindings_preserves_sync_eligible_binding_files",
+      "tests.e4_parity.test_build_oh_my_pi_l5_memory_compaction::test_l5_projection_reproduces_accepted_plan_and_continuation_patch_bytes",
+      "tests.e4_parity.test_build_oh_my_pi_l6_tui_projection::test_l6_projection_reproduces_ordered_host_only_accepted_event_bytes",
+      "tests.e4_parity.test_build_oh_my_pi_p6_6_task_job_subagent::test_task_projection_reproduces_accepted_lifecycle_records_and_rejects_job_only_evidence",
+      "tests.e4_parity.test_build_pi_p5_extension_session_residual::test_comparator_prevalidation_secret_scan_and_node_gate_are_passing",
+      "tests.e4_parity.test_build_pi_p5_extension_session_residual::test_replay_records_are_schema_valid_and_cover_extension_session_residuals",
+      "tests.e4_parity.test_build_pi_p5_extension_session_residual::test_support_claim_and_evidence_manifest_use_current_hashes",
+      "tests.e4_parity.test_build_primitive_projection::test_builder_emits_schema_valid_projection_records",
+      "tests.e4_parity.test_build_primitive_projection::test_projection_content_maps_l1_l2_packet_data",
+      "tests.e4_parity.test_build_primitive_projection::test_projection_output_is_byte_deterministic",
+      "tests.e4_parity.test_catalog_layering::test_catalog_revision_is_keyed_to_stable_entries_hash_not_claim_layer_churn",
+      "tests.e4_parity.test_e4_score_subledger::test_score_subledger_helper_or_checked_in_artifact_accounts_for_inventory_points",
+      "tests.e4_parity.test_e4_score_subledger::test_target_support_and_total_score_rows_have_explicit_point_totals",
+      "tests.e4_parity.test_north_star_c4_packets::test_north_star_lanes_run_through_lane_def_and_support_claim_generators",
+      "tests.e4_parity.test_north_star_c4_packets::test_north_star_reverify_commands_and_checked_in_artifacts_are_canonical_and_pass_c4",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_p31_lane_names_and_byte_locks_all_three_projection_outputs",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p3_1_effective_config_graph_compiler-p3_1_effective_tool_surface-_mutate_p31]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p3_2_context_resource_pack_compiler-p3_2_context_resource_pack-_mutate_p32]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p6_0_l5_memory_compaction-p6_l5_memory_compaction_plan-_mutate_l5]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p6_0_l6_tui_projection-p6_l6_tui_projection-_mutate_l6]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_1_effective_config_graph_compiler]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_2_context_resource_pack_compiler]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_5_resource_blob_compiler]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_8_projection_broker_adapter]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p6_0_l5_memory_compaction]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p6_0_l6_tui_projection]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p6_6_task_job_subagent]",
+      "tests.e4_parity.test_oh_my_pi_p6_profile_capture::test_generic_projection_packet_writes_byte_identical_l6_roles_only_to_scratch",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_2_context_resource_pack_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_3_capability_registry_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_4_extension_hook_execution_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_5_resource_blob_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_6_protocol_provider_policy_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_7_memory_work_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_8_projection_broker_adapter]",
+      "tests.e4_parity.test_phase20_contract_tiers::test_generated_readme_lists_every_registry_entry_with_its_tier",
+      "tests.e4_parity.test_validate_lane::test_current_accepted_lane_cli_emits_ok_v1_report_with_exact_checks",
+      "tests.e4_parity.test_validate_lane::test_temporary_lane_with_missing_capture_input_returns_schema_shaped_non_ok_report",
+      "tests.e4_parity.test_wsj_compliance_contracts::test_breadboard_self_capture_replays_runtime_records_and_binds_transcript_digest",
+      "tests.e4_parity.test_wsj_compliance_contracts::test_wsj_evidence_manifests_and_catalog_entries_have_fresh_hashes"
+    ],
+    "fresh_worktree": "/Users/kylemccleary/projects/breadboard/sp6_final_head_wt",
+    "head_only_failed_test_ids": [],
+    "summary": "50 failed, 595 passed, 1 skipped, 1 xfailed"
+  },
+  "base_sha": "9b9e9ddfe41848ebb0acb4e5c336de8ab18a9707",
+  "before_at_base": {
+    "failed_count": 51,
+    "failed_test_ids": [
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_claim_entry_churn_reaches_revision_fixed_point",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_defaults_to_v2_and_rejects_v1",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_increments_revision_once_for_stable_existing_entry_change",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_is_deterministic_valid_and_covers_lane_and_static_roles",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_keeps_revision_for_derived_only_existing_entry_change",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_rejects_unregistered_derived_from_paths",
+      "tests.e4_parity.test_build_artifact_catalog::test_build_catalog_validates_with_finalize_record",
+      "tests.e4_parity.test_build_artifact_catalog::test_static_script_entries_are_derived_and_recorded_in_tooling_manifest",
+      "tests.e4_parity.test_build_artifact_catalog::test_support_claim_hash_binding_sync_is_opt_in",
+      "tests.e4_parity.test_build_artifact_catalog::test_write_bindings_refreshes_node_gate_hashes_after_evidence_manifest_sync",
+      "tests.e4_parity.test_build_artifact_catalog_a6::test_catalog_cli_without_write_bindings_preserves_sync_eligible_binding_files",
+      "tests.e4_parity.test_build_oh_my_pi_l5_memory_compaction::test_l5_projection_reproduces_accepted_plan_and_continuation_patch_bytes",
+      "tests.e4_parity.test_build_oh_my_pi_l6_tui_projection::test_l6_projection_reproduces_ordered_host_only_accepted_event_bytes",
+      "tests.e4_parity.test_build_oh_my_pi_p6_6_task_job_subagent::test_task_projection_reproduces_accepted_lifecycle_records_and_rejects_job_only_evidence",
+      "tests.e4_parity.test_build_pi_p5_extension_session_residual::test_comparator_prevalidation_secret_scan_and_node_gate_are_passing",
+      "tests.e4_parity.test_build_pi_p5_extension_session_residual::test_replay_records_are_schema_valid_and_cover_extension_session_residuals",
+      "tests.e4_parity.test_build_pi_p5_extension_session_residual::test_support_claim_and_evidence_manifest_use_current_hashes",
+      "tests.e4_parity.test_build_primitive_projection::test_builder_emits_schema_valid_projection_records",
+      "tests.e4_parity.test_build_primitive_projection::test_projection_content_maps_l1_l2_packet_data",
+      "tests.e4_parity.test_build_primitive_projection::test_projection_output_is_byte_deterministic",
+      "tests.e4_parity.test_catalog_layering::test_catalog_revision_is_keyed_to_stable_entries_hash_not_claim_layer_churn",
+      "tests.e4_parity.test_e4_score_subledger::test_score_subledger_helper_or_checked_in_artifact_accounts_for_inventory_points",
+      "tests.e4_parity.test_e4_score_subledger::test_target_support_and_total_score_rows_have_explicit_point_totals",
+      "tests.e4_parity.test_north_star_c4_packets::test_north_star_lanes_run_through_lane_def_and_support_claim_generators",
+      "tests.e4_parity.test_north_star_c4_packets::test_north_star_reverify_commands_and_checked_in_artifacts_are_canonical_and_pass_c4",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_p31_lane_names_and_byte_locks_all_three_projection_outputs",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p3_1_effective_config_graph_compiler-p3_1_effective_tool_surface-_mutate_p31]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p3_2_context_resource_pack_compiler-p3_2_context_resource_pack-_mutate_p32]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p6_0_l5_memory_compaction-p6_l5_memory_compaction_plan-_mutate_l5]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p6_0_l6_tui_projection-p6_l6_tui_projection-_mutate_l6]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p6_6_task_job_subagent-p6_6_task_job_subagent-_mutate_p66]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_1_effective_config_graph_compiler]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_2_context_resource_pack_compiler]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_5_resource_blob_compiler]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_8_projection_broker_adapter]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p6_0_l5_memory_compaction]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p6_0_l6_tui_projection]",
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p6_6_task_job_subagent]",
+      "tests.e4_parity.test_oh_my_pi_p6_profile_capture::test_generic_projection_packet_writes_byte_identical_l6_roles_only_to_scratch",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_2_context_resource_pack_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_3_capability_registry_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_4_extension_hook_execution_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_5_resource_blob_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_6_protocol_provider_policy_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_7_memory_work_compiler]",
+      "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_8_projection_broker_adapter]",
+      "tests.e4_parity.test_phase20_contract_tiers::test_generated_readme_lists_every_registry_entry_with_its_tier",
+      "tests.e4_parity.test_validate_lane::test_current_accepted_lane_cli_emits_ok_v1_report_with_exact_checks",
+      "tests.e4_parity.test_validate_lane::test_temporary_lane_with_missing_capture_input_returns_schema_shaped_non_ok_report",
+      "tests.e4_parity.test_wsj_compliance_contracts::test_breadboard_self_capture_replays_runtime_records_and_binds_transcript_digest",
+      "tests.e4_parity.test_wsj_compliance_contracts::test_wsj_evidence_manifests_and_catalog_entries_have_fresh_hashes"
+    ],
+    "fresh_worktree": "/Users/kylemccleary/projects/breadboard/sp6_final_base_wt",
+    "summary": "51 failed, 591 passed, 1 skipped, 1 xfailed"
+  },
+  "branch": "p20/sp6",
+  "exact_22_clean_checkout": {
+    "base_population_signature_counts": {
+      "missing_generated_node_gate": 11,
+      "missing_generated_primitive_projection": 2,
+      "missing_generated_target_support": 23
+    },
+    "classification": "All residuals are pre-existing generated-estate bb-n4e classes; no residual is the SP6 freeze-provenance defect.",
+    "freeze_provenance_signature": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+    "freeze_provenance_signature_occurrences": 0,
+    "passed_test_ids": [
+      "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p6_6_task_job_subagent-p6_6_task_job_subagent-_mutate_p66]"
+    ],
+    "residual_signature_counts": {
+      "missing_generated_node_gate": 6,
+      "missing_generated_primitive_projection": 1,
+      "missing_generated_target_support": 14
+    },
+    "residuals": [
+      {
+        "message": "ValueError: capture input does not exist: artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_node_gate",
+        "test_id": "tests.e4_parity.test_build_oh_my_pi_l5_memory_compaction::test_l5_projection_reproduces_accepted_plan_and_continuation_patch_bytes"
+      },
+      {
+        "message": "ValueError: capture input does not exist: artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_node_gate",
+        "test_id": "tests.e4_parity.test_build_oh_my_pi_l6_tui_projection::test_l6_projection_reproduces_ordered_host_only_accepted_event_bytes"
+      },
+      {
+        "message": "ValueError: capture input does not exist: artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_node_gate",
+        "test_id": "tests.e4_parity.test_build_oh_my_pi_p6_6_task_job_subagent::test_task_projection_reproduces_accepted_lifecycle_records_and_rejects_job_only_evidence"
+      },
+      {
+        "message": "AssertionError: PosixPath('/Users/kylemccleary/projects/breadboard/sp6_final_head_wt/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json')",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_primitive_projection",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_1_effective_config_graph_compiler]"
+      },
+      {
+        "message": "AssertionError: PosixPath('/Users/kylemccleary/projects/breadboard/sp6_final_head_wt/docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json')",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_2_context_resource_pack_compiler]"
+      },
+      {
+        "message": "AssertionError: PosixPath('/Users/kylemccleary/projects/breadboard/sp6_final_head_wt/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json')",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_5_resource_blob_compiler]"
+      },
+      {
+        "message": "AssertionError: PosixPath('/Users/kylemccleary/projects/breadboard/sp6_final_head_wt/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json')",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p3_8_projection_broker_adapter]"
+      },
+      {
+        "message": "AssertionError: PosixPath('/Users/kylemccleary/projects/breadboard/sp6_final_head_wt/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json')",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p6_0_l5_memory_compaction]"
+      },
+      {
+        "message": "AssertionError: PosixPath('/Users/kylemccleary/projects/breadboard/sp6_final_head_wt/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/secret_scan_report.json')",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p6_0_l6_tui_projection]"
+      },
+      {
+        "message": "AssertionError: PosixPath('/Users/kylemccleary/projects/breadboard/sp6_final_head_wt/artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json')",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_node_gate",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes[oh_my_pi_p6_6_task_job_subagent]"
+      },
+      {
+        "message": "ValueError: capture input does not exist: docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p3_2_context_resource_pack_compiler-p3_2_context_resource_pack-_mutate_p32]"
+      },
+      {
+        "message": "ValueError: capture input does not exist: artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_node_gate",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p6_0_l5_memory_compaction-p6_l5_memory_compaction_plan-_mutate_l5]"
+      },
+      {
+        "message": "ValueError: capture input does not exist: artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_node_gate",
+        "test_id": "tests.e4_parity.test_oh_my_pi_compiler_capture::test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context[oh_my_pi_p6_0_l6_tui_projection-p6_l6_tui_projection-_mutate_l6]"
+      },
+      {
+        "message": "FileNotFoundError: [Errno 2] No such file or directory: '/Users/kylemccleary/projects/breadboard/sp6_final_head_wt/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json'",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_oh_my_pi_p6_profile_capture::test_generic_projection_packet_writes_byte_identical_l6_roles_only_to_scratch"
+      },
+      {
+        "message": "ValueError: capture input does not exist: docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_2_context_resource_pack_compiler]"
+      },
+      {
+        "message": "ValueError: capture input does not exist: docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_3_capability_registry_compiler]"
+      },
+      {
+        "message": "ValueError: capture input does not exist: docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_4_extension_hook_execution_compiler]"
+      },
+      {
+        "message": "ValueError: capture input does not exist: docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_5_resource_blob_compiler]"
+      },
+      {
+        "message": "ValueError: capture input does not exist: docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_6_protocol_provider_policy_compiler]"
+      },
+      {
+        "message": "ValueError: capture input does not exist: docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_7_memory_work_compiler]"
+      },
+      {
+        "message": "ValueError: capture input does not exist: docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+        "present_in_base_population": true,
+        "signature_class": "missing_generated_target_support",
+        "test_id": "tests.e4_parity.test_p3_remaining_helper_runtime_inventory::test_remaining_p3_lane_projections_reproduce_accepted_compiled_record_bytes[oh_my_pi_p3_8_projection_broker_adapter]"
+      }
+    ],
+    "summary": "21 failed, 1 passed, 6 warnings"
+  },
+  "files_changed": [
+    "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
+    "config/e4_lanes/oh_my_pi_p3_1_effective_config_graph_compiler.yaml",
+    "config/e4_lanes/oh_my_pi_p3_2_context_resource_pack_compiler.yaml",
+    "config/e4_lanes/oh_my_pi_p3_3_capability_registry_compiler.yaml",
+    "config/e4_lanes/oh_my_pi_p3_4_extension_hook_execution_compiler.yaml",
+    "config/e4_lanes/oh_my_pi_p3_5_resource_blob_compiler.yaml",
+    "config/e4_lanes/oh_my_pi_p3_6_protocol_provider_policy_compiler.yaml",
+    "config/e4_lanes/oh_my_pi_p3_7_memory_work_compiler.yaml",
+    "config/e4_lanes/oh_my_pi_p3_8_projection_broker_adapter.yaml",
+    "config/e4_lanes/oh_my_pi_p6_0_l1_config_context_tool_surface.yaml",
+    "config/e4_lanes/oh_my_pi_p6_0_l2_tool_execution.yaml",
+    "config/e4_lanes/oh_my_pi_p6_0_l3_command_network_hook.yaml",
+    "config/e4_lanes/oh_my_pi_p6_0_l4_mcp_browser_resource.yaml",
+    "config/e4_lanes/oh_my_pi_p6_0_l5_memory_compaction.yaml",
+    "config/e4_lanes/oh_my_pi_p6_0_l6_tui_projection.yaml",
+    "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.lock.json",
+    "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml",
+    "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.packet_constants.v1.json",
+    "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.payloads.yaml",
+    "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.yaml",
+    "docs/conformance/e4_artifact_catalog.json",
+    "docs/conformance/e4_tooling_manifest.json",
+    "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+    "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+    "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+    "docs_tmp/phase_20/evidence/SP6/implementer.json",
+    "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
+    "scripts/e4_parity/adapters/oh_my_pi_p3_packet.py",
+    "scripts/e4_parity/lane_acceptance_artifacts.py",
+    "scripts/e4_parity/lane_definitions.py",
+    "scripts/e4_parity/oh_my_pi_p6_lane_projection.py",
+    "scripts/e4_parity/run_lane.py",
+    "tests/e4_parity/test_lane_acceptance_candidate_validation.py",
+    "tests/e4_parity/test_oh_my_pi_compiler_capture.py",
+    "tests/e4_parity/test_run_lane.py"
+  ],
+  "final_head_sha": "fe1778cc7e27287bc884b7c18cbec4733fa0e483",
+  "findings": [
+    "Full clean-checkout 22/22 green is not required under acceptance adjudication; 21 residuals are bb-n4e generated-estate scope.",
+    "breadboard_self_runtime_records_v1 was not rebound to the P6.6 tracked sidecar."
+  ],
+  "focused_regressions": {
+    "assertions_weakened": false,
+    "candidate_and_promotion": "3 passed",
+    "pilot_generated_outputs": "3 passed"
+  },
+  "generated_truth": {
+    "commands": [
+      "<venv-python> scripts/e4_parity/build_artifact_catalog.py --schema-version v2",
+      "<venv-python> scripts/e4_parity/generate_support_claims.py --defer-node-gates --json",
+      "git diff --exit-code -- docs/conformance/e4_artifact_catalog.json docs/conformance/e4_tooling_manifest.json docs/conformance/support_claims"
+    ],
+    "final_head_sha": "fe1778cc7e27287bc884b7c18cbec4733fa0e483",
+    "preconditions": [
+      "checkout: /Users/kylemccleary/projects/breadboard/sp6_wt at final head",
+      "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard",
+      "PYTHONPATH=/Users/kylemccleary/projects/breadboard/sp6_wt",
+      "copied breadboard_repo_integration_main_20260326/docs/conformance/e4_target_support into checkout docs/conformance",
+      "copied breadboard_repo_integration_main_20260326/artifacts/conformance contents into checkout artifacts/conformance",
+      "copied breadboard_repo_integration_main_20260326/docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json into checkout docs_tmp/phase_15"
+    ],
+    "result": "both generators exit 0; git diff --exit-code exits 0 at final head"
+  },
+  "implementation_sha": "1a85a57357099f0f607c65d5f45a426b6f3794fa",
+  "independent_review": {
+    "head_sha": "fe1778cc7e27287bc884b7c18cbec4733fa0e483",
+    "nonblocking_note": "Residual first-missing-path aggregate can report 6/1/14 or 7/1/13 for node-gate/primitive-projection/target-support because the test helper iterates an unordered file set; residual IDs and approved pre-existing estate class set are unchanged.",
+    "reproduced": [
+      "fresh head battery 50 failed / 595 passed with strict base failed-ID subset",
+      "exact-22 retired freeze signature count 0",
+      "ambient generators: 337-entry catalog and 21 claims with scoped git diff clean",
+      "north-star 3/3 executed_pass"
+    ],
+    "reviewer": "ReviewSP6",
+    "verdict": "APPROVED"
+  },
+  "north_star_capture": {
+    "command": "BB_WORKSPACE_ROOT=/Users/kylemccleary/projects/breadboard PYTHONPATH=<sp6_wt> <venv-python> scripts/e4_parity/run_lane.py --lane north-star --stage capture --promote-accepted --defer-promotion-refresh --json --defer-derived-writes",
+    "result": "exit 0; all three lanes executed_pass"
+  },
+  "packet": "SP6",
+  "reviewed_head_sha": "fe1778cc7e27287bc884b7c18cbec4733fa0e483",
+  "root_causes": [
+    "Fifteen accepted Oh-My-Pi lanes consumed an ignored campaign-workspace freeze-provenance input instead of a tracked checkout-local input.",
+    "build_lane validated canonical pre-run claim/manifest/freeze paths after writing fresh candidate bytes beneath output_root, causing PIN_STALE before promotion.",
+    "Isolated promotion treated artifacts_root as wholly capture-owned even when migrated record builders declared preserved source roles beneath it."
+  ],
+  "s03_check": {
+    "lane_crud": false,
+    "new_public_capability": false,
+    "schema_family": false,
+    "scorecard_change": false,
+    "sdk_surface": false
+  },
+  "supplementary_non_hermetic": {
+    "label": "non-hermetic supplementary only",
+    "precondition": "artifact-rich sp6_wt after ambient conformance estate materialization",
+    "result": "22 passed, 6 warnings in 53.02s"
+  }
+}

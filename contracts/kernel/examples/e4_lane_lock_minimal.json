@@ -1,0 +1,15 @@
+{
+  "artifact_roles": {},
+  "lane_id": "example_lane",
+  "lock_format": "canonical-json-v1",
+  "manifest_ref": "contracts/kernel/examples/e4_lane_manifest_minimal.json",
+  "manifest_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "packet_constants_ref": null,
+  "registry_pins": [],
+  "resolved_inputs": [],
+  "schema_version": "bb.e4.lane_lock.v1",
+  "target_freeze": {
+    "config_id": "example_lane",
+    "freeze_manifest_row_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  }
+}

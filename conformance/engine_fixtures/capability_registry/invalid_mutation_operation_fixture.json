@@ -1,0 +1,68 @@
+{
+  "comparator_class": "shape-equal",
+  "contract": "bb.capability_registry.v1",
+  "fixture_family": "capability_registry",
+  "fixture_id": "capability_registry_invalid_mutation_operation",
+  "invalid_reason": "mutation_log operation must be one of the schema-defined registry mutation operations",
+  "reference_output": {
+    "capabilities": [
+      {
+        "capability_id": "cap_omp_custom_tool_review",
+        "capability_type": "tool",
+        "discovery": {
+          "discovered_at": "2026-03-08T00:00:00Z",
+          "evidence_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/extensibility/custom-tools/loader.ts:1-260",
+          "mode": "runtime_probe",
+          "state": "discovered"
+        },
+        "exposure": {
+          "mode": "model_visible",
+          "model_visible": true,
+          "reason": "The custom tool is available through the resolved active tool surface.",
+          "state": "exposed",
+          "surface_refs": [
+            "surface_omp_active_tools"
+          ]
+        },
+        "metadata": {
+          "extension_id": "tool:review"
+        },
+        "name": "review",
+        "provider": {
+          "provider_id": "oh-my-pi.pi-coding-agent",
+          "version": "16.2.13"
+        },
+        "scopes": [
+          "tool:execute"
+        ],
+        "visibility": "model_visible"
+      }
+    ],
+    "generated_at": "2026-03-08T00:00:00Z",
+    "mutation_log": [
+      {
+        "affected_capability_ids": [
+          "cap_omp_custom_tool_review"
+        ],
+        "mutation_id": "mut_invalid_operation",
+        "operation": "merge_magic",
+        "outcome": "applied",
+        "phase": "registration",
+        "source": {
+          "source_ref": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest/packages/coding-agent/src/extensibility/custom-tools/loader.ts:1-260",
+          "source_type": "runtime_probe"
+        },
+        "target_ref": "tool:review",
+        "target_type": "tool"
+      }
+    ],
+    "registry_id": "registry_session_invalid_mutation",
+    "registry_revision": 1,
+    "schema_version": "bb.capability_registry.v1",
+    "subject": {
+      "environment_id": "oh_my_pi_source_freeze_5356713e",
+      "run_id": null
+    }
+  },
+  "support_tier": "draft-shape"
+}

@@ -1,0 +1,35 @@
+{
+  "amendments": [],
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "plan_ref": "docs_tmp/phase_16/BB_ER_MASTER_PLAN.md",
+  "revision": 1,
+  "schema_version": "bb.er.progress.v1",
+  "totals": {
+    "points_blocked": 0,
+    "points_done": 10,
+    "points_total": 10
+  },
+  "workstreams": [
+    {
+      "items": [
+        {
+          "evidence": [
+            {
+              "path": "docs_tmp/phase_16/evidence/unit_report.json",
+              "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          ],
+          "item_id": "UNIT.1",
+          "notes": "Minimal completed item with evidence.",
+          "points": 10,
+          "status": "done",
+          "title": "Unit item"
+        }
+      ],
+      "points_available": 10,
+      "points_done": 10,
+      "title": "Unit workstream",
+      "ws_id": "WS-UNIT"
+    }
+  ]
+}

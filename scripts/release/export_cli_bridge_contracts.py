@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Dict
+import os
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,6 +24,21 @@ from agentic_coder_prototype.api.cli_bridge.models import (  # noqa: E402
 )
 CONTRACT_DIR = ROOT / "docs" / "contracts" / "cli_bridge"
 SCHEMA_DIR = CONTRACT_DIR / "schemas"
+
+EXPORT_ENV_PINS = {
+    "BREADBOARD_ENABLE_E4_API": "1",
+    "BREADBOARD_ENGINE_VERSION": "0.1.0",
+    "BREADBOARD_LEGACY_ROUTES": "0",
+    "ATP_REPL_ENABLE": "0",
+    "ATP_REPL_ROUTE": "0",
+}
+
+
+def _pin_export_environment() -> None:
+    for name, value in EXPORT_ENV_PINS.items():
+        os.environ[name] = value
+    os.environ.pop("BREADBOARD_EXTENSIONS_CONFIG_PATH", None)
+
 
 
 def _write_json(path: Path, payload: Dict[str, Any]) -> None:
@@ -1034,6 +1050,7 @@ def _normalize_openapi(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def main() -> None:
+    _pin_export_environment()
     app = create_app()
     openapi = _normalize_openapi(app.openapi())
     _write_json(CONTRACT_DIR / "openapi.json", openapi)

@@ -1,0 +1,138 @@
+schema_version: bb.env_package.v1alpha
+package_id: bb.swe_toy_patch.v1alpha
+version: 0.1.0
+package_hash: sha256:f8c19ad6821d49345652e21b81e9bf85fb32a2f108b1cd61e659881022a80435
+provenance:
+  created_at: "2026-06-17"
+  license: internal-dev-only
+  source_usage_policy: runnable-debug-only
+  contamination_scope: train_visible
+  source_refs: []
+  source_hashes:
+    fixture: sha256:swe-toy-patch
+tasksets:
+  - taskset_id: swe_toy_patch
+    source_kind: swe_rebench_v2
+    source_hash: sha256:swe-toy-patch-taskset
+    task_id_field: task_id
+    prompt_fields:
+      - repo_snapshot
+      - issue
+    allowed_splits:
+      - train_probe
+      - protected_probe
+splits:
+  train_probe:
+    split_id: train_probe
+    split_type: train
+    taskset_id: swe_toy_patch
+    selector:
+      task_ids:
+        - swe_toy_001
+        - swe_toy_002
+        - swe_toy_003
+        - swe_toy_004
+        - swe_toy_005
+        - swe_toy_006
+        - swe_toy_007
+        - swe_toy_008
+        - swe_toy_009
+        - swe_toy_010
+    split_hash: sha256:swe-toy-patch-train-probe
+    immutable: true
+    optimizer_visible: false
+    trainer_visible: false
+    protected: false
+  protected_probe:
+    split_id: protected_probe
+    split_type: protected
+    taskset_id: swe_toy_patch
+    selector:
+      task_ids:
+        - swe_toy_hidden_001
+    split_hash: sha256:swe-toy-patch-protected-probe
+    immutable: true
+    optimizer_visible: false
+    trainer_visible: false
+    protected: true
+harness:
+  harness_id: bb.swe_toy_patch
+  interaction_mode: patch_submit
+  observation_schema:
+    kind: repo_issue
+  action_schema:
+    kind: unified_diff
+  termination:
+    on_tool: submit_patch
+  tools:
+    - read_file
+    - write_file
+    - run_tests
+    - submit_patch
+  max_turns: 12
+  hidden_state_policy: never_visible
+runtime:
+  backend: docker
+  isolation_level: single_tenant_untrusted
+  image_digest: sha256:swe-toy-patch-image
+  agent_user: sandbox
+  network: none
+  secrets_policy: ambient_forbidden
+  pool_key_fields:
+    - backend
+    - package_id
+    - image_digest
+verifier:
+  verifier_id: swe_toy_patch_pytest
+  kind: pytest
+  code_hash: sha256:swe-toy-patch-verifier
+  input_contract:
+    requires:
+      - workspace_ref
+      - patch_ref
+  output_contract:
+    reward: float
+    passed: bool
+  isolated_from_agent: true
+  rerun_policy:
+    required_for_promotion: true
+reward:
+  reward_id: swe_toy_patch_reward
+  kind: binary
+  terminal_reward: true
+renderer:
+  renderer_id: zaya_style_tool_renderer_probe
+  tokenizer_hash: sha256:zaya-style-tokenizer-probe
+  chat_template_hash: sha256:zaya-style-template-probe
+  bridge_to_next_turn_required: true
+  mask_contract:
+    loss_mask_required: true
+    tool_action_mask_required: true
+hardening:
+  policy_id: swe_toy_patch_hardening
+  threat_level: untrusted_agent_code
+  agent_non_root_required: true
+  verifier_isolated_required: true
+  quarantine_on_findings:
+    - conftest_outside_tests
+    - sitecustomize_shadow
+    - pth_injection
+    - symlink_escape
+    - verifier_output_tamper
+replay:
+  replay_required: true
+  live_replay_parity_required: true
+exports:
+  allowed_formats:
+    - bb_graph
+    - jsonl_transition
+    - verl_jsonl_probe
+  trainable: false
+  requires_token_records: true
+  requires_replay_pass: true
+  support_level: experimental
+  trainability_status: debug_only
+  trainability_blockers:
+    - toy_fixture_not_training_data
+    - no_real_swe_source_license
+  support_evidence_refs: []

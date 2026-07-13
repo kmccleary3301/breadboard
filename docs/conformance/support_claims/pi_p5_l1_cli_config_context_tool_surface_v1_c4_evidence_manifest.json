@@ -1,0 +1,100 @@
+{
+  "artifacts": [
+    {
+      "path": "config/e4_target_freeze_manifest.yaml",
+      "role": "freeze_manifest",
+      "sha256": "sha256:54a9d3ddd9e90fb341fbe412ab0656f366eba27ca3fe818ae6c7b0e6b346817b"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json",
+      "role": "capture_ref",
+      "sha256": "sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb",
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json#sha256:f7eb1c6a7a409bc724a1a34d6adfd69157e1c827095f8ffbb4f935c49a8ad261"
+      ],
+      "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json",
+      "role": "replay_ref",
+      "sha256": "sha256:6061c36783aadb6e5ccb5ec046050ad36c83165eb8da4ca9ab8d26a2e1442ae5"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb",
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json#sha256:6061c36783aadb6e5ccb5ec046050ad36c83165eb8da4ca9ab8d26a2e1442ae5",
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json#sha256:f7eb1c6a7a409bc724a1a34d6adfd69157e1c827095f8ffbb4f935c49a8ad261"
+      ],
+      "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json",
+      "role": "comparator_ref",
+      "sha256": "sha256:05315be8132f8b17c123eb085f6a4274bdb291ed0a121e82999011e3e11f4131"
+    },
+    {
+      "path": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+      "role": "support_claim_ref",
+      "sha256": "sha256:521f5fa479db7cd5807c33f51e35c6b8c34388fbddc1b9b9467959f97afe3c4d"
+    },
+    {
+      "derived_from": [
+        "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json#sha256:05315be8132f8b17c123eb085f6a4274bdb291ed0a121e82999011e3e11f4131"
+      ],
+      "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/parity_results.json",
+      "role": "parity_results",
+      "sha256": "sha256:51f51f6f19b8b642d646b6537990b668762fe59a42ef8ca68670b3562ed238bb"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/secret_scan_report.json",
+      "role": "secret_scan_report",
+      "sha256": "sha256:3e0b2f97143bed23a8b459b51648638c96be15107dc69a47c8b04f5f52ad4432"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/prevalidation_report.json",
+      "role": "validator_output",
+      "sha256": "sha256:183cd0cdbf0cc6944e4fb3dc47c60b186c9aff0e8763cb1b8a63e89a3e446d3b"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_setup_and_capture_report.json",
+      "role": "target_setup_report",
+      "sha256": "sha256:158fc96b623da590f0c0a57220808d360b82d18540978decc2b6bce78cf5982f"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json",
+      "role": "target_probe_output",
+      "sha256": "sha256:f7eb1c6a7a409bc724a1a34d6adfd69157e1c827095f8ffbb4f935c49a8ad261"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/pi_p5_target_probe.mjs",
+      "role": "target_probe_script",
+      "sha256": "sha256:2acf19b24e3b87c70919f5cc40bdb4ced1e4a32636bf6895abf83a17c455fe10"
+    },
+    {
+      "path": "agent_configs/misc/pi_p5_l1_cli_config_context_tool_surface_v1.yaml",
+      "role": "agent_config",
+      "sha256": "sha256:c80268ca8ec3a28dac23cdec12efe21c6bb11518d98e9f2224c445eb28a31336"
+    },
+    {
+      "path": "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
+      "role": "source_freeze",
+      "sha256": "sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602"
+    },
+    {
+      "bytes": 4755355,
+      "path": "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
+      "role": "source_archive",
+      "sha256": "sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b"
+    }
+  ],
+  "claim_id": "pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim",
+  "config_id": "pi_p5_l1_cli_config_context_tool_surface_v1",
+  "forbidden_roots_checked": [
+    "scratch",
+    "tmp",
+    "scratch_runs",
+    "/shared_folders"
+  ],
+  "generated_at_utc": "2026-07-03T08:30:00Z",
+  "hash_algorithm": "sha256",
+  "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+  "manifest_scope_note": "Every governed artifact for this Pi P5 L1 C4 chain is canonical repo evidence or source-freeze/archive evidence under docs_tmp/phase_15; temporary target extraction paths are not promotion evidence.",
+  "schema_version": "bb.e4.evidence_manifest.v1"
+}

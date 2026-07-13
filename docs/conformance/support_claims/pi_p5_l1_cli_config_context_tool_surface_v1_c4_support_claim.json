@@ -1,0 +1,269 @@
+{
+  "acceptance_rationale": "The target capture installs and runs the frozen Pi source in an isolated no-secret workspace, executes CLI help/version, imports Pi modules through tsx, and compares observed settings/context/tool outputs to exact expectations.",
+  "accepted": true,
+  "capture_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb",
+  "catalog_binding": {
+    "catalog_path": "docs/conformance/e4_artifact_catalog.json",
+    "catalog_revision": 8,
+    "segment_hash": "sha256:2dfae6e0b5983a74880d298c3c0e5728f02e35e664adbcfec657d2fa9d8bd5bb",
+    "segment_id": "pi_p5_l1_cli_config_context_tool_surface",
+    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+  },
+  "claim_id": "pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim",
+  "claim_semantics": {
+    "asserted_behaviors": [
+      {
+        "behavior_id": "config_graph_package_version",
+        "comparator_assertion_ids": [
+          "package_version"
+        ],
+        "description": "package version"
+      },
+      {
+        "behavior_id": "config_graph_app_config_dir",
+        "comparator_assertion_ids": [
+          "app_config_dir"
+        ],
+        "description": "app config dir"
+      },
+      {
+        "behavior_id": "config_graph_version_command",
+        "comparator_assertion_ids": [
+          "version_command"
+        ],
+        "description": "version command"
+      },
+      {
+        "behavior_id": "config_graph_help_declares_default_tools",
+        "comparator_assertion_ids": [
+          "help_declares_default_tools"
+        ],
+        "description": "help declares default tools"
+      },
+      {
+        "behavior_id": "config_graph_help_declares_read_only_tools",
+        "comparator_assertion_ids": [
+          "help_declares_read_only_tools"
+        ],
+        "description": "help declares read only tools"
+      },
+      {
+        "behavior_id": "config_graph_settings_project_model_wins",
+        "comparator_assertion_ids": [
+          "settings_project_model_wins"
+        ],
+        "description": "settings project model wins"
+      },
+      {
+        "behavior_id": "config_graph_settings_global_provider_preserved",
+        "comparator_assertion_ids": [
+          "settings_global_provider_preserved"
+        ],
+        "description": "settings global provider preserved"
+      },
+      {
+        "behavior_id": "config_graph_settings_nested_merge_preserves_reserve",
+        "comparator_assertion_ids": [
+          "settings_nested_merge_preserves_reserve"
+        ],
+        "description": "settings nested merge preserves reserve"
+      },
+      {
+        "behavior_id": "config_graph_settings_runtime_override_provider",
+        "comparator_assertion_ids": [
+          "settings_runtime_override_provider"
+        ],
+        "description": "settings runtime override provider"
+      },
+      {
+        "behavior_id": "config_graph_settings_runtime_override_nested",
+        "comparator_assertion_ids": [
+          "settings_runtime_override_nested"
+        ],
+        "description": "settings runtime override nested"
+      },
+      {
+        "behavior_id": "config_graph_settings_migration_queue_mode",
+        "comparator_assertion_ids": [
+          "settings_migration_queue_mode"
+        ],
+        "description": "settings migration queue mode"
+      },
+      {
+        "behavior_id": "config_graph_settings_migration_websockets",
+        "comparator_assertion_ids": [
+          "settings_migration_websockets"
+        ],
+        "description": "settings migration websockets"
+      },
+      {
+        "behavior_id": "config_graph_settings_migration_skills",
+        "comparator_assertion_ids": [
+          "settings_migration_skills"
+        ],
+        "description": "settings migration skills"
+      },
+      {
+        "behavior_id": "config_graph_settings_writeback",
+        "comparator_assertion_ids": [
+          "settings_writeback"
+        ],
+        "description": "settings writeback"
+      },
+      {
+        "behavior_id": "config_graph_context_order",
+        "comparator_assertion_ids": [
+          "context_order"
+        ],
+        "description": "context order"
+      },
+      {
+        "behavior_id": "config_graph_context_contents",
+        "comparator_assertion_ids": [
+          "context_contents"
+        ],
+        "description": "context contents"
+      },
+      {
+        "behavior_id": "config_graph_system_prompt",
+        "comparator_assertion_ids": [
+          "system_prompt"
+        ],
+        "description": "system prompt"
+      },
+      {
+        "behavior_id": "config_graph_append_system_prompt",
+        "comparator_assertion_ids": [
+          "append_system_prompt"
+        ],
+        "description": "append system prompt"
+      },
+      {
+        "behavior_id": "config_graph_tool_all",
+        "comparator_assertion_ids": [
+          "tool_all"
+        ],
+        "description": "tool all"
+      },
+      {
+        "behavior_id": "config_graph_tool_coding_defaults",
+        "comparator_assertion_ids": [
+          "tool_coding_defaults"
+        ],
+        "description": "tool coding defaults"
+      },
+      {
+        "behavior_id": "config_graph_tool_read_only",
+        "comparator_assertion_ids": [
+          "tool_read_only"
+        ],
+        "description": "tool read only"
+      },
+      {
+        "behavior_id": "config_graph_no_provider_secrets",
+        "comparator_assertion_ids": [
+          "no_provider_secrets"
+        ],
+        "description": "no provider secrets"
+      },
+      {
+        "behavior_id": "config_graph_replay_context_pack_sources",
+        "comparator_assertion_ids": [
+          "replay_context_pack_sources"
+        ],
+        "description": "replay context pack sources"
+      },
+      {
+        "behavior_id": "config_graph_replay_capability_count",
+        "comparator_assertion_ids": [
+          "replay_capability_count"
+        ],
+        "description": "replay capability count"
+      }
+    ],
+    "excluded_behaviors": [
+      {
+        "behavior_id": "broad_target_parity",
+        "description": "Broad target-family parity remains outside this exact C4 lane claim."
+      }
+    ]
+  },
+  "comparator_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/comparator_report.json#sha256:05315be8132f8b17c123eb085f6a4274bdb291ed0a121e82999011e3e11f4131",
+  "evidence_manifest_ref": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
+  "exclusion_facets": {
+    "excluded_behavior_classes": [
+      "broad_target_parity",
+      "model_inference",
+      "network",
+      "provider_authenticated",
+      "ui_parity",
+      "write_enabled"
+    ],
+    "excluded_families": [
+      "all_other_families"
+    ]
+  },
+  "exclusions": [
+    "No full P5.2 claim for every migration/writeback path; only the observed queueMode/websockets/skills migrations, runtime override, and default-model writeback are accepted.",
+    "No full P5.3 claim for every environment/date context; only observed AGENTS/CLAUDE ancestry, SYSTEM/APPEND prompt discovery, cwd, and Pi env capture are accepted.",
+    "No P5.5 extension hook behavior is claimed.",
+    "No P5.6 session/resume/fork/compaction behavior is claimed.",
+    "No provider-authenticated inference, network, UI, or broad Pi customization parity is claimed."
+  ],
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#pi_p5_l1_cli_config_context_tool_surface_v1#sha256:54a9d3ddd9e90fb341fbe412ab0656f366eba27ca3fe818ae6c7b0e6b346817b",
+  "generated_at_utc": "2026-07-04T00:00:00Z",
+  "kind": "target_support",
+  "ledger_row_refs": [
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_2f47f564bacc6202#sha256:1b755587928005ccf7c4928cdb3e0c39a1fc86126223daac7dcf101e20ba74d5"
+  ],
+  "metadata": {
+    "generated_from_schema_version": "bb.e4.support_claim.v4",
+    "legacy_scope": {
+      "p5_items": [
+        "P5.1",
+        "P5.2-subset",
+        "P5.3-subset",
+        "P5.4",
+        "P5.7",
+        "P5.8"
+      ],
+      "phase": "P5"
+    },
+    "v1_archive_ref": "docs/conformance/support_claims/v1_archive/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json"
+  },
+  "parity_results_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/parity_results.json#sha256:51f51f6f19b8b642d646b6537990b668762fe59a42ef8ca68670b3562ed238bb",
+  "phase_label": "P5",
+  "replay_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/bb_replay_result.json#sha256:6061c36783aadb6e5ccb5ec046050ad36c83165eb8da4ca9ab8d26a2e1442ae5",
+  "reverify_command": {
+    "argv": [
+      ".venv/bin/python",
+      "scripts/validate_e4_c4_chain.py",
+      "--config-id",
+      "pi_p5_l1_cli_config_context_tool_surface_v1",
+      "--support-claim",
+      "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+      "--evidence-manifest",
+      "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
+      "--json-out",
+      "artifacts/conformance/node_gate/ct_p5_pi_l1_cli_config_context_tool_surface_c4_chain.json",
+      "--check-only"
+    ],
+    "cwd": "."
+  },
+  "schema_version": "bb.e4.support_claim.v4",
+  "scope": {
+    "config_id": "pi_p5_l1_cli_config_context_tool_surface_v1",
+    "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+    "provider_model": "no-provider",
+    "run_id": "20260703_pi_p5_l1_cli_config_context_tool_surface_capture",
+    "sandbox_mode": "read-only-no-secret",
+    "target_family": "pi",
+    "target_version": "@mariozechner/pi-coding-agent@0.57.1"
+  },
+  "secret_scan_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/secret_scan_report.json#sha256:3e0b2f97143bed23a8b459b51648638c96be15107dc69a47c8b04f5f52ad4432",
+  "source_freeze_ref": "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json#sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602",
+  "summary": "Pi P5 L1 no-secret CLI/module support is accepted only for observed settings merge/runtime override/writeback, AGENTS/CLAUDE/SYSTEM/APPEND context ordering, and declared tool surfaces.",
+  "validation_refs": [
+    "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/prevalidation_report.json#sha256:183cd0cdbf0cc6944e4fb3dc47c60b186c9aff0e8763cb1b8a63e89a3e446d3b"
+  ]
+}

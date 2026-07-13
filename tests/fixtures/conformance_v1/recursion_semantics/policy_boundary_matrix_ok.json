@@ -1,0 +1,38 @@
+{
+  "cases": [
+    {
+      "case_id": "case_1",
+      "expected_decision": "allow",
+      "observed_decision": "allow"
+    },
+    {
+      "case_id": "case_2",
+      "expected_decision": "deny",
+      "observed_decision": "deny"
+    },
+    {
+      "case_id": "case_3",
+      "expected_decision": "ask",
+      "observed_decision": "ask"
+    },
+    {
+      "case_id": "case_4",
+      "expected_decision": "allow",
+      "observed_decision": "allow"
+    },
+    {
+      "case_id": "case_5",
+      "expected_decision": "deny",
+      "observed_decision": "deny"
+    },
+    {
+      "case_id": "case_6",
+      "expected_decision": "ask",
+      "observed_decision": "ask"
+    }
+  ],
+  "expected": {
+    "case_count": 6
+  },
+  "schema_version": "bb.ct.longrun.policy_boundary_matrix.fixture.v1"
+}

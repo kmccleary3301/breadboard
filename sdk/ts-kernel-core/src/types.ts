@@ -1,15 +1,18 @@
 import type {
   ExecutionCapabilityV1,
   ExecutionPlacementV1,
+  KernelEventV2,
   ProviderExchangeV1,
   RunContextV1,
   SandboxRequestV1,
   SandboxResultV1,
   SessionTranscriptV1,
+  SessionTranscriptV2,
   SessionTranscriptV1Item,
-  ToolCallV1,
-  ToolExecutionOutcomeV1,
-  ToolModelRenderV1,
+  ToolCallV2,
+  ToolExecutionOutcomeV2,
+  ToolModelRenderV2,
+  TranscriptContinuationPatchV1,
 } from "@breadboard/kernel-contracts"
 import type {
   ExecutionDriverEvidenceExpectationV1,
@@ -33,8 +36,8 @@ export interface StaticTextTurnOptions {
 
 export interface StaticTextTurnResult {
   runContext: RunContextV1
-  events: import("@breadboard/kernel-contracts").KernelEventV1[]
-  transcript: SessionTranscriptV1
+  events: KernelEventV2[]
+  transcript: SessionTranscriptV2
 }
 
 export interface ScriptedToolTurnOptions {
@@ -45,9 +48,9 @@ export interface ScriptedToolTurnOptions {
   resolvedProviderRoute?: string | null
   executionMode?: string | null
   activeMode?: string | null
-  toolCall: ToolCallV1
-  toolOutcome: ToolExecutionOutcomeV1
-  toolRender: ToolModelRenderV1
+  toolCall: ToolCallV2
+  toolOutcome: ToolExecutionOutcomeV2
+  toolRender: ToolModelRenderV2
   assistantText?: string | null
   startedAt?: string
 }
@@ -65,7 +68,7 @@ export interface ProviderTextTurnOptions {
 
 export interface ProviderTextTurnResult extends StaticTextTurnResult {
   providerExchange: ProviderExchangeV1
-  transcriptContinuationPatch?: import("@breadboard/kernel-contracts").TranscriptContinuationPatchV1
+  transcriptContinuationPatch?: TranscriptContinuationPatchV1
 }
 
 export interface DriverMediatedToolTurnOptions {
@@ -111,5 +114,8 @@ export interface DriverMediatedToolTurnResult extends StaticTextTurnResult {
 }
 
 export interface ProviderTextContinuationTurnOptions extends ProviderTextTurnOptions {
-  existingTranscript: SessionTranscriptV1 | Array<Record<string, unknown> | SessionTranscriptV1Item>
+  existingTranscript:
+    | SessionTranscriptV1
+    | SessionTranscriptV2
+    | Array<Record<string, unknown> | SessionTranscriptV1Item | SessionTranscriptV2["items"][number]>
 }

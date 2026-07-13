@@ -33,7 +33,7 @@ def _get_ray():  # type: ignore[no-untyped-def]
         _ray = _ray_mod
     return _ray
 from .agent_llm_openai import OpenAIConductor
-from .compilation.v2_loader import load_agent_config
+from .compilation.v2_loader import _config_resolution_base_dirs, load_agent_config
 from .provider.routing import provider_router
 from .provider import provider_adapter_manager
 from .compilation.tool_yaml_loader import load_yaml_tools
@@ -358,6 +358,7 @@ class AgenticCoder:
                 workspace=self.workspace_dir,
                 config=self.config,
                 local_mode=True,
+                prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
             )
         else:
             runtime_env = {
@@ -370,6 +371,7 @@ class AgenticCoder:
             self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
                 workspace=self.workspace_dir,
                 config=self.config,
+                prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
             )
     
     def run_task(
@@ -385,6 +387,8 @@ class AgenticCoder:
         replay_session: Optional[str] = None,
         parity_guardrails: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
+        kernel_emitter_run_dir: Optional[str] = None,
+        kernel_emitter_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Run a single task and return results."""
         if replay_session and self.agent is not None:
@@ -458,6 +462,8 @@ class AgenticCoder:
                 event_queue=event_queue,
                 permission_queue=permission_queue,
                 control_queue=control_queue,
+                kernel_emitter_run_dir=kernel_emitter_run_dir,
+                kernel_emitter_mode=kernel_emitter_mode,
                 context=context,
             )
 
@@ -474,6 +480,8 @@ class AgenticCoder:
             event_queue=event_queue,
             permission_queue=permission_queue,
             control_queue=control_queue,
+            kernel_emitter_run_dir=kernel_emitter_run_dir,
+            kernel_emitter_mode=kernel_emitter_mode,
             context=context,
         )
         ray_mod = _get_ray()

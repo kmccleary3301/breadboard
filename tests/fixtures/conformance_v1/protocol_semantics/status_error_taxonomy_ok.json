@@ -1,0 +1,44 @@
+{
+  "allowed_statuses": [
+    "queued",
+    "running",
+    "completed",
+    "failed",
+    "cancelled"
+  ],
+  "error_statuses": [
+    "failed",
+    "cancelled"
+  ],
+  "events": [
+    {
+      "event_id": "event_1",
+      "status": "queued"
+    },
+    {
+      "event_id": "event_2",
+      "status": "running"
+    },
+    {
+      "event_id": "event_3",
+      "status": "completed"
+    },
+    {
+      "error": {
+        "code": "bb.tool.timeout",
+        "retryable": true
+      },
+      "event_id": "event_4",
+      "status": "failed"
+    },
+    {
+      "error": {
+        "code": "bb.session.cancelled",
+        "retryable": false
+      },
+      "event_id": "event_5",
+      "status": "cancelled"
+    }
+  ],
+  "schema_version": "bb.ct.protocol.status_error_taxonomy.fixture.v1"
+}

@@ -1,84 +1,49 @@
 # Kernel Event Family Registry V1
 
-This registry records the first explicit classification of runtime event families for the multi-engine program.
+This document records the doctrine for classifying runtime event families in the
+multi-engine program. The machine-readable source of truth is
+`contracts/kernel/registries/kernel_event_kinds.v1.json`, validated by
+`contracts/kernel/schemas/bb.registry.v1.schema.json`.
 
-## Canonical kernel event families
+## Machine-readable registry
 
-These event types are treated as kernel-owned truth surfaces.
+Use `contracts/kernel/registries/kernel_event_kinds.v1.json` for the canonical
+runtime event-kind IDs, status, kernel-family/projection-family binding, actor,
+visibility, and bridge classification metadata.
 
-| Runtime event type | Kernel family | Actor | Visibility |
-| --- | --- | --- | --- |
-| `assistant_message` | `message.assistant` | `engine` | `model` |
-| `user_message` | `message.user` | `human` | `model` |
-| `provider_response` | `provider.exchange` | `provider` | `host` |
-| `tool_call` | `tool.called` | `engine` | `host` |
-| `tool_result` | `tool.completed` | `tool` | `host` |
-| `permission_request` | `permission.requested` | `service` | `host` |
-| `permission_response` | `permission.decided` | `service` | `host` |
-| `task_event` | `task.progress` | `subagent` | `host` |
-| `turn_start` | `turn.started` | `engine` | `audit` |
-| `guardrail_event` | `warning.guardrail` | `service` | `audit` |
-| `lifecycle_event` | `run.lifecycle` | `engine` | `audit` |
-| `ctree_node` | `compaction.ctree_node` | `service` | `audit` |
+Do not maintain a divergent literal event-kind list in this document. If a new
+event type is introduced and expected to matter for replay, conformance,
+transcript derivation, or alternative-engine work, add it to the registry before
+it is treated as kernel truth.
 
-## Projection-only runtime events
+## Classification rules
 
-These exist because current clients need direct convenience payloads. They are not yet kernel truth surfaces.
+- `metadata.classification: "kernel"` means the event kind is a kernel-owned
+  truth surface.
+- `metadata.classification: "projection_only"` means the event kind exists for
+  current client convenience and is not yet a kernel truth surface.
+- `metadata.classification: "stream_only_bridge"` means the event kind is a
+  projection/transport artifact.
+- `metadata.classification: "host_only_bridge"` means the event kind is useful
+  host-facing lifecycle/control surface, but not a kernel event-family truth
+  surface.
 
-| Runtime event type | Projection family | Actor | Visibility |
-| --- | --- | --- | --- |
-| `todo_event` | `projection.todo_snapshot` | `service` | `host` |
-| `ctree_snapshot` | `projection.ctree_snapshot` | `service` | `host` |
+## Notes on current owners
 
-## CLI bridge stream-only and host-only events
-
-The CLI bridge currently handles additional runtime event types that are important for live UX but are not yet treated as shared kernel truth.
-
-### Stream-only bridge events
-
-- `stream.gap`
-- `assistant.message.start`
-- `assistant.message.delta`
-- `assistant.message.end`
-- `assistant.reasoning.delta`
-- `assistant.thought_summary.delta`
-- `assistant_delta`
-
-These should be treated as projection/transport artifacts until they are promoted into explicit kernel contracts.
-
-### Host-only lifecycle/control events
-
-- `conversation.compaction.start`
-- `conversation.compaction.end`
-- `checkpoint_list`
-- `checkpoint_restored`
-- `skills_catalog`
-- `skills_selection`
-- `warning`
-- `reward_update`
-- `limits_update`
-- `completion`
-- `log_link`
-- `error`
-- `run_finished`
-
-These are useful host-facing events, but they are not part of the kernel event family registry.
-
-### Notes on current owners
-
-- `limits_update` is emitted as a best-effort host-facing bridge event from provider runtime code when provider rate-limit headers are parsed. It is intentionally not treated as kernel truth.
-- `provider_response` is kernel truth for the scoped TS program because both the Python reference fixtures and the TS kernel/provider-aware execution slices rely on a shared host-visible provider exchange event family.
-- long-running macro events are currently collapsed through `SessionState.record_lifecycle_event(...)`, so their cross-engine contract surface today is `lifecycle_event`, not a separate macro-event family.
-- replay-only events like `completion` and `run_finished` are bridge/session orchestration surfaces, not kernel event families.
+- `limits_update` is emitted as a best-effort host-facing bridge event from
+  provider runtime code when provider rate-limit headers are parsed. It is
+  intentionally not treated as kernel truth.
+- `provider_response` is kernel truth for the scoped TS program because both the
+  Python reference fixtures and the TS kernel/provider-aware execution slices
+  rely on a shared host-visible provider exchange event family.
+- long-running macro events are currently collapsed through
+  `SessionState.record_lifecycle_event(...)`, so their cross-engine contract
+  surface today is `lifecycle_event`, not a separate macro-event family.
+- replay-only events like `completion` and `run_finished` are bridge/session
+  orchestration surfaces, not kernel event families.
 
 ## Legacy or still-unclassified events
 
-These should not be relied on as cross-engine truth until they are promoted into the registry.
-
-- any runtime event not listed above
-- macro event families emitted only for longrun observability
-- host-bridge-specific convenience envelopes
-
-## Rule
-
-If a new event type is introduced and expected to matter for replay, conformance, transcript derivation, or alternative-engine work, it must be added to this registry before it is treated as kernel truth.
+Runtime event kinds absent from
+`contracts/kernel/registries/kernel_event_kinds.v1.json` should not be relied on
+as cross-engine truth until they are promoted into the registry.
