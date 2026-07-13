@@ -51,6 +51,12 @@ jobs:
           cache: npm
           cache-dependency-path: tui_skeleton/package-lock.json
 
+      - name: Build kernel contracts package
+        working-directory: sdk/ts-kernel-contracts
+        run: |
+          npm ci
+          npm run build
+
       - name: Build TUI dist
         working-directory: tui_skeleton
         run: |
@@ -66,14 +72,16 @@ jobs:
           git clone --depth 1 https://github.com/anthropics/claude-code.git "$HARNESS_ROOT/claude-code"
 
       - name: Run snapshot-window recalibration wrapper
+        env:
+          SNAPSHOT_ID: ${{ github.event.inputs.snapshot_id }}
         run: |
           set -euo pipefail
           cmd=(python scripts/run_e4_snapshot_recalibration.py
             --repo-root "$GITHUB_WORKSPACE"
             --harness-root "$HARNESS_ROOT"
             --tmux-socket "$TMUX_SOCKET_NAME")
-          if [[ -n "${{ inputs.snapshot_id }}" ]]; then
-            cmd+=(--snapshot-id "${{ inputs.snapshot_id }}")
+          if [[ -n "$SNAPSHOT_ID" ]]; then
+            cmd+=(--snapshot-id "$SNAPSHOT_ID")
           fi
           "${cmd[@]}"
 
