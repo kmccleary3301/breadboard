@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
 import scripts.run_ct_scenarios as ct_runner
 
@@ -24,7 +25,15 @@ def _write_helper(path: Path, payload: dict[str, object], *, sleep_seconds: floa
     )
 
 
-def _write_manifest(path: Path, *, command: list[str], expected_ok: bool = True) -> None:
+def _write_manifest(
+    path: Path,
+    *,
+    command: list[str],
+    expected_ok: bool = True,
+    test_id: str = "CT-UNIT-001",
+    gate_level: str = "P0-blocking",
+    artifact_path: str = "artifacts/conformance/node_gate/ct_unit_001.json",
+) -> None:
     path.write_text(
         json.dumps(
             {
@@ -33,14 +42,14 @@ def _write_manifest(path: Path, *, command: list[str], expected_ok: bool = True)
                 "target": {"kind": "unit", "id": "unit"},
                 "scenarios": [
                     {
-                        "test_id": "CT-UNIT-001",
+                        "test_id": test_id,
                         "description": "unit scenario",
                         "command": command,
                         "timeout_seconds": 30,
                         "assertions": {
                             "json_files": [
                                 {
-                                    "path": "artifacts/conformance/node_gate/ct_unit_001.json",
+                                    "path": artifact_path,
                                     "checks": [
                                         {"path": "ok", "equals": expected_ok},
                                         {"path": "count", "min": 1},
@@ -49,7 +58,7 @@ def _write_manifest(path: Path, *, command: list[str], expected_ok: bool = True)
                                 }
                             ]
                         },
-                        "gate_level": "P0-blocking",
+                        "gate_level": gate_level,
                     }
                 ],
             },
@@ -165,7 +174,31 @@ def test_regenerate_evidence_ct_scenarios_stage_uses_deterministic_duration_and_
     argv = stage.argv
     assert "--zero-durations" in argv
     assert "--generated-at-utc" in argv
+
     assert argv[argv.index("--generated-at-utc") + 1] == "2026-07-03T00:00:00Z"
+
+
+def test_regenerate_evidence_explain_expands_full_graph_without_workspace(
+    monkeypatch, capsys
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("BB_WORKSPACE_ROOT", raising=False)
+    from scripts.e4_parity import regen as regen_front
+
+    assert regen_front._explain(SimpleNamespace(json=None, python="python")) == 0
+    explained = capsys.readouterr().out
+    assert "01. source_index" in explained
+    assert "49. validate_report_hash_freshness" in explained
+
+    assert regen_front._explain(SimpleNamespace(json="-", python="python")) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert len(plan["stages"]) == len(regen_front.regen.STAGES)
+    freshness = next(
+        stage for stage in plan["stages"] if stage["stage_id"] == "validate_report_hash_freshness"
+    )
+    assert "{expected_points}" in freshness["argv"]
+    assert "{expected_claims}" in freshness["argv"]
 
 def test_run_ct_scenarios_marks_missing_blocking_command_not_implemented_by_default(tmp_path: Path) -> None:
     manifest = tmp_path / "manifest.json"
@@ -371,23 +404,69 @@ def test_run_ct_scenarios_reports_malformed_assertion_shape(tmp_path: Path, monk
     assert report["failing_count"] == 1
     assert report["rows"][0]["failures"] == ["assertions.json_files must be a list"]
 
-def test_real_manifest_p7_codex_gpt55_c4_chain_runs_end_to_end(tmp_path: Path) -> None:
-    repo = Path(__file__).resolve().parents[1]
-    manifest = json.loads((repo / "docs/conformance/ct_scenarios_v1.json").read_text(encoding="utf-8"))
-    scenarios = {scenario["test_id"]: scenario for scenario in manifest["scenarios"]}
-    scenario = scenarios["CT-P7-CODEX-GPT55-C4-CHAIN"]
+def test_test_id_filter_runs_p7_with_authorized_temp_workspace_estate(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import importlib.util
 
-    assert scenario["test_id"] == "CT-P7-CODEX-GPT55-C4-CHAIN"
-    assert scenario["gate_level"] == "P7-support"
-    assert scenario["command"][-2:] == [
+    fixture_spec = importlib.util.spec_from_file_location(
+        "_ct_c4_fixture_builder",
+        Path(__file__).with_name("test_e4_c4_chain_validation.py"),
+    )
+    assert fixture_spec is not None and fixture_spec.loader is not None
+    fixture_module = importlib.util.module_from_spec(fixture_spec)
+    fixture_spec.loader.exec_module(fixture_module)
+
+    production_repo = Path(__file__).resolve().parents[1]
+    manifest_payload = json.loads(
+        (production_repo / "docs/conformance/ct_scenarios_v1.json").read_text(encoding="utf-8")
+    )
+    scenario = next(
+        scenario
+        for scenario in manifest_payload["scenarios"]
+        if scenario["test_id"] == "CT-P7-CODEX-GPT55-C4-CHAIN"
+    )
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
+    chain = fixture_module._build_chain(tmp_path)
+    temp_repo = Path(chain["repo"])
+    monkeypatch.setattr(ct_runner, "ROOT", temp_repo)
+
+    scenario["debug"] = {"allow_absolute_paths": True}
+    scenario["command"] = [
+        sys.executable,
+        str(production_repo / "scripts/validate_e4_c4_chain.py"),
+        "--repo-root",
+        ".",
+        "--config-id",
+        str(chain["config_id"]),
+        "--support-claim",
+        str(Path(chain["support_claim"]).relative_to(temp_repo)),
+        "--evidence-manifest",
+        str(Path(chain["evidence_manifest"]).relative_to(temp_repo)),
         "--json-out",
         "artifacts/conformance/node_gate/ct_p7_codex_gpt55_c4_chain.json",
     ]
-
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": "ct_scenarios_manifest_v1",
+                "suite_id": "authorized-temp-estate",
+                "target": {"kind": "fixture", "id": "codex-gpt55-c4"},
+                "scenarios": [scenario],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     result = tmp_path / "ct_scenarios_result_v1.json"
     rows = tmp_path / "ct_scenarios_rows_v1.json"
+
     exit_code = ct_runner.main(
         [
+            "--manifest",
+            str(manifest),
             "--json-out",
             str(result),
             "--rows-out",
@@ -400,18 +479,63 @@ def test_real_manifest_p7_codex_gpt55_c4_chain_runs_end_to_end(tmp_path: Path) -
     assert exit_code == 0
     report = json.loads(result.read_text(encoding="utf-8"))
     row_payload = json.loads(rows.read_text(encoding="utf-8"))
-    c4_report = json.loads((tmp_path / "node_gate/ct_p7_codex_gpt55_c4_chain.json").read_text(encoding="utf-8"))
-
+    c4_report = json.loads(
+        (tmp_path / "node_gate/ct_p7_codex_gpt55_c4_chain.json").read_text(encoding="utf-8")
+    )
     assert report["ok"] is True
     assert report["status"] == "pass"
     assert report["scenario_count"] == 1
-    assert report["artifact_root"] == str(result.parent)
     assert row_payload[0]["test_id"] == "CT-P7-CODEX-GPT55-C4-CHAIN"
     assert row_payload[0]["status"] == "pass"
-    assert row_payload[0]["exit_code"] == 0
-    assert row_payload[0]["artifact_paths"] == [str(tmp_path / "node_gate/ct_p7_codex_gpt55_c4_chain.json")]
     assert c4_report["ok"] is True
     assert c4_report["accepted"] is True
-    assert c4_report["config_id"] == "codex_cli_gpt55_e4_capture_probe_v1"
-    assert c4_report["claimed_scope"]["provider_model"] == "gpt-5.5"
+    assert c4_report["config_id"] == chain["config_id"]
+    assert c4_report["claimed_scope"] == {
+        "config_id": "codex_cli_gpt55_e4_capture_probe_v1",
+        "lane_id": "codex_cli_e4_capture_probe_v1",
+        "provider_model": "gpt-5.5",
+        "run_id": "20260630_codex_gpt55_capture_probe",
+        "sandbox_mode": "read-only",
+        "target_version": "codex-cli 0.139.0",
+    }
+    assert c4_report["comparator_rerun"] == {
+        "assertion_count": 1,
+        "comparator_class": "deterministic_replay",
+        "comparator_id": "codex_stored_report_replay",
+        "missing_assertion_ids": [],
+        "ok": True,
+        "registry": "conformance/comparators/registry.json",
+        "status_mismatch_ids": [],
+        "unexpected_assertion_ids": [],
+        "value_mismatch_ids": [],
+    }
     assert c4_report["errors"] == []
+
+
+def test_real_manifest_p7_without_workspace_estate_fails_closed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("BB_WORKSPACE_ROOT", raising=False)
+    result = tmp_path / "ct_scenarios_result_v1.json"
+    rows = tmp_path / "ct_scenarios_rows_v1.json"
+
+    exit_code = ct_runner.main(
+        [
+            "--json-out",
+            str(result),
+            "--rows-out",
+            str(rows),
+            "--test-id",
+            "CT-P7-CODEX-GPT55-C4-CHAIN",
+        ]
+    )
+
+    assert exit_code != 0
+    report = json.loads(result.read_text(encoding="utf-8"))
+    row_payload = json.loads(rows.read_text(encoding="utf-8"))
+    assert report["ok"] is False
+    assert report["status"] == "fail"
+    assert row_payload[0]["test_id"] == "CT-P7-CODEX-GPT55-C4-CHAIN"
+    assert row_payload[0]["status"] == "fail"
+    assert row_payload[0]["exit_code"] != 0
+    assert "BB_WORKSPACE_ROOT is required" in row_payload[0]["stderr_excerpt"]

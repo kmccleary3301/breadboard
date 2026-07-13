@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
 import yaml
+import pytest
 from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, stable_entries_hash
+
+
+@pytest.fixture(autouse=True)
+def _workspace_evidence_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "docs_tmp").mkdir()
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(tmp_path))
 
 
 def _repo_root() -> Path:
@@ -92,9 +100,31 @@ def _write_freeze_manifest_and_refresh_refs(chain: dict[str, Path | str], payloa
     return digest
 
 
-def _build_chain(tmp_path: Path) -> dict[str, Path | str]:
+def _build_chain(tmp_path: Path, *, checkout_local_sources: bool = False) -> dict[str, Path | str]:
     repo = tmp_path / "breadboard_repo_integration_main_20260326"
-    docs_tmp = tmp_path / "docs_tmp" / "phase_15" / "packet"
+    source_ref_root = "docs/conformance/e4_target_support/_fixtures/c4_packet" if checkout_local_sources else "docs_tmp/phase_15/packet"
+    docs_tmp = repo / source_ref_root if checkout_local_sources else Path(os.environ["BB_WORKSPACE_ROOT"]) / source_ref_root
+    _write_json(
+        repo / "conformance" / "comparators" / "registry.json",
+        {
+            "schema_version": "bb.e4.comparator_registry.v1",
+            "registry_id": "e4_comparator_registry_v1",
+            "generated_at_utc": "2026-07-03T00:00:00Z",
+            "comparators": [
+                {
+                    "comparator_class": "deterministic_replay",
+                    "comparator_id": "codex_stored_report_replay",
+                    "entrypoint": {
+                        "callable": "compare",
+                        "module": "conformance.comparators.codex_cli",
+                    },
+                    "input_roles": ["capture_ref", "replay_ref", "comparator_ref"],
+                    "lane_ids": ["codex_cli_e4_capture_probe_v1"],
+                    "report_schema_version": "bb.e4.comparator_report.v1",
+                }
+            ],
+        },
+    )
     config_id = "codex_cli_gpt55_e4_capture_probe_v1"
     lane_id = "codex_cli_e4_capture_probe_v1"
     scope = {
@@ -131,8 +161,8 @@ def _build_chain(tmp_path: Path) -> dict[str, Path | str]:
             "generated_at_utc": "2026-07-01T00:00:00Z",
             "lineage_rationale": "Raw Codex rollout is present under canonical docs_tmp packet evidence.",
             "raw_source_status": "canonical_raw_present",
-            "source_artifacts": [{"path": "docs_tmp/phase_15/packet/canonical_capture/rollout.jsonl", "sha256": raw_rollout_hash}],
-            "source_hashes": {"docs_tmp/phase_15/packet/canonical_capture/rollout.jsonl": raw_rollout_hash},
+            "source_artifacts": [{"path": f"{source_ref_root}/canonical_capture/rollout.jsonl", "sha256": raw_rollout_hash}],
+            "source_hashes": {f"{source_ref_root}/canonical_capture/rollout.jsonl": raw_rollout_hash},
         },
     )
     replay = evidence_dir / "bb_replay_result.json"
@@ -144,8 +174,8 @@ def _build_chain(tmp_path: Path) -> dict[str, Path | str]:
             "errors": [],
             "exit_status": "passed",
             "generated_at_utc": "2026-07-01T00:00:00Z",
-            "input_hashes": {"docs_tmp/phase_15/packet/canonical_capture/exports/replay_session.json": replay_session_hash},
-            "input_refs": ["docs_tmp/phase_15/packet/canonical_capture/exports/replay_session.json"],
+            "input_hashes": {f"{source_ref_root}/canonical_capture/exports/replay_session.json": replay_session_hash},
+            "input_refs": [f"{source_ref_root}/canonical_capture/exports/replay_session.json"],
             "normalized_events": [{"tool": "shell_command", "status": "completed"}],
             "replay_engine": {"name": "convert_codex_rollout_to_replay_session.py"},
             "warnings": [],
@@ -223,7 +253,7 @@ def _build_chain(tmp_path: Path) -> dict[str, Path | str]:
                         str(capture.relative_to(repo)),
                         str(replay.relative_to(repo)),
                         str(comparator.relative_to(repo)),
-                        str(parity_results.relative_to(repo.parent)),
+                        f"{source_ref_root}/parity_results.jsonl",
                         str(support_claim.relative_to(repo)),
                         str(evidence_manifest.relative_to(repo)),
                         str(validation_report.relative_to(repo)),
@@ -275,17 +305,17 @@ def _build_chain(tmp_path: Path) -> dict[str, Path | str]:
         "config_id": config_id,
         "generated_at_utc": "2026-07-01T00:00:00Z",
         "forbidden_roots_checked": ["scratch", "tmp", "scratch_runs", "/shared_folders"],
-        "secret_scan_ref": f"docs_tmp/phase_15/packet/secret_scan_report.json#{secret_scan_hash}",
+        "secret_scan_ref": f"{source_ref_root}/secret_scan_report.json#{secret_scan_hash}",
         "artifacts": [
             {"role": "freeze_manifest", "path": "config/e4_target_freeze_manifest.yaml", "sha256": freeze_hash},
             {"role": "target_config", "path": str(config.relative_to(repo)), "sha256": config_hash},
             {"role": "atomic_feature_ledger", "path": str(ledger.relative_to(repo)), "sha256": ledger_hash},
-            {"role": "capture_ref", "path": str(capture.relative_to(repo)), "sha256": capture_hash, "derived_from": [f"docs_tmp/phase_15/packet/canonical_capture/rollout.jsonl#{raw_rollout_hash}"]},
-            {"role": "replay_ref", "path": str(replay.relative_to(repo)), "sha256": replay_hash, "derived_from": [f"docs_tmp/phase_15/packet/canonical_capture/exports/replay_session.json#{replay_session_hash}"]},
+            {"role": "capture_ref", "path": str(capture.relative_to(repo)), "sha256": capture_hash, "derived_from": [f"{source_ref_root}/canonical_capture/rollout.jsonl#{raw_rollout_hash}"]},
+            {"role": "replay_ref", "path": str(replay.relative_to(repo)), "sha256": replay_hash, "derived_from": [f"{source_ref_root}/canonical_capture/exports/replay_session.json#{replay_session_hash}"]},
             {"role": "comparator_ref", "path": str(comparator.relative_to(repo)), "sha256": comparator_hash, "derived_from": [f"{capture.relative_to(repo)}#{capture_hash}", f"{replay.relative_to(repo)}#{replay_hash}"]},
-            {"role": "parity_results", "path": "docs_tmp/phase_15/packet/parity_results.jsonl", "sha256": parity_hash},
+            {"role": "parity_results", "path": f"{source_ref_root}/parity_results.jsonl", "sha256": parity_hash},
             {"role": "support_claim_ref", "path": str(support_claim.relative_to(repo)), "sha256": support_hash},
-            {"role": "secret_scan_report", "path": "docs_tmp/phase_15/packet/secret_scan_report.json", "sha256": secret_scan_hash},
+            {"role": "secret_scan_report", "path": f"{source_ref_root}/secret_scan_report.json", "sha256": secret_scan_hash},
             {"role": "validator_output", "path": str(validation_report.relative_to(repo)), "sha256": validation_hash},
         ],
     }
@@ -312,6 +342,32 @@ def test_c4_chain_validator_accepts_complete_exact_scope(tmp_path: Path) -> None
         config_id=chain["config_id"],
         support_claim_path=chain["support_claim"],
         evidence_manifest_path=chain["evidence_manifest"],
+    )
+
+    assert report["ok"] is True
+    assert report["accepted"] is True
+    assert report["errors"] == []
+
+
+def test_c4_chain_validator_accepts_checkout_local_sources_without_workspace_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _load_module(
+        "validate_e4_c4_chain_checkout_local",
+        "scripts/validate_e4_c4_chain.py",
+    )
+    monkeypatch.delenv("BB_WORKSPACE_ROOT")
+    chain = _build_chain(tmp_path, checkout_local_sources=True)
+
+    report = module.validate_c4_chain(
+        repo_root=chain["repo"],
+        freeze_manifest_path=chain["repo"] / "config" / "e4_target_freeze_manifest.yaml",
+        config_id=chain["config_id"],
+        support_claim_path=chain["support_claim"],
+        evidence_manifest_path=chain["evidence_manifest"],
+        rerun_comparators=False,
+        no_rerun_reason="checkout-local fixture validation",
     )
 
     assert report["ok"] is True
@@ -453,7 +509,7 @@ def test_c4_chain_blame_names_only_mutated_stable_catalog_artifact(tmp_path: Pat
     assert catalog_error["blame"] == [
         {
             "role_id": f"{lane_id}:capture_ref",
-            "path": str(capture_path.relative_to(repo.parent)),
+            "path": str(capture_path.relative_to(repo)),
             "prev_sha256": previous_capture_sha,
             "cur_sha256": current_capture_sha,
         }

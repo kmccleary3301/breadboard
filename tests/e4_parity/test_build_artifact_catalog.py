@@ -65,6 +65,7 @@ def _relative(path: Path, root: Path) -> str:
 def _patch_roots(monkeypatch: pytest.MonkeyPatch, workspace: Path, checkout: Path) -> None:
     monkeypatch.setattr(builder, "ROOT", checkout)
     monkeypatch.setattr(builder, "WORKSPACE", workspace)
+    monkeypatch.setattr(builder, "CHECKOUT_PREFIX", f"{checkout.name}/")
 
 
 def _write_catalog_fixture(
@@ -241,6 +242,54 @@ def _write_catalog_fixture(
         "docs_tmp_static": docs_tmp_static_path,
         "script": script_path,
     }
+
+
+def _make_unlocked_binding_sync_eligible(paths: dict[str, Path]) -> Path:
+    ledger_ref = "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    ledger_path = paths["workspace"] / ledger_ref
+    stale_hash = "sha256:" + "0" * 64
+    _write_json(
+        ledger_path,
+        {
+            "schema_version": "bb.e4.atomic_feature_ledger_seed.v1",
+            "rows": [{"feature_id": "feature_alpha", "status": "accepted", "points": 1}],
+        },
+    )
+
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    inventory["lanes"][0]["artifact_roles"]["atomic_feature_ledger"] = "lane_alpha:atomic_feature_ledger"
+    _write_json(paths["inventory"], inventory)
+    report_roles = json.loads(paths["report_roles"].read_text(encoding="utf-8"))
+    report_roles["lane_artifact_roles"].append(
+        {
+            "lane_id": "lane_alpha",
+            "role_key": "atomic_feature_ledger",
+            "role_id": "lane_alpha:atomic_feature_ledger",
+        }
+    )
+    _write_json(paths["report_roles"], report_roles)
+
+    support_claim = json.loads(paths["support_claim"].read_text(encoding="utf-8"))
+    support_claim["evidence_manifest_ref"] = _relative(paths["evidence_manifest"], paths["checkout"])
+    support_claim["ledger_row_refs"] = [f"{ledger_ref}#feature_alpha#{stale_hash}"]
+    _write_json(paths["support_claim"], support_claim)
+
+    evidence_manifest = json.loads(paths["evidence_manifest"].read_text(encoding="utf-8"))
+    support_artifact = next(
+        artifact for artifact in evidence_manifest["artifacts"] if artifact["role"] == "support_claim_ref"
+    )
+    support_artifact["sha256"] = stale_hash
+    evidence_manifest["artifacts"].append(
+        {
+            "role": "atomic_feature_ledger",
+            "path": ledger_ref,
+            "sha256": stale_hash,
+            "bytes": 1,
+            "exists": False,
+        }
+    )
+    _write_json(paths["evidence_manifest"], evidence_manifest)
+    return ledger_path
 
 
 def test_build_catalog_is_deterministic_valid_and_covers_lane_and_static_roles(
@@ -444,6 +493,17 @@ def test_write_bindings_refreshes_node_gate_hashes_after_evidence_manifest_sync(
         }
     }
     _write_json(paths["inventory"], inventory)
+    inventory["lanes"][0]["artifact_roles"]["atomic_feature_ledger"] = "lane_alpha:atomic_feature_ledger"
+    _write_json(paths["inventory"], inventory)
+    report_roles = json.loads(paths["report_roles"].read_text(encoding="utf-8"))
+    report_roles["lane_artifact_roles"].append(
+        {
+            "lane_id": "lane_alpha",
+            "role_key": "atomic_feature_ledger",
+            "role_id": "lane_alpha:atomic_feature_ledger",
+        }
+    )
+    _write_json(paths["report_roles"], report_roles)
 
     support_claim = json.loads(paths["support_claim"].read_text(encoding="utf-8"))
     support_claim["evidence_manifest_ref"] = "docs/conformance/support_claims/lane_alpha_v1_c4_evidence_manifest.json"
@@ -477,21 +537,29 @@ def test_write_bindings_refreshes_node_gate_hashes_after_evidence_manifest_sync(
         "evidence_manifest": "docs/conformance/support_claims/lane_alpha_v1_c4_evidence_manifest.json",
     }
 
-    _write_json(
-        node_gate_path,
-        {
-            "schema_version": "bb.e4.c4_chain_validation_report.v1",
-            "ok": True,
-            "accepted": True,
-            **original_node_gate_top_level_paths,
-            "refs": original_node_gate_refs,
-            "hashes": {
-                "support_claim": stale_hash,
-                "evidence_manifest": stale_hash,
-            },
-            "errors": [],
+    node_gate = {
+        "schema_version": "bb.e4.c4_chain_validation_report.v1",
+        "ok": True,
+        "accepted": True,
+        **original_node_gate_top_level_paths,
+        "refs": original_node_gate_refs,
+        "hashes": {
+            "support_claim": stale_hash,
+            "evidence_manifest": stale_hash,
         },
-    )
+        "errors": [],
+    }
+    _write_json(node_gate_path, {**node_gate, "hashes": []})
+    binding_bytes_before_invalid_gate = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+    }
+    with pytest.raises(ValueError, match="hashes must be an object"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+    assert {
+        path: path.read_bytes() for path in binding_bytes_before_invalid_gate
+    } == binding_bytes_before_invalid_gate
+    _write_json(node_gate_path, node_gate)
 
     builder.build_catalog(
         inventory_path=paths["inventory"],
@@ -515,6 +583,545 @@ def test_write_bindings_refreshes_node_gate_hashes_after_evidence_manifest_sync(
         key: synced_node_gate[key] for key in original_node_gate_top_level_paths
     } == original_node_gate_top_level_paths
     assert synced_node_gate["refs"] == original_node_gate_refs
+
+
+def test_write_bindings_uses_lane_declared_tracked_ledger_instead_of_ambient_seed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    ambient_ref = "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    tracked_ref = "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json"
+    ambient_path = paths["workspace"] / ambient_ref
+    tracked_path = paths["checkout"] / tracked_ref
+    stale_hash = "sha256:" + "0" * 64
+
+    _write_json(
+        ambient_path,
+        {
+            "schema_version": "bb.e4.atomic_feature_ledger_seed.v1",
+            "rows": [{"feature_id": "ambient_only", "status": "accepted", "points": 99}],
+        },
+    )
+    tracked_row = {"feature_id": "feature_alpha", "status": "accepted", "points": 1}
+    _write_json(
+        tracked_path,
+        {
+            "schema_version": "bb.e4.atomic_feature_ledger_seed.v1",
+            "rows": [tracked_row],
+        },
+    )
+    lane_lock_path = paths["checkout"] / "config" / "e4_lanes" / "lane_alpha.lock.json"
+    _write_json(
+        lane_lock_path,
+        {
+            "lane_id": "lane_alpha",
+            "artifact_roles": {
+                "atomic_feature_ledger": {
+                    "path": tracked_ref,
+                }
+            },
+            "resolved_inputs": [
+                {
+                    "path": tracked_ref,
+                    "sha256": _sha256_file(tracked_path),
+                    "bytes": tracked_path.stat().st_size,
+                }
+            ],
+        },
+    )
+
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    inventory["lanes"][0]["artifact_roles"]["atomic_feature_ledger"] = "lane_alpha:atomic_feature_ledger"
+    _write_json(paths["inventory"], inventory)
+
+    support_claim = json.loads(paths["support_claim"].read_text(encoding="utf-8"))
+    support_claim["evidence_manifest_ref"] = _relative(paths["evidence_manifest"], paths["checkout"])
+    support_claim["ledger_row_refs"] = [f"{tracked_ref}#feature_alpha#{stale_hash}"]
+    _write_json(paths["support_claim"], support_claim)
+
+    evidence_manifest = json.loads(paths["evidence_manifest"].read_text(encoding="utf-8"))
+    evidence_manifest["artifacts"].append(
+        {
+            "role": "atomic_feature_ledger",
+            "path": tracked_ref,
+            "sha256": _sha256_file(ambient_path),
+            "bytes": ambient_path.stat().st_size,
+            "exists": True,
+        }
+    )
+    _write_json(paths["evidence_manifest"], evidence_manifest)
+
+    result = builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+
+    assert result["support_claims_checked"] == 1
+    synced_claim = json.loads(paths["support_claim"].read_text(encoding="utf-8"))
+    expected_row_hash = builder._row_content_hash("feature_alpha", tracked_row)
+    assert synced_claim["ledger_row_refs"] == [f"{tracked_ref}#feature_alpha#{expected_row_hash}"]
+
+    synced_manifest = json.loads(paths["evidence_manifest"].read_text(encoding="utf-8"))
+    ledger_artifact = next(
+        artifact for artifact in synced_manifest["artifacts"] if artifact["role"] == "atomic_feature_ledger"
+    )
+    assert ledger_artifact["path"] == tracked_ref
+    assert ledger_artifact["sha256"] == _sha256_file(tracked_path)
+    assert ledger_artifact["bytes"] == tracked_path.stat().st_size
+    assert ledger_artifact["sha256"] != _sha256_file(ambient_path)
+    synced_claim_bytes = paths["support_claim"].read_bytes()
+    synced_manifest_bytes = paths["evidence_manifest"].read_bytes()
+    second_result = builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+    assert second_result == {
+        "support_claims_checked": 1,
+        "support_claims_changed": 0,
+        "evidence_manifests_changed": 0,
+        "node_gates_changed": 0,
+        "accepted_p0_lanes_skipped_missing_lock": 0,
+    }
+    assert paths["support_claim"].read_bytes() == synced_claim_bytes
+    assert paths["evidence_manifest"].read_bytes() == synced_manifest_bytes
+    lane_lock = json.loads(lane_lock_path.read_text(encoding="utf-8"))
+    lane_lock["resolved_inputs"][0]["sha256"] = stale_hash
+    _write_json(lane_lock_path, lane_lock)
+    with pytest.raises(ValueError, match="atomic_feature_ledger sha256 is inconsistent"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+    lane_lock["resolved_inputs"][0]["sha256"] = _sha256_file(tracked_path)
+    lane_lock["resolved_inputs"][0]["bytes"] = 0
+    _write_json(lane_lock_path, lane_lock)
+    with pytest.raises(ValueError, match="atomic_feature_ledger bytes are inconsistent"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+
+    lane_lock["resolved_inputs"][0]["bytes"] = tracked_path.stat().st_size
+    lane_lock["lane_id"] = "wrong_lane"
+    _write_json(lane_lock_path, lane_lock)
+    with pytest.raises(ValueError, match="lane_id does not match"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+
+    lane_lock["lane_id"] = "lane_alpha"
+    lane_lock["artifact_roles"]["atomic_feature_ledger"]["path"] = "../escaping-ledger.json"
+    _write_json(lane_lock_path, lane_lock)
+    with pytest.raises(ValueError, match="escapes its allowed root"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+
+
+    _write_json(
+        lane_lock_path,
+        {
+            "lane_id": "lane_alpha",
+            "artifact_roles": {
+                "atomic_feature_ledger": {
+                    "path": ambient_ref,
+                }
+            }
+        },
+    )
+    with pytest.raises(ValueError, match="does not match its lane lock"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+
+
+def test_binding_sync_rejects_support_and_evidence_path_alias(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    lane = inventory["lanes"][0]
+    lane["artifact_roles"]["atomic_feature_ledger"] = "lane_alpha:atomic_feature_ledger"
+    lane["claim_id"] = "lane_alpha_v1_c4_evidence_manifest"
+    _write_json(paths["inventory"], inventory)
+
+    with pytest.raises(ValueError, match="ambiguous binding output path"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+
+
+def test_binding_sync_rejects_manifest_lane_mismatch_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    inventory["lanes"][0]["artifact_roles"]["atomic_feature_ledger"] = "lane_alpha:atomic_feature_ledger"
+    _write_json(paths["inventory"], inventory)
+    evidence_manifest = json.loads(paths["evidence_manifest"].read_text(encoding="utf-8"))
+    evidence_manifest["lane_id"] = "wrong_lane"
+    _write_json(paths["evidence_manifest"], evidence_manifest)
+    bindings_before = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+    }
+
+    with pytest.raises(ValueError, match="evidence manifest lane_id binding is inconsistent"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+    assert {path: path.read_bytes() for path in bindings_before} == bindings_before
+
+
+@pytest.mark.parametrize(
+    ("node_gate_ref", "error_match"),
+    [
+        ("/tmp/outside-node-gate.json", "must be repository/workspace-relative"),
+        ("../outside-node-gate.json", "escapes its allowed root"),
+    ],
+)
+def test_binding_sync_rejects_unsafe_node_gate_path_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    node_gate_ref: str,
+    error_match: str,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    lane = inventory["lanes"][0]
+    lane["artifact_roles"]["atomic_feature_ledger"] = "lane_alpha:atomic_feature_ledger"
+    lane["ct"] = {"command": {"argv": ["python", "--json-out", node_gate_ref]}}
+    _write_json(paths["inventory"], inventory)
+    bindings_before = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+    }
+
+    with pytest.raises(ValueError, match=error_match):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+    assert {path: path.read_bytes() for path in bindings_before} == bindings_before
+
+
+def test_binding_sync_rejects_node_gate_alias_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    lane = inventory["lanes"][0]
+    lane["artifact_roles"]["atomic_feature_ledger"] = "lane_alpha:atomic_feature_ledger"
+    lane["ct"] = {
+        "command": {
+            "argv": [
+                "python",
+                "scripts/validate_e4_c4_chain.py",
+                "--json-out",
+                _relative(paths["support_claim"], paths["checkout"]),
+            ]
+        }
+    }
+    _write_json(paths["inventory"], inventory)
+    bindings_before = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+    }
+
+    with pytest.raises(ValueError, match="ambiguous binding output path"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+    assert {path: path.read_bytes() for path in bindings_before} == bindings_before
+
+
+def test_binding_sync_rejects_shared_node_gate_without_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    shared_node_gate_ref = "artifacts/conformance/node_gate/shared.json"
+    first_lane = inventory["lanes"][0]
+    first_lane["artifact_roles"]["atomic_feature_ledger"] = "lane_alpha:atomic_feature_ledger"
+    first_lane["ct"] = {"command": {"argv": ["python", "--json-out", shared_node_gate_ref]}}
+    second_lane = copy.deepcopy(first_lane)
+    second_lane["lane_id"] = "lane_beta"
+    second_lane["config_id"] = "lane_beta_v1"
+    second_lane["claim_id"] = "lane_beta_v1_c4_support_claim"
+    second_lane["artifact_roles"] = {
+        role_key: role_id.replace("lane_alpha:", "lane_beta:")
+        for role_key, role_id in second_lane["artifact_roles"].items()
+    }
+    inventory["lanes"].append(second_lane)
+    _write_json(paths["inventory"], inventory)
+    bindings_before = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+    }
+
+    with pytest.raises(ValueError, match="ambiguous binding output path"):
+        builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+    assert {path: path.read_bytes() for path in bindings_before} == bindings_before
+
+
+def test_binding_path_resolution_rejects_repository_escape(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_catalog_fixture(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="escapes its allowed root"):
+        builder._sync_artifact_path("../outside-ledger.json", role="atomic_feature_ledger")
+    with pytest.raises(ValueError, match="must be repository/workspace-relative"):
+        builder._sync_artifact_path(str(tmp_path / "absolute-ledger.json"), role="atomic_feature_ledger")
+
+
+def test_binding_sync_rejects_traversal_lane_lock_before_any_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    ledger_path = _make_unlocked_binding_sync_eligible(paths)
+    ledger_ref = _relative(ledger_path, paths["workspace"])
+    malicious_lane_id = "lane/../../../../foreign"
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    inventory["lanes"][0]["lane_id"] = malicious_lane_id
+    _write_json(paths["inventory"], inventory)
+    report_roles = json.loads(paths["report_roles"].read_text(encoding="utf-8"))
+    for role in report_roles["lane_artifact_roles"]:
+        role["lane_id"] = malicious_lane_id
+    _write_json(paths["report_roles"], report_roles)
+    evidence_manifest = json.loads(paths["evidence_manifest"].read_text(encoding="utf-8"))
+    evidence_manifest["lane_id"] = malicious_lane_id
+    _write_json(paths["evidence_manifest"], evidence_manifest)
+    escaped_lock = (
+        paths["checkout"] / "config" / "e4_lanes" / f"{malicious_lane_id}.lock.json"
+    ).resolve()
+    _write_json(
+        escaped_lock,
+        {
+            "lane_id": malicious_lane_id,
+            "artifact_roles": {"atomic_feature_ledger": {"path": ledger_ref}},
+            "resolved_inputs": [
+                {
+                    "path": ledger_ref,
+                    "sha256": _sha256_file(ledger_path),
+                    "bytes": ledger_path.stat().st_size,
+                }
+            ],
+        },
+    )
+    _write_text(paths["output"], "existing catalog sentinel\n")
+    files_before = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+        escaped_lock: escaped_lock.read_bytes(),
+        paths["output"]: paths["output"].read_bytes(),
+    }
+
+    with pytest.raises(ValueError, match="filename-safe"):
+        builder.main(
+            [
+                "--inventory",
+                str(paths["inventory"]),
+                "--report-roles",
+                str(paths["report_roles"]),
+                "--output",
+                str(paths["output"]),
+                "--generated-at-utc",
+                GENERATED_AT,
+                "--write-bindings",
+            ]
+        )
+
+    assert {path: path.read_bytes() for path in files_before} == files_before
+
+
+def test_binding_sync_rejects_symlinked_lane_lock_before_any_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    ledger_path = _make_unlocked_binding_sync_eligible(paths)
+    ledger_ref = _relative(ledger_path, paths["workspace"])
+    outside_lock = tmp_path / "foreign-lane-lock.json"
+    _write_json(
+        outside_lock,
+        {
+            "lane_id": "lane_alpha",
+            "artifact_roles": {"atomic_feature_ledger": {"path": ledger_ref}},
+            "resolved_inputs": [
+                {
+                    "path": ledger_ref,
+                    "sha256": _sha256_file(ledger_path),
+                    "bytes": ledger_path.stat().st_size,
+                }
+            ],
+        },
+    )
+    lock_path = paths["checkout"] / "config" / "e4_lanes" / "lane_alpha.lock.json"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        lock_path.symlink_to(outside_lock)
+    except (NotImplementedError, OSError) as exc:
+        pytest.skip(f"symlinks are unavailable: {exc}")
+    _write_text(paths["output"], "existing catalog sentinel\n")
+    files_before = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+        outside_lock: outside_lock.read_bytes(),
+        paths["output"]: paths["output"].read_bytes(),
+    }
+
+    with pytest.raises(ValueError, match="escapes the lane-lock directory"):
+        builder.main(
+            [
+                "--inventory",
+                str(paths["inventory"]),
+                "--report-roles",
+                str(paths["report_roles"]),
+                "--output",
+                str(paths["output"]),
+                "--generated-at-utc",
+                GENERATED_AT,
+                "--write-bindings",
+            ]
+        )
+
+    assert {path: path.read_bytes() for path in files_before} == files_before
+
+
+def test_p0_ambient_ledger_without_tracked_lane_authority_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_catalog_fixture(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="has no tracked lane-lock authority"):
+        builder._declared_ledger_ref(
+            {"lane_id": "north_star_lane", "phase": "P0"},
+            "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+        )
+
+
+def test_write_bindings_skips_accepted_p0_legacy_lane_without_lock_or_binding_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    _make_unlocked_binding_sync_eligible(paths)
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    inventory["lanes"][0]["phase"] = "P0"
+    inventory["lanes"][0]["status"] = "accepted"
+    _write_json(paths["inventory"], inventory)
+    bindings_before = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+    }
+
+    result = builder._sync_support_claim_hash_bindings(inventory_path=paths["inventory"])
+
+    assert result == {
+        "support_claims_checked": 0,
+        "support_claims_changed": 0,
+        "evidence_manifests_changed": 0,
+        "node_gates_changed": 0,
+        "accepted_p0_lanes_skipped_missing_lock": 1,
+    }
+    assert {path: path.read_bytes() for path in bindings_before} == bindings_before
+    assert builder.main(
+        [
+            "--inventory",
+            str(paths["inventory"]),
+            "--report-roles",
+            str(paths["report_roles"]),
+            "--output",
+            str(paths["output"]),
+            "--generated-at-utc",
+            GENERATED_AT,
+            "--write-bindings",
+        ]
+    ) == 0
+    assert paths["output"].is_file()
+    assert {path: path.read_bytes() for path in bindings_before} == bindings_before
+
+
+def test_duplicate_inventory_artifact_role_ids_fail_before_any_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    _make_unlocked_binding_sync_eligible(paths)
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    inventory["lanes"][0]["artifact_roles"]["comparator"] = "lane_alpha:capture"
+    _write_json(paths["inventory"], inventory)
+    report_roles = json.loads(paths["report_roles"].read_text(encoding="utf-8"))
+    comparator_role = next(
+        item for item in report_roles["lane_artifact_roles"] if item["role_key"] == "comparator"
+    )
+    comparator_role["role_id"] = "lane_alpha:capture"
+    _write_json(paths["report_roles"], report_roles)
+    _write_text(paths["output"], "existing catalog sentinel\n")
+    files_before = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+        paths["output"]: paths["output"].read_bytes(),
+    }
+
+    with pytest.raises(ValueError, match="duplicate inventory artifact role_id"):
+        builder.main(
+            [
+                "--inventory",
+                str(paths["inventory"]),
+                "--report-roles",
+                str(paths["report_roles"]),
+                "--output",
+                str(paths["output"]),
+                "--generated-at-utc",
+                GENERATED_AT,
+                "--write-bindings",
+            ]
+        )
+
+    assert {path: path.read_bytes() for path in files_before} == files_before
+
+
+@pytest.mark.parametrize("identifier_field", ["claim_id", "config_id"])
+def test_inventory_claim_paths_cannot_escape_support_claims_before_any_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    identifier_field: str,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    _make_unlocked_binding_sync_eligible(paths)
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    malicious_id = f"../../escaped_{identifier_field}"
+    inventory["lanes"][0][identifier_field] = malicious_id
+
+    if identifier_field == "claim_id":
+        escaped_path = paths["checkout"] / "docs" / "escaped_claim_id.json"
+        support_claim = json.loads(paths["support_claim"].read_text(encoding="utf-8"))
+        support_claim["claim_id"] = malicious_id
+        _write_json(escaped_path, support_claim)
+        evidence_manifest = json.loads(paths["evidence_manifest"].read_text(encoding="utf-8"))
+        evidence_manifest["claim_id"] = malicious_id
+        support_artifact = next(
+            artifact for artifact in evidence_manifest["artifacts"] if artifact["role"] == "support_claim_ref"
+        )
+        support_artifact["path"] = _relative(escaped_path, paths["checkout"])
+        _write_json(paths["evidence_manifest"], evidence_manifest)
+    else:
+        escaped_path = paths["checkout"] / "docs" / "escaped_config_id_c4_evidence_manifest.json"
+        evidence_manifest = json.loads(paths["evidence_manifest"].read_text(encoding="utf-8"))
+        evidence_manifest["config_id"] = malicious_id
+        _write_json(escaped_path, evidence_manifest)
+        support_claim = json.loads(paths["support_claim"].read_text(encoding="utf-8"))
+        support_claim["evidence_manifest_ref"] = _relative(escaped_path, paths["checkout"])
+        _write_json(paths["support_claim"], support_claim)
+
+    _write_json(paths["inventory"], inventory)
+    _write_text(paths["output"], "existing catalog sentinel\n")
+    files_before = {
+        paths["support_claim"]: paths["support_claim"].read_bytes(),
+        paths["evidence_manifest"]: paths["evidence_manifest"].read_bytes(),
+        escaped_path: escaped_path.read_bytes(),
+        paths["output"]: paths["output"].read_bytes(),
+    }
+
+    with pytest.raises(ValueError, match="filename-safe"):
+        builder.main(
+            [
+                "--inventory",
+                str(paths["inventory"]),
+                "--report-roles",
+                str(paths["report_roles"]),
+                "--output",
+                str(paths["output"]),
+                "--generated-at-utc",
+                GENERATED_AT,
+                "--write-bindings",
+            ]
+        )
+
+    assert {path: path.read_bytes() for path in files_before} == files_before
 
 
 def test_build_catalog_keeps_revision_for_derived_only_existing_entry_change(

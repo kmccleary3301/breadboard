@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -153,6 +154,7 @@ def _empty_sync_result() -> dict[str, int]:
         "support_claims_changed": 0,
         "evidence_manifests_changed": 0,
         "node_gates_changed": 0,
+        "accepted_p0_lanes_skipped_missing_lock": 0,
     }
 
 
@@ -166,13 +168,10 @@ def _node_gate_paths_by_evidence_manifest(inventory_path: Path | str) -> dict[st
         return {}
     result: dict[str, Path] = {}
     for lane in lanes:
-        if not isinstance(lane, Mapping):
+        if not isinstance(lane, Mapping) or not isinstance(lane.get("ct"), Mapping):
             continue
-        try:
-            evidence_key = display_path(_evidence_manifest_path(lane))
-            node_gate_path = resolve_registered_path(_node_gate_path(lane))
-        except (KeyError, TypeError, ValueError):
-            continue
+        evidence_key = display_path(_evidence_manifest_path(lane))
+        node_gate_path = _sync_artifact_path(_node_gate_path(lane), role="node_gate")
         result[evidence_key] = node_gate_path
     return result
 
@@ -203,78 +202,337 @@ def _refresh_node_gate_hashes(node_gate_path: Path, support_path: Path, evidence
 
 
 
-def _sync_support_claim_hash_bindings(inventory_path: Path | str = DEFAULT_INVENTORY_PATH) -> dict[str, int]:
-    """Keep support-claim, evidence-manifest, and node-gate hash refs fresh."""
+def _sync_artifact_path(ref: str, *, role: str) -> Path:
+    if not ref or "#" in ref:
+        raise ValueError(f"{role} path must be a non-empty artifact path without a fragment")
+    text = str(ref)
+    if Path(text).is_absolute():
+        raise ValueError(f"{role} path must be repository/workspace-relative: {ref}")
+    resolved = resolve_registered_path(text)
+    if text.startswith("docs_tmp/"):
+        allowed_root = (WORKSPACE / "docs_tmp").resolve()
+    else:
+        allowed_root = ROOT.resolve()
+    try:
+        resolved.relative_to(allowed_root)
+    except ValueError as exc:
+        raise ValueError(f"{role} path escapes its allowed root: {ref}") from exc
+    return resolved
 
-    ledger_path = WORKSPACE / "docs_tmp" / "phase_15" / "BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
-    if not ledger_path.exists():
-        return _empty_sync_result()
+
+def _required_artifact_by_role(evidence_manifest: Mapping[str, Any], role: str) -> dict[str, Any]:
+    artifacts = evidence_manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ValueError("evidence manifest artifacts must be a list")
+    matches = [artifact for artifact in artifacts if isinstance(artifact, dict) and artifact.get("role") == role]
+    if len(matches) != 1:
+        raise ValueError(f"evidence manifest must declare exactly one {role!r} artifact")
+    return matches[0]
+
+
+def _declared_ledger_ref(lane: Mapping[str, Any], manifest_ref: str) -> str | None:
+    lane_id = lane.get("lane_id")
+    if not isinstance(lane_id, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", lane_id) is None:
+        raise ValueError("lane_id must be a filename-safe identifier")
+    locks_root = (ROOT / "config" / "e4_lanes").resolve()
+    lock_path = (locks_root / f"{lane_id}.lock.json").resolve()
+    try:
+        lock_path.relative_to(locks_root)
+    except ValueError as exc:
+        raise ValueError(f"lane {lane_id!r} lock path escapes the lane-lock directory") from exc
+    if not lock_path.exists():
+        if lane.get("phase") == "P0" and lane.get("status") == "accepted":
+            return None
+        if lane.get("phase") == "P0" and manifest_ref.startswith("docs_tmp/"):
+            raise ValueError(
+                f"lane {lane_id!r} has no tracked lane-lock authority for its atomic_feature_ledger"
+            )
+        return manifest_ref
+    lock = load_json(lock_path)
+    if not isinstance(lock, Mapping) or lock.get("lane_id") != lane_id:
+        raise ValueError(f"lane lock {display_path(lock_path)} lane_id does not match {lane_id!r}")
+    artifact_roles = lock.get("artifact_roles")
+    ledger_binding = artifact_roles.get("atomic_feature_ledger") if isinstance(artifact_roles, Mapping) else None
+    lock_ref = ledger_binding.get("path") if isinstance(ledger_binding, Mapping) else None
+    if not isinstance(lock_ref, str) or not lock_ref:
+        raise ValueError(f"lane lock {display_path(lock_path)} has no atomic_feature_ledger path")
+    lock_ledger_path = _sync_artifact_path(lock_ref, role="lane lock atomic_feature_ledger")
+    if lock_ledger_path != _sync_artifact_path(manifest_ref, role="evidence manifest atomic_feature_ledger"):
+        raise ValueError(
+            f"lane {lane_id!r} evidence manifest atomic_feature_ledger path does not match its lane lock"
+        )
+    resolved_inputs = lock.get("resolved_inputs")
+    if not isinstance(resolved_inputs, list):
+        raise ValueError(f"lane lock {display_path(lock_path)} resolved_inputs must be a list")
+    matching_inputs = [
+        item
+        for item in resolved_inputs
+        if isinstance(item, Mapping)
+        and isinstance(item.get("path"), str)
+        and _sync_artifact_path(str(item["path"]), role="lane lock resolved input") == lock_ledger_path
+    ]
+    if len(matching_inputs) != 1:
+        raise ValueError(
+            f"lane lock {display_path(lock_path)} must contain exactly one resolved input for atomic_feature_ledger"
+        )
+    resolved_input = matching_inputs[0]
+    if not lock_ledger_path.is_file():
+        raise FileNotFoundError(f"atomic_feature_ledger does not exist: {display_path(lock_ledger_path)}")
+    if resolved_input.get("sha256") != sha256_path(lock_ledger_path):
+        raise ValueError(f"lane lock {display_path(lock_path)} atomic_feature_ledger sha256 is inconsistent")
+    if resolved_input.get("bytes") != lock_ledger_path.stat().st_size:
+        raise ValueError(f"lane lock {display_path(lock_path)} atomic_feature_ledger bytes are inconsistent")
+    return lock_ref
+
+
+def _ledger_rows_by_feature(ledger_path: Path) -> dict[str, Mapping[str, Any]]:
+    if not ledger_path.is_file():
+        raise FileNotFoundError(f"atomic_feature_ledger does not exist: {display_path(ledger_path)}")
     ledger = load_json(ledger_path)
     rows = ledger.get("rows") if isinstance(ledger, Mapping) else None
     if not isinstance(rows, list):
-        return _empty_sync_result()
-    rows_by_feature = {str(row["feature_id"]): row for row in rows if isinstance(row, Mapping) and isinstance(row.get("feature_id"), str)}
-    ledger_hash = sha256_path(ledger_path)
-    ledger_bytes = ledger_path.stat().st_size
+        raise ValueError(f"atomic_feature_ledger rows must be a list: {display_path(ledger_path)}")
+    result: dict[str, Mapping[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping) or not isinstance(row.get("feature_id"), str) or not row["feature_id"]:
+            raise ValueError(f"atomic_feature_ledger contains an invalid row: {display_path(ledger_path)}")
+        feature_id = str(row["feature_id"])
+        if feature_id in result:
+            raise ValueError(f"atomic_feature_ledger contains duplicate feature_id {feature_id!r}")
+        result[feature_id] = row
+    return result
+
+
+def _ledger_feature_ids(refs: Any, *, ledger_path: Path) -> list[str]:
+    if not isinstance(refs, list) or not refs:
+        raise ValueError("support claim ledger_row_refs must be a non-empty list")
+    feature_ids: list[str] = []
+    for ref in refs:
+        if not isinstance(ref, str):
+            raise ValueError("support claim ledger_row_refs entries must be strings")
+        parts = ref.split("#")
+        if len(parts) != 3 or not parts[0] or not parts[1] or not parts[2].startswith("sha256:"):
+            raise ValueError(f"invalid support claim ledger row ref: {ref!r}")
+        ref_path = _sync_artifact_path(parts[0], role="ledger_row_ref")
+        if ref_path != ledger_path:
+            raise ValueError(
+                "support claim ledger row ref path does not match its atomic_feature_ledger artifact: "
+                f"{parts[0]}"
+            )
+        feature_ids.append(parts[1])
+    if len(feature_ids) != len(set(feature_ids)):
+        raise ValueError("support claim ledger_row_refs contain duplicate feature ids")
+    return feature_ids
+
+
+def _json_payload_sha256(payload: Mapping[str, Any]) -> str:
+    encoded = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _validate_inventory_artifact_role_ids(inventory: Mapping[str, Any]) -> None:
+    lanes = inventory.get("lanes")
+    if not isinstance(lanes, list):
+        raise ValueError("lane inventory lanes must be a list")
+    owners: dict[str, str] = {}
+    for lane in lanes:
+        if not isinstance(lane, Mapping):
+            raise ValueError("lane inventory entry must be an object")
+        lane_id = lane.get("lane_id")
+        artifact_roles = lane.get("artifact_roles")
+        if not isinstance(artifact_roles, Mapping):
+            raise ValueError(f"lane {lane_id!r} artifact_roles must be an object")
+        for role_key, role_id in artifact_roles.items():
+            if not isinstance(role_key, str) or not role_key or not isinstance(role_id, str) or not role_id:
+                raise ValueError(f"lane {lane_id!r} artifact_roles entries must be non-empty strings")
+            owner = f"{lane_id}:{role_key}"
+            previous_owner = owners.get(role_id)
+            if previous_owner is not None:
+                raise ValueError(
+                    f"duplicate inventory artifact role_id {role_id!r}: "
+                    f"claimed by {previous_owner} and {owner}"
+                )
+            owners[role_id] = owner
+
+
+def _sync_support_claim_hash_bindings(inventory_path: Path | str = DEFAULT_INVENTORY_PATH) -> dict[str, int]:
+    """Keep each lane's support-claim, evidence-manifest, and node-gate hash refs fresh."""
+
+    inventory = load_json(inventory_path)
+    lanes = inventory.get("lanes") if isinstance(inventory, Mapping) else None
+    if not isinstance(lanes, list):
+        raise ValueError("lane inventory lanes must be a list")
+    _validate_inventory_artifact_role_ids(inventory)
+    accepted_p0_lanes_skipped_missing_lock = 0
     node_gates_by_manifest = _node_gate_paths_by_evidence_manifest(inventory_path)
-    checked = 0
-    support_changed = 0
-    evidence_changed = 0
-    node_gate_changed = 0
-    for support_path in sorted((ROOT / "docs" / "conformance" / "support_claims").glob("*_c4_support_claim.json")):
-        support_claim = load_json(support_path)
-        if not isinstance(support_claim, dict):
+    claimed_output_paths: dict[Path, str] = {}
+    for lane in lanes:
+        if not isinstance(lane, Mapping):
+            raise ValueError("lane inventory entry must be an object")
+        artifact_roles = lane.get("artifact_roles")
+        if not isinstance(artifact_roles, Mapping):
+            raise ValueError(f"lane {lane.get('lane_id')!r} artifact_roles must be an object")
+        if artifact_roles.get("atomic_feature_ledger") is None:
             continue
-        refs = support_claim.get("ledger_row_refs")
-        evidence_ref = support_claim.get("evidence_manifest_ref")
-        if not isinstance(refs, list) or not refs or not isinstance(refs[0], str) or not isinstance(evidence_ref, str):
-            continue
-        parts = refs[0].split("#")
-        if len(parts) < 2 or not parts[1] or parts[1] not in rows_by_feature:
-            continue
-        checked += 1
-        feature_id = parts[1]
-        expected_ref = f"{display_path(ledger_path)}#{feature_id}#{_row_content_hash(feature_id, rows_by_feature[feature_id])}"
-        if support_claim.get("ledger_row_refs") != [expected_ref]:
-            support_claim["ledger_row_refs"] = [expected_ref]
-            write_json(support_path, support_claim)
-            support_changed += 1
-        evidence_path = resolve_registered_path(evidence_ref)
-        if not evidence_path.exists():
-            continue
-        evidence_manifest = load_json(evidence_path)
-        if not isinstance(evidence_manifest, dict):
-            continue
-        support_artifact = _artifact_by_role(evidence_manifest, "support_claim_ref")
-        ledger_artifact = _artifact_by_role(evidence_manifest, "atomic_feature_ledger")
-        changed = False
-        if support_artifact is not None:
-            support_hash = sha256_path(support_path)
-            if support_artifact.get("sha256") != support_hash:
-                support_artifact["sha256"] = support_hash
-                changed = True
-        if ledger_artifact is not None:
-            if ledger_artifact.get("sha256") != ledger_hash:
-                ledger_artifact["sha256"] = ledger_hash
-                changed = True
-            if ledger_artifact.get("bytes") != ledger_bytes:
-                ledger_artifact["bytes"] = ledger_bytes
-                changed = True
-            if ledger_artifact.get("exists") is not True:
-                ledger_artifact["exists"] = True
-                changed = True
-        if changed:
-            write_json(evidence_path, evidence_manifest)
-            evidence_changed += 1
+        support_path = _support_claim_path(lane).resolve()
+        evidence_path = _evidence_manifest_path(lane).resolve()
+        outputs = [
+            (support_path, f"{lane.get('lane_id')}:support_claim"),
+            (evidence_path, f"{lane.get('lane_id')}:evidence_manifest"),
+        ]
         node_gate_path = node_gates_by_manifest.get(display_path(evidence_path))
-        if node_gate_path is not None and _refresh_node_gate_hashes(node_gate_path, support_path, evidence_path):
-            node_gate_changed += 1
-    return {
-        "support_claims_checked": checked,
-        "support_claims_changed": support_changed,
-        "evidence_manifests_changed": evidence_changed,
-        "node_gates_changed": node_gate_changed,
-    }
+        if node_gate_path is not None:
+            outputs.append((node_gate_path.resolve(), f"{lane.get('lane_id')}:node_gate"))
+        for output_path, owner in outputs:
+            previous_owner = claimed_output_paths.get(output_path)
+            if previous_owner is not None:
+                raise ValueError(
+                    f"ambiguous binding output path {display_path(output_path)!r}: "
+                    f"claimed by {previous_owner} and {owner}"
+                )
+            claimed_output_paths[output_path] = owner
+    plans: list[dict[str, Any]] = []
+
+    for lane in lanes:
+        if not isinstance(lane, Mapping):
+            raise ValueError("lane inventory entry must be an object")
+        artifact_roles = lane.get("artifact_roles")
+        if not isinstance(artifact_roles, Mapping):
+            raise ValueError(f"lane {lane.get('lane_id')!r} artifact_roles must be an object")
+        ledger_role_id = artifact_roles.get("atomic_feature_ledger")
+        if ledger_role_id is None:
+            continue
+        if not isinstance(ledger_role_id, str) or not ledger_role_id:
+            raise ValueError(f"lane {lane.get('lane_id')!r} atomic_feature_ledger role id is invalid")
+
+        support_path = _support_claim_path(lane).resolve()
+        evidence_path = _evidence_manifest_path(lane).resolve()
+        # Global output ownership was validated before any lane payload was loaded or mutated.
+        if not support_path.is_file():
+            raise FileNotFoundError(f"support claim does not exist: {display_path(support_path)}")
+        if not evidence_path.is_file():
+            raise FileNotFoundError(f"evidence manifest does not exist: {display_path(evidence_path)}")
+
+        support_claim = load_json(support_path)
+        evidence_manifest = load_json(evidence_path)
+        if not isinstance(support_claim, dict):
+            raise ValueError(f"support claim must be an object: {display_path(support_path)}")
+        if not isinstance(evidence_manifest, dict):
+            raise ValueError(f"evidence manifest must be an object: {display_path(evidence_path)}")
+        lane_id = lane.get("lane_id")
+        claim_id = lane.get("claim_id")
+        config_id = lane.get("config_id")
+        if support_claim.get("claim_id") != claim_id or evidence_manifest.get("claim_id") != claim_id:
+            raise ValueError(f"lane {lane_id!r} claim_id bindings are inconsistent")
+        if evidence_manifest.get("config_id") != config_id:
+            raise ValueError(f"lane {lane_id!r} config_id binding is inconsistent")
+        if evidence_manifest.get("lane_id") != lane_id:
+            raise ValueError(f"lane {lane_id!r} evidence manifest lane_id binding is inconsistent")
+
+        evidence_ref = support_claim.get("evidence_manifest_ref")
+        if not isinstance(evidence_ref, str):
+            raise ValueError(f"support claim {claim_id!r} evidence_manifest_ref is invalid")
+        if _sync_artifact_path(evidence_ref, role="evidence_manifest_ref") != evidence_path:
+            raise ValueError(f"support claim {claim_id!r} evidence_manifest_ref does not match its lane")
+
+        support_artifact = _required_artifact_by_role(evidence_manifest, "support_claim_ref")
+        support_artifact_path = support_artifact.get("path")
+        if not isinstance(support_artifact_path, str) or (
+            _sync_artifact_path(support_artifact_path, role="support_claim_ref") != support_path
+        ):
+            raise ValueError(f"evidence manifest support_claim_ref does not match lane {lane_id!r}")
+
+        ledger_artifact = _required_artifact_by_role(evidence_manifest, "atomic_feature_ledger")
+        ledger_ref = ledger_artifact.get("path")
+        if not isinstance(ledger_ref, str):
+            raise ValueError(f"lane {lane_id!r} atomic_feature_ledger path is invalid")
+        ledger_ref = _declared_ledger_ref(lane, ledger_ref)
+        if ledger_ref is None:
+            accepted_p0_lanes_skipped_missing_lock += 1
+            continue
+        ledger_path = _sync_artifact_path(ledger_ref, role="atomic_feature_ledger")
+        rows_by_feature = _ledger_rows_by_feature(ledger_path)
+        feature_ids = _ledger_feature_ids(support_claim.get("ledger_row_refs"), ledger_path=ledger_path)
+        declared_feature_ids = lane.get("ledger_feature_ids")
+        if not isinstance(declared_feature_ids, list) or feature_ids != declared_feature_ids:
+            raise ValueError(f"lane {lane_id!r} ledger feature bindings are inconsistent")
+        missing_feature_ids = [feature_id for feature_id in feature_ids if feature_id not in rows_by_feature]
+        if missing_feature_ids:
+            raise ValueError(f"lane {lane_id!r} ledger is missing declared feature ids: {missing_feature_ids}")
+
+        expected_refs = [
+            f"{display_path(ledger_path)}#{feature_id}#{_row_content_hash(feature_id, rows_by_feature[feature_id])}"
+            for feature_id in feature_ids
+        ]
+        support_changed = support_claim["ledger_row_refs"] != expected_refs
+        if support_changed:
+            support_claim["ledger_row_refs"] = expected_refs
+        support_hash = _json_payload_sha256(support_claim) if support_changed else sha256_path(support_path)
+
+        expected_ledger_fields = {
+            "sha256": sha256_path(ledger_path),
+            "bytes": ledger_path.stat().st_size,
+            "exists": True,
+        }
+        evidence_changed = False
+        if support_artifact.get("sha256") != support_hash:
+            support_artifact["sha256"] = support_hash
+            evidence_changed = True
+        for key, value in expected_ledger_fields.items():
+            if ledger_artifact.get(key) != value:
+                ledger_artifact[key] = value
+                evidence_changed = True
+        evidence_hash = _json_payload_sha256(evidence_manifest) if evidence_changed else sha256_path(evidence_path)
+
+        node_gate_path = node_gates_by_manifest.get(display_path(evidence_path))
+        node_gate: dict[str, Any] | None = None
+        node_gate_changed = False
+        if node_gate_path is not None and node_gate_path.exists():
+            node_gate_payload = load_json(node_gate_path)
+            if not isinstance(node_gate_payload, dict):
+                raise ValueError(f"node gate must be an object: {display_path(node_gate_path)}")
+            hashes = node_gate_payload.setdefault("hashes", {})
+            if not isinstance(hashes, dict):
+                raise ValueError(f"{display_path(node_gate_path)} hashes must be an object")
+            expected_hashes = {"support_claim": support_hash, "evidence_manifest": evidence_hash}
+            for key, value in expected_hashes.items():
+                if hashes.get(key) != value:
+                    hashes[key] = value
+                    node_gate_changed = True
+            node_gate = node_gate_payload
+
+        plans.append(
+            {
+                "support_path": support_path,
+                "support_claim": support_claim,
+                "support_changed": support_changed,
+                "evidence_path": evidence_path,
+                "evidence_manifest": evidence_manifest,
+                "evidence_changed": evidence_changed,
+                "node_gate_path": node_gate_path,
+                "node_gate": node_gate,
+                "node_gate_changed": node_gate_changed,
+            }
+        )
+
+    for plan in plans:
+        if plan["support_changed"]:
+            write_json(plan["support_path"], plan["support_claim"])
+        if plan["evidence_changed"]:
+            write_json(plan["evidence_path"], plan["evidence_manifest"])
+        if plan["node_gate_changed"]:
+            write_json(plan["node_gate_path"], plan["node_gate"])
+    result = _empty_sync_result()
+    result.update(
+        {
+            "support_claims_checked": len(plans),
+            "support_claims_changed": sum(bool(plan["support_changed"]) for plan in plans),
+            "evidence_manifests_changed": sum(bool(plan["evidence_changed"]) for plan in plans),
+            "node_gates_changed": sum(bool(plan["node_gate_changed"]) for plan in plans),
+            "accepted_p0_lanes_skipped_missing_lock": accepted_p0_lanes_skipped_missing_lock,
+        }
+    )
+    return result
 
 def _node_gate_path(lane: Mapping[str, Any]) -> str:
     ct = lane.get("ct") if isinstance(lane.get("ct"), Mapping) else {}
@@ -295,18 +553,38 @@ def _node_gate_path(lane: Mapping[str, Any]) -> str:
     return value
 
 
+def _support_claims_output_path(
+    lane: Mapping[str, Any],
+    *,
+    identifier_field: str,
+    suffix: str,
+) -> Path:
+    identifier = lane.get(identifier_field)
+    if not isinstance(identifier, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", identifier) is None:
+        raise ValueError(
+            f"lane {lane.get('lane_id')!r} {identifier_field} must be a filename-safe identifier"
+        )
+    claims_root = (ROOT / "docs" / "conformance" / "support_claims").resolve()
+    output_path = (claims_root / f"{identifier}{suffix}").resolve()
+    try:
+        output_path.relative_to(claims_root)
+    except ValueError as exc:
+        raise ValueError(
+            f"lane {lane.get('lane_id')!r} {identifier_field} escapes the support claims directory"
+        ) from exc
+    return output_path
+
+
 def _evidence_manifest_path(lane: Mapping[str, Any]) -> Path:
-    config_id = lane.get("config_id")
-    if not isinstance(config_id, str) or not config_id:
-        raise ValueError(f"lane {lane.get('lane_id')!r} has invalid config_id")
-    return ROOT / "docs" / "conformance" / "support_claims" / f"{config_id}_c4_evidence_manifest.json"
+    return _support_claims_output_path(
+        lane,
+        identifier_field="config_id",
+        suffix="_c4_evidence_manifest.json",
+    )
 
 
 def _support_claim_path(lane: Mapping[str, Any]) -> Path:
-    claim_id = lane.get("claim_id")
-    if not isinstance(claim_id, str) or not claim_id:
-        raise ValueError(f"lane {lane.get('lane_id')!r} has invalid claim_id")
-    return ROOT / "docs" / "conformance" / "support_claims" / f"{claim_id}.json"
+    return _support_claims_output_path(lane, identifier_field="claim_id", suffix=".json")
 
 
 def _manifest_artifact_by_role(manifest: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
@@ -747,6 +1025,7 @@ def build_catalog(
         raise ValueError("lane inventory must be an object")
     if not isinstance(report_roles, Mapping):
         raise ValueError("report roles must be an object")
+    _validate_inventory_artifact_role_ids(inventory)
     _validate_lane_role_mirror(inventory, report_roles)
     if write_bindings:
         _sync_support_claim_hash_bindings(inventory_path=inventory_file)

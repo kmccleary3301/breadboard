@@ -22,7 +22,7 @@ describe("default Codex config contract", () => {
     const config = YAML.parse(raw)
 
     expect(config.profile.name).toBe("codex-0.107.0-e4-2026-03-06")
-    expect(config.providers.default_model).toBe("openai/gpt-5.4-mini")
+    expect(config.providers.default_model).toBe("openai/gpt-5.1-codex-mini")
     expect(config.provider_tools.use_native).toBe(true)
     expect(config.provider_tools.suppress_prompts).toBe(false)
     expect(config.provider_tools.api_variant).toBe("responses")

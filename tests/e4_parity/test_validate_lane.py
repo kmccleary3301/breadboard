@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 import pytest
 import yaml
 from jsonschema import Draft202012Validator, RefResolver
 
 from scripts.authoring import validate_lane as validator
+from scripts.e4_parity import lane_definitions
+from scripts.e4_parity.validators import registries
+from tests.test_e4_c4_chain_validation import _build_chain
 
 
 ACCEPTED_LANE_ID = "oh_my_pi_p3_1_effective_config_graph_compiler"
@@ -77,6 +81,137 @@ def _lane_report_validator() -> Draft202012Validator:
     return Draft202012Validator(schema, resolver=resolver)
 
 
+def _write_json(path: Path, payload: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+@pytest.fixture
+def hermetic_accepted_lane(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> Iterator[dict[str, Path | str]]:
+    chain = _build_chain(tmp_path, checkout_local_sources=True)
+    repo_root = Path(chain["repo"])
+
+    schema_dir = repo_root / "contracts" / "kernel" / "schemas"
+    schema_dir.mkdir(parents=True)
+    for schema_name in (
+        "bb.e4.lane_def.v2.schema.json",
+        "bb.e4.common.v1.schema.json",
+        "bb.kernel.common.v1.schema.json",
+    ):
+        shutil.copyfile(SCHEMA_DIR / schema_name, schema_dir / schema_name)
+
+    registry_dir = repo_root / "contracts" / "kernel" / "registries"
+    _write_json(
+        registry_dir / "e4_adapters.v1.json",
+        {
+            "registry_id": "e4_adapters",
+            "entries": [
+                {
+                    "id": "oh_my_pi_compiler_capture",
+                    "status": "active",
+                    "metadata": {"kind": "capture_adapter"},
+                },
+                {
+                    "id": "identity",
+                    "status": "active",
+                    "metadata": {
+                        "kind": "translator",
+                        "impl": "scripts.e4_parity.adapters.identity:translate",
+                    },
+                },
+                {
+                    "id": "oh_my_pi_stored_report_replay",
+                    "status": "active",
+                    "metadata": {"kind": "comparator"},
+                },
+            ],
+        },
+    )
+
+    source = validator.ROOT / "config" / "e4_lanes" / f"{ACCEPTED_LANE_ID}.yaml"
+    lane = yaml.safe_load(source.read_text(encoding="utf-8"))
+    capture_path = Path(chain["capture"])
+    lane_id = json.loads(capture_path.read_text(encoding="utf-8"))["lane_id"]
+    support_claim_path = Path(chain["support_claim"])
+    evidence_manifest_path = Path(chain["evidence_manifest"])
+    evidence_root = capture_path.parent
+    reverify_script = repo_root / "scripts" / "validate_e4_c4_chain.py"
+    reverify_script.parent.mkdir(parents=True)
+    reverify_script.write_text("raise SystemExit('fixture command is declarative only')\n", encoding="utf-8")
+
+    lane.update(
+        {
+            "lane_id": lane_id,
+            "config_id": chain["config_id"],
+            "target_version": "codex-cli 0.139.0",
+            "artifacts_root": evidence_root.relative_to(repo_root).as_posix(),
+            "run": {
+                "run_id": "20260630_codex_gpt55_capture_probe",
+                "provider_model": "gpt-5.5",
+                "sandbox_mode": "read-only",
+            },
+        }
+    )
+    lane["capture"]["inputs"] = [capture_path.relative_to(repo_root).as_posix()]
+    lane["reverify_command"]["argv"] = [
+        ".venv/bin/python",
+        reverify_script.relative_to(repo_root).as_posix(),
+        "--config-id",
+        str(chain["config_id"]),
+        "--support-claim",
+        support_claim_path.relative_to(repo_root).as_posix(),
+        "--evidence-manifest",
+        evidence_manifest_path.relative_to(repo_root).as_posix(),
+        "--json-out",
+        "artifacts/conformance/node_gate/hermetic_lane_validation.json",
+        "--check-only",
+    ]
+
+    lane_dir = repo_root / "config" / "e4_lanes"
+    lane_path = lane_dir / f"{lane_id}.yaml"
+    lane_dir.mkdir(parents=True)
+    lane_path.write_text(yaml.safe_dump(lane, sort_keys=False), encoding="utf-8")
+
+    inventory_path = repo_root / "docs" / "conformance" / "e4_lane_inventory.json"
+    score_subledger_path = repo_root / "docs" / "conformance" / "_fixtures" / "score_subledger.json"
+    _write_json(score_subledger_path, {"score_rows": []})
+    monkeypatch.setattr(validator, "ROOT", repo_root)
+    monkeypatch.setattr(validator, "WORKSPACE", repo_root.parent)
+    monkeypatch.setattr(validator, "DEFAULT_LANE_DEF_DIR", lane_dir)
+    monkeypatch.setattr(validator, "DEFAULT_INVENTORY_PATH", inventory_path)
+    monkeypatch.setattr(lane_definitions, "ROOT", repo_root)
+    monkeypatch.setattr(lane_definitions, "DEFAULT_LANE_DEF_DIR", lane_dir)
+    monkeypatch.setattr(registries, "REGISTRY_DIR", registry_dir)
+    monkeypatch.setattr(validator.generate_lane_inventory, "ROOT", repo_root)
+    monkeypatch.setattr(validator.generate_lane_inventory, "WORKSPACE", repo_root.parent)
+    monkeypatch.setattr(
+        validator.generate_lane_inventory,
+        "SCORE_SUBLEDGER_PATH",
+        score_subledger_path,
+    )
+    monkeypatch.setattr(validator.generate_lane_inventory, "_SCORE_SUBLEDGER_CACHE", None)
+    lane_definitions._validator.cache_clear()
+    registries.load_registry.cache_clear()
+
+    loaded_lane = lane_definitions.load_lane_def(lane_path)
+    inventory_row = validator.generate_lane_inventory.lane_inventory_row(loaded_lane)
+    _write_json(inventory_path, {"lanes": [inventory_row]})
+
+    try:
+        yield {
+            **chain,
+            "lane": lane_path,
+            "ledger": evidence_root / "atomic_feature_ledger.json",
+        }
+    finally:
+        lane_definitions._validator.cache_clear()
+        registries.load_registry.cache_clear()
+        validator.generate_lane_inventory._SCORE_SUBLEDGER_CACHE = None
+
+
 @pytest.mark.parametrize(
     ("ok", "failed_check"),
     [
@@ -99,27 +234,44 @@ def test_lane_report_schema_rejects_ok_values_inconsistent_with_failed_checks(
     assert list(errors[0].absolute_path) == ["checks"]
 
 
-def test_current_accepted_lane_cli_emits_ok_v1_report_with_exact_checks(
+def test_hermetic_accepted_lane_cli_emits_ok_v1_report_with_exact_checks(
+    hermetic_accepted_lane: dict[str, Path | str],
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    exit_code, report = _run_cli(ACCEPTED_LANE_ID, capsys)
+    exit_code, report = _run_cli(str(hermetic_accepted_lane["lane"]), capsys)
 
     _assert_report_shape(report)
     assert exit_code == 0
     assert report["ok"] is True
-    assert report["lane_id"] == ACCEPTED_LANE_ID
     assert all(check["status"] == "passed" for check in report["checks"])
 
 
-def test_temporary_lane_with_missing_capture_input_returns_schema_shaped_non_ok_report(
-    tmp_path: Path,
+def test_real_accepted_lane_without_workspace_authority_fails_closed(
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    source = validator.ROOT / "config" / "e4_lanes" / f"{ACCEPTED_LANE_ID}.yaml"
-    payload = yaml.safe_load(source.read_text(encoding="utf-8"))
-    missing_input = "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/__missing_capture_input__.json"
+    monkeypatch.delenv("BB_WORKSPACE_ROOT", raising=False)
+
+    exit_code, report = _run_cli(ACCEPTED_LANE_ID, capsys)
+
+    _assert_report_shape(report)
+    checks = _checks_by_id(report)
+    assert exit_code == 1
+    assert report["ok"] is False
+    assert checks["accepted_artifact_hashes_fresh"]["status"] == "failed"
+    assert "BB_WORKSPACE_ROOT is required for workspace evidence references" in checks[
+        "accepted_artifact_hashes_fresh"
+    ]["detail"]
+
+
+def test_hermetic_lane_with_missing_capture_input_fails_only_that_check(
+    hermetic_accepted_lane: dict[str, Path | str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    lane_path = Path(hermetic_accepted_lane["lane"])
+    payload = yaml.safe_load(lane_path.read_text(encoding="utf-8"))
+    missing_input = "docs/conformance/e4_target_support/__missing_capture_input__.json"
     payload["capture"]["inputs"] = [missing_input]
-    lane_path = tmp_path / "missing_capture_input_lane.yaml"
     lane_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
     exit_code, report = _run_cli(str(lane_path), capsys)
@@ -128,7 +280,6 @@ def test_temporary_lane_with_missing_capture_input_returns_schema_shaped_non_ok_
     checks = _checks_by_id(report)
     assert exit_code == 1
     assert report["ok"] is False
-    assert report["lane_id"] == ACCEPTED_LANE_ID
     assert checks["capture_inputs_exist"]["status"] == "failed"
     assert missing_input in checks["capture_inputs_exist"]["detail"]
     assert {
@@ -136,6 +287,36 @@ def test_temporary_lane_with_missing_capture_input_returns_schema_shaped_non_ok_
         for check_id, check in checks.items()
         if check_id != "capture_inputs_exist"
     } == {check_id: "passed" for check_id in EXPECTED_CHECK_IDS if check_id != "capture_inputs_exist"}
+
+
+@pytest.mark.parametrize("artifact_key", ["capture", "ledger"])
+def test_hermetic_lane_detects_accepted_artifact_integrity_mutation(
+    hermetic_accepted_lane: dict[str, Path | str],
+    capsys: pytest.CaptureFixture[str],
+    artifact_key: str,
+) -> None:
+    artifact_path = Path(hermetic_accepted_lane[artifact_key])
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    payload["integrity_test_mutation"] = artifact_key
+    _write_json(artifact_path, payload)
+
+    exit_code, report = _run_cli(str(hermetic_accepted_lane["lane"]), capsys)
+
+    _assert_report_shape(report)
+    checks = _checks_by_id(report)
+    assert exit_code == 1
+    assert report["ok"] is False
+    assert checks["accepted_artifact_hashes_fresh"]["status"] == "failed"
+    assert "hash mismatch" in checks["accepted_artifact_hashes_fresh"]["detail"]
+    assert {
+        check_id: check["status"]
+        for check_id, check in checks.items()
+        if check_id != "accepted_artifact_hashes_fresh"
+    } == {
+        check_id: "passed"
+        for check_id in EXPECTED_CHECK_IDS
+        if check_id != "accepted_artifact_hashes_fresh"
+    }
 
 
 
