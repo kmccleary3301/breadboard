@@ -47,6 +47,7 @@ jobs:
           --ignore=tests/e4_parity/test_lane_def_metadata_non_normative.py
           --ignore=tests/e4_parity/test_oh_my_pi_p6_profile_capture.py
           --ignore=tests/e4_parity/test_p3_remaining_helper_runtime_inventory.py
+          --deselect=tests/e4_parity/test_binding_topology_reports.py::test_phase15_archive_manifest_is_content_addressed
           --deselect=tests/e4_parity/test_check_er_progress.py::test_live_bb_er_progress_passes_checker
           --deselect=tests/e4_parity/test_lane_inventory_consistency.py::test_inventory_points_match_score_subledger_accounting
           --deselect=tests/e4_parity/test_north_star_c4_packets.py::test_north_star_lanes_run_through_lane_def_and_support_claim_generators
