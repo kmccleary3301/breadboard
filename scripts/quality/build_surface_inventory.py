@@ -31,10 +31,8 @@ except ImportError:
 PUBLIC_DIR = ROOT / "contracts" / "public"
 DEFAULT_OUTPUT = PUBLIC_DIR / "surface_inventory.v1.json"
 
-
 def _sha256(path: Path) -> str:
     return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
-
 
 def _cli_commands(root: Path) -> set[str]:
     commands: set[str] = set()
@@ -55,7 +53,6 @@ def _cli_commands(root: Path) -> set[str]:
             commands.add(f"bbh {namespace} {command}")
     return commands
 
-
 def _openapi_operations(root: Path) -> set[tuple[str, str, str]]:
     path = root / "docs" / "contracts" / "cli_bridge" / "openapi.json"
     if not path.is_file():
@@ -67,7 +64,6 @@ def _openapi_operations(root: Path) -> set[tuple[str, str, str]]:
                 if isinstance(operation, dict) and isinstance(operation.get("operationId"), str):
                     found.add((method.upper(), route, operation["operationId"]))
     return found
-
 
 def _binding_manifest(path: Path, fields: tuple[str, ...]) -> set[tuple[str, ...]]:
     if not path.is_file():
@@ -85,10 +81,8 @@ def _binding_manifest(path: Path, fields: tuple[str, ...]) -> set[tuple[str, ...
         found.add(identity)
     return found
 
-
 def _surface_result(detected: bool, present: str, missing: str) -> dict[str, str]:
     return {"evidence": present if detected else missing, "status": "candidate_binding_detected" if detected else "gap"}
-
 
 def build_inventory(root: Path = ROOT) -> dict[str, Any]:
     public_dir = root / "contracts" / "public"
@@ -147,7 +141,6 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
         raise ContractValidationError("invalid generated inventory: " + "; ".join(error.message for error in errors))
     return inventory
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
@@ -164,7 +157,6 @@ def main(argv: list[str] | None = None) -> int:
     args.output.write_bytes(content)
     print(f"wrote candidate surface inventory: {args.output}")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

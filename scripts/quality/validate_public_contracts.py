@@ -20,11 +20,10 @@ KERNEL_SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 SURFACES = ("bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs")
 FROZEN_SHA256 = "sha256:72817b7b1bc5e5d10f752acb48157491aaeb3eb268337461a4fd6f0bd10cbfe0"
 AXIS_MANIFEST_SHA256 = "sha256:dff057633730b1bbb28ebd4fceff3060227f5532b6caabb0f3ed2a325d437db0"
-
+RECORD_ROLE_PROJECTION_SHA256 = "sha256:98e8cf84a312ad4b28f347d89ad3146873e88f290cba9a9295655966661d896b"
 
 class ContractValidationError(ValueError):
     """A candidate public contract violates its frozen contract."""
-
 
 def load_json(path: Path) -> dict[str, Any]:
     try:
@@ -35,14 +34,11 @@ def load_json(path: Path) -> dict[str, Any]:
         raise ContractValidationError(f"{path}: root must be an object")
     return value
 
-
 def canonical_bytes(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
-
 def _sha256(data: bytes) -> str:
     return f"sha256:{hashlib.sha256(data).hexdigest()}"
-
 
 def load_frozen_surface(public_dir: Path = PUBLIC_DIR) -> dict[str, Any]:
     path = public_dir / "frozen_public_surface.v1.json"
@@ -54,10 +50,8 @@ def load_frozen_surface(public_dir: Path = PUBLIC_DIR) -> dict[str, Any]:
         raise ContractValidationError(f"{path}: unexpected frozen contract_id")
     return frozen
 
-
 def frozen_operation_ids(frozen: dict[str, Any]) -> frozenset[str]:
     return frozenset(item for group in frozen["canonical_operations"].values() for item in group)
-
 
 def load_schema(path: Path) -> dict[str, Any]:
     schema = load_json(path)
@@ -66,7 +60,35 @@ def load_schema(path: Path) -> dict[str, Any]:
     except SchemaError as exc:
         raise ContractValidationError(f"{path}: invalid Draft 2020-12 schema: {exc.message}") from exc
     return schema
-
+def sync_record_schemas(public_dir: Path = PUBLIC_DIR, *, write: bool = False) -> None:
+    source_path = public_dir / "record_schemas.v1.json"
+    source = load_json(source_path)
+    if source.get("contract_id") != "bb.public_record_schema_source.v1" or source.get("status") != "candidate":
+        raise ContractValidationError(f"{source_path}: invalid candidate record-schema source")
+    source_bytes = canonical_bytes(source)
+    if source_path.read_bytes() != source_bytes:
+        raise ContractValidationError(f"{source_path}: semantic source must use canonical bytes")
+    source_hash = _sha256(source_bytes)
+    generated_by = "scripts/quality/validate_public_contracts.py --write-record-schemas"
+    expected: set[Path] = set()
+    for schema_id, body in sorted(source["schemas"].items()):
+        path = public_dir / "schemas" / f"{schema_id}.schema.json"
+        schema = {**body, "x-generated-by": generated_by, "x-source-sha256": source_hash}
+        try:
+            Draft202012Validator.check_schema(schema)
+        except SchemaError as exc:
+            raise ContractValidationError(f"{source_path}:{schema_id}: invalid Draft 2020-12 schema: {exc.message}") from exc
+        if schema.get("$id") != f"https://breadboard.dev/contracts/public/schemas/{path.name}":
+            raise ContractValidationError(f"{source_path}:{schema_id}: non-canonical $id")
+        expected.add(path)
+        content = canonical_bytes(schema)
+        if write:
+            path.write_bytes(content)
+        elif not path.is_file() or path.read_bytes() != content:
+            raise ContractValidationError(f"{path}: generated record schema is stale; run --write-record-schemas")
+    extras = {path for path in (public_dir / "schemas").glob("*.schema.json") if load_json(path).get("x-generated-by") == generated_by} - expected
+    if extras:
+        raise ContractValidationError(f"generated record schemas absent from source: {sorted(map(str, extras))}")
 
 def _schema_errors(instance: Any, schema_name: str, schema_dir: Path = SCHEMA_DIR) -> list[str]:
     schema = load_schema(schema_dir / schema_name)
@@ -76,12 +98,10 @@ def _schema_errors(instance: Any, schema_name: str, schema_dir: Path = SCHEMA_DI
         for error in sorted(errors, key=lambda item: (tuple(map(str, item.absolute_path)), item.message))
     ]
 
-
 def _raise_if_errors(errors: Iterable[str]) -> None:
     items = list(errors)
     if items:
         raise ContractValidationError("\n".join(items))
-
 
 def _reject_inline_models(value: Any, path: tuple[str, ...] = ()) -> None:
     if isinstance(value, dict):
@@ -95,7 +115,6 @@ def _reject_inline_models(value: Any, path: tuple[str, ...] = ()) -> None:
     elif isinstance(value, list):
         for index, child in enumerate(value):
             _reject_inline_models(child, (*path, str(index)))
-
 
 def validate_catalog(
     catalog: dict[str, Any], schema_dir: Path = SCHEMA_DIR, frozen: dict[str, Any] | None = None,
@@ -127,7 +146,6 @@ def validate_catalog(
         if by_id[operation_id]["bindings"]["bbh"]["command"] != command:
             raise ContractValidationError(f"{operation_id}.bbh: command differs from frozen example {command}")
 
-
 def _schema_index(schema_dir: Path, kernel_schema_dir: Path) -> dict[str, Path]:
     by_id: dict[str, Path] = {}
     by_uri: dict[str, Path] = {}
@@ -148,7 +166,6 @@ def _schema_index(schema_dir: Path, kernel_schema_dir: Path) -> dict[str, Path]:
                 raise ContractValidationError(f"{path}: duplicate schema identity also declared by {by_id[schema_id]}")
             by_id[schema_id] = path
     return by_id
-
 
 def validate_record_surface(
     record_surface: dict[str, Any], schema_dir: Path = SCHEMA_DIR,
@@ -175,27 +192,31 @@ def validate_record_surface(
     for schema_id in schema_ids:
         if schema_id not in schema_index:
             raise ContractValidationError(f"{schema_id}: schema ID is absent from candidate/kernel roots")
-
+    projection = [{"label": row["label"], "schema_ids": row["schema_ids"]} for row in roles]
+    if _sha256(canonical_bytes(projection)) != RECORD_ROLE_PROJECTION_SHA256:
+        raise ContractValidationError("record role semantic mapping differs from the frozen projection")
 
 def validate_axis_manifest(manifest: dict[str, Any], schema_dir: Path = SCHEMA_DIR) -> None:
     _raise_if_errors(_schema_errors(manifest, "bb.public_axis_smoke_manifest.v1.schema.json", schema_dir))
     if _sha256(canonical_bytes(manifest)) != AXIS_MANIFEST_SHA256:
         raise ContractValidationError("axis smoke manifest differs from the frozen projection hash")
 
-
 def validate_public_contracts(public_dir: Path = PUBLIC_DIR) -> None:
     schema_dir = public_dir / "schemas"
     kernel_schema_dir = public_dir.parent / "kernel" / "schemas"
+    sync_record_schemas(public_dir)
     frozen = load_frozen_surface(public_dir)
     validate_catalog(load_json(public_dir / "operations.v1.json"), schema_dir, frozen)
     validate_record_surface(load_json(public_dir / "record_surface.v1.json"), schema_dir, kernel_schema_dir, frozen)
     validate_axis_manifest(load_json(public_dir / "axis_smoke.v1.json"), schema_dir)
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--public-dir", type=Path, default=PUBLIC_DIR)
+    parser.add_argument("--write-record-schemas", action="store_true")
     args = parser.parse_args(argv)
+    if args.write_record_schemas:
+        sync_record_schemas(args.public_dir, write=True)
     try:
         validate_public_contracts(args.public_dir)
     except ContractValidationError as exc:
@@ -203,7 +224,6 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("public candidate contracts valid: 45 operations, 6 bindings each, non-active")
     return 0
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

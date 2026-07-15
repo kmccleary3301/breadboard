@@ -27,10 +27,8 @@ DEFAULT_MANIFEST = ROOT / "contracts" / "public" / "axis_smoke.v1.json"
 CHECK_TIMEOUT_SECONDS = 180
 MAX_OUTPUT_BYTES = 32 * 1024
 
-
 def _command(argv: list[str]) -> list[str]:
     return [sys.executable, *argv[1:]] if argv and argv[0] == "python" else argv
-
 
 def _stop_group(process: subprocess.Popen[bytes]) -> None:
     for termination_signal in (signal.SIGTERM, signal.SIGKILL):
@@ -42,7 +40,6 @@ def _stop_group(process: subprocess.Popen[bytes]) -> None:
             time.sleep(0.1)
     process.wait()
 
-
 def _run_check(argv: list[str], repo_root: Path) -> dict[str, Any]:
     process = subprocess.Popen(
         _command(argv), cwd=repo_root, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -51,19 +48,24 @@ def _run_check(argv: list[str], repo_root: Path) -> dict[str, Any]:
     assert process.stdout is not None
     selector, retained, truncated = selectors.DefaultSelector(), bytearray(), False
     selector.register(process.stdout, selectors.EVENT_READ)
-    deadline, timed_out = time.monotonic() + CHECK_TIMEOUT_SECONDS, False
-    while selector.get_map():
-        if time.monotonic() >= deadline:
+    deadline, timed_out, pipe_open = time.monotonic() + CHECK_TIMEOUT_SECONDS, False, True
+    while process.poll() is None or pipe_open:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
             timed_out = True
             _stop_group(process)
-            selector.unregister(process.stdout)
-            process.stdout.close()
+            if pipe_open:
+                selector.unregister(process.stdout)
+                process.stdout.close()
             break
-        events = selector.select(0.05)
+        events = selector.select(min(0.05, remaining)) if pipe_open else ()
+        if not pipe_open:
+            time.sleep(min(0.05, remaining))
         for key, _ in events:
             chunk = os.read(key.fd, 8192)
             if not chunk:
                 selector.unregister(key.fileobj)
+                pipe_open = False
                 continue
             available = MAX_OUTPUT_BYTES - len(retained)
             retained.extend(chunk[:max(available, 0)])
@@ -75,7 +77,6 @@ def _run_check(argv: list[str], repo_root: Path) -> dict[str, Any]:
         output += f"\n[output truncated at {MAX_OUTPUT_BYTES} bytes]"
     failure = f"timed out after {CHECK_TIMEOUT_SECONDS} seconds" if timed_out else None
     return {"command": argv, "exit_code": exit_code, "failure": failure, "output": output, "output_truncated": truncated, "status": "passed" if exit_code == 0 else "failed"}
-
 
 def run_axis_smoke(manifest_path: Path = DEFAULT_MANIFEST, repo_root: Path = ROOT, *, execute: bool = True) -> dict[str, Any]:
     manifest = load_json(manifest_path)
@@ -91,7 +92,6 @@ def run_axis_smoke(manifest_path: Path = DEFAULT_MANIFEST, repo_root: Path = ROO
         axis_results.append({"axis_id": axis["id"], "check_ids": axis["check_ids"], "score": None, "status": status})
     return {"assessment": "smoke_only_no_score", "axis_results": axis_results, "checks": check_results, "contract_id": "bb.public_axis_smoke_result.v1", "manifest_sha256": f"sha256:{hashlib.sha256(manifest_path.read_bytes()).hexdigest()}", "passed": execute and all(row["status"] == "passed" for row in check_results.values()), "score_promoted": False, "version": 1}
 
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
@@ -102,7 +102,6 @@ def main(argv: list[str] | None = None) -> int:
     content = canonical_bytes(result)
     args.output.write_bytes(content) if args.output else sys.stdout.buffer.write(content)
     return 0 if args.list or result["passed"] else 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main())
