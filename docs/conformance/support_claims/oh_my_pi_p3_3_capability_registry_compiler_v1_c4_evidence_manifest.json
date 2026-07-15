@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:61f535792c05d4874561e81c76c328236d16a0305555f81e577955d1bba1d2c0"
+      "sha256": "sha256:b47aa57cf3d9b946303b33b1c2f0dba9303b92f30e11b2c813522a96d0092c83"
     },
     {
       "derived_from": [

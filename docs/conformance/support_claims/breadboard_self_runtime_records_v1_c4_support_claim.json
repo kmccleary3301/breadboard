@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "The packet binds freeze row, capture, replay, comparator, secret-scan, parity, ledger row, and prevalidation artifacts under canonical roots; comparator rerun is deterministic over current input hashes.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:22a99e22d3f49718b97246b283667caf19d954e4b6f428f84daf2b2c37e16523",
+  "capture_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:8515d0352fc769e79dcf622311b094828431760e45c7031f72056d6522471dd4",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 12,
-    "segment_hash": "sha256:2197743c92593c03fcd65c4408430849bce837875f3c06359da798e02a41fa5c",
+    "catalog_revision": 13,
+    "segment_hash": "sha256:21438111816b2d33edb5ea542eaf3c5c38944840870053314c98ffde615b57a1",
     "segment_id": "breadboard_self_runtime_records_v1",
-    "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
+    "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
   },
   "claim_id": "breadboard_self_runtime_records_v1_c4_support_claim",
   "claim_semantics": {
@@ -62,7 +62,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json#sha256:af2ea8b0bb9eb578d077e042ab52f736ff380c5dce3c583a3515dfcfbe19a94b",
+  "comparator_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json#sha256:6c90b0d8e88de5df32c8d4a2827e05432d7da0e40c4e759a9e6e117ec5acba36",
   "evidence_manifest_ref": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -89,14 +89,14 @@
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "non_target_accounting",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_e7bfda921c4e30ed#sha256:8051f874dfeefd5a0d44bbaaadd58ff32641e59cb58eac40d4a33269128912ad"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_e7bfda921c4e30ed#sha256:5643f6c5ef743daeaed012f7e3e54182599d4b80333f2a16eb44dc3d565f0677"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4"
   },
   "parity_results_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/parity_results.json#sha256:3d3ed4eae27ec1a3b4dc76bf6ad884e8f6c7f5169c1879ecb409cd2e08c5a2b4",
   "phase_label": "WS-J",
-  "replay_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json#sha256:361b858899fc5a29acc100df6a015e23d634cf001e45e90180c6a36aab371aea",
+  "replay_ref": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json#sha256:9a2a1c377235053ecc53fcaf2a31358d1488724d1a0b51170440c4e21c8e6e2d",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",

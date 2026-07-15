@@ -42,6 +42,7 @@ EXPECTED_CLAIMS = "{expected_claims}"
 
 PINNED_GENERATED_AT_UTC = "2026-07-03T00:00:00Z"
 
+
 @dataclass(frozen=True)
 class Stage:
     """One executable node in the E4 evidence regeneration DAG."""
@@ -97,7 +98,9 @@ class Stage:
             substitutions[EXPECTED_POINTS] = str(expected_points)
             substitutions[EXPECTED_CLAIMS] = str(expected_claims)
         return [
-            substitutions.get(part, python if part in (".venv/bin/python", "python") else part)
+            substitutions.get(
+                part, python if part in (".venv/bin/python", "python") else part
+            )
             for part in self.argv
         ]
 
@@ -125,12 +128,20 @@ def _lane_def_projection_sources(lane_def: dict[str, object]) -> tuple[str, ...]
     return record_builder_source_paths(lane_def, verbatim_only=True)
 
 
-def _lane_def_output_paths(lane_def: dict[str, object], argv: Sequence[str]) -> tuple[str, ...]:
+def _lane_def_output_paths(
+    lane_def: dict[str, object], argv: Sequence[str]
+) -> tuple[str, ...]:
     outputs: list[str] = []
     capture = lane_def.get("capture")
     inputs = capture.get("inputs") if isinstance(capture, dict) else None
-    declared_inputs = frozenset(item for item in inputs if isinstance(item, str)) if isinstance(inputs, list) else frozenset()
-    preserved_sources = declared_inputs | frozenset(_lane_def_projection_sources(lane_def))
+    declared_inputs = (
+        frozenset(item for item in inputs if isinstance(item, str))
+        if isinstance(inputs, list)
+        else frozenset()
+    )
+    preserved_sources = declared_inputs | frozenset(
+        _lane_def_projection_sources(lane_def)
+    )
     normalize = lane_def.get("normalize")
     config = normalize.get("config") if isinstance(normalize, dict) else None
     roles = config.get("roles") if isinstance(config, dict) else None
@@ -151,7 +162,9 @@ def _lane_def_output_paths(lane_def: dict[str, object], argv: Sequence[str]) -> 
     return tuple(dict.fromkeys(outputs))
 
 
-def _lane_def_reverify_reads(lane_def: dict[str, object], argv: Sequence[str]) -> tuple[str, ...]:
+def _lane_def_reverify_reads(
+    lane_def: dict[str, object], argv: Sequence[str]
+) -> tuple[str, ...]:
     reads: list[str] = []
     if len(argv) > 1:
         reads.append(argv[1])
@@ -196,10 +209,16 @@ def _lane_def_reverify_stages(
         previous = stage.stage_id
     return tuple(stages)
 
-LANE_DEFS = load_lane_defs(DEFAULT_LANE_DEF_DIR)
+
+LANE_DEFS = load_lane_defs(DEFAULT_LANE_DEF_DIR, materialize_inputs=False)
 
 
-_CLAIM_DERIVED_LANE_ROLES = ("evidence_manifest", "node_gate", "support_claim", "validator_output")
+_CLAIM_DERIVED_LANE_ROLES = (
+    "evidence_manifest",
+    "node_gate",
+    "support_claim",
+    "validator_output",
+)
 _PRIMITIVE_PROJECTION_LANE_ROLES = (
     "capability_registry",
     "effective_config_graph",
@@ -235,7 +254,6 @@ LANE_DEF_REVERIFY_STAGES = _lane_def_reverify_stages(
 )
 
 
-
 STAGES: tuple[Stage, ...] = (
     Stage(
         stage_id="source_index",
@@ -248,7 +266,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="north_star_proof_packets",
         phase="claims_manifests_node_gates_ws_j",
         label="Regenerate WS-J north-star proof packets through the lane runner.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "north-star", "--stage", "all", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "north-star",
+            "--stage",
+            "all",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("source_index",),
         reads=(
             # Workspace-level tool defs consumed by the self-capture session's agent
@@ -280,14 +308,26 @@ STAGES: tuple[Stage, ...] = (
         label="Safely materialize the tracked Oh-My-Pi source archive for legacy L5/L6 adapters.",
         argv=(PYTHON, "scripts/e4_parity/materialize_source_freeze.py", "--json"),
         depends_on=("scrub_absorbed_validator_refs",),
-        reads=("config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip",),
+        reads=(
+            "config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip",
+        ),
         writes=("../docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest",),
     ),
     Stage(
         stage_id="p3_1_effective_config_graph",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.1 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_1_effective_config_graph_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p3_1_effective_config_graph_compiler",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("materialize_oh_my_pi_source_freeze",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
@@ -299,7 +339,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="p3_2_context_resource_pack",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.2 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_2_context_resource_pack_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p3_2_context_resource_pack_compiler",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("p3_1_effective_config_graph",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
@@ -311,7 +361,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="p3_3_capability_registry",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.3 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_3_capability_registry_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p3_3_capability_registry_compiler",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("p3_2_context_resource_pack",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
@@ -323,7 +383,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="p3_4_extension_hook_execution",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.4 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_4_extension_hook_execution_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p3_4_extension_hook_execution_compiler",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("p3_3_capability_registry",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
@@ -335,7 +405,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="p3_5_resource_blob",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.5 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_5_resource_blob_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p3_5_resource_blob_compiler",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("p3_4_extension_hook_execution",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
@@ -347,7 +427,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="p3_6_protocol_provider_policy",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.6 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_6_protocol_provider_policy_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p3_6_protocol_provider_policy_compiler",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("p3_5_resource_blob",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
@@ -359,7 +449,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="p3_7_memory_work",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.7 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_7_memory_work_compiler", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p3_7_memory_work_compiler",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("p3_6_protocol_provider_policy",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
@@ -371,7 +471,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="p3_8_projection_broker",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.8 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p3_8_projection_broker_adapter", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p3_8_projection_broker_adapter",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("p3_7_memory_work",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
@@ -383,7 +493,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="pi_p5_cli_config_context_tool_surface",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate Pi P5 L1 CLI/config/context/tool-surface through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "pi_p5_l1_cli_config_context_tool_surface", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "pi_p5_l1_cli_config_context_tool_surface",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("p3_8_projection_broker",),
         writes=(
             "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
@@ -395,7 +515,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="pi_p5_extension_session_residual",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate Pi P5 residual extension/session through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "pi_p5_l2_extension_session_residual", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "pi_p5_l2_extension_session_residual",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("pi_p5_cli_config_context_tool_surface",),
         writes=(
             "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
@@ -407,7 +537,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="oh_my_pi_l5_memory_compaction",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate Oh-My-Pi P6 L5 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p6_0_l5_memory_compaction", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p6_0_l5_memory_compaction",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("pi_p5_extension_session_residual",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
@@ -419,7 +559,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="oh_my_pi_l6_tui_projection",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate Oh-My-Pi P6 L6 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p6_0_l6_tui_projection", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p6_0_l6_tui_projection",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("oh_my_pi_l5_memory_compaction",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
@@ -454,7 +604,17 @@ STAGES: tuple[Stage, ...] = (
         stage_id="oh_my_pi_p66_task_job_subagent",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate Oh-My-Pi P6.6 through lane_def v2 capture adapter.",
-        argv=(PYTHON, "scripts/e4_parity/run_lane.py", "--lane", "oh_my_pi_p6_6_task_job_subagent", "--stage", "capture", "--promote-accepted", "--defer-promotion-refresh", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/run_lane.py",
+            "--lane",
+            "oh_my_pi_p6_6_task_job_subagent",
+            "--stage",
+            "capture",
+            "--promote-accepted",
+            "--defer-promotion-refresh",
+            "--json",
+        ),
         depends_on=("materialize_oh_my_pi_p66_lane_lock",),
         writes=(
             "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent",
@@ -496,7 +656,10 @@ STAGES: tuple[Stage, ...] = (
         label="Build the stable catalog after every regenerable lane capture.",
         argv=_catalog_argv(
             "docs/conformance/e4_artifact_catalog_stable_snapshot.json",
-            excluded_lane_roles=(*_CLAIM_DERIVED_LANE_ROLES, *_PRIMITIVE_PROJECTION_LANE_ROLES),
+            excluded_lane_roles=(
+                *_CLAIM_DERIVED_LANE_ROLES,
+                *_PRIMITIVE_PROJECTION_LANE_ROLES,
+            ),
             referenced_static_only=True,
         ),
         depends_on=("ledger_report",),
@@ -528,7 +691,12 @@ STAGES: tuple[Stage, ...] = (
         stage_id="support_claim_generation",
         phase="support_claim_generation",
         label="Generate support claims and manifests in manifest-to-claim order.",
-        argv=(PYTHON, "scripts/e4_parity/generate_support_claims.py", "--defer-node-gates", "--json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/generate_support_claims.py",
+            "--defer-node-gates",
+            "--json",
+        ),
         depends_on=("catalog_claim_binding_snapshot",),
         writes=(
             "docs/conformance/support_claims/*_support_claim.json",
@@ -547,7 +715,11 @@ STAGES: tuple[Stage, ...] = (
             referenced_static_only=True,
         ),
         depends_on=(
-            (LANE_DEF_REVERIFY_STAGES[-1].stage_id if LANE_DEF_REVERIFY_STAGES else "support_claim_generation"),
+            (
+                LANE_DEF_REVERIFY_STAGES[-1].stage_id
+                if LANE_DEF_REVERIFY_STAGES
+                else "support_claim_generation"
+            ),
         ),
         writes=("docs/conformance/e4_artifact_catalog_full_snapshot.json",),
     ),
@@ -628,7 +800,14 @@ STAGES: tuple[Stage, ...] = (
         stage_id="catalog_post_report_snapshot",
         phase="catalog_full",
         label="Refresh the full artifact catalog after report-generation stages update claim-layer report hashes.",
-        argv=(PYTHON, "scripts/e4_parity/build_artifact_catalog.py", "--schema-version", "v2", "--output", "docs/conformance/e4_artifact_catalog_post_report_snapshot.json"),
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/build_artifact_catalog.py",
+            "--schema-version",
+            "v2",
+            "--output",
+            "docs/conformance/e4_artifact_catalog_post_report_snapshot.json",
+        ),
         depends_on=("final_readiness_packet",),
         writes=("docs/conformance/e4_artifact_catalog_post_report_snapshot.json",),
     ),
@@ -675,7 +854,11 @@ _PRIMITIVE_PROJECTION_OUTPUT_PREFIX = "artifacts/conformance/e4_primitive_projec
 def _reverify_argv(lane_def: dict[str, object]) -> tuple[str, ...]:
     command = lane_def.get("reverify_command")
     argv = command.get("argv") if isinstance(command, dict) else None
-    return tuple(argv) if isinstance(argv, list) and all(isinstance(item, str) for item in argv) else ()
+    return (
+        tuple(argv)
+        if isinstance(argv, list) and all(isinstance(item, str) for item in argv)
+        else ()
+    )
 
 
 def _lane_defs_for_stage(stage: Stage) -> tuple[dict[str, object], ...]:
@@ -690,7 +873,8 @@ def _lane_defs_for_stage(stage: Stage) -> tuple[dict[str, object], ...]:
             lane_def
             for lane_def in LANE_DEFS.values()
             if isinstance(lane_def.get("compare"), dict)
-            and lane_def["compare"].get("comparator") == "north_star_stored_report_replay"
+            and lane_def["compare"].get("comparator")
+            == "north_star_stored_report_replay"
         )
     lane_def = LANE_DEFS.get(str(lane_id))
     return (lane_def,) if lane_def is not None else ()
@@ -746,7 +930,11 @@ def _lane_capture_writes(stage: Stage) -> tuple[str, ...] | None:
             output
             for output in _lane_def_output_paths(lane_def, _reverify_argv(lane_def))
             if not output.startswith(
-                (_CLAIM_OUTPUT_PREFIX, _NODE_GATE_OUTPUT_PREFIX, _PRIMITIVE_PROJECTION_OUTPUT_PREFIX)
+                (
+                    _CLAIM_OUTPUT_PREFIX,
+                    _NODE_GATE_OUTPUT_PREFIX,
+                    _PRIMITIVE_PROJECTION_OUTPUT_PREFIX,
+                )
             )
         )
         if outputs:
@@ -793,7 +981,10 @@ def _workspace_display_path(value: str) -> str:
 
 def _catalog_static_reads() -> tuple[str, ...]:
     report_roles_path = ROOT / "docs" / "conformance" / "e4_report_roles.json"
-    reads = ["docs/conformance/e4_lane_inventory.json", "docs/conformance/e4_report_roles.json"]
+    reads = [
+        "docs/conformance/e4_lane_inventory.json",
+        "docs/conformance/e4_report_roles.json",
+    ]
     try:
         report_roles = json.loads(report_roles_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -808,7 +999,9 @@ def _catalog_static_reads() -> tuple[str, ...]:
 
 def _stage_reads(stage: Stage, previous: dict[str, Stage]) -> tuple[str, ...]:
     reads: list[str] = list(stage.reads)
-    reads.extend(value for value in _argv_declared_paths(stage.argv) if value not in stage.writes)
+    reads.extend(
+        value for value in _argv_declared_paths(stage.argv) if value not in stage.writes
+    )
     reads.extend(_lane_capture_reads(stage))
     if stage.argv[1:2] == ("scripts/e4_parity/build_artifact_catalog.py",):
         reads.extend(_catalog_static_reads())
@@ -872,7 +1065,14 @@ def _expanded_write_targets(value: str) -> frozenset[str]:
     path = base / relative
     if path.is_dir():
         return frozenset(
-            (value, *(_display_write_path(candidate) for candidate in path.rglob("*") if candidate.is_file()))
+            (
+                value,
+                *(
+                    _display_write_path(candidate)
+                    for candidate in path.rglob("*")
+                    if candidate.is_file()
+                ),
+            )
         )
     return frozenset((value,))
 
@@ -885,8 +1085,6 @@ def _write_patterns_overlap(left: str, right: str) -> bool:
     if not _is_glob(left) and not _is_glob(right):
         return left == right
     return fnmatch.fnmatchcase(left, right) or fnmatch.fnmatchcase(right, left)
-
-
 
 
 def _lane_capture_outputs(stages: Sequence[Stage]) -> tuple[tuple[str, str], ...]:
@@ -905,18 +1103,28 @@ def validate_stage_graph(stages: Sequence[Stage] = STAGES) -> None:
             raise ValueError(f"duplicate stage id: {stage.stage_id}")
         missing_or_late = [dep for dep in stage.depends_on if dep not in seen]
         if missing_or_late:
-            raise ValueError(f"stage {stage.stage_id} depends on missing or later stages: {missing_or_late}")
+            raise ValueError(
+                f"stage {stage.stage_id} depends on missing or later stages: {missing_or_late}"
+            )
         seen.add(stage.stage_id)
     write_owners: list[tuple[str, str]] = []
     for stage in stages:
         if not stage.writes and not stage.read_only:
-            raise ValueError(f"stage {stage.stage_id} declares no writes but is not read_only")
+            raise ValueError(
+                f"stage {stage.stage_id} declares no writes but is not read_only"
+            )
         if stage.read_only and stage.writes:
-            raise ValueError(f"read_only stage {stage.stage_id} must not declare writes")
+            raise ValueError(
+                f"read_only stage {stage.stage_id} must not declare writes"
+            )
         for write in stage.writes:
             for owner, owned_write in write_owners:
-                if owner != stage.stage_id and _write_patterns_overlap(write, owned_write):
-                    raise ValueError(f"write path {write} is declared by both {owner} and {stage.stage_id}")
+                if owner != stage.stage_id and _write_patterns_overlap(
+                    write, owned_write
+                ):
+                    raise ValueError(
+                        f"write path {write} is declared by both {owner} and {stage.stage_id}"
+                    )
             write_owners.append((stage.stage_id, write))
     if stages is STAGES:
         for capture_stage_id, output in _lane_capture_outputs(stages):
@@ -930,12 +1138,29 @@ def validate_stage_graph(stages: Sequence[Stage] = STAGES) -> None:
                     f"lane capture output {output} from {capture_stage_id} must have exactly one declared owner; "
                     f"found {sorted(owners)}"
                 )
-        catalog_stages = [stage for stage in stages if stage.argv[1:2] == ("scripts/e4_parity/build_artifact_catalog.py",)]
-        if [stage.stage_id for stage in catalog_stages] != ["catalog_stable_snapshot", "catalog_claim_binding_snapshot", "catalog_full", "catalog_post_report_snapshot"]:
-            raise ValueError("regeneration DAG must include stable, claim-binding, full, and post-report catalog stages")
-        claim_stages = [stage for stage in stages if stage.argv[1:2] == ("scripts/e4_parity/generate_support_claims.py",)]
+        catalog_stages = [
+            stage
+            for stage in stages
+            if stage.argv[1:2] == ("scripts/e4_parity/build_artifact_catalog.py",)
+        ]
+        if [stage.stage_id for stage in catalog_stages] != [
+            "catalog_stable_snapshot",
+            "catalog_claim_binding_snapshot",
+            "catalog_full",
+            "catalog_post_report_snapshot",
+        ]:
+            raise ValueError(
+                "regeneration DAG must include stable, claim-binding, full, and post-report catalog stages"
+            )
+        claim_stages = [
+            stage
+            for stage in stages
+            if stage.argv[1:2] == ("scripts/e4_parity/generate_support_claims.py",)
+        ]
         if [stage.stage_id for stage in claim_stages] != ["support_claim_generation"]:
-            raise ValueError("regeneration DAG must include support_claim_generation stage")
+            raise ValueError(
+                "regeneration DAG must include support_claim_generation stage"
+            )
     phases = [stage.phase for stage in stages]
     if "validators" in phases and phases.index("validators") < phases.index("reports"):
         raise ValueError("validator stages must not precede report stages")
@@ -958,7 +1183,9 @@ def _plan_invariants() -> list[str]:
     ]
 
 
-def plan_dict(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable) -> dict[str, object]:
+def plan_dict(
+    stages: Sequence[Stage] = STAGES, *, python: str = sys.executable
+) -> dict[str, object]:
     generated_stage_count = _generated_stage_count(stages)
     return {
         "schema_version": "bb.e4.regen_plan.v1",
@@ -980,9 +1207,13 @@ def plan_dict(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable)
     }
 
 
-def print_explain(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable) -> None:
+def print_explain(
+    stages: Sequence[Stage] = STAGES, *, python: str = sys.executable
+) -> None:
     print("E4 evidence regeneration DAG")
-    print("Topological order: immutable ledger bootstrap + source index -> lane captures -> ledger -> ledger report -> catalog_stable_snapshot -> legacy generators -> support_claim_generation -> lane reverify -> catalog_full -> reports -> catalog_post_report_snapshot -> validators")
+    print(
+        "Topological order: immutable ledger bootstrap + source index -> lane captures -> ledger -> ledger report -> catalog_stable_snapshot -> legacy generators -> support_claim_generation -> lane reverify -> catalog_full -> reports -> catalog_post_report_snapshot -> validators"
+    )
     for index, stage in enumerate(stages, start=1):
         deps = ", ".join(stage.depends_on) if stage.depends_on else "<root>"
         print(f"{index:02d}. {stage.stage_id} [{stage.phase}]")
@@ -1010,7 +1241,6 @@ class StageResult:
     duration_seconds: float
 
 
-
 def _json_object_from_output(text: str) -> dict[str, object] | None:
     stripped = text.strip()
     if not stripped.startswith("{"):
@@ -1023,7 +1253,9 @@ def _json_object_from_output(text: str) -> dict[str, object] | None:
 
 
 def _gate_error_bullets(result: StageResult) -> list[str]:
-    payload = _json_object_from_output(result.stdout) or _json_object_from_output(result.stderr)
+    payload = _json_object_from_output(result.stdout) or _json_object_from_output(
+        result.stderr
+    )
     gate_errors = payload.get("gate_errors") if isinstance(payload, dict) else None
     if not isinstance(gate_errors, list):
         return []
@@ -1039,7 +1271,6 @@ def _gate_error_bullets(result: StageResult) -> list[str]:
     return bullets
 
 
-
 def _run_stage_sequence(
     stages: Sequence[Stage],
     *,
@@ -1051,7 +1282,10 @@ def _run_stage_sequence(
     blocked_exit_code: int | None = None
     for stage in stages:
         if blocked_exit_code is not None and stage.phase == "validators":
-            print("STOPPING before validators because an earlier report stage is fail-closed", file=sys.stderr)
+            print(
+                "STOPPING before validators because an earlier report stage is fail-closed",
+                file=sys.stderr,
+            )
             return blocked_exit_code, results
         argv = stage.expanded_argv(
             python,
@@ -1069,7 +1303,9 @@ def _run_stage_sequence(
         )
         if workspace_root is not None:
             env["BB_WORKSPACE_ROOT"] = str(workspace_root)
-        completed = subprocess.run(argv, cwd=execution_root, text=True, capture_output=True, env=env)
+        completed = subprocess.run(
+            argv, cwd=execution_root, text=True, capture_output=True, env=env
+        )
         duration_seconds = round(time.perf_counter() - start, 6)
         result = StageResult(
             stage_id=stage.stage_id,
@@ -1083,7 +1319,11 @@ def _run_stage_sequence(
         if result.stdout:
             print(result.stdout, end="" if result.stdout.endswith("\n") else "\n")
         if result.stderr:
-            print(result.stderr, end="" if result.stderr.endswith("\n") else "\n", file=sys.stderr)
+            print(
+                result.stderr,
+                end="" if result.stderr.endswith("\n") else "\n",
+                file=sys.stderr,
+            )
         print(
             f"<== {stage.stage_id}: exit={result.returncode} "
             f"duration_seconds={result.duration_seconds:.3f}",
@@ -1092,13 +1332,19 @@ def _run_stage_sequence(
         if result.returncode != 0:
             if result.returncode in stage.allowed_exit_codes:
                 blocked_exit_code = blocked_exit_code or result.returncode
-                print(f"CONTINUING blocked stage {stage.stage_id} exit={result.returncode}", file=sys.stderr)
+                print(
+                    f"CONTINUING blocked stage {stage.stage_id} exit={result.returncode}",
+                    file=sys.stderr,
+                )
                 if stage.blocker:
                     print(f"BLOCKER: {stage.blocker}", file=sys.stderr)
                 for bullet in _gate_error_bullets(result):
                     print(f"GATE_ERROR {bullet}", file=sys.stderr)
                 continue
-            print(f"FAILED stage {stage.stage_id} exit={result.returncode}", file=sys.stderr)
+            print(
+                f"FAILED stage {stage.stage_id} exit={result.returncode}",
+                file=sys.stderr,
+            )
             if stage.blocker:
                 print(f"BLOCKER: {stage.blocker}", file=sys.stderr)
             for bullet in _gate_error_bullets(result):
@@ -1135,7 +1381,9 @@ def _copy_path(
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(resolved_target, destination)
             else:
-                raise FileNotFoundError(f"candidate symlink target does not exist: {source}")
+                raise FileNotFoundError(
+                    f"candidate symlink target does not exist: {source}"
+                )
             return
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.symlink_to(target)
@@ -1154,8 +1402,6 @@ def _candidate_path(candidate_root: Path, accepted_path: Path) -> Path:
         return candidate_root / accepted_absolute.relative_to(root_absolute)
     except ValueError:
         return candidate_root.parent / accepted_absolute.relative_to(workspace_absolute)
-
-
 
 
 def _tracked_checkout_paths() -> tuple[tuple[str, str, Path], ...]:
@@ -1207,8 +1453,6 @@ def _copy_tracked_checkout(candidate_root: Path) -> None:
             raise RuntimeError(f"unsupported tracked mode {mode}: {relative_path}")
 
 
-
-
 def _prepare_candidate_root(candidate_root: Path, stages: Sequence[Stage]) -> None:
     """Materialize exactly the staged checkout plus its verified immutable inputs."""
 
@@ -1223,12 +1467,11 @@ def _prepare_candidate_root(candidate_root: Path, stages: Sequence[Stage]) -> No
     if not any(_lane_defs_for_stage(stage) for stage in stages):
         return
 
-    bootstrap = (
-        bundle_root
-        / "e4_regen_bootstrap/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
-    )
+    bootstrap = bundle_root / "e4_regen_bootstrap/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
     if not bootstrap.is_file():
-        raise FileNotFoundError(f"missing immutable regeneration bootstrap input: {bootstrap}")
+        raise FileNotFoundError(
+            f"missing immutable regeneration bootstrap input: {bootstrap}"
+        )
     _copy_path(
         bootstrap,
         candidate_root.parent
@@ -1248,7 +1491,6 @@ def _accepted_path(candidate_root: Path, candidate_path: Path) -> Path:
         return WORKSPACE / candidate_absolute.relative_to(workspace_absolute)
 
 
-
 def _write_set_entries(
     candidate_root: Path,
     stages: Sequence[Stage],
@@ -1260,19 +1502,28 @@ def _write_set_entries(
         candidate_pattern = candidate_root / pattern
         accepted_pattern = ROOT / pattern
         if _is_glob(pattern):
-            candidate_matches = set(candidate_pattern.parent.glob(candidate_pattern.name))
+            candidate_matches = set(
+                candidate_pattern.parent.glob(candidate_pattern.name)
+            )
             accepted_matches = set(accepted_pattern.parent.glob(accepted_pattern.name))
             for source in candidate_matches:
                 destination = _accepted_path(candidate_root, source)
                 entries[destination] = source
             for destination in accepted_matches:
                 candidate = _candidate_path(candidate_root, destination)
-                entries.setdefault(destination, candidate if candidate.exists() else None)
+                entries.setdefault(
+                    destination, candidate if candidate.exists() else None
+                )
             continue
         source = candidate_pattern
         destination = accepted_pattern
         entries[destination] = source if source.exists() else None
-    return [(source, destination) for destination, source in sorted(entries.items(), key=lambda item: str(item[0]))]
+    return [
+        (source, destination)
+        for destination, source in sorted(
+            entries.items(), key=lambda item: str(item[0])
+        )
+    ]
 
 
 def _remove_path(path: Path) -> None:
@@ -1338,7 +1589,9 @@ def _run_regeneration_transaction(
     python: str = sys.executable,
 ) -> tuple[int, list[StageResult]]:
     results: list[StageResult] = []
-    with tempfile.TemporaryDirectory(prefix=".e4-candidate-", dir=WORKSPACE) as temp_name:
+    with tempfile.TemporaryDirectory(
+        prefix=".e4-candidate-", dir=WORKSPACE
+    ) as temp_name:
         candidate_root = Path(temp_name) / "repo"
         _prepare_candidate_root(candidate_root, candidate_stages)
         candidate_code, candidate_results = _run_stage_sequence(
@@ -1351,7 +1604,9 @@ def _run_regeneration_transaction(
         if candidate_code != 0:
             return candidate_code, results
 
-        with tempfile.TemporaryDirectory(prefix=".e4-promotion-", dir=WORKSPACE) as promotion_name:
+        with tempfile.TemporaryDirectory(
+            prefix=".e4-promotion-", dir=WORKSPACE
+        ) as promotion_name:
             try:
                 applied = _promote_write_set(
                     candidate_root,
@@ -1402,15 +1657,21 @@ def _canonical_transaction_groups(
 ) -> tuple[tuple[Stage, ...], tuple[Stage, ...], tuple[Stage, ...]]:
     candidate_stages = tuple(_candidate_stage(stage) for stage in stages)
     rebind_start = next(
-        index for index, stage in enumerate(stages) if stage.stage_id == "catalog_claim_binding_snapshot"
+        index
+        for index, stage in enumerate(stages)
+        if stage.stage_id == "catalog_claim_binding_snapshot"
     )
-    final_start = next(index for index, stage in enumerate(stages) if stage.phase == "validators")
+    final_start = next(
+        index for index, stage in enumerate(stages) if stage.phase == "validators"
+    )
     canonical_rebind_stages = tuple(stages[rebind_start:final_start])
     final_c4_stages = tuple(stages[final_start:])
     return candidate_stages, canonical_rebind_stages, final_c4_stages
 
 
-def run_pipeline(stages: Sequence[Stage] = STAGES, *, python: str = sys.executable) -> tuple[int, list[StageResult]]:
+def run_pipeline(
+    stages: Sequence[Stage] = STAGES, *, python: str = sys.executable
+) -> tuple[int, list[StageResult]]:
     validate_stage_graph(stages)
     stage_ids = {stage.stage_id for stage in stages}
     if {

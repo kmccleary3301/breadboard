@@ -51,10 +51,10 @@
       "sha256": "sha256:a258ee8b9258130a32dbe1bb4787592ed27ea16904102eb83325e5956af6cb1a"
     },
     {
-      "bytes": 63864,
+      "bytes": 67096,
       "path": "scripts/e4_parity/regenerate_evidence.py",
       "role_id": "e4_static:script/regenerate_evidence",
-      "sha256": "sha256:776c5c592cc45bc88ac7e1529f6ce1741e593b3597c7718dc55150dde7952aea"
+      "sha256": "sha256:0681488efd34322473c5ca2c293d322588a7d4498c212cf5128122fe08179350"
     },
     {
       "bytes": 7594,

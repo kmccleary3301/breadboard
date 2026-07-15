@@ -11,7 +11,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "breadboard_self_runtime_records_v1:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -29,7 +29,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json",
       "role_id": "breadboard_self_runtime_records_v1:capture",
-      "sha256": "sha256:22a99e22d3f49718b97246b283667caf19d954e4b6f428f84daf2b2c37e16523"
+      "sha256": "sha256:8515d0352fc769e79dcf622311b094828431760e45c7031f72056d6522471dd4"
     },
     {
       "artifact_kind": "comparator",
@@ -45,7 +45,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json",
       "role_id": "breadboard_self_runtime_records_v1:comparator",
-      "sha256": "sha256:af2ea8b0bb9eb578d077e042ab52f736ff380c5dce3c583a3515dfcfbe19a94b"
+      "sha256": "sha256:6c90b0d8e88de5df32c8d4a2827e05432d7da0e40c4e759a9e6e117ec5acba36"
     },
     {
       "artifact_kind": "freeze",
@@ -110,7 +110,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json",
       "role_id": "breadboard_self_runtime_records_v1:replay",
-      "sha256": "sha256:361b858899fc5a29acc100df6a015e23d634cf001e45e90180c6a36aab371aea"
+      "sha256": "sha256:9a2a1c377235053ecc53fcaf2a31358d1488724d1a0b51170440c4e21c8e6e2d"
     },
     {
       "artifact_kind": "secret_scan",
@@ -158,7 +158,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json",
       "role_id": "breadboard_self_runtime_records_v1:target_probe_output",
-      "sha256": "sha256:644e7bf9b4a91b12db60d5dd7ba0df3505e31bd9d18af44f346d11b8a4ae427f"
+      "sha256": "sha256:40a66641b1850f63f1ca3362dea39cbd77a482e43b9d58ee57ed71ad612a272e"
     },
     {
       "artifact_kind": "ledger",
@@ -170,7 +170,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "claude_code_north_star_capture_v1:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -290,7 +290,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "codex_cli_e4_capture_probe_v1:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -480,7 +480,7 @@
       "media_type": "application/json",
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "e4_static:report/bb_e4_atomic_feature_ledger_seed_json",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "config",
@@ -1524,7 +1524,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -1615,7 +1615,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -1706,7 +1706,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -1797,7 +1797,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -1888,7 +1888,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -2019,7 +2019,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -2323,7 +2323,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "opencode_north_star_capture_v1:atomic_feature_ledger",
-      "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
     },
     {
       "artifact_kind": "capture",
@@ -2740,31 +2740,31 @@
   ],
   "generated_at_utc": "2026-07-03T00:00:00Z",
   "integrity": {
-    "entries_hash": "sha256:d76ca5e6c3d483eb047734d1e37f46e954f9904481154d78611e4138679f8a21",
+    "entries_hash": "sha256:a1a9ca3612cf90d5a6ffe6c8949619b6b83a635257be453cf53b629b12d870b4",
     "entry_count": 211,
-    "segments_hash": "sha256:d543f661e8d75a07e2f2b30d04e47bd816b404221e6dee1611d84bebc1fe114c",
-    "stable_entries_hash": "sha256:d76ca5e6c3d483eb047734d1e37f46e954f9904481154d78611e4138679f8a21"
+    "segments_hash": "sha256:81542204070187f0cf10a14847f1344d1f1fd40a4b2781364bc2b3411948edb9",
+    "stable_entries_hash": "sha256:a1a9ca3612cf90d5a6ffe6c8949619b6b83a635257be453cf53b629b12d870b4"
   },
-  "revision": 12,
+  "revision": 13,
   "schema_version": "bb.e4.artifact_catalog.v2",
   "segments": [
     {
-      "entries_hash": "sha256:2197743c92593c03fcd65c4408430849bce837875f3c06359da798e02a41fa5c",
+      "entries_hash": "sha256:21438111816b2d33edb5ea542eaf3c5c38944840870053314c98ffde615b57a1",
       "entry_count": 12,
       "segment_id": "breadboard_self_runtime_records_v1",
-      "stable_entries_hash": "sha256:2197743c92593c03fcd65c4408430849bce837875f3c06359da798e02a41fa5c"
+      "stable_entries_hash": "sha256:21438111816b2d33edb5ea542eaf3c5c38944840870053314c98ffde615b57a1"
     },
     {
-      "entries_hash": "sha256:222b818a80e1ff614631b97af1e8d48686a1e04062b2df4fd60e53d8739e7911",
+      "entries_hash": "sha256:008ee9df97fbb3e2ffb4e7bf2f7c0ae2b448fe010f40eace8e1215e29920ac0e",
       "entry_count": 9,
       "segment_id": "claude_code_north_star_capture_v1",
-      "stable_entries_hash": "sha256:222b818a80e1ff614631b97af1e8d48686a1e04062b2df4fd60e53d8739e7911"
+      "stable_entries_hash": "sha256:008ee9df97fbb3e2ffb4e7bf2f7c0ae2b448fe010f40eace8e1215e29920ac0e"
     },
     {
-      "entries_hash": "sha256:e4deb8df991acf68eb57aff8aba40877523fdd45f93efc8acbb81ff68d57f7b0",
+      "entries_hash": "sha256:549a2a1af732bfdae2579752dbbd1fee6060a229d75042ded14535046da6a6cf",
       "entry_count": 13,
       "segment_id": "codex_cli_e4_capture_probe_v1",
-      "stable_entries_hash": "sha256:e4deb8df991acf68eb57aff8aba40877523fdd45f93efc8acbb81ff68d57f7b0"
+      "stable_entries_hash": "sha256:549a2a1af732bfdae2579752dbbd1fee6060a229d75042ded14535046da6a6cf"
     },
     {
       "entries_hash": "sha256:82c812a11846c37cf8fb17de6cd3eb78a489528709cb8b7470fef60030b4da11",
@@ -2815,40 +2815,40 @@
       "stable_entries_hash": "sha256:bc4ff56fee0f2757b6d0815269f08690550633ae775b9caf36881c32801350cc"
     },
     {
-      "entries_hash": "sha256:01320abf272a3671e276c50e4a81d5e2d39aacfccfdc3d07c387652387a5ec44",
+      "entries_hash": "sha256:7e264169e9a95f270bad69792d5c6bf835ed3554c36d8489d81e024757d4487a",
       "entry_count": 7,
       "segment_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
-      "stable_entries_hash": "sha256:01320abf272a3671e276c50e4a81d5e2d39aacfccfdc3d07c387652387a5ec44"
+      "stable_entries_hash": "sha256:7e264169e9a95f270bad69792d5c6bf835ed3554c36d8489d81e024757d4487a"
     },
     {
-      "entries_hash": "sha256:6d521f4b71118d1cd3d9d230b2abae6b73b8216c9cc29a5ff83e51e69682fd78",
+      "entries_hash": "sha256:197b60e70637b6791a2a4a9399af1d6feafe976a570de4a0d21851466103d370",
       "entry_count": 7,
       "segment_id": "oh_my_pi_p6_0_l2_tool_execution",
-      "stable_entries_hash": "sha256:6d521f4b71118d1cd3d9d230b2abae6b73b8216c9cc29a5ff83e51e69682fd78"
+      "stable_entries_hash": "sha256:197b60e70637b6791a2a4a9399af1d6feafe976a570de4a0d21851466103d370"
     },
     {
-      "entries_hash": "sha256:c1d677530050ebcdebb4243cf46253a4b4b353d67d2fcdb70d4977f653cbd8e2",
+      "entries_hash": "sha256:a625791947007fa3cc99f592421476f93f924603e9c68e7135dbd927a5833ba4",
       "entry_count": 7,
       "segment_id": "oh_my_pi_p6_0_l3_command_network_hook",
-      "stable_entries_hash": "sha256:c1d677530050ebcdebb4243cf46253a4b4b353d67d2fcdb70d4977f653cbd8e2"
+      "stable_entries_hash": "sha256:a625791947007fa3cc99f592421476f93f924603e9c68e7135dbd927a5833ba4"
     },
     {
-      "entries_hash": "sha256:4c70f089133e2b6f038226ce6f03c35b0ec638e13c2c5699c228a2b38c8e818e",
+      "entries_hash": "sha256:bf6df7d059749b2bd0c5287782613dac73a93aee8065792260a03e063ccb20b8",
       "entry_count": 7,
       "segment_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
-      "stable_entries_hash": "sha256:4c70f089133e2b6f038226ce6f03c35b0ec638e13c2c5699c228a2b38c8e818e"
+      "stable_entries_hash": "sha256:bf6df7d059749b2bd0c5287782613dac73a93aee8065792260a03e063ccb20b8"
     },
     {
-      "entries_hash": "sha256:5115581f4b8653dc55828651d8fe4f611aab33fab4b75a2226146c1e97fc03a6",
+      "entries_hash": "sha256:c6d9c145a39fcc60d3f8811aa36831dc7cfb44f2d5688db5c670c966ea185d24",
       "entry_count": 10,
       "segment_id": "oh_my_pi_p6_0_l5_memory_compaction",
-      "stable_entries_hash": "sha256:5115581f4b8653dc55828651d8fe4f611aab33fab4b75a2226146c1e97fc03a6"
+      "stable_entries_hash": "sha256:c6d9c145a39fcc60d3f8811aa36831dc7cfb44f2d5688db5c670c966ea185d24"
     },
     {
-      "entries_hash": "sha256:3a78af15d0aa9b85c031ea2d372a452c8a60f420161c377587a74974ad94fde3",
+      "entries_hash": "sha256:fc87c556a43efe851e324752f8fd05d1ae26b3f3770436cde09142431803b509",
       "entry_count": 8,
       "segment_id": "oh_my_pi_p6_0_l6_tui_projection",
-      "stable_entries_hash": "sha256:3a78af15d0aa9b85c031ea2d372a452c8a60f420161c377587a74974ad94fde3"
+      "stable_entries_hash": "sha256:fc87c556a43efe851e324752f8fd05d1ae26b3f3770436cde09142431803b509"
     },
     {
       "entries_hash": "sha256:f75fc511e99a1b81e0ab1dac50b7c6cf3d386f26fd77f2900b2d6ce93ec4a186",
@@ -2857,10 +2857,10 @@
       "stable_entries_hash": "sha256:f75fc511e99a1b81e0ab1dac50b7c6cf3d386f26fd77f2900b2d6ce93ec4a186"
     },
     {
-      "entries_hash": "sha256:4337d140cf567417b257836629d47c85b946d681bc0c6a527757963b66d91130",
+      "entries_hash": "sha256:e12f25fa4a9667b51952366c034f5efd41d9f59fb502e0aabde8fe1455cb5b83",
       "entry_count": 9,
       "segment_id": "opencode_north_star_capture_v1",
-      "stable_entries_hash": "sha256:4337d140cf567417b257836629d47c85b946d681bc0c6a527757963b66d91130"
+      "stable_entries_hash": "sha256:e12f25fa4a9667b51952366c034f5efd41d9f59fb502e0aabde8fe1455cb5b83"
     },
     {
       "entries_hash": "sha256:f6728a024aefe55e3456dcdc6eb8c142505ab0887612bee12e2a7505a96c9e9d",
@@ -2875,10 +2875,10 @@
       "stable_entries_hash": "sha256:5d183f71524302dac5164fd28d3b85cf497ec0c7df15e7d368bfd0d9f00e0176"
     },
     {
-      "entries_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8",
+      "entries_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1",
       "entry_count": 3,
       "segment_id": "shared",
-      "stable_entries_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
+      "stable_entries_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
     }
   ]
 }

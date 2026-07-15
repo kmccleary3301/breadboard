@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:102001c4033ca8880ecbcae73d3af76d177acbbad3924510da3d3bc795723554"
+      "sha256": "sha256:61d79c9f40c7d38095ba6c2b735dafeb3f65426f1fec649eed9d24537eb23136"
     },
     {
       "derived_from": [

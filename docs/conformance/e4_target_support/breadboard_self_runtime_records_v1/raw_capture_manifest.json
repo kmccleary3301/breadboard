@@ -22,7 +22,7 @@
     "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json": "sha256:691e22260f4a083e88469c155658afa0e4681a83b2e2f68f199abca8147c7548",
     "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl": "sha256:4a4fe71c21e31c96bbc0213858c01575973f9ef8f5a2993b358fc5fdc0b41758",
     "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl": "sha256:af6e3902fbfa9bcd14781c7e619eb3134e62fa7f8f1cf00b6a419a8d3d3d8672",
-    "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json": "sha256:7abb0a1f4c4dff3fcdd8e9c1fc089a7526de450c4a1bdea283463a361f1751c1"
+    "docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json": "sha256:dc85730248a556fe4a45b51358f6dea8f3d6d9a76b057666ea367c09ab3588a1"
   },
   "target_family": "breadboard",
   "target_version": "breadboard runtime_records strict kernel emission"

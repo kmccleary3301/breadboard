@@ -7,7 +7,9 @@ import sys
 import scripts.run_ct_scenarios as ct_runner
 
 
-def _write_helper(path: Path, payload: dict[str, object], *, sleep_seconds: float = 0.0) -> None:
+def _write_helper(
+    path: Path, payload: dict[str, object], *, sleep_seconds: float = 0.0
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         "from __future__ import annotations\n"
@@ -69,7 +71,9 @@ def _write_manifest(
     )
 
 
-def test_run_ct_scenarios_executes_command_and_remaps_artifact_paths(tmp_path: Path, monkeypatch) -> None:
+def test_run_ct_scenarios_executes_command_and_remaps_artifact_paths(
+    tmp_path: Path, monkeypatch
+) -> None:
     repo_root = tmp_path / "repo"
     monkeypatch.setattr(ct_runner, "ROOT", repo_root)
     helper = repo_root / "scripts" / "write_report.py"
@@ -88,7 +92,14 @@ def test_run_ct_scenarios_executes_command_and_remaps_artifact_paths(tmp_path: P
     rows = tmp_path / "artifacts" / "ct_scenarios_rows_v1.json"
 
     exit_code = ct_runner.main(
-        ["--manifest", str(manifest), "--json-out", str(result), "--rows-out", str(rows)]
+        [
+            "--manifest",
+            str(manifest),
+            "--json-out",
+            str(result),
+            "--rows-out",
+            str(rows),
+        ]
     )
 
     assert exit_code == 0
@@ -101,7 +112,9 @@ def test_run_ct_scenarios_executes_command_and_remaps_artifact_paths(tmp_path: P
     assert (tmp_path / "artifacts" / "node_gate" / "ct_unit_001.json").is_file()
 
 
-def test_run_ct_scenarios_zero_durations_sets_all_row_durations_to_zero(tmp_path: Path, monkeypatch) -> None:
+def test_run_ct_scenarios_zero_durations_sets_all_row_durations_to_zero(
+    tmp_path: Path, monkeypatch
+) -> None:
     repo_root = tmp_path / "repo"
     monkeypatch.setattr(ct_runner, "ROOT", repo_root)
     helper = repo_root / "scripts" / "write_report.py"
@@ -138,11 +151,15 @@ def test_run_ct_scenarios_zero_durations_sets_all_row_durations_to_zero(tmp_path
     assert all(row["duration_seconds"] == 0.0 for row in row_payload)
 
 
-def test_run_ct_scenarios_default_keeps_measured_duration_float(tmp_path: Path, monkeypatch) -> None:
+def test_run_ct_scenarios_default_keeps_measured_duration_float(
+    tmp_path: Path, monkeypatch
+) -> None:
     repo_root = tmp_path / "repo"
     monkeypatch.setattr(ct_runner, "ROOT", repo_root)
     helper = repo_root / "scripts" / "write_report.py"
-    _write_helper(helper, {"ok": True, "count": 3, "violations": []}, sleep_seconds=0.02)
+    _write_helper(
+        helper, {"ok": True, "count": 3, "violations": []}, sleep_seconds=0.02
+    )
     manifest = tmp_path / "manifest.json"
     _write_manifest(
         manifest,
@@ -157,7 +174,14 @@ def test_run_ct_scenarios_default_keeps_measured_duration_float(tmp_path: Path, 
     rows = tmp_path / "ct_scenarios_rows_v1.json"
 
     exit_code = ct_runner.main(
-        ["--manifest", str(manifest), "--json-out", str(result), "--rows-out", str(rows)]
+        [
+            "--manifest",
+            str(manifest),
+            "--json-out",
+            str(result),
+            "--rows-out",
+            str(rows),
+        ]
     )
 
     assert exit_code == 0
@@ -167,7 +191,9 @@ def test_run_ct_scenarios_default_keeps_measured_duration_float(tmp_path: Path, 
     assert duration > 0.0
 
 
-def test_regenerate_evidence_ct_scenarios_stage_uses_deterministic_duration_and_timestamp_flags() -> None:
+def test_regenerate_evidence_ct_scenarios_stage_uses_deterministic_duration_and_timestamp_flags() -> (
+    None
+):
     from scripts.e4_parity.regenerate_evidence import STAGES
 
     stage = next(stage for stage in STAGES if stage.stage_id == "ct_scenarios")
@@ -189,18 +215,23 @@ def test_regenerate_evidence_explain_expands_full_graph_without_workspace(
     assert regen_front._explain(SimpleNamespace(json=None, python="python")) == 0
     explained = capsys.readouterr().out
     assert "01. source_index" in explained
-    assert "49. validate_report_hash_freshness" in explained
+    assert "52. validate_report_hash_freshness" in explained
 
     assert regen_front._explain(SimpleNamespace(json="-", python="python")) == 0
     plan = json.loads(capsys.readouterr().out)
     assert len(plan["stages"]) == len(regen_front.regen.STAGES)
     freshness = next(
-        stage for stage in plan["stages"] if stage["stage_id"] == "validate_report_hash_freshness"
+        stage
+        for stage in plan["stages"]
+        if stage["stage_id"] == "validate_report_hash_freshness"
     )
     assert "{expected_points}" in freshness["argv"]
     assert "{expected_claims}" in freshness["argv"]
 
-def test_run_ct_scenarios_marks_missing_blocking_command_not_implemented_by_default(tmp_path: Path) -> None:
+
+def test_run_ct_scenarios_marks_missing_blocking_command_not_implemented_by_default(
+    tmp_path: Path,
+) -> None:
     manifest = tmp_path / "manifest.json"
     _write_manifest(
         manifest,
@@ -215,7 +246,14 @@ def test_run_ct_scenarios_marks_missing_blocking_command_not_implemented_by_defa
     rows = tmp_path / "rows.json"
 
     exit_code = ct_runner.main(
-        ["--manifest", str(manifest), "--json-out", str(result), "--rows-out", str(rows)]
+        [
+            "--manifest",
+            str(manifest),
+            "--json-out",
+            str(result),
+            "--rows-out",
+            str(rows),
+        ]
     )
 
     assert exit_code == 1
@@ -262,7 +300,9 @@ def test_run_ct_scenarios_can_fail_on_missing_commands(tmp_path: Path) -> None:
     assert report["failing_count"] == 1
 
 
-def test_run_ct_scenarios_fails_assertion_mismatches(tmp_path: Path, monkeypatch) -> None:
+def test_run_ct_scenarios_fails_assertion_mismatches(
+    tmp_path: Path, monkeypatch
+) -> None:
     repo_root = tmp_path / "repo"
     monkeypatch.setattr(ct_runner, "ROOT", repo_root)
     helper = repo_root / "scripts" / "write_report.py"
@@ -282,7 +322,14 @@ def test_run_ct_scenarios_fails_assertion_mismatches(tmp_path: Path, monkeypatch
     rows = tmp_path / "rows.json"
 
     exit_code = ct_runner.main(
-        ["--manifest", str(manifest), "--json-out", str(result), "--rows-out", str(rows)]
+        [
+            "--manifest",
+            str(manifest),
+            "--json-out",
+            str(result),
+            "--rows-out",
+            str(rows),
+        ]
     )
 
     assert exit_code == 1
@@ -291,8 +338,9 @@ def test_run_ct_scenarios_fails_assertion_mismatches(tmp_path: Path, monkeypatch
     assert "expected True" in report["rows"][0]["failures"][0]
 
 
-
-def test_run_ct_scenarios_rejects_manifest_without_scenarios_list(tmp_path: Path) -> None:
+def test_run_ct_scenarios_rejects_manifest_without_scenarios_list(
+    tmp_path: Path,
+) -> None:
     manifest = tmp_path / "manifest.json"
     manifest.write_text(
         json.dumps(
@@ -360,7 +408,9 @@ def test_run_ct_scenarios_rejects_duplicate_selected_test_ids(tmp_path: Path) ->
     assert exit_code == 2
 
 
-def test_run_ct_scenarios_reports_malformed_assertion_shape(tmp_path: Path, monkeypatch) -> None:
+def test_run_ct_scenarios_reports_malformed_assertion_shape(
+    tmp_path: Path, monkeypatch
+) -> None:
     repo_root = tmp_path / "repo"
     monkeypatch.setattr(ct_runner, "ROOT", repo_root)
     helper = repo_root / "scripts" / "write_report.py"
@@ -383,7 +433,11 @@ def test_run_ct_scenarios_reports_malformed_assertion_shape(tmp_path: Path, monk
                             "artifacts/conformance/node_gate/ct_unit_bad_assertions.json",
                         ],
                         "timeout_seconds": 30,
-                        "assertions": {"json_files": {"path": "artifacts/conformance/node_gate/ct_unit_bad_assertions.json"}},
+                        "assertions": {
+                            "json_files": {
+                                "path": "artifacts/conformance/node_gate/ct_unit_bad_assertions.json"
+                            }
+                        },
                         "gate_level": "P0-blocking",
                     }
                 ],
@@ -396,13 +450,21 @@ def test_run_ct_scenarios_reports_malformed_assertion_shape(tmp_path: Path, monk
     rows = tmp_path / "rows.json"
 
     exit_code = ct_runner.main(
-        ["--manifest", str(manifest), "--json-out", str(result), "--rows-out", str(rows)]
+        [
+            "--manifest",
+            str(manifest),
+            "--json-out",
+            str(result),
+            "--rows-out",
+            str(rows),
+        ]
     )
 
     assert exit_code == 1
     report = json.loads(result.read_text(encoding="utf-8"))
     assert report["failing_count"] == 1
     assert report["rows"][0]["failures"] == ["assertions.json_files must be a list"]
+
 
 def test_test_id_filter_runs_p7_with_authorized_temp_workspace_estate(
     tmp_path: Path, monkeypatch
@@ -419,7 +481,9 @@ def test_test_id_filter_runs_p7_with_authorized_temp_workspace_estate(
 
     production_repo = Path(__file__).resolve().parents[1]
     manifest_payload = json.loads(
-        (production_repo / "docs/conformance/ct_scenarios_v1.json").read_text(encoding="utf-8")
+        (production_repo / "docs/conformance/ct_scenarios_v1.json").read_text(
+            encoding="utf-8"
+        )
     )
     scenario = next(
         scenario
@@ -480,7 +544,9 @@ def test_test_id_filter_runs_p7_with_authorized_temp_workspace_estate(
     report = json.loads(result.read_text(encoding="utf-8"))
     row_payload = json.loads(rows.read_text(encoding="utf-8"))
     c4_report = json.loads(
-        (tmp_path / "node_gate/ct_p7_codex_gpt55_c4_chain.json").read_text(encoding="utf-8")
+        (tmp_path / "node_gate/ct_p7_codex_gpt55_c4_chain.json").read_text(
+            encoding="utf-8"
+        )
     )
     assert report["ok"] is True
     assert report["status"] == "pass"

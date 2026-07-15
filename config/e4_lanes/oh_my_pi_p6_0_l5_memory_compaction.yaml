@@ -628,14 +628,14 @@
               {
                 "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
                 "role": "support_claim_ref",
-                "sha256": "sha256:ebb933f02cfb854edae37c2edc1f25a27683ddcaf612e76dfa22b61ec7dcb8c2"
+                "sha256": "sha256:f5cc46e3e85ef8ebc07e404bb921692517b92c193209d8a6c4419b7fb3517c0b"
               },
               {
-                "bytes": 124871,
+                "bytes": 123094,
                 "exists": true,
                 "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
                 "role": "atomic_feature_ledger",
-                "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+                "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
               },
               {
                 "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",
@@ -992,10 +992,10 @@
             "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
             "catalog_binding": {
               "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-              "catalog_revision": 12,
-              "segment_hash": "sha256:5115581f4b8653dc55828651d8fe4f611aab33fab4b75a2226146c1e97fc03a6",
+              "catalog_revision": 13,
+              "segment_hash": "sha256:c6d9c145a39fcc60d3f8811aa36831dc7cfb44f2d5688db5c670c966ea185d24",
               "segment_id": "oh_my_pi_p6_0_l5_memory_compaction",
-              "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
+              "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
             },
             "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
             "claim_semantics": {

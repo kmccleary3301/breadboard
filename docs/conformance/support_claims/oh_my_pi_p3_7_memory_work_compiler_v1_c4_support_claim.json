@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:7cb8a75c681e858d0c697ebed24551cc102409afdcbfde234276802b6d0d6828",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 12,
+    "catalog_revision": 13,
     "segment_hash": "sha256:9029189846bfa032580020e9c17a39984f647c3cadec246f58279dc546b17308",
     "segment_id": "oh_my_pi_p3_7_memory_work_compiler",
-    "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
+    "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
   },
   "claim_id": "oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim",
   "claim_semantics": {

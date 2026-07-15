@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:d52592394e115c7bd830fad4d5ce49fa36c24076d4a7cd6c0253177c7d3be6de"
+      "sha256": "sha256:c4cdb7f0967631773c28871c9de1413189b20505cd6b24e5f009dbd793e72660"
     },
     {
       "derived_from": [

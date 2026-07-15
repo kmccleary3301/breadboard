@@ -8,6 +8,8 @@ jobs:
   product-spine:
     name: product-spine
     runs-on: ubuntu-latest
+    env:
+      BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +31,9 @@ jobs:
           python -m pip install -r requirements.txt
           python -m pip install -e .
           npm --prefix sdk/ts ci
+
+      - name: Provision immutable E4 inputs
+        run: python scripts/e4_parity/provision_immutable_inputs.py --repo-root "$GITHUB_WORKSPACE" --workspace-root "$GITHUB_WORKSPACE/.."
 
       - name: Verify WS-A default-server SDK smokes
         env:

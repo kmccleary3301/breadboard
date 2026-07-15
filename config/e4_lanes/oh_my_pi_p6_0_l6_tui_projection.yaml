@@ -720,14 +720,14 @@
               {
                 "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
                 "role": "support_claim_ref",
-                "sha256": "sha256:0c415a426a3f485e06603bc2a5813a1c1e3b3b6a125b1be345665608a0315872"
+                "sha256": "sha256:0ebafe90322a126f75dcb809979434494e99b9a0f6ea83ed30c0565cd99ccbb0"
               },
               {
-                "bytes": 124871,
+                "bytes": 123094,
                 "exists": true,
                 "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
                 "role": "atomic_feature_ledger",
-                "sha256": "sha256:eb5cd053eadd65e81328ddd6d157dbebaed5447c218b952f2d1be8b538062632"
+                "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
               },
               {
                 "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",
@@ -1042,10 +1042,10 @@
             "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
             "catalog_binding": {
               "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-              "catalog_revision": 12,
-              "segment_hash": "sha256:3a78af15d0aa9b85c031ea2d372a452c8a60f420161c377587a74974ad94fde3",
+              "catalog_revision": 13,
+              "segment_hash": "sha256:fc87c556a43efe851e324752f8fd05d1ae26b3f3770436cde09142431803b509",
               "segment_id": "oh_my_pi_p6_0_l6_tui_projection",
-              "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
+              "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
             },
             "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
             "claim_semantics": {

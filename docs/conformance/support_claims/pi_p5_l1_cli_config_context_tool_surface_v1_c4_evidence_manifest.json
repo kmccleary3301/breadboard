@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:0502e01a21f8f39d31b79e1c0351362672acf2b93bac12ba6dd9d89c03a6183a"
+      "sha256": "sha256:85fbe041a9c40a2dc01fcdc44fd863e451d477bf7bd7010fc8ca9f61e8e0151e"
     },
     {
       "derived_from": [

@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/claude_code_north_star_capture_v1/raw_capture_manifest.json#sha256:87dc1d20a9f2e7383a3bb7704355db752a752b778cdfd9d3750fbb67faaa4e2d",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 12,
-    "segment_hash": "sha256:222b818a80e1ff614631b97af1e8d48686a1e04062b2df4fd60e53d8739e7911",
+    "catalog_revision": 13,
+    "segment_hash": "sha256:008ee9df97fbb3e2ffb4e7bf2f7c0ae2b448fe010f40eace8e1215e29920ac0e",
     "segment_id": "claude_code_north_star_capture_v1",
-    "shared_segment_hash": "sha256:7771c5e51542018cd57d51a70ff97672f9fd24fadec2c4770642d54f0fa2d0c8"
+    "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
   },
   "claim_id": "claude_code_haiku45_north_star_capture_v1_c4_support_claim",
   "claim_semantics": {
