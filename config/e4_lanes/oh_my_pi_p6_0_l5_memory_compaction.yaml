@@ -700,10 +700,10 @@
             "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
             "gate_errors": [],
             "hashes": {
-              "evidence_manifest": "sha256:bb2553600f0aa8ba669975582e30d0e647e6040b233fc6a3e96d4c4de3891fe4",
+              "evidence_manifest": "sha256:3cd2957d1038a701174457ec8f054fb86cede397868d85471581a8ef785f2d92",
               "freeze_manifest": "sha256:6d7979a411879d2ef6ca291745bd3df35a97a72b51fdcc90088fb7b66a82a27e",
               "freeze_manifest_row": "sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124",
-              "support_claim": "sha256:ebb933f02cfb854edae37c2edc1f25a27683ddcaf612e76dfa22b61ec7dcb8c2"
+              "support_claim": "sha256:f5cc46e3e85ef8ebc07e404bb921692517b92c193209d8a6c4419b7fb3517c0b"
             },
             "ok": true,
             "pin_stale_count": 0,

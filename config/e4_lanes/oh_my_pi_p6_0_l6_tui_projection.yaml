@@ -781,10 +781,10 @@
             "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
             "gate_errors": [],
             "hashes": {
-              "evidence_manifest": "sha256:898bdd974e128f68ee385dbff618d25505b2033a6000530f2508f71088f442f4",
+              "evidence_manifest": "sha256:bb87b79cef78c9ddd40e5e8cb45d167b8781bdf0a7305bbb7c20fd4f3625264d",
               "freeze_manifest": "sha256:6d7979a411879d2ef6ca291745bd3df35a97a72b51fdcc90088fb7b66a82a27e",
               "freeze_manifest_row": "sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0",
-              "support_claim": "sha256:0c415a426a3f485e06603bc2a5813a1c1e3b3b6a125b1be345665608a0315872"
+              "support_claim": "sha256:0ebafe90322a126f75dcb809979434494e99b9a0f6ea83ed30c0565cd99ccbb0"
             },
             "ok": true,
             "pin_stale_count": 0,
