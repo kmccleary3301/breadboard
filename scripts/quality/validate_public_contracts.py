@@ -9,7 +9,6 @@ import json
 import re
 from pathlib import Path
 from typing import Any, Iterable
-from urllib.parse import urlparse
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
@@ -108,7 +107,8 @@ def validate_catalog(
     duplicates = sorted({item for item in operation_ids if operation_ids.count(item) > 1})
     if duplicates:
         raise ContractValidationError(f"duplicate operation IDs: {', '.join(duplicates)}")
-    expected, actual = frozen_operation_ids(frozen or load_frozen_surface()), set(operation_ids)
+    frozen = frozen or load_frozen_surface()
+    expected, actual = frozen_operation_ids(frozen), set(operation_ids)
     if expected != actual:
         raise ContractValidationError(f"frozen operation set mismatch; missing={sorted(expected-actual)}, extra={sorted(actual-expected)}")
     identity_fields = {"bbh": ("command",), "openapi": ("method", "path"), "python_sdk": ("method",), "typescript_sdk": ("method",), "tui": ("action_id",), "docs": ("slug",)}
@@ -122,16 +122,32 @@ def validate_catalog(
             if identity in seen[surface]:
                 raise ContractValidationError(f"duplicate {surface} binding identity for {seen[surface][identity]} and {row['operation_id']}: {identity}")
             seen[surface][identity] = row["operation_id"]
+    by_id = {row["operation_id"]: row for row in rows}
+    for operation_id, command in frozen["surface_bindings"]["bbh"]["examples"].items():
+        if by_id[operation_id]["bindings"]["bbh"]["command"] != command:
+            raise ContractValidationError(f"{operation_id}.bbh: command differs from frozen example {command}")
 
 
-def _resolve_schema_id(schema_id: str, schema_dir: Path, kernel_schema_dir: Path) -> None:
-    filename = f"{schema_id}.schema.json"
-    matches = [path for path in (schema_dir / filename, kernel_schema_dir / filename) if path.is_file()]
-    if len(matches) != 1:
-        raise ContractValidationError(f"{schema_id}: expected exactly one schema in candidate/kernel roots, found {len(matches)}")
-    schema = load_schema(matches[0])
-    if not isinstance(schema.get("$id"), str) or Path(urlparse(schema["$id"]).path).name != filename:
-        raise ContractValidationError(f"{matches[0]}: $id must end with {filename}")
+def _schema_index(schema_dir: Path, kernel_schema_dir: Path) -> dict[str, Path]:
+    by_id: dict[str, Path] = {}
+    by_uri: dict[str, Path] = {}
+    for root, namespace in ((schema_dir, "public"), (kernel_schema_dir, "kernel")):
+        for path in sorted(root.glob("*.schema.json")):
+            schema = load_schema(path)
+            uri = schema.get("$id")
+            if not isinstance(uri, str):
+                raise ContractValidationError(f"{path}: missing string $id")
+            if uri in by_uri:
+                raise ContractValidationError(f"{path}: duplicate schema $id also declared by {by_uri[uri]}")
+            by_uri[uri] = path
+            expected_uri = f"https://breadboard.dev/contracts/{namespace}/schemas/{path.name}"
+            if uri != expected_uri:
+                raise ContractValidationError(f"{path}: $id must equal {expected_uri}")
+            schema_id = path.name.removesuffix(".schema.json")
+            if schema_id in by_id:
+                raise ContractValidationError(f"{path}: duplicate schema identity also declared by {by_id[schema_id]}")
+            by_id[schema_id] = path
+    return by_id
 
 
 def validate_record_surface(
@@ -155,8 +171,10 @@ def validate_record_surface(
     duplicates = sorted({item for item in schema_ids if schema_ids.count(item) > 1})
     if duplicates:
         raise ContractValidationError(f"record schemas assigned to multiple roles: {', '.join(duplicates)}")
+    schema_index = _schema_index(schema_dir, kernel_schema_dir)
     for schema_id in schema_ids:
-        _resolve_schema_id(schema_id, schema_dir, kernel_schema_dir)
+        if schema_id not in schema_index:
+            raise ContractValidationError(f"{schema_id}: schema ID is absent from candidate/kernel roots")
 
 
 def validate_axis_manifest(manifest: dict[str, Any], schema_dir: Path = SCHEMA_DIR) -> None:

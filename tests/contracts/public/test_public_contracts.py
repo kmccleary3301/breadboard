@@ -3,7 +3,6 @@ from __future__ import annotations
 import copy
 import importlib
 import shutil
-import subprocess
 
 import pytest
 
@@ -24,10 +23,8 @@ from scripts.quality.validate_public_contracts import (
     validate_public_contracts,
 )
 
-
 def catalog() -> dict:
     return load_json(PUBLIC_DIR / "operations.v1.json")
-
 
 def test_catalog_is_the_frozen_non_active_six_surface_candidate() -> None:
     value = catalog()
@@ -40,20 +37,17 @@ def test_catalog_is_the_frozen_non_active_six_surface_candidate() -> None:
         assert row["status"] == "candidate"
         assert {binding["status"] for binding in row["bindings"].values()} == {"candidate"}
 
-
 def test_duplicate_operation_id_is_rejected() -> None:
     value = catalog()
     value["operations"][1]["operation_id"] = value["operations"][0]["operation_id"]
     with pytest.raises(ContractValidationError, match="duplicate operation IDs"):
         validate_catalog(value)
 
-
 def test_missing_surface_binding_is_rejected() -> None:
     value = catalog()
     del value["operations"][0]["bindings"]["tui"]
     with pytest.raises(ContractValidationError, match="tui.*required property|missing surface bindings"):
         validate_catalog(value)
-
 
 @pytest.mark.parametrize("surface", SURFACES)
 def test_duplicate_surface_binding_identity_is_rejected(surface: str) -> None:
@@ -65,20 +59,29 @@ def test_duplicate_surface_binding_identity_is_rejected(surface: str) -> None:
     with pytest.raises(ContractValidationError, match="duplicate"):
         validate_catalog(value)
 
-
 def test_openapi_operation_id_must_match_canonical_operation_id() -> None:
     value = catalog()
     value["operations"][0]["bindings"]["openapi"]["operation_id"] = "system.health"
     with pytest.raises(ContractValidationError, match="canonical operation ID"):
         validate_catalog(value)
 
+def test_frozen_bbh_example_is_binding_invariant() -> None:
+    value = catalog()
+    next(row for row in value["operations"] if row["operation_id"] == "session.start")["bindings"]["bbh"]["command"] = "bbh session nope"
+    with pytest.raises(ContractValidationError, match="differs from frozen example"):
+        validate_catalog(value)
+
+def test_docs_slug_cannot_escape_documentation_root() -> None:
+    value = catalog()
+    value["operations"][0]["bindings"]["docs"]["slug"] = "operations/../../outside"
+    with pytest.raises(ContractValidationError, match="does not match"):
+        validate_catalog(value)
 
 def test_active_or_unknown_status_is_rejected() -> None:
     value = catalog()
     value["operations"][0]["status"] = "active"
     with pytest.raises(ContractValidationError, match="candidate"):
         validate_catalog(value)
-
 
 @pytest.mark.parametrize("stability", [None, "candidate"])
 def test_missing_or_invalid_stability_is_rejected(stability) -> None:
@@ -90,7 +93,6 @@ def test_missing_or_invalid_stability_is_rejected(stability) -> None:
     with pytest.raises(ContractValidationError, match="stability|experimental"):
         validate_catalog(value)
 
-
 def test_duplicated_inline_record_models_are_rejected() -> None:
     value = catalog()
     model = {"type": "object", "properties": {"id": {"type": "string"}}}
@@ -99,13 +101,11 @@ def test_duplicated_inline_record_models_are_rejected() -> None:
     with pytest.raises(ContractValidationError, match="schema ID|inline record models|not of type 'string'"):
         validate_catalog(value)
 
-
 def test_record_schema_cannot_be_owned_by_two_public_roles() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
     value["roles"][1]["schema_ids"] = value["roles"][0]["schema_ids"]
     with pytest.raises(ContractValidationError, match="multiple roles"):
         validate_record_surface(value)
-
 
 def test_count_preserving_record_role_substitution_is_rejected() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
@@ -113,20 +113,17 @@ def test_count_preserving_record_role_substitution_is_rejected() -> None:
     with pytest.raises(ContractValidationError, match="frozen public record roles mismatch"):
         validate_record_surface(value)
 
-
 def test_nonexistent_record_schema_is_rejected() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
     value["roles"][0]["schema_ids"] = ["bb.syntactically_valid_missing.v1"]
-    with pytest.raises(ContractValidationError, match="expected exactly one schema"):
+    with pytest.raises(ContractValidationError, match="absent from candidate/kernel roots"):
         validate_record_surface(value)
-
 
 def staged_root(tmp_path):
     root = tmp_path / "staged"
     shutil.copytree(PUBLIC_DIR, root / "contracts" / "public")
     shutil.copytree(PUBLIC_DIR.parent / "kernel" / "schemas", root / "contracts" / "kernel" / "schemas")
     return root
-
 
 def test_staged_contracts_reject_their_malformed_schema(tmp_path) -> None:
     root = staged_root(tmp_path)
@@ -137,6 +134,16 @@ def test_staged_contracts_reject_their_malformed_schema(tmp_path) -> None:
     with pytest.raises(ContractValidationError, match="invalid Draft 2020-12 schema"):
         validate_public_contracts(root / "contracts" / "public")
 
+@pytest.mark.parametrize("mode", ["wrong_id", "duplicate_id"])
+def test_staged_schema_identity_index_is_strict(tmp_path, mode) -> None:
+    root = staged_root(tmp_path)
+    path = root / "contracts/public/schemas/bb.page.v1.schema.json"
+    if mode == "wrong_id":
+        schema = load_json(path); schema["$id"] = "https://example.invalid/bb.page.v1.schema.json"; path.write_bytes(canonical_bytes(schema))
+    else:
+        shutil.copy(path, root / "contracts/kernel/schemas" / path.name)
+    with pytest.raises(ContractValidationError, match=r"\$id must equal|duplicate schema \$id"):
+        validate_public_contracts(root / "contracts/public")
 
 def test_staged_inventory_uses_its_inventory_schema(tmp_path) -> None:
     root = staged_root(tmp_path)
@@ -146,7 +153,6 @@ def test_staged_inventory_uses_its_inventory_schema(tmp_path) -> None:
     schema_path.write_bytes(canonical_bytes(schema))
     with pytest.raises(ContractValidationError, match="invalid generated inventory"):
         build_inventory(root)
-
 
 def test_inventory_is_a_checked_in_fixed_point_with_honest_gaps() -> None:
     first = build_inventory()
@@ -158,7 +164,6 @@ def test_inventory_is_a_checked_in_fixed_point_with_honest_gaps() -> None:
     assert all(summary["gaps"] > 0 for summary in first["summary"].values())
     assert all(summary["detected"] + summary["gaps"] == 45 for summary in first["summary"].values())
 
-
 def test_generated_binding_manifest_ignores_source_text(tmp_path) -> None:
     manifest = tmp_path / "generated" / "public_surface_manifest.v1.json"
     (tmp_path / "client.test.ts").write_text("// system.health BreadBoardClient health", encoding="utf-8")
@@ -167,23 +172,20 @@ def test_generated_binding_manifest_ignores_source_text(tmp_path) -> None:
     manifest.write_bytes(canonical_bytes({"operations": [{"operation_id": "system.health", "client": "BreadBoardClient", "method": "health"}]}))
     assert _binding_manifest(manifest, ("operation_id", "client", "method")) == {("system.health", "BreadBoardClient", "health")}
 
-
-def test_axis_check_timeout_is_structured(monkeypatch, tmp_path) -> None:
-    def timeout(*args, **kwargs):
-        raise subprocess.TimeoutExpired(args[0], axis_runner.CHECK_TIMEOUT_SECONDS)
-    monkeypatch.setattr(axis_runner.subprocess, "run", timeout)
-    result = axis_runner._run_check(["never"], tmp_path)
+def test_axis_check_timeout_kills_grandchild_holding_stdout(monkeypatch, tmp_path) -> None:
+    pid_path = tmp_path / "grandchild.pid"
+    monkeypatch.setattr(axis_runner, "CHECK_TIMEOUT_SECONDS", 0.25)
+    code = f"import pathlib,subprocess,sys; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); pathlib.Path({str(pid_path)!r}).write_text(str(p.pid))"
+    result = axis_runner._run_check(["python", "-c", code], tmp_path)
     assert result["status"] == "failed" and result["exit_code"] is None and "timed out" in result["failure"]
+    with pytest.raises(ProcessLookupError):
+        axis_runner.os.kill(int(pid_path.read_text()), 0)
 
-
-def test_axis_check_output_is_bounded(monkeypatch, tmp_path) -> None:
-    def noisy(*args, **kwargs):
-        kwargs["stdout"].write(b"x" * (axis_runner.MAX_OUTPUT_BYTES + 1))
-        return subprocess.CompletedProcess(args[0], 0)
-    monkeypatch.setattr(axis_runner.subprocess, "run", noisy)
-    result = axis_runner._run_check(["noisy"], tmp_path)
+def test_axis_check_output_is_bounded_with_real_child(tmp_path) -> None:
+    code = f"import os; os.write(1, b'x' * {axis_runner.MAX_OUTPUT_BYTES * 4})"
+    result = axis_runner._run_check(["python", "-c", code], tmp_path)
     assert result["status"] == "passed" and result["output_truncated"] is True
-
+    assert len(result["output"].split("\n[output truncated", 1)[0].encode()) == axis_runner.MAX_OUTPUT_BYTES
 
 def test_axis_manifest_and_runner_emit_only_the_frozen_names_without_scores() -> None:
     manifest_path = PUBLIC_DIR / "axis_smoke.v1.json"
@@ -201,13 +203,11 @@ def test_axis_manifest_and_runner_emit_only_the_frozen_names_without_scores() ->
     assert result["score_promoted"] is False
     assert result["passed"] is False
 
-
 def test_axis_manifest_cannot_embed_a_promoted_score() -> None:
     manifest = load_json(PUBLIC_DIR / "axis_smoke.v1.json")
     manifest["axes"][0]["score"] = 10
     with pytest.raises(ContractValidationError, match="[Aa]dditional properties"):
         validate_axis_manifest(manifest)
-
 
 def test_product_boundary_is_declarative_and_exports_no_implementation() -> None:
     product = importlib.import_module("breadboard.product")

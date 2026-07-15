@@ -103,20 +103,21 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
     python_bindings = _binding_manifest(root / "breadboard_sdk" / "generated" / "public_surface_manifest.v1.json", ("operation_id", "client", "method"))
     typescript_bindings = _binding_manifest(root / "sdk" / "ts" / "src" / "generated" / "public_surface_manifest.v1.json", ("operation_id", "client", "method"))
     tui_bindings = _binding_manifest(root / "tui_skeleton" / "src" / "generated" / "public_surface_manifest.v1.json", ("operation_id", "action_id", "kind"))
-    docs_root = root / "docs" / "reference" / "public"
+    docs_root = (root / "docs" / "reference" / "public").resolve()
     operation_rows: list[dict[str, Any]] = []
     counts = {surface: 0 for surface in SURFACES}
     for operation in sorted(catalog["operations"], key=lambda row: row["operation_id"]):
         operation_id, bindings = operation["operation_id"], operation["bindings"]
         command, api = bindings["bbh"]["command"], bindings["openapi"]
         py, ts, tui, slug = bindings["python_sdk"], bindings["typescript_sdk"], bindings["tui"], bindings["docs"]["slug"]
+        doc_path = (docs_root / f"{slug}.md").resolve()
         detected = {
             "bbh": command in cli_commands,
             "openapi": (api["method"], api["path"], api["operation_id"]) in openapi,
             "python_sdk": (operation_id, py["client"], py["method"]) in python_bindings,
             "typescript_sdk": (operation_id, ts["client"], ts["method"]) in typescript_bindings,
             "tui": (operation_id, tui["action_id"], tui["kind"]) in tui_bindings,
-            "docs": (docs_root / f"{slug}.md").is_file(),
+            "docs": doc_path.is_relative_to(docs_root) and doc_path.is_file(),
         }
         evidence = {
             "bbh": (f"registered command {command}", f"no registered command {command}"),
