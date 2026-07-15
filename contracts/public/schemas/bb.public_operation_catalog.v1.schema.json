@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.public_operation_catalog.v1.schema.json",
+  "title": "BreadBoard candidate public operation catalog V1",
+  "type": "object", "additionalProperties": false,
+  "required": ["contract_id", "version", "status", "frozen_public_surface", "operations"],
+  "properties": {
+    "contract_id": {"const": "bb.public_operation_catalog.v1"},
+    "version": {"const": 1},
+    "status": {"const": "candidate"},
+    "frozen_public_surface": {"type": "object", "additionalProperties": false, "required": ["contract_id", "sha256"], "properties": {"contract_id": {"const": "bb.north_star.public_surface.v1"}, "sha256": {"const": "sha256:72817b7b1bc5e5d10f752acb48157491aaeb3eb268337461a4fd6f0bd10cbfe0"}}},
+    "operations": {"type": "array", "minItems": 45, "maxItems": 45, "items": {"$ref": "#/$defs/operation"}}
+  },
+  "$defs": {
+    "schema_id": {"type": "string", "pattern": "^bb\\.[a-z0-9_.]+\\.v[0-9]+$"},
+    "candidate_binding": {"type": "object", "required": ["status", "owner"], "properties": {"status": {"const": "candidate"}, "owner": {"type": "string", "minLength": 1}}},
+    "bbh": {"allOf": [{"$ref": "#/$defs/candidate_binding"}, {"type": "object", "additionalProperties": false, "required": ["status", "owner", "command"], "properties": {"status": {"const": "candidate"}, "owner": {"type": "string", "minLength": 1}, "command": {"type": "string", "pattern": "^bbh "}}}]},
+    "openapi": {"allOf": [{"$ref": "#/$defs/candidate_binding"}, {"type": "object", "additionalProperties": false, "required": ["status", "owner", "method", "path", "operation_id"], "properties": {"status": {"const": "candidate"}, "owner": {"type": "string", "minLength": 1}, "method": {"enum": ["DELETE", "GET", "PATCH", "POST", "PUT"]}, "path": {"type": "string", "pattern": "^/v1/"}, "operation_id": {"type": "string", "minLength": 1}}}]},
+    "sdk": {"allOf": [{"$ref": "#/$defs/candidate_binding"}, {"type": "object", "additionalProperties": false, "required": ["status", "owner", "client", "method"], "properties": {"status": {"const": "candidate"}, "owner": {"type": "string", "minLength": 1}, "client": {"const": "BreadBoardClient"}, "method": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}}}]},
+    "tui": {"allOf": [{"$ref": "#/$defs/candidate_binding"}, {"type": "object", "additionalProperties": false, "required": ["status", "owner", "action_id", "kind"], "properties": {"status": {"const": "candidate"}, "owner": {"type": "string", "minLength": 1}, "action_id": {"type": "string", "pattern": "^public\\."}, "kind": {"enum": ["action", "view"]}}}]},
+    "docs": {"allOf": [{"$ref": "#/$defs/candidate_binding"}, {"type": "object", "additionalProperties": false, "required": ["status", "owner", "slug"], "properties": {"status": {"const": "candidate"}, "owner": {"type": "string", "minLength": 1}, "slug": {"type": "string", "pattern": "^operations/"}}}]},
+    "operation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operation_id", "module", "summary", "status", "owner", "input_schema", "output_schema", "error_schema", "event_schema", "effects", "idempotency", "lifecycle", "required_capabilities", "auth_policy", "bindings"],
+      "properties": {
+        "operation_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"}, "module": {"type": "string", "minLength": 1}, "summary": {"type": "string", "minLength": 1}, "status": {"const": "candidate"}, "owner": {"type": "string", "minLength": 1},
+        "input_schema": {"$ref": "#/$defs/schema_id"}, "output_schema": {"$ref": "#/$defs/schema_id"}, "error_schema": {"$ref": "#/$defs/schema_id"}, "event_schema": {"anyOf": [{"$ref": "#/$defs/schema_id"}, {"type": "null"}]},
+        "effects": {"enum": ["read", "write", "execute", "verify"]},
+        "idempotency": {"type": "object", "additionalProperties": false, "required": ["mode", "rule"], "properties": {"mode": {"enum": ["idempotent", "keyed", "non_idempotent"]}, "rule": {"type": "string", "minLength": 1}}},
+        "lifecycle": {"enum": ["sync", "async"]}, "required_capabilities": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "auth_policy": {"type": "object", "additionalProperties": false, "required": ["mode", "secret_references"], "properties": {"mode": {"enum": ["none", "authenticated", "capability_gated"]}, "secret_references": {"const": "references_only"}}},
+        "bindings": {"type": "object", "additionalProperties": false, "required": ["bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs"], "properties": {"bbh": {"$ref": "#/$defs/bbh"}, "openapi": {"$ref": "#/$defs/openapi"}, "python_sdk": {"$ref": "#/$defs/sdk"}, "typescript_sdk": {"$ref": "#/$defs/sdk"}, "tui": {"$ref": "#/$defs/tui"}, "docs": {"$ref": "#/$defs/docs"}}}
+      }
+    }
+  }
+}
