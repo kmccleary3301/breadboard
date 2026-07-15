@@ -21,9 +21,9 @@
     "docs": {"allOf": [{"$ref": "#/$defs/candidate_binding"}, {"type": "object", "additionalProperties": false, "required": ["status", "owner", "slug"], "properties": {"status": {"const": "candidate"}, "owner": {"type": "string", "minLength": 1}, "slug": {"type": "string", "pattern": "^operations/"}}}]},
     "operation": {
       "type": "object", "additionalProperties": false,
-      "required": ["operation_id", "module", "summary", "status", "owner", "input_schema", "output_schema", "error_schema", "event_schema", "effects", "idempotency", "lifecycle", "required_capabilities", "auth_policy", "bindings"],
+      "required": ["operation_id", "module", "summary", "status", "stability", "owner", "input_schema", "output_schema", "error_schema", "event_schema", "effects", "idempotency", "lifecycle", "required_capabilities", "auth_policy", "bindings"],
       "properties": {
-        "operation_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"}, "module": {"type": "string", "minLength": 1}, "summary": {"type": "string", "minLength": 1}, "status": {"const": "candidate"}, "owner": {"type": "string", "minLength": 1},
+        "operation_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$"}, "module": {"type": "string", "minLength": 1}, "summary": {"type": "string", "minLength": 1}, "status": {"const": "candidate"}, "stability": {"enum": ["experimental", "stable", "deprecated"]}, "owner": {"type": "string", "minLength": 1},
         "input_schema": {"$ref": "#/$defs/schema_id"}, "output_schema": {"$ref": "#/$defs/schema_id"}, "error_schema": {"$ref": "#/$defs/schema_id"}, "event_schema": {"anyOf": [{"$ref": "#/$defs/schema_id"}, {"type": "null"}]},
         "effects": {"enum": ["read", "write", "execute", "verify"]},
         "idempotency": {"type": "object", "additionalProperties": false, "required": ["mode", "rule"], "properties": {"mode": {"enum": ["idempotent", "keyed", "non_idempotent"]}, "rule": {"type": "string", "minLength": 1}}},

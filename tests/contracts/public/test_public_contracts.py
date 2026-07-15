@@ -3,18 +3,21 @@ from __future__ import annotations
 import copy
 import importlib
 import shutil
+import subprocess
 
 import pytest
 
-from scripts.quality.build_surface_inventory import build_inventory
+from scripts.quality.build_surface_inventory import _binding_manifest, build_inventory
+import scripts.quality.run_axis_smoke as axis_runner
 from scripts.quality.run_axis_smoke import run_axis_smoke
 from scripts.quality.validate_public_contracts import (
     ContractValidationError,
-    FROZEN_OPERATION_IDS,
     PUBLIC_DIR,
     SURFACES,
     canonical_bytes,
     load_json,
+    frozen_operation_ids,
+    load_frozen_surface,
     validate_axis_manifest,
     validate_catalog,
     validate_record_surface,
@@ -29,7 +32,7 @@ def catalog() -> dict:
 def test_catalog_is_the_frozen_non_active_six_surface_candidate() -> None:
     value = catalog()
     validate_catalog(value)
-    assert tuple(sorted(row["operation_id"] for row in value["operations"])) == FROZEN_OPERATION_IDS
+    assert set(row["operation_id"] for row in value["operations"]) == frozen_operation_ids(load_frozen_surface())
     assert len(value["operations"]) == 45
     assert value["status"] == "candidate"
     for row in value["operations"]:
@@ -77,6 +80,17 @@ def test_active_or_unknown_status_is_rejected() -> None:
         validate_catalog(value)
 
 
+@pytest.mark.parametrize("stability", [None, "candidate"])
+def test_missing_or_invalid_stability_is_rejected(stability) -> None:
+    value = catalog()
+    if stability is None:
+        del value["operations"][0]["stability"]
+    else:
+        value["operations"][0]["stability"] = stability
+    with pytest.raises(ContractValidationError, match="stability|experimental"):
+        validate_catalog(value)
+
+
 def test_duplicated_inline_record_models_are_rejected() -> None:
     value = catalog()
     model = {"type": "object", "properties": {"id": {"type": "string"}}}
@@ -96,20 +110,42 @@ def test_record_schema_cannot_be_owned_by_two_public_roles() -> None:
 def test_count_preserving_record_role_substitution_is_rejected() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
     value["roles"][0]["role_id"] = "substituted_role"
-    value["roles"][0]["label"] = "substituted role"
     with pytest.raises(ContractValidationError, match="frozen public record roles mismatch"):
         validate_record_surface(value)
 
 
-def test_staged_contracts_use_their_staged_schemas(tmp_path) -> None:
-    staged = tmp_path / "public"
-    shutil.copytree(PUBLIC_DIR, staged)
-    schema_path = staged / "schemas" / "bb.public_operation_catalog.v1.schema.json"
+def test_nonexistent_record_schema_is_rejected() -> None:
+    value = load_json(PUBLIC_DIR / "record_surface.v1.json")
+    value["roles"][0]["schema_ids"] = ["bb.syntactically_valid_missing.v1"]
+    with pytest.raises(ContractValidationError, match="expected exactly one schema"):
+        validate_record_surface(value)
+
+
+def staged_root(tmp_path):
+    root = tmp_path / "staged"
+    shutil.copytree(PUBLIC_DIR, root / "contracts" / "public")
+    shutil.copytree(PUBLIC_DIR.parent / "kernel" / "schemas", root / "contracts" / "kernel" / "schemas")
+    return root
+
+
+def test_staged_contracts_reject_their_malformed_schema(tmp_path) -> None:
+    root = staged_root(tmp_path)
+    schema_path = root / "contracts" / "public" / "schemas" / "bb.public_operation_catalog.v1.schema.json"
     schema = load_json(schema_path)
-    schema["properties"]["contract_id"]["const"] = "bb.staged_only.invalid"
+    schema["type"] = 7
     schema_path.write_bytes(canonical_bytes(schema))
-    with pytest.raises(ContractValidationError):
-        validate_public_contracts(staged)
+    with pytest.raises(ContractValidationError, match="invalid Draft 2020-12 schema"):
+        validate_public_contracts(root / "contracts" / "public")
+
+
+def test_staged_inventory_uses_its_inventory_schema(tmp_path) -> None:
+    root = staged_root(tmp_path)
+    schema_path = root / "contracts" / "public" / "schemas" / "bb.public_surface_inventory.v1.schema.json"
+    schema = load_json(schema_path)
+    schema["properties"]["operation_count"]["const"] = 44
+    schema_path.write_bytes(canonical_bytes(schema))
+    with pytest.raises(ContractValidationError, match="invalid generated inventory"):
+        build_inventory(root)
 
 
 def test_inventory_is_a_checked_in_fixed_point_with_honest_gaps() -> None:
@@ -121,6 +157,32 @@ def test_inventory_is_a_checked_in_fixed_point_with_honest_gaps() -> None:
     assert first["candidate_status"] == "candidate"
     assert all(summary["gaps"] > 0 for summary in first["summary"].values())
     assert all(summary["detected"] + summary["gaps"] == 45 for summary in first["summary"].values())
+
+
+def test_generated_binding_manifest_ignores_source_text(tmp_path) -> None:
+    manifest = tmp_path / "generated" / "public_surface_manifest.v1.json"
+    (tmp_path / "client.test.ts").write_text("// system.health BreadBoardClient health", encoding="utf-8")
+    assert _binding_manifest(manifest, ("operation_id", "client", "method")) == set()
+    manifest.parent.mkdir()
+    manifest.write_bytes(canonical_bytes({"operations": [{"operation_id": "system.health", "client": "BreadBoardClient", "method": "health"}]}))
+    assert _binding_manifest(manifest, ("operation_id", "client", "method")) == {("system.health", "BreadBoardClient", "health")}
+
+
+def test_axis_check_timeout_is_structured(monkeypatch, tmp_path) -> None:
+    def timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], axis_runner.CHECK_TIMEOUT_SECONDS)
+    monkeypatch.setattr(axis_runner.subprocess, "run", timeout)
+    result = axis_runner._run_check(["never"], tmp_path)
+    assert result["status"] == "failed" and result["exit_code"] is None and "timed out" in result["failure"]
+
+
+def test_axis_check_output_is_bounded(monkeypatch, tmp_path) -> None:
+    def noisy(*args, **kwargs):
+        kwargs["stdout"].write(b"x" * (axis_runner.MAX_OUTPUT_BYTES + 1))
+        return subprocess.CompletedProcess(args[0], 0)
+    monkeypatch.setattr(axis_runner.subprocess, "run", noisy)
+    result = axis_runner._run_check(["noisy"], tmp_path)
+    assert result["status"] == "passed" and result["output_truncated"] is True
 
 
 def test_axis_manifest_and_runner_emit_only_the_frozen_names_without_scores() -> None:

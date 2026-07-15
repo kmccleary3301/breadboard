@@ -4,45 +4,23 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 
 ROOT = Path(__file__).resolve().parents[2]
 PUBLIC_DIR = ROOT / "contracts" / "public"
 SCHEMA_DIR = PUBLIC_DIR / "schemas"
+KERNEL_SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 SURFACES = ("bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs")
-FROZEN_OPERATION_IDS = (
-    "artifact.get", "artifact.list", "artifact.verify",
-    "claim.evidence", "claim.get", "claim.list", "claim.reverify",
-    "harness.create", "harness.explain", "harness.get", "harness.list",
-    "harness.lock", "harness.update", "harness.validate", "harness_lock.get",
-    "integration.get", "integration.list", "integration.probe",
-    "lane.capture", "lane.claim", "lane.compare", "lane.create", "lane.get",
-    "lane.list", "lane.lock", "lane.normalize", "lane.replay", "lane.run",
-    "lane.stage_report", "lane.validate", "lane_execution.cancel",
-    "lane_execution.get", "lane_lock.get",
-    "session.approve", "session.artifacts", "session.cancel", "session.events",
-    "session.get", "session.list", "session.resume", "session.send_input",
-    "session.start", "system.describe", "system.health", "system.schemas",
-)
-FROZEN_RECORD_ROLES = frozenset({
-    ("harness_definition", "Harness Definition"), ("effective_harness_lock", "Effective Harness Lock"),
-    ("validation_report", "validation report"), ("explanation_effective_graph_report", "explanation/effective-graph report"),
-    ("session", "Session"), ("kernel_event", "Kernel Event"),
-    ("operator_approval_interaction_record", "operator approval/interaction record"),
-    ("provider_route_lock_capability_probe", "Provider Route Lock and capability probe"),
-    ("provider_exchange", "Provider Exchange"), ("tool_call_execution_outcome", "tool call and Tool Execution Outcome"),
-    ("integration_descriptor", "integration descriptor"), ("artifact_blob_ref_manifest", "Artifact/blob ref and artifact manifest"),
-    ("lane_manifest", "Lane Manifest"), ("lane_lock", "Lane Lock"),
-    ("lane_execution_journey_report", "lane execution/journey report"), ("stage_report", "stage report"),
-    ("replay_plan", "replay plan"), ("replay_execution", "replay execution"),
-    ("comparator_report", "comparator report"), ("exact_scope_claim", "Exact-Scope Claim"),
-    ("claim_reverification_report", "claim reverification report"), ("stable_problem_error", "stable problem/error"),
-    ("pagination_list_envelope", "pagination/list envelope"), ("cli_result_envelope", "CLI/result envelope"),
-})
+FROZEN_SHA256 = "sha256:72817b7b1bc5e5d10f752acb48157491aaeb3eb268337461a4fd6f0bd10cbfe0"
+AXIS_MANIFEST_SHA256 = "sha256:dff057633730b1bbb28ebd4fceff3060227f5532b6caabb0f3ed2a325d437db0"
 
 
 class ContractValidationError(ValueError):
@@ -63,8 +41,36 @@ def canonical_bytes(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
+def _sha256(data: bytes) -> str:
+    return f"sha256:{hashlib.sha256(data).hexdigest()}"
+
+
+def load_frozen_surface(public_dir: Path = PUBLIC_DIR) -> dict[str, Any]:
+    path = public_dir / "frozen_public_surface.v1.json"
+    frozen = load_json(path)
+    canonical = canonical_bytes(frozen)
+    if path.read_bytes() != canonical or _sha256(canonical) != FROZEN_SHA256:
+        raise ContractValidationError(f"{path}: canonical frozen public-surface hash mismatch")
+    if frozen.get("contract_id") != "bb.north_star.public_surface.v1":
+        raise ContractValidationError(f"{path}: unexpected frozen contract_id")
+    return frozen
+
+
+def frozen_operation_ids(frozen: dict[str, Any]) -> frozenset[str]:
+    return frozenset(item for group in frozen["canonical_operations"].values() for item in group)
+
+
+def load_schema(path: Path) -> dict[str, Any]:
+    schema = load_json(path)
+    try:
+        Draft202012Validator.check_schema(schema)
+    except SchemaError as exc:
+        raise ContractValidationError(f"{path}: invalid Draft 2020-12 schema: {exc.message}") from exc
+    return schema
+
+
 def _schema_errors(instance: Any, schema_name: str, schema_dir: Path = SCHEMA_DIR) -> list[str]:
-    schema = load_json(schema_dir / schema_name)
+    schema = load_schema(schema_dir / schema_name)
     errors = Draft202012Validator(schema).iter_errors(instance)
     return [
         f"{'.'.join(map(str, error.absolute_path)) or '<root>'}: {error.message}"
@@ -83,9 +89,7 @@ def _reject_inline_models(value: Any, path: tuple[str, ...] = ()) -> None:
         for key, child in value.items():
             child_path = (*path, key)
             if key in {"inline_model", "inline_schema", "model"} and isinstance(child, dict):
-                raise ContractValidationError(
-                    f"{'.'.join(child_path)}: inline record models are forbidden; reference a schema ID"
-                )
+                raise ContractValidationError(f"{'.'.join(child_path)}: inline record models are forbidden")
             if key.endswith("_schema") and child is not None and not isinstance(child, str):
                 raise ContractValidationError(f"{'.'.join(child_path)}: schema binding must be a schema ID")
             _reject_inline_models(child, child_path)
@@ -94,7 +98,9 @@ def _reject_inline_models(value: Any, path: tuple[str, ...] = ()) -> None:
             _reject_inline_models(child, (*path, str(index)))
 
 
-def validate_catalog(catalog: dict[str, Any], schema_dir: Path = SCHEMA_DIR) -> None:
+def validate_catalog(
+    catalog: dict[str, Any], schema_dir: Path = SCHEMA_DIR, frozen: dict[str, Any] | None = None,
+) -> None:
     _raise_if_errors(_schema_errors(catalog, "bb.public_operation_catalog.v1.schema.json", schema_dir))
     _reject_inline_models(catalog)
     rows = catalog["operations"]
@@ -102,90 +108,69 @@ def validate_catalog(catalog: dict[str, Any], schema_dir: Path = SCHEMA_DIR) -> 
     duplicates = sorted({item for item in operation_ids if operation_ids.count(item) > 1})
     if duplicates:
         raise ContractValidationError(f"duplicate operation IDs: {', '.join(duplicates)}")
-    expected, actual = set(FROZEN_OPERATION_IDS), set(operation_ids)
+    expected, actual = frozen_operation_ids(frozen or load_frozen_surface()), set(operation_ids)
     if expected != actual:
-        missing = sorted(expected - actual)
-        extra = sorted(actual - expected)
-        raise ContractValidationError(f"frozen operation set mismatch; missing={missing}, extra={extra}")
-    identity_fields = {
-        "bbh": ("command",), "openapi": ("method", "path"),
-        "python_sdk": ("method",), "typescript_sdk": ("method",),
-        "tui": ("action_id",), "docs": ("slug",),
-    }
-    seen_bindings: dict[str, dict[tuple[str, ...], str]] = {surface: {} for surface in SURFACES}
+        raise ContractValidationError(f"frozen operation set mismatch; missing={sorted(expected-actual)}, extra={sorted(actual-expected)}")
+    identity_fields = {"bbh": ("command",), "openapi": ("method", "path"), "python_sdk": ("method",), "typescript_sdk": ("method",), "tui": ("action_id",), "docs": ("slug",)}
+    seen: dict[str, dict[tuple[str, ...], str]] = {surface: {} for surface in SURFACES}
     for row in rows:
-        if row["status"] != "candidate":
-            raise ContractValidationError(f"{row['operation_id']}: status must remain candidate")
-        missing_surfaces = sorted(set(SURFACES) - set(row["bindings"]))
-        if missing_surfaces:
-            raise ContractValidationError(
-                f"{row['operation_id']}: missing surface bindings: {', '.join(missing_surfaces)}"
-            )
         for surface in SURFACES:
-            if row["bindings"][surface]["status"] != "candidate":
-                raise ContractValidationError(f"{row['operation_id']}.{surface}: status must remain candidate")
             binding = row["bindings"][surface]
             if surface == "openapi" and binding["operation_id"] != row["operation_id"]:
-                raise ContractValidationError(
-                    f"{row['operation_id']}.openapi: operation_id must equal the canonical operation ID"
-                )
+                raise ContractValidationError(f"{row['operation_id']}.openapi: operation_id must equal the canonical operation ID")
             identity = tuple(binding[field] for field in identity_fields[surface])
-            if identity in seen_bindings[surface]:
-                raise ContractValidationError(
-                    f"duplicate {surface} binding identity for {seen_bindings[surface][identity]} and {row['operation_id']}: {identity}"
-                )
-            seen_bindings[surface][identity] = row["operation_id"]
+            if identity in seen[surface]:
+                raise ContractValidationError(f"duplicate {surface} binding identity for {seen[surface][identity]} and {row['operation_id']}: {identity}")
+            seen[surface][identity] = row["operation_id"]
 
 
-def validate_record_surface(record_surface: dict[str, Any], schema_dir: Path = SCHEMA_DIR) -> None:
+def _resolve_schema_id(schema_id: str, schema_dir: Path, kernel_schema_dir: Path) -> None:
+    filename = f"{schema_id}.schema.json"
+    matches = [path for path in (schema_dir / filename, kernel_schema_dir / filename) if path.is_file()]
+    if len(matches) != 1:
+        raise ContractValidationError(f"{schema_id}: expected exactly one schema in candidate/kernel roots, found {len(matches)}")
+    schema = load_schema(matches[0])
+    if not isinstance(schema.get("$id"), str) or Path(urlparse(schema["$id"]).path).name != filename:
+        raise ContractValidationError(f"{matches[0]}: $id must end with {filename}")
+
+
+def validate_record_surface(
+    record_surface: dict[str, Any], schema_dir: Path = SCHEMA_DIR,
+    kernel_schema_dir: Path = KERNEL_SCHEMA_DIR, frozen: dict[str, Any] | None = None,
+) -> None:
     _raise_if_errors(_schema_errors(record_surface, "bb.public_record_surface.v1.schema.json", schema_dir))
     _reject_inline_models(record_surface)
-    role_ids = [row["role_id"] for row in record_surface["roles"]]
+    roles = record_surface["roles"]
+    role_ids = [row["role_id"] for row in roles]
     if len(role_ids) != len(set(role_ids)):
         raise ContractValidationError("duplicate public record role IDs")
-    actual_roles = {(row["role_id"], row["label"]) for row in record_surface["roles"]}
-    if actual_roles != FROZEN_RECORD_ROLES:
-        missing = sorted(FROZEN_RECORD_ROLES - actual_roles)
-        extra = sorted(actual_roles - FROZEN_RECORD_ROLES)
-        raise ContractValidationError(f"frozen public record roles mismatch; missing={missing}, extra={extra}")
-    schema_ids = [schema_id for row in record_surface["roles"] for schema_id in row["schema_ids"]]
+    expected_roles = {
+        (re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_"), label)
+        for label in (frozen or load_frozen_surface())["required_record_roles"]
+    }
+    actual_roles = {(row["role_id"], row["label"]) for row in roles}
+    if actual_roles != expected_roles:
+        raise ContractValidationError(f"frozen public record roles mismatch; missing={sorted(expected_roles-actual_roles)}, extra={sorted(actual_roles-expected_roles)}")
+    schema_ids = [schema_id for row in roles for schema_id in row["schema_ids"]]
     duplicates = sorted({item for item in schema_ids if schema_ids.count(item) > 1})
     if duplicates:
         raise ContractValidationError(f"record schemas assigned to multiple roles: {', '.join(duplicates)}")
+    for schema_id in schema_ids:
+        _resolve_schema_id(schema_id, schema_dir, kernel_schema_dir)
 
 
 def validate_axis_manifest(manifest: dict[str, Any], schema_dir: Path = SCHEMA_DIR) -> None:
     _raise_if_errors(_schema_errors(manifest, "bb.public_axis_smoke_manifest.v1.schema.json", schema_dir))
-    expected_axes = (
-        ("maintainability", ("candidate_contracts", "public_contract_tests", "surface_inventory_fixed_point")),
-        ("atomicity_composability", ("candidate_contracts", "public_contract_tests")),
-        ("generalizability", ("candidate_contracts", "surface_inventory_fixed_point")),
-        ("development_velocity", ("candidate_contracts", "public_contract_tests")),
-        ("versatility", ("behavior_preservation", "candidate_contracts")),
-        ("developer_experience", ("candidate_contracts", "public_contract_tests")),
-        ("interpretability", ("candidate_contracts", "surface_inventory_fixed_point")),
-        ("intuitive_configuration", ("candidate_contracts", "public_contract_tests")),
-        ("forward_compatibility", ("candidate_contracts", "surface_inventory_fixed_point")),
-        ("blast_radius", ("behavior_preservation", "product_boundary", "public_contract_tests")),
-    )
-    actual_axes = tuple((row["id"], tuple(row["check_ids"])) for row in manifest["axes"])
-    if actual_axes != expected_axes:
-        raise ContractValidationError(f"axis manifest differs from immutable bb.north_star.qc.v1 smoke mapping: {actual_axes}")
-    expected_checks = {
-        "behavior_preservation": ["python", "-m", "pytest", "-q", "tests/test_breadboard_cli_g2.py", "tests/test_breadboard_cli_harness_run.py", "tests/test_breadboard_sdk_client.py", "tests/test_e4_api_surface.py"],
-        "candidate_contracts": ["python", "scripts/quality/validate_public_contracts.py"],
-        "product_boundary": ["python", "-c", "import breadboard.product; assert breadboard.product.__all__ == []"],
-        "public_contract_tests": ["python", "-m", "pytest", "-q", "tests/contracts/public"],
-        "surface_inventory_fixed_point": ["python", "scripts/quality/build_surface_inventory.py", "--check"],
-    }
-    if manifest["checks"] != expected_checks:
-        raise ContractValidationError("axis smoke checks differ from the immutable targeted command set")
+    if _sha256(canonical_bytes(manifest)) != AXIS_MANIFEST_SHA256:
+        raise ContractValidationError("axis smoke manifest differs from the frozen projection hash")
 
 
 def validate_public_contracts(public_dir: Path = PUBLIC_DIR) -> None:
     schema_dir = public_dir / "schemas"
-    validate_catalog(load_json(public_dir / "operations.v1.json"), schema_dir)
-    validate_record_surface(load_json(public_dir / "record_surface.v1.json"), schema_dir)
+    kernel_schema_dir = public_dir.parent / "kernel" / "schemas"
+    frozen = load_frozen_surface(public_dir)
+    validate_catalog(load_json(public_dir / "operations.v1.json"), schema_dir, frozen)
+    validate_record_surface(load_json(public_dir / "record_surface.v1.json"), schema_dir, kernel_schema_dir, frozen)
     validate_axis_manifest(load_json(public_dir / "axis_smoke.v1.json"), schema_dir)
 
 
