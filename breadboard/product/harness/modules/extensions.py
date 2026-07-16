@@ -99,11 +99,13 @@ def _snapshot(value: object) -> Operation:
         raise CompositionError("module operation is uninitialized") from None
 
 
-def _seal(operations: tuple[Operation, ...]) -> bytes:
+def _seal(state: tuple[object, object, tuple[Operation, ...]]) -> bytes:
+    module_id, precedence, operations = state
     if any(type(item) is not Operation for item in operations):
         raise CompositionError("module operations must be exact Operation values")
-    state = repr(tuple((item.kind, item.path, item.value) for item in operations))
-    return hmac.digest(_SEAL_KEY, state.encode(), "sha256")
+    items = tuple((item.kind, item.path, item.value) for item in operations)
+    author = repr((module_id, precedence, items))
+    return hmac.digest(_SEAL_KEY, author.encode(), "sha256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,8 +143,8 @@ class _OwnedContribution(ModuleContribution):
         if _key is not _OWNER_KEY:
             raise CompositionError("owned contributions require internal capability")
         super().__init__(*args, **kwargs)
-        sealed = _seal(self.operations)
-        object.__setattr__(self, "_sealed", (self.module_id, self.precedence, sealed))
+        state = (self.module_id, self.precedence, self.operations)
+        object.__setattr__(self, "_sealed", _seal(state))
 
 
 _OWNERS: dict[type, tuple[frozenset[str], Validator]] = {}
@@ -176,8 +178,9 @@ def _admit(value: object) -> tuple[ModuleContribution, frozenset[str]]:
         raise CompositionError("owned module operations must be an exact tuple")
     module_id = getattr(value, "module_id", None)
     precedence = getattr(value, "precedence", None)
-    fields = (module_id, precedence, _seal(operations))
-    if fields != getattr(value, "_sealed", None):
+    sealed = getattr(value, "_sealed", None)
+    digest = _seal((module_id, precedence, operations))
+    if type(sealed) is not bytes or not hmac.compare_digest(sealed, digest):
         raise CompositionError("owned module was mutated after construction")
     operations = tuple(_snapshot(item) for item in operations)
     if any(item.path[0] not in roots for item in operations):

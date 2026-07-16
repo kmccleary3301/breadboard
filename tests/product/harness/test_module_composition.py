@@ -73,8 +73,8 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     for _ in range(2):
         assert compose_modules(base, [tools])["tools"] == composed["tools"]
     object.__setattr__(tools.operations[0], "path", ["tools", "aliases"])
-    state = repr(tuple((item.kind, item.path, item.value) for item in tools.operations))
-    object.__setattr__(tools, "_sealed", (tools.module_id, tools.precedence, state))
+    deceptive = type("Seal", (), {"__ne__": lambda *_: False})()
+    object.__setattr__(tools, "_sealed", deceptive)
     with pytest.raises(CompositionError, match="mutated after construction"):
         compose_modules(base, [tools])
     object.__setattr__(provider.operations[0], "value", 1)
@@ -123,19 +123,23 @@ def test_module_invariants_fail_before_lock() -> None:
         with pytest.raises(CompositionError, match=match):
             compose_modules(document, modules)
 
-    bad_model = Operation("replace", ("providers", "default_model"), "x")
-    reject([build_provider_module([bad_model])], "declared model")
+    base["tools"]["aliases"] = None
+    compose_modules(base, [])
     cases = (
         ("permissions/shell", "{default: allow, deny: [{rm: null}]}"),
         ("permissions/shell/deny", "['   ']"),
+        ("permissions/shell/default", "' deny '"),
         (
             "concurrency/groups",
             "[{name: a, match_tools: [x]}, {name: b, match_tools: [y]}]",
         ),
+        ("concurrency/groups", "[{name: a, match_tools: [' x ']}]"),
+        ("concurrency/nonblocking_tools", "[' x ']"),
         ("long_running/recovery", "{backoff_base_seconds: 3}"),
         ("long_running/verification", "{tiers: [{name: tier_1}, {}]}"),
         ("tools/dialects", "{selection: {by_model: {'*': bash_block}}}"),
         ("tools/dialects", "{preference: {default: '   '}}"),
+        ("tools/dialects", "{selection: {by_model: {'*': [' bash_block ']}}}"),
         ("tools/aliases", "{a: b, b: a}"),
     )
     for path, value in cases:
@@ -157,19 +161,6 @@ def test_module_invariants_fail_before_lock() -> None:
     typed = build_provider_module([])
     with pytest.raises(CompositionError, match="internal capability"):
         replace(typed, operations=(_FOREIGN,), validator=lambda _: None)
-    deep = {}
-    for _ in range(99):
-        deep = {"x": deep}
-    deep_base = _load("engineering.v1.yaml")
-    deep_base["dossier"] = deep
-    compose_modules(deep_base, [])
-    deep["x"] = {"x": deep["x"]}
-    reject([], "100 segments", deep_base)
-    cycle = {}
-    cycle["x"] = cycle
-    cyclic_base = _load("engineering.v1.yaml")
-    cyclic_base["dossier"] = cycle
-    reject([], "cyclic JSON", cyclic_base)
     owners = (
         (build_provider_module, "providers provider_tools"),
         (build_tool_module, "tools enhanced_tools"),

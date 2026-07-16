@@ -12,6 +12,10 @@ def _validate(document: Mapping[str, object]) -> None:
     shell = permissions.get("shell")
     if not isinstance(shell, Mapping):
         return
+    default = shell.get("default", "allow")
+    normalized = default.lower() if isinstance(default, str) else ""
+    if normalized not in ("allow", "ask", "deny") or default != default.strip():
+        raise CompositionError("invalid permission shell default")
     seen: set[str] = set()
     for bucket in ("allow", "ask", "deny"):
         entries = shell.get(bucket)

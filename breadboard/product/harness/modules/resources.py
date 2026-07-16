@@ -7,8 +7,18 @@ def _validate(document: Mapping[str, object]) -> None:
     concurrency = document.get("concurrency")
     if not isinstance(concurrency, Mapping):
         return
-    config = document.get("tools")
-    aliases = config.get("aliases", {}) if isinstance(config, Mapping) else {}
+    config = document.get("tools") or {}
+    aliases = config.get("aliases") or {}
+
+    def _clean(value: object) -> bool:
+        return type(value) is str and bool(value) and value == value.strip()
+
+    def _names(values: object) -> bool:
+        return (
+            isinstance(values, (list, tuple))
+            and bool(values)
+            and all(_clean(value) for value in values)
+        )
 
     def canonical(name: str) -> str:
         while name in aliases:
@@ -17,10 +27,7 @@ def _validate(document: Mapping[str, object]) -> None:
 
     for field in ("nonblocking_tools", "at_most_one_of"):
         values = concurrency.get(field)
-        if values is not None and (
-            not isinstance(values, (list, tuple))
-            or any(type(value) is not str or not value.strip() for value in values)
-        ):
+        if values is not None and not _names(values):
             raise CompositionError(f"{field} must contain nonempty tool names")
     groups = concurrency.get("groups")
     if not isinstance(groups, (list, tuple)):
@@ -30,10 +37,11 @@ def _validate(document: Mapping[str, object]) -> None:
     for group in groups:
         if not isinstance(group, Mapping):
             continue
-        name = group.get("name", "").strip()
-        tools = [canonical(tool.strip()) for tool in group.get("match_tools", ())]
-        if not name or name in seen or not tools or any(not tool for tool in tools):
+        name = group.get("name", "")
+        raw_tools = group.get("match_tools", ())
+        if not _clean(name) or name in seen or not _names(raw_tools):
             raise CompositionError("concurrency group is invalid")
+        tools = [canonical(tool) for tool in raw_tools]
         if len(tools) != len(set(tools)) or claimed.intersection(tools):
             raise CompositionError("tool belongs to multiple concurrency groups")
         claimed.update(tools)
@@ -43,9 +51,7 @@ def _validate(document: Mapping[str, object]) -> None:
             raise CompositionError("concurrency group max_parallel must be positive")
         barrier = group.get("barrier_after")
         if barrier is not None and (
-            type(barrier) is not str
-            or not barrier.strip()
-            or canonical(barrier.strip()) not in tools
+            not _clean(barrier) or canonical(barrier) not in tools
         ):
             raise CompositionError("concurrency group barrier is invalid")
 
