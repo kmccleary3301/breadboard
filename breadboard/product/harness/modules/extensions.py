@@ -72,12 +72,9 @@ class Operation:
     def __post_init__(self) -> None:
         if type(self.kind) is not str or self.kind not in ("remove", "replace", "add"):
             raise CompositionError(f"unknown operation kind: {self.kind!r}")
-        if isinstance(self.path, (str, bytes)):
+        if type(self.path) not in (list, tuple):
             raise CompositionError("operation path must be a sequence")
-        try:
-            path = tuple(self.path)
-        except TypeError:
-            raise CompositionError("operation path must be a sequence") from None
+        path = tuple(self.path)
         if not path or any(type(part) is not str or not part for part in path):
             raise CompositionError("operation path must contain non-empty strings")
         object.__setattr__(self, "path", path)
@@ -88,6 +85,12 @@ class Operation:
             raise CompositionError(f"{self.kind} operation requires a value")
         else:
             object.__setattr__(self, "value", _copy_json(self.value, True))
+
+
+def _snapshot(value: object) -> Operation:
+    if type(value) is not Operation:
+        raise CompositionError("module operations must be exact Operation values")
+    return Operation(value.kind, value.path, value.value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,12 +105,9 @@ class ModuleContribution:
             raise CompositionError("module_id must be a non-empty string")
         if type(self.precedence) is not int:
             raise CompositionError("module precedence must be an integer")
-        try:
-            operations = tuple(self.operations)
-        except TypeError:
-            raise CompositionError("module operations must be a sequence") from None
-        if any(type(item) is not Operation for item in operations):
-            raise CompositionError("module operations must be exact Operation values")
+        if type(self.operations) not in (list, tuple):
+            raise CompositionError("module operations must be a sequence")
+        operations = tuple(_snapshot(item) for item in self.operations)
         keys = [(item.kind, item.path) for item in operations]
         if len(keys) != len(set(keys)):
             raise CompositionError("module operations must not repeat a kind and path")
@@ -116,7 +116,7 @@ class ModuleContribution:
         object.__setattr__(self, "operations", operations)
 
 
-_Ops: TypeAlias = Sequence[Operation]
+_Ops: TypeAlias = list[Operation] | tuple[Operation, ...]
 _Mod: TypeAlias = ModuleContribution
 
 
@@ -147,9 +147,7 @@ def _owned(
         _OWNED_TYPES[authority] = owned_type
         _OWNERS[owned_type] = authority
     args = (f"{module_id}:{precedence}", precedence, operations, validator)
-    owned = owned_type(*args, _key=_OWNER_KEY)
-    _admit(owned)
-    return owned
+    return _admit(owned_type(*args, _key=_OWNER_KEY))[0]
 
 
 def _admit(value: object) -> tuple[ModuleContribution, frozenset[str]]:
@@ -157,22 +155,13 @@ def _admit(value: object) -> tuple[ModuleContribution, frozenset[str]]:
     if authority is None:
         raise CompositionError("invalid owned module contribution")
     roots, validator = authority
-    raw = tuple(value.operations)
-    if any(type(item) is not Operation for item in raw):
-        raise CompositionError("module operations must be exact Operation values")
-    operations = []
-    for item in raw:
-        if item.kind == "remove":
-            copied = Operation(item.kind, item.path)
-        else:
-            copied = Operation(item.kind, item.path, item.value)
-        operations.append(copied)
+    if type(value.operations) is not tuple:
+        raise CompositionError("owned module operations must be an exact tuple")
+    operations = tuple(_snapshot(item) for item in value.operations)
     if any(item.path[0] not in roots for item in operations):
         raise CompositionError("owned module operation targets an unowned root")
-    return (
-        ModuleContribution(value.module_id, value.precedence, operations, validator),
-        roots,
-    )
+    args = (value.module_id, value.precedence, operations, validator)
+    return type(value)(*args, _key=_OWNER_KEY), roots
 
 
 def _path(path: tuple[str, ...]) -> str:

@@ -63,13 +63,24 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
         ModuleContribution("duplicate", 30, [duplicate, duplicate])
     with pytest.raises(CompositionError, match="unknown operation kind"):
         Operation(type("Deceptive", (), {"__eq__": lambda *_: True})(), path, True)
+    with pytest.raises(CompositionError, match="sequence"):
+        build_provider_module(iter([duplicate]))
     seed = build_provider_module([Operation("add", path, False)], 5)
     provider = build_provider_module([Operation("replace", path, True)], 10)
-    tools = build_tool_module([Operation("add", ("tools", "aliases"), aliases)], 20)
+    alias_op = Operation("add", ("tools", "aliases"), aliases)
+    tools = build_tool_module([alias_op], 20)
     composed = compose_modules(base, [tools, provider, seed])
     aliases["read"] = "changed"
     assert composed["providers"]["stream_responses"] is True
-    assert composed["tools"]["aliases"] == {"read": "read_file"}
+    object.__setattr__(alias_op, "kind", "remove")
+    for _ in range(2):
+        assert compose_modules(base, [tools])["tools"] == composed["tools"]
+    object.__setattr__(tools.operations[0], "kind", "remove")
+    with pytest.raises(CompositionError, match="remove operation"):
+        compose_modules(base, [tools])
+    object.__setattr__(provider, "operations", iter([duplicate]))
+    with pytest.raises(CompositionError, match="exact tuple"):
+        compose_modules(base, [provider])
     remove = Operation("remove", ("tools", "mark_task_complete"))
     removed = compose_modules(base, [build_tool_module([remove])])
     assert "mark_task_complete" not in removed["tools"]
