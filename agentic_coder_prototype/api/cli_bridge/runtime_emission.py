@@ -9,6 +9,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from breadboard.product.runtime.artifacts import ArtifactStore
+
 from ...compilation import compile_capability_registry, compile_effective_config_graph, finalize_record, get_spec
 from ...compilation.effective_operation_policy import compile_effective_operation_policy
 from ...compilation.v2_loader import load_agent_config
@@ -285,9 +287,11 @@ def emit_session_start_records(
 
     out_dir = default_runtime_record_root(root) / session_id
     out_dir.mkdir(parents=True, exist_ok=True)
+    artifact_store = ArtifactStore(out_dir / "objects")
     policy_path = out_dir / "effective_operation_policy.json"
     policy_text = json.dumps(operation_policy, indent=2, sort_keys=True) + "\n"
-    policy_path.write_text(policy_text, encoding="utf-8")
+    policy_ref = artifact_store.put(policy_text.encode("utf-8"), media_type="application/json")
+    artifact_store.materialize(policy_ref, policy_path)
     operation_policy_ref = f"effective_operation_policy.json#sha256:{hashlib.sha256(policy_text.encode('utf-8')).hexdigest()}"
     work_created = _work_item(
         session_id,
@@ -323,20 +327,29 @@ def emit_session_start_records(
     config_plane_path = out_dir / "records" / "config_plane.jsonl"
     config_plane_path.parent.mkdir(parents=True, exist_ok=True)
     paths: dict[str, str] = {}
-    with config_plane_path.open("a", encoding="utf-8") as stream:
-        for name, payload in records.items():
-            if name == "effective_operation_policy":
-                paths[name] = str(policy_path)
-            else:
-                path = out_dir / f"{name}.json"
-                path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-                paths[name] = str(path)
-            envelope = {
-                "stream": "config_plane",
-                "name": name,
-                "schema_version": payload.get("schema_version") if isinstance(payload, Mapping) else None,
-                "record": payload,
-                "emitted_at_utc": generated,
-            }
-            stream.write(json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+    envelopes: list[str] = []
+    for name, payload in records.items():
+        if name == "effective_operation_policy":
+            paths[name] = str(policy_path)
+        else:
+            path = out_dir / f"{name}.json"
+            content = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+            artifact_store.materialize(
+                artifact_store.put(content, media_type="application/json"), path
+            )
+            paths[name] = str(path)
+        envelope = {
+            "stream": "config_plane",
+            "name": name,
+            "schema_version": payload.get("schema_version") if isinstance(payload, Mapping) else None,
+            "record": payload,
+            "emitted_at_utc": generated,
+        }
+        envelopes.append(json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
+    prior = config_plane_path.read_bytes() if config_plane_path.exists() else b""
+    stream_content = prior + "".join(envelopes).encode("utf-8")
+    artifact_store.materialize(
+        artifact_store.put(stream_content, media_type="application/x-ndjson"),
+        config_plane_path,
+    )
     return paths

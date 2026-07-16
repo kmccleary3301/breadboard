@@ -20,6 +20,7 @@ packages = [
   "breadboard",
   "breadboard.product",
   "breadboard.product.harness",
+  "breadboard.product.runtime",
   "conformance",
 ]
 py-modules = ["adaptive_iter"]
@@ -27,4 +28,8 @@ py-modules = ["adaptive_iter"]
 [tool.setuptools.data-files]
 "agent_configs/templates" = ["agent_configs/templates/minimal_harness.v3.yaml"]
 "contracts/kernel/schemas" = ["contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json"]
-"contracts/public/schemas" = ["contracts/public/schemas/bb.harness_definition.v1.schema.json"]
+"contracts/public/schemas" = [
+  "contracts/public/schemas/bb.harness_definition.v1.schema.json",
+  "contracts/public/schemas/bb.session.v1.schema.json",
+  "contracts/public/schemas/bb.artifact_manifest.v1.schema.json",
+]
