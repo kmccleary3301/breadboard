@@ -4,9 +4,6 @@ from typing import TypeGuard
 from .extensions import CompositionError, ModuleContribution, Operation, _owned
 
 _ROOTS = frozenset({"long_running", "turn_strategy", "completion"})
-_STOPPING_BUDGETS = frozenset(
-    "max_total_cost_usd max_total_tokens total_cost_usd total_tokens".split()
-)
 
 
 def _validate(document: Mapping[str, object]) -> None:
@@ -37,9 +34,11 @@ def _validate(document: Mapping[str, object]) -> None:
             raise CompositionError("verification tier names must be unique")
     if long_running.get("enabled") is True:
         budgets = long_running.get("budgets")
-        if not isinstance(budgets, Mapping) or not any(
-            _positive(budgets.get(name)) for name in _STOPPING_BUDGETS
-        ):
+        if not isinstance(budgets, Mapping):
+            budgets = {}
+        tokens = budgets.get("total_tokens", budgets.get("max_total_tokens"))
+        cost = budgets.get("total_cost_usd", budgets.get("max_total_cost_usd"))
+        if not (_positive(tokens) or _positive(cost)):
             raise CompositionError(
                 "enabled long-running execution requires a positive stopping budget"
             )

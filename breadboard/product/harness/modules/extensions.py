@@ -37,40 +37,30 @@ def _copy_json(
     if depth > 100:
         raise CompositionError("JSON paths must not exceed 100 segments")
     active = set() if active is None else active
-    if isinstance(value, Mapping):
-        identity = id(value)
-        if identity in active:
-            raise CompositionError("cyclic JSON value")
-        if any(type(key) is not str for key in value):
-            raise CompositionError("JSON object keys must be strings")
-        active.add(identity)
-        try:
-            result = {
-                key: _copy_json(item, freeze, active, depth + 1)
-                for key, item in value.items()
-            }
-        finally:
-            active.remove(identity)
-        return MappingProxyType(result) if freeze else result
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, (Mapping, list, tuple)):
         identity = id(value)
         if identity in active:
             raise CompositionError("cyclic JSON value")
         active.add(identity)
         try:
+            if isinstance(value, Mapping):
+                if any(type(key) is not str for key in value):
+                    raise CompositionError("JSON object keys must be strings")
+                result = {
+                    key: _copy_json(item, freeze, active, depth + 1)
+                    for key, item in value.items()
+                }
+                return MappingProxyType(result) if freeze else result
             result = [_copy_json(item, freeze, active, depth + 1) for item in value]
+            return tuple(result) if freeze else result
         finally:
             active.remove(identity)
-        return tuple(result) if freeze else result
     kind = type(value)
-    if (
-        value is None
-        or kind in (bool, str)
-        or kind is int
-        and abs(value) <= _MAX_JSON_INTEGER
-        or kind is float
-        and math.isfinite(value)
-    ):
+    if value is None or kind in (bool, str):
+        return value
+    if kind is int and abs(value) <= _MAX_JSON_INTEGER:
+        return value
+    if kind is float and math.isfinite(value):
         return value
     raise CompositionError(f"unsupported JSON value: {kind.__name__}")
 
@@ -166,15 +156,12 @@ def _path(path: tuple[str, ...]) -> str:
 def _apply(document: dict[str, Any], operation: Operation) -> None:
     parent = document
     for index, item in enumerate(operation.path[:-1]):
+        location = _path(operation.path[: index + 1])
         if item not in parent:
-            raise CompositionError(
-                f"operation parent does not exist: {_path(operation.path[:index + 1])}"
-            )
+            raise CompositionError(f"operation parent does not exist: {location}")
         child = parent[item]
         if not isinstance(child, dict):
-            raise CompositionError(
-                f"operation crosses non-object: {_path(operation.path[:index + 1])}"
-            )
+            raise CompositionError(f"operation crosses non-object: {location}")
         parent = child
     target, present = operation.path[-1], operation.path[-1] in parent
     if operation.kind == "add" and present:
@@ -210,7 +197,7 @@ def compose_modules(
         snapshot = tuple(modules)
     except TypeError:
         raise CompositionError("modules must be a sequence") from None
-    if any(not isinstance(item, _OwnedContribution) for item in snapshot):
+    if any(type(item) is not _OwnedContribution for item in snapshot):
         raise CompositionError("modules must be owned module contributions")
     precedences = [item.precedence for item in snapshot]
     if len(precedences) != len(set(precedences)):
@@ -273,7 +260,7 @@ class LocalExtensionRegistry:
             raise CompositionError(
                 f"extension builder {extension_id!r} failed: {error}"
             ) from None
-        if not isinstance(built, _OwnedContribution):
+        if type(built) is not _OwnedContribution:
             raise CompositionError(
                 f"extension builder {extension_id!r} must return an owned contribution"
             )

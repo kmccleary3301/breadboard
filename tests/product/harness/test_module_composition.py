@@ -25,23 +25,22 @@ FIXTURES = ROOT / "tests" / "fixtures" / "product" / "harness"
 _FOREIGN = Operation("replace", ("workspace", "root"), "elsewhere")
 
 
+class _ForgedOwned(type(build_provider_module([]))):
+    def __init__(self) -> None:
+        ModuleContribution.__init__(self, "forged", 2, (_FOREIGN,))
+
+
 def _load(name: str) -> dict[str, object]:
     return yaml.safe_load((FIXTURES / name).read_text(encoding="utf-8"))
 
 
 def test_representative_fixtures_share_the_frozen_primitive_language() -> None:
-    paths = [
-        ROOT / "agent_configs" / "templates" / "representative_harness.v1.yaml",
-        FIXTURES / "research.v1.yaml",
-        FIXTURES / "engineering.v1.yaml",
-    ]
+    paths = [FIXTURES / name for name in ("research.v1.yaml", "engineering.v1.yaml")]
+    paths.append(ROOT / "agent_configs/templates/representative_harness.v1.yaml")
     documents = [load_harness_definition(path).as_dict() for path in paths]
-    forbidden = {"resources", "host", "policies", "extensions"}
-    assert all(not forbidden.intersection(document) for document in documents)
-    required = {"workspace", "providers", "modes", "loop"}
-    assert all(required <= set(document) for document in documents)
-    called = []
-    probe = ModuleContribution("side-effect", 1, [], lambda _: called.append(True))
+    for document in documents:
+        assert not {"resources", "host", "policies", "extensions"} & document.keys()
+        assert {"workspace", "providers", "modes", "loop"} <= document.keys()
     for field, value in (
         ("schema_version", "bb.agent_config_surface.v2"),
         ("version", True),
@@ -49,9 +48,9 @@ def test_representative_fixtures_share_the_frozen_primitive_language() -> None:
     ):
         invalid = _load("engineering.v1.yaml")
         invalid[field] = value
+        invalid["providers"]["default_model"] = "missing"
         with pytest.raises(CompositionError, match="bb.harness_definition.v1"):
-            compose_modules(invalid, [probe])
-    assert not called
+            compose_modules(invalid, [build_provider_module([])])
 
 
 def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
@@ -119,38 +118,53 @@ def test_local_extensions_fail_closed_without_a_core_fork() -> None:
     registry.register("forged", forge)
     with pytest.raises(CompositionError, match="builder 'forged' failed"):
         registry.resolve("forged", {})
+    registry.register("subclass", lambda _: _ForgedOwned())
+    with pytest.raises(CompositionError, match="owned contribution"):
+        registry.resolve("subclass", {})
 
 
 def test_module_invariants_fail_before_lock() -> None:
     base = _load("engineering.v1.yaml")
+
+    def reject(modules: object, match: str | None = None, document=base) -> None:
+        with pytest.raises(CompositionError, match=match):
+            compose_modules(document, modules)
+
     bad_model = Operation("replace", ("providers", "default_model"), "x")
-    with pytest.raises(CompositionError, match="declared model"):
-        compose_modules(base, [build_provider_module([bad_model])])
+    reject([build_provider_module([bad_model])], "declared model")
+    models = [{"id": f"m{i}", "adapter": "mock"} for i in range(1101)]
+    for i, model in enumerate(models[:-1]):
+        model["routing"] = {"fallback_models": [f"m{i + 1}"]}
+    provider_chain = {**base, "providers": {"default_model": "m0", "models": models}}
+    compose_modules(provider_chain, [build_provider_module([])])
+    models[-1]["routing"] = {"fallback_models": ["m0"]}
+    reject([build_provider_module([])], "acyclic", provider_chain)
     bad_resume = Operation("add", ("long_running", "resume"), {"enabled": True})
-    with pytest.raises(CompositionError, match="state_path"):
-        compose_modules(base, [build_longrun_module([bad_resume])])
+    reject([build_longrun_module([bad_resume])], "state_path")
     budget = Operation("replace", ("long_running", "budgets"), {"total_tokens": 1})
     compose_modules(base, [build_longrun_module([budget])])
-    for name in ("wall_clock_s", "total_episodes"):
-        unsupported = Operation("replace", ("long_running", "budgets"), {name: 1})
-        with pytest.raises(CompositionError, match="positive stopping budget"):
-            compose_modules(base, [build_longrun_module([unsupported])])
+    for budgets in (
+        {"wall_clock_s": 1},
+        {"total_episodes": 1},
+        {"total_tokens": 0, "max_total_tokens": 1},
+        {"total_cost_usd": 0, "max_total_cost_usd": 1},
+    ):
+        unsupported = Operation("replace", ("long_running", "budgets"), budgets)
+        reject([build_longrun_module([unsupported])], "positive stopping budget")
     cases = (
         (build_host_module, ("workspace", "mirror"), {"enabled": True}),
         (build_resource_module, ("concurrency", "at_most_one_of"), [["x", "x"]]),
         (build_policy_module, ("permissions", "shell", "allow"), ["x", "x"]),
     )
     for builder, path, value in cases:
-        with pytest.raises(CompositionError):
-            compose_modules(base, [builder([Operation("add", path, value)])])
+        reject([builder([Operation("add", path, value)])])
     duplicate_paths = Operation("replace", ("tools", "registry", "paths"), ["x", "x"])
-    with pytest.raises(CompositionError, match="tools.registry.paths"):
-        compose_modules(base, [build_tool_module([duplicate_paths])])
+    reject([build_tool_module([duplicate_paths])], "tools.registry.paths")
     with pytest.raises(CompositionError, match="precedence"):
         compose_modules(base, [build_provider_module([], 1), build_tool_module([], 1)])
     generic = ModuleContribution("generic", 2, [_FOREIGN])
-    with pytest.raises(CompositionError, match="owned module"):
-        compose_modules(base, [generic])
+    reject([generic], "owned module")
+    reject([_ForgedOwned()], "owned module")
     typed = build_provider_module([])
     with pytest.raises(CompositionError, match="internal capability"):
         replace(typed, operations=(_FOREIGN,), validator=lambda _: None)
@@ -159,17 +173,24 @@ def test_module_invariants_fail_before_lock() -> None:
         (Operation("replace", ("tools", "aliases"), {}), "does not exist"),
     )
     for operation, message in target_cases:
-        with pytest.raises(CompositionError, match=message):
-            compose_modules(base, [build_tool_module([operation])])
+        reject([build_tool_module([operation])], message)
     deep = {}
-    for _ in range(102):
+    for _ in range(99):
         deep = {"x": deep}
-    with pytest.raises(CompositionError, match="100 segments"):
-        Operation("add", ("tools", "deep"), deep)
     deep_base = _load("engineering.v1.yaml")
-    deep_base["workspace"]["root"] = deep
-    with pytest.raises(CompositionError, match="100 segments"):
-        compose_modules(deep_base, [])
+    deep_base["dossier"] = deep
+    compose_modules(deep_base, [])
+    deep["x"] = {"x": deep["x"]}
+    reject([], "100 segments", deep_base)
+    cycles = ({}, [])
+    cycles[0]["x"] = cycles[0]
+    cycles[1].append(cycles[1])
+    for cycle in cycles:
+        with pytest.raises(CompositionError, match="cyclic JSON"):
+            Operation("add", ("tools", "deep"), cycle)
+        cyclic_base = _load("engineering.v1.yaml")
+        cyclic_base["dossier"] = cycle
+        reject([], "cyclic JSON", cyclic_base)
     owners = (
         (build_provider_module, "providers provider_tools"),
         (build_tool_module, "tools enhanced_tools"),
@@ -179,7 +200,7 @@ def test_module_invariants_fail_before_lock() -> None:
         (build_longrun_module, "long_running turn_strategy completion"),
     )
     roots = set(
-        "providers provider_tools tools enhanced_tools concurrency permissions guardrails replay workspace long_running turn_strategy completion".split()
+        "completion concurrency dossier enhanced_tools features guardrails long_running loop modes multi_agent permissions prompts provider_tools providers replay schema_version tools turn_strategy version workspace".split()
     )
     for builder, names in owners:
         for root in roots:
