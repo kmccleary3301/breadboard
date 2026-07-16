@@ -1,18 +1,13 @@
 from __future__ import annotations
-
 import copy
 import importlib
 import shutil
-
 import pytest
-
 from scripts.quality.build_surface_inventory import _binding_manifest, build_inventory
 import scripts.quality.run_axis_smoke as axis_runner
 from scripts.quality.run_axis_smoke import run_axis_smoke
 from scripts.quality.validate_public_contracts import (
-    ContractValidationError,
-    PUBLIC_DIR,
-    SURFACES,
+    ContractValidationError, PUBLIC_DIR, SURFACES,
     canonical_bytes,
     load_json,
     frozen_operation_ids,
@@ -133,14 +128,16 @@ def test_staged_schema_identity_index_is_strict(tmp_path, mode) -> None:
         shutil.copy(path, root / "contracts/kernel/schemas" / path.name)
     with pytest.raises(ContractValidationError, match=r"\$id must equal|duplicate schema \$id"):
         validate_public_contracts(root / "contracts/public")
-@pytest.mark.parametrize("mode", ["provenance", "schema_version"])
+@pytest.mark.parametrize("mode", ["provenance", "schema_version", "conditional", "fixture_omission"])
 def test_staged_record_schema_source_rejects_false_identity(tmp_path, mode) -> None:
     public_dir = staged_root(tmp_path) / "contracts/public"
     path = public_dir / "record_schemas.v1.json"; source = load_json(path)
     if mode == "provenance": source["decision_inputs"]["executable_replay_sha256"] = "sha256:" + "0" * 64
-    else: source["schemas"]["bb.page.v1"]["properties"]["schema_version"]["const"] = "1.0"
+    elif mode == "schema_version": source["schemas"]["bb.page.v1"]["properties"]["schema_version"]["const"] = "1.0"
+    elif mode == "conditional": del source["schemas"]["bb.comparison_report.v1"]["allOf"]
+    else: del source["fixtures"]["bb.page.v1"]
     path.write_bytes(canonical_bytes(source))
-    with pytest.raises(ContractValidationError, match="decision inputs differ from frozen provenance|non-canonical schema identity"):
+    with pytest.raises(ContractValidationError, match="frozen provenance|schema identity|contradiction fixture passed|fixture schema keys"):
         validate_public_contracts(public_dir)
 def test_generated_record_schema_drift_fails_and_rewrites_deterministically(tmp_path) -> None:
     root = staged_root(tmp_path); public_dir = root / "contracts/public"
