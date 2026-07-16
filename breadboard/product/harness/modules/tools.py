@@ -36,11 +36,9 @@ def _validate(document: Mapping[str, object]) -> None:
     aliases = tools.get("aliases")
     if isinstance(aliases, Mapping):
         for alias, target in aliases.items():
-            if (
-                not isinstance(alias, str)
-                or not alias
-                or not isinstance(target, str)
-                or not target
+            if any(
+                type(value) is not str or not value or value != value.strip()
+                for value in (alias, target)
             ):
                 raise CompositionError("invalid tool alias")
         for root in aliases:

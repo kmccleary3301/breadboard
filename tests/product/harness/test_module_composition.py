@@ -141,6 +141,7 @@ def test_module_invariants_fail_before_lock() -> None:
         ("tools/dialects", "{preference: {default: '   '}}"),
         ("tools/dialects", "{selection: {by_model: {'*': [' bash_block ']}}}"),
         ("tools/aliases", "{a: b, b: a}"),
+        ("tools/aliases", "{' a ': b}"),
     )
     for path, value in cases:
         document = _load("engineering.v1.yaml")
