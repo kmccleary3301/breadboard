@@ -58,8 +58,11 @@ def _metadata_leaf(value: Any) -> bool:
 def _merge(current: Any, sources: Any, incoming: Any, layer_id: str,
            *, metadata: bool = True) -> tuple[Any, Any]:
     if metadata and _metadata_leaf(incoming):
-        meta = {key: _copy(value, freeze=False) for key, value in incoming.items()
-                if key != "value"}
+        meta = {key: _copy(value, freeze=False) for key, value in incoming.items() if key != "value"}
+        if "env_name" in meta and (not isinstance(meta["env_name"], str) or not meta["env_name"]):
+            raise HarnessCompileError("env_name metadata must be a non-empty string")
+        if "env_satisfied" in meta and type(meta["env_satisfied"]) is not bool:
+            raise HarnessCompileError("env_satisfied metadata must be a boolean")
         return _copy(incoming["value"], freeze=False), (layer_id, meta)
     if isinstance(incoming, Mapping):
         if not incoming and (not isinstance(current, Mapping) or not current):
@@ -129,20 +132,19 @@ def compile_harness_definition(
     extends_chain: list[str] = []
     source_hashes = {source_ref: sha256_json(root)}
     source_number = 0
-
     def add_source(document: dict[str, Any], ref: str) -> None:
         nonlocal source_number
         name = PurePath(ref).name or "source"
+        values = _runtime_values(document)
         record = {
-            "host_visible": True, "layer_hash": sha256_json(document),
+            "host_visible": True, "layer_hash": sha256_json(values),
             "layer_id": f"agent-config:{source_number:04d}:{name}",
             "model_visible": True, "scope": "agent", "source_kind": "project",
             "source_ref": ref,
         }
         source_number += 1
-        layers.append((record, _runtime_values(document),
+        layers.append((record, values,
                        {key: value for key, value in document.items() if key != "extends"}))
-
     def visit(document: dict[str, Any], ref: str, stack: tuple[str, ...]) -> None:
         for declared in _refs(document, ref):
             if load_ref is None:
@@ -170,20 +172,20 @@ def compile_harness_definition(
         add_source(document, ref)
 
     if defaults is not None:
-        default = _mapping(defaults, "defaults")
+        default = _runtime_values(_mapping(defaults, "defaults"))
         layers.append(({
             "host_visible": True, "layer_hash": sha256_json(default),
             "layer_id": "harness-default:0000", "model_visible": True,
             "scope": "agent", "source_kind": "default", "source_ref": None,
-        }, _runtime_values(default), None))
+        }, default, None))
     visit(root, source_ref, (source_ref,))
     for index, overlay in enumerate(overlays):
-        value = _mapping(overlay, f"overlay {index}")
+        value = _runtime_values(_mapping(overlay, f"overlay {index}"))
         layers.append(({
             "host_visible": True, "layer_hash": sha256_json(value),
             "layer_id": f"harness-overlay:{index:04d}", "model_visible": True,
             "scope": "agent", "source_kind": "runtime", "source_ref": f"overlay:{index}",
-        }, _runtime_values(value), None))
+        }, value, None))
 
     effective: Any = {}
     provenance: Any = {}
@@ -246,8 +248,8 @@ def compile_harness_definition(
     redacted_paths = [row["path"] for row in effective_values
                       if row["visibility"] == "redacted"]
     graph = {
-        "effective_values": effective_values, "env_gates": list(env_gates.values()),
-        "graph_hash": None,
+        "effective_values": effective_values,
+        "env_gates": [env_gates[key] for key in sorted(env_gates)], "graph_hash": None,
         "graph_id": f"agent_config:{PurePath(source_ref).stem or 'harness'}",
         "merge_policy": {"conflict_resolution": "highest-precedence",
                          "policy_id": "precedence_order_deep_merge",
