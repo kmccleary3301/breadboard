@@ -48,6 +48,9 @@ class EventType(str, enum.Enum):
     LOG_LINK = "log_link"
     ERROR = "error"
     RUN_FINISHED = "run_finished"
+    TURN_COMPLETED = "turn_completed"
+    TURN_FAILED = "turn_failed"
+    TURN_CANCELLED = "turn_cancelled"
 
 
 def _now_ms() -> int:
@@ -69,6 +72,8 @@ class SessionEvent:
     family: Optional[str] = None
     actor: Optional[str] = None
     visibility: Optional[str] = None
+    input_id: Optional[str] = None
+    turn_id: Optional[str] = None
 
     def asdict(self) -> Dict[str, Any]:
         timestamp_ms = int(self.created_at)
@@ -83,6 +88,10 @@ class SessionEvent:
             "protocol_version": PROTOCOL_VERSION,
             "payload": self.payload,
         }
+        if self.input_id is not None:
+            envelope["input_id"] = self.input_id
+        if self.turn_id is not None:
+            envelope["turn_id"] = self.turn_id
         if self.classification:
             envelope["classification"] = self.classification
         if self.family:

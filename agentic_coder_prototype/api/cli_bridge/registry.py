@@ -6,14 +6,43 @@ import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Deque, Dict, Iterable, Optional, Set
+from typing import Any, Deque, Dict, Iterable, Optional, Set, Tuple
 
 from .events import SessionEvent
-from .models import SessionStatus, SessionSummary
+from .models import SessionStatus, SessionSummary, TurnAdmission
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+@dataclass
+class TurnRecord:
+    """Engine-owned identity and admission state for one accepted turn."""
+
+    input_id: str
+    turn_id: str
+    client_message_id: str
+    content: str
+    attachments: Tuple[str, ...]
+    original_disposition: str
+    state: str
+    cancellation_requested: bool = False
+    cancellation_reason: Optional[str] = None
+    execution_committed: bool = False
+    terminal_outcome: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CancellationRecord:
+    """Stable acknowledgement facts for one targeted cancellation request."""
+
+    cancellation_request_id: str
+    cancellation_request_key: str
+    turn_id: str
+    input_id: str
+    reason: str
+    original_disposition: str
 
 
 @dataclass
@@ -35,6 +64,13 @@ class SessionRecord:
     dispatch_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
     dispatcher_task: Optional[asyncio.Task] = None
     runner: Any = None  # Populated with SessionRunner once started
+    turn_admission: TurnAdmission = TurnAdmission.IDLE
+    active_turn_id: Optional[str] = None
+    queued_turn_ids: Deque[str] = field(default_factory=deque, repr=False)
+    turns_by_id: Dict[str, TurnRecord] = field(default_factory=dict, repr=False)
+    submissions_by_key: Dict[str, TurnRecord] = field(default_factory=dict, repr=False)
+    cancellations_by_key: Dict[str, CancellationRecord] = field(default_factory=dict, repr=False)
+    admission_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
 
     def to_summary(self) -> SessionSummary:
         model = None
@@ -53,6 +89,9 @@ class SessionRecord:
             reward_summary=self.reward_summary,
             logging_dir=self.logging_dir,
             metadata=self.metadata or None,
+            turn_admission=self.turn_admission,
+            active_turn_id=self.active_turn_id,
+            queued_turn_count=len(self.queued_turn_ids),
         )
 
 

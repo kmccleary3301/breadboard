@@ -38,10 +38,12 @@ from .models import (
     SessionInputRequest,
     SessionInputResponse,
     SessionStatus,
+    SessionTurnCancelRequest,
+    SessionTurnCancelResponse,
 )
 from .atp_diagnostics import build_atp_harness_diagnostic
 from .registry import SessionRecord, SessionRegistry
-from .session_runner import SessionRunner
+from .session_runner import SessionRunner, TurnContractConflict
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from ...compilation.v2_loader import load_agent_config
 from ...compilation.effective_operation_policy import policy_pack_for_config_authority
@@ -464,12 +466,46 @@ class SessionService:
         if not runner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
         try:
-            await runner.enqueue_input(payload.content, attachments=list(payload.attachments or []))
+            return await runner.submit_input(
+                payload.content,
+                attachments=list(payload.attachments or []),
+                client_message_id=payload.client_message_id,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except TurnContractConflict as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": exc.code, "message": str(exc), "turn_id": exc.turn_id},
+            ) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-        return SessionInputResponse()
+
+    async def cancel_turn(
+        self,
+        session_id: str,
+        turn_id: str,
+        payload: SessionTurnCancelRequest,
+    ) -> SessionTurnCancelResponse:
+        record = await self.ensure_session(session_id)
+        runner: Optional[SessionRunner] = getattr(record, "runner", None)
+        if not runner:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
+        try:
+            return await runner.cancel_turn(
+                turn_id,
+                cancellation_request_key=payload.cancellation_request_key,
+                reason=payload.reason,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        except TurnContractConflict as exc:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={"code": exc.code, "message": str(exc), "turn_id": exc.turn_id},
+            ) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     async def execute_command(self, session_id: str, payload: SessionCommandRequest) -> SessionCommandResponse:
         record = await self.ensure_session(session_id)

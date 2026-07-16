@@ -374,6 +374,48 @@ class AgenticCoder:
                 prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
             )
     
+    @staticmethod
+    def _preserve_turn_message_provenance(
+        result: Dict[str, Any],
+        *,
+        context: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Preserve only provenance created by the matching message producer."""
+
+        expected_invocation_id = (
+            context.get("_breadboard_turn_invocation_id")
+            if isinstance(context, dict)
+            else None
+        )
+        expected_user_content = (
+            context.get("_breadboard_submitted_task_text")
+            if isinstance(context, dict)
+            else None
+        )
+        provenance = result.get("_breadboard_turn_message_provenance")
+        messages = result.get("messages")
+        valid = (
+            isinstance(provenance, dict)
+            and isinstance(messages, list)
+            and provenance.get("invocation_id") == expected_invocation_id
+            and provenance.get("submitted_user_content") == expected_user_content
+        )
+        if valid:
+            watermark = provenance.get("message_start_index")
+            user_index = provenance.get("user_message_index")
+            valid = (
+                isinstance(watermark, int)
+                and not isinstance(watermark, bool)
+                and isinstance(user_index, int)
+                and not isinstance(user_index, bool)
+                and 0 <= watermark <= user_index < len(messages)
+                and isinstance(messages[user_index], dict)
+                and messages[user_index].get("role") == "user"
+            )
+        if not valid:
+            result.pop("_breadboard_turn_message_provenance", None)
+        return result
+
     def run_task(
         self,
         task: str,
@@ -449,7 +491,7 @@ class AgenticCoder:
                 "falling back to queue-based streaming."
             )
         if self._local_mode:
-            return self.agent.run_agentic_loop(
+            result = self.agent.run_agentic_loop(
                 "",
                 user_prompt,
                 model,
@@ -464,6 +506,10 @@ class AgenticCoder:
                 control_queue=control_queue,
                 kernel_emitter_run_dir=kernel_emitter_run_dir,
                 kernel_emitter_mode=kernel_emitter_mode,
+                context=context,
+            )
+            return self._preserve_turn_message_provenance(
+                result,
                 context=context,
             )
 
@@ -487,7 +533,11 @@ class AgenticCoder:
         ray_mod = _get_ray()
         if ray_mod is None:
             raise RuntimeError("Ray is unavailable for remote execution.")
-        return ray_mod.get(ref)
+        result = ray_mod.get(ref)
+        return self._preserve_turn_message_provenance(
+            result,
+            context=context,
+        )
     
     def interactive_session(self) -> None:
         """Start an interactive session with the agent."""

@@ -49,6 +49,8 @@ from .models import (
     SessionFileInfo,
     SessionInputRequest,
     SessionInputResponse,
+    SessionTurnCancelRequest,
+    SessionTurnCancelResponse,
     SessionSummary,
 )
 from agentic_coder_prototype.api.e4 import create_e4_router
@@ -705,6 +707,24 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     )
     async def post_input(session_id: str, payload: SessionInputRequest, svc: SessionService = Depends(get_service)):
         return await svc.send_input(session_id, payload)
+
+    @app.post(
+        "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
+        response_model=SessionTurnCancelResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+        responses={
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+            400: {"model": ErrorResponse},
+        },
+    )
+    async def cancel_turn(
+        session_id: str,
+        turn_id: str,
+        payload: SessionTurnCancelRequest,
+        svc: SessionService = Depends(get_service),
+    ):
+        return await svc.cancel_turn(session_id, turn_id, payload)
 
     @app.post(
         "/v1/sessions/{session_id}/command",

@@ -18,12 +18,18 @@ class SessionStatus(str, enum.Enum):
     FAILED = "failed"
     STOPPED = "stopped"
 
+class TurnAdmission(str, enum.Enum):
+    """Whether a session can start a newly admitted turn immediately."""
+
+    IDLE = "idle"
+    ACTIVE = "active"
+
 
 class SessionCreateRequest(BaseModel):
     """Incoming payload for POST /sessions."""
 
     config_path: str = Field(..., description="Path to agent config YAML/JSON.")
-    task: str = Field(..., description="User prompt or path to task file.")
+    task: str = Field(default="", description="Optional initial task; omit for an idle session.")
     overrides: Dict[str, Any] | None = Field(default=None, description="Dotted-key override map.")
     metadata: Dict[str, Any] | None = Field(default=None, description="Opaque metadata for UX features.")
     workspace: Optional[str] = Field(default=None, description="Optional explicit workspace root.")
@@ -56,6 +62,9 @@ class SessionSummary(BaseModel):
     reward_summary: Dict[str, Any] | None = None
     logging_dir: Optional[str] = None
     metadata: Dict[str, Any] | None = None
+    turn_admission: TurnAdmission = TurnAdmission.IDLE
+    active_turn_id: Optional[str] = None
+    queued_turn_count: int = 0
 
 
 class ErrorEnvelope(BaseModel):
@@ -93,12 +102,19 @@ class AttachmentUploadResponse(BaseModel):
 class SessionInputRequest(BaseModel):
     content: str = Field(..., description="User supplied input text.")
     attachments: Optional[List[str]] = Field(default=None, description="Attachment IDs returned by /attachments.")
+    client_message_id: str = Field(..., description="Stable idempotency key for this input.")
 
     @validator("content")
     def _validate_content(cls, value: str) -> str:
         if not value or not value.strip():
             raise ValueError("content must not be empty")
         return value
+
+    @validator("client_message_id")
+    def _validate_client_message_id(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("client_message_id must not be empty")
+        return value.strip()
 
     @validator("attachments", each_item=True)
     def _validate_attachment_id(cls, value: str) -> str:
@@ -108,7 +124,33 @@ class SessionInputRequest(BaseModel):
 
 
 class SessionInputResponse(BaseModel):
-    status: str = Field(default="accepted")
+    status: Literal["accepted"] = "accepted"
+    client_message_id: str
+    input_id: str
+    turn_id: str
+    disposition: Literal["started", "queued", "deduplicated"]
+    original_disposition: Literal["started", "queued"]
+
+
+class SessionTurnCancelRequest(BaseModel):
+    cancellation_request_key: str = Field(..., description="Stable idempotency key for this cancellation.")
+    reason: Literal["user_requested", "timeout", "superseded"] = "user_requested"
+
+    @validator("cancellation_request_key")
+    def _validate_cancellation_request_key(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("cancellation_request_key must not be empty")
+        return value.strip()
+
+
+class SessionTurnCancelResponse(BaseModel):
+    status: Literal["accepted"] = "accepted"
+    cancellation_request_id: str
+    cancellation_request_key: str
+    input_id: str
+    turn_id: str
+    disposition: Literal["cancellation_requested", "queued_cancelled", "deduplicated"]
+    original_disposition: Literal["cancellation_requested", "queued_cancelled"]
 
 
 class SessionCommandRequest(BaseModel):
