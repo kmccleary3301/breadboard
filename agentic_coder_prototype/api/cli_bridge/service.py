@@ -12,6 +12,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, Optional, Sequence
 
+from breadboard.product.harness.lock import EffectiveHarnessLock
+from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard.product.runtime.ports import JsonlEventSink
+from breadboard.product.runtime.session import Session as ProductSession
+
 from fastapi import HTTPException, UploadFile, status
 
 from .events import EventType, SessionEvent
@@ -43,6 +48,7 @@ from .atp_diagnostics import build_atp_harness_diagnostic
 from .registry import SessionRecord, SessionRegistry
 from .session_runner import SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
+from ...compilation.effective_config_graph import compile_effective_config_graph
 from ...compilation.v2_loader import load_agent_config
 from ...compilation.effective_operation_policy import policy_pack_for_config_authority
 from .runtime_emission import default_runtime_record_root, emit_session_start_records, primitive_emission_enabled
@@ -84,22 +90,42 @@ class SessionService:
         self._atp_service_initialized = False
         self._atp_runtime_capabilities: dict[str, Any] = {}
 
+    @staticmethod
+    def _runtime_lock(session_id: str, runtime_config: dict[str, Any], source_ref: str) -> EffectiveHarnessLock:
+        graph = compile_effective_config_graph(
+            graph_id=f"session:{session_id}",
+            layers=[{
+                "layer_id": "runtime:effective", "source_kind": "runtime", "scope": "session",
+                "precedence": 0, "values": runtime_config, "source_ref": source_ref,
+            }],
+        )
+        return EffectiveHarnessLock._from_record(graph)
+
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
         session_id = str(uuid.uuid4())
         metadata = dict(request.metadata or {})
         if self._bridge_chaos:
             metadata.setdefault("bridgeChaos", self._bridge_chaos)
         metadata.setdefault("config_path", request.config_path)
+        record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata)
+        runner = SessionRunner(session=record, registry=self.registry, request=request)
+        runtime_config = runner.prepare_runtime_config()
+        runtime_lock = self._runtime_lock(session_id, runtime_config, request.config_path)
+        product_session = ProductSession.start(
+            runtime_lock, request.task, session_id=session_id,
+            sink=JsonlEventSink(Path(os.environ.get("BREADBOARD_SESSION_EVENT_ROOT", Path.home() / ".breadboard" / "session_events")) / session_id / "session_events.jsonl"),
+        )
+        metadata["session_contract"] = product_session.read_model.as_dict()
         if primitive_emission_enabled():
             emitted_paths = emit_session_start_records(session_id=session_id, request=request)
             metadata.setdefault("runtime_records", emitted_paths)
             metadata.setdefault("runtime_record_dir", str(default_runtime_record_root() / session_id))
-        record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata)
+        record.product_session = product_session
+        record.runner = runner
+        record.product_artifacts = {}
         await self.registry.create(record)
         await self._ensure_dispatcher(record)
         await self._maybe_prewarm_request_runtime(request, metadata)
-        runner = SessionRunner(session=record, registry=self.registry, request=request)
-        record.runner = runner
         await runner.start()
         logger.info("Session %s created", session_id)
         return SessionCreateResponse(
@@ -452,6 +478,9 @@ class SessionService:
 
     async def stop_session(self, session_id: str) -> None:
         record = await self.ensure_session(session_id)
+        product_session: ProductSession | None = getattr(record, "product_session", None)
+        if product_session and product_session.read_model.status not in {"completed", "failed", "canceled"}:
+            product_session.cancel()
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if runner:
             await runner.stop()
@@ -463,8 +492,16 @@ class SessionService:
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
+        product_session: ProductSession | None = getattr(record, "product_session", None)
         try:
-            await runner.enqueue_input(payload.content, attachments=list(payload.attachments or []))
+            if product_session and product_session.read_model.status != "running":
+                raise RuntimeError(f"cannot accept input while session is {product_session.read_model.status}")
+            accepted_content = await runner.enqueue_input(payload.content, attachments=list(payload.attachments or []))
+            if product_session:
+                artifacts = getattr(record, "product_artifacts", {})
+                refs = [artifacts[attachment_id] for attachment_id in payload.attachments or [] if attachment_id in artifacts]
+                product_session.input(accepted_content or payload.content, refs)
+                record.metadata["session_contract"] = product_session.read_model.as_dict()
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except RuntimeError as exc:
@@ -476,8 +513,20 @@ class SessionService:
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
+        product_session: ProductSession | None = getattr(record, "product_session", None)
         try:
             detail = await runner.handle_command(payload.command, payload.payload)
+            if product_session and payload.command in {"set_model", "set_skills"}:
+                product_session.reconfigure(
+                    self._runtime_lock(session_id, runner.current_runtime_config(), runner.request.config_path),
+                    payload.command,
+                )
+                record.metadata["session_contract"] = product_session.read_model.as_dict()
+            if product_session and payload.command in {"permission_decision", "respond_permission", "permission_response"}:
+                request_id, decision = detail.get("request_id"), detail.get("decision")
+                if isinstance(request_id, str) and isinstance(decision, str):
+                    product_session.resolve_approval(request_id, decision)
+                    record.metadata["session_contract"] = product_session.read_model.as_dict()
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except NotImplementedError as exc:
@@ -504,6 +553,8 @@ class SessionService:
 
         attachment_entries: list[dict[str, Any]] = []
         handles: list[AttachmentHandle] = []
+        artifact_store = ArtifactStore(workspace_dir / ".breadboard" / "artifacts")
+        artifact_refs = getattr(record, "product_artifacts", {})
         attachment_root = workspace_dir / ".breadboard" / "attachments"
         attachment_root.mkdir(parents=True, exist_ok=True)
         for index, upload in enumerate(files, start=1):
@@ -518,7 +569,9 @@ class SessionService:
             target_dir = attachment_root / attachment_id
             target_dir.mkdir(parents=True, exist_ok=True)
             target_path = target_dir / filename
-            target_path.write_bytes(data)
+            artifact_ref = artifact_store.put(data, media_type=upload.content_type or "application/octet-stream")
+            artifact_store.materialize(artifact_ref, target_path)
+            artifact_refs[attachment_id] = artifact_ref
             rel_path = target_path.relative_to(workspace_dir)
             handle = AttachmentHandle(
                 id=attachment_id,
@@ -536,6 +589,8 @@ class SessionService:
                     "metadata": metadata or {},
                 }
             )
+        record.product_artifacts = artifact_refs
+        record.metadata["artifact_manifest"] = artifact_store.manifest(session_id, artifact_refs)
         if not handles:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no attachment data found")
         runner.register_attachments(attachment_entries)

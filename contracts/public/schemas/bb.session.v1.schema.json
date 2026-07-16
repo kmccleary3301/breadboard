@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.session.v1.schema.json",
+  "title": "BreadBoard Session V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "status", "effective_lock_hash", "task_hash", "event_count", "pending_approval", "terminal_outcome"],
+  "properties": {
+    "schema_version": {"const": "bb.session.v1"},
+    "session_id": {"type": "string", "minLength": 1},
+    "status": {"enum": ["running", "awaiting_approval", "paused", "completed", "failed", "canceled"]},
+    "effective_lock_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "task_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "event_count": {"type": "integer", "minimum": 1},
+    "pending_approval": {"type": ["string", "null"]},
+    "terminal_outcome": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["outcome"],
+          "properties": {"outcome": {"enum": ["completed", "failed", "canceled"]}},
+          "additionalProperties": true
+        }
+      ]
+    }
+  }
+}
