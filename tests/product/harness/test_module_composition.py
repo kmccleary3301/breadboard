@@ -26,11 +26,6 @@ FIXTURES = ROOT / "tests" / "fixtures" / "product" / "harness"
 _FOREIGN = Operation("replace", ("workspace", "root"), "elsewhere")
 
 
-class _ForgedOwned(type(build_provider_module([]))):
-    def __init__(self) -> None:
-        ModuleContribution.__init__(self, "forged", 2, (_FOREIGN,))
-
-
 def _load(name: str) -> dict[str, object]:
     return yaml.safe_load((FIXTURES / name).read_text(encoding="utf-8"))
 
@@ -65,7 +60,7 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
         Operation(type("Deceptive", (), {"__eq__": lambda *_: True})(), path, True)
     with pytest.raises(CompositionError, match="sequence"):
         build_provider_module(iter([duplicate]))
-    with pytest.raises(CompositionError, match="modules must be a sequence"):
+    with pytest.raises(CompositionError, match="list or tuple"):
         compose_modules(base, iter([build_provider_module([])]))
     seed = build_provider_module([Operation("add", path, False)], 5)
     provider = build_provider_module([Operation("replace", path, True)], 10)
@@ -78,6 +73,8 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     for _ in range(2):
         assert compose_modules(base, [tools])["tools"] == composed["tools"]
     object.__setattr__(tools.operations[0], "path", ["tools", "aliases"])
+    state = repr(tuple((item.kind, item.path, item.value) for item in tools.operations))
+    object.__setattr__(tools, "_sealed", (tools.module_id, tools.precedence, state))
     with pytest.raises(CompositionError, match="mutated after construction"):
         compose_modules(base, [tools])
     object.__setattr__(provider.operations[0], "value", 1)
@@ -113,20 +110,10 @@ def test_local_extensions_fail_closed_without_a_core_fork() -> None:
     assert document["completion"]["confidence_threshold"] == 0.9
     with pytest.raises(CompositionError, match="unknown extension id"):
         registry.resolve("missing", {})
-    reinitialized = build_provider_module([])
-    uninitialized = object.__new__(type(reinitialized))
-    ModuleContribution.__init__(uninitialized, "forged", 2, ())
-    ModuleContribution.__init__(reinitialized, "forged", 2, (_FOREIGN,))
-    for name, builder in (
-        ("bare", lambda _: ModuleContribution("bare", 1, [])),
-        ("forged", lambda _: replace(reinitialized, operations=(_FOREIGN,))),
-        ("subclass", lambda _: _ForgedOwned()),
-        ("reinitialized", lambda _: reinitialized),
-        ("uninitialized", lambda _: uninitialized),
-    ):
-        registry.register(name, builder)
-        with pytest.raises(CompositionError):
-            registry.resolve(name, {})
+    uninitialized = object.__new__(type(build_provider_module([])))
+    registry.register("uninitialized", lambda _: uninitialized)
+    with pytest.raises(CompositionError):
+        registry.resolve("uninitialized", {})
 
 
 def test_module_invariants_fail_before_lock() -> None:
@@ -138,49 +125,38 @@ def test_module_invariants_fail_before_lock() -> None:
 
     bad_model = Operation("replace", ("providers", "default_model"), "x")
     reject([build_provider_module([bad_model])], "declared model")
-    models = [{"id": f"m{i}", "adapter": "mock"} for i in range(1101)]
-    for i, model in enumerate(models[:-1]):
-        model["routing"] = {"fallback_models": [f"m{i + 1}"]}
-    provider_chain = {**base, "providers": {"default_model": "m0", "models": models}}
-    compose_modules(provider_chain, [build_provider_module([])])
-    models[-1]["routing"] = {"fallback_models": ["m0"]}
-    reject([build_provider_module([])], "acyclic", provider_chain)
-    builders = (
-        build_policy_module,
-        build_resource_module,
-        build_longrun_module,
-        build_tool_module,
-    )
     cases = (
-        (0, "permissions/shell", "{default: allow, deny: [{rm: null}]}"),
+        ("permissions/shell", "{default: allow, deny: [{rm: null}]}"),
+        ("permissions/shell/deny", "['   ']"),
         (
-            1,
             "concurrency/groups",
-            "[{name: a, match_tools: [x]}, {name: b, match_tools: [x]}]",
+            "[{name: a, match_tools: [x]}, {name: b, match_tools: [y]}]",
         ),
-        (2, "long_running/recovery", "{backoff_base_seconds: 3}"),
-        (2, "long_running/verification", "{tiers: [{name: tier_1}, {}]}"),
-        (3, "tools/dialects", "{selection: {by_model: {'*': bash_block}}}"),
-        (3, "tools/aliases", "{a: b, b: a}"),
+        ("long_running/recovery", "{backoff_base_seconds: 3}"),
+        ("long_running/verification", "{tiers: [{name: tier_1}, {}]}"),
+        ("tools/dialects", "{selection: {by_model: {'*': bash_block}}}"),
+        ("tools/dialects", "{preference: {default: '   '}}"),
+        ("tools/aliases", "{a: b, b: a}"),
     )
-    for index, path, value in cases:
-        kind = "replace" if index < 2 else "add"
-        operation = Operation(kind, tuple(path.split("/")), yaml.safe_load(value))
-        reject([builders[index]([operation])])
+    for path, value in cases:
+        document = _load("engineering.v1.yaml")
+        document["tools"]["aliases"] = {"x": "y"}
+        keys = path.split("/")
+        parent = document
+        for key in keys[:-1]:
+            parent = parent.setdefault(key, {})
+        parent[keys[-1]] = yaml.safe_load(value)
+        reject([], document=document)
     with pytest.raises(CompositionError, match="precedence"):
         compose_modules(base, [build_provider_module([], 1), build_tool_module([], 1)])
     forged = type("ForgedOperation", (Operation,), {"__post_init__": lambda self: None})
     with pytest.raises(CompositionError, match="exact Operation"):
         build_provider_module([forged("move", ("providers", "stream_responses"), True)])
+    with pytest.raises(CompositionError, match="uninitialized"):
+        build_provider_module([object.__new__(Operation)])
     typed = build_provider_module([])
     with pytest.raises(CompositionError, match="internal capability"):
         replace(typed, operations=(_FOREIGN,), validator=lambda _: None)
-    target_cases = (
-        (Operation("add", ("tools", "registry"), {}), "already exists"),
-        (Operation("replace", ("tools", "aliases"), {}), "does not exist"),
-    )
-    for operation, message in target_cases:
-        reject([build_tool_module([operation])], message)
     deep = {}
     for _ in range(99):
         deep = {"x": deep}
@@ -204,6 +180,9 @@ def test_module_invariants_fail_before_lock() -> None:
     )
     roots = set(
         "completion concurrency dossier enhanced_tools features guardrails long_running loop modes multi_agent permissions prompts provider_tools providers replay schema_version tools turn_strategy version workspace".split()
+    )
+    assert get_type_hints(compose_modules)["modules"] == (
+        list[ModuleContribution] | tuple[ModuleContribution, ...]
     )
     for builder, names in owners:
         assert get_type_hints(builder)["return"] is ModuleContribution

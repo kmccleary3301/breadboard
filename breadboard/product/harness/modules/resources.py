@@ -7,6 +7,14 @@ def _validate(document: Mapping[str, object]) -> None:
     concurrency = document.get("concurrency")
     if not isinstance(concurrency, Mapping):
         return
+    config = document.get("tools")
+    aliases = config.get("aliases", {}) if isinstance(config, Mapping) else {}
+
+    def canonical(name: str) -> str:
+        while name in aliases:
+            name = aliases[name]
+        return name
+
     for field in ("nonblocking_tools", "at_most_one_of"):
         values = concurrency.get(field)
         if values is not None and (
@@ -23,7 +31,7 @@ def _validate(document: Mapping[str, object]) -> None:
         if not isinstance(group, Mapping):
             continue
         name = group.get("name", "").strip()
-        tools = [tool.strip() for tool in group.get("match_tools", ())]
+        tools = [canonical(tool.strip()) for tool in group.get("match_tools", ())]
         if not name or name in seen or not tools or any(not tool for tool in tools):
             raise CompositionError("concurrency group is invalid")
         if len(tools) != len(set(tools)) or claimed.intersection(tools):
@@ -37,7 +45,7 @@ def _validate(document: Mapping[str, object]) -> None:
         if barrier is not None and (
             type(barrier) is not str
             or not barrier.strip()
-            or barrier.strip() not in tools
+            or canonical(barrier.strip()) not in tools
         ):
             raise CompositionError("concurrency group barrier is invalid")
 

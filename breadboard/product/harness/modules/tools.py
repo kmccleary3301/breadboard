@@ -7,16 +7,17 @@ _ROOTS = frozenset({"tools", "enhanced_tools"})
 
 def _unique_names(value: object, label: str, *, require_list: bool = False) -> None:
     if isinstance(value, str) and not require_list:
-        if not value:
+        if not value.strip():
             raise CompositionError(f"{label} must be nonempty")
         return
     if not isinstance(value, (list, tuple)):
         if require_list:
             raise CompositionError(f"{label} must be a list")
         return
-    if any(not isinstance(name, str) or not name for name in value):
+    names = [name.strip() for name in value if isinstance(name, str)]
+    if len(names) != len(value) or not all(names):
         raise CompositionError(f"{label} requires nonempty string names")
-    if len(value) != len(set(value)):
+    if len(names) != len(set(names)):
         raise CompositionError(f"{label} names must be unique")
 
 

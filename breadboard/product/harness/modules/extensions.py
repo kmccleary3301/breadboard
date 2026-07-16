@@ -1,4 +1,6 @@
+import hmac
 import math
+import secrets
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -16,6 +18,7 @@ _ROOTS = frozenset(
 _PROTECTED = frozenset(("schema_version", "version", "dossier"))
 _MAX_JSON_INTEGER = 10**640 - 1
 _OWNER_KEY = object()
+_SEAL_KEY = secrets.token_bytes(32)
 
 
 class CompositionError(ValueError):
@@ -90,13 +93,17 @@ class Operation:
 def _snapshot(value: object) -> Operation:
     if type(value) is not Operation:
         raise CompositionError("module operations must be exact Operation values")
-    return Operation(value.kind, value.path, value.value)
+    try:
+        return Operation(value.kind, value.path, value.value)
+    except AttributeError:
+        raise CompositionError("module operation is uninitialized") from None
 
 
-def _seal(operations: tuple[Operation, ...]) -> str:
+def _seal(operations: tuple[Operation, ...]) -> bytes:
     if any(type(item) is not Operation for item in operations):
         raise CompositionError("module operations must be exact Operation values")
-    return repr(tuple((item.kind, item.path, item.value) for item in operations))
+    state = repr(tuple((item.kind, item.path, item.value) for item in operations))
+    return hmac.digest(_SEAL_KEY, state.encode(), "sha256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +130,7 @@ class ModuleContribution:
 
 
 _Ops: TypeAlias = list[Operation] | tuple[Operation, ...]
+_Mods: TypeAlias = list[ModuleContribution] | tuple[ModuleContribution, ...]
 _Mod: TypeAlias = ModuleContribution
 
 
@@ -163,15 +171,18 @@ def _admit(value: object) -> tuple[ModuleContribution, frozenset[str]]:
     if authority is None:
         raise CompositionError("invalid owned module contribution")
     roots, validator = authority
-    if type(value.operations) is not tuple:
+    operations = getattr(value, "operations", None)
+    if type(operations) is not tuple:
         raise CompositionError("owned module operations must be an exact tuple")
-    fields = (value.module_id, value.precedence, _seal(value.operations))
+    module_id = getattr(value, "module_id", None)
+    precedence = getattr(value, "precedence", None)
+    fields = (module_id, precedence, _seal(operations))
     if fields != getattr(value, "_sealed", None):
         raise CompositionError("owned module was mutated after construction")
-    operations = tuple(_snapshot(item) for item in value.operations)
+    operations = tuple(_snapshot(item) for item in operations)
     if any(item.path[0] not in roots for item in operations):
         raise CompositionError("owned module operation targets an unowned root")
-    args = (value.module_id, value.precedence, operations, validator)
+    args = (module_id, precedence, operations, validator)
     return type(value)(*args, _key=_OWNER_KEY), roots
 
 
@@ -202,9 +213,16 @@ def _apply(document: dict[str, Any], operation: Operation) -> None:
         parent[target] = _copy_json(operation.value, False)
 
 
-def compose_modules(
-    base: Mapping[str, Any], modules: Sequence[ModuleContribution]
-) -> dict[str, Any]:
+def _validate_all(document: Mapping[str, Any]) -> None:
+    try:
+        for name in "tools providers resources policies host longrun".split():
+            module = __import__(f"{__package__}.{name}", fromlist=("_validate",))
+            module._validate(document)
+    except Exception as error:
+        raise CompositionError(f"module validation failed: {error}") from None
+
+
+def compose_modules(base: Mapping[str, Any], modules: _Mods) -> dict[str, Any]:
     if not isinstance(base, Mapping):
         raise CompositionError("base harness must be a mapping")
     document = _copy_json(base, False)
@@ -218,7 +236,7 @@ def compose_modules(
     if extra:
         raise CompositionError(f"base contains non-canonical V1 root: {extra[0]!r}")
     if type(modules) not in (list, tuple):
-        raise CompositionError("modules must be a sequence")
+        raise CompositionError("modules must be a list or tuple")
     snapshot = tuple(_admit(item)[0] for item in modules)
     precedences = [item.precedence for item in snapshot]
     if len(precedences) != len(set(precedences)):
@@ -235,12 +253,7 @@ def compose_modules(
                 )
             _apply(document, operation)
     final = _copy_json(document, True)
-    for module in ordered:
-        try:
-            module.validator(final)
-        except Exception as error:
-            message = f"validator for module {module.module_id!r} failed: {error}"
-            raise CompositionError(message) from None
+    _validate_all(final)
     try:
         return parse_harness_definition(document).as_dict()
     except Exception as error:
