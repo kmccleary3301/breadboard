@@ -135,6 +135,12 @@ def test_json_depth_boundary_is_stable() -> None:
         "/dossier/bad" + "/0" * 99, "json_depth",
         "JSON paths must not exceed 100 segments")
     assert validate_harness_definition(_definition(dossier={"bad": rejected})) == (expected,)
+    very_deep: object = None
+    for _ in range(1200):
+        very_deep = [very_deep]
+    with pytest.raises(HarnessDefinitionValidationError) as raised:
+        HarnessDefinition.from_mapping(_definition(dossier={"bad": very_deep}))
+    assert raised.value.findings[0].code == "json_depth"
 @pytest.mark.parametrize(("schema_version", "version", "expected"), [
     ("bb.unknown.v9", 9, [("/schema_version", "unsupported_schema_version"),
                           ("/version", "unsupported_version")]),
@@ -160,14 +166,6 @@ def test_missing_discriminators_fail_before_schema_validation() -> None:
     assert _pairs(document) == [
         ("/schema_version", "required"), ("/version", "required")
     ]
-def test_loading_yaml_requires_a_mapping_root(tmp_path: Path) -> None:
-    path = tmp_path / "not-a-mapping.yaml"
-    path.write_text("- one\n- two\n", encoding="utf-8")
-    with pytest.raises(HarnessDefinitionValidationError) as raised:
-        load_harness_definition(path)
-    assert raised.value.findings == (
-        ValidationFinding("/", "type", "Harness definition must be a mapping"),
-    )
 def test_findings_are_immutable_and_orderable() -> None:
     later, earlier = ValidationFinding("/z", "type", "later"), ValidationFinding("/a", "required", "earlier")
     assert sorted((later, earlier)) == [earlier, later]

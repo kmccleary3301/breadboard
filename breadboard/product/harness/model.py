@@ -17,7 +17,9 @@ _SCALAR_TYPES = (bool, str)
 _MAX_JSON_INTEGER = 10**640 - 1
 
 
-def _snapshot(value: Any, memo: dict[int, Any] | None = None) -> Any:
+def _snapshot(value: Any, memo: dict[int, Any] | None = None, depth: int = 0) -> Any:
+    if depth > 100:
+        return value
     if not isinstance(value, (Mapping, list)):
         return value
     memo = {} if memo is None else memo
@@ -28,9 +30,9 @@ def _snapshot(value: Any, memo: dict[int, Any] | None = None) -> Any:
     memo[identity] = snapshot
     if isinstance(value, Mapping):
         for key, item in value.items():
-            snapshot[key] = _snapshot(item, memo)
+            snapshot[key] = _snapshot(item, memo, depth + 1)
     else:
-        snapshot.extend(_snapshot(item, memo) for item in value)
+        snapshot.extend(_snapshot(item, memo, depth + 1) for item in value)
     return snapshot
 
 
