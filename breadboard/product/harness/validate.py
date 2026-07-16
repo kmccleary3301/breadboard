@@ -29,7 +29,7 @@ _KNOWN_VERSIONS = {
     _CANONICAL[0]: _CANONICAL[1],
     _LEGACY[0]: _LEGACY[1],
 }
-_MAX_JSON_INTEGER = 10**1000 - 1
+_MAX_JSON_INTEGER = 10**640 - 1
 
 @dataclass(frozen=True, order=True)
 class ValidationFinding:
@@ -93,7 +93,7 @@ def _json_findings(
     if type(value) is int:
         return [] if abs(value) <= _MAX_JSON_INTEGER else [
             ValidationFinding(_pointer(path), "integer_range",
-                              "JSON integers must contain at most 1000 decimal digits")]
+                              "JSON integers must contain at most 640 decimal digits")]
     if type(value) is float:
         return [] if math.isfinite(value) else [
             ValidationFinding(_pointer(path), "finite", "JSON numbers must be finite")

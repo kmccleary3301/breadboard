@@ -1,6 +1,7 @@
 from __future__ import annotations
 import copy
 import json
+import sys
 from dataclasses import FrozenInstanceError
 from datetime import date
 from pathlib import Path
@@ -122,18 +123,17 @@ def test_json_domain_preflight_rejects_adversarial_values(
 ) -> None:
     message = {"json_type": "Value is not a JSON-domain value",
                "finite": "JSON numbers must be finite",
-               "integer_range": "JSON integers must contain at most 1000 decimal digits",
+               "integer_range": "JSON integers must contain at most 640 decimal digits",
                "json_key": "Object keys must be strings"}[code]
     assert validate_harness_definition(_definition(dossier={"bad": value})) == (
         ValidationFinding("/dossier/bad", code, message),)
-def test_json_domain_preflight_reports_cycle_back_edge() -> None:
-    cycle: list[object] = []
-    cycle.append(cycle)
-    assert validate_harness_definition(_definition(dossier={"bad": cycle})) == (
-        ValidationFinding("/dossier/bad/0", "json_cycle", "JSON values must not contain cycles"),
-    )
-def test_json_depth_boundary_is_stable() -> None:
+def test_json_domain_preflight_reports_cycle_back_edge() -> None: cycle: list[object] = []; cycle.append(cycle); assert validate_harness_definition(_definition(dossier={"bad": cycle})) == (ValidationFinding("/dossier/bad/0", "json_cycle", "JSON values must not contain cycles"),)
+def test_supported_json_boundaries_are_stable(request: pytest.FixtureRequest) -> None:
     accepted, rejected = (json.loads("[" * depth + "null" + "]" * depth) for depth in (98, 99))
+    original = sys.get_int_max_str_digits(); request.addfinalizer(lambda: sys.set_int_max_str_digits(original))
+    sys.set_int_max_str_digits(640)
+    for integer in (10**640 - 1, -(10**640 - 1)): assert json.loads(HarnessDefinition.from_mapping(_definition(dossier={"bad": integer})).canonical_json())["dossier"]["bad"] == integer
+    for integer in (10**640, -(10**640)): assert validate_harness_definition(_definition(dossier={"bad": integer})) == (ValidationFinding("/dossier/bad", "integer_range", "JSON integers must contain at most 640 decimal digits"),)
     assert json.loads(HarnessDefinition.from_mapping(_definition(dossier={"bad": accepted})).canonical_json())["dossier"]["bad"] == accepted
     assert validate_harness_definition(_definition(dossier={"bad": rejected})) == (ValidationFinding("/dossier/bad" + "/0" * 99, "json_depth", "JSON paths must not exceed 100 segments"),)
 @pytest.mark.parametrize(("schema_version", "version", "expected"), [
@@ -178,8 +178,6 @@ loop: {sequence: [{mode: build}]}
     assert isinstance(loaded, HarnessDefinition)
     assert loaded["schema_version"] == "bb.harness_definition.v1"
 def test_findings_are_immutable_and_orderable() -> None:
-    later = ValidationFinding("/z", "type", "later")
-    earlier = ValidationFinding("/a", "required", "earlier")
+    later, earlier = ValidationFinding("/z", "type", "later"), ValidationFinding("/a", "required", "earlier")
     assert sorted((later, earlier)) == [earlier, later]
-    with pytest.raises(FrozenInstanceError):
-        earlier.pointer = "/changed"  # type: ignore[misc]
+    with pytest.raises(FrozenInstanceError): earlier.pointer = "/changed"  # type: ignore[misc]
