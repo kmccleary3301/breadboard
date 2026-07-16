@@ -7,7 +7,7 @@ def _validate(document: Mapping[str, object]) -> None:
     config = document.get("tools") or {}
     aliases = dict(
         item.split("=")
-        for item in "apply_patch=apply_unified_patch patch=apply_unified_patch write=create_file_from_block list=list_dir read=read_file bash=run_shell shell_command=run_shell todoread=todo.list todowrite=todo.write_board".split()
+        for item in "apply_patch=apply_unified_patch patch=apply_unified_patch write=create_file_from_block list=list_dir read=read_file bash=run_shell shell_command=run_shell todoread=todo.list todowrite=TodoWrite".split()
     )
     aliases.update(config.get("aliases") or {})
 

@@ -131,7 +131,7 @@ def test_module_invariants_fail_before_lock() -> None:
         ("permissions/shell/deny", "[' rm ']"),
         ("permissions/edit/default", "ALLOW"),
         ("concurrency/groups", "[{name: a, match_tools: [x, y]}]"),
-        ("concurrency/groups", "[{name: a, match_tools: [read, read_file]}]"),
+        ("concurrency/groups", "[{name: a, match_tools: [todowrite, TodoWrite]}]"),
         ("concurrency/groups", "[{name: a, match_tools: [' x ']}]"),
         ("concurrency/groups", "[{name: a, match_tools: [x], barrier_after: y}]"),
         ("long_running/recovery", "{backoff_base_seconds: 3}"),
