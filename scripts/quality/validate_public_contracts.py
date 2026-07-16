@@ -17,7 +17,7 @@ KERNEL_SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 SURFACES = ("bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs")
 FROZEN_SHA256 = "sha256:72817b7b1bc5e5d10f752acb48157491aaeb3eb268337461a4fd6f0bd10cbfe0"
 AXIS_MANIFEST_SHA256 = "sha256:dff057633730b1bbb28ebd4fceff3060227f5532b6caabb0f3ed2a325d437db0"
-RECORD_ROLE_PROJECTION_SHA256 = "sha256:0005af82fe101136ab23f4a33389e76f2294d361c8b24f586ab3e5fc9f4163e0"
+RECORD_ROLE_PROJECTION_SHA256 = "sha256:f169f9804766f9a13fe7599011ca14bee62d092983d672b8a30b47fa339b8994"
 class ContractValidationError(ValueError):
     """A candidate public contract violates its frozen contract."""
 def load_json(path: Path) -> dict[str, Any]:
@@ -58,6 +58,8 @@ def _patched_fixture(instance: dict[str, Any], pointer: str, value: Any) -> dict
 def sync_record_schemas(public_dir: Path = PUBLIC_DIR, *, write: bool = False) -> None:
     source_path = public_dir / "record_schemas.v1.json"
     source = load_json(source_path)
+    if set(source) != {"contract_id", "decision_inputs", "fixtures", "schemas", "status", "version"} or source.get("version") != 1:
+        raise ContractValidationError(f"{source_path}: invalid record-schema source envelope")
     if source.get("contract_id") != "bb.public_record_schema_source.v1" or source.get("status") != "candidate":
         raise ContractValidationError(f"{source_path}: invalid candidate record-schema source")
     frozen_inputs = load_frozen_surface(public_dir)["frozen_inputs"]

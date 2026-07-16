@@ -79,32 +79,29 @@ def test_missing_or_invalid_stability_is_rejected(stability) -> None:
     with pytest.raises(ContractValidationError, match="stability|experimental"):
         validate_catalog(value)
 def test_duplicated_inline_record_models_are_rejected() -> None:
-    value = catalog()
-    model = {"type": "object", "properties": {"id": {"type": "string"}}}
-    value["operations"][0]["input_schema"] = copy.deepcopy(model)
-    value["operations"][1]["input_schema"] = copy.deepcopy(model)
-    with pytest.raises(ContractValidationError, match="schema ID|inline record models|not of type 'string'"):
-        validate_catalog(value)
+    value = catalog(); model = {"type": "object", "properties": {"id": {"type": "string"}}}
+    value["operations"][0]["input_schema"] = copy.deepcopy(model); value["operations"][1]["input_schema"] = copy.deepcopy(model)
+    with pytest.raises(ContractValidationError, match="schema ID|inline record models|not of type 'string'"): validate_catalog(value)
 def test_record_schema_cannot_be_owned_by_two_public_roles() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
     value["roles"][1]["schema_ids"] = value["roles"][0]["schema_ids"]
-    with pytest.raises(ContractValidationError, match="multiple roles"):
-        validate_record_surface(value)
+    with pytest.raises(ContractValidationError, match="multiple roles"): validate_record_surface(value)
 def test_count_preserving_record_role_substitution_is_rejected() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
     value["roles"][0]["role_id"] = "substituted_role"
-    with pytest.raises(ContractValidationError, match="frozen public record roles mismatch"):
-        validate_record_surface(value)
+    with pytest.raises(ContractValidationError, match="frozen public record roles mismatch"): validate_record_surface(value)
 def test_valid_schema_ids_cannot_be_swapped_between_roles() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
     value["roles"][0]["schema_ids"], value["roles"][1]["schema_ids"] = value["roles"][1]["schema_ids"], value["roles"][0]["schema_ids"]
-    with pytest.raises(ContractValidationError, match="semantic mapping"):
-        validate_record_surface(value)
+    with pytest.raises(ContractValidationError, match="semantic mapping"): validate_record_surface(value)
+def test_validation_role_cannot_drop_harness_validation_report() -> None:
+    value = load_json(PUBLIC_DIR / "record_surface.v1.json")
+    next(row for row in value["roles"] if row["role_id"] == "validation_report")["schema_ids"] = ["bb.lane_validation_report.v1"]
+    with pytest.raises(ContractValidationError, match="semantic mapping"): validate_record_surface(value)
 def test_nonexistent_record_schema_is_rejected() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
     value["roles"][0]["schema_ids"] = ["bb.syntactically_valid_missing.v1"]
-    with pytest.raises(ContractValidationError, match="absent from candidate/kernel roots"):
-        validate_record_surface(value)
+    with pytest.raises(ContractValidationError, match="absent from candidate/kernel roots"): validate_record_surface(value)
 def staged_root(tmp_path):
     root = tmp_path / "staged"
     shutil.copytree(PUBLIC_DIR, root / "contracts" / "public")
@@ -116,29 +113,27 @@ def test_staged_contracts_reject_their_malformed_schema(tmp_path) -> None:
     schema = load_json(schema_path)
     schema["type"] = 7
     schema_path.write_bytes(canonical_bytes(schema))
-    with pytest.raises(ContractValidationError, match="invalid Draft 2020-12 schema"):
-        validate_public_contracts(root / "contracts" / "public")
+    with pytest.raises(ContractValidationError, match="invalid Draft 2020-12 schema"): validate_public_contracts(root / "contracts" / "public")
 @pytest.mark.parametrize("mode", ["wrong_id", "duplicate_id"])
 def test_staged_schema_identity_index_is_strict(tmp_path, mode) -> None:
     root = staged_root(tmp_path)
     path = root / "contracts/public/schemas/bb.public_operation_catalog.v1.schema.json"
     if mode == "wrong_id":
         schema = load_json(path); schema["$id"] = "https://example.invalid/bb.public_operation_catalog.v1.schema.json"; path.write_bytes(canonical_bytes(schema))
-    else:
-        shutil.copy(path, root / "contracts/kernel/schemas" / path.name)
-    with pytest.raises(ContractValidationError, match=r"\$id must equal|duplicate schema \$id"):
-        validate_public_contracts(root / "contracts/public")
-@pytest.mark.parametrize("mode", ["provenance", "schema_version", "conditional", "fixture_omission"])
+    else: shutil.copy(path, root / "contracts/kernel/schemas" / path.name)
+    with pytest.raises(ContractValidationError, match=r"\$id must equal|duplicate schema \$id"): validate_public_contracts(root / "contracts/public")
+@pytest.mark.parametrize("mode", ["provenance", "schema_version", "conditional", "fixture_omission", "source_version", "top_level_extra"])
 def test_staged_record_schema_source_rejects_false_identity(tmp_path, mode) -> None:
     public_dir = staged_root(tmp_path) / "contracts/public"
     path = public_dir / "record_schemas.v1.json"; source = load_json(path)
     if mode == "provenance": source["decision_inputs"]["executable_replay_sha256"] = "sha256:" + "0" * 64
     elif mode == "schema_version": source["schemas"]["bb.page.v1"]["properties"]["schema_version"]["const"] = "1.0"
     elif mode == "conditional": del source["schemas"]["bb.comparison_report.v1"]["allOf"]
-    else: del source["fixtures"]["bb.page.v1"]
+    elif mode == "fixture_omission": del source["fixtures"]["bb.page.v1"]
+    elif mode == "source_version": source["version"] = 2
+    else: source["unexpected"] = True
     path.write_bytes(canonical_bytes(source))
-    with pytest.raises(ContractValidationError, match="frozen provenance|schema identity|contradiction fixture passed|fixture schema keys"):
-        validate_public_contracts(public_dir)
+    with pytest.raises(ContractValidationError, match="frozen provenance|schema identity|contradiction fixture passed|fixture schema keys|source envelope"): validate_public_contracts(public_dir)
 def test_generated_record_schema_drift_fails_and_rewrites_deterministically(tmp_path) -> None:
     root = staged_root(tmp_path); public_dir = root / "contracts/public"
     path = public_dir / "schemas/bb.page.v1.schema.json"
