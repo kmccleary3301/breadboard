@@ -41,9 +41,8 @@ def _validate(document: Mapping[str, object]) -> None:
         tokens = budgets.get("total_tokens", budgets.get("max_total_tokens"))
         cost = budgets.get("total_cost_usd", budgets.get("max_total_cost_usd"))
         if not any(_number(value) and value > 0 for value in (tokens, cost)):
-            raise CompositionError(
-                "enabled long-running execution requires a positive stopping budget"
-            )
+            message = "positive stopping budget required for enabled long-running"
+            raise CompositionError(message)
 
 
 def _number(value: object) -> TypeGuard[int | float]:

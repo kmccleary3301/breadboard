@@ -42,9 +42,8 @@ def _validate(document: Mapping[str, object]) -> None:
                 or not isinstance(target, str)
                 or not target
             ):
-                raise CompositionError(
-                    "tool aliases require nonempty string names and targets"
-                )
+                message = "tool aliases require nonempty string names and targets"
+                raise CompositionError(message)
 
     dialects = tools.get("dialects")
     if not isinstance(dialects, Mapping):

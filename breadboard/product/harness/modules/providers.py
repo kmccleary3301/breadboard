@@ -30,8 +30,7 @@ def _validate(document: Mapping[str, object]) -> None:
         if any(not isinstance(target, str) or not target for target in fallbacks):
             raise CompositionError("provider fallback targets must be nonempty strings")
         if len(fallbacks) != len(set(fallbacks)):
-            message = f"provider fallbacks for {identifier} must be distinct"
-            raise CompositionError(message)
+            raise CompositionError(f"duplicate provider fallback for {identifier}")
         graph[identifier] = tuple(fallbacks)
     declared = set(graph)
     default = providers.get("default_model")

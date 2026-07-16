@@ -93,6 +93,10 @@ def _snapshot(value: object) -> Operation:
     return Operation(value.kind, value.path, value.value)
 
 
+def _seal(operations: tuple[Operation, ...]) -> str:
+    return repr(tuple((item.kind, item.path, item.value) for item in operations))
+
+
 @dataclass(frozen=True, slots=True)
 class ModuleContribution:
     module_id: str
@@ -121,12 +125,14 @@ _Mod: TypeAlias = ModuleContribution
 
 
 class _OwnedContribution(ModuleContribution):
-    __slots__ = ()
+    __slots__ = ("_sealed",)
 
     def __init__(self, *args: Any, _key: object | None = None, **kwargs: Any) -> None:
         if _key is not _OWNER_KEY:
             raise CompositionError("owned contributions require internal capability")
         super().__init__(*args, **kwargs)
+        sealed = _seal(self.operations)
+        object.__setattr__(self, "_sealed", (self.module_id, self.precedence, sealed))
 
 
 _OWNERS: dict[type, tuple[frozenset[str], Validator]] = {}
@@ -158,6 +164,9 @@ def _admit(value: object) -> tuple[ModuleContribution, frozenset[str]]:
     if type(value.operations) is not tuple:
         raise CompositionError("owned module operations must be an exact tuple")
     operations = tuple(_snapshot(item) for item in value.operations)
+    fields = (value.module_id, value.precedence, _seal(operations))
+    if fields != value._sealed:
+        raise CompositionError("owned module was mutated after construction")
     if any(item.path[0] not in roots for item in operations):
         raise CompositionError("owned module operation targets an unowned root")
     args = (value.module_id, value.precedence, operations, validator)
@@ -274,10 +283,6 @@ class LocalExtensionRegistry:
         except CompositionError as error:
             message = f"extension builder {extension_id!r} returned invalid ownership"
             raise CompositionError(f"{message}: {error}") from None
-        return _owned(
-            f"extension:{extension_id}",
-            precedence,
-            contribution.operations,
-            roots,
-            contribution.validator,
-        )
+        name = f"extension:{extension_id}"
+        operations = contribution.operations
+        return _owned(name, precedence, operations, roots, contribution.validator)

@@ -75,11 +75,11 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     object.__setattr__(alias_op, "kind", "remove")
     for _ in range(2):
         assert compose_modules(base, [tools])["tools"] == composed["tools"]
-    object.__setattr__(tools.operations[0], "kind", "remove")
-    with pytest.raises(CompositionError, match="remove operation"):
+    object.__setattr__(tools.operations[0], "path", ("tools", "dialects"))
+    with pytest.raises(CompositionError, match="mutated after construction"):
         compose_modules(base, [tools])
-    object.__setattr__(provider, "operations", iter([duplicate]))
-    with pytest.raises(CompositionError, match="exact tuple"):
+    object.__setattr__(provider.operations[0], "value", 1)
+    with pytest.raises(CompositionError, match="mutated after construction"):
         compose_modules(base, [provider])
     remove = Operation("remove", ("tools", "mark_task_complete"))
     removed = compose_modules(base, [build_tool_module([remove])])
@@ -179,7 +179,7 @@ def test_module_invariants_fail_before_lock() -> None:
     with pytest.raises(CompositionError, match="internal capability"):
         replace(typed, operations=(_FOREIGN,), validator=lambda _: None)
     ModuleContribution.__init__(typed, "forged", 2, (_FOREIGN,))
-    reject([typed], "unowned root")
+    reject([typed], "mutated after construction")
     target_cases = (
         (Operation("add", ("tools", "registry"), {}), "already exists"),
         (Operation("replace", ("tools", "aliases"), {}), "does not exist"),

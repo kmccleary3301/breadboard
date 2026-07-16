@@ -26,13 +26,11 @@ def _validate(document: Mapping[str, object]) -> None:
                 continue
             for pattern in patterns:
                 if not isinstance(pattern, str) or not pattern:
-                    raise CompositionError(
-                        "permission shell patterns must be nonempty strings"
-                    )
+                    message = "permission shell patterns must be nonempty strings"
+                    raise CompositionError(message)
                 if pattern in seen:
-                    raise CompositionError(
-                        f"duplicate permission shell pattern: {pattern}"
-                    )
+                    message = f"duplicate permission shell pattern: {pattern}"
+                    raise CompositionError(message)
                 seen.add(pattern)
 
 
