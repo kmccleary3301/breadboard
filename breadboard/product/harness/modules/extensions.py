@@ -13,11 +13,7 @@ JsonValue: TypeAlias = (
 )
 Validator: TypeAlias = Callable[[Mapping[str, Any]], None]
 _ROOTS = frozenset(
-    (
-        "completion concurrency dossier enhanced_tools features guardrails long_running "
-        "loop modes multi_agent permissions prompts provider_tools providers replay "
-        "schema_version tools turn_strategy version workspace"
-    ).split()
+    "completion concurrency dossier enhanced_tools features guardrails long_running loop modes multi_agent permissions prompts provider_tools providers replay schema_version tools turn_strategy version workspace".split()
 )
 _PROTECTED = frozenset(("schema_version", "version", "dossier"))
 _ORDER = {"remove": 0, "replace": 1, "add": 2}
@@ -131,6 +127,11 @@ class ModuleContribution:
         object.__setattr__(self, "operations", operations)
 
 
+# Registry-safe ownership is minted only through typed module builders.
+class _OwnedContribution(ModuleContribution):
+    __slots__ = ()
+
+
 def contribution(
     module_id: str,
     precedence: int,
@@ -155,7 +156,7 @@ def owned(
         for item in snapshot
     ):
         raise CompositionError(f"{module_id} module operation targets an unowned root")
-    return contribution(module_id, precedence, snapshot, validator)
+    return _OwnedContribution(module_id, precedence, snapshot, validator)
 
 
 def _path(path: tuple[str, ...]) -> str:
@@ -199,13 +200,13 @@ def _duplicate(values: Sequence[Any]) -> Any | None:
 def compose_modules(
     base: Mapping[str, Any], modules: Sequence[ModuleContribution]
 ) -> dict[str, Any]:
-    """Apply contributions deterministically and return a detached validated V1 dict."""
     if not isinstance(base, Mapping):
         raise CompositionError("base harness must be a mapping")
     document = _copy_json(base, False)
-    if (document.get("schema_version"), document.get("version")) != (
-        "bb.harness_definition.v1",
-        1,
+    if (
+        document.get("schema_version") != "bb.harness_definition.v1"
+        or type(document.get("version")) is not int
+        or document["version"] != 1
     ):
         raise CompositionError(
             "base harness must use bb.harness_definition.v1 version 1"
@@ -286,11 +287,11 @@ class LocalExtensionRegistry:
             raise CompositionError(
                 f"extension builder {extension_id!r} failed: {error}"
             ) from None
-        if not isinstance(built, ModuleContribution):
+        if not isinstance(built, _OwnedContribution):
             raise CompositionError(
                 f"extension builder {extension_id!r} must return an owned contribution"
             )
-        return contribution(
+        return _OwnedContribution(
             f"extension:{extension_id}",
             precedence,
             built.operations,

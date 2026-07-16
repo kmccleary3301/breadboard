@@ -11,6 +11,8 @@ from breadboard.product.harness.modules.extensions import (
     compose_modules,
     contribution,
 )
+from breadboard.product.harness.modules.host import build_host_module
+from breadboard.product.harness.modules.resources import build_resource_module
 from breadboard.product.harness.modules.policies import build_policy_module
 from breadboard.product.harness.modules.longrun import build_longrun_module
 from breadboard.product.harness.modules.providers import build_provider_module
@@ -34,13 +36,20 @@ def test_representative_fixtures_share_the_frozen_primitive_language() -> None:
     documents = [load_harness_definition(path).as_dict() for path in paths]
     forbidden = {"resources", "host", "policies", "extensions"}
     assert all(not forbidden.intersection(document) for document in documents)
-    assert all(
-        {"workspace", "providers", "modes", "loop"} <= set(document)
-        for document in documents
-    )
-    legacy = {"schema_version": "bb.agent_config_surface.v2", "version": 2}
-    with pytest.raises(CompositionError, match="bb.harness_definition.v1"):
-        compose_modules(legacy, [])
+    required = {"workspace", "providers", "modes", "loop"}
+    assert all(required <= set(document) for document in documents)
+    called = []
+    probe = contribution("side-effect", 1, [], lambda _: called.append(True))
+    for field, value in (
+        ("schema_version", "bb.agent_config_surface.v2"),
+        ("version", True),
+        ("version", 1.0),
+    ):
+        invalid = _load("engineering.v1.yaml")
+        invalid[field] = value
+        with pytest.raises(CompositionError, match="bb.harness_definition.v1"):
+            compose_modules(invalid, [probe])
+    assert not called
 
 
 def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
@@ -83,20 +92,13 @@ def test_one_module_mutation_changes_only_its_lock_subgraph() -> None:
             )
         ],
     )
-    left = compile_harness_definition(
-        base, source_ref="engineering.yaml"
-    ).lock.as_dict()
-    right = compile_harness_definition(
-        changed, source_ref="engineering.yaml"
-    ).lock.as_dict()
+    left = compile_harness_definition(base, source_ref="x").lock.as_dict()
+    right = compile_harness_definition(changed, source_ref="x").lock.as_dict()
     left_rows = {row["path"]: row for row in left["effective_values"]}
     right_rows = {row["path"]: row for row in right["effective_values"]}
     assert set(right_rows) - set(left_rows) == {"providers.stream_responses"}
     assert all(left_rows[path] == right_rows[path] for path in left_rows)
-    assert (
-        left["source_layers"][0]["layer_hash"]
-        != right["source_layers"][0]["layer_hash"]
-    )
+    assert left["source_layers"] != right["source_layers"]
     assert left["graph_hash"] != right["graph_hash"]
 
 
@@ -121,7 +123,7 @@ def test_local_extensions_fail_closed_without_a_core_fork() -> None:
     )
     with pytest.raises(CompositionError, match="unknown extension id"):
         registry.resolve("missing", {})
-    registry.register("bare", lambda _: [])
+    registry.register("bare", lambda _: contribution("bare", 1, []))
     with pytest.raises(CompositionError, match="owned contribution"):
         registry.resolve("bare", {})
 
@@ -137,6 +139,15 @@ def test_module_invariants_fail_before_lock() -> None:
     budget = Operation("replace", ("long_running", "budgets"), {"total_tokens": 1})
     bounded = compose_modules(base, [build_longrun_module([budget])])
     assert bounded["long_running"]["budgets"] == {"total_tokens": 1}
+    cases = (
+        (build_host_module, ("workspace", "mirror"), {"enabled": True}),
+        (build_resource_module, ("concurrency", "at_most_one_of"), [["x", "x"]]),
+        (build_policy_module, ("permissions", "shell", "allow"), ["x", "x"]),
+        (build_tool_module, ("tools", "default"), ["x", "x"]),
+    )
+    for builder, path, value in cases:
+        with pytest.raises(CompositionError):
+            compose_modules(base, [builder([Operation("add", path, value)])])
 
 
 def test_composition_preconditions_and_module_ownership_fail_closed() -> None:

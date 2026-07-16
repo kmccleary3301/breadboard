@@ -1,5 +1,3 @@
-"""Composable tool and enhanced-tool settings."""
-
 from collections.abc import Mapping, Sequence
 
 from .extensions import CompositionError, ModuleContribution, Operation, owned

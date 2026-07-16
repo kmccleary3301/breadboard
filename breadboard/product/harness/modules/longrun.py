@@ -1,5 +1,3 @@
-"""Composable long-running execution settings."""
-
 from collections.abc import Mapping, Sequence
 from typing import TypeGuard
 

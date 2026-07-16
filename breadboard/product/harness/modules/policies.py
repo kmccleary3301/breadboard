@@ -1,5 +1,3 @@
-"""Composable permission, guardrail, and replay settings."""
-
 from collections.abc import Mapping, Sequence
 
 from .extensions import CompositionError, ModuleContribution, Operation, owned
