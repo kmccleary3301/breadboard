@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Mapping, Sequence
+import math
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, TypeAlias
@@ -12,22 +13,31 @@ JsonScalar: TypeAlias = None | bool | int | float | str
 FrozenJsonValue: TypeAlias = (
     JsonScalar | Mapping[str, "FrozenJsonValue"] | tuple["FrozenJsonValue", ...]
 )
+_SCALAR_TYPES = (bool, int, str)
+
+
+def _copy_json(value: Any, freeze: bool) -> Any:
+    if isinstance(value, Mapping):
+        if any(type(key) is not str for key in value):
+            raise TypeError("JSON object keys must be strings")
+        items = {key: _copy_json(item, freeze) for key, item in value.items()}
+        return MappingProxyType(items) if freeze else items
+    sequence = list if freeze else tuple
+    if isinstance(value, sequence):
+        items = (_copy_json(item, freeze) for item in value)
+        return tuple(items) if freeze else list(items)
+    kind = type(value)
+    if value is None or kind in _SCALAR_TYPES or kind is float and math.isfinite(value):
+        return value
+    raise TypeError(f"unsupported JSON value: {kind.__name__}")
 
 
 def _freeze(value: Any) -> FrozenJsonValue:
-    if isinstance(value, Mapping):
-        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-        return tuple(_freeze(item) for item in value)
-    return value
+    return _copy_json(value, True)
 
 
 def _thaw(value: FrozenJsonValue) -> Any:
-    if isinstance(value, Mapping):
-        return {key: _thaw(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return [_thaw(item) for item in value]
-    return value
+    return _copy_json(value, False)
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -48,7 +58,6 @@ class HarnessDefinition(Mapping[str, FrozenJsonValue]):
 
     @classmethod
     def _from_validated(cls, document: Mapping[str, Any]) -> HarnessDefinition:
-        """Construct from a mapping that has already passed public validation."""
         instance = object.__new__(cls)
         frozen = _freeze(document)
         if not isinstance(frozen, Mapping):

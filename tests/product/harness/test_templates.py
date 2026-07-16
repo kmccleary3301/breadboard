@@ -63,22 +63,13 @@ def test_wheel_import_loads_template_from_distribution_data_root(tmp_path: Path)
         assert process.returncode == 0, process.stderr
         return process.stdout
 
-    run(
-        sys.executable,
-        "-m",
-        "pip",
-        "wheel",
-        "--no-deps",
-        "--no-build-isolation",
-        "--wheel-dir",
-        str(wheelhouse),
-        str(ROOT),
-    )
+    run(sys.executable, "-m", "pip", "wheel", "--no-deps", "--no-build-isolation",
+        "--wheel-dir", str(wheelhouse), str(ROOT))
     wheel = next(wheelhouse.glob("*.whl"))
     venv = tmp_path / "venv"
-    run(sys.executable, "-m", "venv", "--system-site-packages", str(venv))
+    run(sys.executable, "-m", "venv", str(venv))
     venv_python = venv / "bin" / "python"
-    run(str(venv_python), "-m", "pip", "install", "--no-deps", str(wheel))
+    run(str(venv_python), "-m", "pip", "install", str(wheel))
     script = (
         "import json, sysconfig; from breadboard.product.harness.templates import "
         "load_minimal_harness, minimal_template_path, minimal_template_text; "
