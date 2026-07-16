@@ -1,0 +1,15 @@
+# Minimal canonical Harness Definition for an offline-safe single-mode agent.
+schema_version: bb.harness_definition.v1
+version: 1
+workspace:
+  root: .
+providers:
+  default_model: mock/reference
+  models:
+    - id: mock/reference
+      adapter: mock_chat
+modes:
+  - name: respond
+loop:
+  sequence:
+    - mode: respond
