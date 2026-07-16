@@ -17,8 +17,8 @@ def _validate(document: Mapping[str, object]) -> None:
             raise CompositionError("enabled resume requires a nonempty state_path")
     recovery = long_running.get("recovery")
     if isinstance(recovery, Mapping):
-        base = recovery.get("backoff_base_seconds")
-        maximum = recovery.get("backoff_max_seconds")
+        base = recovery.get("backoff_base_seconds", 0.25)
+        maximum = recovery.get("backoff_max_seconds", 2.0)
         if base == 0 or maximum == 0:
             raise CompositionError("recovery backoffs must be positive when provided")
         if _number(base) and _number(maximum) and base > maximum:
@@ -28,9 +28,9 @@ def _validate(document: Mapping[str, object]) -> None:
         verification.get("tiers"), (list, tuple)
     ):
         names = [
-            tier["name"]
-            for tier in verification["tiers"]
-            if isinstance(tier, Mapping) and isinstance(tier.get("name"), str)
+            tier.get("name", f"tier_{index}")
+            for index, tier in enumerate(verification["tiers"])
+            if isinstance(tier, Mapping)
         ]
         if len(names) != len(set(names)):
             raise CompositionError("verification tier names must be unique")
@@ -41,8 +41,7 @@ def _validate(document: Mapping[str, object]) -> None:
         tokens = budgets.get("total_tokens", budgets.get("max_total_tokens"))
         cost = budgets.get("total_cost_usd", budgets.get("max_total_cost_usd"))
         if not any(_number(value) and value > 0 for value in (tokens, cost)):
-            message = "positive stopping budget required for enabled long-running"
-            raise CompositionError(message)
+            raise CompositionError("positive stopping budget required")
 
 
 def _number(value: object) -> TypeGuard[int | float]:

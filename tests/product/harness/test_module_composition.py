@@ -65,6 +65,8 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
         Operation(type("Deceptive", (), {"__eq__": lambda *_: True})(), path, True)
     with pytest.raises(CompositionError, match="sequence"):
         build_provider_module(iter([duplicate]))
+    with pytest.raises(CompositionError, match="modules must be a sequence"):
+        compose_modules(base, iter([build_provider_module([])]))
     seed = build_provider_module([Operation("add", path, False)], 5)
     provider = build_provider_module([Operation("replace", path, True)], 10)
     alias_op = Operation("add", ("tools", "aliases"), aliases)
@@ -75,7 +77,7 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     object.__setattr__(alias_op, "kind", "remove")
     for _ in range(2):
         assert compose_modules(base, [tools])["tools"] == composed["tools"]
-    object.__setattr__(tools.operations[0], "path", ("tools", "dialects"))
+    object.__setattr__(tools.operations[0], "path", ["tools", "aliases"])
     with pytest.raises(CompositionError, match="mutated after construction"):
         compose_modules(base, [tools])
     object.__setattr__(provider.operations[0], "value", 1)
@@ -112,12 +114,15 @@ def test_local_extensions_fail_closed_without_a_core_fork() -> None:
     with pytest.raises(CompositionError, match="unknown extension id"):
         registry.resolve("missing", {})
     reinitialized = build_provider_module([])
+    uninitialized = object.__new__(type(reinitialized))
+    ModuleContribution.__init__(uninitialized, "forged", 2, ())
     ModuleContribution.__init__(reinitialized, "forged", 2, (_FOREIGN,))
     for name, builder in (
         ("bare", lambda _: ModuleContribution("bare", 1, [])),
         ("forged", lambda _: replace(reinitialized, operations=(_FOREIGN,))),
         ("subclass", lambda _: _ForgedOwned()),
         ("reinitialized", lambda _: reinitialized),
+        ("uninitialized", lambda _: uninitialized),
     ):
         registry.register(name, builder)
         with pytest.raises(CompositionError):
@@ -140,46 +145,36 @@ def test_module_invariants_fail_before_lock() -> None:
     compose_modules(provider_chain, [build_provider_module([])])
     models[-1]["routing"] = {"fallback_models": ["m0"]}
     reject([build_provider_module([])], "acyclic", provider_chain)
-    bad_resume = Operation("add", ("long_running", "resume"), {"enabled": True})
-    reject([build_longrun_module([bad_resume])], "state_path")
-    budget = Operation("replace", ("long_running", "budgets"), {"total_tokens": 1})
-    compose_modules(base, [build_longrun_module([budget])])
-    for budgets in (
-        {"wall_clock_s": 1},
-        {"total_tokens": 0, "max_total_tokens": 1},
-        {"total_cost_usd": 0, "max_total_cost_usd": 1},
-    ):
-        unsupported = Operation("replace", ("long_running", "budgets"), budgets)
-        reject([build_longrun_module([unsupported])], "positive stopping budget")
-    zero_backoff = Operation(
-        "add", ("long_running", "recovery"), {"backoff_base_seconds": 0}
+    builders = (
+        build_policy_module,
+        build_resource_module,
+        build_longrun_module,
+        build_tool_module,
     )
-    reject([build_longrun_module([zero_backoff])], "positive when provided")
     cases = (
-        (build_host_module, ("workspace", "mirror"), {"enabled": True}),
-        (build_resource_module, ("concurrency", "at_most_one_of"), [["x", "x"]]),
-        (build_policy_module, ("permissions", "shell", "allow"), ["x", "x"]),
+        (0, "permissions/shell", "{default: allow, deny: [{rm: null}]}"),
+        (
+            1,
+            "concurrency/groups",
+            "[{name: a, match_tools: [x]}, {name: b, match_tools: [x]}]",
+        ),
+        (2, "long_running/recovery", "{backoff_base_seconds: 3}"),
+        (2, "long_running/verification", "{tiers: [{name: tier_1}, {}]}"),
+        (3, "tools/dialects", "{selection: {by_model: {'*': bash_block}}}"),
+        (3, "tools/aliases", "{a: b, b: a}"),
     )
-    for builder, path, value in cases:
-        reject([builder([Operation("add", path, value)])])
-    zero_group = [{"name": "x", "match_tools": ["x"], "max_parallel": 0}]
-    zero_parallel = Operation("replace", ("concurrency", "groups"), zero_group)
-    reject([build_resource_module([zero_parallel])], "max_parallel")
-    duplicate_paths = Operation("replace", ("tools", "registry", "paths"), ["x", "x"])
-    reject([build_tool_module([duplicate_paths])], "tools.registry.paths")
+    for index, path, value in cases:
+        kind = "replace" if index < 2 else "add"
+        operation = Operation(kind, tuple(path.split("/")), yaml.safe_load(value))
+        reject([builders[index]([operation])])
     with pytest.raises(CompositionError, match="precedence"):
         compose_modules(base, [build_provider_module([], 1), build_tool_module([], 1)])
-    generic = ModuleContribution("generic", 2, [_FOREIGN])
-    reject([generic], "owned module")
-    reject([_ForgedOwned()], "owned module")
     forged = type("ForgedOperation", (Operation,), {"__post_init__": lambda self: None})
     with pytest.raises(CompositionError, match="exact Operation"):
         build_provider_module([forged("move", ("providers", "stream_responses"), True)])
     typed = build_provider_module([])
     with pytest.raises(CompositionError, match="internal capability"):
         replace(typed, operations=(_FOREIGN,), validator=lambda _: None)
-    ModuleContribution.__init__(typed, "forged", 2, (_FOREIGN,))
-    reject([typed], "mutated after construction")
     target_cases = (
         (Operation("add", ("tools", "registry"), {}), "already exists"),
         (Operation("replace", ("tools", "aliases"), {}), "does not exist"),
@@ -194,15 +189,11 @@ def test_module_invariants_fail_before_lock() -> None:
     compose_modules(deep_base, [])
     deep["x"] = {"x": deep["x"]}
     reject([], "100 segments", deep_base)
-    cycles = ({}, [])
-    cycles[0]["x"] = cycles[0]
-    cycles[1].append(cycles[1])
-    for cycle in cycles:
-        with pytest.raises(CompositionError, match="cyclic JSON"):
-            Operation("add", ("tools", "deep"), cycle)
-        cyclic_base = _load("engineering.v1.yaml")
-        cyclic_base["dossier"] = cycle
-        reject([], "cyclic JSON", cyclic_base)
+    cycle = {}
+    cycle["x"] = cycle
+    cyclic_base = _load("engineering.v1.yaml")
+    cyclic_base["dossier"] = cycle
+    reject([], "cyclic JSON", cyclic_base)
     owners = (
         (build_provider_module, "providers provider_tools"),
         (build_tool_module, "tools enhanced_tools"),

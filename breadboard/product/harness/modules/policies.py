@@ -18,20 +18,11 @@ def _validate(document: Mapping[str, object]) -> None:
         if not isinstance(entries, (list, tuple)):
             continue
         for entry in entries:
-            if isinstance(entry, str):
-                patterns = (entry,)
-            elif bucket == "deny" and isinstance(entry, Mapping):
-                patterns = entry.keys()
-            else:
-                continue
-            for pattern in patterns:
-                if not isinstance(pattern, str) or not pattern:
-                    message = "permission shell patterns must be nonempty strings"
-                    raise CompositionError(message)
-                if pattern in seen:
-                    message = f"duplicate permission shell pattern: {pattern}"
-                    raise CompositionError(message)
-                seen.add(pattern)
+            if not isinstance(entry, str) or not entry:
+                raise CompositionError("invalid permission shell entry")
+            if entry in seen:
+                raise CompositionError(f"duplicate permission shell pattern: {entry}")
+            seen.add(entry)
 
 
 def build_policy_module(operations: _Ops, precedence: int = 40) -> _Mod:

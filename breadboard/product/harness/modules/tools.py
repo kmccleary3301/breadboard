@@ -42,8 +42,15 @@ def _validate(document: Mapping[str, object]) -> None:
                 or not isinstance(target, str)
                 or not target
             ):
-                message = "tool aliases require nonempty string names and targets"
-                raise CompositionError(message)
+                raise CompositionError("invalid tool alias")
+        for root in aliases:
+            seen = set()
+            current = root
+            while current in aliases:
+                if current in seen:
+                    raise CompositionError("tool alias graph must be acyclic")
+                seen.add(current)
+                current = aliases[current]
 
     dialects = tools.get("dialects")
     if not isinstance(dialects, Mapping):
@@ -61,6 +68,8 @@ def _validate(document: Mapping[str, object]) -> None:
             label = f"tools.dialects.{section_name}.by_model.{model}"
             if isinstance(value, Mapping):
                 value = value.get("order")
+            if section_name == "selection" and isinstance(value, str):
+                raise CompositionError("tool selection order must be a list")
             _unique_names(value, label)
 
 

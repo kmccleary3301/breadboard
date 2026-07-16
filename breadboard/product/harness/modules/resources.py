@@ -18,6 +18,7 @@ def _validate(document: Mapping[str, object]) -> None:
     if not isinstance(groups, (list, tuple)):
         return
     seen = set()
+    claimed = set()
     for group in groups:
         if not isinstance(group, Mapping):
             continue
@@ -25,6 +26,9 @@ def _validate(document: Mapping[str, object]) -> None:
         tools = [tool.strip() for tool in group.get("match_tools", ())]
         if not name or name in seen or not tools or any(not tool for tool in tools):
             raise CompositionError("concurrency group is invalid")
+        if len(tools) != len(set(tools)) or claimed.intersection(tools):
+            raise CompositionError("tool belongs to multiple concurrency groups")
+        claimed.update(tools)
         seen.add(name)
         maximum = group.get("max_parallel", 1)
         if type(maximum) is not int or maximum < 1:

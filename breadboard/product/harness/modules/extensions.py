@@ -94,6 +94,8 @@ def _snapshot(value: object) -> Operation:
 
 
 def _seal(operations: tuple[Operation, ...]) -> str:
+    if any(type(item) is not Operation for item in operations):
+        raise CompositionError("module operations must be exact Operation values")
     return repr(tuple((item.kind, item.path, item.value) for item in operations))
 
 
@@ -163,10 +165,10 @@ def _admit(value: object) -> tuple[ModuleContribution, frozenset[str]]:
     roots, validator = authority
     if type(value.operations) is not tuple:
         raise CompositionError("owned module operations must be an exact tuple")
-    operations = tuple(_snapshot(item) for item in value.operations)
-    fields = (value.module_id, value.precedence, _seal(operations))
-    if fields != value._sealed:
+    fields = (value.module_id, value.precedence, _seal(value.operations))
+    if fields != getattr(value, "_sealed", None):
         raise CompositionError("owned module was mutated after construction")
+    operations = tuple(_snapshot(item) for item in value.operations)
     if any(item.path[0] not in roots for item in operations):
         raise CompositionError("owned module operation targets an unowned root")
     args = (value.module_id, value.precedence, operations, validator)
@@ -215,11 +217,9 @@ def compose_modules(
     extra = sorted(set(document) - _ROOTS)
     if extra:
         raise CompositionError(f"base contains non-canonical V1 root: {extra[0]!r}")
-    try:
-        candidates = tuple(modules)
-    except TypeError:
-        raise CompositionError("modules must be a sequence") from None
-    snapshot = tuple(_admit(item)[0] for item in candidates)
+    if type(modules) not in (list, tuple):
+        raise CompositionError("modules must be a sequence")
+    snapshot = tuple(_admit(item)[0] for item in modules)
     precedences = [item.precedence for item in snapshot]
     if len(precedences) != len(set(precedences)):
         raise CompositionError("duplicate module precedence")
