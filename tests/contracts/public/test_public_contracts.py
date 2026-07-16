@@ -105,7 +105,6 @@ def test_valid_schema_ids_cannot_be_swapped_between_roles() -> None:
     value["roles"][0]["schema_ids"], value["roles"][1]["schema_ids"] = value["roles"][1]["schema_ids"], value["roles"][0]["schema_ids"]
     with pytest.raises(ContractValidationError, match="semantic mapping"):
         validate_record_surface(value)
-
 def test_nonexistent_record_schema_is_rejected() -> None:
     value = load_json(PUBLIC_DIR / "record_surface.v1.json")
     value["roles"][0]["schema_ids"] = ["bb.syntactically_valid_missing.v1"]
@@ -134,6 +133,15 @@ def test_staged_schema_identity_index_is_strict(tmp_path, mode) -> None:
         shutil.copy(path, root / "contracts/kernel/schemas" / path.name)
     with pytest.raises(ContractValidationError, match=r"\$id must equal|duplicate schema \$id"):
         validate_public_contracts(root / "contracts/public")
+@pytest.mark.parametrize("mode", ["provenance", "schema_version"])
+def test_staged_record_schema_source_rejects_false_identity(tmp_path, mode) -> None:
+    public_dir = staged_root(tmp_path) / "contracts/public"
+    path = public_dir / "record_schemas.v1.json"; source = load_json(path)
+    if mode == "provenance": source["decision_inputs"]["executable_replay_sha256"] = "sha256:" + "0" * 64
+    else: source["schemas"]["bb.page.v1"]["properties"]["schema_version"]["const"] = "1.0"
+    path.write_bytes(canonical_bytes(source))
+    with pytest.raises(ContractValidationError, match="decision inputs differ from frozen provenance|non-canonical schema identity"):
+        validate_public_contracts(public_dir)
 def test_generated_record_schema_drift_fails_and_rewrites_deterministically(tmp_path) -> None:
     root = staged_root(tmp_path); public_dir = root / "contracts/public"
     path = public_dir / "schemas/bb.page.v1.schema.json"
@@ -141,7 +149,6 @@ def test_generated_record_schema_drift_fails_and_rewrites_deterministically(tmp_
     with pytest.raises(ContractValidationError, match="generated record schema is stale"):
         validate_public_contracts(public_dir)
     sync_record_schemas(public_dir, write=True); validate_public_contracts(public_dir)
-
 def test_staged_inventory_uses_its_inventory_schema(tmp_path) -> None:
     root = staged_root(tmp_path)
     schema_path = root / "contracts" / "public" / "schemas" / "bb.public_surface_inventory.v1.schema.json"
@@ -181,7 +188,6 @@ def test_axis_check_timeout_survives_early_pipe_eof(monkeypatch, tmp_path) -> No
     result = axis_runner._run_check(["python", "-c", code], tmp_path)
     assert result["status"] == "failed" and result["exit_code"] is None and "timed out" in result["failure"]
     with pytest.raises(ProcessLookupError): axis_runner.os.kill(int(pid_path.read_text()), 0)
-
 def test_axis_check_output_is_bounded_with_real_child(tmp_path) -> None:
     code = f"import os; os.write(1, b'x' * {axis_runner.MAX_OUTPUT_BYTES * 4})"
     result = axis_runner._run_check(["python", "-c", code], tmp_path)

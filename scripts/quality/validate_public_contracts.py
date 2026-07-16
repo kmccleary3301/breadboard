@@ -20,11 +20,9 @@ KERNEL_SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
 SURFACES = ("bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs")
 FROZEN_SHA256 = "sha256:72817b7b1bc5e5d10f752acb48157491aaeb3eb268337461a4fd6f0bd10cbfe0"
 AXIS_MANIFEST_SHA256 = "sha256:dff057633730b1bbb28ebd4fceff3060227f5532b6caabb0f3ed2a325d437db0"
-RECORD_ROLE_PROJECTION_SHA256 = "sha256:98e8cf84a312ad4b28f347d89ad3146873e88f290cba9a9295655966661d896b"
-
+RECORD_ROLE_PROJECTION_SHA256 = "sha256:0005af82fe101136ab23f4a33389e76f2294d361c8b24f586ab3e5fc9f4163e0"
 class ContractValidationError(ValueError):
     """A candidate public contract violates its frozen contract."""
-
 def load_json(path: Path) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -33,13 +31,10 @@ def load_json(path: Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ContractValidationError(f"{path}: root must be an object")
     return value
-
 def canonical_bytes(value: Any) -> bytes:
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
-
 def _sha256(data: bytes) -> str:
     return f"sha256:{hashlib.sha256(data).hexdigest()}"
-
 def load_frozen_surface(public_dir: Path = PUBLIC_DIR) -> dict[str, Any]:
     path = public_dir / "frozen_public_surface.v1.json"
     frozen = load_json(path)
@@ -49,10 +44,8 @@ def load_frozen_surface(public_dir: Path = PUBLIC_DIR) -> dict[str, Any]:
     if frozen.get("contract_id") != "bb.north_star.public_surface.v1":
         raise ContractValidationError(f"{path}: unexpected frozen contract_id")
     return frozen
-
 def frozen_operation_ids(frozen: dict[str, Any]) -> frozenset[str]:
     return frozenset(item for group in frozen["canonical_operations"].values() for item in group)
-
 def load_schema(path: Path) -> dict[str, Any]:
     schema = load_json(path)
     try:
@@ -65,9 +58,15 @@ def sync_record_schemas(public_dir: Path = PUBLIC_DIR, *, write: bool = False) -
     source = load_json(source_path)
     if source.get("contract_id") != "bb.public_record_schema_source.v1" or source.get("status") != "candidate":
         raise ContractValidationError(f"{source_path}: invalid candidate record-schema source")
+    frozen_inputs = load_frozen_surface(public_dir)["frozen_inputs"]
+    expected_inputs = {"public_surface_sha256": FROZEN_SHA256, "public_boundary_sha256": frozen_inputs["public_boundary_sha256"], "executable_replay_sha256": frozen_inputs["executable_replay_sha256"]}
+    if source.get("decision_inputs") != expected_inputs:
+        raise ContractValidationError(f"{source_path}: decision inputs differ from frozen provenance")
     source_bytes = canonical_bytes(source)
     if source_path.read_bytes() != source_bytes:
         raise ContractValidationError(f"{source_path}: semantic source must use canonical bytes")
+    if any(body.get("$id") != f"https://breadboard.dev/contracts/public/schemas/{schema_id}.schema.json" or body.get("properties", {}).get("schema_version", {}).get("const") != schema_id for schema_id, body in source["schemas"].items()):
+        raise ContractValidationError(f"{source_path}: non-canonical schema identity")
     source_hash = _sha256(source_bytes)
     generated_by = "scripts/quality/validate_public_contracts.py --write-record-schemas"
     expected: set[Path] = set()
@@ -78,8 +77,6 @@ def sync_record_schemas(public_dir: Path = PUBLIC_DIR, *, write: bool = False) -
             Draft202012Validator.check_schema(schema)
         except SchemaError as exc:
             raise ContractValidationError(f"{source_path}:{schema_id}: invalid Draft 2020-12 schema: {exc.message}") from exc
-        if schema.get("$id") != f"https://breadboard.dev/contracts/public/schemas/{path.name}":
-            raise ContractValidationError(f"{source_path}:{schema_id}: non-canonical $id")
         expected.add(path)
         content = canonical_bytes(schema)
         if write:
@@ -89,7 +86,6 @@ def sync_record_schemas(public_dir: Path = PUBLIC_DIR, *, write: bool = False) -
     extras = {path for path in (public_dir / "schemas").glob("*.schema.json") if load_json(path).get("x-generated-by") == generated_by} - expected
     if extras:
         raise ContractValidationError(f"generated record schemas absent from source: {sorted(map(str, extras))}")
-
 def _schema_errors(instance: Any, schema_name: str, schema_dir: Path = SCHEMA_DIR) -> list[str]:
     schema = load_schema(schema_dir / schema_name)
     errors = Draft202012Validator(schema).iter_errors(instance)
