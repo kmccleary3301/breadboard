@@ -4,7 +4,6 @@ import pytest
 
 from breadboard.product.harness.compile import compile_harness_definition
 
-
 def test_explanation_accounts_for_winners_effects_and_blockers() -> None:
     compiled = compile_harness_definition(
         {"capabilities": {"read": True}, "limit": 1, "dossier": {"note": "hidden"}},
@@ -29,6 +28,18 @@ def test_explanation_accounts_for_winners_effects_and_blockers() -> None:
     assert winners == locked
     assert "dossier.note" not in winners
 
+def test_prompt_summary_includes_only_concrete_pack_files() -> None:
+    summary = compile_harness_definition({
+        "prompts": {
+            "environment": {"format": "xml"},
+            "injection": {"system_order": ["environment", "pack"]},
+            "packs": {"base": {"system": "prompts/system.md",
+                               "builder": "prompts/builder.md",
+                               "compact": "prompts/system.md"}},
+            "tool_prompt_mode": "none",
+        },
+    }, source_ref="root").explanation["resolved_summary"]
+    assert summary["prompt_files"] == ("prompts/builder.md", "prompts/system.md")
 
 def test_explanation_is_frozen_and_detached() -> None:
     explanation = compile_harness_definition({"value": 1}, source_ref="root").explanation

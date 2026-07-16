@@ -11,7 +11,6 @@ from typing import Any, Dict, Union
 
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.compile import HarnessCompilation, compile_harness_definition
-from breadboard.product.harness.validate import parse_harness_definition
 
 from .effective_config_graph import sha256_json
 
@@ -381,7 +380,6 @@ def _config_view_from_compilation(compilation: HarnessCompilation, config_path: 
     effective_doc = compilation.resolved_author_dict()
     surface_schema_version = _surface_schema_version(effective_doc)
     if surface_schema_version == "bb.harness_definition.v1":
-        parse_harness_definition(effective_doc)
         runtime_doc = _normalize_for_runtime(effective_doc)
     elif surface_schema_version == "bb.agent_config_surface.v2":
         _validate_v2(effective_doc)
@@ -539,7 +537,6 @@ def load_agent_config(config_path_str: str) -> Dict[str, Any]:
 
     surface_schema_version = _surface_schema_version(doc)
     if surface_schema_version == "bb.harness_definition.v1":
-        parse_harness_definition(doc)
         legacy_doc = _normalize_for_runtime(doc)
     elif surface_schema_version == "bb.agent_config_surface.v2":
         _validate_v2(doc)

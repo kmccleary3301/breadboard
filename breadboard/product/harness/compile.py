@@ -7,6 +7,7 @@ from typing import Any
 from .explain import HarnessExplanation
 from .lock import EffectiveHarnessLock, _copy, graph_content_hash, sha256_json
 from .model import HarnessDefinition
+from .validate import HarnessDefinitionValidationError, parse_harness_definition
 LoadReference = Callable[[str, str], tuple[str, Mapping[str, Any]]]
 class HarnessCompileError(ValueError):
     """Raised before a compilation exists when an input cannot be resolved."""
@@ -51,19 +52,30 @@ def _refs(document: Mapping[str, Any], source_ref: str) -> tuple[str, ...]:
 def _runtime_values(document: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in document.items()
             if key not in {"extends", "dossier"}}
-def _merge(current: Any, sources: Any, incoming: Any, layer_id: str) -> tuple[Any, Any]:
+def _metadata_leaf(value: Any) -> bool:
+    return isinstance(value, Mapping) and "value" in value and (
+        "env_name" in value or "env_satisfied" in value)
+def _merge(current: Any, sources: Any, incoming: Any, layer_id: str,
+           *, metadata: bool = True) -> tuple[Any, Any]:
+    if metadata and _metadata_leaf(incoming):
+        meta = {key: _copy(value, freeze=False) for key, value in incoming.items()
+                if key != "value"}
+        return _copy(incoming["value"], freeze=False), (layer_id, meta)
     if isinstance(incoming, Mapping):
+        if not incoming and (not isinstance(current, Mapping) or not current):
+            return {}, (layer_id, {})
         values = dict(current) if isinstance(current, Mapping) else {}
         provenance = dict(sources) if isinstance(sources, Mapping) else {}
         for key in sorted(incoming):
             values[key], provenance[key] = _merge(
-                values.get(key), provenance.get(key), incoming[key], layer_id)
+                values.get(key), provenance.get(key), incoming[key], layer_id,
+                metadata=metadata)
         return values, provenance
-    return _copy(incoming, freeze=False), layer_id
-def _flatten(values: Any, sources: Any, prefix: str = "") -> list[tuple[str, Any, str]]:
-    if isinstance(sources, str):
-        return [(prefix, _copy(values, freeze=False), sources)]
-    rows: list[tuple[str, Any, str]] = []
+    return _copy(incoming, freeze=False), (layer_id, {})
+def _flatten(values: Any, sources: Any, prefix: str = "") -> list[tuple[str, Any, str, dict[str, Any]]]:
+    if isinstance(sources, tuple):
+        return [(prefix, _copy(values, freeze=False), sources[0], sources[1])]
+    rows: list[tuple[str, Any, str, dict[str, Any]]] = []
     if isinstance(values, Mapping):
         for key in sorted(values):
             path = f"{prefix}.{key}" if prefix else key
@@ -71,26 +83,21 @@ def _flatten(values: Any, sources: Any, prefix: str = "") -> list[tuple[str, Any
                                  sources.get(key) if isinstance(sources, Mapping) else None,
                                  path))
     return rows
+def _source_rows(sources: Any, prefix: str = "") -> list[tuple[str, str]]:
+    if isinstance(sources, tuple):
+        return [(prefix, sources[0])]
+    return [(item) for key in sorted(sources) for item in _source_rows(
+        sources[key], f"{prefix}.{key}" if prefix else key)] if isinstance(sources, Mapping) else []
 def _kind(value: Any) -> str:
-    if value is None:
-        return "null"
-    if type(value) is bool:
-        return "boolean"
-    if type(value) in (int, float):
-        return "number"
-    if isinstance(value, str):
-        return "string"
-    if isinstance(value, Mapping):
-        return "object"
-    return "array"
+    kind = type(value)
+    return ("null" if value is None else "boolean" if kind is bool
+            else "number" if kind in (int, float) else "string"
+            if isinstance(value, str) else "object" if isinstance(value, Mapping) else "array")
 def _summary(values: Mapping[str, Any], extends_chain: Sequence[str]) -> dict[str, Any]:
-    providers = values.get("providers")
-    modes = values.get("modes")
-    prompts = values.get("prompts")
+    providers, modes, prompts = (values.get(key) for key in ("providers", "modes", "prompts"))
     mode_rows = modes if isinstance(modes, list) else []
     tools = {tool for mode in mode_rows if isinstance(mode, Mapping)
-             for tool in mode.get("tools_enabled", ())
-             if isinstance(tool, str)}
+             for tool in mode.get("tools_enabled", ()) if isinstance(tool, str)}
     def strings(value: Any) -> list[str]:
         if isinstance(value, str):
             return [value] if value else []
@@ -99,12 +106,13 @@ def _summary(values: Mapping[str, Any], extends_chain: Sequence[str]) -> dict[st
         if isinstance(value, list):
             return [item for child in value for item in strings(child)]
         return []
+    packs = prompts.get("packs") if isinstance(prompts, Mapping) else None
     return {
         "provider_default_model": str(providers.get("default_model", ""))
         if isinstance(providers, Mapping) else "",
         "mode_ids": sorted(str(mode["name"]) for mode in mode_rows
                            if isinstance(mode, Mapping) and "name" in mode),
-        "tool_count": len(tools), "prompt_files": sorted(strings(prompts)),
+        "tool_count": len(tools), "prompt_files": sorted(set(strings(packs))),
         "extends_chain": list(extends_chain),
     }
 def compile_harness_definition(
@@ -188,10 +196,10 @@ def compile_harness_definition(
         source_layers.append(record)
         if authored is not None:
             author, author_sources = _merge(
-                author, author_sources, authored, record["layer_id"])
-        before = {path: source for path, _, source in _flatten(effective, provenance)}
+                author, author_sources, authored, record["layer_id"], metadata=False)
+        before = dict(_source_rows(provenance))
         effective, provenance = _merge(effective, provenance, values, record["layer_id"])
-        after = {path: source for path, _, source in _flatten(effective, provenance)}
+        after = dict(_source_rows(provenance))
         if record["source_kind"] == "default":
             diagnostics.extend(_effect(path, "info", "defaulted", record["layer_id"])
                                for path, source in after.items()
@@ -200,12 +208,32 @@ def compile_harness_definition(
                            for path, source in before.items()
                            if after.get(path) != source)
 
+    if author.get("schema_version") == "bb.harness_definition.v1":
+        try:
+            parse_harness_definition(author)
+        except HarnessDefinitionValidationError as error:
+            raise HarnessCompileError(f"invalid Harness Definition: {error}") from None
     rows = _flatten(effective, provenance)
-    effective_values = [{
-        "env_gate_ids": [], "path": path, "source_layer_id": source,
-        "value": value, "value_kind": _kind(value), "visibility": "model-visible",
-    } for path, value, source in rows]
-    for path, value, source in rows:
+    if not rows or any(not path for path, *_ in rows):
+        raise HarnessCompileError("effective configuration must contain at least one value")
+    env_gates: dict[str, dict[str, Any]] = {}
+    effective_values: list[dict[str, Any]] = []
+    for path, value, source, metadata in rows:
+        env_name = metadata.get("env_name")
+        redacted = bool(env_name) or _looks_secret(path)
+        gate_ids = [f"env.{env_name}"] if env_name else []
+        if env_name:
+            env_gates[gate_ids[0]] = {"env_name": str(env_name), "gate_id": gate_ids[0],
+                                     "required": True,
+                                     "satisfied": bool(metadata.get("env_satisfied", False))}
+        effective_values.append({
+            "env_gate_ids": gate_ids, "path": path, "source_layer_id": source,
+            "value": (f"secret://env/{env_name}" if env_name else
+                      "secret://redacted/" + path.replace(".", "/")) if redacted else value,
+            "value_kind": "secret-ref" if redacted else _kind(value),
+            "visibility": "redacted" if redacted else "model-visible",
+        })
+    for path, value, source, _ in rows:
         diagnostics.append(_effect(path, "info", "selected", source))
         if (path == "capabilities" or path.startswith("capabilities.")
                 or ".capabilities." in path or path.endswith(".capabilities")):
@@ -215,8 +243,11 @@ def compile_harness_definition(
                 diagnostics.append(_effect(
                     path, "warning", "capability_disabled", source, blocker=True))
 
+    redacted_paths = [row["path"] for row in effective_values
+                      if row["visibility"] == "redacted"]
     graph = {
-        "effective_values": effective_values, "env_gates": [], "graph_hash": None,
+        "effective_values": effective_values, "env_gates": list(env_gates.values()),
+        "graph_hash": None,
         "graph_id": f"agent_config:{PurePath(source_ref).stem or 'harness'}",
         "merge_policy": {"conflict_resolution": "highest-precedence",
                          "policy_id": "precedence_order_deep_merge",
@@ -225,8 +256,10 @@ def compile_harness_definition(
                         "migration_id": "agent-config-yaml-to-effective-config-graph-v1",
                         "to_version": "bb.effective_config_graph.v1"}],
         "schema_version": "bb.effective_config_graph.v1", "source_layers": source_layers,
-        "visibility": {"host_only_paths": [], "model_visible_paths": [row[0] for row in rows],
-                       "redacted_paths": []},
+        "visibility": {"host_only_paths": [],
+                       "model_visible_paths": [row["path"] for row in effective_values
+                                               if row["visibility"] == "model-visible"],
+                       "redacted_paths": redacted_paths},
     }
     graph["graph_hash"] = graph_content_hash(graph)
     surface = effective.get("schema_version")
@@ -240,15 +273,18 @@ def compile_harness_definition(
         "surface_schema_version": surface, "resolved_summary": _summary(effective, extends_chain),
         "fields": [{"classification": "operational", "consumer_ref": None,
                     "path": path, "source_layer": source}
-                   for path, _, source in rows],
+                   for path, _, source, _ in rows],
         "diagnostics": sorted(diagnostics, key=lambda item: (item["path"], item["message"])),
         "ok": True,
     }
     return HarnessCompilation._create(
         effective, author, EffectiveHarnessLock._from_record(graph),
         HarnessExplanation._from_record(explanation_record))
-
-
+def _looks_secret(path: str) -> bool:
+    segments = (part.replace("-", "_") for part in path.lower().split("."))
+    return any(part in {"api_key", "apikey", "password", "secret", "token"}
+               or "api_key" in part or "apikey" in part
+               or part.endswith(("_password", "_secret", "_token")) for part in segments)
 def _effect(path: str, severity: str, effect: str, source: str,
             *, blocker: bool = False) -> dict[str, Any]:
     label = "blocker" if blocker else "effect"
