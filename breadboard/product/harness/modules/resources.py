@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 
-from .extensions import CompositionError, ModuleContribution, Operation, contribution
+from .extensions import CompositionError, ModuleContribution, Operation, owned
 
 
 def _validate(document: Mapping[str, object]) -> None:
@@ -25,9 +25,6 @@ def _validate(document: Mapping[str, object]) -> None:
 def build_resource_module(
     operations: Sequence[Operation], precedence: int = 30
 ) -> ModuleContribution:
-    if any(
-        not operation.path or operation.path[0] != "concurrency"
-        for operation in operations
-    ):
-        raise CompositionError("resource modules may only target concurrency")
-    return contribution("resource", precedence, operations, _validate)
+    return owned(
+        "resource", precedence, operations, frozenset({"concurrency"}), _validate
+    )

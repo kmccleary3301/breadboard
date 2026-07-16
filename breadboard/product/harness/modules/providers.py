@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 
-from .extensions import CompositionError, ModuleContribution, Operation, contribution
+from .extensions import CompositionError, ModuleContribution, Operation, owned
 
 _ROOTS = frozenset({"providers", "provider_tools"})
 
@@ -69,11 +69,4 @@ def _validate(document: Mapping[str, object]) -> None:
 def build_provider_module(
     operations: Sequence[Operation], precedence: int = 10
 ) -> ModuleContribution:
-    if any(
-        not operation.path or operation.path[0] not in _ROOTS
-        for operation in operations
-    ):
-        raise CompositionError(
-            "provider modules may only target providers or provider_tools"
-        )
-    return contribution("provider", precedence, operations, _validate)
+    return owned("provider", precedence, operations, _ROOTS, _validate)

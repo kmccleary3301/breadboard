@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 
-from .extensions import CompositionError, ModuleContribution, Operation, contribution
+from .extensions import CompositionError, ModuleContribution, Operation, owned
 
 _ROOTS = frozenset({"tools", "enhanced_tools"})
 
@@ -70,9 +70,4 @@ def _validate(document: Mapping[str, object]) -> None:
 def build_tool_module(
     operations: Sequence[Operation], precedence: int = 20
 ) -> ModuleContribution:
-    if any(
-        not operation.path or operation.path[0] not in _ROOTS
-        for operation in operations
-    ):
-        raise CompositionError("tool modules may only target tools or enhanced_tools")
-    return contribution("tool", precedence, operations, _validate)
+    return owned("tool", precedence, operations, _ROOTS, _validate)

@@ -20,6 +20,7 @@ packages = [
   "breadboard",
   "breadboard.product",
   "breadboard.product.harness",
+  "breadboard.product.harness.modules",
   "conformance",
 ]
 py-modules = ["adaptive_iter"]

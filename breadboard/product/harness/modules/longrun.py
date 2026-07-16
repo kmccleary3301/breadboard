@@ -3,10 +3,12 @@
 from collections.abc import Mapping, Sequence
 from typing import TypeGuard
 
-from .extensions import CompositionError, ModuleContribution, Operation, contribution
+from .extensions import CompositionError, ModuleContribution, Operation, owned
 
 _ROOTS = frozenset({"long_running", "turn_strategy", "completion"})
-_BUDGETS = ("max_total_cost_usd", "max_total_tokens", "wall_clock_s")
+_BUDGETS = frozenset(
+    "max_total_cost_usd max_total_tokens total_cost_usd total_episodes total_tokens wall_clock_s".split()
+)
 
 
 def _validate(document: Mapping[str, object]) -> None:
@@ -56,11 +58,4 @@ def _positive(value: object) -> bool:
 def build_longrun_module(
     operations: Sequence[Operation], precedence: int = 60
 ) -> ModuleContribution:
-    if any(
-        not operation.path or operation.path[0] not in _ROOTS
-        for operation in operations
-    ):
-        raise CompositionError(
-            "longrun modules may only target long_running, turn_strategy, or completion"
-        )
-    return contribution("longrun", precedence, operations, _validate)
+    return owned("longrun", precedence, operations, _ROOTS, _validate)

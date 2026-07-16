@@ -1,5 +1,3 @@
-"""Deterministic composition primitives for harness authoring modules."""
-
 from __future__ import annotations
 
 import math
@@ -10,31 +8,16 @@ from typing import Any, Literal, TypeAlias
 from ..validate import parse_harness_definition
 
 JsonScalar: TypeAlias = None | bool | int | float | str
-JsonValue: TypeAlias = JsonScalar | Mapping[str, "JsonValue"] | Sequence["JsonValue"]
+JsonValue: TypeAlias = (
+    JsonScalar | Mapping[str, "JsonValue"] | list["JsonValue"] | tuple["JsonValue", ...]
+)
 Validator: TypeAlias = Callable[[Mapping[str, Any]], None]
 _ROOTS = frozenset(
     (
-        "completion",
-        "concurrency",
-        "dossier",
-        "enhanced_tools",
-        "features",
-        "guardrails",
-        "long_running",
-        "loop",
-        "modes",
-        "multi_agent",
-        "permissions",
-        "prompts",
-        "provider_tools",
-        "providers",
-        "replay",
-        "schema_version",
-        "tools",
-        "turn_strategy",
-        "version",
-        "workspace",
-    )
+        "completion concurrency dossier enhanced_tools features guardrails long_running "
+        "loop modes multi_agent permissions prompts provider_tools providers replay "
+        "schema_version tools turn_strategy version workspace"
+    ).split()
 )
 _PROTECTED = frozenset(("schema_version", "version", "dossier"))
 _ORDER = {"remove": 0, "replace": 1, "add": 2}
@@ -140,6 +123,9 @@ class ModuleContribution:
             raise CompositionError("module operations must be a sequence") from None
         if any(not isinstance(item, Operation) for item in operations):
             raise CompositionError("module operations must be Operation values")
+        keys = [(item.kind, item.path) for item in operations]
+        if len(keys) != len(set(keys)):
+            raise CompositionError("module operations must not repeat a kind and path")
         if not callable(self.validator):
             raise CompositionError("module validator must be callable")
         object.__setattr__(self, "operations", operations)
@@ -151,10 +137,25 @@ def contribution(
     operations: Sequence[Operation],
     validator: Validator | None = None,
 ) -> ModuleContribution:
-    """Detach inputs into one immutable contribution."""
     return ModuleContribution(
         module_id, precedence, operations, _noop if validator is None else validator
     )
+
+
+def owned(
+    module_id: str,
+    precedence: int,
+    operations: Sequence[Operation],
+    roots: frozenset[str],
+    validator: Validator,
+) -> ModuleContribution:
+    snapshot = tuple(operations)
+    if any(
+        not isinstance(item, Operation) or item.path[0] not in roots
+        for item in snapshot
+    ):
+        raise CompositionError(f"{module_id} module operation targets an unowned root")
+    return contribution(module_id, precedence, snapshot, validator)
 
 
 def _path(path: tuple[str, ...]) -> str:
@@ -202,6 +203,13 @@ def compose_modules(
     if not isinstance(base, Mapping):
         raise CompositionError("base harness must be a mapping")
     document = _copy_json(base, False)
+    if (document.get("schema_version"), document.get("version")) != (
+        "bb.harness_definition.v1",
+        1,
+    ):
+        raise CompositionError(
+            "base harness must use bb.harness_definition.v1 version 1"
+        )
     extra = sorted(set(document) - _ROOTS)
     if extra:
         raise CompositionError(f"base contains non-canonical V1 root: {extra[0]!r}")
@@ -246,7 +254,6 @@ def compose_modules(
 
 
 class LocalExtensionRegistry:
-    """Process-local extension builders normalized into core contributions."""
 
     def __init__(self) -> None:
         self._builders: dict[str, Callable[[Mapping[str, Any]], Any]] = {}
@@ -279,14 +286,13 @@ class LocalExtensionRegistry:
             raise CompositionError(
                 f"extension builder {extension_id!r} failed: {error}"
             ) from None
-        if isinstance(built, ModuleContribution):
-            operations, validator = built.operations, built.validator
-        elif isinstance(built, Sequence) and not isinstance(built, (str, bytes)):
-            operations, validator = built, None
-        else:
+        if not isinstance(built, ModuleContribution):
             raise CompositionError(
-                f"extension builder {extension_id!r} returned an invalid contribution"
+                f"extension builder {extension_id!r} must return an owned contribution"
             )
         return contribution(
-            f"extension:{extension_id}", precedence, operations, validator
+            f"extension:{extension_id}",
+            precedence,
+            built.operations,
+            built.validator,
         )

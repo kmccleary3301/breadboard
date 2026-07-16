@@ -1,15 +1,10 @@
 schema_version: bb.harness_definition.v1
 version: 1
 workspace: {root: .}
-providers:
-  default_model: openai/research
-  models:
-    - {id: openai/research, adapter: openai, params: {max_output_tokens: 4096, temperature: 0.2, tool_use: true}}
+providers: {default_model: openai/research, models: [{id: openai/research, adapter: openai, params: {max_output_tokens: 4096, temperature: 0.2, tool_use: true}}]}
 provider_tools: {api_variant: responses, responses_stateful: true, use_native: true}
 tools: {registry: {include: [web_search, read_file, write_file]}}
-modes:
-  - {name: investigate, tools_enabled: [web_search, read_file]}
-  - {name: synthesize, tools_enabled: [read_file, write_file]}
+modes: [{name: investigate, tools_enabled: [web_search, read_file]}, {name: synthesize, tools_enabled: [read_file, write_file]}]
 loop: {sequence: [{mode: investigate}, {mode: synthesize}]}
 completion: {done_markers: [evidence recorded], confidence_threshold: 0.8}
 concurrency: {groups: [{name: sources, match_tools: [web_search], max_parallel: 2}]}

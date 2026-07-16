@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 
-from .extensions import CompositionError, ModuleContribution, Operation, contribution
+from .extensions import CompositionError, ModuleContribution, Operation, owned
 
 
 def _validate(document: Mapping[str, object]) -> None:
@@ -20,9 +20,4 @@ def _validate(document: Mapping[str, object]) -> None:
 def build_host_module(
     operations: Sequence[Operation], precedence: int = 50
 ) -> ModuleContribution:
-    if any(
-        not operation.path or operation.path[0] != "workspace"
-        for operation in operations
-    ):
-        raise CompositionError("host modules may only target workspace")
-    return contribution("host", precedence, operations, _validate)
+    return owned("host", precedence, operations, frozenset({"workspace"}), _validate)
