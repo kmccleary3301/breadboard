@@ -124,6 +124,7 @@ def test_module_invariants_fail_before_lock() -> None:
             compose_modules(document, modules)
 
     base["tools"]["aliases"] = None
+    base["concurrency"]["at_most_one_of"] = []
     compose_modules(base, [])
     cases = (
         ("permissions/shell", "{default: allow, deny: [{rm: null}]}"),
@@ -134,7 +135,7 @@ def test_module_invariants_fail_before_lock() -> None:
             "[{name: a, match_tools: [x]}, {name: b, match_tools: [y]}]",
         ),
         ("concurrency/groups", "[{name: a, match_tools: [' x ']}]"),
-        ("concurrency/nonblocking_tools", "[' x ']"),
+        ("concurrency/groups", "[{name: a, match_tools: [x], barrier_after: y}]"),
         ("long_running/recovery", "{backoff_base_seconds: 3}"),
         ("long_running/verification", "{tiers: [{name: tier_1}, {}]}"),
         ("tools/dialects", "{selection: {by_model: {'*': bash_block}}}"),

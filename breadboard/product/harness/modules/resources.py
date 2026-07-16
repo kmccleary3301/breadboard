@@ -14,10 +14,8 @@ def _validate(document: Mapping[str, object]) -> None:
         return type(value) is str and bool(value) and value == value.strip()
 
     def _names(values: object) -> bool:
-        return (
-            isinstance(values, (list, tuple))
-            and bool(values)
-            and all(_clean(value) for value in values)
+        return isinstance(values, (list, tuple)) and all(
+            _clean(value) for value in values
         )
 
     def canonical(name: str) -> str:
@@ -39,7 +37,7 @@ def _validate(document: Mapping[str, object]) -> None:
             continue
         name = group.get("name", "")
         raw_tools = group.get("match_tools", ())
-        if not _clean(name) or name in seen or not _names(raw_tools):
+        if not _clean(name) or name in seen or not raw_tools or not _names(raw_tools):
             raise CompositionError("concurrency group is invalid")
         tools = [canonical(tool) for tool in raw_tools]
         if len(tools) != len(set(tools)) or claimed.intersection(tools):
@@ -50,9 +48,7 @@ def _validate(document: Mapping[str, object]) -> None:
         if type(maximum) is not int or maximum < 1:
             raise CompositionError("concurrency group max_parallel must be positive")
         barrier = group.get("barrier_after")
-        if barrier is not None and (
-            not _clean(barrier) or canonical(barrier) not in tools
-        ):
+        if barrier is not None and (not _clean(barrier) or barrier not in raw_tools):
             raise CompositionError("concurrency group barrier is invalid")
 
 
