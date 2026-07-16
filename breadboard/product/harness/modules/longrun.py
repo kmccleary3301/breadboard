@@ -34,10 +34,10 @@ def _validate(document: Mapping[str, object]) -> None:
         ]
         if len(names) != len(set(names)):
             raise CompositionError("verification tier names must be unique")
+    budgets = long_running.get("budgets") or {}
+    if "total_episodes" in budgets or "wall_clock_s" in budgets:
+        raise CompositionError("unsupported stopping budget")
     if long_running.get("enabled") is True:
-        budgets = long_running.get("budgets")
-        if not isinstance(budgets, Mapping):
-            budgets = {}
         tokens = budgets.get("total_tokens", budgets.get("max_total_tokens"))
         cost = budgets.get("total_cost_usd", budgets.get("max_total_cost_usd"))
         if not any(_number(value) and value > 0 for value in (tokens, cost)):

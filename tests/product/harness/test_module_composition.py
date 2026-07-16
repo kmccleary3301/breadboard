@@ -129,17 +129,18 @@ def test_module_invariants_fail_before_lock() -> None:
     cases = (
         ("permissions/shell", "{default: allow, deny: [{rm: null}]}"),
         ("permissions/shell/deny", "[' rm ']"),
-        ("permissions/edit/default", "' deny '"),
+        ("permissions/edit/default", "ALLOW"),
         ("concurrency/groups", "[{name: a, match_tools: [x, y]}]"),
         ("concurrency/groups", "[{name: a, match_tools: [read, read_file]}]"),
         ("concurrency/groups", "[{name: a, match_tools: [' x ']}]"),
         ("concurrency/groups", "[{name: a, match_tools: [x], barrier_after: y}]"),
         ("long_running/recovery", "{backoff_base_seconds: 3}"),
+        ("long_running/budgets", "{total_episodes: 1}"),
         ("long_running/verification", "{tiers: [{name: tier_1}, {}]}"),
         ("tools/dialects", "{selection: {by_model: {'*': bash_block}}}"),
         ("tools/dialects", "{preference: {default: [bash_block]}}"),
-        ("tools/dialects", "{selection: {by_model: {'*': [' bash_block ']}}}"),
-        ("tools/aliases", "{a: b, b: a}"),
+        ("tools/dialects", "{selection: {by_model: {' * ': [bash_block]}}}"),
+        ("tools/aliases", "{read_file: read}"),
         ("tools/aliases", "{' a ': b}"),
     )
     for path, value in cases:

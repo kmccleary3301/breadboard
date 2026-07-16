@@ -59,6 +59,7 @@ def _validate(document: Mapping[str, object]) -> None:
     by_model = selection.get("by_model")
     if not isinstance(by_model, Mapping):
         return
+    _unique_names(tuple(by_model), "tools.dialects.selection.by_model")
     for model, value in by_model.items():
         if isinstance(value, Mapping):
             value = value.get("order")

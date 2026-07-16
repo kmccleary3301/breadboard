@@ -16,7 +16,6 @@ bbh = "scripts.breadboard_cli:main"
 packages = [
   "scripts",
   "agentic_coder_prototype",
-  "agentic_coder_prototype.compilation",
   "breadboard_sdk",
   "breadboard",
   "breadboard.product",
@@ -29,6 +28,5 @@ py-modules = ["adaptive_iter"]
 [tool.setuptools.data-files]
 "agent_configs/templates" = ["agent_configs/templates/minimal_harness.v3.yaml"]
 "agent_configs/templates/" = ["agent_configs/templates/representative_harness.v1.yaml"]
-"implementations/tools/defs" = ["implementations/tools/defs/*.yaml"]
 "contracts/kernel/schemas" = ["contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json"]
 "contracts/public/schemas" = ["contracts/public/schemas/bb.harness_definition.v1.schema.json"]

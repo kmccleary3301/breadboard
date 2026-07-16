@@ -1,18 +1,31 @@
-from agentic_coder_prototype.compilation.tool_registry import load_tool_registry
-
 from collections.abc import Mapping
 
 from .extensions import CompositionError, _Mod, _Ops, _owned
 
 
 def _validate(document: Mapping[str, object]) -> None:
+    config = document.get("tools") or {}
+    aliases = dict(
+        item.split("=")
+        for item in "apply_patch=apply_unified_patch patch=apply_unified_patch write=create_file_from_block list=list_dir read=read_file bash=run_shell shell_command=run_shell todoread=todo.list todowrite=todo.write_board".split()
+    )
+    aliases.update(config.get("aliases") or {})
+
+    def canonical(name: str) -> str:
+        seen = set()
+        while name in aliases:
+            if name in seen:
+                raise CompositionError("tool alias graph must be acyclic")
+            seen.add(name)
+            name = aliases[name]
+        return name
+
+    for root in aliases:
+        canonical(root)
+
     concurrency = document.get("concurrency")
     if not isinstance(concurrency, Mapping):
         return
-    config = document.get("tools") or {}
-    aliases = load_tool_registry(
-        config.get("defs_dir"), aliases=config.get("aliases") or {}
-    ).alias_map()
 
     def _clean(value: object) -> bool:
         return type(value) is str and bool(value) and value == value.strip()
@@ -21,11 +34,6 @@ def _validate(document: Mapping[str, object]) -> None:
         return isinstance(values, (list, tuple)) and all(
             _clean(value) for value in values
         )
-
-    def canonical(name: str) -> str:
-        while name in aliases:
-            name = aliases[name]
-        return name
 
     for field in ("nonblocking_tools", "at_most_one_of"):
         values = concurrency.get(field)
