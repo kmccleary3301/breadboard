@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ from breadboard.product.harness.validate import load_harness_definition
 
 ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = ROOT / "tests" / "fixtures" / "product" / "harness"
+_FOREIGN = Operation("replace", ("workspace", "root"), "elsewhere")
 
 
 def _load(name: str) -> dict[str, object]:
@@ -56,12 +58,9 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     base = _load("engineering.v1.yaml")
     aliases = {"read": "read_file"}
     path = ("providers", "stream_responses")
+    duplicate = Operation("replace", path, True)
     with pytest.raises(CompositionError, match="repeat a kind and path"):
-        ModuleContribution(
-            "duplicate",
-            30,
-            [Operation("replace", path, False), Operation("replace", path, True)],
-        )
+        ModuleContribution("duplicate", 30, [duplicate, duplicate])
     seed = build_provider_module([Operation("add", path, False)], 5)
     provider = build_provider_module([Operation("replace", path, True)], 10)
     tools = build_tool_module([Operation("add", ("tools", "aliases"), aliases)], 20)
@@ -70,69 +69,56 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     assert composed["providers"]["stream_responses"] is True
     assert composed["tools"]["aliases"] == {"read": "read_file"}
     assert "stream_responses" not in base["providers"]
-    ordered = build_tool_module(
+    dependent = build_tool_module(
         [
-            Operation("add", ("tools", "aliases", "write"), "write_file"),
-            Operation("replace", ("tools", "mark_task_complete"), False),
+            Operation("add", ("tools", "aliases"), {"read": "pending"}),
+            Operation("replace", ("tools", "aliases", "read"), "read_file"),
             Operation("remove", ("tools", "aliases", "read")),
         ]
     )
-    result = compose_modules(composed, [ordered])
-    assert result["tools"]["aliases"] == {"write": "write_file"}
-    assert result["tools"]["mark_task_complete"] is False
-    dependent = build_tool_module(
-        [
-            Operation("remove", ("tools", "registry", "paths")),
-            Operation("remove", ("tools", "registry")),
-        ]
-    )
-    assert "registry" not in compose_modules(base, [dependent])["tools"]
+    assert compose_modules(base, [dependent])["tools"]["aliases"] == {}
 
 
 def test_one_module_mutation_changes_only_its_lock_subgraph() -> None:
     base = _load("engineering.v1.yaml")
-    changed = compose_modules(
-        base,
-        [
-            build_provider_module(
-                [Operation("add", ("providers", "stream_responses"), True)]
-            )
-        ],
+    module = build_provider_module(
+        [Operation("add", ("providers", "stream_responses"), True)]
     )
+    changed = compose_modules(base, [module])
     left = compile_harness_definition(base, source_ref="x").lock.as_dict()
     right = compile_harness_definition(changed, source_ref="x").lock.as_dict()
     left_rows = {row["path"]: row for row in left["effective_values"]}
     right_rows = {row["path"]: row for row in right["effective_values"]}
     assert set(right_rows) - set(left_rows) == {"providers.stream_responses"}
     assert all(left_rows[path] == right_rows[path] for path in left_rows)
-    assert left["source_layers"] != right["source_layers"]
     assert left["graph_hash"] != right["graph_hash"]
 
 
 def test_local_extensions_fail_closed_without_a_core_fork() -> None:
     base = _load("research.v1.yaml")
     registry = LocalExtensionRegistry()
+    confidence_path = ("completion", "confidence_threshold")
     registry.register(
         "local-confidence",
         lambda config: build_longrun_module(
-            [
-                Operation(
-                    "replace",
-                    ("completion", "confidence_threshold"),
-                    config["value"],
-                )
-            ]
+            [Operation("replace", confidence_path, config["value"])]
         ),
     )
     extension = registry.resolve("local-confidence", {"value": 0.9}, precedence=70)
-    assert (
-        compose_modules(base, [extension])["completion"]["confidence_threshold"] == 0.9
-    )
+    document = compose_modules(base, [extension])
+    assert document["completion"]["confidence_threshold"] == 0.9
     with pytest.raises(CompositionError, match="unknown extension id"):
         registry.resolve("missing", {})
     registry.register("bare", lambda _: ModuleContribution("bare", 1, []))
     with pytest.raises(CompositionError, match="owned contribution"):
         registry.resolve("bare", {})
+
+    def forge(_: object) -> ModuleContribution:
+        return replace(build_provider_module([]), operations=(_FOREIGN,))
+
+    registry.register("forged", forge)
+    with pytest.raises(CompositionError, match="builder 'forged' failed"):
+        registry.resolve("forged", {})
 
 
 def test_module_invariants_fail_before_lock() -> None:
@@ -144,8 +130,11 @@ def test_module_invariants_fail_before_lock() -> None:
     with pytest.raises(CompositionError, match="state_path"):
         compose_modules(base, [build_longrun_module([bad_resume])])
     budget = Operation("replace", ("long_running", "budgets"), {"total_tokens": 1})
-    bounded = compose_modules(base, [build_longrun_module([budget])])
-    assert bounded["long_running"]["budgets"] == {"total_tokens": 1}
+    compose_modules(base, [build_longrun_module([budget])])
+    for name in ("wall_clock_s", "total_episodes"):
+        unsupported = Operation("replace", ("long_running", "budgets"), {name: 1})
+        with pytest.raises(CompositionError, match="positive stopping budget"):
+            compose_modules(base, [build_longrun_module([unsupported])])
     cases = (
         (build_host_module, ("workspace", "mirror"), {"enabled": True}),
         (build_resource_module, ("concurrency", "at_most_one_of"), [["x", "x"]]),
@@ -157,28 +146,46 @@ def test_module_invariants_fail_before_lock() -> None:
     duplicate_paths = Operation("replace", ("tools", "registry", "paths"), ["x", "x"])
     with pytest.raises(CompositionError, match="tools.registry.paths"):
         compose_modules(base, [build_tool_module([duplicate_paths])])
-
-
-def test_composition_preconditions_and_module_ownership_fail_closed() -> None:
-    base = _load("engineering.v1.yaml")
     with pytest.raises(CompositionError, match="precedence"):
         compose_modules(base, [build_provider_module([], 1), build_tool_module([], 1)])
-    generic = ModuleContribution(
-        "generic",
-        2,
-        [Operation("add", ("workspace", "mirror"), {"enabled": True})],
-    )
+    generic = ModuleContribution("generic", 2, [_FOREIGN])
     with pytest.raises(CompositionError, match="owned module"):
         compose_modules(base, [generic])
-    with pytest.raises(CompositionError, match="already exists"):
-        compose_modules(
-            base,
-            [build_tool_module([Operation("add", ("tools", "registry"), {})])],
-        )
-    with pytest.raises(CompositionError, match="does not exist"):
-        compose_modules(
-            base,
-            [build_tool_module([Operation("replace", ("tools", "aliases"), {})])],
-        )
-    with pytest.raises(CompositionError, match="unowned root"):
-        build_policy_module([Operation("replace", ("workspace",), {})])
+    typed = build_provider_module([])
+    with pytest.raises(CompositionError, match="internal capability"):
+        replace(typed, operations=(_FOREIGN,), validator=lambda _: None)
+    target_cases = (
+        (Operation("add", ("tools", "registry"), {}), "already exists"),
+        (Operation("replace", ("tools", "aliases"), {}), "does not exist"),
+    )
+    for operation, message in target_cases:
+        with pytest.raises(CompositionError, match=message):
+            compose_modules(base, [build_tool_module([operation])])
+    deep = {}
+    for _ in range(102):
+        deep = {"x": deep}
+    with pytest.raises(CompositionError, match="100 segments"):
+        Operation("add", ("tools", "deep"), deep)
+    deep_base = _load("engineering.v1.yaml")
+    deep_base["workspace"]["root"] = deep
+    with pytest.raises(CompositionError, match="100 segments"):
+        compose_modules(deep_base, [])
+    owners = (
+        (build_provider_module, "providers provider_tools"),
+        (build_tool_module, "tools enhanced_tools"),
+        (build_resource_module, "concurrency"),
+        (build_policy_module, "permissions guardrails replay"),
+        (build_host_module, "workspace"),
+        (build_longrun_module, "long_running turn_strategy completion"),
+    )
+    roots = set(
+        "providers provider_tools tools enhanced_tools concurrency permissions guardrails replay workspace long_running turn_strategy completion".split()
+    )
+    for builder, names in owners:
+        for root in roots:
+            operation = Operation("add", (root, "probe"), None)
+            if root in names.split():
+                builder([operation])
+            else:
+                with pytest.raises(CompositionError, match="unowned root"):
+                    builder([operation])

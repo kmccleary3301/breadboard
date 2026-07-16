@@ -1,5 +1,3 @@
-"""Deterministic composition primitives for typed Harness authoring modules."""
-
 from __future__ import annotations
 
 import math
@@ -18,8 +16,8 @@ _ROOTS = frozenset(
     "completion concurrency dossier enhanced_tools features guardrails long_running loop modes multi_agent permissions prompts provider_tools providers replay schema_version tools turn_strategy version workspace".split()
 )
 _PROTECTED = frozenset(("schema_version", "version", "dossier"))
-_ORDER = {"remove": 0, "replace": 1, "add": 2}
 _MAX_JSON_INTEGER = 10**640 - 1
+_OWNER_KEY = object()
 
 
 class CompositionError(ValueError):
@@ -33,7 +31,11 @@ class _Missing:
 _MISSING = _Missing()
 
 
-def _copy_json(value: Any, freeze: bool, active: set[int] | None = None) -> Any:
+def _copy_json(
+    value: Any, freeze: bool, active: set[int] | None = None, depth: int = 0
+) -> Any:
+    if depth > 100:
+        raise CompositionError("JSON paths must not exceed 100 segments")
     active = set() if active is None else active
     if isinstance(value, Mapping):
         identity = id(value)
@@ -44,7 +46,8 @@ def _copy_json(value: Any, freeze: bool, active: set[int] | None = None) -> Any:
         active.add(identity)
         try:
             result = {
-                key: _copy_json(item, freeze, active) for key, item in value.items()
+                key: _copy_json(item, freeze, active, depth + 1)
+                for key, item in value.items()
             }
         finally:
             active.remove(identity)
@@ -55,7 +58,7 @@ def _copy_json(value: Any, freeze: bool, active: set[int] | None = None) -> Any:
             raise CompositionError("cyclic JSON value")
         active.add(identity)
         try:
-            result = [_copy_json(item, freeze, active) for item in value]
+            result = [_copy_json(item, freeze, active, depth + 1) for item in value]
         finally:
             active.remove(identity)
         return tuple(result) if freeze else result
@@ -72,10 +75,6 @@ def _copy_json(value: Any, freeze: bool, active: set[int] | None = None) -> Any:
     raise CompositionError(f"unsupported JSON value: {kind.__name__}")
 
 
-def _noop(_: Mapping[str, Any]) -> None:
-    pass
-
-
 @dataclass(frozen=True, slots=True)
 class Operation:
     kind: Literal["remove", "replace", "add"]
@@ -83,7 +82,7 @@ class Operation:
     value: JsonValue | _Missing = field(default=_MISSING, repr=False)
 
     def __post_init__(self) -> None:
-        if self.kind not in _ORDER:
+        if self.kind not in ("remove", "replace", "add"):
             raise CompositionError(f"unknown operation kind: {self.kind!r}")
         if isinstance(self.path, (str, bytes)):
             raise CompositionError("operation path must be a sequence")
@@ -108,7 +107,7 @@ class ModuleContribution:
     module_id: str
     precedence: int
     operations: tuple[Operation, ...]
-    validator: Validator = field(default=_noop, repr=False, compare=False)
+    validator: Validator = field(default=lambda _: None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if type(self.module_id) is not str or not self.module_id:
@@ -129,9 +128,13 @@ class ModuleContribution:
         object.__setattr__(self, "operations", operations)
 
 
-# Registry-safe ownership is minted only through typed module builders.
 class _OwnedContribution(ModuleContribution):
     __slots__ = ()
+
+    def __init__(self, *args: Any, _key: object | None = None, **kwargs: Any) -> None:
+        if _key is not _OWNER_KEY:
+            raise CompositionError("owned contributions require internal capability")
+        super().__init__(*args, **kwargs)
 
 
 def _owned(
@@ -148,7 +151,11 @@ def _owned(
     ):
         raise CompositionError(f"{module_id} module operation targets an unowned root")
     return _OwnedContribution(
-        f"{module_id}:{precedence}", precedence, snapshot, validator
+        f"{module_id}:{precedence}",
+        precedence,
+        snapshot,
+        validator,
+        _key=_OWNER_KEY,
     )
 
 
@@ -182,14 +189,6 @@ def _apply(document: dict[str, Any], operation: Operation) -> None:
         parent[target] = _copy_json(operation.value, False)
 
 
-def _duplicate(values: Sequence[Any]) -> Any | None:
-    seen: set[Any] = set()
-    duplicates: set[Any] = set()
-    for value in values:
-        (duplicates if value in seen else seen).add(value)
-    return min(duplicates) if duplicates else None
-
-
 def compose_modules(
     base: Mapping[str, Any], modules: Sequence[ModuleContribution]
 ) -> dict[str, Any]:
@@ -213,12 +212,9 @@ def compose_modules(
         raise CompositionError("modules must be a sequence") from None
     if any(not isinstance(item, _OwnedContribution) for item in snapshot):
         raise CompositionError("modules must be owned module contributions")
-    duplicate = _duplicate([item.module_id for item in snapshot])
-    if duplicate is not None:
-        raise CompositionError(f"duplicate module id: {duplicate!r}")
-    duplicate = _duplicate([item.precedence for item in snapshot])
-    if duplicate is not None:
-        raise CompositionError(f"duplicate module precedence: {duplicate}")
+    precedences = [item.precedence for item in snapshot]
+    if len(precedences) != len(set(precedences)):
+        raise CompositionError("duplicate module precedence")
     ordered = sorted(snapshot, key=lambda item: (item.precedence, item.module_id))
     for module in ordered:
         for operation in module.operations:
@@ -286,4 +282,5 @@ class LocalExtensionRegistry:
             precedence,
             built.operations,
             built.validator,
+            _key=_OWNER_KEY,
         )

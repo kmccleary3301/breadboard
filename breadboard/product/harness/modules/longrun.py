@@ -4,8 +4,8 @@ from typing import TypeGuard
 from .extensions import CompositionError, ModuleContribution, Operation, _owned
 
 _ROOTS = frozenset({"long_running", "turn_strategy", "completion"})
-_BUDGETS = frozenset(
-    "max_total_cost_usd max_total_tokens total_cost_usd total_episodes total_tokens wall_clock_s".split()
+_STOPPING_BUDGETS = frozenset(
+    "max_total_cost_usd max_total_tokens total_cost_usd total_tokens".split()
 )
 
 
@@ -38,7 +38,7 @@ def _validate(document: Mapping[str, object]) -> None:
     if long_running.get("enabled") is True:
         budgets = long_running.get("budgets")
         if not isinstance(budgets, Mapping) or not any(
-            _positive(budgets.get(name)) for name in _BUDGETS
+            _positive(budgets.get(name)) for name in _STOPPING_BUDGETS
         ):
             raise CompositionError(
                 "enabled long-running execution requires a positive stopping budget"
