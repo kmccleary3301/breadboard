@@ -1,5 +1,6 @@
 import type { TodoPreviewSelectionStrategy, TodoStoreSnapshot } from "../../../types.js"
 import { selectTodoPreviewItems, todoStoreCounts } from "../../../todos/todoStore.js"
+import { todoStatusPresentation } from "../../../todos/todoStatusPresentation.js"
 import { ASCII_ONLY } from "../theme.js"
 
 export type TodoPreviewItem = {
@@ -49,20 +50,6 @@ const extractCtreeNodeId = (metadata: Record<string, unknown> | null | undefined
   return cleaned ? cleaned : null
 }
 
-const statusToken = (status: string): string => {
-  switch (status) {
-    case "done":
-      return ASCII_ONLY ? "[x]" : "🗹"
-    case "in_progress":
-      return ASCII_ONLY ? "[ ]" : "☐"
-    case "blocked":
-      return ASCII_ONLY ? "[!]" : "☒"
-    case "canceled":
-      return ASCII_ONLY ? "[!]" : "☒"
-    default:
-      return ASCII_ONLY ? "[ ]" : "☐"
-  }
-}
 
 const formatHeaderWithHint = (header: string, hint: string, cols: number | null): string => {
   const safeCols = cols != null && Number.isFinite(cols) ? Math.max(10, Math.floor(cols) - 2) : null
@@ -98,7 +85,7 @@ export const buildTodoPreviewModel = (
   const items: TodoPreviewItem[] = selection.visible.map((todo) => ({
     id: todo.id,
     status: todo.status,
-    label: `${statusToken(todo.status)} ${todo.title}`,
+    label: `${todoStatusPresentation(todo.status).previewSymbol[ASCII_ONLY ? "ascii" : "unicode"]} ${todo.title}`,
   }))
   const anyCtreeLink = selection.visible.some((todo) => extractCtreeNodeId(todo.metadata ?? null) != null)
 

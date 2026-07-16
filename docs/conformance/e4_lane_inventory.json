@@ -51,7 +51,7 @@
         "feat_e7bfda921c4e30ed"
       ],
       "phase": "P0",
-      "points": 15,
+      "points": 0,
       "primitives": [
         "bb.kernel_event.v2"
       ],
@@ -125,7 +125,7 @@
         "feat_d5be8aa4451edbac"
       ],
       "phase": "P0",
-      "points": 30,
+      "points": 0,
       "primitives": [
         "bb.replay_session.v1"
       ],
@@ -1296,7 +1296,7 @@
       "ct": {
         "command": {
           "argv": [
-            ".venv/bin/python",
+            "python",
             "scripts/validate_e4_c4_chain.py",
             "--config-id",
             "oh_my_pi_p6_6_task_job_subagent_v1",
@@ -1325,7 +1325,7 @@
       "provider_model": "anthropic/claude-haiku-4-5",
       "reverify_command": {
         "argv": [
-          ".venv/bin/python",
+          "python",
           "scripts/validate_e4_c4_chain.py",
           "--config-id",
           "oh_my_pi_p6_6_task_job_subagent_v1",
@@ -1392,7 +1392,7 @@
         "feat_48d391c67faf0adf"
       ],
       "phase": "P0",
-      "points": 20,
+      "points": 0,
       "primitives": [
         "bb.replay_session.v1"
       ],

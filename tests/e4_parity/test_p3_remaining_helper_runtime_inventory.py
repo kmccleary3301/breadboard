@@ -8,6 +8,7 @@ import pytest
 
 from scripts.e4_parity.adapters import oh_my_pi_compiler_capture as compiler
 from scripts.e4_parity.adapters.oh_my_pi_projection_packet import canonical_json_bytes
+from scripts.e4_parity.adapters import oh_my_pi_p3_remaining_projections as projections
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -25,6 +26,19 @@ P3_LANE_IDS = [
 
 def _read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def test_context_resource_pack_projection_is_independent_of_candidate_root() -> None:
+    project = projections.PROJECTIONS["p3_2_context_resource_pack"]
+    candidate_a = project({"lane_id": "context_pack", "root": "/tmp/candidate-a"})
+    candidate_b = project({"lane_id": "context_pack", "root": "/tmp/candidate-b"})
+
+    assert candidate_a == candidate_b
+    generated_cwd = candidate_a["records"][0]["value"]["sources"][2]
+    assert generated_cwd["source_id"] == "generated_cwd"
+    assert generated_cwd["content_hash"] == (
+        "sha256:d15580757e216640dbb75339468c374e60e202c7a0339603f02605666dfcc9ab"
+    )
 
 
 @pytest.mark.parametrize("lane_id", P3_LANE_IDS)

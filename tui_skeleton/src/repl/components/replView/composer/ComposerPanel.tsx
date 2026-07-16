@@ -8,6 +8,7 @@ import { highlightFuzzyLabel } from "../utils/text.js"
 import { RuntimePreviewStack } from "./RuntimePreviewStack.js"
 import { FooterV2 } from "./FooterV2.js"
 import { buildComposerStateModel } from "./composerStateModel.js"
+import { todoStatusPresentation } from "../../../todos/todoStatusPresentation.js"
 
 // Bottom-band ownership stays local and repaint-friendly even while the
 // controller still provides broad semantic state. This surface must remain the
@@ -149,20 +150,6 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
   if (claudeChrome && todosOpen) {
     const scroll = Math.max(0, Math.min(todoScroll ?? 0, todoMaxScroll ?? 0))
     const visibleRows = Array.isArray(todoRows) ? todoRows.slice(scroll, scroll + (todoViewportRows ?? 0)) : []
-    const colorForStatus = (status?: string) => {
-      switch (status) {
-        case "in_progress":
-          return COLORS.info
-        case "done":
-          return COLORS.success
-        case "blocked":
-          return COLORS.error
-        case "canceled":
-          return COLORS.muted
-        default:
-          return COLORS.warning
-      }
-    }
     const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Todos"), color: COLORS.info }]
     const hintLines: SelectPanelLine[] = [
       {
@@ -179,7 +166,7 @@ export const ComposerPanel: React.FC<{ context: ComposerPanelContext }> = ({ con
     } else {
       visibleRows.forEach((row: any) => {
         if (row.kind === "header") {
-          panelRows.push({ kind: "header", text: row.label, color: colorForStatus(row.status) })
+          panelRows.push({ kind: "header", text: row.label, color: todoStatusPresentation(row.status).panelColor })
         } else {
           panelRows.push({ kind: "item", text: `  • ${row.label}`, wrap: "truncate-end" })
         }

@@ -3,44 +3,44 @@
     {
       "path": "config/e4_target_freeze_manifest.yaml",
       "role": "freeze_manifest",
-      "sha256": "sha256:47986b7c5a0718fa8121263fc1ba090d9cf62987e79d0a42da6a21ba4c0ce210"
+      "sha256": "sha256:d7a88960f74033b0654e49d3ed34ac7f8da610d8f19870ea42f7a182e3923f97"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5"
+      "sha256": "sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98",
         "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/compiled_records.json#sha256:f4937dc781e178f6b6af004e8be94be62002ee22ba2455c12e217ab30a4ef8ec"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b"
+      "sha256": "sha256:3408d24a3b7581ca5bc78d7145ef7202650d6804906230c425000e5ca4900da5"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json#sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json#sha256:3408d24a3b7581ca5bc78d7145ef7202650d6804906230c425000e5ca4900da5",
         "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/compiled_records.json#sha256:f4937dc781e178f6b6af004e8be94be62002ee22ba2455c12e217ab30a4ef8ec"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb"
+      "sha256": "sha256:09118d45c07d126ea0299f7bb132239e928bdfdf9c085eaf11504d953c1fa7c0"
     },
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:a7ceaf4700ace6e9aa7dbce8ab7ed10f86bab734c9a4b50994c89ee93ec89e56"
+      "sha256": "sha256:30e0b79349e5aed34a59b95f2613eb636feeee72c63f0fb0248799ca5561d840"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json#sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json#sha256:09118d45c07d126ea0299f7bb132239e928bdfdf9c085eaf11504d953c1fa7c0"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:014a27b3d4f220e39ed3de6efaef9e90c0390b8b45b900ca22cb6f204258dd63"
+      "sha256": "sha256:839e941ee148eedeea879a037a4414f35bbc81d5c03cc1822a018b15472a5047"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/secret_scan_report.json",

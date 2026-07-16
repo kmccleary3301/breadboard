@@ -69,7 +69,10 @@
         "effective_tool_surface": "artifacts/conformance/e4_primitive_projection/oh_my_pi_p6_0_l1_l2/effective_tool_surface.v1.json",
         "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/raw_capture_manifest.json",
         "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/bb_replay_result.json",
-        "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json"
+        "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/comparator_report.json",
+        "parity_results": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/parity_results.json",
+        "secret_scan_report": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/secret_scan_report.json",
+        "validator_output": "docs/conformance/e4_target_support/oh_my_pi_p3_1_effective_config_graph_compiler/prevalidation_report.json"
       }
     }
   },

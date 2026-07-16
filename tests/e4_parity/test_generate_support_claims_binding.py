@@ -65,6 +65,29 @@ def _catalog(*, revision: int | bool = 3, include_stable_hash: bool = True) -> d
     }
 
 
+def test_claim_derived_validator_ref_hashes_physical_artifact_outside_binding_catalog(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    validator_path = tmp_path / "docs/conformance/lane_alpha/prevalidation_report.json"
+    _write_json(validator_path, {"ok": True})
+    monkeypatch.setattr(generator, "ROOT", tmp_path)
+    monkeypatch.setattr(generator, "WORKSPACE", tmp_path.parent)
+    lane = {
+        "lane_id": "lane_alpha",
+        "artifact_roles": {"validator_output": "lane_alpha:validator_output"},
+    }
+
+    resolved = generator._catalog_hash_ref(
+        _catalog(),
+        lane,
+        "validator_output",
+        "docs/conformance/lane_alpha/prevalidation_report.json#sha256:" + "0" * 64,
+    )
+
+    assert resolved == f"docs/conformance/lane_alpha/prevalidation_report.json#{generator.sha256_path(validator_path)}"
+
+
 def test_catalog_binding_uses_fixture_revision_and_segment_hashes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -142,6 +165,57 @@ def test_catalog_binding_rejects_missing_digest_or_invalid_revision(
 
     with pytest.raises(ValueError):
         generator._catalog_binding(_lane())
+
+
+def test_refresh_freeze_ref_binds_current_row_hash(tmp_path: Path) -> None:
+    freeze_path = tmp_path / "freeze.yaml"
+    _write_json(freeze_path, {"e4_configs": {"config_alpha": {"revision": 2}}})
+
+    refreshed = generator._refresh_freeze_ref(
+        f"{freeze_path}#config_alpha#sha256:{'0' * 64}"
+    )
+
+    expected_hash = generator.lane_runtime.sha256_text(
+        generator.lane_runtime.canonical_json(
+            {"row_id": "config_alpha", "row": {"revision": 2}},
+            separators_style="compact",
+        )
+    )
+    assert refreshed == f"{freeze_path}#config_alpha#{expected_hash}"
+
+
+def test_updated_manifest_refreshes_derived_from_hashes(tmp_path: Path) -> None:
+    dependency_path = tmp_path / "dependency.json"
+    artifact_path = tmp_path / "artifact.json"
+    claim_path = tmp_path / "claim.json"
+    manifest_path = tmp_path / "manifest.json"
+    _write_json(dependency_path, {"revision": 2})
+    _write_json(artifact_path, {"result": True})
+    _write_json(claim_path, {"claim": True})
+    _write_json(
+        manifest_path,
+        {
+            "artifacts": [
+                {
+                    "derived_from": [f"{dependency_path}#sha256:{'0' * 64}"],
+                    "path": str(artifact_path),
+                    "role": "parity_results",
+                    "sha256": "sha256:" + "0" * 64,
+                },
+                {
+                    "path": str(claim_path),
+                    "role": "support_claim_ref",
+                    "sha256": "sha256:" + "0" * 64,
+                },
+            ]
+        },
+    )
+
+    generator._updated_manifest(manifest_path, claim_path, {"freeze_ref": ""})
+
+    updated = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert updated["artifacts"][0]["derived_from"] == [generator.ref(dependency_path)]
+    assert updated["artifacts"][0]["sha256"] == generator.sha256_path(artifact_path)
 
 
 def test_updated_node_gate_only_syncs_refs_and_hashes(tmp_path: Path) -> None:

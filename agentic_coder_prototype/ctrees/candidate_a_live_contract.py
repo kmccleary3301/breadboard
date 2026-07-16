@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-import json
-import os
-import subprocess
 from pathlib import Path
 from typing import Any, Dict, List
+
+from .phase11_benchmark_execution import (
+    Phase11BenchmarkExecutionRequest,
+    build_phase11_benchmark_command,
+    build_phase11_contract_cell_statuses,
+    execute_phase11_benchmark_cell,
+)
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -56,25 +60,10 @@ def build_phase11_candidate_a_live_cells() -> List[Dict[str, Any]]:
 
 
 def build_phase11_candidate_a_live_contract_status() -> Dict[str, Any]:
-    cells: List[Dict[str, Any]] = []
-    live_ready = False
-    for cell in build_phase11_candidate_a_live_cells():
-        missing_env = [name for name in list(cell.get("provider_env_requirements") or []) if not os.environ.get(name)]
-        status = "contract_ready" if not missing_env else "provider_blocked_missing_env"
-        if not missing_env:
-            live_ready = True
-        cells.append(
-            {
-                "cell_id": str(cell.get("cell_id") or ""),
-                "model_tier": str(cell.get("model_tier") or ""),
-                "candidate_id": str(cell.get("candidate_id") or ""),
-                "config_path": str(cell.get("config_path") or ""),
-                "runner_script": str(cell.get("runner_script") or ""),
-                "provider_env_requirements": list(cell.get("provider_env_requirements") or []),
-                "missing_env": missing_env,
-                "status": status,
-            }
-        )
+    cells, live_ready = build_phase11_contract_cell_statuses(
+        build_phase11_candidate_a_live_cells(),
+        identity_key="candidate_id",
+    )
     return {
         "schema_version": "phase11_candidate_a_live_contract_v1",
         "runner_script": str(_RUNNER_SCRIPT),
@@ -90,17 +79,6 @@ def _cell_by_id(cell_id: str) -> Dict[str, Any]:
     raise KeyError(f"unknown candidate_a live cell {cell_id}")
 
 
-def _pythonpath_env() -> str:
-    existing = str(os.environ.get("PYTHONPATH") or "").strip()
-    if existing:
-        return f"{_REPO_ROOT}:{existing}"
-    return str(_REPO_ROOT)
-
-
-def _workspace_root_for_cell(cell_id: str) -> Path:
-    return _DEFAULT_WORKSPACE_ROOT / str(cell_id)
-
-
 def build_phase11_candidate_a_live_command(
     *,
     cell_id: str,
@@ -109,26 +87,15 @@ def build_phase11_candidate_a_live_command(
     workspace_root: Path,
     dry_run: bool,
 ) -> Dict[str, Any]:
-    cell = _cell_by_id(cell_id)
-    cmd = [
-        "python",
-        str(_RUNNER_SCRIPT),
-        "--config",
-        str(cell["config_path"]),
-        "--tasks",
-        str(tasks_path),
-        "--out",
-        str(out_path),
-        "--workspace-root",
-        str(workspace_root),
-    ]
-    if dry_run:
-        cmd.append("--dry-run")
-    return {
-        "cmd": cmd,
-        "env": {"PYTHONPATH": _pythonpath_env()},
-        "cell": cell,
-    }
+    return build_phase11_benchmark_command(
+        cell=_cell_by_id(cell_id),
+        runner_script=_RUNNER_SCRIPT,
+        repo_root=_REPO_ROOT,
+        tasks_path=tasks_path,
+        out_path=out_path,
+        workspace_root=workspace_root,
+        dry_run=dry_run,
+    )
 
 
 def execute_phase11_candidate_a_live_cell(
@@ -140,62 +107,15 @@ def execute_phase11_candidate_a_live_cell(
 ) -> Dict[str, Any]:
     contract = build_phase11_candidate_a_live_contract_status()
     target_cell = next(item for item in contract["cells"] if str(item.get("cell_id") or "") == str(cell_id))
-    resolved_out_root = Path(out_root or _DEFAULT_OUTPUT_ROOT)
-    resolved_out_root.mkdir(parents=True, exist_ok=True)
-    tasks_path = resolved_out_root / f"{cell_id}_tasks.json"
-    out_path = resolved_out_root / f"{cell_id}_results.json"
-    workspace_root = _workspace_root_for_cell(cell_id)
-    if not dry_run:
-        workspace_root.mkdir(parents=True, exist_ok=True)
-    tasks_path.write_text(json.dumps(tasks_payload, indent=2), encoding="utf-8")
-
-    command_payload = build_phase11_candidate_a_live_command(
-        cell_id=cell_id,
-        tasks_path=tasks_path,
-        out_path=out_path,
-        workspace_root=workspace_root,
-        dry_run=dry_run,
+    return execute_phase11_benchmark_cell(
+        Phase11BenchmarkExecutionRequest(
+            execution_schema_version="phase11_candidate_a_live_execution_v1",
+            cell=target_cell,
+            tasks_payload=tasks_payload,
+            out_root=Path(out_root or _DEFAULT_OUTPUT_ROOT),
+            workspace_root=_DEFAULT_WORKSPACE_ROOT / str(cell_id),
+            runner_script=_RUNNER_SCRIPT,
+            repo_root=_REPO_ROOT,
+            dry_run=dry_run,
+        ),
     )
-    missing_env = list(target_cell.get("missing_env") or [])
-    if missing_env and not dry_run:
-        return {
-            "schema_version": "phase11_candidate_a_live_execution_v1",
-            "cell_id": cell_id,
-            "model_tier": str(target_cell.get("model_tier") or ""),
-            "status": "provider_blocked_missing_env",
-            "missing_env": missing_env,
-            "tasks_path": str(tasks_path),
-            "out_path": str(out_path),
-            "workspace_root": str(workspace_root),
-            "command": command_payload["cmd"],
-        }
-
-    env = os.environ.copy()
-    env.update(dict(command_payload.get("env") or {}))
-    completed = subprocess.run(
-        list(command_payload["cmd"]),
-        cwd=str(_REPO_ROOT),
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    payload: Dict[str, Any] = {
-        "schema_version": "phase11_candidate_a_live_execution_v1",
-        "cell_id": cell_id,
-        "model_tier": str(target_cell.get("model_tier") or ""),
-        "status": "dry_run_executed" if dry_run and completed.returncode == 0 else ("executed" if completed.returncode == 0 else "runner_failed"),
-        "missing_env": missing_env,
-        "tasks_path": str(tasks_path),
-        "out_path": str(out_path),
-        "workspace_root": str(workspace_root),
-        "command": command_payload["cmd"],
-        "returncode": int(completed.returncode),
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
-    }
-    if out_path.exists():
-        try:
-            payload["result"] = json.loads(out_path.read_text(encoding="utf-8"))
-        except Exception:
-            payload["result"] = None
-    return payload

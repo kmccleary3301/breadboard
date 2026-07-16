@@ -162,6 +162,26 @@ COMPLETION_GUARD_ABORT_TEMPLATE = (
 )
 
 
+class _RlmProviderApiKeyMissing(Exception):
+    pass
+
+
+class _RlmProviderSubcallTimeout(Exception):
+    def __init__(self, elapsed_seconds: float) -> None:
+        self.elapsed_seconds = elapsed_seconds
+
+
+@dataclass(frozen=True, slots=True)
+class _RlmProviderSubcallExecution:
+    text: str
+    usage: Dict[str, Any]
+    usage_tokens: int
+    usage_cost_usd: float
+    resolved_model: str
+    provider_id: str
+    elapsed_seconds: float | None
+
+
 @dataclass
 class AsyncAgentJob:
     task_id: str
@@ -3307,6 +3327,63 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         )
         return result
 
+    def _execute_rlm_provider_subcall(
+        self,
+        *,
+        model_route: str,
+        messages: List[Dict[str, Any]],
+        runtime_extra: Dict[str, Any],
+        started_at: float | None = None,
+        timeout_seconds: float = 0.0,
+    ) -> _RlmProviderSubcallExecution:
+        runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
+        client_cfg = provider_router.create_client_config(model_route)
+        if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
+            raise _RlmProviderApiKeyMissing(f"{runtime_descriptor.api_key_env} missing in environment.")
+        runtime = provider_registry.create_runtime(runtime_descriptor)
+        client = runtime.create_client(
+            client_cfg.get("api_key"),
+            base_url=client_cfg.get("base_url"),
+            default_headers=client_cfg.get("default_headers"),
+        )
+        result = runtime.invoke(
+            client=client,
+            model=runtime_model,
+            messages=messages,
+            tools=None,
+            stream=False,
+            context=ProviderRuntimeContext(
+                session_state=getattr(self, "_active_session_state", None),
+                agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
+                stream=False,
+                extra=runtime_extra,
+            ),
+        )
+        elapsed_seconds = None
+        if started_at is not None:
+            elapsed_seconds = max(0.0, time.time() - started_at)
+            if timeout_seconds > 0.0 and elapsed_seconds > timeout_seconds:
+                raise _RlmProviderSubcallTimeout(elapsed_seconds)
+        text_parts = [
+            message.content.strip()
+            for message in result.messages or []
+            if isinstance(message, ProviderMessage)
+            and isinstance(message.content, str)
+            and message.content.strip()
+        ]
+        usage = dict(result.usage or {})
+        usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
+        return _RlmProviderSubcallExecution(
+            text="\n\n".join(text_parts).strip(),
+            usage=usage,
+            usage_tokens=usage_tokens,
+            usage_cost_usd=usage_cost_usd,
+            resolved_model=runtime_model,
+            provider_id=runtime_descriptor.provider_id,
+            elapsed_seconds=elapsed_seconds,
+        )
+
+
     def _handle_llm_query_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         expected_output = tool_call.get("expected_output")
         expected_status = tool_call.get("expected_status")
@@ -3396,42 +3473,21 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         )
 
         try:
-            runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
-            client_cfg = provider_router.create_client_config(model_route)
-            if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
-                return self._rlm_mvi_error("api_key_missing", f"{runtime_descriptor.api_key_env} missing in environment.")
-            runtime = provider_registry.create_runtime(runtime_descriptor)
-            client = runtime.create_client(
-                client_cfg.get("api_key"),
-                base_url=client_cfg.get("base_url"),
-                default_headers=client_cfg.get("default_headers"),
-            )
-            runtime_context = ProviderRuntimeContext(
-                session_state=getattr(self, "_active_session_state", None),
-                agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
-                stream=False,
-                extra={
+            execution = self._execute_rlm_provider_subcall(
+                model_route=model_route,
+                messages=messages,
+                runtime_extra={
                     "rlm_subcall": True,
                     "branch_id": branch_id,
                     "max_completion_tokens": args.get("max_completion_tokens") or subcall_cfg.get("max_completion_tokens"),
                     "temperature": args.get("temperature", subcall_cfg.get("temperature")),
                 },
             )
-            result = runtime.invoke(
-                client=client,
-                model=runtime_model,
-                messages=messages,
-                tools=None,
-                stream=False,
-                context=runtime_context,
-            )
-            text_parts: List[str] = []
-            for msg in result.messages or []:
-                if isinstance(msg, ProviderMessage) and isinstance(msg.content, str) and msg.content.strip():
-                    text_parts.append(msg.content.strip())
-            text = "\n\n".join(text_parts).strip()
-            usage = dict(result.usage or {})
-            usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
+            runtime_model = execution.resolved_model
+            text = execution.text
+            usage = execution.usage
+            usage_tokens = execution.usage_tokens
+            usage_cost_usd = execution.usage_cost_usd
             next_state = consume_subcall(
                 state=state,
                 branch_id=branch_id,
@@ -3451,7 +3507,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "lane": lane,
                 "route_id": model_route,
                 "resolved_model": runtime_model,
-                "provider_id": runtime_descriptor.provider_id,
+                "provider_id": execution.provider_id,
                 "prompt_hash": prompt_hash,
                 "blob_refs": blob_refs,
                 "consumed_blobs": list(blob_refs),
@@ -3491,12 +3547,14 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "estimated_cost_usd": usage_cost_usd,
                 "model": runtime_model,
                 "route_id": model_route,
-                "provider_id": runtime_descriptor.provider_id,
+                "provider_id": execution.provider_id,
                 "branch_id": branch_id,
                 "lane": lane,
                 "cached": False,
                 "__mvi_text_output": mvi,
             }
+        except _RlmProviderApiKeyMissing as exc:
+            return self._rlm_mvi_error("api_key_missing", str(exc))
         except ProviderRuntimeError as exc:
             self._rlm_record_branch_event(
                 branch_id=branch_id,
@@ -3737,30 +3795,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             for attempt in range(retries + 1):
                 started = time.time()
                 try:
-                    runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
-                    client_cfg = provider_router.create_client_config(model_route)
-                    if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
-                        return {
-                            "request_index": request_index,
-                            "status": "failed",
-                            "reason": "api_key_missing",
-                            "error": f"{runtime_descriptor.api_key_env} missing in environment.",
-                            "branch_id": branch_id,
-                            "depth": depth,
-                            "lane": item.get("lane"),
-                            "attempt_count": attempt + 1,
-                        }
-                    runtime = provider_registry.create_runtime(runtime_descriptor)
-                    client = runtime.create_client(
-                        client_cfg.get("api_key"),
-                        base_url=client_cfg.get("base_url"),
-                        default_headers=client_cfg.get("default_headers"),
-                    )
-                    runtime_context = ProviderRuntimeContext(
-                        session_state=getattr(self, "_active_session_state", None),
-                        agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
-                        stream=False,
-                        extra={
+                    execution = self._execute_rlm_provider_subcall(
+                        model_route=model_route,
+                        messages=messages,
+                        runtime_extra={
                             "rlm_subcall": True,
                             "rlm_batch_subcall": True,
                             "branch_id": branch_id,
@@ -3769,54 +3807,52 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                             "max_completion_tokens": item.get("max_completion_tokens"),
                             "temperature": item.get("temperature"),
                         },
+                        started_at=started,
+                        timeout_seconds=timeout_seconds,
                     )
-                    result = runtime.invoke(
-                        client=client,
-                        model=runtime_model,
-                        messages=messages,
-                        tools=None,
-                        stream=False,
-                        context=runtime_context,
-                    )
-                    elapsed = max(0.0, time.time() - started)
-                    if timeout_seconds > 0.0 and elapsed > timeout_seconds:
-                        attempts.append({"attempt": attempt + 1, "status": "timeout", "duration_seconds": elapsed})
-                        if attempt < retries:
-                            continue
-                        return {
-                            "request_index": request_index,
-                            "status": "timeout",
-                            "reason": "timeout",
-                            "error": f"subcall exceeded timeout_seconds={timeout_seconds}",
-                            "branch_id": branch_id,
-                            "depth": depth,
-                            "lane": item.get("lane"),
-                            "attempt_count": attempt + 1,
-                            "attempts": attempts,
-                        }
-                    text_parts: List[str] = []
-                    for msg in result.messages or []:
-                        if isinstance(msg, ProviderMessage) and isinstance(msg.content, str) and msg.content.strip():
-                            text_parts.append(msg.content.strip())
-                    text = "\n\n".join(text_parts).strip()
-                    usage = dict(result.usage or {})
-                    usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
                     return {
                         "request_index": request_index,
                         "status": "completed",
                         "branch_id": branch_id,
                         "depth": depth,
                         "lane": item.get("lane"),
-                        "text": text,
-                        "usage": usage,
-                        "usage_tokens": usage_tokens,
-                        "estimated_cost_usd": usage_cost_usd,
+                        "text": execution.text,
+                        "usage": execution.usage,
+                        "usage_tokens": execution.usage_tokens,
+                        "estimated_cost_usd": execution.usage_cost_usd,
                         "route_id": model_route,
-                        "resolved_model": runtime_model,
-                        "provider_id": runtime_descriptor.provider_id,
+                        "resolved_model": execution.resolved_model,
+                        "provider_id": execution.provider_id,
                         "prompt_hash": hashlib.sha256(user_prompt.encode("utf-8", errors="ignore")).hexdigest(),
                         "attempt_count": attempt + 1,
-                        "attempts": attempts + [{"attempt": attempt + 1, "status": "completed", "duration_seconds": elapsed}],
+                        "attempts": attempts + [{"attempt": attempt + 1, "status": "completed", "duration_seconds": execution.elapsed_seconds}],
+                    }
+                except _RlmProviderSubcallTimeout as exc:
+                    elapsed = exc.elapsed_seconds
+                    attempts.append({"attempt": attempt + 1, "status": "timeout", "duration_seconds": elapsed})
+                    if attempt < retries:
+                        continue
+                    return {
+                        "request_index": request_index,
+                        "status": "timeout",
+                        "reason": "timeout",
+                        "error": f"subcall exceeded timeout_seconds={timeout_seconds}",
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
+                        "attempts": attempts,
+                    }
+                except _RlmProviderApiKeyMissing as exc:
+                    return {
+                        "request_index": request_index,
+                        "status": "failed",
+                        "reason": "api_key_missing",
+                        "error": str(exc),
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
                     }
                 except ProviderRuntimeError as exc:
                     attempts.append({"attempt": attempt + 1, "status": "provider_error", "error": str(exc)})

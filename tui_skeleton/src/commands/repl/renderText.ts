@@ -6,6 +6,7 @@ import type { ReplState } from "./controller.js"
 import { ASCII_HEADER, HEADER_COLOR, speakerColor, TOOL_EVENT_COLOR } from "../../repl/viewUtils.js"
 import type { Block, DiffBlock as StreamDiffBlock, DiffKind, InlineNode, TokenLineV1 } from "@stream-mdx/core/types"
 import { selectTodoPreviewItems, todoStoreCounts } from "../../repl/todos/todoStore.js"
+import { todoStatusPresentation } from "../../repl/todos/todoStatusPresentation.js"
 import {
   BRAND_COLORS,
   NEUTRAL_COLORS,
@@ -1520,20 +1521,6 @@ const formatModelMenu = (
   return lines
 }
 
-const todoStatusMark = (status: string): string => {
-  switch (status) {
-    case "done":
-      return "x"
-    case "in_progress":
-      return "~"
-    case "blocked":
-      return "!"
-    case "canceled":
-      return "-"
-    default:
-      return " "
-  }
-}
 
 const formatComposerRegion = (
   state: ReplState,
@@ -1554,7 +1541,7 @@ const formatComposerRegion = (
       options.showHiddenCount && selection.hiddenCount > 0 ? `${separator}+${selection.hiddenCount}` : ""
     lines.push(`TODOs: ${done}/${total}${hiddenSuffix}`)
     for (const item of selection.visible) {
-      lines.push(`[${todoStatusMark(item.status)}] ${item.title}`)
+      lines.push(`[${todoStatusPresentation(item.status).textMark}] ${item.title}`)
     }
   }
   // Minimal prompt affordance to make baselines include the "above input" region.

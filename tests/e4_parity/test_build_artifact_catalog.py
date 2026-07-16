@@ -397,6 +397,82 @@ def test_build_catalog_is_deterministic_valid_and_covers_lane_and_static_roles(
     assert stable_entries_hash(mutated_entries) == first["integrity"]["stable_entries_hash"]
     assert sha256_ref(canonical_record_bytes(mutated_entries)) != first["integrity"]["entries_hash"]
 
+
+def test_bootstrap_catalog_omits_derived_lane_roles_and_unreferenced_static_outputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    paths["checkout_static"].unlink()
+    paths["docs_tmp_static"].unlink()
+    paths["script"].unlink()
+
+    catalog = builder.build_catalog(
+        inventory_path=paths["inventory"],
+        report_roles_path=paths["report_roles"],
+        output_path=paths["output"],
+        excluded_lane_roles={"evidence_manifest", "node_gate", "support_claim"},
+        referenced_static_only=True,
+    )
+
+    assert {entry["role_id"] for entry in catalog["entries"]} == {
+        "lane_alpha:capture",
+        "lane_alpha:comparator",
+    }
+    assert _catalog_entry(catalog, "lane_alpha:comparator")["derived_from"] == [
+        "lane_alpha:capture"
+    ]
+    assert not (paths["checkout"] / "docs/conformance/e4_tooling_manifest.json").exists()
+def test_bootstrap_catalog_prunes_lane_roles_derived_from_excluded_roles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+
+    catalog = builder.build_catalog(
+        inventory_path=paths["inventory"],
+        report_roles_path=paths["report_roles"],
+        output_path=paths["output"],
+        excluded_lane_roles={"capture", "evidence_manifest", "node_gate", "support_claim"},
+        referenced_static_only=True,
+    )
+
+    assert catalog["entries"] == []
+
+
+def test_bootstrap_catalog_keeps_default_ledger_needed_by_support_claim_generation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    ledger = paths["workspace"] / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    _write_json(ledger, {"rows": [{"feature_id": "feature_alpha"}]})
+    report_roles = json.loads(paths["report_roles"].read_text(encoding="utf-8"))
+    report_roles["static_artifact_roles"].append(
+        {
+            "role_id": builder.DEFAULT_ATOMIC_LEDGER_ROLE_ID,
+            "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
+            "artifact_kind": "ledger",
+            "media_type": "application/json",
+            "derived_from": [],
+            "generated_by": "scripts/e4_parity/seed_atomic_feature_ledger.py",
+        }
+    )
+    _write_json(paths["report_roles"], report_roles)
+
+    catalog = builder.build_catalog(
+        inventory_path=paths["inventory"],
+        report_roles_path=paths["report_roles"],
+        output_path=paths["output"],
+        excluded_lane_roles={"evidence_manifest", "node_gate", "support_claim"},
+        referenced_static_only=True,
+    )
+
+    assert builder.DEFAULT_ATOMIC_LEDGER_ROLE_ID in {
+        entry["role_id"] for entry in catalog["entries"]
+    }
+
+
 def test_static_script_entries_are_derived_and_recorded_in_tooling_manifest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

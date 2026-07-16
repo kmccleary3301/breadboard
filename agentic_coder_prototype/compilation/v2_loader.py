@@ -7,11 +7,12 @@ import os
 from collections.abc import Iterator, Mapping
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, Union
 
 from jsonschema import Draft202012Validator
+from breadboard.product.harness.compile import HarnessCompilation, compile_harness_definition
 
-from .effective_config_graph import compile_effective_config_graph, sha256_json
+from .effective_config_graph import sha256_json
 
 _VALID_CONFIG_AUTHORITIES = {"config", "parity", "effective"}
 
@@ -96,6 +97,19 @@ def _load_yaml(path: Union[str, Path]) -> Dict[str, Any]:
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
+def _load_config_ref(parent_source_ref: str, declared_ref: str) -> tuple[str, Dict[str, Any]]:
+    ref_path = Path(declared_ref)
+    resolved = ref_path.resolve() if ref_path.is_absolute() else (Path(parent_source_ref).parent / ref_path).resolve()
+    document = _load_yaml(resolved)
+    if not isinstance(document, dict):
+        raise ValueError(f"extended agent config must be a mapping: {resolved}")
+    return str(resolved), document
+
+def _compile_config(raw: object, config_path: Path) -> HarnessCompilation:
+    if not isinstance(raw, dict):
+        raise ValueError("agent config must be a mapping")
+    return compile_harness_definition(raw, source_ref=str(config_path.resolve()), load_ref=_load_config_ref)
+
 
 
 def _repo_root() -> Path:
@@ -122,6 +136,8 @@ def _surface_schema_version(doc: Mapping[str, Any]) -> str:
         return "bb.agent_config_surface.v1"
     if schema_version == "bb.agent_config_surface.v2":
         return "bb.agent_config_surface.v2"
+    if schema_version == "bb.harness_definition.v1":
+        return "bb.harness_definition.v1"
     raise ValueError(f"unsupported agent config surface schema_version: {schema_version}")
 
 def _has_agent_config_version_2(doc: Mapping[str, Any]) -> bool:
@@ -358,157 +374,32 @@ def _validate_schema_less_v2_compatibility(doc: Dict[str, Any]) -> None:
             _compat_number(tier, "timeout_seconds", f"{path}.timeout_seconds", positive=True)
             _compat_bool(tier, "hard_fail", f"{path}.hard_fail")
 
-def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Merge two dicts recursively. Lists/tuples are replaced, not merged.
-    Scalars replace.
-    """
-    out: Dict[str, Any] = dict(base)
-    for k, v in (override or {}).items():
-        if k not in out:
-            out[k] = v
-            continue
-        if isinstance(out[k], dict) and isinstance(v, dict):
-            out[k] = _deep_merge(out[k], v)
-        else:
-            out[k] = v
-    return out
 
 
-def _resolve_extends(doc: Dict[str, Any], config_path: Path) -> Dict[str, Any]:
-    """Resolve one or more levels of `extends` declarations.
-
-    Supports single string or list for `extends`, and resolves nested bases
-    recursively so that the final document contains all inherited sections
-    (e.g., `version`, `tools`, `modes`, `loop`).
-    """
-    extends_val = doc.get("extends")
-    if not extends_val:
-        return doc
-
-    base_docs: List[Dict[str, Any]] = []
-    if isinstance(extends_val, (list, tuple)):
-        paths = list(extends_val)
-    else:
-        paths = [extends_val]
-
-    for rel in paths:
-        base_path = (config_path.parent / str(rel)).resolve()
-        base_raw = _load_yaml(base_path)
-        # Recursively resolve base's own extends if present
-        base_resolved = _resolve_extends(base_raw, base_path) if isinstance(base_raw, dict) and base_raw.get("extends") else base_raw
-        base_docs.append(base_resolved)
-
-    merged: Dict[str, Any] = {}
-    for b in base_docs:
-        merged = _deep_merge(merged, b)
-    merged = _deep_merge(merged, {k: v for k, v in doc.items() if k != "extends"})
-    return merged
-
-
-def _extends_paths(doc: Mapping[str, Any]) -> list[str]:
-    extends_val = doc.get("extends")
-    if not extends_val:
-        return []
-    if isinstance(extends_val, (list, tuple)):
-        return [str(item) for item in extends_val]
-    return [str(extends_val)]
-
-
-def _config_graph_layers(doc: Dict[str, Any], config_path: Path, *, _seen: tuple[Path, ...] = ()) -> list[Dict[str, Any]]:
-    layers: list[Dict[str, Any]] = []
-    _append_config_graph_layers(doc, config_path, layers, _seen=_seen)
-    return layers
-
-
-def _append_config_graph_layers(
-    doc: Dict[str, Any],
-    config_path: Path,
-    layers: list[Dict[str, Any]],
-    *,
-    _seen: tuple[Path, ...] = (),
-) -> None:
-    resolved_path = config_path.resolve()
-    if resolved_path in _seen:
-        chain = " -> ".join(str(path) for path in (*_seen, resolved_path))
-        raise ValueError(f"cyclic config extends chain: {chain}")
-
-    for rel in _extends_paths(doc):
-        base_path = (config_path.parent / rel).resolve()
-        base_raw = _load_yaml(base_path)
-        _append_config_graph_layers(base_raw, base_path, layers, _seen=(*_seen, resolved_path))
-
-    layer_values = {key: value for key, value in doc.items() if key not in {"extends", "dossier"}}
-    order = len(layers)
-    layers.append(
-        {
-            "layer_id": f"agent-config:{order:04d}:{config_path.name}",
-            "source_kind": "project",
-            "scope": "agent",
-            "precedence": order * 10,
-            "source_ref": str(config_path),
-            "layer_hash": sha256_json(layer_values),
-            "values": layer_values,
-        }
-    )
-
-
-def _effective_values_to_dict(effective_values: list[Mapping[str, Any]]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    for item in effective_values:
-        dotted_path = str(item.get("path") or "")
-        if not dotted_path:
-            continue
-        current: Dict[str, Any] = out
-        parts = dotted_path.split(".")
-        for part in parts[:-1]:
-            next_value = current.get(part)
-            if not isinstance(next_value, dict):
-                next_value = {}
-                current[part] = next_value
-            current = next_value
-        current[parts[-1]] = copy.deepcopy(item.get("value"))
-    return out
-
-
-def build_config_view(config_path_str: str) -> ConfigView:
-    """Build the v2 ConfigView foundation without changing legacy defaults."""
-
-    config_path = _resolve_config_path(config_path_str)
-    raw = _load_yaml(config_path)
-    if not isinstance(raw, dict):
-        raise ValueError("agent config must be a mapping")
-
-    effective_doc = _resolve_extends(raw, config_path) if raw.get("extends") else copy.deepcopy(raw)
+def _config_view_from_compilation(compilation: HarnessCompilation, config_path: Path) -> ConfigView:
+    effective_doc = compilation.resolved_author_dict()
     surface_schema_version = _surface_schema_version(effective_doc)
-    if surface_schema_version == "bb.agent_config_surface.v2":
+    if surface_schema_version == "bb.harness_definition.v1":
+        runtime_doc = _normalize_for_runtime(effective_doc)
+    elif surface_schema_version == "bb.agent_config_surface.v2":
         _validate_v2(effective_doc)
         runtime_doc = _normalize_for_runtime(effective_doc)
-    else:
-        if _has_agent_config_version_2(effective_doc):
-            if _env_truthy("AGENT_SCHEMA_V2_ENABLED"):
-                _validate_schema_less_v2_compatibility(effective_doc)
-                runtime_doc = _normalize_for_runtime(effective_doc)
-            else:
-                _validate_agent_config_surface(effective_doc, "bb.agent_config_surface.v1")
-                runtime_doc = effective_doc
+    elif _has_agent_config_version_2(effective_doc):
+        if _env_truthy("AGENT_SCHEMA_V2_ENABLED"):
+            _validate_schema_less_v2_compatibility(effective_doc)
+            runtime_doc = _normalize_for_runtime(effective_doc)
         else:
+            _validate_agent_config_surface(effective_doc, "bb.agent_config_surface.v1")
             runtime_doc = effective_doc
+    else:
+        runtime_doc = effective_doc
+    return ConfigView(runtime_doc, graph=compilation.lock.as_dict(), config_path=config_path)
 
-    layers = _config_graph_layers(raw, config_path)
-    graph = compile_effective_config_graph(
-        graph_id=f"agent_config:{config_path.stem}",
-        layers=layers,
-        migrations=[
-            {
-                "migration_id": "agent-config-yaml-to-effective-config-graph-v1",
-                "from_version": "agent-config-yaml",
-                "to_version": "bb.effective_config_graph.v1",
-                "applied": True,
-            }
-        ],
-    )
-    return ConfigView(runtime_doc, graph=graph, config_path=config_path)
+def build_config_view(config_path_str: str) -> ConfigView:
+    """Compile one product-owned result and adapt it to the legacy read-only view."""
+    config_path = _resolve_config_path(config_path_str)
+    compilation = _compile_config(_load_yaml(config_path), config_path)
+    return _config_view_from_compilation(compilation, config_path)
 
 
 def load_agent_config_view(config_path_str: str) -> ConfigView:
@@ -639,14 +530,15 @@ def load_agent_config(config_path_str: str) -> Dict[str, Any]:
     """
     config_path = _resolve_config_path(config_path_str)
     raw = _load_yaml(config_path)
-
-    # Prefer resolving extends first (so child files inherit version/mode/loop)
-    doc = _resolve_extends(raw, config_path) if (isinstance(raw, dict) and raw.get("extends")) else raw
+    compilation = _compile_config(raw, config_path)
+    doc = compilation.resolved_author_dict()
 
 
 
     surface_schema_version = _surface_schema_version(doc)
-    if surface_schema_version == "bb.agent_config_surface.v2":
+    if surface_schema_version == "bb.harness_definition.v1":
+        legacy_doc = _normalize_for_runtime(doc)
+    elif surface_schema_version == "bb.agent_config_surface.v2":
         _validate_v2(doc)
         legacy_doc = _normalize_for_runtime(doc)
     else:
@@ -672,7 +564,7 @@ def load_agent_config(config_path_str: str) -> Dict[str, Any]:
     if authority == "config":
         return legacy_doc
 
-    view = build_config_view(str(config_path))
+    view = _config_view_from_compilation(compilation, config_path)
     effective_doc = view.as_dict()
     if legacy_doc != effective_doc:
         _log_config_divergence(config_path, legacy_doc, effective_doc, logger=active_logger)

@@ -72,6 +72,11 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "class": "plan_mandated_evolution",
         "ref": "plan §3 H2/H3 + AM17a/AM17b-r",
     },
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json": {
+        "packet": "bb-31n",
+        "sha256": "64bff2f1f55bba6216ecc71f0669a3eb4900253d07dfe3db3070c3217a325c02",
+        "class": "tightening",
+    },
 }
 
 # Phase 20 packet F4. These generated sources are known before the freeze begins.

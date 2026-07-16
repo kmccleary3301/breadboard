@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "P3.7 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72",
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:7cb8a75c681e858d0c697ebed24551cc102409afdcbfde234276802b6d0d6828",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:5123526b9018df862e0afc6400d8c60b9a7a60e78be5a18862201fbde881e6ec",
+    "catalog_revision": 13,
+    "segment_hash": "sha256:9029189846bfa032580020e9c17a39984f647c3cadec246f58279dc546b17308",
     "segment_id": "oh_my_pi_p3_7_memory_work_compiler",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
   },
   "claim_id": "oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -48,7 +48,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:5018880ebc35ba442553a66541371b21c0992436670da3dc18e07595e7d30e19",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -72,11 +72,11 @@
     "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
     "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
   ],
-  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:eb8e4807da21d37e88280deb188f533d5e789e66196246e7c7417347c486dac5",
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:f931b518016ae1c13d2d1389ec59595b79b79e6360a979e310605421c407c9c6",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "non_target_accounting",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_b650fa627d57aa92#sha256:66a5ee34199be19b992ec9cabbeed31b3940c1d18eda943c5e8214362cca88c1"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_b650fa627d57aa92#sha256:ac1591d97ee963b82679b93306ea9d82a8a72ca307a8a2df9db75c6383972a21"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",
@@ -86,9 +86,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json#sha256:ce16682d0bd3a14e4f777aa796cb000181552ac13bf2f088346641fe03b0b037",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json#sha256:64e2734be1354ffdea697fec66ca8f0efeed86e57fa150d45bd5c4d75a30f6ac",
   "phase_label": "P3",
-  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:5e555daee1dd17ad7796b6c813fda5483e32339f1f559b4edc1491d7fe051e77",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",

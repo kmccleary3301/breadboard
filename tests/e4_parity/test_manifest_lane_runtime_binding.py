@@ -43,9 +43,26 @@ def test_runtime_projection_requires_physical_canonical_ledger_and_prefers_its_b
         "path": canonical_ledger_ref,
         "sha256": f"sha256:{hashlib.sha256(canonical_bytes).hexdigest()}",
         "value": json.loads(canonical_bytes),
+        "verbatim": True,
     }
     assert loaded[canonical_ledger_ref]["value"] != virtual[canonical_ledger_ref]
-    virtual_only = set(virtual) - {canonical_ledger_ref}
+    source_role_refs = {
+        path
+        for builder in config["record_builders"]
+        for path in builder.get("source_roles", {}).values()
+        if isinstance(path, str) and (ROOT / path).is_file()
+    }
+    physical_refs = {canonical_ledger_ref, *source_role_refs}
+    for reference in physical_refs:
+        physical_bytes = (ROOT / reference).read_bytes()
+        assert loaded[reference] == {
+            "bytes": len(physical_bytes),
+            "path": reference,
+            "sha256": f"sha256:{hashlib.sha256(physical_bytes).hexdigest()}",
+            "value": adapter._decode_projection_input(ROOT / reference),
+            "verbatim": True,
+        }
+    virtual_only = set(virtual) - physical_refs
     assert {
         reference: loaded[reference]["value"] for reference in virtual_only
     } == {reference: virtual[reference] for reference in virtual_only}
@@ -80,6 +97,7 @@ def test_runtime_loader_materializes_missing_source_freeze_extraction(
     assert not extraction_path.exists()
     monkeypatch.setattr(lane_definitions, "ROOT", checkout)
     monkeypatch.setattr(compile_lane_lock, "ROOT", checkout)
+    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(checkout))
 
     lane = load_manifest_lane_def(lane_dir / f"{LANE_ID}.manifest.yaml")
 

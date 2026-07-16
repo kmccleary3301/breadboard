@@ -472,6 +472,12 @@ export class ReplSessionController extends EventEmitter {
     }
   }
 
+  private markTodoScopesStale(): void {
+    for (const key of Object.keys(this.todoScopeStaleByKey)) {
+      this.todoScopeStaleByKey[key] = true
+    }
+  }
+
   getState(): ReplState {
     // Goldens/tests call getState() without attaching listeners. Flush any pending todo coalescing so
     // deterministic renderers see the committed state.

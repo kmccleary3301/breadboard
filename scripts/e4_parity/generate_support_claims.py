@@ -10,14 +10,15 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from jsonschema import Draft202012Validator, RefResolver
+import yaml
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 try:
     from scripts.e4_parity.validators import hash_utils as _hash_utils
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from validators import hash_utils as _hash_utils
-
-
-if str(ROOT := Path(__file__).resolve().parents[2]) not in sys.path:
-    sys.path.insert(0, str(ROOT))
 from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
 from agentic_coder_prototype.conformance.catalog_binding import (
     CATALOG_PATH as CATALOG_BINDING_PATH,
@@ -25,10 +26,9 @@ from agentic_coder_prototype.conformance.catalog_binding import (
     reusable_catalog_revision,
     stable_entries_hash,
 )
-from scripts.e4_parity import catalog_refs
+from scripts.e4_parity import catalog_refs, lane_runtime
 from scripts.e4_parity.validators.registries import schema_generation_default
 
-ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 CATALOG_PATH = ROOT / "docs" / "conformance" / "e4_artifact_catalog.json"
@@ -134,9 +134,29 @@ def _refresh_hash_ref(prior_ref: Any) -> str:
 
 def _catalog_hash_ref(catalog: Mapping[str, Any], lane: Mapping[str, Any], role_key: str, prior_ref: Any) -> str:
     role_id = _artifact_role(lane, role_key)
-    if role_id:
+    if role_id and role_key != "validator_output":
         return catalog_refs.hash_ref(catalog, role_id)
     return _refresh_hash_ref(prior_ref)
+
+
+def _refresh_freeze_ref(prior_ref: Any) -> str:
+    parts = str(prior_ref).split("#")
+    if len(parts) != 3 or not parts[0] or not parts[1]:
+        raise ValueError(f"invalid freeze row ref: {prior_ref!r}")
+    path = resolve_ref(parts[0])
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"freeze manifest must be an object: {display(path)}")
+    configs = payload.get("e4_configs")
+    if not isinstance(configs, Mapping) or parts[1] not in configs:
+        raise ValueError(f"freeze manifest missing config row {parts[1]!r}: {display(path)}")
+    digest = lane_runtime.sha256_text(
+        lane_runtime.canonical_json(
+            {"row_id": parts[1], "row": configs[parts[1]]},
+            separators_style="compact",
+        )
+    )
+    return f"{display(path)}#{parts[1]}#{digest}"
 
 
 def _catalog_row_refs(catalog: Mapping[str, Any], lane: Mapping[str, Any], prior_refs: Sequence[Any]) -> list[str]:
@@ -150,7 +170,7 @@ def _catalog_row_refs(catalog: Mapping[str, Any], lane: Mapping[str, Any], prior
 def _ref_set_for_lane(lane: Mapping[str, Any], prior: Mapping[str, Any]) -> dict[str, Any]:
     catalog = _load_catalog()
     return {
-        "freeze_ref": str(prior["freeze_ref"]),
+        "freeze_ref": _refresh_freeze_ref(prior["freeze_ref"]),
         "capture_ref": _catalog_hash_ref(catalog, lane, "capture", prior["capture_ref"]),
         "replay_ref": _catalog_hash_ref(catalog, lane, "replay", prior["replay_ref"]),
         "comparator_ref": _catalog_hash_ref(catalog, lane, "comparator", prior["comparator_ref"]),
@@ -372,6 +392,13 @@ def _updated_manifest(path: Path, claim_path: Path, claim: Mapping[str, Any]) ->
     for artifact in artifacts:
         if not isinstance(artifact, dict):
             continue
+        derived_from = artifact.get("derived_from")
+        if derived_from is not None:
+            if not isinstance(derived_from, list) or not all(
+                isinstance(item, str) and item for item in derived_from
+            ):
+                raise ValueError(f"{display(path)} artifact derived_from must be a list of refs")
+            artifact["derived_from"] = [_refresh_hash_ref(item) for item in derived_from]
         role = artifact.get("role")
         if role == "freeze_manifest":
             artifact_path = artifact.get("path")

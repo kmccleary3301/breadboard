@@ -1,13 +1,13 @@
 {
   "acceptance_rationale": "P3.3 helper/runtime support is accepted only for the named source-derived compiler fixture; it is backed by schema validation, machine comparator assertions, and a live C4 chain validator.",
   "accepted": true,
-  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json#sha256:a6571aac4acdd0833fda62f2c58c9888974b2d39689f2590454d7c39e41efe5a",
+  "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json#sha256:7a0e9aa4a4747e4d5e1751bf2f714a117b00ae2e1e5ac963c4a9b6208bb7abc3",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:875db4242dfbfbb5b84e85c1f5f2f5ad36b232ec3c973846e9ec877c070fa0a3",
+    "catalog_revision": 13,
+    "segment_hash": "sha256:e51cc6735fc3d61266d2f85a7328ae3182ae08c0db8bcf82857e40057ef6b8a6",
     "segment_id": "oh_my_pi_p3_3_capability_registry_compiler",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
   },
   "claim_id": "oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim",
   "claim_semantics": {
@@ -48,7 +48,7 @@
       }
     ]
   },
-  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json#sha256:8c505e256a5ecf141ff54a569e50b4f99c5491ed3e98ba67ef5dcbabd38af5f0",
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json#sha256:1764b2a9cddf3f4c520eb674f26e38a479960ccc699e2283612a11a4f6b64ff5",
   "evidence_manifest_ref": "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
@@ -72,11 +72,11 @@
     "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
     "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
   ],
-  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_3_capability_registry_compiler_v1#sha256:ba2cbee50de9672220d2aea86cfe011bcf5bcf9df4fb484eee5e4a018a2b5d00",
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_3_capability_registry_compiler_v1#sha256:6c8f31ccb965e3e4f818e31d0927d409da09285ba3089fdd259f748ae4e9e6f4",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "non_target_accounting",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_5123d3276f9ca468#sha256:d49a95c7873c789ebfa51760d059d4eae9dcfeba5c9d542fc85d9e0ef5d6b30e"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_5123d3276f9ca468#sha256:09cc99c669d39708681c151b9f20f1064a0ac77c2fe77419fd7b943ead998c1d"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",
@@ -86,9 +86,9 @@
     },
     "v1_archive_ref": "docs/conformance/support_claims/v1_archive/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json"
   },
-  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/parity_results.json#sha256:4f4ea6e7db13fb1b1fd32eb4b10b0808f4f30a3eeb70e82c45b49577540f83c6",
+  "parity_results_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/parity_results.json#sha256:fac080c0e727d178c3f93c8e78ed81b294d55b52c19246e5924aacc63857446b",
   "phase_label": "P3",
-  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json#sha256:eb5ac608cbb27fcd40a47e7a1dbeec468dbd3c91180badc9723a2a545f35d3dd",
+  "replay_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json#sha256:163f39cd545b563cc426b800178ded385eb7d5a5a93a8f8a54748e8f95952cc3",
   "reverify_command": {
     "argv": [
       ".venv/bin/python",

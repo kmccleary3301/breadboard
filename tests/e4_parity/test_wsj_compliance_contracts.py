@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, catalog_segment_hash
-from scripts.e4_parity import build_artifact_catalog, generate_support_claims, regenerate_evidence, run_lane
+from scripts.e4_parity import regenerate_evidence
+from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
+from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
 from scripts.replay_session_from_records import replay_session_from_records
 from scripts.e4_parity.validators.registries import schema_generation_default
 
@@ -107,21 +109,22 @@ def test_checked_in_wsj_support_claims_use_generation_default_and_are_segment_bo
         }
 
 
-def test_breadboard_self_capture_replays_runtime_records_and_binds_transcript_digest() -> None:
+def test_breadboard_self_capture_replays_runtime_records_and_binds_transcript_digest(
+    tmp_path: Path,
+) -> None:
     """Self-capture evidence must be replayed from runtime_records and carry a transcript digest."""
-    result = run_lane.run_lane(
-        "breadboard_self_runtime_records_v1",
-        stage="capture",
-        out_dir=None,
-        promote_accepted=True,
-    )
+    lane_id = "breadboard_self_runtime_records_v1"
+    lane_def = load_lane_defs(DEFAULT_LANE_DEF_DIR)[lane_id]
+    inventory = _load_json(ROOT / "docs/conformance/e4_lane_inventory.json")
+    inventory_lane = next(row for row in inventory["lanes"] if row["lane_id"] == lane_id)
+    result = build_lane_from_definition(lane_def, inventory_lane, output_root=tmp_path)
     assert result["ok"] is True, result
-    assert result["stages"][0]["artifact_writer"] == "run_lane"
 
-    build_artifact_catalog.main(["--schema-version", "v2", "--write-bindings"])
-    generate_support_claims.generate(dry_run=False)
-    build_artifact_catalog.main(["--schema-version", "v2", "--write-bindings"])
-    run_dir = ROOT / "docs" / "conformance" / "e4_target_support" / "breadboard_self_runtime_records_v1" / "runtime_records"
+    run_dir = (
+        tmp_path
+        / "docs/conformance/e4_target_support"
+        / "breadboard_self_runtime_records_v1/runtime_records"
+    )
 
     manifest = _load_json(run_dir / "manifest.json")
     assert manifest["session_transcript_digest"].startswith("sha256:")
@@ -129,6 +132,9 @@ def test_breadboard_self_capture_replays_runtime_records_and_binds_transcript_di
     assert manifest["counts_by_schema"]["bb.kernel_event.v2"] >= 3
     assert manifest["counts_by_schema"]["bb.session_transcript.v2"] == 1
     assert (run_dir / "records" / "bb.session_transcript.v2.jsonl").is_file()
+    transcript = _load_json(run_dir / "records" / "bb.session_transcript.v2.jsonl")
+    assert len(transcript["items"]) >= 2
+    assert [item["seq"] for item in transcript["items"]] == list(range(len(transcript["items"])))
 
     replay = replay_session_from_records(run_dir)
     assert replay["ok"] is True

@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from agentic_coder_prototype.compilation import helper_runtime_primitives as helper
 from scripts.e4_parity.fixtures import p3_lane_fixtures
 
+LOGICAL_WORKSPACE_ROOT = "workspace://"
 Projection = Callable[[Mapping[str, Any]], dict[str, Any]]
 ProjectionResult = dict[str, Any]
 
@@ -47,14 +47,12 @@ def _generated_at(context: Mapping[str, Any]) -> str:
     return str(context["generated_at_utc"])
 
 
-def _root(context: Mapping[str, Any]) -> Path:
-    return Path(str(context["root"]))
 
 
 def _project_context_resource_pack(context: Mapping[str, Any]) -> ProjectionResult:
     record = helper.compile_context_resource_pack(
         pack_id=f"{_lane_id(context)}_pack",
-        sources=p3_lane_fixtures.context_sources(workspace_root=str(_root(context))),
+        sources=p3_lane_fixtures.context_sources(workspace_root=LOGICAL_WORKSPACE_ROOT),
         render_profile=p3_lane_fixtures.RENDER_PROFILE,
     )
     return _result(

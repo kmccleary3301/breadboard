@@ -304,10 +304,10 @@ def emit_self_runtime_records(
     from agentic_coder_prototype.agent import AgenticCoder
     from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
     from scripts.replay_session_from_records import (
+        _append_transcript_item,
         _iter_jsonl,
         _record_from_line,
         _transcript_content_digest,
-        _transcript_item_from_event,
         _validate_record,
     )
 
@@ -322,13 +322,12 @@ def emit_self_runtime_records(
         if transcript_path.is_file():
             shutil.copy2(transcript_path, raw_dir / "bb.session_transcript.v2.jsonl")
         reconstructed_items: list[dict[str, Any]] = []
+        reconstructed_source_kinds: list[str] = []
         last_event: dict[str, Any] | None = None
         for line_no, payload in _iter_jsonl(kernel_path):
             event = _validate_record(_record_from_line(payload), path=kernel_path, line_no=line_no)
             last_event = event
-            item = _transcript_item_from_event(event, len(reconstructed_items))
-            if item is not None:
-                reconstructed_items.append(item)
+            _append_transcript_item(reconstructed_items, reconstructed_source_kinds, event)
         if not reconstructed_items or last_event is None:
             raise RuntimeError("self-capture kernel stream did not contain replayable transcript events")
         transcript = {
@@ -637,9 +636,17 @@ def build_lane(spec: Mapping[str, Any], output_root: Path | None = None) -> dict
     }
     _write_json(support_path, support_claim, output_root)
 
-    capture_inputs = [ref(resolve(spec["config_path"])), _ref_output(probe_path, output_root)]
+    capture_inputs = [
+        ref(resolve(spec["config_path"])),
+        _ref_output(probe_path, output_root),
+    ]
     if spec["target_family"] == "breadboard":
-        capture_inputs.extend(ref(resolve(path)) for path in runtime_paths)
+        capture_inputs.extend(
+            f"{runtime_path}#{sha256_path(runtime_physical_path)}"
+            for runtime_path, runtime_physical_path in zip(
+                runtime_paths, runtime_physical_paths
+            )
+        )
     artifacts = [
         {"path": display(FREEZE_MANIFEST_PATH), "role": "freeze_manifest", "sha256": freeze_hash},
         {"path": spec["config_path"], "role": "target_config", "sha256": sha256_path(resolve(spec["config_path"]))},
@@ -653,13 +660,21 @@ def build_lane(spec: Mapping[str, Any], output_root: Path | None = None) -> dict
         {"path": display(prevalidation_path), "role": "validator_output", "sha256": _sha256_output(prevalidation_path, output_root)},
         {"path": display(LEDGER_PATH), "role": "atomic_feature_ledger", "sha256": sha256_path(LEDGER_PATH)},
     ]
-    for runtime_path in runtime_paths:
+    for runtime_path, runtime_physical_path in zip(
+        runtime_paths, runtime_physical_paths
+    ):
         role = "primitive_projection_manifest"
         if runtime_path.endswith("bb.kernel_event.v2.jsonl"):
             role = "projection_events"
         elif runtime_path.endswith("bb.session_transcript.v2.jsonl"):
             role = "session_transcript"
-        artifacts.append({"path": runtime_path, "role": role, "sha256": sha256_path(resolve(runtime_path))})
+        artifacts.append(
+            {
+                "path": runtime_path,
+                "role": role,
+                "sha256": sha256_path(runtime_physical_path),
+            }
+        )
     manifest = {
         "schema_version": "bb.e4.evidence_manifest.v1",
         "claim_id": spec["claim_id"],

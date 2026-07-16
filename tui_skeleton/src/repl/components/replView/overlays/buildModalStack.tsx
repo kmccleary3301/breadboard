@@ -11,7 +11,7 @@ import type { PermissionRuleScope } from "../../../types.js"
 import { buildPickerWindow, resolvePickerLayout, type PickerModel } from "../../../pickerModel.js"
 import { buildConfirmModal, buildShortcutsModal } from "./modalBasics.js"
 import { SheetModal } from "./SheetModal.js"
-import { formatTodoModalRowLabel } from "./todoCheckbox.js"
+import { todoStatusPresentation } from "../../../todos/todoStatusPresentation.js"
 import { parseBooleanEnv } from "../../../../utils/envBoolean.js"
 import { buildPickerPanelProjection, pickerRowToSelectPanelRow } from "./pickerPanelAdapter.js"
 import {
@@ -838,20 +838,6 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         const panelWidth = PANEL_WIDTH
         const scroll = Math.max(0, Math.min(todoScroll, todoMaxScroll))
         const visible = todoRows.slice(scroll, scroll + todoViewportRows)
-        const colorForStatus = (status?: string) => {
-          switch (status) {
-            case "in_progress":
-              return COLORS.info
-            case "done":
-              return COLORS.success
-            case "blocked":
-              return COLORS.error
-            case "canceled":
-              return COLORS.muted
-            default:
-              return COLORS.warning
-          }
-        }
         const titleLines: SelectPanelLine[] = [{ text: CHALK.bold("Todos"), color: COLORS.info }]
         const hintLines: SelectPanelLine[] = [
           {
@@ -868,7 +854,7 @@ export const buildModalStack = (context: ModalStackContext): ModalDescriptor[] =
         } else {
           visible.forEach((row: any, idx: number) => {
             if (row.kind === "header") {
-              panelRows.push({ kind: "header", text: row.label, color: colorForStatus(row.status) })
+              panelRows.push({ kind: "header", text: row.label, color: todoStatusPresentation(row.status).panelColor })
             } else {
               panelRows.push({ kind: "item", text: `  • ${row.label}`, wrap: "truncate-end" })
             }

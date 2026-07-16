@@ -16,12 +16,30 @@ def _validated_workspace_root(value: str | Path, *, source: str) -> Path:
     raw = Path(value).expanduser()
     if not raw.is_absolute():
         raise ReferenceResolutionError(f"{source} must be an absolute path: {value}")
-    candidate = raw.resolve()
-    if not candidate.is_dir() or not (candidate / "docs_tmp").is_dir():
+    try:
+        candidate = raw.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
         raise ReferenceResolutionError(
-            f"{source} must name an existing workspace containing docs_tmp: "
-            f"{candidate}"
+            f"{source} must name an existing workspace: {raw}"
+        ) from exc
+    if not candidate.is_dir():
+        raise ReferenceResolutionError(
+            f"{source} must name an existing workspace directory: {candidate}"
         )
+    docs_tmp = candidate / "docs_tmp"
+    if docs_tmp.exists() or docs_tmp.is_symlink():
+        try:
+            resolved_docs_tmp = docs_tmp.resolve(strict=True)
+        except (OSError, RuntimeError) as exc:
+            raise ReferenceResolutionError(
+                f"{source} docs_tmp must be an existing directory contained by "
+                f"the workspace: {docs_tmp}"
+            ) from exc
+        if not resolved_docs_tmp.is_dir() or not resolved_docs_tmp.is_relative_to(candidate):
+            raise ReferenceResolutionError(
+                f"{source} docs_tmp must be an existing directory contained by "
+                f"the workspace: {docs_tmp}"
+            )
     return candidate
 
 

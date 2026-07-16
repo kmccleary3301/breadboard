@@ -10,16 +10,22 @@ import yaml
 
 from agentic_coder_prototype.compilation.effective_config_graph import finalize_effective_config_graph, graph_content_hash
 from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
-from agentic_coder_prototype.conformance.c4_chain import validate_c4_chain
 from agentic_coder_prototype.conformance.catalog_binding import catalog_segment_hash, reusable_catalog_revision
 from scripts.e4_parity import build_primitive_projection as primitive_projection
 from scripts.e4_parity import lane_inventory_utils as lane_inventory
 from scripts.e4_parity import lane_runtime
+from scripts.e4_parity.lane_definitions import (
+    record_builder_source_paths,
+    record_builder_source_roles,
+)
 from scripts.e4_parity.path_refs import (
     ReferenceResolutionError,
     resolve_declared_reference,
 )
-from scripts.e4_parity.adapters.oh_my_pi_p3_remaining_capture import capture_p3_remaining
+from scripts.e4_parity.adapters.oh_my_pi_p3_remaining_capture import (
+    capture_p3_remaining,
+    validate_candidate_c4_chain,
+)
 from scripts.e4_parity.adapters.oh_my_pi_l5_projection import PROJECTIONS as L5_PROJECTIONS
 from scripts.e4_parity.adapters.oh_my_pi_l6_projection import PROJECTIONS as L6_PROJECTIONS
 from scripts.e4_parity.adapters.oh_my_pi_p3_1_projection import (
@@ -39,7 +45,7 @@ from scripts.e4_parity.validators import hash_utils
 from scripts.e4_parity.validators.registries import schema_generation_default
 
 ROOT = Path(__file__).resolve().parents[3]
-WORKSPACE = ROOT
+WORKSPACE = ROOT.parent
 
 GENERATED_AT_UTC = "2026-07-03T07:30:00Z"
 SUPPORT_CLAIM_GENERATED_AT_UTC = "2026-07-04T00:00:00Z"
@@ -131,13 +137,14 @@ def _display(path: Path, *, logical_root: Path | None = None) -> str:
 
 
 def _resolve_display(path: str) -> Path:
-    namespace = "repo"
+    namespace = "workspace_evidence"
     try:
         return resolve_declared_reference(
             path,
             checkout_root=ROOT,
             namespace=namespace,
             label="capture input",
+            workspace_root=WORKSPACE,
             must_exist=False,
         )
     except ReferenceResolutionError as exc:
@@ -228,7 +235,33 @@ def _projection_input(path_text: str, path: Path) -> dict[str, Any]:
         "path": path_text,
         "sha256": _sha256_file(path),
         "value": _decode_projection_input(path),
+        "verbatim": True,
     }
+def _add_projection_input(inputs: dict[str, dict[str, Any]], path_text: str) -> None:
+    path = _resolve_display(path_text)
+    if not path.exists():
+        raise ValueError(f"capture input does not exist: {path_text}")
+    if path.is_dir():
+        child_values: dict[str, dict[str, Any]] = {}
+        child_hashes: dict[str, str] = {}
+        for child in sorted(candidate for candidate in path.rglob("*") if candidate.is_file()):
+            child_key = _display(child)
+            item = _projection_input(child_key, child)
+            child_values[child_key] = item
+            child_hashes[child_key] = str(item["sha256"])
+            inputs[child_key] = item
+        inputs[path_text] = {
+            "path": path_text,
+            "sha256": _sha256_bytes(_json_bytes(child_hashes)),
+            "value": child_values,
+            "verbatim": True,
+        }
+        return
+    item = _projection_input(path_text, path)
+    inputs[path_text] = item
+    inputs.setdefault(_display(path), item)
+
+
 
 
 def _load_projection_inputs(lane_def: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
@@ -236,27 +269,7 @@ def _load_projection_inputs(lane_def: Mapping[str, Any]) -> dict[str, dict[str, 
     declared = capture["inputs"]
     inputs: dict[str, dict[str, Any]] = {}
     for path_text in declared:
-        path = _resolve_display(path_text)
-        if not path.exists():
-            raise ValueError(f"capture input does not exist: {path_text}")
-        if path.is_dir():
-            child_values: dict[str, dict[str, Any]] = {}
-            child_hashes: dict[str, str] = {}
-            for child in sorted(candidate for candidate in path.rglob("*") if candidate.is_file()):
-                child_key = _display(child)
-                item = _projection_input(child_key, child)
-                child_values[child_key] = item
-                child_hashes[child_key] = str(item["sha256"])
-                inputs[child_key] = item
-            inputs[path_text] = {
-                "path": path_text,
-                "sha256": _sha256_bytes(_json_bytes(child_hashes)),
-                "value": child_values,
-            }
-            continue
-        item = _projection_input(path_text, path)
-        inputs[path_text] = item
-        inputs.setdefault(_display(path), item)
+        _add_projection_input(inputs, path_text)
     normalize_config = _normalize_config(lane_def)
     runtime_payload_inputs = normalize_config.get("runtime_payload_inputs", {})
     if not isinstance(runtime_payload_inputs, Mapping):
@@ -284,6 +297,11 @@ def _load_projection_inputs(lane_def: Mapping[str, Any]) -> dict[str, dict[str, 
             "sha256": _sha256_bytes(data),
             "value": value,
         }
+    for path_text in record_builder_source_roles(
+        lane_def,
+        verbatim_only=True,
+    ).values():
+        _add_projection_input(inputs, path_text)
     return inputs
 
 
@@ -437,6 +455,20 @@ def _capture_projection_packet(
         if path.is_absolute() or ".." in path.parts:
             raise ValueError(f"normalize.config.roles.{role} must be a repo-relative path")
         logical_roles[role] = value
+    record_sources = record_builder_source_roles(lane_def, verbatim_only=True)
+    record_source_roles = set(record_sources)
+    record_source_paths = set(
+        record_builder_source_paths(lane_def, verbatim_only=True)
+    )
+
+    def is_source_role(role: str, path: str) -> bool:
+        item = projection_inputs.get(path)
+        return item is not None and (
+            item.get("verbatim") is True
+            or role in record_source_roles
+            or path in record_source_paths
+        )
+
     if promote_accepted:
         base = ROOT
     elif out_dir is not None:
@@ -447,7 +479,7 @@ def _capture_projection_packet(
     source_role_hashes = {
         role: str(projection_inputs[path]["sha256"])
         for role, path in logical_roles.items()
-        if path in projection_inputs
+        if is_source_role(role, path)
     }
     source_input_refs = {
         role: f"{logical_roles[role]}#{digest}"
@@ -456,12 +488,19 @@ def _capture_projection_packet(
     source_payloads = {
         role: projection_inputs[path]["value"]
         for role, path in logical_roles.items()
-        if path in projection_inputs and isinstance(projection_inputs[path]["value"], (Mapping, list))
+        if is_source_role(role, path)
+        and isinstance(projection_inputs[path]["value"], (Mapping, list))
+    }
+    source_values = {
+        role: projection_inputs[path]["value"]
+        for role, path in logical_roles.items()
+        if path in projection_inputs
     }
     source_bytes = {
         role: int(projection_inputs[path]["bytes"])
         for role, path in logical_roles.items()
-        if path in projection_inputs and "bytes" in projection_inputs[path]
+        if is_source_role(role, path)
+        and "bytes" in projection_inputs[path]
     }
     packet = build_projection_packet(
         lane_def,
@@ -474,7 +513,7 @@ def _capture_projection_packet(
         input_refs=source_input_refs,
         source_payloads=source_payloads,
         source_bytes=source_bytes,
-        source_values=source_payloads,
+        source_values=source_values,
     )
     node_bytes = packet.get("node_gate")
     if not isinstance(node_bytes, bytes):
@@ -1059,17 +1098,22 @@ def capture(
     ct_output_path = Path(lane_inventory.ct_output(inventory_lane))
     node_gate_path = (ROOT if promote_accepted else Path(out_dir or ROOT)) / ct_output_path
     logical_node_gate_path = ROOT / ct_output_path
-    selected_support_claim_path = support_claim_path if promote_accepted else logical_support_claim_path
-    selected_evidence_manifest_path = evidence_manifest_path if promote_accepted else logical_evidence_manifest_path
-    node_gate_report = validate_c4_chain(
-        repo_root=ROOT,
-        freeze_manifest_path=FREEZE_MANIFEST_PATH,
+    node_gate_report = validate_candidate_c4_chain(
         config_id=config_id,
-        support_claim_path=selected_support_claim_path,
-        evidence_manifest_path=selected_evidence_manifest_path,
-        rerun_comparators=True,
-        comparator_registry_path=ROOT / "conformance/comparators/registry.json",
-        enforce_catalog_binding=False,
+        physical_support_claim_path=support_claim_path,
+        physical_evidence_manifest_path=evidence_manifest_path,
+        logical_support_claim_path=logical_support_claim_path,
+        logical_evidence_manifest_path=logical_evidence_manifest_path,
+        candidate_root=None if promote_accepted else Path(out_dir or ROOT).resolve(),
+        materialized_sources=(
+            FREEZE_MANIFEST_PATH,
+            SOURCE_FREEZE_PATH,
+            L1_AGENT_CONFIG_PATH,
+            L1_RAW_CAPTURE_PATH,
+            L1_TARGET_PROBE_PATH,
+            L1_SETUP_REPORT_PATH,
+        ),
+        temp_prefix=".oh-my-pi-c4-validation-",
     )
     node_gate_report["support_claim"] = _display(logical_support_claim_path)
     node_gate_report["evidence_manifest"] = _display(logical_evidence_manifest_path)
@@ -1095,6 +1139,9 @@ def capture(
             "evidence_manifest": _display(logical_evidence_manifest_path),
             "raw_capture": _display(logical_raw_capture_path),
             "replay": _display(logical_replay_path),
+            "parity_results": _display(logical_parity_path),
+            "secret_scan_report": _display(logical_secret_scan_path),
+            "validator_output": _display(logical_prevalidation_path),
             "support_claim": _display(logical_support_claim_path),
         },
         "points": points,

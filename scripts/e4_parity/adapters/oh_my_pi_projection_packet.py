@@ -224,9 +224,19 @@ def _render_role_bytes(
     auto_bind_role_refs: bool,
     verbatim_roles: set[str] | None = None,
 ) -> dict[str, bytes]:
-    resolved_hashes = dict(role_hashes)
-    resolved_refs = dict(input_refs)
-    resolved_bytes = {str(role): int(size) for role, size in source_bytes.items()}
+    pending_roles = set(required_roles)
+    # Required roles are outputs, even when their parsed source payload and raw
+    # input hash were supplied by the caller. Downstream roles must wait for the
+    # canonical output bytes rather than binding to the raw source-byte digest.
+    resolved_hashes = {
+        str(role): digest for role, digest in role_hashes.items() if role not in pending_roles
+    }
+    resolved_refs = {
+        str(role): ref for role, ref in input_refs.items() if role not in pending_roles
+    }
+    resolved_bytes = {
+        str(role): int(size) for role, size in source_bytes.items() if role not in pending_roles
+    }
     path_to_role: dict[str, str] = {}
     for role in [*required_roles, *role_paths]:
         path = role_paths.get(role)
@@ -236,7 +246,7 @@ def _render_role_bytes(
         path = role_paths.get(role)
         if path is not None:
             resolved_refs.setdefault(role, f"{path}#{digest}")
-    pending = set(required_roles)
+    pending = set(pending_roles)
     rendered: dict[str, bytes] = {}
     while pending:
         progressed = False
@@ -252,7 +262,7 @@ def _render_role_bytes(
                 for row in rows
                 if isinstance(row, Mapping) and row.get("source") in {"role_hashes", "input_refs"}
             }
-            auto_dependencies = _referenced_roles(payloads[role], path_to_role) if auto_bind_role_refs and not verbatim else set()
+            auto_dependencies = _referenced_roles(payloads[role], path_to_role) if auto_bind_role_refs else set()
             if any(dependency not in resolved_hashes for dependency in auto_dependencies):
                 continue
             if any(
@@ -260,7 +270,7 @@ def _render_role_bytes(
                 for source, key in dependencies
             ):
                 continue
-            if auto_bind_role_refs and not verbatim:
+            if auto_bind_role_refs:
                 _bind_role_refs(
                     payloads[role],
                     path_to_role=path_to_role,

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -29,6 +31,54 @@ HELPER_MODULE_PATH = p3_packet.HELPER_MODULE_PATH
 SCHEMA_BY_RECORD_KEY = p3_packet.SCHEMA_BY_RECORD_KEY
 SECRET_PATTERNS = p3_packet.SECRET_PATTERNS
 
+
+def validate_candidate_c4_chain(
+    *,
+    config_id: str,
+    physical_support_claim_path: Path,
+    physical_evidence_manifest_path: Path,
+    logical_support_claim_path: Path,
+    logical_evidence_manifest_path: Path,
+    candidate_root: Path | None,
+    materialized_sources: tuple[Path, ...],
+    temp_prefix: str,
+) -> dict[str, Any]:
+    """Validate a promoted packet or a scratch packet in an isolated repo view."""
+    if candidate_root is None:
+        return validate_c4_chain(
+            repo_root=ROOT,
+            freeze_manifest_path=FREEZE_MANIFEST_PATH,
+            config_id=config_id,
+            support_claim_path=physical_support_claim_path,
+            evidence_manifest_path=physical_evidence_manifest_path,
+            rerun_comparators=True,
+            comparator_registry_path=ROOT / "conformance/comparators/registry.json",
+            enforce_catalog_binding=False,
+        )
+
+    with tempfile.TemporaryDirectory(
+        prefix=temp_prefix,
+        dir=candidate_root.parent,
+    ) as workspace:
+        validation_root = Path(workspace)
+        shutil.copytree(candidate_root, validation_root, dirs_exist_ok=True)
+        for source in materialized_sources:
+            destination = validation_root / source.relative_to(ROOT)
+            if source.is_dir():
+                shutil.copytree(source, destination, dirs_exist_ok=True)
+            else:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination)
+        return validate_c4_chain(
+            repo_root=validation_root,
+            freeze_manifest_path=validation_root / FREEZE_MANIFEST_PATH.relative_to(ROOT),
+            config_id=config_id,
+            support_claim_path=validation_root / logical_support_claim_path.relative_to(ROOT),
+            evidence_manifest_path=validation_root / logical_evidence_manifest_path.relative_to(ROOT),
+            rerun_comparators=True,
+            comparator_registry_path=ROOT / "conformance/comparators/registry.json",
+            enforce_catalog_binding=False,
+        )
 
 
 def _json_bytes(value: Any) -> bytes:
@@ -446,15 +496,23 @@ def _write_support_and_manifest(spec: Mapping[str, Any], inventory_lane: Mapping
 
 
 def _write_node_gate(spec: Mapping[str, Any], physical: Mapping[str, Path], logical: Mapping[str, Path]) -> dict[str, Any]:
-    report = validate_c4_chain(
-        repo_root=ROOT,
-        freeze_manifest_path=FREEZE_MANIFEST_PATH,
+    is_scratch = physical["support_claim"].resolve() != logical["support_claim"].resolve()
+    report = validate_candidate_c4_chain(
         config_id=str(spec["config_id"]),
-        support_claim_path=logical["support_claim"],
-        evidence_manifest_path=logical["evidence_manifest"],
-        rerun_comparators=True,
-        comparator_registry_path=ROOT / "conformance/comparators/registry.json",
-        enforce_catalog_binding=False,
+        physical_support_claim_path=physical["support_claim"],
+        physical_evidence_manifest_path=physical["evidence_manifest"],
+        logical_support_claim_path=logical["support_claim"],
+        logical_evidence_manifest_path=logical["evidence_manifest"],
+        candidate_root=physical["support_claim"].parents[3] if is_scratch else None,
+        materialized_sources=(
+            FREEZE_MANIFEST_PATH,
+            SOURCE_FREEZE_PATH,
+            SOURCE_L1_CAPTURE_PATH,
+            SOURCE_L1_PROBE_PATH,
+            SOURCE_L1_SETUP_PATH,
+            HELPER_MODULE_PATH,
+        ),
+        temp_prefix=".oh-my-pi-p3-c4-validation-",
     )
     report["support_claim"] = _display(logical["support_claim"])
     report["evidence_manifest"] = _display(logical["evidence_manifest"])

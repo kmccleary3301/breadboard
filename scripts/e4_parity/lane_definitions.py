@@ -8,7 +8,10 @@ from typing import Any, Mapping
 
 import yaml
 from jsonschema import Draft202012Validator, RefResolver
-from scripts.e4_parity.validators.registries import RegistryValidationError, assert_registered
+from scripts.e4_parity.validators.registries import (
+    RegistryValidationError,
+    assert_registered,
+)
 from scripts.e4_parity.validators.hash_utils import sha256_file
 from scripts.e4_parity.path_refs import (
     ReferenceResolutionError,
@@ -55,6 +58,74 @@ _PILOT_LEGACY_CAPTURE_INPUTS = (
 
 class LaneDefValidationError(ValueError):
     pass
+
+
+def _record_builders(lane_def: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    normalize = lane_def.get("normalize")
+    config = normalize.get("config") if isinstance(normalize, Mapping) else None
+    builders = config.get("record_builders") if isinstance(config, Mapping) else None
+    if builders is None:
+        return ()
+    if not isinstance(builders, list):
+        raise LaneDefValidationError("normalize.config.record_builders must be a list")
+    return tuple(builder for builder in builders if isinstance(builder, Mapping))
+
+
+def record_builder_source_roles(
+    lane_def: Mapping[str, Any],
+    *,
+    verbatim_only: bool = False,
+) -> dict[str, str]:
+    """Return the normalized role-to-source mapping declared by record builders."""
+    sources: dict[str, str] = {}
+    for builder in _record_builders(lane_def):
+        source_roles = builder.get("source_roles")
+        if not isinstance(source_roles, Mapping):
+            continue
+        roles = (
+            builder.get("verbatim_source_roles", []) if verbatim_only else source_roles
+        )
+        if not isinstance(roles, (list, Mapping)):
+            raise LaneDefValidationError(
+                "record builder verbatim_source_roles must be a list"
+            )
+        for role in roles:
+            if not isinstance(role, str):
+                raise LaneDefValidationError(
+                    f"record builder source role must be a string: {role!r}"
+                )
+            path = source_roles.get(role)
+            if not isinstance(path, str):
+                raise LaneDefValidationError(
+                    f"record builder source_roles.{role} must be a path"
+                )
+            previous = sources.get(role)
+            if previous is not None and previous != path:
+                raise LaneDefValidationError(
+                    f"record builder source role {role!r} maps to multiple paths"
+                )
+            sources[role] = path
+    return sources
+
+
+def record_builder_source_paths(
+    lane_def: Mapping[str, Any],
+    *,
+    verbatim_only: bool = False,
+) -> tuple[str, ...]:
+    """Return deduplicated source files consumed by record builders."""
+    paths = [
+        source
+        for builder in _record_builders(lane_def)
+        if isinstance((source := builder.get("source")), str)
+    ]
+    paths.extend(
+        record_builder_source_roles(
+            lane_def,
+            verbatim_only=verbatim_only,
+        ).values()
+    )
+    return tuple(dict.fromkeys(paths))
 
 
 def _load_json(path: Path) -> dict[str, Any]:
@@ -111,7 +182,9 @@ def _validator(schema_version: str) -> Draft202012Validator:
     schema_path = _schema_path(schema_version)
     schema = _load_json(schema_path)
     common_path = _resolve_repo_reference(COMMON_SCHEMA_REF, label="common schema")
-    e4_common_path = _resolve_repo_reference(E4_COMMON_SCHEMA_REF, label="E4 common schema")
+    e4_common_path = _resolve_repo_reference(
+        E4_COMMON_SCHEMA_REF, label="E4 common schema"
+    )
     common = _load_json(common_path)
     e4_common = _load_json(e4_common_path)
     store = {
@@ -124,12 +197,16 @@ def _validator(schema_version: str) -> Draft202012Validator:
     }
     return Draft202012Validator(
         schema,
-        resolver=RefResolver(base_uri=schema_path.as_uri(), referrer=schema, store=store),
+        resolver=RefResolver(
+            base_uri=schema_path.as_uri(), referrer=schema, store=store
+        ),
     )
 
 
 def _format_error(error: Any) -> str:
-    parts = [str(part).replace("~", "~0").replace("/", "~1") for part in error.absolute_path]
+    parts = [
+        str(part).replace("~", "~0").replace("/", "~1") for part in error.absolute_path
+    ]
     if error.validator == "required":
         quoted = error.message.split("'")
         if len(quoted) >= 3:
@@ -143,7 +220,9 @@ def _schema_version(payload: Mapping[str, Any], *, source: Path | None = None) -
     if value not in SUPPORTED_SCHEMA_VERSIONS:
         prefix = f"{source}: " if source is not None else ""
         supported = ", ".join(SUPPORTED_SCHEMA_VERSIONS)
-        raise LaneDefValidationError(f"{prefix}unknown schema_version {value!r}; expected one of: {supported}")
+        raise LaneDefValidationError(
+            f"{prefix}unknown schema_version {value!r}; expected one of: {supported}"
+        )
     return str(value)
 
 
@@ -165,7 +244,11 @@ def _normalize_v1_lane(lane_def: dict[str, Any]) -> dict[str, Any]:
             "sandbox_mode": metadata.get("sandbox_mode"),
         },
     )
-    if normalized["run"] == {"run_id": None, "provider_model": None, "sandbox_mode": None}:
+    if normalized["run"] == {
+        "run_id": None,
+        "provider_model": None,
+        "sandbox_mode": None,
+    }:
         normalized["run"] = None
 
     if normalized.get("provenance") is None:
@@ -176,7 +259,9 @@ def _normalize_v1_lane(lane_def: dict[str, Any]) -> dict[str, Any]:
                 "upstream_repo": acceptance_packet.get("upstream_repo"),
                 "upstream_commit": acceptance_packet.get("upstream_commit"),
                 "upstream_commit_date": acceptance_packet.get("upstream_commit_date"),
-                "upstream_release_label": acceptance_packet.get("upstream_release_label"),
+                "upstream_release_label": acceptance_packet.get(
+                    "upstream_release_label"
+                ),
                 "source_paths": list(acceptance_packet.get("source_paths") or []),
             }
 
@@ -203,7 +288,9 @@ def _normalize_v2_lane(lane_def: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _validate_v2_adapter_references(lane_def: Mapping[str, Any], *, source: Path | None = None) -> None:
+def _validate_v2_adapter_references(
+    lane_def: Mapping[str, Any], *, source: Path | None = None
+) -> None:
     checks: list[tuple[str, str, str]] = []
     normalize = lane_def.get("normalize")
     if isinstance(normalize, Mapping):
@@ -228,7 +315,9 @@ def _validate_v2_adapter_references(lane_def: Mapping[str, Any], *, source: Path
             raise LaneDefValidationError(f"{prefix}{field}: {exc}") from exc
 
 
-def _validate_replay_mode(lane_def: Mapping[str, Any], *, source: Path | None = None) -> None:
+def _validate_replay_mode(
+    lane_def: Mapping[str, Any], *, source: Path | None = None
+) -> None:
     replay = lane_def.get("replay")
     if not isinstance(replay, Mapping) or "mode" not in replay:
         return
@@ -240,11 +329,18 @@ def _validate_replay_mode(lane_def: Mapping[str, Any], *, source: Path | None = 
         )
 
 
-def validate_lane_def(payload: Mapping[str, Any], *, source: Path | None = None) -> dict[str, Any]:
+def validate_lane_def(
+    payload: Mapping[str, Any], *, source: Path | None = None
+) -> dict[str, Any]:
     schema_version = _schema_version(payload, source=source)
     lane_def = dict(payload)
     _validate_replay_mode(lane_def, source=source)
-    errors = sorted((_format_error(error) for error in _validator(schema_version).iter_errors(lane_def)))
+    errors = sorted(
+        (
+            _format_error(error)
+            for error in _validator(schema_version).iter_errors(lane_def)
+        )
+    )
     if errors:
         prefix = f"{source}: " if source is not None else ""
         raise LaneDefValidationError(prefix + "; ".join(errors))
@@ -257,14 +353,20 @@ def validate_lane_def(payload: Mapping[str, Any], *, source: Path | None = None)
 def load_lane_def(path: Path) -> dict[str, Any]:
     return validate_lane_def(_load_yaml(path), source=path)
 
+
 def _sha256(path: Path) -> str:
     return sha256_file(path)
 
 
-
-
-def _validate_payload(payload: Mapping[str, Any], schema_version: str, source: Path) -> None:
-    errors = sorted((_format_error(error) for error in _validator(schema_version).iter_errors(dict(payload))))
+def _validate_payload(
+    payload: Mapping[str, Any], schema_version: str, source: Path
+) -> None:
+    errors = sorted(
+        (
+            _format_error(error)
+            for error in _validator(schema_version).iter_errors(dict(payload))
+        )
+    )
     if errors:
         raise LaneDefValidationError(f"{source}: " + "; ".join(errors))
 
@@ -311,15 +413,14 @@ def _provenance_source_paths(inputs: list[str]) -> list[str]:
 
 def _derived_run(sidecar: Mapping[str, Any]) -> dict[str, str]:
     templates = sidecar.get("payload_templates")
-    probe = templates.get("target_probe_output") if isinstance(templates, Mapping) else None
+    probe = (
+        templates.get("target_probe_output") if isinstance(templates, Mapping) else None
+    )
     if not isinstance(probe, Mapping):
-        raise LaneDefValidationError(
-            "sidecar target_probe_output payload is required"
-        )
+        raise LaneDefValidationError("sidecar target_probe_output payload is required")
     fields = ("run_id", "provider_model", "sandbox_mode")
     if not all(
-        isinstance(probe.get(field), str) and probe.get(field)
-        for field in fields
+        isinstance(probe.get(field), str) and probe.get(field) for field in fields
     ):
         raise LaneDefValidationError(
             "sidecar target probe lacks run_id/provider_model/sandbox_mode"
@@ -327,7 +428,9 @@ def _derived_run(sidecar: Mapping[str, Any]) -> dict[str, str]:
     return {field: str(probe[field]) for field in fields}
 
 
-def _derived_provenance(manifest: Mapping[str, Any], inputs: list[str]) -> dict[str, Any]:
+def _derived_provenance(
+    manifest: Mapping[str, Any], inputs: list[str]
+) -> dict[str, Any]:
     target = manifest["target"]
     freeze_ref = target.get("source_freeze_ref")
     if not isinstance(freeze_ref, str):
@@ -340,7 +443,9 @@ def _derived_provenance(manifest: Mapping[str, Any], inputs: list[str]) -> dict[
     row = rows.get(config_id) if isinstance(rows, Mapping) else None
     harness = row.get("harness") if isinstance(row, Mapping) else None
     if not isinstance(harness, Mapping):
-        raise LaneDefValidationError(f"target freeze has no harness row for {config_id!r}")
+        raise LaneDefValidationError(
+            f"target freeze has no harness row for {config_id!r}"
+        )
     return {
         "provenance_kind": "git_commit",
         "upstream_repo": harness.get("upstream_repo"),
@@ -351,7 +456,9 @@ def _derived_provenance(manifest: Mapping[str, Any], inputs: list[str]) -> dict[
     }
 
 
-def _assert_lock_matches_manifest(manifest_path: Path, manifest: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _assert_lock_matches_manifest(
+    manifest_path: Path, manifest: Mapping[str, Any]
+) -> tuple[dict[str, Any], dict[str, Any]]:
     lane_id = str(manifest["lane_id"])
     manifest_reference = manifest_path.resolve().relative_to(ROOT.resolve())
     lock_reference = manifest_reference.with_name(f"{lane_id}.lock.json")
@@ -361,12 +468,18 @@ def _assert_lock_matches_manifest(manifest_path: Path, manifest: Mapping[str, An
     if lock.get("lane_id") != lane_id:
         raise LaneDefValidationError(f"{lock_path}: lane_id does not match manifest")
     if lock.get("manifest_sha256") != _sha256(manifest_path):
-        raise LaneDefValidationError(f"{lock_path}: manifest_sha256 does not match manifest bytes")
+        raise LaneDefValidationError(
+            f"{lock_path}: manifest_sha256 does not match manifest bytes"
+        )
     manifest_ref = manifest_path.resolve().relative_to(ROOT.resolve()).as_posix()
     if lock.get("manifest_ref") != manifest_ref:
-        raise LaneDefValidationError(f"{lock_path}: manifest_ref does not name {manifest_ref}")
+        raise LaneDefValidationError(
+            f"{lock_path}: manifest_ref does not name {manifest_ref}"
+        )
     sidecar_ref = lock.get("packet_constants_ref")
-    if not isinstance(sidecar_ref, Mapping) or not isinstance(sidecar_ref.get("path"), str):
+    if not isinstance(sidecar_ref, Mapping) or not isinstance(
+        sidecar_ref.get("path"), str
+    ):
         raise LaneDefValidationError(f"{lock_path}: packet_constants_ref is required")
     sidecar_path = _resolve_repo_reference(
         str(sidecar_ref["path"]),
@@ -376,7 +489,9 @@ def _assert_lock_matches_manifest(manifest_path: Path, manifest: Mapping[str, An
     if sidecar_ref.get("sha256") != _sha256(sidecar_path):
         raise LaneDefValidationError(f"{lock_path}: packet_constants_ref sha256 drift")
     if set(sidecar) != {"payload_templates", "substitutions"}:
-        raise LaneDefValidationError(f"{sidecar_path}: sidecar must contain exactly payload_templates/substitutions")
+        raise LaneDefValidationError(
+            f"{sidecar_path}: sidecar must contain exactly payload_templates/substitutions"
+        )
     return lock, sidecar
 
 
@@ -396,9 +511,7 @@ def _runtime_inputs(inputs: list[str], *, parity_legacy: bool) -> list[str]:
     if parity_legacy:
         return list(_PILOT_LEGACY_CAPTURE_INPUTS)
     return [
-        SOURCE_FREEZE_EXTRACTION_REF
-        if value == SOURCE_FREEZE_ARCHIVE_REF
-        else value
+        SOURCE_FREEZE_EXTRACTION_REF if value == SOURCE_FREEZE_ARCHIVE_REF else value
         for value in inputs
     ]
 
@@ -417,7 +530,12 @@ def _runtime_payload_inputs(
     }
 
 
-def load_manifest_lane_def(path: Path, *, parity_legacy: bool = False) -> dict[str, Any]:
+def load_manifest_lane_def(
+    path: Path,
+    *,
+    parity_legacy: bool = False,
+    materialize_inputs: bool = True,
+) -> dict[str, Any]:
     """Normalize manifest+lock+sidecar to the v2 runtime or pilot-parity contract."""
     path = _resolve_checkout_path(path, label="lane manifest")
     manifest = _load_yaml(path)
@@ -426,12 +544,13 @@ def load_manifest_lane_def(path: Path, *, parity_legacy: bool = False) -> dict[s
     _validate_payload(manifest, MANIFEST_SCHEMA_VERSION, path)
     from scripts.e4_parity import compile_lane_lock
 
-    try:
-        compile_lane_lock.materialize_manifest_inputs(path)
-    except (OSError, ValueError) as exc:
-        raise LaneDefValidationError(
-            f"{path}: cannot materialize declared runtime inputs: {exc}"
-        ) from exc
+    if materialize_inputs:
+        try:
+            compile_lane_lock.materialize_manifest_inputs(path)
+        except (OSError, ValueError) as exc:
+            raise LaneDefValidationError(
+                f"{path}: cannot materialize declared runtime inputs: {exc}"
+            ) from exc
     lock, sidecar = _assert_lock_matches_manifest(path, manifest)
     inputs = [str(value) for value in manifest["capture"].get("inputs", [])]
     normalize = manifest["normalize"]
@@ -447,8 +566,7 @@ def load_manifest_lane_def(path: Path, *, parity_legacy: bool = False) -> dict[s
         "required_roles": list(normalize.get("required_roles", [])),
     }
     roles = {
-        str(role): str(entry["path"])
-        for role, entry in lock["artifact_roles"].items()
+        str(role): str(entry["path"]) for role, entry in lock["artifact_roles"].items()
     }
     run = _derived_run(sidecar)
     ct = dict(manifest.get("ct", {}))
@@ -478,7 +596,9 @@ def load_manifest_lane_def(path: Path, *, parity_legacy: bool = False) -> dict[s
         "target_version": manifest["target"]["version"],
         "package_ref": manifest["target"].get("package_ref"),
         "kind": manifest["kind"],
-        "status": {"accepted": "accepted", "candidate": "captured", "draft": "planned"}[manifest.get("status", "draft")],
+        "status": {"accepted": "accepted", "candidate": "captured", "draft": "planned"}[
+            manifest.get("status", "draft")
+        ],
         "points": manifest.get("points", 0),
         "capture": {
             "strategy": manifest["capture"]["strategy"],
@@ -500,11 +620,18 @@ def load_manifest_lane_def(path: Path, *, parity_legacy: bool = False) -> dict[s
         },
         "compare": {
             "comparator": manifest["compare"]["comparator"],
-            "config": {"assertions": [_manifest_assertion(value) for value in manifest["compare"].get("assertions", [])]},
+            "config": {
+                "assertions": [
+                    _manifest_assertion(value)
+                    for value in manifest["compare"].get("assertions", [])
+                ]
+            },
         },
         "claim": {
             "scope": dict(manifest["claim"]["scope"]),
-            "exclusions": [str(value["reason"]) for value in manifest["claim"]["exclusions"]],
+            "exclusions": [
+                str(value["reason"]) for value in manifest["claim"]["exclusions"]
+            ],
         },
         "ct": ct,
         "artifacts_root": manifest["artifacts_root"],
@@ -522,13 +649,17 @@ def load_manifest_lane_def(path: Path, *, parity_legacy: bool = False) -> dict[s
     return validate_lane_def(lane_def, source=path)
 
 
-def lane_lock_sha256(lane_id: str, directory: Path = DEFAULT_LANE_DEF_DIR) -> str | None:
+def lane_lock_sha256(
+    lane_id: str, directory: Path = DEFAULT_LANE_DEF_DIR
+) -> str | None:
     lock_path = directory / f"{lane_id}.lock.json"
     return _sha256(lock_path) if lock_path.is_file() else None
 
 
 def inventory_lane_sources(
     directory: Path = DEFAULT_LANE_DEF_DIR,
+    *,
+    materialize_inputs: bool = True,
 ) -> list[dict[str, str | None]]:
     """Classify and validate every YAML source consumed by the lane loader."""
     if not directory.exists():
@@ -536,7 +667,7 @@ def inventory_lane_sources(
     inventory: list[dict[str, str | None]] = []
     for path in sorted(directory.glob("*.yaml")):
         if path.name.endswith(".manifest.yaml"):
-            load_manifest_lane_def(path)
+            load_manifest_lane_def(path, materialize_inputs=materialize_inputs)
             kind = "lane_manifest"
             reason = None
         elif path.name.endswith(".payloads.yaml"):
@@ -568,19 +699,31 @@ def inventory_lane_sources(
     return inventory
 
 
-def load_lane_defs(directory: Path = DEFAULT_LANE_DEF_DIR) -> dict[str, dict[str, Any]]:
+def load_lane_defs(
+    directory: Path = DEFAULT_LANE_DEF_DIR,
+    *,
+    materialize_inputs: bool = True,
+) -> dict[str, dict[str, Any]]:
     if not directory.exists():
         return {}
-    inventory = inventory_lane_sources(directory)
+    inventory = inventory_lane_sources(
+        directory,
+        materialize_inputs=materialize_inputs,
+    )
     lane_defs: dict[str, dict[str, Any]] = {}
     for row in inventory:
         if row["kind"] != "lane_manifest":
             continue
         path = directory / str(row["path"])
-        lane_def = load_manifest_lane_def(path)
+        lane_def = load_manifest_lane_def(
+            path,
+            materialize_inputs=materialize_inputs,
+        )
         lane_id = str(lane_def["lane_id"])
         if lane_id in lane_defs:
-            raise LaneDefValidationError(f"duplicate lane_id {lane_id!r} in {directory}")
+            raise LaneDefValidationError(
+                f"duplicate lane_id {lane_id!r} in {directory}"
+            )
         lane_defs[lane_id] = lane_def
     for row in inventory:
         if row["kind"] != "lane_def_legacy":
@@ -591,6 +734,8 @@ def load_lane_defs(directory: Path = DEFAULT_LANE_DEF_DIR) -> dict[str, dict[str
         lane_def = load_lane_def(path)
         lane_id = str(lane_def["lane_id"])
         if lane_id in lane_defs:
-            raise LaneDefValidationError(f"duplicate lane_id {lane_id!r} in {directory}")
+            raise LaneDefValidationError(
+                f"duplicate lane_id {lane_id!r} in {directory}"
+            )
         lane_defs[lane_id] = lane_def
     return lane_defs

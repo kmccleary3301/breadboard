@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw_capture_manifest.json#sha256:3798ed26b35cd0ae9008a62fbf703c2d3ef6ccef2242a7e7ca4e7007b0c6edcb",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 8,
-    "segment_hash": "sha256:2dfae6e0b5983a74880d298c3c0e5728f02e35e664adbcfec657d2fa9d8bd5bb",
+    "catalog_revision": 13,
+    "segment_hash": "sha256:f6728a024aefe55e3456dcdc6eb8c142505ab0887612bee12e2a7505a96c9e9d",
     "segment_id": "pi_p5_l1_cli_config_context_tool_surface",
-    "shared_segment_hash": "sha256:f688f4f0f80d522e31ba077e5bcefcf60d91fc52ed4e131d506e2b63842c1e66"
+    "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
   },
   "claim_id": "pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim",
   "claim_semantics": {
@@ -210,11 +210,11 @@
     "No P5.6 session/resume/fork/compaction behavior is claimed.",
     "No provider-authenticated inference, network, UI, or broad Pi customization parity is claimed."
   ],
-  "freeze_ref": "config/e4_target_freeze_manifest.yaml#pi_p5_l1_cli_config_context_tool_surface_v1#sha256:54a9d3ddd9e90fb341fbe412ab0656f366eba27ca3fe818ae6c7b0e6b346817b",
+  "freeze_ref": "config/e4_target_freeze_manifest.yaml#pi_p5_l1_cli_config_context_tool_surface_v1#sha256:1660c21c101c360b16d33e33bc19467eab90cc33f81ae56a8cfa4a5fb5ed9a2f",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_2f47f564bacc6202#sha256:1b755587928005ccf7c4928cdb3e0c39a1fc86126223daac7dcf101e20ba74d5"
+    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_2f47f564bacc6202#sha256:7b02d6c09a9a89542ac027ccfeed262ccc31372024f08c71429335d46af587ad"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",

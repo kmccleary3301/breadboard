@@ -12,20 +12,38 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 try:
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, lane_lock_sha256, load_lane_defs
+    from scripts.e4_parity.lane_definitions import (
+        DEFAULT_LANE_DEF_DIR,
+        lane_lock_sha256,
+        load_lane_defs,
+        record_builder_source_paths,
+    )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
-    from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
+    from scripts.e4_parity.path_refs import (
+        ReferenceResolutionError,
+        resolve_declared_reference,
+        workspace_root_for_checkout,
+    )
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, lane_lock_sha256, load_lane_defs
+    from scripts.e4_parity.lane_definitions import (
+        DEFAULT_LANE_DEF_DIR,
+        lane_lock_sha256,
+        load_lane_defs,
+        record_builder_source_paths,
+    )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
-    from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
+    from scripts.e4_parity.path_refs import (
+        ReferenceResolutionError,
+        resolve_declared_reference,
+        workspace_root_for_checkout,
+    )
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
@@ -659,10 +677,14 @@ def _finalize_stage_result(
 
 
 
-def _refresh_er_progress_seed_pin(seed_path: Path) -> None:
-    progress_path = ROOT.parent / "docs_tmp" / "phase_16" / "BB_ER_PROGRESS.json"
-    if not progress_path.exists():
-        return
+def _refresh_er_progress_seed_pin(seed_path: Path, *, workspace_root: Path) -> None:
+    progress_path = resolve_declared_reference(
+        "docs_tmp/phase_16/BB_ER_PROGRESS.json",
+        checkout_root=ROOT,
+        namespace="workspace_evidence",
+        label="ER progress seed pin",
+        workspace_root=workspace_root,
+    )
     progress = _load_json(progress_path)
     changed = False
     for workstream in progress.get("workstreams", []):
@@ -685,6 +707,7 @@ def _refresh_er_progress_seed_pin(seed_path: Path) -> None:
 
 def _refresh_promoted_bindings() -> dict[str, Any]:
     """Refresh deterministic artifacts whose hashes depend on promoted lane packets."""
+    workspace_root = workspace_root_for_checkout(ROOT)
     try:
         from scripts.e4_parity import build_artifact_catalog, build_e4_final_readiness_packet, seed_atomic_feature_ledger
         from scripts.e4_parity.generate_support_claims import generate as generate_support_claims
@@ -698,7 +721,10 @@ def _refresh_promoted_bindings() -> dict[str, Any]:
         seed_atomic_feature_ledger.DEFAULT_OUT,
         seed_atomic_feature_ledger.DEFAULT_INDEX_OUT,
     )
-    _refresh_er_progress_seed_pin(seed_atomic_feature_ledger.DEFAULT_OUT)
+    _refresh_er_progress_seed_pin(
+        seed_atomic_feature_ledger.DEFAULT_OUT,
+        workspace_root=workspace_root,
+    )
     first_catalog = build_artifact_catalog.build_catalog(write_bindings=True, schema_version="v2")
     build_artifact_catalog.write_json(build_artifact_catalog.DEFAULT_OUTPUT_PATH, first_catalog)
     first_claims = generate_support_claims(dry_run=False)
@@ -728,21 +754,7 @@ def _capture_owned_paths(lane_def: Mapping[str, Any]) -> tuple[str, ...]:
     normalize = lane_def.get("normalize")
     config = normalize.get("config") if isinstance(normalize, Mapping) else None
     roles = config.get("roles") if isinstance(config, Mapping) else None
-    record_builders = config.get("record_builders") if isinstance(config, Mapping) else None
-    projection_sources: set[str] = set()
-    if isinstance(record_builders, list):
-        for builder in record_builders:
-            if not isinstance(builder, Mapping):
-                continue
-            source = builder.get("source")
-            if isinstance(source, str):
-                projection_sources.add(source)
-            source_roles = builder.get("source_roles")
-            if isinstance(source_roles, Mapping):
-                projection_sources.update(
-                    value for value in source_roles.values() if isinstance(value, str)
-                )
-    preserved_sources = declared_inputs | projection_sources
+    preserved_sources = declared_inputs | set(record_builder_source_paths(lane_def))
     if isinstance(roles, Mapping):
         for value in roles.values():
             if (
@@ -953,14 +965,20 @@ def run_lane(
                 continue
             continue
         argv = _command_stage_argv(stage_name, lane_def, inventory_lane)
-        if argv is None and stage_name == "capture" and promote_accepted:
+        if argv is None and stage_name == "capture" and (promote_accepted or out_dir is not None):
             try:
                 from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
             except ModuleNotFoundError:  # pragma: no cover - direct script execution
                 from lane_acceptance_artifacts import build_lane_from_definition
 
-            row = build_lane_from_definition(lane_def, inventory_lane)
-            refresh_report = _refresh_promoted_bindings() if row.get("ok") and not defer_promotion_refresh else {"skipped": True, "reason": "deferred by --defer-promotion-refresh"} if row.get("ok") else None
+            row = build_lane_from_definition(lane_def, inventory_lane, output_root=out_dir)
+            refresh_report = (
+                _refresh_promoted_bindings()
+                if row.get("ok") and promote_accepted and not defer_promotion_refresh
+                else {"skipped": True, "reason": "deferred by --defer-promotion-refresh"}
+                if row.get("ok") and promote_accepted
+                else None
+            )
             builder_result = _finalize_stage_result(
                 {
                     "stage": stage_name,
