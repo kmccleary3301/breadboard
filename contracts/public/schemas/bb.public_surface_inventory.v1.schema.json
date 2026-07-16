@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.public_surface_inventory.v1.schema.json",
+  "title": "BreadBoard candidate surface inventory V1",
+  "type": "object", "additionalProperties": false,
+  "required": ["contract_id", "version", "candidate_status", "parity_claimed", "generated_by", "catalog_sha256", "record_surface_sha256", "operation_count", "summary", "operations"],
+  "properties": {
+    "contract_id": {"const": "bb.public_surface_inventory.v1"}, "version": {"const": 1}, "candidate_status": {"const": "candidate"}, "parity_claimed": {"const": false}, "generated_by": {"const": "scripts/quality/build_surface_inventory.py"},
+    "catalog_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "record_surface_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}, "operation_count": {"const": 45},
+    "summary": {"type": "object", "additionalProperties": false, "required": ["bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs"], "properties": {"bbh": {"$ref": "#/$defs/summary"}, "openapi": {"$ref": "#/$defs/summary"}, "python_sdk": {"$ref": "#/$defs/summary"}, "typescript_sdk": {"$ref": "#/$defs/summary"}, "tui": {"$ref": "#/$defs/summary"}, "docs": {"$ref": "#/$defs/summary"}}},
+    "operations": {"type": "array", "minItems": 45, "maxItems": 45, "items": {"type": "object", "additionalProperties": false, "required": ["operation_id", "surfaces"], "properties": {"operation_id": {"type": "string"}, "surfaces": {"type": "object", "additionalProperties": false, "required": ["bbh", "openapi", "python_sdk", "typescript_sdk", "tui", "docs"], "properties": {"bbh": {"$ref": "#/$defs/result"}, "openapi": {"$ref": "#/$defs/result"}, "python_sdk": {"$ref": "#/$defs/result"}, "typescript_sdk": {"$ref": "#/$defs/result"}, "tui": {"$ref": "#/$defs/result"}, "docs": {"$ref": "#/$defs/result"}}}}}}
+  },
+  "$defs": {
+    "summary": {"type": "object", "additionalProperties": false, "required": ["detected", "gaps", "total"], "properties": {"detected": {"type": "integer", "minimum": 0}, "gaps": {"type": "integer", "minimum": 0}, "total": {"const": 45}}},
+    "result": {"type": "object", "additionalProperties": false, "required": ["status", "evidence"], "properties": {"status": {"enum": ["candidate_binding_detected", "gap"]}, "evidence": {"type": "string", "minLength": 1}}}
+  }
+}
