@@ -1,3 +1,5 @@
+from agentic_coder_prototype.compilation.tool_registry import load_tool_registry
+
 from collections.abc import Mapping
 
 from .extensions import CompositionError, _Mod, _Ops, _owned
@@ -8,7 +10,9 @@ def _validate(document: Mapping[str, object]) -> None:
     if not isinstance(concurrency, Mapping):
         return
     config = document.get("tools") or {}
-    aliases = config.get("aliases") or {}
+    aliases = load_tool_registry(
+        config.get("defs_dir"), aliases=config.get("aliases") or {}
+    ).alias_map()
 
     def _clean(value: object) -> bool:
         return type(value) is str and bool(value) and value == value.strip()

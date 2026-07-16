@@ -53,22 +53,18 @@ def _validate(document: Mapping[str, object]) -> None:
     dialects = tools.get("dialects")
     if not isinstance(dialects, Mapping):
         return
-    for section_name in ("preference", "selection"):
-        section = dialects.get(section_name)
-        if not isinstance(section, Mapping):
-            continue
-        if section_name == "preference" and "default" in section:
-            _unique_names(section["default"], "tools.dialects.preference.default")
-        by_model = section.get("by_model")
-        if not isinstance(by_model, Mapping):
-            continue
-        for model, value in by_model.items():
-            label = f"tools.dialects.{section_name}.by_model.{model}"
-            if isinstance(value, Mapping):
-                value = value.get("order")
-            if section_name == "selection" and isinstance(value, str):
-                raise CompositionError("tool selection order must be a list")
-            _unique_names(value, label)
+    if "preference" in dialects:
+        raise CompositionError("V1 tool dialect preference is unsupported")
+    selection = dialects.get("selection") or {}
+    by_model = selection.get("by_model")
+    if not isinstance(by_model, Mapping):
+        return
+    for model, value in by_model.items():
+        if isinstance(value, Mapping):
+            value = value.get("order")
+        if isinstance(value, str):
+            raise CompositionError("tool selection order must be a list")
+        _unique_names(value, f"tools.dialects.selection.by_model.{model}")
 
 
 def build_tool_module(operations: _Ops, precedence: int = 20) -> _Mod:

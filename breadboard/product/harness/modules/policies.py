@@ -9,21 +9,25 @@ def _validate(document: Mapping[str, object]) -> None:
     permissions = document.get("permissions")
     if not isinstance(permissions, Mapping):
         return
+    for category in ("edit", "shell"):
+        config = permissions.get(category)
+        if not isinstance(config, Mapping):
+            continue
+        default = config.get("default", "allow")
+        normalized = default.lower() if isinstance(default, str) else ""
+        if normalized not in ("allow", "ask", "deny") or default != default.strip():
+            raise CompositionError(f"invalid permission {category} default")
     shell = permissions.get("shell")
     if not isinstance(shell, Mapping):
         return
-    default = shell.get("default", "allow")
-    normalized = default.lower() if isinstance(default, str) else ""
-    if normalized not in ("allow", "ask", "deny") or default != default.strip():
-        raise CompositionError("invalid permission shell default")
     seen: set[str] = set()
     for bucket in ("allow", "ask", "deny"):
         entries = shell.get(bucket)
         if not isinstance(entries, (list, tuple)):
             continue
         for entry in entries:
-            pattern = entry.strip() if isinstance(entry, str) else ""
-            if not pattern:
+            pattern = entry if isinstance(entry, str) else ""
+            if not pattern or pattern != pattern.strip():
                 raise CompositionError("invalid permission shell entry")
             if pattern in seen:
                 raise CompositionError(f"duplicate permission shell pattern: {pattern}")
