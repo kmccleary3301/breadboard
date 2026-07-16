@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -12,6 +10,8 @@ JsonValue: TypeAlias = (
     JsonScalar | Mapping[str, "JsonValue"] | list["JsonValue"] | tuple["JsonValue", ...]
 )
 Validator: TypeAlias = Callable[[Mapping[str, Any]], None]
+Operations: TypeAlias = Sequence["Operation"]
+Contribution: TypeAlias = "ModuleContribution"
 _ROOTS = frozenset(
     "completion concurrency dossier enhanced_tools features guardrails long_running loop modes multi_agent permissions prompts provider_tools providers replay schema_version tools turn_strategy version workspace".split()
 )
@@ -108,8 +108,8 @@ class ModuleContribution:
             operations = tuple(self.operations)
         except TypeError:
             raise CompositionError("module operations must be a sequence") from None
-        if any(not isinstance(item, Operation) for item in operations):
-            raise CompositionError("module operations must be Operation values")
+        if any(type(item) is not Operation for item in operations):
+            raise CompositionError("module operations must be exact Operation values")
         keys = [(item.kind, item.path) for item in operations]
         if len(keys) != len(set(keys)):
             raise CompositionError("module operations must not repeat a kind and path")
@@ -127,6 +127,10 @@ class _OwnedContribution(ModuleContribution):
         super().__init__(*args, **kwargs)
 
 
+_OWNERS: dict[type, tuple[frozenset[str], Validator]] = {}
+_OWNED_TYPES: dict[tuple[frozenset[str], Validator], type[_OwnedContribution]] = {}
+
+
 def _owned(
     module_id: str,
     precedence: int,
@@ -134,18 +138,38 @@ def _owned(
     roots: frozenset[str],
     validator: Validator,
 ) -> ModuleContribution:
-    snapshot = tuple(operations)
-    if any(
-        not isinstance(item, Operation) or item.path[0] not in roots
-        for item in snapshot
-    ):
-        raise CompositionError(f"{module_id} module operation targets an unowned root")
-    return _OwnedContribution(
-        f"{module_id}:{precedence}",
-        precedence,
-        snapshot,
-        validator,
-        _key=_OWNER_KEY,
+    authority = (roots, validator)
+    owned_type = _OWNED_TYPES.get(authority)
+    if owned_type is None:
+        owned_type = type("_Owned", (_OwnedContribution,), {"__slots__": ()})
+        _OWNED_TYPES[authority] = owned_type
+        _OWNERS[owned_type] = authority
+    args = (f"{module_id}:{precedence}", precedence, operations, validator)
+    owned = owned_type(*args, _key=_OWNER_KEY)
+    _admit(owned)
+    return owned
+
+
+def _admit(value: object) -> tuple[ModuleContribution, frozenset[str]]:
+    authority = _OWNERS.get(type(value))
+    if authority is None:
+        raise CompositionError("invalid owned module contribution")
+    roots, validator = authority
+    raw = tuple(value.operations)
+    if any(type(item) is not Operation for item in raw):
+        raise CompositionError("module operations must be exact Operation values")
+    operations = []
+    for item in raw:
+        if item.kind == "remove":
+            copied = Operation(item.kind, item.path)
+        else:
+            copied = Operation(item.kind, item.path, item.value)
+        operations.append(copied)
+    if any(item.path[0] not in roots for item in operations):
+        raise CompositionError("owned module operation targets an unowned root")
+    return (
+        ModuleContribution(value.module_id, value.precedence, operations, validator),
+        roots,
     )
 
 
@@ -187,18 +211,15 @@ def compose_modules(
         or type(document.get("version")) is not int
         or document["version"] != 1
     ):
-        raise CompositionError(
-            "base harness must use bb.harness_definition.v1 version 1"
-        )
+        raise CompositionError("base must use bb.harness_definition.v1 version 1")
     extra = sorted(set(document) - _ROOTS)
     if extra:
         raise CompositionError(f"base contains non-canonical V1 root: {extra[0]!r}")
     try:
-        snapshot = tuple(modules)
+        candidates = tuple(modules)
     except TypeError:
         raise CompositionError("modules must be a sequence") from None
-    if any(type(item) is not _OwnedContribution for item in snapshot):
-        raise CompositionError("modules must be owned module contributions")
+    snapshot = tuple(_admit(item)[0] for item in candidates)
     precedences = [item.precedence for item in snapshot]
     if len(precedences) != len(set(precedences)):
         raise CompositionError("duplicate module precedence")
@@ -218,9 +239,8 @@ def compose_modules(
         try:
             module.validator(final)
         except Exception as error:
-            raise CompositionError(
-                f"validator for module {module.module_id!r} failed: {error}"
-            ) from None
+            message = f"validator for module {module.module_id!r} failed: {error}"
+            raise CompositionError(message) from None
     try:
         return parse_harness_definition(document).as_dict()
     except Exception as error:
@@ -228,7 +248,6 @@ def compose_modules(
 
 
 class LocalExtensionRegistry:
-
     def __init__(self) -> None:
         self._builders: dict[str, Callable[[Mapping[str, Any]], Any]] = {}
 
@@ -257,17 +276,17 @@ class LocalExtensionRegistry:
         try:
             built = self._builders[extension_id](_copy_json(config, False))
         except Exception as error:
-            raise CompositionError(
-                f"extension builder {extension_id!r} failed: {error}"
-            ) from None
-        if type(built) is not _OwnedContribution:
-            raise CompositionError(
-                f"extension builder {extension_id!r} must return an owned contribution"
-            )
-        return _OwnedContribution(
-            f"extension:{extension_id}:{precedence}",
+            message = f"extension builder {extension_id!r} failed: {error}"
+            raise CompositionError(message) from None
+        try:
+            contribution, roots = _admit(built)
+        except CompositionError as error:
+            message = f"extension builder {extension_id!r} returned invalid ownership"
+            raise CompositionError(f"{message}: {error}") from None
+        return _owned(
+            f"extension:{extension_id}",
             precedence,
-            built.operations,
-            built.validator,
-            _key=_OWNER_KEY,
+            contribution.operations,
+            roots,
+            contribution.validator,
         )

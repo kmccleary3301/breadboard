@@ -1,6 +1,6 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
-from .extensions import CompositionError, ModuleContribution, Operation, _owned
+from .extensions import CompositionError, Contribution, Operations, _owned
 
 
 def _validate(document: Mapping[str, object]) -> None:
@@ -15,7 +15,5 @@ def _validate(document: Mapping[str, object]) -> None:
         raise CompositionError("enabled workspace mirror requires a nonempty path")
 
 
-def build_host_module(
-    operations: Sequence[Operation], precedence: int = 50
-) -> ModuleContribution:
+def build_host_module(operations: Operations, precedence: int = 50) -> Contribution:
     return _owned("host", precedence, operations, frozenset({"workspace"}), _validate)

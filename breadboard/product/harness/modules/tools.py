@@ -1,6 +1,6 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
-from .extensions import CompositionError, ModuleContribution, Operation, _owned
+from .extensions import CompositionError, Contribution, Operations, _owned
 
 _ROOTS = frozenset({"tools", "enhanced_tools"})
 
@@ -65,7 +65,5 @@ def _validate(document: Mapping[str, object]) -> None:
             _unique_names(value, label)
 
 
-def build_tool_module(
-    operations: Sequence[Operation], precedence: int = 20
-) -> ModuleContribution:
+def build_tool_module(operations: Operations, precedence: int = 20) -> Contribution:
     return _owned("tool", precedence, operations, _ROOTS, _validate)

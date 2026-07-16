@@ -1,7 +1,7 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import TypeGuard
 
-from .extensions import CompositionError, ModuleContribution, Operation, _owned
+from .extensions import CompositionError, Contribution, Operations, _owned
 
 _ROOTS = frozenset({"long_running", "turn_strategy", "completion"})
 
@@ -19,6 +19,8 @@ def _validate(document: Mapping[str, object]) -> None:
     if isinstance(recovery, Mapping):
         base = recovery.get("backoff_base_seconds")
         maximum = recovery.get("backoff_max_seconds")
+        if base == 0 or maximum == 0:
+            raise CompositionError("recovery backoffs must be positive when provided")
         if _number(base) and _number(maximum) and base > maximum:
             raise CompositionError("recovery backoff base cannot exceed maximum")
     verification = long_running.get("verification")
@@ -38,7 +40,7 @@ def _validate(document: Mapping[str, object]) -> None:
             budgets = {}
         tokens = budgets.get("total_tokens", budgets.get("max_total_tokens"))
         cost = budgets.get("total_cost_usd", budgets.get("max_total_cost_usd"))
-        if not (_positive(tokens) or _positive(cost)):
+        if not any(_number(value) and value > 0 for value in (tokens, cost)):
             raise CompositionError(
                 "enabled long-running execution requires a positive stopping budget"
             )
@@ -48,11 +50,5 @@ def _number(value: object) -> TypeGuard[int | float]:
     return type(value) in (int, float)
 
 
-def _positive(value: object) -> bool:
-    return _number(value) and value > 0
-
-
-def build_longrun_module(
-    operations: Sequence[Operation], precedence: int = 60
-) -> ModuleContribution:
+def build_longrun_module(operations: Operations, precedence: int = 60) -> Contribution:
     return _owned("longrun", precedence, operations, _ROOTS, _validate)

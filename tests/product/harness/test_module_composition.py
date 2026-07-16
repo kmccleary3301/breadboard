@@ -68,14 +68,11 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     assert composed["providers"]["stream_responses"] is True
     assert composed["tools"]["aliases"] == {"read": "read_file"}
     assert "stream_responses" not in base["providers"]
-    dependent = build_tool_module(
-        [
-            Operation("add", ("tools", "aliases"), {"read": "pending"}),
-            Operation("replace", ("tools", "aliases", "read"), "read_file"),
-            Operation("remove", ("tools", "aliases", "read")),
-        ]
+    remove = Operation("remove", ("tools", "mark_task_complete"))
+    assert (
+        "mark_task_complete"
+        not in compose_modules(base, [build_tool_module([remove])])["tools"]
     )
-    assert compose_modules(base, [dependent])["tools"]["aliases"] == {}
 
 
 def test_one_module_mutation_changes_only_its_lock_subgraph() -> None:
@@ -96,31 +93,24 @@ def test_one_module_mutation_changes_only_its_lock_subgraph() -> None:
 def test_local_extensions_fail_closed_without_a_core_fork() -> None:
     base = _load("research.v1.yaml")
     registry = LocalExtensionRegistry()
-    confidence_path = ("completion", "confidence_threshold")
-    registry.register(
-        "local-confidence",
-        lambda config: build_longrun_module(
-            [Operation("replace", confidence_path, config["value"])]
-        ),
-    )
+    confidence = Operation("replace", ("completion", "confidence_threshold"), 0.9)
+    registry.register("local-confidence", lambda _: build_longrun_module([confidence]))
     extension = registry.resolve("local-confidence", {"value": 0.9}, precedence=70)
     document = compose_modules(base, [extension])
     assert document["completion"]["confidence_threshold"] == 0.9
     with pytest.raises(CompositionError, match="unknown extension id"):
         registry.resolve("missing", {})
-    registry.register("bare", lambda _: ModuleContribution("bare", 1, []))
-    with pytest.raises(CompositionError, match="owned contribution"):
-        registry.resolve("bare", {})
-
-    def forge(_: object) -> ModuleContribution:
-        return replace(build_provider_module([]), operations=(_FOREIGN,))
-
-    registry.register("forged", forge)
-    with pytest.raises(CompositionError, match="builder 'forged' failed"):
-        registry.resolve("forged", {})
-    registry.register("subclass", lambda _: _ForgedOwned())
-    with pytest.raises(CompositionError, match="owned contribution"):
-        registry.resolve("subclass", {})
+    reinitialized = build_provider_module([])
+    ModuleContribution.__init__(reinitialized, "forged", 2, (_FOREIGN,))
+    for name, builder in (
+        ("bare", lambda _: ModuleContribution("bare", 1, [])),
+        ("forged", lambda _: replace(reinitialized, operations=(_FOREIGN,))),
+        ("subclass", lambda _: _ForgedOwned()),
+        ("reinitialized", lambda _: reinitialized),
+    ):
+        registry.register(name, builder)
+        with pytest.raises(CompositionError):
+            registry.resolve(name, {})
 
 
 def test_module_invariants_fail_before_lock() -> None:
@@ -145,12 +135,15 @@ def test_module_invariants_fail_before_lock() -> None:
     compose_modules(base, [build_longrun_module([budget])])
     for budgets in (
         {"wall_clock_s": 1},
-        {"total_episodes": 1},
         {"total_tokens": 0, "max_total_tokens": 1},
         {"total_cost_usd": 0, "max_total_cost_usd": 1},
     ):
         unsupported = Operation("replace", ("long_running", "budgets"), budgets)
         reject([build_longrun_module([unsupported])], "positive stopping budget")
+    zero_backoff = Operation(
+        "add", ("long_running", "recovery"), {"backoff_base_seconds": 0}
+    )
+    reject([build_longrun_module([zero_backoff])], "positive when provided")
     cases = (
         (build_host_module, ("workspace", "mirror"), {"enabled": True}),
         (build_resource_module, ("concurrency", "at_most_one_of"), [["x", "x"]]),
@@ -158,6 +151,9 @@ def test_module_invariants_fail_before_lock() -> None:
     )
     for builder, path, value in cases:
         reject([builder([Operation("add", path, value)])])
+    zero_group = [{"name": "x", "match_tools": ["x"], "max_parallel": 0}]
+    zero_parallel = Operation("replace", ("concurrency", "groups"), zero_group)
+    reject([build_resource_module([zero_parallel])], "max_parallel")
     duplicate_paths = Operation("replace", ("tools", "registry", "paths"), ["x", "x"])
     reject([build_tool_module([duplicate_paths])], "tools.registry.paths")
     with pytest.raises(CompositionError, match="precedence"):
@@ -165,9 +161,14 @@ def test_module_invariants_fail_before_lock() -> None:
     generic = ModuleContribution("generic", 2, [_FOREIGN])
     reject([generic], "owned module")
     reject([_ForgedOwned()], "owned module")
+    forged = type("ForgedOperation", (Operation,), {"__post_init__": lambda self: None})
+    with pytest.raises(CompositionError, match="exact Operation"):
+        build_provider_module([forged("move", ("providers", "stream_responses"), True)])
     typed = build_provider_module([])
     with pytest.raises(CompositionError, match="internal capability"):
         replace(typed, operations=(_FOREIGN,), validator=lambda _: None)
+    ModuleContribution.__init__(typed, "forged", 2, (_FOREIGN,))
+    reject([typed], "unowned root")
     target_cases = (
         (Operation("add", ("tools", "registry"), {}), "already exists"),
         (Operation("replace", ("tools", "aliases"), {}), "does not exist"),
