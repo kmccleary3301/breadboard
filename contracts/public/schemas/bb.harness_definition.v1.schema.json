@@ -1,0 +1,30 @@
+{
+  "$id": "https://breadboard.dev/contracts/public/schemas/bb.harness_definition.v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "completion": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/completion"},
+    "concurrency": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/concurrency"},
+    "dossier": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/dossier"},
+    "enhanced_tools": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/enhanced_tools"},
+    "features": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/features"},
+    "guardrails": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/guardrails"},
+    "long_running": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/long_running"},
+    "loop": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/loop"},
+    "modes": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/modes"},
+    "multi_agent": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/multi_agent"},
+    "permissions": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/permissions"},
+    "prompts": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/prompts"},
+    "provider_tools": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/provider_tools"},
+    "providers": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/providers"},
+    "replay": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/replay"},
+    "schema_version": {"const": "bb.harness_definition.v1"},
+    "tools": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/tools"},
+    "turn_strategy": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/turn_strategy"},
+    "version": {"const": 1},
+    "workspace": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/workspace"}
+  },
+  "required": ["schema_version", "version", "workspace", "providers", "modes", "loop"],
+  "title": "BreadBoard Harness Definition V1",
+  "type": "object"
+}
