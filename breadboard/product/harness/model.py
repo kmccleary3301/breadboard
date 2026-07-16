@@ -13,7 +13,8 @@ JsonScalar: TypeAlias = None | bool | int | float | str
 FrozenJsonValue: TypeAlias = (
     JsonScalar | Mapping[str, "FrozenJsonValue"] | tuple["FrozenJsonValue", ...]
 )
-_SCALAR_TYPES = (bool, int, str)
+_SCALAR_TYPES = (bool, str)
+_MAX_JSON_INTEGER = 10**1000 - 1
 
 
 def _copy_json(value: Any, freeze: bool) -> Any:
@@ -27,7 +28,7 @@ def _copy_json(value: Any, freeze: bool) -> Any:
         items = (_copy_json(item, freeze) for item in value)
         return tuple(items) if freeze else list(items)
     kind = type(value)
-    if value is None or kind in _SCALAR_TYPES or kind is float and math.isfinite(value):
+    if value is None or kind in _SCALAR_TYPES or kind is int and abs(value) <= _MAX_JSON_INTEGER or kind is float and math.isfinite(value):
         return value
     raise TypeError(f"unsupported JSON value: {kind.__name__}")
 

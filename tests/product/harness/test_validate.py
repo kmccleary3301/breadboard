@@ -116,12 +116,13 @@ def test_compatible_one_of_branch_exposes_leaf_findings(
     (b"x", "json_type"), (bytearray(b"x"), "json_type"), ((1,), "json_type"),
     (range(1), "json_type"), ({1}, "json_type"), (date(2026, 1, 1), "json_type"),
     (object(), "json_type"), (float("nan"), "finite"), (float("inf"), "finite"), (float("-inf"), "finite"),
-    ({1: "value"}, "json_key")])
+    pytest.param(10**5000, "integer_range", id="oversized-integer"), ({1: "value"}, "json_key")])
 def test_json_domain_preflight_rejects_adversarial_values(
     value: object, code: str
 ) -> None:
     message = {"json_type": "Value is not a JSON-domain value",
                "finite": "JSON numbers must be finite",
+               "integer_range": "JSON integers must contain at most 1000 decimal digits",
                "json_key": "Object keys must be strings"}[code]
     assert validate_harness_definition(_definition(dossier={"bad": value})) == (
         ValidationFinding("/dossier/bad", code, message),)
@@ -131,11 +132,16 @@ def test_json_domain_preflight_reports_cycle_back_edge() -> None:
     assert validate_harness_definition(_definition(dossier={"bad": cycle})) == (
         ValidationFinding("/dossier/bad/0", "json_cycle", "JSON values must not contain cycles"),
     )
+def test_json_depth_boundary_is_stable() -> None:
+    accepted, rejected = (json.loads("[" * depth + "null" + "]" * depth) for depth in (98, 99))
+    assert json.loads(HarnessDefinition.from_mapping(_definition(dossier={"bad": accepted})).canonical_json())["dossier"]["bad"] == accepted
+    assert validate_harness_definition(_definition(dossier={"bad": rejected})) == (ValidationFinding("/dossier/bad" + "/0" * 99, "json_depth", "JSON paths must not exceed 100 segments"),)
 @pytest.mark.parametrize(("schema_version", "version", "expected"), [
     ("bb.unknown.v9", 9, [("/schema_version", "unsupported_schema_version"),
                           ("/version", "unsupported_version")]),
     ("bb.harness_definition.v1", 2, [("/version", "unsupported_version")]),
     ("bb.agent_config_surface.v2", 1, [("/version", "unsupported_version")]),
+    pytest.param("bb.harness_definition.v1", 10**5000, [("/version", "integer_range")], id="oversized-version"),
     ("bb.harness_definition.v1", "1", [("/version", "unsupported_version")])])
 def test_unsupported_and_mismatched_source_pairs_fail_closed(
     schema_version: object, version: object, expected: list[tuple[str, str]]

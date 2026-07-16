@@ -29,6 +29,7 @@ _KNOWN_VERSIONS = {
     _CANONICAL[0]: _CANONICAL[1],
     _LEGACY[0]: _LEGACY[1],
 }
+_MAX_JSON_INTEGER = 10**1000 - 1
 
 @dataclass(frozen=True, order=True)
 class ValidationFinding:
@@ -84,8 +85,15 @@ def _pointer(path: Sequence[object]) -> str:
 def _json_findings(
     value: object, path: tuple[object, ...] = (), active: set[int] | None = None
 ) -> list[ValidationFinding]:
-    if type(value) in (type(None), bool, int, str):
+    if len(path) > 100:
+        return [ValidationFinding(
+            _pointer(path), "json_depth", "JSON paths must not exceed 100 segments")]
+    if value is None or type(value) in (bool, str):
         return []
+    if type(value) is int:
+        return [] if abs(value) <= _MAX_JSON_INTEGER else [
+            ValidationFinding(_pointer(path), "integer_range",
+                              "JSON integers must contain at most 1000 decimal digits")]
     if type(value) is float:
         return [] if math.isfinite(value) else [
             ValidationFinding(_pointer(path), "finite", "JSON numbers must be finite")
