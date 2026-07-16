@@ -201,7 +201,7 @@ def _source_pair_findings(document: Mapping[str, object]) -> list[ValidationFind
             ValidationFinding(
                 "/schema_version",
                 "unsupported_schema_version",
-                f"Unsupported schema_version {schema_version!r}; expected one of {supported}",
+                f"Unsupported schema_version; expected one of {supported}",
             )
         )
     if expected is not None and (type(version) is not int or version != expected):
@@ -209,8 +209,7 @@ def _source_pair_findings(document: Mapping[str, object]) -> list[ValidationFind
             ValidationFinding(
                 "/version",
                 "unsupported_version",
-                f"Version {version!r} does not match schema_version "
-                f"{schema_version!r}; expected {expected}",
+                f"Version does not match schema_version; expected {expected}",
             )
         )
     elif expected is None and not (
@@ -220,7 +219,7 @@ def _source_pair_findings(document: Mapping[str, object]) -> list[ValidationFind
             ValidationFinding(
                 "/version",
                 "unsupported_version",
-                f"Unsupported version {version!r}; expected integer 1 or 2",
+                "Unsupported version; expected integer 1 or 2",
             )
         )
     return findings
@@ -244,11 +243,9 @@ def validate_harness_definition(
     return tuple(sorted(set(findings)))
 
 def parse_harness_definition(document: Mapping[str, object]) -> HarnessDefinition:
-    if findings := validate_harness_definition(document):
-        raise HarnessDefinitionValidationError(findings)
     from .model import HarnessDefinition
 
-    return HarnessDefinition._from_validated(document)
+    return HarnessDefinition.from_mapping(document)
 
 def load_harness_definition(path: str | Path) -> HarnessDefinition:
     with Path(path).open(encoding="utf-8") as definition_file:

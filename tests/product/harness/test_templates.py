@@ -43,45 +43,40 @@ def test_checked_in_template_is_exact_minimal_canonical_model() -> None:
     assert harness.as_dict() == document
 
 def test_wheel_import_loads_template_from_distribution_data_root(tmp_path: Path) -> None:
-    wheelhouse = tmp_path / "wheelhouse"
-    outside_repo = tmp_path / "outside-repo"
-    wheelhouse.mkdir()
-    outside_repo.mkdir()
+    wheelhouse, outside_repo = tmp_path / "wheelhouse", tmp_path / "outside-repo"
+    for directory in (wheelhouse, outside_repo):
+        directory.mkdir()
     environment = os.environ.copy()
     environment.pop("PYTHONPATH", None)
     environment["PYTHONNOUSERSITE"] = "1"
 
     def run(*command: str) -> str:
-        process = subprocess.run(
+        return subprocess.run(
             command,
             cwd=outside_repo,
             env=environment,
-            check=False,
+            check=True,
             capture_output=True,
             text=True,
-        )
-        assert process.returncode == 0, process.stderr
-        return process.stdout
+        ).stdout
 
     run(sys.executable, "-m", "pip", "wheel", "--no-deps", "--no-build-isolation",
         "--wheel-dir", str(wheelhouse), str(ROOT))
     wheel = next(wheelhouse.glob("*.whl"))
-    venv = tmp_path / "venv"
-    run(sys.executable, "-m", "venv", str(venv))
-    venv_python = venv / "bin" / "python"
-    run(str(venv_python), "-m", "pip", "install", str(wheel))
+    install_root = tmp_path / "install"
+    run(sys.executable, "-m", "pip", "install", "--no-deps",
+        "--target", str(install_root), str(wheel))
     script = (
-        "import json, sysconfig; from breadboard.product.harness.templates import "
+        f"import sys; sys.path.insert(0, {str(install_root)!r}); import json; "
+        "from breadboard.product.harness.templates import "
         "load_minimal_harness, minimal_template_path, minimal_template_text; "
-        "print(json.dumps({'data_root': sysconfig.get_path('data'), 'path': str(minimal_template_path()), "
+        "print(json.dumps({'path': str(minimal_template_path()), "
         "'text': minimal_template_text(), 'document': load_minimal_harness().as_dict()}))"
     )
-    payload = json.loads(run(str(venv_python), "-I", "-c", script))
+    payload = json.loads(run(sys.executable, "-I", "-c", script))
     expected_text = TEMPLATE.read_text(encoding="utf-8")
     expected_installed_path = (
-        Path(payload["data_root"])
-        / "agent_configs/templates/minimal_harness.v3.yaml"
-    )
+        install_root / "agent_configs/templates/minimal_harness.v3.yaml")
     assert Path(payload["path"]) == expected_installed_path
     assert payload["text"] == expected_text
     assert payload["document"] == yaml.safe_load(expected_text)

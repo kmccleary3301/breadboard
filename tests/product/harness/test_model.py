@@ -43,6 +43,18 @@ def test_actual_v2_configs_round_trip_exactly_without_coercion(path: Path) -> No
     assert _typed(definition.as_dict()) == _typed(expected)
     assert json.loads(definition.canonical_json()) == expected
 
+def test_construction_validates_the_detached_snapshot() -> None:
+    class ClearingMapping(dict[str, Any]):
+        def items(self):  # type: ignore[override]
+            entries = dict(self).items()
+            self.clear()
+            return entries
+
+    source = ClearingMapping(_load(CONFIGS[0]))
+    definition = HarnessDefinition.from_mapping(source)
+    assert not source
+    assert definition.as_dict() == _load(CONFIGS[0])
+
 
 def test_definition_is_recursively_immutable_and_copies_are_detached() -> None:
     source = _load(CONFIGS[1])
@@ -70,12 +82,7 @@ def test_canonical_json_is_stable_compact_utf8_safe_and_has_no_newline() -> None
     canonical = HarnessDefinition.from_mapping(source).canonical_json()
     assert canonical == HarnessDefinition.from_mapping(reordered).canonical_json()
     assert canonical == json.dumps(
-        source,
-        allow_nan=False,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
+        source, allow_nan=False, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     assert "—" in canonical and not canonical.endswith("\n")
 
 

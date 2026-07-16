@@ -17,6 +17,23 @@ _SCALAR_TYPES = (bool, str)
 _MAX_JSON_INTEGER = 10**640 - 1
 
 
+def _snapshot(value: Any, memo: dict[int, Any] | None = None) -> Any:
+    if not isinstance(value, (Mapping, list)):
+        return value
+    memo = {} if memo is None else memo
+    identity = id(value)
+    if identity in memo:
+        return memo[identity]
+    snapshot: Any = {} if isinstance(value, Mapping) else []
+    memo[identity] = snapshot
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            snapshot[key] = _snapshot(item, memo)
+    else:
+        snapshot.extend(_snapshot(item, memo) for item in value)
+    return snapshot
+
+
 def _copy_json(value: Any, freeze: bool) -> Any:
     if isinstance(value, Mapping):
         if any(type(key) is not str for key in value):
@@ -50,21 +67,19 @@ class HarnessDefinition(Mapping[str, FrozenJsonValue]):
 
     @classmethod
     def from_mapping(cls, document: Mapping[str, Any]) -> HarnessDefinition:
-        """Validate and detach an author mapping before exposing it as immutable."""
+        """Detach, validate, and freeze one stable author snapshot."""
         from .validate import HarnessDefinitionValidationError, validate_harness_definition
 
-        findings = validate_harness_definition(document)
+        snapshot = _snapshot(document)
+        findings = validate_harness_definition(snapshot)
         if findings:
             raise HarnessDefinitionValidationError(findings)
-        return cls._from_validated(document)
+        return cls._from_validated(snapshot)
 
     @classmethod
     def _from_validated(cls, document: Mapping[str, Any]) -> HarnessDefinition:
         instance = object.__new__(cls)
-        frozen = _freeze(document)
-        if not isinstance(frozen, Mapping):
-            raise TypeError("a harness definition must be a mapping")
-        object.__setattr__(instance, "_document", frozen)
+        object.__setattr__(instance, "_document", _freeze(document))
         return instance
 
     def __getitem__(self, key: str) -> FrozenJsonValue:
@@ -82,10 +97,5 @@ class HarnessDefinition(Mapping[str, FrozenJsonValue]):
 
     def canonical_json(self) -> str:
         """Return stable compact JSON without changing any author values."""
-        return json.dumps(
-            self.as_dict(),
-            allow_nan=False,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
+        return json.dumps(self.as_dict(), allow_nan=False, ensure_ascii=False,
+                          separators=(",", ":"), sort_keys=True)
