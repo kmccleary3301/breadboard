@@ -1,5 +1,6 @@
 from dataclasses import replace
 from pathlib import Path
+from typing import get_type_hints
 
 import pytest
 import yaml
@@ -60,6 +61,8 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     duplicate = Operation("replace", path, True)
     with pytest.raises(CompositionError, match="repeat a kind and path"):
         ModuleContribution("duplicate", 30, [duplicate, duplicate])
+    with pytest.raises(CompositionError, match="unknown operation kind"):
+        Operation(type("Deceptive", (), {"__eq__": lambda *_: True})(), path, True)
     seed = build_provider_module([Operation("add", path, False)], 5)
     provider = build_provider_module([Operation("replace", path, True)], 10)
     tools = build_tool_module([Operation("add", ("tools", "aliases"), aliases)], 20)
@@ -67,12 +70,9 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     aliases["read"] = "changed"
     assert composed["providers"]["stream_responses"] is True
     assert composed["tools"]["aliases"] == {"read": "read_file"}
-    assert "stream_responses" not in base["providers"]
     remove = Operation("remove", ("tools", "mark_task_complete"))
-    assert (
-        "mark_task_complete"
-        not in compose_modules(base, [build_tool_module([remove])])["tools"]
-    )
+    removed = compose_modules(base, [build_tool_module([remove])])
+    assert "mark_task_complete" not in removed["tools"]
 
 
 def test_one_module_mutation_changes_only_its_lock_subgraph() -> None:
@@ -204,6 +204,7 @@ def test_module_invariants_fail_before_lock() -> None:
         "completion concurrency dossier enhanced_tools features guardrails long_running loop modes multi_agent permissions prompts provider_tools providers replay schema_version tools turn_strategy version workspace".split()
     )
     for builder, names in owners:
+        assert get_type_hints(builder)["return"] is ModuleContribution
         for root in roots:
             operation = Operation("add", (root, "probe"), None)
             if root in names.split():

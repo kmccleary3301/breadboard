@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 
-from .extensions import CompositionError, Contribution, Operations, _owned
+from .extensions import CompositionError, _Mod, _Ops, _owned
 
 
 def _validate(document: Mapping[str, object]) -> None:
@@ -38,7 +38,7 @@ def _validate(document: Mapping[str, object]) -> None:
             raise CompositionError("concurrency group barrier is invalid")
 
 
-def build_resource_module(operations: Operations, precedence: int = 30) -> Contribution:
+def build_resource_module(operations: _Ops, precedence: int = 30) -> _Mod:
     return _owned(
         "resource", precedence, operations, frozenset({"concurrency"}), _validate
     )

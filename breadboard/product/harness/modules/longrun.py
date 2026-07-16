@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 from typing import TypeGuard
 
-from .extensions import CompositionError, Contribution, Operations, _owned
+from .extensions import CompositionError, _Mod, _Ops, _owned
 
 _ROOTS = frozenset({"long_running", "turn_strategy", "completion"})
 
@@ -50,5 +50,5 @@ def _number(value: object) -> TypeGuard[int | float]:
     return type(value) in (int, float)
 
 
-def build_longrun_module(operations: Operations, precedence: int = 60) -> Contribution:
+def build_longrun_module(operations: _Ops, precedence: int = 60) -> _Mod:
     return _owned("longrun", precedence, operations, _ROOTS, _validate)

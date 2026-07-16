@@ -10,8 +10,6 @@ JsonValue: TypeAlias = (
     JsonScalar | Mapping[str, "JsonValue"] | list["JsonValue"] | tuple["JsonValue", ...]
 )
 Validator: TypeAlias = Callable[[Mapping[str, Any]], None]
-Operations: TypeAlias = Sequence["Operation"]
-Contribution: TypeAlias = "ModuleContribution"
 _ROOTS = frozenset(
     "completion concurrency dossier enhanced_tools features guardrails long_running loop modes multi_agent permissions prompts provider_tools providers replay schema_version tools turn_strategy version workspace".split()
 )
@@ -72,7 +70,7 @@ class Operation:
     value: JsonValue | _Missing = field(default=_MISSING, repr=False)
 
     def __post_init__(self) -> None:
-        if self.kind not in ("remove", "replace", "add"):
+        if type(self.kind) is not str or self.kind not in ("remove", "replace", "add"):
             raise CompositionError(f"unknown operation kind: {self.kind!r}")
         if isinstance(self.path, (str, bytes)):
             raise CompositionError("operation path must be a sequence")
@@ -116,6 +114,10 @@ class ModuleContribution:
         if not callable(self.validator):
             raise CompositionError("module validator must be callable")
         object.__setattr__(self, "operations", operations)
+
+
+_Ops: TypeAlias = Sequence[Operation]
+_Mod: TypeAlias = ModuleContribution
 
 
 class _OwnedContribution(ModuleContribution):

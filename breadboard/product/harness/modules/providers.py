@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 
-from .extensions import CompositionError, Contribution, Operations, _owned
+from .extensions import CompositionError, _Mod, _Ops, _owned
 
 _ROOTS = frozenset({"providers", "provider_tools"})
 
@@ -57,5 +57,5 @@ def _validate(document: Mapping[str, object]) -> None:
                 stack.extend((target, False) for target in reversed(graph[identifier]))
 
 
-def build_provider_module(operations: Operations, precedence: int = 10) -> Contribution:
+def build_provider_module(operations: _Ops, precedence: int = 10) -> _Mod:
     return _owned("provider", precedence, operations, _ROOTS, _validate)
