@@ -9,7 +9,7 @@ from breadboard.product.harness.modules.extensions import (
     LocalExtensionRegistry,
     Operation,
     compose_modules,
-    contribution,
+    ModuleContribution,
 )
 from breadboard.product.harness.modules.host import build_host_module
 from breadboard.product.harness.modules.resources import build_resource_module
@@ -39,7 +39,7 @@ def test_representative_fixtures_share_the_frozen_primitive_language() -> None:
     required = {"workspace", "providers", "modes", "loop"}
     assert all(required <= set(document) for document in documents)
     called = []
-    probe = contribution("side-effect", 1, [], lambda _: called.append(True))
+    probe = ModuleContribution("side-effect", 1, [], lambda _: called.append(True))
     for field, value in (
         ("schema_version", "bb.agent_config_surface.v2"),
         ("version", True),
@@ -57,12 +57,12 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     aliases = {"read": "read_file"}
     path = ("providers", "stream_responses")
     with pytest.raises(CompositionError, match="repeat a kind and path"):
-        contribution(
+        ModuleContribution(
             "duplicate",
             30,
             [Operation("replace", path, False), Operation("replace", path, True)],
         )
-    seed = contribution("seed", 5, [Operation("add", path, False)])
+    seed = build_provider_module([Operation("add", path, False)], 5)
     provider = build_provider_module([Operation("replace", path, True)], 10)
     tools = build_tool_module([Operation("add", ("tools", "aliases"), aliases)], 20)
     composed = compose_modules(base, [tools, provider, seed])
@@ -80,6 +80,13 @@ def test_operations_compose_by_explicit_precedence_and_detach_inputs() -> None:
     result = compose_modules(composed, [ordered])
     assert result["tools"]["aliases"] == {"write": "write_file"}
     assert result["tools"]["mark_task_complete"] is False
+    dependent = build_tool_module(
+        [
+            Operation("remove", ("tools", "registry", "paths")),
+            Operation("remove", ("tools", "registry")),
+        ]
+    )
+    assert "registry" not in compose_modules(base, [dependent])["tools"]
 
 
 def test_one_module_mutation_changes_only_its_lock_subgraph() -> None:
@@ -123,7 +130,7 @@ def test_local_extensions_fail_closed_without_a_core_fork() -> None:
     )
     with pytest.raises(CompositionError, match="unknown extension id"):
         registry.resolve("missing", {})
-    registry.register("bare", lambda _: contribution("bare", 1, []))
+    registry.register("bare", lambda _: ModuleContribution("bare", 1, []))
     with pytest.raises(CompositionError, match="owned contribution"):
         registry.resolve("bare", {})
 
@@ -143,27 +150,26 @@ def test_module_invariants_fail_before_lock() -> None:
         (build_host_module, ("workspace", "mirror"), {"enabled": True}),
         (build_resource_module, ("concurrency", "at_most_one_of"), [["x", "x"]]),
         (build_policy_module, ("permissions", "shell", "allow"), ["x", "x"]),
-        (build_tool_module, ("tools", "default"), ["x", "x"]),
     )
     for builder, path, value in cases:
         with pytest.raises(CompositionError):
             compose_modules(base, [builder([Operation("add", path, value)])])
+    duplicate_paths = Operation("replace", ("tools", "registry", "paths"), ["x", "x"])
+    with pytest.raises(CompositionError, match="tools.registry.paths"):
+        compose_modules(base, [build_tool_module([duplicate_paths])])
 
 
 def test_composition_preconditions_and_module_ownership_fail_closed() -> None:
     base = _load("engineering.v1.yaml")
     with pytest.raises(CompositionError, match="precedence"):
-        compose_modules(base, [contribution("a", 1, []), contribution("b", 1, [])])
-    with pytest.raises(CompositionError, match="protected root"):
-        compose_modules(
-            base,
-            [contribution("protected", 1, [Operation("replace", ("version",), 1)])],
-        )
-    with pytest.raises(CompositionError, match="not canonical"):
-        compose_modules(
-            base,
-            [contribution("unknown", 1, [Operation("add", ("extensions",), {})])],
-        )
+        compose_modules(base, [build_provider_module([], 1), build_tool_module([], 1)])
+    generic = ModuleContribution(
+        "generic",
+        2,
+        [Operation("add", ("workspace", "mirror"), {"enabled": True})],
+    )
+    with pytest.raises(CompositionError, match="owned module"):
+        compose_modules(base, [generic])
     with pytest.raises(CompositionError, match="already exists"):
         compose_modules(
             base,

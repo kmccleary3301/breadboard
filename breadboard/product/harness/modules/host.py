@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 
-from .extensions import CompositionError, ModuleContribution, Operation, owned
+from .extensions import CompositionError, ModuleContribution, Operation, _owned
 
 
 def _validate(document: Mapping[str, object]) -> None:
@@ -18,4 +18,4 @@ def _validate(document: Mapping[str, object]) -> None:
 def build_host_module(
     operations: Sequence[Operation], precedence: int = 50
 ) -> ModuleContribution:
-    return owned("host", precedence, operations, frozenset({"workspace"}), _validate)
+    return _owned("host", precedence, operations, frozenset({"workspace"}), _validate)

@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 
-from .extensions import CompositionError, ModuleContribution, Operation, owned
+from .extensions import CompositionError, ModuleContribution, Operation, _owned
 
 _ROOTS = frozenset({"permissions", "guardrails", "replay"})
 
@@ -39,4 +39,4 @@ def _validate(document: Mapping[str, object]) -> None:
 def build_policy_module(
     operations: Sequence[Operation], precedence: int = 40
 ) -> ModuleContribution:
-    return owned("policy", precedence, operations, _ROOTS, _validate)
+    return _owned("policy", precedence, operations, _ROOTS, _validate)

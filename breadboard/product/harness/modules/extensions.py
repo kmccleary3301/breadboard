@@ -1,3 +1,5 @@
+"""Deterministic composition primitives for typed Harness authoring modules."""
+
 from __future__ import annotations
 
 import math
@@ -132,18 +134,7 @@ class _OwnedContribution(ModuleContribution):
     __slots__ = ()
 
 
-def contribution(
-    module_id: str,
-    precedence: int,
-    operations: Sequence[Operation],
-    validator: Validator | None = None,
-) -> ModuleContribution:
-    return ModuleContribution(
-        module_id, precedence, operations, _noop if validator is None else validator
-    )
-
-
-def owned(
+def _owned(
     module_id: str,
     precedence: int,
     operations: Sequence[Operation],
@@ -156,7 +147,9 @@ def owned(
         for item in snapshot
     ):
         raise CompositionError(f"{module_id} module operation targets an unowned root")
-    return _OwnedContribution(module_id, precedence, snapshot, validator)
+    return _OwnedContribution(
+        f"{module_id}:{precedence}", precedence, snapshot, validator
+    )
 
 
 def _path(path: tuple[str, ...]) -> str:
@@ -218,8 +211,8 @@ def compose_modules(
         snapshot = tuple(modules)
     except TypeError:
         raise CompositionError("modules must be a sequence") from None
-    if any(not isinstance(item, ModuleContribution) for item in snapshot):
-        raise CompositionError("modules must be ModuleContribution values")
+    if any(not isinstance(item, _OwnedContribution) for item in snapshot):
+        raise CompositionError("modules must be owned module contributions")
     duplicate = _duplicate([item.module_id for item in snapshot])
     if duplicate is not None:
         raise CompositionError(f"duplicate module id: {duplicate!r}")
@@ -228,10 +221,7 @@ def compose_modules(
         raise CompositionError(f"duplicate module precedence: {duplicate}")
     ordered = sorted(snapshot, key=lambda item: (item.precedence, item.module_id))
     for module in ordered:
-        operations = sorted(
-            module.operations, key=lambda item: (_ORDER[item.kind], item.path)
-        )
-        for operation in operations:
+        for operation in module.operations:
             root = operation.path[0]
             if root not in _ROOTS:
                 raise CompositionError(f"operation root is not canonical V1: {root!r}")
@@ -292,7 +282,7 @@ class LocalExtensionRegistry:
                 f"extension builder {extension_id!r} must return an owned contribution"
             )
         return _OwnedContribution(
-            f"extension:{extension_id}",
+            f"extension:{extension_id}:{precedence}",
             precedence,
             built.operations,
             built.validator,

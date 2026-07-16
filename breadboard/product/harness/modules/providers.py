@@ -1,6 +1,8 @@
+"""Composable provider and provider-tool settings."""
+
 from collections.abc import Mapping, Sequence
 
-from .extensions import CompositionError, ModuleContribution, Operation, owned
+from .extensions import CompositionError, ModuleContribution, Operation, _owned
 
 _ROOTS = frozenset({"providers", "provider_tools"})
 
@@ -67,4 +69,4 @@ def _validate(document: Mapping[str, object]) -> None:
 def build_provider_module(
     operations: Sequence[Operation], precedence: int = 10
 ) -> ModuleContribution:
-    return owned("provider", precedence, operations, _ROOTS, _validate)
+    return _owned("provider", precedence, operations, _ROOTS, _validate)

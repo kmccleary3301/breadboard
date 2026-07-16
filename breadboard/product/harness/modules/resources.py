@@ -1,6 +1,6 @@
 from collections.abc import Mapping, Sequence
 
-from .extensions import CompositionError, ModuleContribution, Operation, owned
+from .extensions import CompositionError, ModuleContribution, Operation, _owned
 
 
 def _validate(document: Mapping[str, object]) -> None:
@@ -23,6 +23,6 @@ def _validate(document: Mapping[str, object]) -> None:
 def build_resource_module(
     operations: Sequence[Operation], precedence: int = 30
 ) -> ModuleContribution:
-    return owned(
+    return _owned(
         "resource", precedence, operations, frozenset({"concurrency"}), _validate
     )

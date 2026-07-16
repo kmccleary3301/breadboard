@@ -1,7 +1,7 @@
 from collections.abc import Mapping, Sequence
 from typing import TypeGuard
 
-from .extensions import CompositionError, ModuleContribution, Operation, owned
+from .extensions import CompositionError, ModuleContribution, Operation, _owned
 
 _ROOTS = frozenset({"long_running", "turn_strategy", "completion"})
 _BUDGETS = frozenset(
@@ -56,4 +56,4 @@ def _positive(value: object) -> bool:
 def build_longrun_module(
     operations: Sequence[Operation], precedence: int = 60
 ) -> ModuleContribution:
-    return owned("longrun", precedence, operations, _ROOTS, _validate)
+    return _owned("longrun", precedence, operations, _ROOTS, _validate)
