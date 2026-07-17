@@ -243,7 +243,7 @@ def test_responses_stream_emits_assistant_delta_events(monkeypatch):
             self._final = types.SimpleNamespace(
                 id="resp_stream_1",
                 model="gpt-5.4-mini",
-                output=[output_item],
+                output=[],
                 usage={},
             )
             self._events = [
@@ -309,3 +309,47 @@ def test_responses_stream_emits_assistant_delta_events(monkeypatch):
         ("assistant.message.delta", {"item_id": "msg_1", "delta": " there"}, 3),
         ("assistant.message.end", {"item_id": "msg_1"}, 3),
     ]
+
+
+def test_responses_stream_final_output_remains_authoritative():
+    runtime = OpenAIResponsesRuntime(
+        types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses")
+    )
+    output_item = types.SimpleNamespace(
+        type="message",
+        role="assistant",
+        content=[{"type": "output_text", "text": "Final response"}],
+        finish_reason="stop",
+    )
+    final_response = types.SimpleNamespace(
+        id="resp_stream_final",
+        model="gpt-5.4-mini",
+        output=[output_item],
+        usage={},
+    )
+
+    def fake_stream(_client, _payload, _context, streamed_output_text):
+        streamed_output_text["msg_1"] = ["Streamed response"]
+        return final_response
+
+    runtime._stream_responses = fake_stream
+    context = ProviderRuntimeContext(
+        session_state=types.SimpleNamespace(
+            get_provider_metadata=lambda *_args, **_kwargs: None,
+            set_provider_metadata=lambda *_args, **_kwargs: None,
+        ),
+        agent_config={"provider_tools": {"openai": {}}},
+        stream=True,
+    )
+
+    result = runtime.invoke(
+        client=types.SimpleNamespace(),
+        model="gpt-5.4-mini",
+        messages=[{"role": "user", "content": "hello"}],
+        tools=None,
+        stream=True,
+        context=context,
+    )
+
+    assert len(result.messages) == 1
+    assert result.messages[0].content == "Final response"

@@ -1342,6 +1342,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         client: Any,
         payload: Dict[str, Any],
         context: ProviderRuntimeContext,
+        streamed_output_text: Dict[str, List[str]],
     ) -> Any:
         request_id = provider_dump_logger.log_request(
             provider=self.descriptor.provider_id,
@@ -1364,6 +1365,13 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         started_item_ids: set[str] = set()
         ended_item_ids: set[str] = set()
 
+        def event_item_id(event: Any) -> str:
+            item_id = str(getattr(event, "item_id", "") or "")
+            if item_id:
+                return item_id
+            output_index = getattr(event, "output_index", None)
+            return f"output-{output_index}" if isinstance(output_index, int) and output_index >= 0 else ""
+
         def start_item(item_id: str) -> None:
             if not item_id or item_id in started_item_ids:
                 return
@@ -1378,6 +1386,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         def emit_delta(item_id: str, delta: str) -> None:
             if not item_id or not isinstance(delta, str) or not delta:
                 return
+            streamed_output_text.setdefault(item_id, []).append(delta)
             start_item(item_id)
             self._stream_emit_event(
                 context,
@@ -1402,12 +1411,12 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 for event in stream:
                     event_type = getattr(event, "type", None)
                     if event_type == "response.output_text.delta":
-                        item_id = str(getattr(event, "item_id", "") or "")
+                        item_id = event_item_id(event)
                         delta = getattr(event, "delta", None)
                         if isinstance(delta, str) and delta:
                             emit_delta(item_id, delta)
                     elif event_type == "response.output_text.done":
-                        item_id = str(getattr(event, "item_id", "") or "")
+                        item_id = event_item_id(event)
                         text = getattr(event, "text", None)
                         if item_id not in started_item_ids and isinstance(text, str) and text:
                             emit_delta(item_id, text)
@@ -1543,8 +1552,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             payload.update(extra_payload)
 
         response: Any = None
+        streamed_output_text: Dict[str, List[str]] = {}
         if stream:
-            response = self._stream_responses(client, payload, context)
+            response = self._stream_responses(client, payload, context, streamed_output_text)
 
         if response is None:
             try:
@@ -1630,6 +1640,19 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 summary_text = self._message_content_to_text(summary_blocks)
                 if summary_text:
                     reasoning_summaries.append(summary_text)
+
+        if streamed_output_text and not any(message.content or message.tool_calls for message in normalized_messages):
+            normalized_messages = [
+                ProviderMessage(
+                    role="assistant",
+                    content="".join(parts),
+                    finish_reason="stop",
+                    index=index,
+                    annotations={"responses_type": "streamed_output_text"},
+                )
+                for index, parts in enumerate(streamed_output_text.values())
+                if parts
+            ]
 
         usage_dict = self._extract_usage(response)
 
