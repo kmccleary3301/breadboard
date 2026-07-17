@@ -73,14 +73,15 @@ def test_lane_inventory_row_uses_packet_feature_id_without_claim_artifacts() -> 
     assert row["ledger_feature_ids"] == ["feat_demo_packet"]
 
 
-def test_lane_inventory_row_preserves_retained_claim_status() -> None:
+def test_lane_inventory_row_reports_retired_producer_and_retained_evidence_status() -> None:
     lane_def = _lane_def()
     lane_def["status"] = "superseded"
     lane_def["claim"]["status"] = "accepted"
 
     row = lane_inventory_row(lane_def)
 
-    assert row["status"] == "accepted"
+    assert row["status"] == "superseded"
+    assert row["evidence_status"] == "accepted"
 
 
 def test_build_inventory_sorts_lane_defs() -> None:

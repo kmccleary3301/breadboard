@@ -717,9 +717,9 @@
         "gate_level": "C4",
         "test_id": "CT-P3-OHMYPI-P37-MEMORY-WORK-C4"
       },
+      "evidence_status": "accepted",
       "kind": "non_target_accounting",
       "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "lane_def_ref": "config/e4_lanes/oh_my_pi_p3_7_memory_work_compiler.yaml",
       "ledger_feature_ids": [
         "feat_b650fa627d57aa92"
       ],
@@ -748,7 +748,7 @@
       "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
       "sandbox_mode": "read-only",
       "score_row_id": "score_oh_my_pi_p3_7_memory_work_compiler",
-      "status": "accepted",
+      "status": "superseded",
       "target_family": "oh_my_pi",
       "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
     },
@@ -1606,9 +1606,9 @@
         "gate_level": "C4",
         "test_id": "CT-P5-PI-L2-EXTENSION-SESSION-RESIDUAL-C4"
       },
+      "evidence_status": "accepted",
       "kind": "target_support",
       "lane_id": "pi_p5_l2_extension_session_residual",
-      "lane_def_ref": "config/e4_lanes/pi_p5_l2_extension_session_residual.yaml",
       "ledger_feature_ids": [
         "feat_38725eb172b28cb1"
       ],
@@ -1640,7 +1640,7 @@
       "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
       "sandbox_mode": "read-only-no-secret",
       "score_row_id": "score_p5_pi_l2_extension_session_residual",
-      "status": "accepted",
+      "status": "superseded",
       "target_family": "pi",
       "target_version": "@mariozechner/pi-coding-agent@0.57.1"
     }

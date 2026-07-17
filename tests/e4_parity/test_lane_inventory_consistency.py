@@ -37,6 +37,18 @@ def _accepted_lanes() -> list[dict[str, Any]]:
     return [lane for lane in lanes if isinstance(lane, dict) and lane.get("status") == "accepted"]
 
 
+def _accounted_lanes() -> list[dict[str, Any]]:
+    inventory = _load_json(INVENTORY_PATH)
+    lanes = inventory.get("lanes")
+    assert isinstance(lanes, list), "inventory lanes must be a list"
+    return [
+        lane
+        for lane in lanes
+        if isinstance(lane, dict)
+        and (lane.get("status") == "accepted" or lane.get("evidence_status") == "accepted")
+    ]
+
+
 def test_lane_inventory_ids_and_ct_outputs_are_unique() -> None:
     """Accepted inventory lanes must have one stable identity and one node-gate output each."""
     lanes = _accepted_lanes()
@@ -81,7 +93,7 @@ def test_accepted_lanes_have_required_artifact_roles() -> None:
 
 def test_inventory_points_match_score_subledger_accounting() -> None:
     """Inventory-managed points must reconcile with current score-subledger totals without lane lists in tests."""
-    lanes = _accepted_lanes()
+    lanes = _accounted_lanes()
     target_points = sum(int(lane["points"]) for lane in lanes if lane.get("kind") == "target_support")
     non_target_inventory_points = sum(
         int(lane["points"]) for lane in lanes if lane.get("kind") == "non_target_accounting"

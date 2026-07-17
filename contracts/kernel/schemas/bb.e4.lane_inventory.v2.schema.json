@@ -85,6 +85,20 @@
               "superseded"
             ]
           },
+          "evidence_status": {
+            "enum": [
+              "planned",
+              "scaffolded",
+              "captured",
+              "replayed",
+              "compared",
+              "claimed",
+              "accepted",
+              "blocked",
+              "superseded"
+            ],
+            "description": "Retained evidence lifecycle when it differs from the producer lifecycle in status."
+          },
           "points": {
             "type": "integer",
             "minimum": 0
