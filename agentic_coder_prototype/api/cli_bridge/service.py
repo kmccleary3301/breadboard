@@ -10,11 +10,19 @@ import time
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, AsyncIterator, Optional, Sequence
+from typing import Any, AsyncIterator, Dict, Optional, Sequence
 
 from fastapi import HTTPException, UploadFile, status
 
-from .events import EventType, SessionEvent
+from .events import (
+    OVERFLOW_RECOVERY_ACTION,
+    REPLAY_RETENTION_MAX_AGE_MS,
+    REPLAY_RETENTION_MAX_EVENTS,
+    SNAPSHOT_RECOVERY_ACTION,
+    EventType,
+    SessionEvent,
+    replay_retention_facts,
+)
 from .models import (
     ATPReplBatchRequest,
     ATPReplBatchResponse,
@@ -42,7 +50,14 @@ from .models import (
     SessionTurnCancelResponse,
 )
 from .atp_diagnostics import build_atp_harness_diagnostic
-from .registry import SessionRecord, SessionRegistry
+from .registry import (
+    SessionRecord,
+    SessionRegistry,
+    SubscriberState,
+    cancellation_body_digest,
+    identity_digest,
+    submission_body_digest,
+)
 from .session_runner import SessionRunner, TurnContractConflict
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from ...compilation.v2_loader import load_agent_config
@@ -78,8 +93,25 @@ def _env_flag(name: str) -> bool:
 class SessionService:
     """Facade that coordinates the registry, runners, and FastAPI endpoints."""
 
-    def __init__(self, registry: SessionRegistry | None = None) -> None:
-        self.registry = registry or SessionRegistry()
+    def __init__(
+        self,
+        registry: SessionRegistry | None = None,
+        *,
+        state_root: str | Path | None = None,
+        subscriber_queue_maxsize: int | None = None,
+    ) -> None:
+        configured_state_root = (
+            state_root
+            or os.environ.get("BREADBOARD_SESSION_STATE_ROOT")
+            or (default_runtime_record_root() / "session_state")
+        )
+        self.registry = registry or SessionRegistry(configured_state_root)
+        self._subscriber_queue_maxsize = max(
+            1,
+            subscriber_queue_maxsize
+            if subscriber_queue_maxsize is not None
+            else REPLAY_RETENTION_MAX_EVENTS + 2,
+        )
         self._bridge_chaos = _load_bridge_chaos_metadata()
         self._atp_repl_enabled = _env_flag("ATP_REPL_ENABLE") or _env_flag("ATP_REPL_ROUTE")
         self._atp_repl_service: Any | None = None
@@ -166,24 +198,33 @@ class SessionService:
         limit: Optional[int] = None,
         from_id: Optional[str] = None,
         validated: bool = False,
+        include_open_ack: bool = False,
     ) -> AsyncIterator[SessionEvent]:
         record = await self.ensure_session(session_id)
         await self._ensure_dispatcher(record)
-        subscriber: asyncio.Queue[Optional[SessionEvent]] = asyncio.Queue()
-        await self._register_subscriber(
+        subscriber: asyncio.Queue[Optional[SessionEvent]] = asyncio.Queue(
+            maxsize=self._subscriber_queue_maxsize
+        )
+        state = await self._register_subscriber(
             record,
             subscriber,
             replay=replay,
             limit=limit,
             from_id=from_id,
             validated=validated,
+            include_open_ack=include_open_ack,
         )
         try:
             while True:
                 event = await subscriber.get()
                 if event is None:
                     break
+                if event.stable_cursor:
+                    state.last_delivered_sequence = event.seq
+                    state.last_delivered_event_id = event.event_id
                 yield event
+                if event.type is EventType.STREAM_GAP:
+                    break
         finally:
             await self._unregister_subscriber(record, subscriber)
 
@@ -203,60 +244,89 @@ class SessionService:
         limit: Optional[int] = None,
         from_id: Optional[str] = None,
         validated: bool = False,
-    ) -> None:
+        include_open_ack: bool = False,
+    ) -> SubscriberState:
+        del validated
         replay_enabled = replay or bool(from_id)
+        state = SubscriberState(queue=queue)
         async with record.dispatch_lock:
-            if replay_enabled:
-                self._ensure_event_sequence(record)
-                events = list(record.event_log)
-                if from_id:
-                    start_index = self._resolve_start_index(events, from_id)
-                    if start_index is None:
-                        if not validated:
-                            raise HTTPException(
-                                status_code=status.HTTP_409_CONFLICT,
-                                detail={
-                                    "message": "resume window exceeded or event id not found",
-                                    "code": "resume_window_exceeded",
-                                    "last_event_id": from_id,
-                                    "event_log_size": len(events),
-                                    "first_seq": events[0].seq if events else None,
-                                    "last_seq": events[-1].seq if events else None,
-                                },
-                            )
-                        events = []
-                    else:
-                        events = events[start_index:]
-                if isinstance(limit, int) and limit > 0:
-                    events = events[-limit:]
-                for event in events:
-                    queue.put_nowait(event)
-            else:
-                # Snapshot-on-reconnect: if the client connects without replay/from_id,
-                # push the most recent todo snapshot into its queue so the TUI can
-                # converge even when history is missing (resume window exceeded, etc).
-                envelope = record.metadata.get("todo_last_update") if isinstance(record.metadata, dict) else None
+            self._ensure_event_sequence(record)
+            self._prune_replay(record)
+            events = list(record.event_log)
+            if from_id:
+                start_index = self._resolve_start_index(events, from_id)
+                if start_index is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=self._resume_gap_detail(record, from_id),
+                    )
+                cursor_event = events[start_index - 1]
+                state.last_delivered_sequence = cursor_event.seq
+                state.last_delivered_event_id = cursor_event.event_id
+                events = events[start_index:]
+            elif replay_enabled and isinstance(limit, int) and limit > 0:
+                events = events[-limit:]
+            elif not replay_enabled:
+                events = []
+
+            record.subscribers[queue] = state
+            if include_open_ack:
+                self._enqueue_subscription(
+                    record,
+                    state,
+                    SessionEvent(
+                        EventType.STREAM_OPEN,
+                        record.session_id,
+                        replay_retention_facts(
+                            record.event_log,
+                            head_sequence=record.event_seq,
+                            retained_history_partial=record.replay_history_partial,
+                        ),
+                        stable_cursor=False,
+                    ),
+                )
+            for event in events:
+                self._enqueue_subscription(record, state, event)
+
+            if not replay_enabled and not state.gapped:
+                envelope = (
+                    record.metadata.get("todo_last_update")
+                    if isinstance(record.metadata, dict)
+                    else None
+                )
                 if not isinstance(envelope, dict):
                     runner = getattr(record, "runner", None)
                     workspace_dir = runner.get_workspace_dir() if runner else None
                     if workspace_dir:
                         try:
                             from agentic_coder_prototype.todo import TodoStore
-                            from agentic_coder_prototype.todo.projection import project_store_snapshot_to_tui_envelope
+                            from agentic_coder_prototype.todo.projection import (
+                                project_store_snapshot_to_tui_envelope,
+                            )
 
                             store = TodoStore(str(workspace_dir), load_existing=True)
-                            envelope = project_store_snapshot_to_tui_envelope(store.snapshot(), scope_key="main", scope_label="main")
+                            envelope = project_store_snapshot_to_tui_envelope(
+                                store.snapshot(),
+                                scope_key="main",
+                                scope_label="main",
+                            )
                         except Exception:
                             envelope = None
                 if isinstance(envelope, dict):
-                    queue.put_nowait(
+                    self._enqueue_subscription(
+                        record,
+                        state,
                         SessionEvent(
                             EventType.TOOL_RESULT,
                             record.session_id,
-                            {"call_id": f"todo:snapshot:connect:{uuid.uuid4().hex[:8]}", "todo": envelope},
-                        )
+                            {
+                                "call_id": f"todo:snapshot:connect:{uuid.uuid4().hex[:8]}",
+                                "todo": envelope,
+                            },
+                            stable_cursor=False,
+                        ),
                     )
-            record.subscribers.add(queue)
+        return state
 
     async def _unregister_subscriber(
         self,
@@ -264,38 +334,95 @@ class SessionService:
         queue: "asyncio.Queue[Optional[SessionEvent]]",
     ) -> None:
         async with record.dispatch_lock:
-            try:
-                record.subscribers.discard(queue)
-            except Exception:
-                pass
+            record.subscribers.pop(queue, None)
 
     async def _dispatch_events(self, record: SessionRecord) -> None:
-        """Fan-out events from the producer queue to all subscribers."""
+        """Log stable events and fan them out without hiding subscriber gaps."""
         while True:
             event = await record.event_queue.get()
             if event is None:
                 break
             async with record.dispatch_lock:
-                record.event_seq += 1
-                if event.seq is None:
-                    event.seq = record.event_seq
-                else:
-                    record.event_seq = max(record.event_seq, int(event.seq))
-                record.event_log.append(event)
-                if record.subscribers:
-                    for subscriber in list(record.subscribers):
-                        try:
-                            subscriber.put_nowait(event)
-                        except asyncio.QueueFull:
-                            # Drop on overflow; subscribers are best-effort observers.
-                            continue
+                if event.stable_cursor:
+                    record.event_seq += 1
+                    if event.seq is None:
+                        event.seq = record.event_seq
+                    else:
+                        record.event_seq = max(record.event_seq, int(event.seq))
+                    record.event_log.append(event)
+                    self._prune_replay(record)
+                for subscriber in list(record.subscribers.values()):
+                    self._enqueue_subscription(record, subscriber, event)
+            if event.stable_cursor:
+                await self.registry.persist(
+                    record,
+                    terminal_event=event
+                    if event.type
+                    in {
+                        EventType.TURN_COMPLETED,
+                        EventType.TURN_FAILED,
+                        EventType.TURN_CANCELLED,
+                    }
+                    else None,
+                )
         async with record.dispatch_lock:
-            if record.subscribers:
-                for subscriber in list(record.subscribers):
-                    try:
-                        subscriber.put_nowait(None)
-                    except asyncio.QueueFull:
-                        continue
+            for subscriber in list(record.subscribers.values()):
+                try:
+                    subscriber.queue.put_nowait(None)
+                except asyncio.QueueFull:
+                    self._mark_subscription_gap(record, subscriber)
+
+    def _enqueue_subscription(
+        self,
+        record: SessionRecord,
+        subscriber: SubscriberState,
+        event: SessionEvent,
+    ) -> None:
+        if subscriber.gapped:
+            return
+        try:
+            subscriber.queue.put_nowait(event)
+        except asyncio.QueueFull:
+            self._mark_subscription_gap(record, subscriber)
+
+    def _mark_subscription_gap(
+        self,
+        record: SessionRecord,
+        subscriber: SubscriberState,
+    ) -> None:
+        if subscriber.gapped:
+            return
+        subscriber.gapped = True
+        record.subscribers.pop(subscriber.queue, None)
+        while True:
+            try:
+                subscriber.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+        replay = replay_retention_facts(
+            record.event_log,
+            head_sequence=record.event_seq,
+            retained_history_partial=record.replay_history_partial,
+        )
+        subscriber.queue.put_nowait(
+            SessionEvent(
+                EventType.STREAM_GAP,
+                record.session_id,
+                {
+                    "code": "subscriber_overflow",
+                    "last_safely_delivered_cursor": {
+                        "sequence": subscriber.last_delivered_sequence,
+                        "event_id": subscriber.last_delivered_event_id,
+                    },
+                    "recovery": {
+                        "action": OVERFLOW_RECOVERY_ACTION,
+                        "snapshot_action": SNAPSHOT_RECOVERY_ACTION,
+                    },
+                    **replay,
+                },
+                stable_cursor=False,
+            )
+        )
 
     async def list_sessions(self):
         return await self.registry.list()
@@ -411,19 +538,12 @@ class SessionService:
             if not (replay or from_id):
                 return
             self._ensure_event_sequence(record)
+            self._prune_replay(record)
             events = list(record.event_log)
-            start_index = self._resolve_start_index(events, from_id)
-            if start_index is None:
+            if self._resolve_start_index(events, from_id) is None:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail={
-                        "message": "resume window exceeded or event id not found",
-                        "code": "resume_window_exceeded",
-                        "last_event_id": from_id,
-                        "event_log_size": len(events),
-                        "first_seq": events[0].seq if events else None,
-                        "last_seq": events[-1].seq if events else None,
-                    },
+                    detail=self._resume_gap_detail(record, from_id),
                 )
 
     def _ensure_event_sequence(self, record: SessionRecord) -> None:
@@ -435,6 +555,36 @@ class SessionService:
             else:
                 seq = max(seq, int(event.seq))
         record.event_seq = seq
+
+    def _prune_replay(self, record: SessionRecord) -> None:
+        cutoff = int(time.time() * 1000) - REPLAY_RETENTION_MAX_AGE_MS
+        while record.event_log and (
+            len(record.event_log) > REPLAY_RETENTION_MAX_EVENTS
+            or int(record.event_log[0].created_at) < cutoff
+        ):
+            record.event_log.popleft()
+            record.replay_history_partial = True
+
+    def _resume_gap_detail(self, record: SessionRecord, from_id: str) -> dict[str, Any]:
+        replay = replay_retention_facts(
+            record.event_log,
+            head_sequence=record.event_seq,
+            retained_history_partial=record.replay_history_partial,
+        )
+        last_retained_sequence = record.event_log[-1].seq if record.event_log else None
+        return {
+            "message": "resume cursor is outside the retained replay window",
+            "code": "resume_window_exceeded",
+            "last_event_id": from_id,
+            "first_retained_sequence": replay["earliestRetainedSequence"],
+            "last_retained_sequence": last_retained_sequence,
+            "recovery": {
+                "action": SNAPSHOT_RECOVERY_ACTION,
+                "snapshot": {"method": "GET", "resource": "session_snapshot"},
+                "reconnect": {"method": "GET", "resource": "session_event_stream", "cursor": None},
+            },
+            **replay,
+        }
 
     def _resolve_start_index(self, events: list[SessionEvent], from_id: str) -> Optional[int]:
         seq_value: Optional[int] = None
@@ -453,24 +603,61 @@ class SessionService:
         return None
 
     async def stop_session(self, session_id: str) -> None:
-        record = await self.ensure_session(session_id)
-        runner: Optional[SessionRunner] = getattr(record, "runner", None)
-        if runner:
-            await runner.stop()
-        await self.registry.update_status(session_id, SessionStatus.STOPPED)
+        record = await self.registry.get(session_id)
+        if record is not None:
+            runner: Optional[SessionRunner] = getattr(record, "runner", None)
+            if runner:
+                await runner.stop()
+            await self.registry.update_status(session_id, SessionStatus.STOPPED)
         await self.registry.delete(session_id)
 
     async def send_input(self, session_id: str, payload: SessionInputRequest) -> SessionInputResponse:
         record = await self.ensure_session(session_id)
+        attachments = tuple(
+            item.strip()
+            for item in (payload.attachments or [])
+            if isinstance(item, str) and item.strip()
+        )
+        key_digest = identity_digest(payload.client_message_id)
+        existing = record.submissions_by_key.get(payload.client_message_id)
+        if existing is None:
+            existing = record.submissions_by_key_digest.get(key_digest)
+        if existing is not None:
+            expected_body_digest = existing.body_digest or submission_body_digest(
+                existing.content,
+                existing.attachments,
+            )
+            if expected_body_digest != submission_body_digest(payload.content, attachments):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "input_idempotency_conflict",
+                        "message": "client_message_id was already used with a different input body",
+                        "turn_id": existing.turn_id,
+                    },
+                )
+            return SessionInputResponse(
+                client_message_id=payload.client_message_id,
+                input_id=existing.input_id,
+                turn_id=existing.turn_id,
+                disposition="deduplicated",
+                original_disposition=existing.original_disposition,
+            )
+
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
         try:
-            return await runner.submit_input(
+            response = await runner.submit_input(
                 payload.content,
-                attachments=list(payload.attachments or []),
+                attachments=list(attachments),
                 client_message_id=payload.client_message_id,
             )
+            turn = record.turns_by_id.get(response.turn_id)
+            if turn is not None:
+                turn.body_digest = submission_body_digest(payload.content, attachments)
+            await self.registry.persist(record)
+            return response
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except TurnContractConflict as exc:
@@ -488,15 +675,56 @@ class SessionService:
         payload: SessionTurnCancelRequest,
     ) -> SessionTurnCancelResponse:
         record = await self.ensure_session(session_id)
+        key_digest = identity_digest(payload.cancellation_request_key)
+        existing = record.cancellations_by_key.get(payload.cancellation_request_key)
+        if existing is None:
+            existing = record.cancellations_by_key_digest.get(key_digest)
+        if existing is not None:
+            expected_body_digest = existing.body_digest or cancellation_body_digest(
+                existing.turn_id,
+                existing.reason,
+            )
+            if expected_body_digest != cancellation_body_digest(turn_id, payload.reason):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "cancellation_idempotency_conflict",
+                        "message": (
+                            "cancellation_request_key was already used with a different target or body"
+                        ),
+                        "turn_id": existing.turn_id,
+                    },
+                )
+            return SessionTurnCancelResponse(
+                cancellation_request_id=existing.cancellation_request_id,
+                cancellation_request_key=payload.cancellation_request_key,
+                input_id=existing.input_id,
+                turn_id=existing.turn_id,
+                disposition="deduplicated",
+                original_disposition=existing.original_disposition,
+            )
+
+        turn = record.turns_by_id.get(turn_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
+            if turn is not None and turn.terminal_outcome is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "turn_already_terminal",
+                        "message": "target turn already has a terminal outcome",
+                        "turn_id": turn_id,
+                    },
+                )
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
         try:
-            return await runner.cancel_turn(
+            response = await runner.cancel_turn(
                 turn_id,
                 cancellation_request_key=payload.cancellation_request_key,
                 reason=payload.reason,
             )
+            await self.registry.persist(record)
+            return response
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except TurnContractConflict as exc:

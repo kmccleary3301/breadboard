@@ -250,6 +250,12 @@ def _stable_json_hash(payload: Any) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+def _encode_sse_event(event: SessionEvent) -> bytes:
+    payload = json.dumps(event.asdict(), separators=(",", ":"))
+    cursor_line = f"id: {event.seq}\n" if event.stable_cursor and event.seq is not None else ""
+    return f"{cursor_line}data: {payload}\n\n".encode("utf-8")
+
+
 def create_app(service: SessionService | None = None, include_atp_routes: bool | None = None) -> FastAPI:
     engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
@@ -385,10 +391,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                 extra_delay = latency_ms + (random.random() * jitter_ms)
                 if extra_delay > 0:
                     await asyncio.sleep(extra_delay / 1000.0)
-            payload = json.dumps(event.asdict(), separators=(",", ":"))
-            event_id = event.seq if event.seq is not None else event.event_id
-            yield f"id: {event_id}\n".encode("utf-8")
-            yield f"data: {payload}\n\n".encode("utf-8")
+            yield _encode_sse_event(event)
 
     def _registry_payloads() -> list[tuple[Path, dict[str, Any]]]:
         registries_dir = e4_repo_root / "contracts" / "kernel" / "registries"
@@ -938,6 +941,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                 limit=limit,
                 from_id=from_id,
                 validated=True,
+                include_open_ack=True,
             )
         except HTTPException as exc:
             raise exc

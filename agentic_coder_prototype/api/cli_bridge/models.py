@@ -6,7 +6,7 @@ import enum
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, validator
 
 
 class SessionStatus(str, enum.Enum):
@@ -65,6 +65,17 @@ class SessionSummary(BaseModel):
     turn_admission: TurnAdmission = TurnAdmission.IDLE
     active_turn_id: Optional[str] = None
     queued_turn_count: int = 0
+    replay_retention: Dict[str, Any] = Field(default_factory=dict, alias="replayRetention")
+    earliest_retained_sequence: Optional[int] = Field(default=None, alias="earliestRetainedSequence")
+    earliest_retained_event_id: Optional[str] = Field(default=None, alias="earliestRetainedEventId")
+    head_sequence: int = Field(default=0, alias="headSequence")
+    head_event_id: Optional[str] = Field(default=None, alias="headEventId")
+    retained_history: Literal["complete", "partial"] = Field(default="complete", alias="retainedHistory")
+    session_replay_contract_digest: str = Field(default="", alias="sessionReplayContractDigest")
+    terminal_turns: List[Dict[str, Any]] = Field(default_factory=list, alias="terminalTurns")
+    terminal_event_envelopes: List[Dict[str, Any]] = Field(default_factory=list, alias="terminalEventEnvelopes")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ErrorEnvelope(BaseModel):
