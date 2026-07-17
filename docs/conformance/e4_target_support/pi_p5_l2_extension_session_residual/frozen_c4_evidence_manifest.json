@@ -1,9 +1,9 @@
 {
   "artifacts": [
     {
-      "path": "config/e4_target_freeze_manifest.yaml",
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_target_freeze_manifest.yaml",
       "role": "freeze_manifest",
-      "sha256": "sha256:34b38f0eb690e8940d6b8c6bd8cf623c795f9239fab75343f1aea3b46bdc1d6f"
+      "sha256": "sha256:bec77f0821ff03f790536a728229e6fb892be6eae11e1f5f294279f3042c8999"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json",
@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:dcff72423049f786bd82f63ae9bf4bcccc9ee7e698165e414b6c2b899badca7b"
+      "sha256": "sha256:228fc4ed2ac0779742702c344fd564ef6f782634c1ecec83249ed745b22ef216"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json",

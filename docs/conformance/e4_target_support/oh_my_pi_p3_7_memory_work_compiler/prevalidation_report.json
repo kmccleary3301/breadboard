@@ -1,0 +1,22 @@
+{
+  "accepted": true,
+  "checks": [
+    {
+      "name": "schema_validation",
+      "passed": true
+    },
+    {
+      "name": "machine_comparator_assertions",
+      "passed": true
+    },
+    {
+      "name": "secret_scan",
+      "passed": true
+    }
+  ],
+  "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+  "generated_at_utc": "2026-07-03T07:30:00Z",
+  "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+  "ok": true,
+  "schema_version": "bb.e4.prevalidation_report.v1"
+}

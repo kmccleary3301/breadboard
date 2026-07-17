@@ -29,16 +29,16 @@
   "evidence_manifest": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json",
   "gate_errors": [],
   "hashes": {
-    "evidence_manifest": "sha256:5069fda926ec31912686468c41138c235b80d11ab6315f9f69107308b2d2c3d8",
-    "freeze_manifest": "sha256:de628cd1c653dca7a011c3953f678f1c630c73b1647dd673801ddbeaa037d0e5",
-    "freeze_manifest_row": "sha256:eb8e4807da21d37e88280deb188f533d5e789e66196246e7c7417347c486dac5",
-    "support_claim": "sha256:d64eda500b55a699483f6661d3d9498a23c3dbef19db20fd2c4528e4a956fc18"
+    "evidence_manifest": "sha256:16e831a8104c363fa29e49e7e20003cf23890965cb56b103b284a9dffd136a7c",
+    "freeze_manifest": "sha256:5eb46e9bb2601b71aef89b50e8a8f7816f8174585d7fd9a92767037374e361e7",
+    "freeze_manifest_row": "sha256:f931b518016ae1c13d2d1389ec59595b79b79e6360a979e310605421c407c9c6",
+    "support_claim": "sha256:e503f86220f14d4a1f346e34b931eaad4aede6ab44b17ce6086d59a90b28964f"
   },
   "ok": true,
   "pin_stale_count": 0,
   "refs": {
     "evidence_manifest": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json",
-    "freeze_manifest": "breadboard_repo_integration_main_20260326/config/e4_target_freeze_manifest.yaml",
+    "freeze_manifest": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml",
     "support_claim": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json"
   },
   "schema_version": "bb.e4.c4_chain_validation_report.v1",

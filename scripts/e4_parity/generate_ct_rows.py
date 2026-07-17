@@ -122,6 +122,54 @@ def _timeout_seconds(lane: Mapping[str, Any], lane_def: Mapping[str, Any] | None
     return 240 if lane.get("phase") == "P5" else 180
 
 
+def _is_retired_evidence_lane(lane: Mapping[str, Any]) -> bool:
+    return lane.get("status") != "accepted" and lane.get("evidence_status") == "accepted"
+
+
+def _retired_evidence_scenario(lane: Mapping[str, Any]) -> dict[str, Any]:
+    artifacts_root = lane.get("artifacts_root")
+    ct = lane.get("ct")
+    if not isinstance(artifacts_root, str) or not artifacts_root:
+        raise CtRowGenerationError(
+            f"retired lane {lane.get('lane_id', '<unknown>')} missing artifacts_root"
+        )
+    if not isinstance(ct, Mapping) or not isinstance(ct.get("test_id"), str):
+        raise CtRowGenerationError(
+            f"retired lane {lane.get('lane_id', '<unknown>')} missing ct.test_id"
+        )
+    lane_id = str(lane["lane_id"])
+    output_path = f"artifacts/conformance/node_gate/ct_frozen_{lane_id}.json"
+    return {
+        "assertions": {
+            "json_files": [
+                {
+                    "checks": [
+                        {"equals": True, "path": "ok"},
+                        {"length_equals": 0, "path": "errors"},
+                        {"equals": str(lane["config_id"]), "path": "claimed_scope.config_id"},
+                        {"equals": lane_id, "path": "claimed_scope.lane_id"},
+                        {"equals": str(lane["provider_model"]), "path": "claimed_scope.provider_model"},
+                        {"equals": str(lane["sandbox_mode"]), "path": "claimed_scope.sandbox_mode"},
+                    ],
+                    "path": output_path,
+                }
+            ]
+        },
+        "command": [
+            "python",
+            "scripts/e4_parity/validate_frozen_e4_evidence.py",
+            "--validation-report",
+            f"{artifacts_root}/frozen_c4_validation_report.json",
+            "--json-out",
+            output_path,
+        ],
+        "description": f"{lane_id}: validate hash-bound frozen evidence for a retired producer",
+        "gate_level": _phase_gate_level(lane),
+        "test_id": str(ct["test_id"]),
+        "timeout_seconds": 60,
+    }
+
+
 def generate_inventory_scenarios(
     inventory: Mapping[str, Any],
     *,
@@ -140,6 +188,8 @@ def generate_inventory_scenarios(
         if ct is None:
             continue
         if lane.get("status") != "accepted":
+            if _is_retired_evidence_lane(lane):
+                scenarios.append(_retired_evidence_scenario(lane))
             continue
         if not isinstance(ct, Mapping):
             raise CtRowGenerationError(f"lane {lane.get('lane_id', '<unknown>')} ct must be object or null")

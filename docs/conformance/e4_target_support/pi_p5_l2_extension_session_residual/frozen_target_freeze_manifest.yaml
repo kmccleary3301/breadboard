@@ -1,0 +1,46 @@
+schema_version: e4_target_freeze_manifest_v1
+manifest_updated_utc: '2026-07-01T18:37:08Z'
+notes:
+- Retained immutable freeze row for a superseded evidence-accounted lane.
+e4_configs:
+  pi_p5_l2_extension_session_residual_v1:
+    config_path: agent_configs/misc/pi_p5_l2_extension_session_residual_v1.yaml
+    harness:
+      family: pi
+      upstream_repo: https://github.com/badlogic/pi-mono.git
+      upstream_ref: archive:01_pi_mono_git_tracked.zip
+      upstream_commit: archive:sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
+      upstream_commit_date: '2026-07-03T08:30:00Z'
+      upstream_release_label: '@mariozechner/pi-coding-agent@0.57.1'
+      upstream_version: '@mariozechner/pi-coding-agent@0.57.1'
+      provenance:
+        kind: archive_snapshot_without_git_dir
+        source_archive:
+          path: docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip
+          sha256: sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b
+          bytes: 4755355
+        source_freeze_ref: docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json#sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602
+        package:
+          name: '@mariozechner/pi-coding-agent'
+          version: 0.57.1
+      runtime_surface:
+        provider_model: no-provider
+        sandbox_mode: read-only-no-secret
+        target_profile_id: pi_p5_l2_extension_session_residual
+    calibration_anchor:
+      class: raw_target_capture
+      scenario_id: pi_p5_l2_extension_session_residual
+      run_id: 20260703_pi_p5_l2_extension_session_residual_capture
+      evidence_paths:
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json
+      - docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/prevalidation_report.json
+      - docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json
+      - docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json
+    snapshot_source_entry: pi_p5_l2_extension_session_residual_v1
+    snapshot_tag: pi_0_57_1_p5_l2_extension_session_residual_20260703

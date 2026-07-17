@@ -72,11 +72,11 @@
     "No score is claimed for P5 Pi lanes or P8 final readiness from this P3 helper/runtime evidence.",
     "No provider-authenticated, danger-full-access, network, browser, MCP, or model-inference behavior is claimed."
   ],
-  "freeze_ref": "config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:eb8e4807da21d37e88280deb188f533d5e789e66196246e7c7417347c486dac5",
+  "freeze_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:f931b518016ae1c13d2d1389ec59595b79b79e6360a979e310605421c407c9c6",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "non_target_accounting",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_b650fa627d57aa92#sha256:66a5ee34199be19b992ec9cabbeed31b3940c1d18eda943c5e8214362cca88c1"
+    "config/e4_lanes/evidence_inputs/e4_lane_ledger_seed_extensions.v1.json#feat_b650fa627d57aa92#sha256:d636db57a95cd95fff6e14077baab6a828d77e4262b3d289a319ba560c57502f"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",

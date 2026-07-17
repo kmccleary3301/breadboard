@@ -144,6 +144,46 @@ def test_managed_score_rows_include_retired_inventory_producers(monkeypatch: Any
     }
 
 
+def test_refresh_managed_lane_score_rows_replaces_retired_producer_refs(
+    monkeypatch: Any,
+) -> None:
+    lane = {"lane_id": "retired_lane", "score_row_id": "score_retired"}
+    stale_row = {
+        "score_row_id": "score_retired",
+        "live_validator_ref": "artifacts/conformance/node_gate/retired.json#sha256:stale",
+    }
+    p8_row = {"score_row_id": builder.P8_SCORE_ROW_ID, "points": 35}
+    subledger = {
+        "score_rows": [
+            {"score_row_id": "score_unmanaged", "points": 10},
+            stale_row,
+            p8_row,
+        ]
+    }
+    monkeypatch.setattr(builder, "_accounted_lanes", lambda: [lane])
+    monkeypatch.setattr(
+        builder,
+        "build_lane_score_row",
+        lambda candidate, existing: {
+            "score_row_id": candidate["score_row_id"],
+            "live_validator_ref": "docs/conformance/e4_target_support/retired/frozen_c4_validation_report.json#sha256:fresh",
+            "previous_ref": existing["live_validator_ref"],
+        },
+    )
+
+    builder._refresh_managed_lane_score_rows(subledger)
+
+    assert subledger["score_rows"] == [
+        {"score_row_id": "score_unmanaged", "points": 10},
+        {
+            "score_row_id": "score_retired",
+            "live_validator_ref": "docs/conformance/e4_target_support/retired/frozen_c4_validation_report.json#sha256:fresh",
+            "previous_ref": stale_row["live_validator_ref"],
+        },
+        p8_row,
+    ]
+
+
 def test_retired_scored_lanes_use_hash_bound_frozen_validators() -> None:
     retired_lanes = [
         lane
