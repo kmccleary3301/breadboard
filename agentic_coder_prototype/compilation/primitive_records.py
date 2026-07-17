@@ -14,8 +14,23 @@ _COMMON_SCHEMA_NAME = "bb.kernel.common.v1.schema.json"
 _COMMON_SCHEMA_URI = f"https://breadboard.dev/contracts/kernel/schemas/{_COMMON_SCHEMA_NAME}"
 _E4_COMMON_SCHEMA_NAME = "bb.e4.common.v1.schema.json"
 _E4_COMMON_SCHEMA_URI = f"https://breadboard.dev/contracts/kernel/schemas/{_E4_COMMON_SCHEMA_NAME}"
-_VALIDATION_ONLY_ID_FIELDS = {"bb.coordination_view.v1": "view_id", "bb.work_item.v2": "work_item_id", "bb.work_placement.v1": "placement_id"}
-VALIDATION_ONLY_SCHEMA_VERSIONS = frozenset(_VALIDATION_ONLY_ID_FIELDS)
+_VALIDATION_ONLY_ID_FIELDS = {
+    "bb.coordination_view.v1": "view_id",
+    "bb.work_placement.v1": "placement_id",
+    "bb.work_item.v1": "work_item_id",
+    "bb.coordination_slice.v2": "slice_id",
+    "bb.coordination_pack.v3": "pack_id",
+}
+_FROZEN_VALIDATION_ID_FIELDS = {
+    "bb.task.v1": "task_id",
+    "bb.distributed_task_descriptor.v1": "task_id",
+    "bb.coordination_reference_slice.v1": "scenario_id",
+    "bb.coordination_longrun_reference_slice.v1": "scenario_id",
+    "bb.coordination_multi_worker_reference_slice.v1": "scenario_id",
+    "bb.coordination_delegated_verification_reference_slice.v1": "scenario_id",
+    "bb.coordination_intervention_reference_slice.v1": "scenario_id",
+}
+VALIDATION_ONLY_SCHEMA_VERSIONS = frozenset(_VALIDATION_ONLY_ID_FIELDS | _FROZEN_VALIDATION_ID_FIELDS)
 
 
 class PrimitiveCompileError(ValueError):
@@ -102,7 +117,7 @@ def finalize_record(spec: PrimitiveSpec, record: Mapping[str, Any], *, validate:
         result[spec.hash_field] = sha256_ref(canonical_record_bytes(preimage))
 
     if validate:
-        _validate_record(spec, result)
+        _validate_record(spec, result, semantic=True)
 
     return result
 def validate_record(spec: PrimitiveSpec, record: Mapping[str, Any]) -> dict[str, Any]: result = copy.deepcopy(dict(record)); _validate_record(spec, result, semantic=True); return result
@@ -122,13 +137,11 @@ _CORE_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
     ("bb.provider_route.v1", "route_id", None),
     ("bb.memory_compaction_plan.v1", "plan_id", None),
     ("bb.transcript_continuation_patch.v1", "patch_id", None),
-    ("bb.work_item.v1", "work_item_id", None),
+    ("bb.work_item.v2", "work_item_id", None),
     ("bb.side_effect_broker.v1", "broker_id", None),
     ("bb.projection_event.v1", "projection_event_id", None),
     ("bb.effective_operation_policy.v1", "policy_id", None),
     ("bb.effective_tool_surface.v1", "surface_id", "surface_hash"),
-    ("bb.coordination_slice.v2", "slice_id", None),
-    ("bb.coordination_pack.v3", "pack_id", None),
     ("bb.environment_selector.v2", "selector_id", None),
     ("bb.kernel_event.v2", "event_id", None),
     ("bb.tool_call.v2", "call_id", None),
@@ -170,17 +183,20 @@ def _build_spec_registry(schema_specs: tuple[tuple[str, str, str | None], ...]) 
 CORE_SPEC_REGISTRY: dict[str, PrimitiveSpec] = _build_spec_registry(_CORE_SCHEMA_SPECS)
 E4_SPEC_REGISTRY: dict[str, PrimitiveSpec] = _build_spec_registry(_E4_SCHEMA_SPECS)
 SPEC_REGISTRY: dict[str, PrimitiveSpec] = {**CORE_SPEC_REGISTRY, **E4_SPEC_REGISTRY}
+FROZEN_VALIDATION_SPEC_REGISTRY: dict[str, PrimitiveSpec] = _build_spec_registry(
+    tuple((version, id_field, None) for version, id_field in _FROZEN_VALIDATION_ID_FIELDS.items())
+)
 
 
 def get_spec(schema_version: str) -> PrimitiveSpec:
     try:
-        return SPEC_REGISTRY[schema_version]
+        return SPEC_REGISTRY.get(schema_version) or FROZEN_VALIDATION_SPEC_REGISTRY[schema_version]
     except KeyError as exc:
         raise PrimitiveCompileError(
             schema_version=schema_version,
             record_id=None,
             errors=[("", "unknown schema_version")],
-            hint="use one of SPEC_REGISTRY.keys()",
+            hint="use one of SPEC_REGISTRY.keys() or a frozen validation schema",
         ) from exc
 
 
@@ -209,8 +225,8 @@ def _schema_registry() -> Registry:
         ]
     )
 
-    for schema_version, _, _ in _SCHEMA_SPECS:
-        schema_name = f"{schema_version}.schema.json"
+    for schema_path in sorted(_SCHEMAS_DIR.glob("bb.*.schema.json")):
+        schema_name = schema_path.name
         if schema_name in registered_names:
             continue
         schema = _load_json(_SCHEMAS_DIR / schema_name)

@@ -6,63 +6,25 @@
   "target_version": "@oh-my-pi/pi-coding-agent@16.2.13",
   "package_ref": null,
   "kind": "non_target_accounting",
-  "status": "accepted",
+  "status": "superseded",
   "points": 15,
   "capture": {
-    "strategy": "adapter",
+    "strategy": "replay_dump",
     "argv": null,
     "inputs": [
-      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
-      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
-      "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
-      "config/e4_lanes/evidence_inputs/oh_my_pi_main_5356713e_freeze_provenance.v1.json",
+      "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+      "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
       "agentic_coder_prototype/compilation/helper_runtime_primitives.py",
-      "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
-      "scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
-      "scripts/e4_parity/adapters/oh_my_pi_p3_remaining_projections.py",
-      "scripts/e4_parity/adapters/oh_my_pi_p3_packet.py",
-      "scripts/e4_parity/fixtures/p3_lane_fixtures.py",
-      "contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json",
-      "contracts/kernel/schemas/bb.capability_registry.v1.schema.json",
-      "contracts/kernel/schemas/bb.extension_hook_execution.v1.schema.json",
-      "contracts/kernel/schemas/bb.resource_ref.v1.schema.json",
-      "contracts/kernel/schemas/bb.resource_access.v1.schema.json",
-      "contracts/kernel/schemas/bb.blob_ref.v1.schema.json",
-      "contracts/kernel/schemas/bb.external_protocol_session.v1.schema.json",
-      "contracts/kernel/schemas/bb.provider_route.v1.schema.json",
-      "contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json",
       "contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
-      "contracts/kernel/schemas/bb.work_item.v1.schema.json",
-      "contracts/kernel/schemas/bb.projection_event.v1.schema.json",
-      "contracts/kernel/schemas/bb.side_effect_broker.v1.schema.json"
+      "contracts/kernel/schemas/bb.work_item.v1.schema.json"
     ],
     "workspace_template": null,
-    "adapter": "oh_my_pi_compiler_capture"
+    "adapter": null
   },
   "normalize": {
     "translator": "identity",
     "mode": "identity",
     "config": {
-      "record_builders": [
-        {
-          "id": "p3_7_memory_compaction_plan",
-          "schema_version": "bb.memory_compaction_plan.v1",
-          "source": "scripts/e4_parity/fixtures/p3_lane_fixtures.py",
-          "projection": "p3_7_memory_compaction_plan",
-          "records": [
-            "memory_compaction_plan"
-          ]
-        },
-        {
-          "id": "p3_7_work_item",
-          "schema_version": "bb.work_item.v1",
-          "source": "scripts/e4_parity/fixtures/p3_lane_fixtures.py",
-          "projection": "p3_7_work_item",
-          "records": [
-            "work_item"
-          ]
-        }
-      ],
       "roles": {
         "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json",
         "compiled_records": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/compiled_records.json",
@@ -75,7 +37,7 @@
         "agent_config": "agent_configs/misc/oh_my_pi_p3_7_memory_work_compiler_v1.yaml"
       },
       "packet_constants": {
-        "summary": "BreadBoard P3.7 memory/work compiler support is accepted only for checkpoint-backed memory plan and work-item lifecycle records in the named helper/runtime fixture.",
+        "summary": "BreadBoard P3.7 memory/work evidence is frozen and validation-only; live v1 dispatch is retired.",
         "behavior_prefix": "memory_compaction",
         "comparator_expected": {
           "schema_validation_passed": true,

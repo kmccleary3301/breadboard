@@ -3,11 +3,12 @@
   "fixture_id": "tool_execution_denied_python_reference",
   "comparator_class": "normalized-trace-equal",
   "support_tier": "reference-engine",
-  "contract": "bb.tool_execution_outcome.v1",
+  "contract": "bb.tool_execution_outcome.v2",
   "reference_output": {
-    "schemaVersion": "bb.tool_execution_outcome.v1",
-    "callId": "call-run-shell-denied-1",
-    "terminalState": "denied",
+    "schema_version": "bb.tool_execution_outcome.v2",
+    "call_id": "call-run-shell-denied-1",
+    "terminal_state": "denied",
+    "completed_at_utc": "2026-03-08T00:00:00Z",
     "result": {
       "error": "blocked by policy",
       "guardrail": "workspace_guard_violation"

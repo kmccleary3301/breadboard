@@ -244,11 +244,6 @@ def test_canonical_transaction_groups_isolate_candidate_rebind_and_final_c4() ->
         for stage in candidate_stages
         if stage.stage_id == "materialize_oh_my_pi_source_freeze"
     )
-    pilot_lock = next(
-        stage
-        for stage in candidate_stages
-        if stage.stage_id == "materialize_oh_my_pi_p66_lane_lock"
-    )
     pilot_capture = next(
         stage
         for stage in candidate_stages
@@ -257,10 +252,8 @@ def test_canonical_transaction_groups_isolate_candidate_rebind_and_final_c4() ->
     assert source_freeze.writes == (
         "../docs_tmp/phase_15/source_freezes/oh_my_pi_main_latest",
     )
-    assert pilot_lock.writes[-1] == (
-        "../docs_tmp/phase_20/derived/oh_my_pi_main_5356713e_extracted"
-    )
-    assert pilot_capture.depends_on == (pilot_lock.stage_id,)
+    assert "materialize_oh_my_pi_p66_lane_lock" not in {stage.stage_id for stage in candidate_stages}
+    assert pilot_capture.depends_on == ("oh_my_pi_l6_tui_projection",) and pilot_capture.argv[pilot_capture.argv.index("--lane") + 1] == "oh_my_pi_p6_6_task_job_subagent_v2"
     source_north_star = next(
         stage for stage in driver.STAGES if stage.stage_id == "north_star_proof_packets"
     )

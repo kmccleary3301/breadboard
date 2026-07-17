@@ -83,12 +83,12 @@ def test_contract_tier_schema_and_product_spine_consumers_validate() -> None:
             ],
         ),
         (
-            "bb.task.v1",
-            "evidence",
+            "bb.work_item.v2",
+            "runtime_protocol",
             [
                 {
-                    "kind": "evidence_machinery",
-                    "path": "scripts/build_python_reference_contract_fixtures.py",
+                    "kind": "runtime_emission",
+                    "path": "agentic_coder_prototype/api/cli_bridge/runtime_emission.py",
                 }
             ],
         ),
@@ -132,7 +132,8 @@ def test_audited_contracts_name_their_actual_tier_and_consumer(
         ("bb.environment_selector.v2", "config_algebra"),
         ("bb.registry.v1", "config_algebra"),
         ("bb.tool_spec.v2", "config_algebra"),
-        ("bb.work_item.v1", "runtime_protocol"),
+        ("bb.task.v1", "frozen_legacy"),
+        ("bb.work_item.v1", "frozen_legacy"),
     ],
 )
 def test_descriptive_tier_without_a_product_consumer_remains_frozen(

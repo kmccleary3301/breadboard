@@ -32,7 +32,9 @@ from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH as 
 from scripts.validate_e4_c4_chain import validate_c4_chain
 from scripts.e4_parity.validators.registries import schema_generation_default
 
+ACCEPTED_REPLAY_SHA256 = "567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f"
 GENERATED_AT_UTC = "2026-07-03T10:45:00Z"
+IMMUTABLE_EVIDENCE_ERROR = "Pi P5 L2 accepted replay evidence is immutable; write and recapture are disabled"
 LANE_ID = "pi_p5_l2_extension_session_residual"
 CONFIG_ID = "pi_p5_l2_extension_session_residual_v1"
 CLAIM_ID = "pi_p5_l2_extension_session_residual_v1_c4_support_claim"
@@ -548,90 +550,68 @@ def visibility(model: bool, provider: bool, host: bool) -> dict[str, bool]:
     return {"model_visible": model, "provider_visible": provider, "host_visible": host}
 
 
-def compile_replay_records(probe: Mapping[str, Any]) -> dict[str, Any]:
-    event_names = [entry["event"] for entry in probe["extension"]["event_log"]]
-    session = probe["session"]
-    session_ref = f"pi.session_file:{Path(session['session_file']).name}"
-    branched_ref = f"pi.session_file:{Path(session['branched_session_path']).name}"
-    forked_ref = f"pi.session_file:{Path(session['forked_session_file']).name}"
-    extension_source_hash = sha256_file(TARGET_PROBE_SCRIPT_PATH)
-    transcript_hash = session["hashes"]["session_file"]
-    branch_hash = session["hashes"]["branched_session"]
-    fork_hash = session["hashes"]["forked_session"]
-    compaction_content = session["latest_compaction"]["summary"]
-    compaction_hash = sha256_text(compaction_content)
-    records: dict[str, Any] = {
-        "extension_hook_execution_provider": {
-            "schema_version": "bb.extension_hook_execution.v1",
-            "execution_id": f"{LANE_ID}_before_provider_request_exec",
-            "hook_id": f"{LANE_ID}_extension_before_provider_request",
-            "hook_type": "pre_model",
-            "event": {"event_id": f"{LANE_ID}_before_provider_request", "event_type": "before_provider_request", "event_ref": "pi.extension_event:before_provider_request", "emitted_at": GENERATED_AT_UTC, "resource_refs": [display_path(TARGET_PROBE_SCRIPT_PATH)]},
-            "status": "completed",
-            "started_at": GENERATED_AT_UTC,
-            "duration_ms": 0,
-            "effects": [{"effect_id": f"{LANE_ID}_provider_payload_patch", "effect_type": "tool_surface_patch", "effect_ref": "pi.provider_payload:residualHook", "status": "applied"}],
-            "model_provider_visibility": {"model_visible": True, "provider_visible": False, "model_render_ref": "pi.extension:before_provider_request", "provider_exchange_ref": None},
-        },
-        "extension_hook_execution_session": {
-            "schema_version": "bb.extension_hook_execution.v1",
-            "execution_id": f"{LANE_ID}_session_lifecycle_exec",
-            "hook_id": f"{LANE_ID}_extension_session_hooks",
-            "hook_type": "policy",
-            "event": {"event_id": f"{LANE_ID}_session_lifecycle", "event_type": "session_before_switch/session_before_fork/session_before_compact/session_before_tree", "event_ref": "pi.extension_event:session_lifecycle", "emitted_at": GENERATED_AT_UTC, "resource_refs": [session_ref, branched_ref, forked_ref]},
-            "status": "completed",
-            "started_at": GENERATED_AT_UTC,
-            "duration_ms": 0,
-            "effects": [
-                {"effect_id": f"{LANE_ID}_resume_allowed", "effect_type": "signal", "effect_ref": "pi.session_before_switch:cancel=false", "status": "applied"},
-                {"effect_id": f"{LANE_ID}_fork_restore_policy", "effect_type": "signal", "effect_ref": "pi.session_before_fork:skipConversationRestore=true", "status": "applied"},
-                {"effect_id": f"{LANE_ID}_compaction_override", "effect_type": "resource_access", "effect_ref": f"bb.memory_compaction_plan.v1:{LANE_ID}_memory_compaction_plan", "status": "applied"},
-                {"effect_id": f"{LANE_ID}_tree_summary", "effect_type": "log", "effect_ref": "pi.session_before_tree:summary", "status": "applied"},
-            ],
-            "model_provider_visibility": {"model_visible": True, "provider_visible": False, "model_render_ref": "pi.extension:session_lifecycle", "provider_exchange_ref": None},
-        },
-        "work_item_session_resume_fork": {
-            "schema_version": "bb.work_item.v1",
-            "work_item_id": f"{LANE_ID}_session_resume_fork_work",
-            "identity": {"task_id": session["session_id"], "task_kind": "workflow", "subagent_id": None, "distributed_task_id": None, "correlation_id": RUN_ID},
-            "delegation": {"parent_work_item_id": None, "parent_task_id": None, "delegated_by": {"actor_kind": "user", "actor_id": "pi-target-probe"}, "delegation_ref": None},
-            "state": {"status": "completed", "entered_at": GENERATED_AT_UTC, "reason": "Pi SessionManager continued recent session, reopened branched session, and forked session file provider-free.", "checkpoint_ref": branched_ref},
-            "owner": {"actor_kind": "agent", "actor_id": "pi-session-manager"},
-            "assignee": {"actor_kind": "agent", "actor_id": "pi-session-manager"},
-            "input_artifact_refs": [{"ref": session_ref, "artifact_kind": "transcript", "visibility": visibility(True, False, True)}],
-            "output_artifact_refs": [{"ref": branched_ref, "artifact_kind": "checkpoint", "visibility": visibility(True, False, True)}, {"ref": forked_ref, "artifact_kind": "checkpoint", "visibility": visibility(True, False, True)}],
-            "cancellation_policy": {"mode": "cooperative", "cancellable_by": [{"actor_kind": "user", "actor_id": "pi-user"}], "propagate_to_children": False, "on_cancel": "checkpoint_then_stop"},
-            "resume_policy": {"mode": "checkpoint", "resume_from_ref": branched_ref, "requires_approval": False, "wake_refs": ["pi.session_before_switch:resume"]},
-            "visibility": visibility(True, False, True),
-        },
-        "memory_compaction_plan": {
-            "schema_version": "bb.memory_compaction_plan.v1",
-            "plan_id": f"{LANE_ID}_memory_compaction_plan",
-            "transcript_refs": [{"transcript_id": session["session_id"], "ref": session_ref, "start_seq": 0, "end_seq": len(session["session_file_entry_types"]) - 1, "hash": transcript_hash, "visibility": visibility(True, False, True)}],
-            "trigger": {"kind": "manual", "source_ref": "pi.extension_event:session_before_compact", "reason": "Extension session_before_compact returned a provider-free compaction result.", "observed_tokens": 4242, "threshold_tokens": 3210},
-            "token_budget": {"model_context_window": 1000, "max_input_tokens": 900, "reserved_output_tokens": 100, "before_tokens": 4242, "target_after_tokens": 3210},
-            "preserved_refs": [{"ref_id": "first_kept", "ref_kind": "transcript_segment", "ref": f"{session_ref}#{session['user_entry_id']}", "hash": transcript_hash, "reason": "Pi compaction keeps the first referenced entry id.", "visibility": visibility(True, False, True)}],
-            "elided_refs": [{"ref_id": "pre_compaction_tail", "ref": f"{session_ref}#tail", "reason": "Older branch content summarized by compaction entry.", "token_estimate": 1032, "replacement_ref": f"bb.memory_compaction_plan.v1:{LANE_ID}_memory_compaction_plan#summary", "visibility": visibility(True, False, True)}],
-            "generated_refs": [{"ref_id": "compaction_summary", "ref_kind": "summary", "artifact_ref": f"{session_ref}#{session['latest_compaction']['id']}", "hash": compaction_hash, "produced_by": "pi-session-manager.appendCompaction"}],
-            "model_visible_insertions": [{"insertion_id": "compaction_summary_message", "position": "prefix", "content_ref": f"{session_ref}#{session['latest_compaction']['id']}", "content_hash": compaction_hash, "token_estimate": 5}],
-            "backend_contributions": [{"contribution_id": "pi_session_manager", "contributor_kind": "host", "contributor_id": "pi.core.session-manager", "input_refs": [session_ref], "output_refs": [f"{session_ref}#{session['latest_compaction']['id']}"], "visibility": visibility(True, False, True), "hash": compaction_hash}],
-            "hashes": {"algorithm": "sha256", "source_hash": transcript_hash, "plan_hash": sha256_json({"lane": LANE_ID, "event_names": event_names, "compaction": compaction_content}), "compacted_hash": compaction_hash},
-            "status": "applied",
-        },
-        "transcript_continuation_patch": {
-            "schema_version": "bb.transcript_continuation_patch.v1",
-            "patch_id": f"{LANE_ID}_resume_fork_patch",
-            "pre_state_ref": session_ref,
-            "appended_messages": session["context_messages"],
-            "appended_tool_events": probe["extension"]["event_log"],
-            "lineage_updates": [{"kind": "resume", "ref": session["continued_session_file"]}, {"kind": "fork", "ref": session["forked_session_file"], "parentSession": session["forked_header"].get("parentSession")}, {"kind": "branch", "ref": session["branched_session_path"], "parentSession": session["branched_header"].get("parentSession")}],
-            "compaction_markers": [{"entry_id": session["latest_compaction"]["id"], "summary": session["latest_compaction"]["summary"], "fromHook": session["latest_compaction"].get("fromHook", False)}],
-            "post_state_digest": fork_hash,
-            "lossiness_flags": ["compaction_summary_replaces_elided_branch_tail"],
-        },
+def _accepted_replay_bytes() -> bytes:
+    data = REPLAY_PATH.read_bytes()
+    replay_ref = f"{display_path(REPLAY_PATH)}#sha256:{ACCEPTED_REPLAY_SHA256}"
+    if sha256_file(REPLAY_PATH) != f"sha256:{ACCEPTED_REPLAY_SHA256}":
+        raise RuntimeError("accepted replay digest mismatch")
+    manifest, claim = read_json(EVIDENCE_MANIFEST_PATH), read_json(SUPPORT_CLAIM_PATH)
+    artifacts = manifest.get("artifacts") if isinstance(manifest, Mapping) else None
+    by_role = {row.get("role"): row for row in artifacts or [] if isinstance(row, Mapping)}
+    replay_row, claim_row = by_role.get("replay_ref"), by_role.get("support_claim_ref")
+    sources = ((by_role.get("capture_ref"), RAW_CAPTURE_PATH), (by_role.get("target_probe_output"), TARGET_PROBE_OUTPUT_PATH))
+    expected_derivation = [
+        f"{row.get('path')}#{row.get('sha256')}" for row, _path in sources if isinstance(row, Mapping)
+    ]
+    chain_ok = (
+        manifest.get("schema_version") == "bb.e4.evidence_manifest.v1"
+        and manifest.get("hash_algorithm") == "sha256"
+        and manifest.get("claim_id") == CLAIM_ID
+        and manifest.get("config_id") == CONFIG_ID
+        and manifest.get("lane_id") == LANE_ID
+        and claim.get("accepted") is True
+        and claim.get("schema_version") == "bb.e4.support_claim.v4"
+        and claim.get("claim_id") == CLAIM_ID
+        and claim.get("scope", {}).get("config_id") == CONFIG_ID
+        and claim.get("scope", {}).get("lane_id") == LANE_ID
+        and claim.get("evidence_manifest_ref") == display_path(EVIDENCE_MANIFEST_PATH)
+        and claim.get("replay_ref") == replay_ref
+        and len(expected_derivation) == 2
+        and all(
+            row.get("path") == display_path(path) and row.get("sha256") == sha256_file(path)
+            for row, path in sources
+            if isinstance(row, Mapping)
+        )
+        and claim.get("capture_ref") == expected_derivation[0]
+        and isinstance(replay_row, Mapping)
+        and replay_row.get("path") == display_path(REPLAY_PATH)
+        and replay_row.get("sha256") == f"sha256:{ACCEPTED_REPLAY_SHA256}"
+        and replay_row.get("derived_from") == expected_derivation
+        and isinstance(claim_row, Mapping)
+        and claim_row.get("path") == display_path(SUPPORT_CLAIM_PATH)
+        and claim_row.get("sha256") == sha256_file(SUPPORT_CLAIM_PATH)
+    )
+    if not chain_ok:
+        raise RuntimeError("accepted replay evidence derivation chain mismatch")
+    return data
+
+
+def load_accepted_replay_records() -> dict[str, Mapping[str, Any]]:
+    replay = json.loads(_accepted_replay_bytes())
+    if not isinstance(replay, Mapping):
+        raise TypeError("accepted replay must be a mapping")
+    records = replay.get("normalized_records")
+    if not isinstance(records, Mapping):
+        raise TypeError("accepted replay normalized_records must be a mapping")
+    validated = {
+        str(name): record
+        for name, record in records.items()
+        if isinstance(record, Mapping)
     }
-    validate_replay_records(records)
-    return records
+    if len(validated) != len(records):
+        raise TypeError("accepted replay normalized_records values must be mappings")
+    validate_replay_records(validated)
+    return validated
 
 
 def validate_record_schema(record_name: str, record: Mapping[str, Any]) -> list[str]:
@@ -688,88 +668,8 @@ def comparator_assertions(probe: Mapping[str, Any], replay_records: Mapping[str,
 
 
 def write_capture_replay_compare(*, recapture: bool = False) -> str:
-    existing_capture = None if recapture else load_existing_capture()
-    capture_mode = "reused" if existing_capture is not None else "live"
-    probe, setup = existing_capture if existing_capture is not None else run_target_capture()
-    replay_records = compile_replay_records(probe)
-    replay = {
-        "schema_version": "bb.e4.bb_replay_result.v1",
-        "lane_id": LANE_ID,
-        "config_id": CONFIG_ID,
-        "run_id": RUN_ID,
-        "p5_items": P5_ITEMS,
-        "generated_at_utc": GENERATED_AT_UTC,
-        "exit_status": "passed",
-        "warnings": [],
-        "errors": [],
-        "input_hashes": {display_path(TARGET_PROBE_OUTPUT_PATH): sha256_file(TARGET_PROBE_OUTPUT_PATH), display_path(SETUP_REPORT_PATH): sha256_file(SETUP_REPORT_PATH), display_path(AGENT_CONFIG_PATH): sha256_file(AGENT_CONFIG_PATH)},
-        "normalized_records": replay_records,
-        "replay_summary": "BreadBoard replay maps Pi residual extension hooks plus session resume/fork/compaction observations to hook execution, work item, memory compaction, and transcript continuation records.",
-    }
-    write_json(REPLAY_PATH, replay)
-    assertions = comparator_assertions(probe, replay_records)
-    failed = sum(1 for item in assertions if item["status"] != "passed")
-    comparator = {
-        "schema_version": "bb.e4.comparator_report.v1",
-        "lane_id": LANE_ID,
-        "config_id": CONFIG_ID,
-        "run_id": RUN_ID,
-        "scope": {"config_id": CONFIG_ID, "lane_id": LANE_ID, "phase": PHASE, "p5_items": P5_ITEMS, "provider_model": PROVIDER_MODEL, "run_id": RUN_ID, "sandbox_mode": SANDBOX_MODE, "target_version": TARGET_VERSION, "target_family": TARGET_FAMILY},
-        "assertions": assertions,
-        "details": [{"name": item["name"], "status": item["status"]} for item in assertions],
-        "failed": failed,
-        "warned": 0,
-        "input_hashes": {display_path(RAW_CAPTURE_PATH): "pending", display_path(REPLAY_PATH): sha256_file(REPLAY_PATH), display_path(TARGET_PROBE_OUTPUT_PATH): sha256_file(TARGET_PROBE_OUTPUT_PATH)},
-    }
-    write_json(COMPARATOR_PATH, comparator)
-    parity = {"schema_version": "bb.e4.parity_results.v1", "lane_id": LANE_ID, "config_id": CONFIG_ID, "passed": failed == 0, "failed": failed, "warned": 0, "comparator_ref": ref(COMPARATOR_PATH), "generated_at_utc": GENERATED_AT_UTC}
-    write_json(PARITY_PATH, parity)
-    scan_paths = [TARGET_PROBE_OUTPUT_PATH, SETUP_REPORT_PATH, REPLAY_PATH, COMPARATOR_PATH, PARITY_PATH, RAW_DIR / "module_probe.stdout.txt", TARGET_PROBE_SCRIPT_PATH]
-    credential_patterns = [
-        ("provider_key_prefix", re.compile(r"\b(?:sk-ant-[A-Za-z0-9_-]{16,}|sk-proj-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{32,}|AIza[0-9A-Za-z_-]{20,}|xai-[A-Za-z0-9_-]{20,})\b")),
-        ("github_token_prefix", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9_]{36,}|github_pat_[A-Za-z0-9_]{36,})\b")),
-        ("authorization_bearer", re.compile(r"(?i)authorization\s*:\s*bearer\s+[A-Za-z0-9._~+/=-]{16,}")),
-        ("env_secret_assignment", re.compile(r"(?m)[\"']?\b(?:ANTHROPIC_API_KEY|ANTHROPIC_OAUTH_TOKEN|OPENAI_API_KEY|GEMINI_API_KEY|GROQ_API_KEY|CEREBRAS_API_KEY|XAI_API_KEY|OPENROUTER_API_KEY|ZAI_API_KEY|MISTRAL_API_KEY|MINIMAX_API_KEY|AI_GATEWAY_API_KEY|OPENCODE_API_KEY|COPILOT_GITHUB_TOKEN|GH_TOKEN|GITHUB_TOKEN)\b[\"']?\s*[=:]\s*[\"']?(?!false\b|true\b|null\b|unset\b|<[^>]+>\b|$)([A-Za-z0-9._~+/=-]{12,})")),
-    ]
-    findings = []
-    for path in scan_paths:
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        for name, pattern in credential_patterns:
-            if pattern.search(text):
-                findings.append({"path": display_path(path), "pattern": name})
-    secret_scan = {"schema_version": "bb.e4.secret_scan_report.v1", "lane_id": LANE_ID, "config_id": CONFIG_ID, "passed": not findings, "findings": findings, "checked_paths": [display_path(path) for path in scan_paths], "documented_key_names_allowed": SECRET_KEYS, "generated_at_utc": GENERATED_AT_UTC}
-    write_json(SECRET_SCAN_PATH, secret_scan)
-    prevalidation = {"schema_version": "bb.e4.prevalidation_report.v1", "ok": failed == 0 and not findings, "accepted": failed == 0 and not findings, "lane_id": LANE_ID, "config_id": CONFIG_ID, "checks": [{"name": "target_commands_exit_zero", "passed": True}, {"name": "replay_record_schema_validation", "passed": True}, {"name": "machine_comparator_assertions", "passed": failed == 0}, {"name": "secret_scan", "passed": not findings}], "generated_at_utc": GENERATED_AT_UTC}
-    write_json(PREVALIDATION_PATH, prevalidation)
-    raw_capture = {
-        "schema_version": "bb.e4.raw_capture_manifest.v1",
-        "accepted_as_capture_ref": True,
-        "capture_class": "raw_target_capture",
-        "raw_source_status": "canonical_raw_present",
-        "generated_at_utc": GENERATED_AT_UTC,
-        "lane_id": LANE_ID,
-        "config_id": CONFIG_ID,
-        "run_id": RUN_ID,
-        "target_family": TARGET_FAMILY,
-        "target_version": TARGET_VERSION,
-        "provider_model": PROVIDER_MODEL,
-        "sandbox_mode": SANDBOX_MODE,
-        "raw_source_ref": ref(SETUP_REPORT_PATH),
-        "lineage_rationale": "Pi residual capture runs @mariozechner/pi-coding-agent 0.57.1 from the frozen local source archive in an isolated no-secret target workspace, observing extension hook registration/execution and session resume/fork/compaction APIs without provider inference.",
-        "source_artifacts": [display_path(ZIP_PATH), display_path(SOURCE_FREEZE_PATH), display_path(SETUP_REPORT_PATH), display_path(TARGET_PROBE_OUTPUT_PATH), display_path(TARGET_PROBE_SCRIPT_PATH), display_path(AGENT_CONFIG_PATH)],
-        "source_hashes": {display_path(path): sha256_file(path) for path in [ZIP_PATH, SOURCE_FREEZE_PATH, SETUP_REPORT_PATH, TARGET_PROBE_OUTPUT_PATH, TARGET_PROBE_SCRIPT_PATH, AGENT_CONFIG_PATH]},
-        "captured_artifacts": [{"path": display_path(path), "role": role, "sha256": sha256_file(path)} for path, role in [(SETUP_REPORT_PATH, "target_setup"), (TARGET_PROBE_OUTPUT_PATH, "target_probe"), (RAW_DIR / "module_probe.stdout.txt", "module_probe_stdout"), (RAW_DIR / "module_probe.stderr.txt", "module_probe_stderr")]],
-        "target_source": {"repository": "https://github.com/badlogic/pi-mono.git", "package": "@mariozechner/pi-coding-agent", "version": "0.57.1", "source_archive_ref": ref(ZIP_PATH)},
-        "scope_exclusions": ["no provider-authenticated inference", "no network behavior", "no UI rendering", "no broad Pi customization outside observed extension/session APIs"],
-    }
-    write_json(RAW_CAPTURE_PATH, raw_capture)
-    comparator["input_hashes"][display_path(RAW_CAPTURE_PATH)] = sha256_file(RAW_CAPTURE_PATH)
-    write_json(COMPARATOR_PATH, comparator)
-    parity["comparator_ref"] = ref(COMPARATOR_PATH)
-    write_json(PARITY_PATH, parity)
-    prevalidation["checks"].append({"name": "raw_capture_written", "passed": True})
-    write_json(PREVALIDATION_PATH, prevalidation)
-    return capture_mode
+    del recapture
+    raise RuntimeError(IMMUTABLE_EVIDENCE_ERROR)
 
 
 def build_ledger_row(freeze_ref: str) -> dict[str, Any]:
@@ -918,20 +818,15 @@ def validate_and_write_node_gate() -> dict[str, Any]:
 
 
 def build(write: bool = True, *, recapture: bool = False) -> dict[str, Any]:
-    if not write:
-        return {"ok": True, "config_id": CONFIG_ID, "capture_mode": "reused"}
-    ensure_source_freeze()
-    write_agent_config()
-    write_freeze_manifest()
-    capture_mode = write_capture_replay_compare(recapture=recapture)
-    freeze_ref = f"{display_path(FREEZE_MANIFEST_PATH)}#{CONFIG_ID}#{freeze_row_hash()}"
-    row = build_ledger_row(freeze_ref)
-    ledger_hash = upsert_ledger(row)
-    ledger_ref = f"{display_path(LEDGER_PATH)}#{FEATURE_ID}#{ledger_hash}"
-    write_support_claim_and_manifest(ledger_ref, freeze_ref)
-    report = validate_and_write_node_gate()
-    upsert_ct_scenario()
-    return {"ok": bool(report.get("ok")), "config_id": CONFIG_ID, "claim_id": CLAIM_ID, "ct_id": CT_ID, "points": POINTS, "node_gate": display_path(NODE_GATE_PATH), "errors": report.get("errors", []), "capture_mode": capture_mode}
+    if write or recapture:
+        raise RuntimeError(IMMUTABLE_EVIDENCE_ERROR)
+    records = load_accepted_replay_records()
+    return {
+        "ok": True,
+        "config_id": CONFIG_ID,
+        "capture_mode": "reused",
+        "validated_record_count": len(records),
+    }
 
 
 _SCRATCH_PATH_GLOBALS = (
@@ -992,21 +887,11 @@ def capture(
     promote_accepted: bool,
     out_dir: Path | None = None,
 ) -> dict[str, Any]:
-    """Run the Pi P5 capture adapter for the accepted lane packet."""
-    if promote_accepted:
-        return build(write=True, recapture=False)
-    if out_dir is None:
-        raise ValueError("Pi P5 L2 scratch capture requires out_dir")
-    with _scratch_paths(Path(out_dir)):
-        row = build(write=True, recapture=False)
-    row["scratch_node_gate_ok"] = row.get("ok")
-    row["scratch_node_gate_errors"] = list(row.get("errors", []))
-    row["ok"] = True
-    row["errors"] = []
-    return row
+    del lane_def, inventory_lane, promote_accepted, out_dir
+    raise RuntimeError(IMMUTABLE_EVIDENCE_ERROR)
 
 
-capture.supports_scratch_out_dir = True
+capture.supports_scratch_out_dir = False
 
 
 def main(argv: list[str] | None = None) -> int:

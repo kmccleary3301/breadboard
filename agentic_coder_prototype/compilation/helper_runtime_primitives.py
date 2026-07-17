@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any, TypedDict
 from urllib.parse import urlparse
 
-from .primitive_records import PrimitiveCompileError, finalize_record, get_spec
+from .primitive_records import PrimitiveCompileError, finalize_record, get_spec, validate_record
 
 SCHEMA_CONTEXT_RESOURCE_PACK = "bb.context_resource_pack.v1"
 SCHEMA_CAPABILITY_REGISTRY = "bb.capability_registry.v1"
@@ -19,7 +19,7 @@ SCHEMA_EXTERNAL_PROTOCOL_SESSION = "bb.external_protocol_session.v1"
 SCHEMA_PROVIDER_ROUTE = "bb.provider_route.v1"
 SCHEMA_EFFECTIVE_OPERATION_POLICY = "bb.effective_operation_policy.v1"
 SCHEMA_MEMORY_COMPACTION_PLAN = "bb.memory_compaction_plan.v1"
-SCHEMA_WORK_ITEM = "bb.work_item.v1"
+SCHEMA_LEGACY_WORK_ITEM = "bb.work_item.v1"
 SCHEMA_PROJECTION_EVENT = "bb.projection_event.v1"
 SCHEMA_SIDE_EFFECT_BROKER = "bb.side_effect_broker.v1"
 
@@ -536,17 +536,12 @@ def compile_protocol_provider_policy_bundle(
     }
 
 
-def compile_memory_work_bundle(*, memory_plan: Mapping[str, Any], work_item: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
-    """Finalize explicit memory compaction and work-item records.
-
-    Required inputs: complete semantic records for bb.memory_compaction_plan.v1 and bb.work_item.v1.
-    Hash behavior: these primitives have no content hash; embedded refs/hashes are caller-owned semantic values.
-    Error behavior: schema validation failures raise PrimitiveCompileError with JSON pointers.
-    """
+def validate_memory_work_evidence(*, memory_plan: Mapping[str, Any], work_item: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """Read and validate explicit legacy memory/work evidence without finalizing it."""
 
     return {
-        "memory_compaction_plan": finalize_record(get_spec(SCHEMA_MEMORY_COMPACTION_PLAN), memory_plan),
-        "work_item": finalize_record(get_spec(SCHEMA_WORK_ITEM), work_item),
+        "memory_compaction_plan": validate_record(get_spec(SCHEMA_MEMORY_COMPACTION_PLAN), memory_plan),
+        "work_item": validate_record(get_spec(SCHEMA_LEGACY_WORK_ITEM), work_item),
     }
 
 
@@ -572,7 +567,7 @@ __all__ = [
     "compile_capability_registry",
     "compile_context_resource_pack",
     "compile_extension_hook_execution",
-    "compile_memory_work_bundle",
+    "validate_memory_work_evidence",
     "compile_projection_broker_bundle",
     "compile_protocol_provider_policy_bundle",
     "compile_resource_access_bundle",

@@ -4,15 +4,27 @@ import hashlib
 import json
 import os
 from datetime import datetime, timezone
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Mapping
 from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard.product.coordination.work_items import (
+    Budget,
+    CancellationPolicy,
+    ResumePolicy,
+    RetryPolicy,
+    WorkItemEvent,
+    WorkItemSnapshot,
+    rebuild_work_item,
+)
 from ...auth.enforcer import apply_dotted_overrides
 from ...compilation import compile_capability_registry, compile_effective_config_graph, finalize_record, get_spec
 from ...compilation.effective_operation_policy import compile_effective_operation_policy
 from ...compilation.v2_loader import load_agent_config
 from .models import SessionCreateRequest
+DEFAULT_INTERACTIVE_SESSION_TITLE = "interactive session awaiting input"
+
 def primitive_emission_enabled() -> bool:
     return os.environ.get("BREADBOARD_EMIT_PRIMITIVES", "").strip().lower() in {"1", "true", "yes", "on"}
 def config_plane_dialects() -> set[str]:
@@ -74,24 +86,68 @@ def _effective_tool_surface(surface_id: str, capability_registry: Mapping[str, A
         "schema_version": "bb.effective_tool_surface.v1", "surface_id": surface_id,
         "tool_ids": tool_ids, "binding_ids": [f"binding.{tool_id}" for tool_id in tool_ids],
         "hidden_tool_ids": [], "projection_profile_id": "runtime_session_start", "surface_hash": None})
-def _work_item(
-    session_id: str, *, status: str, entered_at: str, reason: str | None, operation_policy_ref: str | None,
-) -> dict[str, Any]:
-    actor = {"actor_kind": "service", "actor_id": "cli_bridge.session_service"}
-    return finalize_record(get_spec("bb.work_item.v1"), {
-        "schema_version": "bb.work_item.v1", "work_item_id": f"{session_id}.{status}",
-        "identity": {"task_id": session_id, "task_kind": "task", "subagent_id": None,
-                     "distributed_task_id": None, "correlation_id": session_id},
-        "delegation": {"parent_work_item_id": None, "parent_task_id": None, "delegated_by": actor, "delegation_ref": None},
-        "state": {"status": status, "entered_at": entered_at, "reason": reason, "checkpoint_ref": None},
-        "owner": actor, "assignee": {"actor_kind": "agent", "actor_id": "session_runner"},
-        "input_artifact_refs": [], "output_artifact_refs": [],
-        "cancellation_policy": {"mode": "cooperative", "cancellable_by": [actor], "propagate_to_children": True,
-                                "on_cancel": "checkpoint_then_stop"},
-        "resume_policy": {"mode": "manual", "resume_from_ref": None, "requires_approval": False, "wake_refs": []},
-        "visibility": {"model_visible": False, "provider_visible": False, "host_visible": True},
-        "provider_route_ref": None, "operation_policy_ref": operation_policy_ref, "budget": None, "isolation": None,
-        "metadata": {"session_id": session_id, "runtime_source": "cli_bridge"}})
+
+def _work_item_records(session_id: str, *, title: str, generated_at: str) -> dict[str, dict[str, Any]]:
+    events = (
+        WorkItemEvent(
+            session_id,
+            1,
+            "work_item.created",
+            generated_at,
+            {
+                "title": title,
+                "parent_work_item_id": None,
+                "dependency_refs": [],
+                "retry_policy": RetryPolicy().as_dict(),
+                "resume_policy": ResumePolicy().as_dict(),
+                "cancellation_policy": CancellationPolicy(
+                    cancellable_by=("cli_bridge.session_service",),
+                ).as_dict(),
+                "budget": Budget().as_dict(),
+            },
+        ),
+        WorkItemEvent(
+            session_id,
+            2,
+            "lease.acquired",
+            generated_at,
+            {
+                "lease_id": f"{session_id}.lease",
+                "worker_id": "session_runner",
+                "expires_at": None,
+            },
+        ),
+        WorkItemEvent(
+            session_id,
+            3,
+            "attempt.started",
+            generated_at,
+            {
+                "attempt_id": f"{session_id}.attempt",
+                "lease_id": f"{session_id}.lease",
+                "session_ref": session_id,
+            },
+        ),
+    )
+    snapshot = _work_item_snapshot_record(rebuild_work_item(events))
+    return {
+        "work_item_created": events[0].as_dict(),
+        "work_item_lease_acquired": events[1].as_dict(),
+        "work_item_attempt_started": events[2].as_dict(),
+        "work_item_snapshot": finalize_record(get_spec("bb.work_item.v2"), snapshot),
+    }
+
+
+def _work_item_snapshot_record(snapshot: WorkItemSnapshot) -> dict[str, Any]:
+    record = json.loads(json.dumps(asdict(snapshot)))
+    placements = record.pop("placements")
+    record["placement_refs"] = [placement["placement_id"] for placement in placements]
+    record["budget"] = {
+        "limits": record.pop("budget"),
+        "usage": record.pop("budget_usage"),
+    }
+    return record
+
 def _coordination_slice(session_id: str, *, generated_at: str) -> dict[str, Any]:
     return finalize_record(get_spec("bb.coordination_slice.v2"), {
         "schema_version": "bb.coordination_slice.v2", "slice_id": f"{session_id}_coordination_slice",
@@ -108,7 +164,7 @@ def _coordination_pack(session_id: str, *, generated_at: str, slices: list[Mappi
                       "deprecation_notice": "v1/v2 coordination evidence remains readable; v3 is the grouped write envelope."},
         "metadata": {"session_id": session_id, "runtime_source": "cli_bridge"}})
 def emit_session_start_records(
-    *, session_id: str, request: SessionCreateRequest, repo_root: Path | None = None, generated_at: str | None = None, output_root: Path | None = None, effective_runtime_config: Mapping[str, Any] | None = None,
+    *, session_id: str, request: SessionCreateRequest, title: str | None = None, repo_root: Path | None = None, generated_at: str | None = None, output_root: Path | None = None, effective_runtime_config: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
     """Emit validating session-start records, failing before partial evidence is written."""
     root = (repo_root or Path(__file__).resolve().parents[3]).resolve()
@@ -137,28 +193,13 @@ def emit_session_start_records(
     policy_ref = artifact_store.put(policy_text.encode("utf-8"), media_type="application/json")
     artifact_store.materialize(policy_ref, policy_path)
     operation_policy_ref = f"effective_operation_policy.json#sha256:{hashlib.sha256(policy_text.encode('utf-8')).hexdigest()}"
-    work_created = _work_item(
-        session_id, status="queued", entered_at=generated, reason="session accepted",
-        operation_policy_ref=operation_policy_ref,
-    )
-    work_running = _work_item(
-        session_id, status="running", entered_at=generated, reason="runner start requested",
-        operation_policy_ref=operation_policy_ref,
-    )
     records = {
-        "effective_operation_policy": operation_policy, "effective_config_graph": graph,
-        "capability_registry": registry, "effective_tool_surface": surface,
-        "work_item_queued": work_created, "work_item_running": work_running,
+        "effective_operation_policy": operation_policy,
+        "effective_config_graph": graph,
+        "capability_registry": registry,
+        "effective_tool_surface": surface,
+        **_work_item_records(session_id, title=title if title is not None else request.task if request.task.strip() else DEFAULT_INTERACTIVE_SESSION_TITLE, generated_at=generated),
     }
-    dialects = config_plane_dialects()
-    coordination_slices: list[Mapping[str, Any]] = []
-    if "v2" in dialects or "v3" in dialects:
-        coordination_slice = _coordination_slice(session_id, generated_at=generated)
-        coordination_slices.append(coordination_slice)
-        if "v2" in dialects:
-            records["coordination_slice"] = coordination_slice
-    if "v3" in dialects:
-        records["coordination_pack"] = _coordination_pack(session_id, generated_at=generated, slices=coordination_slices)
     config_plane_path = out_dir / "records" / "config_plane.jsonl"
     config_plane_path.parent.mkdir(parents=True, exist_ok=True)
     paths: dict[str, str] = {}
@@ -176,6 +217,13 @@ def emit_session_start_records(
             "schema_version": payload.get("schema_version") if isinstance(payload, Mapping) else None,
             "record": payload, "emitted_at_utc": generated,
         }
+        if name.startswith("work_item_"):
+            envelope["correlation"] = {
+                "work_item_id": session_id,
+                "session_id": session_id,
+                "run_id": session_id,
+            }
+            envelope["operation_policy_ref"] = operation_policy_ref
         envelopes.append(json.dumps(envelope, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n")
     prior = config_plane_path.read_bytes() if config_plane_path.exists() else b""
     stream_content = prior + "".join(envelopes).encode("utf-8")

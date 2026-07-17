@@ -44,12 +44,15 @@ def _valid_protocol_records() -> dict[str, dict[str, Any]]:
 
 
 def _valid_memory_records() -> dict[str, dict[str, Any]]:
-    return p3_lane_fixtures.memory_work_records(
+    records = p3_lane_fixtures.memory_work_records(
         run_id=RUN_ID,
         plan_id=f"{LANE_ID}_plan",
         work_item_id=f"{LANE_ID}_work_item",
         generated_at=GENERATED_AT,
     )
+    records["memory_plan"]["schema_version"] = "bb.memory_compaction_plan.v1"
+    records["work_item"]["schema_version"] = "bb.work_item.v1"
+    return records
 
 
 def _valid_projection_records() -> dict[str, dict[str, Any]]:
@@ -262,29 +265,43 @@ def test_protocol_provider_policy_bundle_rejects_wrong_bindings_type() -> None:
     _assert_error_mentions(error, "/bindings")
 
 
-def test_memory_work_bundle_rejects_missing_plan_id() -> None:
+def test_memory_work_evidence_is_validation_only() -> None:
+    records = _valid_memory_records()
+
+    validated = helper.validate_memory_work_evidence(
+        memory_plan=records["memory_plan"],
+        work_item=records["work_item"],
+    )
+
+    assert validated == {
+        "memory_compaction_plan": records["memory_plan"],
+        "work_item": records["work_item"],
+    }
+
+
+def test_memory_work_evidence_rejects_missing_plan_id() -> None:
     records = _valid_memory_records()
     del records["memory_plan"]["plan_id"]
 
-    error = _expect_compile_error(helper.compile_memory_work_bundle, memory_plan=records["memory_plan"], work_item=records["work_item"])
+    error = _expect_compile_error(helper.validate_memory_work_evidence, memory_plan=records["memory_plan"], work_item=records["work_item"])
 
     _assert_error_mentions(error, "plan_id")
 
 
-def test_memory_work_bundle_rejects_invalid_work_item_status() -> None:
+def test_memory_work_evidence_rejects_invalid_work_item_status() -> None:
     records = _valid_memory_records()
     records["work_item"]["state"]["status"] = "done-ish"
 
-    error = _expect_compile_error(helper.compile_memory_work_bundle, memory_plan=records["memory_plan"], work_item=records["work_item"])
+    error = _expect_compile_error(helper.validate_memory_work_evidence, memory_plan=records["memory_plan"], work_item=records["work_item"])
 
     _assert_error_mentions(error, "/state/status")
 
 
-def test_memory_work_bundle_rejects_wrong_owner_type() -> None:
+def test_memory_work_evidence_rejects_wrong_owner_type() -> None:
     records = _valid_memory_records()
     records["work_item"]["owner"] = "main"
 
-    error = _expect_compile_error(helper.compile_memory_work_bundle, memory_plan=records["memory_plan"], work_item=records["work_item"])
+    error = _expect_compile_error(helper.validate_memory_work_evidence, memory_plan=records["memory_plan"], work_item=records["work_item"])
 
     _assert_error_mentions(error, "/owner")
 

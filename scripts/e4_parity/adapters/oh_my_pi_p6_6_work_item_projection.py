@@ -1,165 +1,153 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from typing import Any, Mapping
 
-from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
+from agentic_coder_prototype.compilation.primitive_records import get_spec, validate_record
+from breadboard.product.coordination.work_items import WorkItemEvent, WorkItemSnapshot, rebuild_work_item
 
-PROJECTION_ID = "p6_6_task_job_subagent"
-SCHEMA_VERSION = "bb.work_item.v1"
+PROJECTION_ID = "p6_6_task_job_subagent_v2"
+SCHEMA_VERSION = "bb.work_item.v2"
 SOURCE_ROLE = "target_probe_output"
 RECORD_KEYS = ("work_items",)
 
-_VALID_TASK_KINDS = {
-    "turn",
-    "step",
-    "task",
-    "subagent",
-    "distributed_task",
-    "background",
-    "workflow",
-    "longrun_goal",
-    "workflow_objective",
-}
-_VALID_STATUSES = {"queued", "running", "blocked", "waiting", "completed", "failed", "cancelled", "paused"}
+_ACCEPTED_OBSERVED_STATUSES = {"completed", "cancelled"}
 
 
-def project_work_items(context: Mapping[str, Any]) -> dict[str, Any]:
-    """Project P6.6 target-probe observations into finalized ``bb.work_item.v1`` records.
-
-    The projection is intentionally pure: callers supply decoded source data, lane facts,
-    role paths, role hashes, and pinned constants. This function performs no filesystem,
-    environment, clock, dynamic-import, or global-path reads.
-    """
+def project_work_item_v2_snapshots(context: Mapping[str, Any]) -> dict[str, Any]:
+    """Project P6.6 observations into semantically validated Work Item v2 snapshots."""
 
     source_packet = _mapping(context.get("source"), "source")
     source = _mapping(source_packet.get("value", source_packet), "source.value")
-    observations_value = source.get("work_item_observations", [])
-    if not isinstance(observations_value, list):
-        observations_value = []
+    observations = source.get("work_item_observations", [])
+    if not isinstance(observations, list):
+        raise TypeError("work_item_observations must be a list")
 
     constants = _mapping(context.get("constants"), "constants")
     generated_at = _required_str(constants, "generated_at_utc")
     parent_work_item_id = _required_str(constants, "parent_work_item_id")
-    parent_task_id = _required_str(constants, "parent_task_id")
-    delegated_by = _actor_from(constants, "delegated_by")
-    owner = _actor_from(constants, "owner")
-    host_assignee = _actor_from(constants, "host_assignee")
-    cancel_actors = tuple(_actors_from(constants, "cancellable_by"))
-
-    records: list[dict[str, Any]] = []
-    for observation_value in observations_value:
-        if not isinstance(observation_value, Mapping):
-            continue
-        raw_record = _build_work_item(
-            observation_value,
-            generated_at=generated_at,
-            parent_work_item_id=parent_work_item_id,
-            parent_task_id=parent_task_id,
-            delegated_by=delegated_by,
-            owner=owner,
-            host_assignee=host_assignee,
-            cancellable_by=cancel_actors,
-            context=context,
+    host_assignee = _mapping(constants.get("host_assignee"), "host_assignee")
+    host_worker_id = _required_str(host_assignee, "actor_id")
+    cancellable_by = tuple(
+        dict.fromkeys(
+            _required_str(_mapping(actor, "cancellable_by actor"), "actor_id")
+            for actor in _list(constants.get("cancellable_by"), "cancellable_by")
         )
-        finalized = finalize_record(get_spec(SCHEMA_VERSION), raw_record)
-        records.append({"record_key": finalized["work_item_id"], "value": finalized})
+    )
 
-    summary = _summary(source, records)
-    return {"records": records, "derived_facts": summary, "derived_values": summary}
+    rows: list[dict[str, Any]] = []
+    for value in observations:
+        observation = _mapping(value, "work_item observation")
+        work_item_id = _required_str(observation, "work_item_id")
+        status = _required_str(observation, "status")
+        if status not in _ACCEPTED_OBSERVED_STATUSES:
+            raise ValueError(f"unsupported P6.6 observed lifecycle status: {status}")
+        worker_id = str(observation.get("subagent_id") or host_worker_id)
+        record = _project_snapshot(
+            observation,
+            work_item_id=work_item_id,
+            status=status,
+            worker_id=worker_id,
+            parent_work_item_id=parent_work_item_id,
+            cancellable_by=cancellable_by,
+            generated_at=generated_at,
+        )
+        rows.append({"record_key": work_item_id, "schema_version": SCHEMA_VERSION, "value": record})
+
+    summary = _summary(source, observations)
+    return {"records": rows, "derived_facts": summary, "derived_values": summary}
 
 
-def _build_work_item(
+def _project_snapshot(
     observation: Mapping[str, Any],
     *,
-    generated_at: str,
+    work_item_id: str,
+    status: str,
+    worker_id: str,
     parent_work_item_id: str,
-    parent_task_id: str,
-    delegated_by: Mapping[str, str],
-    owner: Mapping[str, str],
-    host_assignee: Mapping[str, str],
-    cancellable_by: tuple[Mapping[str, str], ...],
-    context: Mapping[str, Any],
+    cancellable_by: tuple[str, ...],
+    generated_at: str,
 ) -> dict[str, Any]:
-    task_kind = str(observation.get("task_kind") or "background")
-    status = str(observation.get("status") or "completed")
-    work_item_id = str(observation.get("work_item_id") or observation.get("observation_id") or "wi-unknown")
     task_id = str(observation.get("task_id") or observation.get("observation_id") or work_item_id)
-    subagent_id = observation.get("subagent_id")
-    job_id = observation.get("job_id")
-    input_ref = _input_ref_for_observation(observation, context)
-    cancelled = status == "cancelled"
-    normalized_task_kind = task_kind if task_kind in _VALID_TASK_KINDS else "task"
-    normalized_status = status if status in _VALID_STATUSES else "completed"
-
-    return {
-        "work_item_id": work_item_id,
-        "identity": {
-            "task_id": task_id,
-            "task_kind": normalized_task_kind,
-            "subagent_id": str(subagent_id) if subagent_id is not None else None,
-            "distributed_task_id": None,
-            "correlation_id": str(job_id) if job_id is not None else None,
-        },
-        "delegation": {
-            "parent_work_item_id": parent_work_item_id,
-            "parent_task_id": parent_task_id,
-            "delegated_by": dict(delegated_by),
-            "delegation_ref": str(observation.get("observation_id")),
-        },
-        "state": {
-            "status": normalized_status,
-            "entered_at": generated_at,
-            "reason": ";".join(str(event) for event in observation.get("observed_events", [])) or None,
-            "checkpoint_ref": input_ref if normalized_status in {"completed", "cancelled"} else None,
-        },
-        "owner": dict(owner),
-        "assignee": _actor("subagent", str(subagent_id)) if subagent_id else dict(host_assignee),
-        "input_artifact_refs": [_artifact(input_ref, "transcript")],
-        "output_artifact_refs": [_artifact(_role_ref(context, SOURCE_ROLE), "report")],
+    reason = ";".join(str(event) for event in observation.get("observed_events", [])) or f"observed {status} lifecycle"
+    cleanup = "keep_partial_outputs" if status == "cancelled" else "checkpoint_then_stop"
+    created_payload = {
+        "title": task_id,
+        "parent_work_item_id": parent_work_item_id,
+        "dependency_refs": [],
+        "retry_policy": {"max_attempts": 1, "retry_on_any_failure": False, "retryable_reasons": []},
+        "resume_policy": {"mode": "never", "requires_approval": False},
         "cancellation_policy": {
-            "mode": "immediate" if cancelled else "cooperative",
-            "cancellable_by": [dict(actor) for actor in cancellable_by],
-            "propagate_to_children": normalized_task_kind == "subagent",
-            "on_cancel": "keep_partial_outputs" if cancelled else "checkpoint_then_stop",
+            "mode": "immediate" if status == "cancelled" else "cooperative",
+            "cancellable_by": list(cancellable_by),
+            "propagate_to_children": observation.get("task_kind") == "subagent",
+            "cleanup": cleanup,
         },
-        "resume_policy": {
-            "mode": "checkpoint" if cancelled else "replay",
-            "resume_from_ref": input_ref,
-            "requires_approval": False,
-            "wake_refs": [str(job_id)] if job_id is not None else [],
-        },
-        "visibility": {"model_visible": True, "provider_visible": True, "host_visible": True},
+        "budget": {"token_limit": None, "cost_limit_microusd": None, "wall_time_limit_ms": None},
+    }
+    events = [WorkItemEvent(work_item_id, 1, "work_item.created", generated_at, created_payload)]
+    if status == "cancelled":
+        events.append(
+            WorkItemEvent(
+                work_item_id,
+                2,
+                "work.canceled",
+                generated_at,
+                {"actor_id": cancellable_by[0], "reason": reason, "cleanup": cleanup, "child_work_item_ids": []},
+            )
+        )
+    else:
+        lease_id = f"{work_item_id}:lease"
+        attempt_id = f"{work_item_id}:attempt"
+        session_ref = str(observation.get("source_capture_id") or f"{work_item_id}:session")
+        events.extend(
+            (
+                WorkItemEvent(work_item_id, 2, "lease.acquired", generated_at, {"lease_id": lease_id, "worker_id": worker_id, "expires_at": None}),
+                WorkItemEvent(work_item_id, 3, "attempt.started", generated_at, {"attempt_id": attempt_id, "lease_id": lease_id, "session_ref": session_ref}),
+                WorkItemEvent(work_item_id, 4, "work.completed", generated_at, {"attempt_id": attempt_id, "summary": reason}),
+            )
+        )
+    return validate_record(get_spec(SCHEMA_VERSION), _snapshot_record(rebuild_work_item(events)))
+
+
+def _snapshot_record(snapshot: WorkItemSnapshot) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "work_item_id": snapshot.work_item_id,
+        "title": snapshot.title,
+        "status": snapshot.status,
+        "parent_work_item_id": snapshot.parent_work_item_id,
+        "child_work_item_ids": list(snapshot.child_work_item_ids),
+        "dependency_refs": list(snapshot.dependency_refs),
+        "satisfied_dependency_refs": list(snapshot.satisfied_dependency_refs),
+        "wake_refs": list(snapshot.wake_refs),
+        "retry_policy": snapshot.retry_policy.as_dict(),
+        "resume_policy": snapshot.resume_policy.as_dict(),
+        "cancellation_policy": snapshot.cancellation_policy.as_dict(),
+        "budget": {"limits": snapshot.budget.as_dict(), "usage": asdict(snapshot.budget_usage)},
+        "active_lease": asdict(snapshot.active_lease) if snapshot.active_lease is not None else None,
+        "used_lease_ids": list(snapshot.used_lease_ids),
+        "attempts": [asdict(attempt) for attempt in snapshot.attempts],
+        "placement_refs": [placement.placement_id for placement in snapshot.placements],
+        "latest_checkpoint_ref": snapshot.latest_checkpoint_ref,
+        "terminal_reason": snapshot.terminal_reason,
+        "event_count": snapshot.event_count,
     }
 
 
-def _input_ref_for_observation(observation: Mapping[str, Any], context: Mapping[str, Any]) -> str:
-    source_capture_id = observation.get("source_capture_id")
-    if source_capture_id == "joined-subagent-target-capture":
-        return _role_ref(context, "joined_subagent_target_capture")
-    if source_capture_id == "detached-subagent-target-capture":
-        return _role_ref(context, "detached_subagent_target_capture")
-    return _role_ref(context, SOURCE_ROLE)
-
-
-def _summary(source: Mapping[str, Any], records: list[Mapping[str, Any]]) -> dict[str, Any]:
-    joined = sum(1 for item in records if _record_value(item)["identity"]["task_kind"] == "subagent" and _record_value(item)["identity"].get("subagent_id") == "joined-subagent" and _record_value(item)["state"]["status"] == "completed")
-    detached = sum(1 for item in records if _record_value(item)["identity"]["task_kind"] == "subagent" and _record_value(item)["identity"].get("subagent_id") == "detached-subagent" and _record_value(item)["state"]["status"] in {"completed", "cancelled"})
-    background = sum(1 for item in records if _record_value(item)["identity"]["task_kind"] == "background" and _record_value(item)["state"]["status"] in {"completed", "cancelled", "running"})
-    cancelled = sum(1 for item in records if _record_value(item)["state"]["status"] == "cancelled")
-    observations = source.get("work_item_observations", [])
-    cancel_observed = cancelled > 0 or any(
-        isinstance(observation, Mapping) and "job_cancel_requested" in observation.get("observed_events", [])
-        for observation in observations
-        if isinstance(observations, list)
-    )
-    job_manager_only = bool(source.get("job_manager_only_evidence")) or joined == 0 or detached == 0
+def _summary(source: Mapping[str, Any], observations: list[Any]) -> dict[str, Any]:
+    rows = [row for row in observations if isinstance(row, Mapping)]
+    joined = any(row.get("task_kind") == "subagent" and row.get("subagent_id") == "joined-subagent" and row.get("status") == "completed" for row in rows)
+    detached = any(row.get("task_kind") == "subagent" and row.get("subagent_id") == "detached-subagent" and row.get("status") in _ACCEPTED_OBSERVED_STATUSES for row in rows)
+    background = any(row.get("task_kind") == "background" and row.get("status") in _ACCEPTED_OBSERVED_STATUSES for row in rows)
+    cancelled = any(row.get("status") == "cancelled" for row in rows)
     return {
         "work_item_schema_valid": True,
-        "joined_subagent_target_capture_observed": joined > 0,
-        "detached_subagent_target_capture_observed": detached > 0,
-        "background_job_observed": background > 0,
-        "cancel_observed": cancel_observed,
-        "job_manager_only_evidence": job_manager_only,
+        "joined_subagent_target_capture_observed": joined,
+        "detached_subagent_target_capture_observed": detached,
+        "background_job_observed": background,
+        "cancel_observed": cancelled,
+        "job_manager_only_evidence": bool(source.get("job_manager_only_evidence")) or not joined or not detached,
         "provider_authenticated_capture": bool(source.get("provider_authenticated_capture", source.get("provider_dispatch_observed", False))),
         "provider_dispatch_observed": bool(source.get("provider_dispatch_observed", False)),
         "provider_parity_claimed": False,
@@ -168,50 +156,15 @@ def _summary(source: Mapping[str, Any], records: list[Mapping[str, Any]]) -> dic
     }
 
 
-def _record_value(item: Mapping[str, Any]) -> Mapping[str, Any]:
-    value = item.get("value")
-    if not isinstance(value, Mapping):
-        raise TypeError("record item value must be a mapping")
-    return value
-
-
-def _artifact(ref: str, artifact_kind: str, *, provider_visible: bool = True) -> dict[str, Any]:
-    return {
-        "ref": ref,
-        "artifact_kind": artifact_kind,
-        "visibility": {"model_visible": True, "provider_visible": provider_visible, "host_visible": True},
-    }
-
-
-def _role_ref(context: Mapping[str, Any], role: str) -> str:
-    roles = _mapping(context.get("roles"), "roles")
-    hashes = _mapping(context.get("role_hashes"), "role_hashes")
-    path = _required_str(roles, role)
-    digest = _required_str(hashes, role)
-    return f"{path}#{digest}"
-
-
-def _actor(kind: str, actor_id: str) -> dict[str, str]:
-    return {"actor_kind": kind, "actor_id": actor_id}
-
-
-def _actor_from(mapping: Mapping[str, Any], key: str) -> Mapping[str, str]:
-    value = _mapping(mapping.get(key), key)
-    actor_kind = _required_str(value, "actor_kind")
-    actor_id = _required_str(value, "actor_id")
-    return _actor(actor_kind, actor_id)
-
-
-def _actors_from(mapping: Mapping[str, Any], key: str) -> list[Mapping[str, str]]:
-    value = mapping.get(key)
-    if not isinstance(value, list):
-        raise TypeError(f"{key} must be a list")
-    return [_actor_from({"actor": item}, "actor") for item in value]
-
-
 def _mapping(value: Any, name: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError(f"{name} must be a mapping")
+    return value
+
+
+def _list(value: Any, name: str) -> list[Any]:
+    if not isinstance(value, list):
+        raise TypeError(f"{name} must be a list")
     return value
 
 
@@ -227,5 +180,5 @@ __all__ = [
     "RECORD_KEYS",
     "SCHEMA_VERSION",
     "SOURCE_ROLE",
-    "project_work_items",
+    "project_work_item_v2_snapshots",
 ]
