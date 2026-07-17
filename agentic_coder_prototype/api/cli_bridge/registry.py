@@ -44,6 +44,9 @@ def submission_body_digest(content: str, attachments: Tuple[str, ...]) -> str:
 def cancellation_body_digest(turn_id: str, reason: str) -> str:
     return _digest_payload({"turn_id": turn_id, "reason": reason})
 
+class SessionRecordDeletedError(RuntimeError):
+    """Raised when an operation tries to persist a deleted session record."""
+
 @dataclass
 class TurnRecord:
     """Engine-owned identity and admission state for one accepted turn."""
@@ -117,6 +120,8 @@ class SessionRecord:
     submissions_by_key_digest: Dict[str, TurnRecord] = field(default_factory=dict, repr=False)
     cancellations_by_key: Dict[str, CancellationRecord] = field(default_factory=dict, repr=False)
     cancellations_by_key_digest: Dict[str, CancellationRecord] = field(default_factory=dict, repr=False)
+    lifecycle_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
+    deleting: bool = field(default=False, repr=False)
     admission_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
 
     def to_summary(self) -> SessionSummary:
@@ -187,6 +192,9 @@ class SessionRegistry:
     async def get(self, session_id: str) -> Optional[SessionRecord]:
         async with self._lock:
             return self._records.get(session_id)
+    async def records(self) -> list[SessionRecord]:
+        async with self._lock:
+            return list(self._records.values())
 
     async def list(self) -> Iterable[SessionSummary]:
         async with self._lock:
@@ -243,7 +251,9 @@ class SessionRegistry:
     ) -> None:
         async with self._lock:
             if self._records.get(record.session_id) is not record:
-                return
+                raise SessionRecordDeletedError(
+                    f"session {record.session_id} was deleted before persistence"
+                )
             retained: Dict[str, Any] | None = None
             if terminal_event is not None:
                 candidate = self._retained_terminal_envelope(terminal_event)

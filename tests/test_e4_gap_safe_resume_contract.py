@@ -28,6 +28,7 @@ from agentic_coder_prototype.api.cli_bridge.models import (
 from agentic_coder_prototype.api.cli_bridge.registry import (
     CancellationRecord,
     SessionRecord,
+    SessionRecordDeletedError,
     SessionRegistry,
     TurnRecord,
 )
@@ -225,6 +226,7 @@ async def test_v1_count_and_age_boundary_gaps_are_typed_before_stream_headers(
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        list_response = await client.get("/v1/sessions")
         count_response = await client.get(
             f"/v1/sessions/{count_record.session_id}/events",
             params={"from_id": "1"},
@@ -232,6 +234,7 @@ async def test_v1_count_and_age_boundary_gaps_are_typed_before_stream_headers(
         age_snapshot_response = await client.get(
             f"/v1/sessions/{age_record.session_id}"
         )
+        assert age_record.dispatcher_task is None
         age_response = await client.get(
             f"/v1/sessions/{age_record.session_id}/events",
             params={"from_id": "1"},
@@ -259,6 +262,12 @@ async def test_v1_count_and_age_boundary_gaps_are_typed_before_stream_headers(
     assert age_snapshot_response.status_code == 200
     assert age_snapshot_response.json()["earliestRetainedSequence"] is None
     assert age_snapshot_response.json()["retainedHistory"] == "partial"
+    assert list_response.status_code == 200
+    listed_age = next(
+        item for item in list_response.json() if item["session_id"] == age_record.session_id
+    )
+    assert listed_age["earliestRetainedSequence"] is None
+    assert listed_age["retainedHistory"] == "partial"
 
     await _stop_dispatcher(count_record)
     await _stop_dispatcher(age_record)
@@ -596,6 +605,45 @@ async def test_terminal_and_idempotency_state_survives_restart_and_replay_expiry
 
 
 @pytest.mark.asyncio
+async def test_delete_wins_queued_submit_and_cancel_without_accepting_them() -> None:
+    registry = SessionRegistry()
+    service = SessionService(registry)
+    record = SessionRecord(session_id="delete-race", status=SessionStatus.RUNNING)
+    await registry.create(record)
+    await record.lifecycle_lock.acquire()
+    delete_task = asyncio.create_task(service.stop_session(record.session_id))
+    await asyncio.sleep(0)
+    submit_task = asyncio.create_task(
+        service.send_input(
+            record.session_id,
+            SessionInputRequest(
+                content="must-not-be-accepted",
+                attachments=[],
+                client_message_id="delete-race-submit",
+            ),
+        )
+    )
+    cancel_task = asyncio.create_task(
+        service.cancel_turn(
+            record.session_id,
+            "turn-missing",
+            SessionTurnCancelRequest(
+                cancellation_request_key="delete-race-cancel",
+                reason="user_requested",
+            ),
+        )
+    )
+    record.lifecycle_lock.release()
+
+    await delete_task
+    for operation in (submit_task, cancel_task):
+        with pytest.raises(HTTPException) as rejected:
+            await operation
+        assert rejected.value.status_code == 404
+    assert await registry.get(record.session_id) is None
+
+
+@pytest.mark.asyncio
 async def test_destructive_delete_is_repeat_idempotent_and_state_stays_absent(tmp_path: Path) -> None:
     state_root = tmp_path / "session_state"
     registry = SessionRegistry(state_root)
@@ -628,7 +676,8 @@ async def test_destructive_delete_is_repeat_idempotent_and_state_stays_absent(tm
 
     await service.stop_session(record.session_id)
     await service.stop_session(record.session_id)
-    await registry.persist(record)
+    with pytest.raises(SessionRecordDeletedError):
+        await registry.persist(record)
     assert list(state_root.glob("*.json")) == []
 
     with pytest.raises(HTTPException) as lookup:

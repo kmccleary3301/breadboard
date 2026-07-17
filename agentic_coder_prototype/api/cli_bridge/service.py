@@ -53,6 +53,7 @@ from .models import (
 from .atp_diagnostics import build_atp_harness_diagnostic
 from .registry import (
     SessionRecord,
+    SessionRecordDeletedError,
     SessionRegistry,
     SubscriberState,
     cancellation_body_digest,
@@ -382,6 +383,7 @@ class SessionService:
                 if event.stable_cursor:
                     previous_sequence = record.event_seq
                     original_event_sequence = event.seq
+                    previous_event_log = tuple(record.event_log)
                     previous_history_partial = record.replay_history_partial
                     record.event_seq += 1
                     if event.seq is None:
@@ -389,7 +391,7 @@ class SessionService:
                     else:
                         record.event_seq = max(record.event_seq, int(event.seq))
                     record.event_log.append(event)
-                    pruned_events = self._prune_replay(record)
+                    self._prune_replay(record)
                     try:
                         await self.registry.persist(
                             record,
@@ -407,12 +409,10 @@ class SessionService:
                             "Durable event persistence failed for session %s",
                             record.session_id,
                         )
-                        if record.event_log and record.event_log[-1] is event:
-                            record.event_log.pop()
+                        record.event_log.clear()
+                        record.event_log.extend(previous_event_log)
                         record.event_seq = previous_sequence
                         event.seq = original_event_sequence
-                        for pruned_event in reversed(pruned_events):
-                            record.event_log.appendleft(pruned_event)
                         record.replay_history_partial = previous_history_partial
                         persistence_failed = True
                         for subscriber in list(record.subscribers.values()):
@@ -490,10 +490,16 @@ class SessionService:
         )
 
     async def list_sessions(self):
-        return await self.registry.list()
+        summaries = []
+        for record in await self.registry.records():
+            async with record.dispatch_lock:
+                self._ensure_event_sequence(record)
+                self._prune_replay(record)
+                summaries.append(record.to_summary())
+        return summaries
+
     async def session_snapshot(self, session_id: str):
         record = await self.ensure_session(session_id)
-        await self._ensure_dispatcher(record)
         async with record.dispatch_lock:
             self._ensure_event_sequence(record)
             self._prune_replay(record)
@@ -606,16 +612,14 @@ class SessionService:
                 seq = max(seq, int(event.seq))
         record.event_seq = seq
 
-    def _prune_replay(self, record: SessionRecord) -> list[SessionEvent]:
+    def _prune_replay(self, record: SessionRecord) -> None:
         cutoff = int(time.time() * 1000) - REPLAY_RETENTION_MAX_AGE_MS
-        removed: list[SessionEvent] = []
         while record.event_log and (
             len(record.event_log) > REPLAY_RETENTION_MAX_EVENTS
             or int(record.event_log[0].created_at) < cutoff
         ):
-            removed.append(record.event_log.popleft())
+            record.event_log.popleft()
             record.replay_history_partial = True
-        return removed
 
     def _resume_gap_detail(self, record: SessionRecord, from_id: Optional[str]) -> dict[str, Any]:
         replay = replay_retention_facts(
@@ -657,18 +661,30 @@ class SessionService:
     async def stop_session(self, session_id: str) -> None:
         record = await self.registry.get(session_id)
         if record is not None:
-            runner: Optional[SessionRunner] = getattr(record, "runner", None)
-            if runner:
-                await runner.stop()
-            dispatcher = record.dispatcher_task
-            if dispatcher is not None and not dispatcher.done():
-                await record.event_queue.put(None)
-                await dispatcher
-            await self.registry.update_status(session_id, SessionStatus.STOPPED)
-        await self.registry.delete(session_id)
+            async with record.lifecycle_lock:
+                record.deleting = True
+                runner: Optional[SessionRunner] = getattr(record, "runner", None)
+                if runner:
+                    await runner.stop()
+                dispatcher = record.dispatcher_task
+                if dispatcher is not None and not dispatcher.done():
+                    await record.event_queue.put(None)
+                    await dispatcher
+                await self.registry.update_status(session_id, SessionStatus.STOPPED)
+                await self.registry.delete(session_id)
 
     async def send_input(self, session_id: str, payload: SessionInputRequest) -> SessionInputResponse:
         record = await self.ensure_session(session_id)
+        async with record.lifecycle_lock:
+            if record.deleting:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+            return await self._send_input_for_record(record, payload)
+
+    async def _send_input_for_record(
+        self,
+        record: SessionRecord,
+        payload: SessionInputRequest,
+    ) -> SessionInputResponse:
         attachments = tuple(
             item.strip()
             for item in (payload.attachments or [])
@@ -721,6 +737,8 @@ class SessionService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail={"code": exc.code, "message": str(exc), "turn_id": exc.turn_id},
             ) from exc
+        except SessionRecordDeletedError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found") from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
@@ -731,6 +749,17 @@ class SessionService:
         payload: SessionTurnCancelRequest,
     ) -> SessionTurnCancelResponse:
         record = await self.ensure_session(session_id)
+        async with record.lifecycle_lock:
+            if record.deleting:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
+            return await self._cancel_turn_for_record(record, turn_id, payload)
+
+    async def _cancel_turn_for_record(
+        self,
+        record: SessionRecord,
+        turn_id: str,
+        payload: SessionTurnCancelRequest,
+    ) -> SessionTurnCancelResponse:
         key_digest = identity_digest(payload.cancellation_request_key)
         existing = record.cancellations_by_key.get(payload.cancellation_request_key)
         if existing is None:
@@ -788,6 +817,8 @@ class SessionService:
                 status_code=status.HTTP_409_CONFLICT,
                 detail={"code": exc.code, "message": str(exc), "turn_id": exc.turn_id},
             ) from exc
+        except SessionRecordDeletedError as exc:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found") from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
