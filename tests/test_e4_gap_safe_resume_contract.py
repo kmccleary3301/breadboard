@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import httpx
@@ -139,7 +140,6 @@ async def test_v1_snapshot_and_stream_ack_export_equal_replay_contract_shapes() 
         if line.startswith("data: ")
     ]
     assert len(stream_data) == 1
-    import json
 
     opened = json.loads(stream_data[0])
     assert opened["type"] == "stream.open"
@@ -172,7 +172,7 @@ async def test_expired_cursor_returns_typed_recovery_without_registering_a_subsc
     await registry.create(record)
 
     with pytest.raises(HTTPException) as captured:
-        await service.validate_event_stream(record.session_id, from_id="1")
+        await service.prepare_event_stream(record.session_id, from_id="1")
 
     assert captured.value.status_code == 409
     detail = captured.value.detail
@@ -188,6 +188,74 @@ async def test_expired_cursor_returns_typed_recovery_without_registering_a_subsc
     assert record.subscribers == {}
 
     await _stop_dispatcher(record)
+
+@pytest.mark.asyncio
+async def test_v1_count_and_age_boundary_gaps_are_typed_before_stream_headers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now_ms = 2_000_000_000_000
+    monkeypatch.setattr(service_module.time, "time", lambda: now_ms / 1000)
+    registry = SessionRegistry()
+    service = SessionService(registry)
+
+    count_record = SessionRecord(
+        session_id="count-boundary",
+        status=SessionStatus.COMPLETED,
+        event_seq=REPLAY_RETENTION_MAX_EVENTS + 1,
+    )
+    count_record.event_log.extend(
+        _logged_event(count_record.session_id, sequence, created_at=now_ms)
+        for sequence in range(1, REPLAY_RETENTION_MAX_EVENTS + 2)
+    )
+    age_record = SessionRecord(
+        session_id="age-boundary",
+        status=SessionStatus.COMPLETED,
+        event_seq=1,
+    )
+    age_record.event_log.append(
+        _logged_event(
+            age_record.session_id,
+            1,
+            created_at=now_ms - REPLAY_RETENTION_MAX_AGE_MS - 1,
+        )
+    )
+    await registry.create(count_record)
+    await registry.create(age_record)
+    app = create_app(service, include_atp_routes=False)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        count_response = await client.get(
+            f"/v1/sessions/{count_record.session_id}/events",
+            params={"from_id": "1"},
+        )
+        age_response = await client.get(
+            f"/v1/sessions/{age_record.session_id}/events",
+            params={"from_id": "1"},
+        )
+
+    for response in (count_response, age_response):
+        assert response.status_code == 409
+        body = response.json()
+        assert body["error"] == "resume_window_exceeded"
+        assert body["detail"]["message"] == (
+            "resume cursor is outside the retained replay window"
+        )
+        assert body["detail"]["last_event_id"] == "1"
+        assert body["detail"]["recovery"]["action"] == SNAPSHOT_RECOVERY_ACTION
+        assert body["detail"]["recovery"]["reconnect"]["cursor"] is None
+        assert body["detail"]["replayRetention"] == {
+            "maxEvents": REPLAY_RETENTION_MAX_EVENTS,
+            "maxAgeMs": REPLAY_RETENTION_MAX_AGE_MS,
+            "configurationDigest": body["detail"]["replayRetention"][
+                "configurationDigest"
+            ],
+        }
+    assert count_response.json()["detail"]["first_retained_sequence"] == 2
+    assert age_response.json()["detail"]["first_retained_sequence"] is None
+
+    await _stop_dispatcher(count_record)
+    await _stop_dispatcher(age_record)
 
 
 @pytest.mark.asyncio
@@ -258,6 +326,57 @@ async def test_subscriber_overflow_emits_one_terminal_gap_and_stops_later_delive
     with pytest.raises(StopAsyncIteration):
         await stream.__anext__()
     await _stop_dispatcher(record)
+
+@pytest.mark.asyncio
+async def test_durable_persist_failure_never_fans_out_stable_event() -> None:
+    class PersistFailingRegistry(SessionRegistry):
+        fail_persist = False
+
+        async def persist(
+            self,
+            record: SessionRecord,
+            *,
+            terminal_event: SessionEvent | None = None,
+        ) -> None:
+            if self.fail_persist:
+                raise OSError("deterministic persist failure")
+            await super().persist(record, terminal_event=terminal_event)
+
+    registry = PersistFailingRegistry()
+    service = SessionService(registry)
+    record = SessionRecord(session_id="persist-failure", status=SessionStatus.RUNNING)
+    await registry.create(record)
+    prepared = await service.prepare_event_stream(record.session_id)
+    stream = service.prepared_event_stream(prepared)
+
+    registry.fail_persist = True
+    await record.event_queue.put(
+        _logged_event(
+            record.session_id,
+            1,
+            event_type=EventType.TURN_COMPLETED,
+            input_id="input-failure",
+            turn_id="turn-failure",
+            payload={},
+        )
+    )
+    assert record.dispatcher_task is not None
+    await record.dispatcher_task
+
+    gap = await stream.__anext__()
+    assert gap.type is EventType.STREAM_GAP
+    assert gap.stable_cursor is False
+    assert gap.payload["code"] == "durable_persist_failed"
+    assert gap.payload["last_safely_delivered_cursor"] == {
+        "sequence": None,
+        "event_id": None,
+    }
+    assert gap.payload["recovery"]["action"] == SNAPSHOT_RECOVERY_ACTION
+    assert record.event_seq == 0
+    assert list(record.event_log) == []
+    assert record.terminal_event_envelopes == []
+    with pytest.raises(StopAsyncIteration):
+        await stream.__anext__()
 
 
 def test_replay_retention_exact_count_age_edges_and_configuration_digest(

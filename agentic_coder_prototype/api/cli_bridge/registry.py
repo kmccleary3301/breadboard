@@ -242,13 +242,21 @@ class SessionRegistry:
         terminal_event: SessionEvent | None = None,
     ) -> None:
         async with self._lock:
+            retained: Dict[str, Any] | None = None
             if terminal_event is not None:
-                retained = self._retained_terminal_envelope(terminal_event)
-                if retained is not None and not any(
-                    item.get("id") == retained.get("id") for item in record.terminal_event_envelopes
+                candidate = self._retained_terminal_envelope(terminal_event)
+                if candidate is not None and not any(
+                    item.get("id") == candidate.get("id")
+                    for item in record.terminal_event_envelopes
                 ):
-                    record.terminal_event_envelopes.append(retained)
-            self._persist_record_locked(record)
+                    retained = candidate
+                    record.terminal_event_envelopes.append(candidate)
+            try:
+                self._persist_record_locked(record)
+            except Exception:
+                if retained is not None:
+                    record.terminal_event_envelopes.remove(retained)
+                raise
 
     def _state_path(self, session_id: str) -> Path | None:
         if self._state_root is None:

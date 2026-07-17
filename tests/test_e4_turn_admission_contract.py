@@ -753,4 +753,7 @@ def test_canonical_targeted_cancel_route_uses_typed_models(monkeypatch: pytest.M
         "disposition": "cancellation_requested",
         "original_disposition": "cancellation_requested",
     }
-    assert not any(route.path == "/sessions/{session_id}/turns/{turn_id}/cancel" for route in app.routes)
+    assert not any(
+        getattr(route, "path", None) == "/sessions/{session_id}/turns/{turn_id}/cancel"
+        for route in app.routes
+    )

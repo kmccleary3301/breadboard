@@ -233,11 +233,14 @@ def _http_error_content(exc: HTTPException) -> dict[str, Any]:
     detail = exc.detail
     if isinstance(detail, dict):
         error = detail.get("error") or detail.get("code") or detail.get("error_code") or _error_code_for_status(exc.status_code)
-        envelope_detail = detail.get("detail")
-        if envelope_detail is None:
-            envelope_detail = detail.get("message")
-        if envelope_detail is None:
-            envelope_detail = {key: value for key, value in detail.items() if key not in {"message", "error", "code", "error_code", "path"}}
+        if "detail" in detail:
+            envelope_detail = detail.get("detail")
+        else:
+            envelope_detail = {
+                key: value
+                for key, value in detail.items()
+                if key not in {"error", "code", "error_code", "path"}
+            }
             if not envelope_detail:
                 envelope_detail = None
         path = detail.get("path") if isinstance(detail.get("path"), str) else None
@@ -933,16 +936,14 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         try:
             if not from_id:
                 from_id = request.headers.get("last-event-id") or request.headers.get("Last-Event-ID")
-            if from_id:
-                await svc.validate_event_stream(session_id, from_id=from_id, replay=replay)
-            generator = svc.event_stream(
+            prepared = await svc.prepare_event_stream(
                 session_id,
                 replay=replay,
                 limit=limit,
                 from_id=from_id,
-                validated=True,
                 include_open_ack=True,
             )
+            generator = svc.prepared_event_stream(prepared)
         except HTTPException as exc:
             raise exc
 

@@ -8,6 +8,7 @@ import logging
 import os
 import time
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, Dict, Optional, Sequence
@@ -88,6 +89,13 @@ def _load_bridge_chaos_metadata() -> dict[str, float] | None:
 
 def _env_flag(name: str) -> bool:
     return (os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"})
+
+
+@dataclass(frozen=True)
+class PreparedEventStream:
+    record: SessionRecord
+    queue: "asyncio.Queue[Optional[SessionEvent]]"
+    subscriber: SubscriberState
 
 
 class SessionService:
@@ -190,6 +198,31 @@ class SessionService:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="session not found")
         return record
 
+    async def prepare_event_stream(
+        self,
+        session_id: str,
+        *,
+        replay: bool = False,
+        limit: Optional[int] = None,
+        from_id: Optional[str] = None,
+        include_open_ack: bool = False,
+    ) -> PreparedEventStream:
+        """Validate and register a stream before response headers are committed."""
+        record = await self.ensure_session(session_id)
+        await self._ensure_dispatcher(record)
+        queue: asyncio.Queue[Optional[SessionEvent]] = asyncio.Queue(
+            maxsize=self._subscriber_queue_maxsize
+        )
+        subscriber = await self._register_subscriber(
+            record,
+            queue,
+            replay=replay,
+            limit=limit,
+            from_id=from_id,
+            include_open_ack=include_open_ack,
+        )
+        return PreparedEventStream(record=record, queue=queue, subscriber=subscriber)
+
     async def event_stream(
         self,
         session_id: str,
@@ -197,36 +230,35 @@ class SessionService:
         replay: bool = False,
         limit: Optional[int] = None,
         from_id: Optional[str] = None,
-        validated: bool = False,
         include_open_ack: bool = False,
     ) -> AsyncIterator[SessionEvent]:
-        record = await self.ensure_session(session_id)
-        await self._ensure_dispatcher(record)
-        subscriber: asyncio.Queue[Optional[SessionEvent]] = asyncio.Queue(
-            maxsize=self._subscriber_queue_maxsize
-        )
-        state = await self._register_subscriber(
-            record,
-            subscriber,
+        prepared = await self.prepare_event_stream(
+            session_id,
             replay=replay,
             limit=limit,
             from_id=from_id,
-            validated=validated,
             include_open_ack=include_open_ack,
         )
+        async for event in self.prepared_event_stream(prepared):
+            yield event
+
+    async def prepared_event_stream(
+        self,
+        prepared: PreparedEventStream,
+    ) -> AsyncIterator[SessionEvent]:
         try:
             while True:
-                event = await subscriber.get()
+                event = await prepared.queue.get()
                 if event is None:
                     break
                 if event.stable_cursor:
-                    state.last_delivered_sequence = event.seq
-                    state.last_delivered_event_id = event.event_id
+                    prepared.subscriber.last_delivered_sequence = event.seq
+                    prepared.subscriber.last_delivered_event_id = event.event_id
                 yield event
                 if event.type is EventType.STREAM_GAP:
                     break
         finally:
-            await self._unregister_subscriber(record, subscriber)
+            await self._unregister_subscriber(prepared.record, prepared.queue)
 
     async def _ensure_dispatcher(self, record: SessionRecord) -> None:
         task = record.dispatcher_task
@@ -243,10 +275,8 @@ class SessionService:
         replay: bool = False,
         limit: Optional[int] = None,
         from_id: Optional[str] = None,
-        validated: bool = False,
         include_open_ack: bool = False,
     ) -> SubscriberState:
-        del validated
         replay_enabled = replay or bool(from_id)
         state = SubscriberState(queue=queue)
         async with record.dispatch_lock:
@@ -337,13 +367,16 @@ class SessionService:
             record.subscribers.pop(queue, None)
 
     async def _dispatch_events(self, record: SessionRecord) -> None:
-        """Log stable events and fan them out without hiding subscriber gaps."""
+        """Persist stable events before any subscriber can observe them."""
         while True:
             event = await record.event_queue.get()
             if event is None:
                 break
+            persistence_failed = False
             async with record.dispatch_lock:
                 if event.stable_cursor:
+                    previous_sequence = record.event_seq
+                    original_event_sequence = event.seq
                     record.event_seq += 1
                     if event.seq is None:
                         event.seq = record.event_seq
@@ -351,20 +384,40 @@ class SessionService:
                         record.event_seq = max(record.event_seq, int(event.seq))
                     record.event_log.append(event)
                     self._prune_replay(record)
-                for subscriber in list(record.subscribers.values()):
-                    self._enqueue_subscription(record, subscriber, event)
-            if event.stable_cursor:
-                await self.registry.persist(
-                    record,
-                    terminal_event=event
-                    if event.type
-                    in {
-                        EventType.TURN_COMPLETED,
-                        EventType.TURN_FAILED,
-                        EventType.TURN_CANCELLED,
-                    }
-                    else None,
-                )
+                    try:
+                        await self.registry.persist(
+                            record,
+                            terminal_event=event
+                            if event.type
+                            in {
+                                EventType.TURN_COMPLETED,
+                                EventType.TURN_FAILED,
+                                EventType.TURN_CANCELLED,
+                            }
+                            else None,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Durable event persistence failed for session %s",
+                            record.session_id,
+                        )
+                        if record.event_log and record.event_log[-1] is event:
+                            record.event_log.pop()
+                        record.event_seq = previous_sequence
+                        event.seq = original_event_sequence
+                        persistence_failed = True
+                        for subscriber in list(record.subscribers.values()):
+                            self._mark_subscription_gap(
+                                record,
+                                subscriber,
+                                code="durable_persist_failed",
+                                recovery_action=SNAPSHOT_RECOVERY_ACTION,
+                            )
+                if not persistence_failed:
+                    for subscriber in list(record.subscribers.values()):
+                        self._enqueue_subscription(record, subscriber, event)
+            if persistence_failed:
+                break
         async with record.dispatch_lock:
             for subscriber in list(record.subscribers.values()):
                 try:
@@ -389,6 +442,9 @@ class SessionService:
         self,
         record: SessionRecord,
         subscriber: SubscriberState,
+        *,
+        code: str = "subscriber_overflow",
+        recovery_action: str = OVERFLOW_RECOVERY_ACTION,
     ) -> None:
         if subscriber.gapped:
             return
@@ -409,13 +465,13 @@ class SessionService:
                 EventType.STREAM_GAP,
                 record.session_id,
                 {
-                    "code": "subscriber_overflow",
+                    "code": code,
                     "last_safely_delivered_cursor": {
                         "sequence": subscriber.last_delivered_sequence,
                         "event_id": subscriber.last_delivered_event_id,
                     },
                     "recovery": {
-                        "action": OVERFLOW_RECOVERY_ACTION,
+                        "action": recovery_action,
                         "snapshot_action": SNAPSHOT_RECOVERY_ACTION,
                     },
                     **replay,
@@ -523,28 +579,6 @@ class SessionService:
             return None
         return None
 
-    async def validate_event_stream(
-        self,
-        session_id: str,
-        *,
-        from_id: Optional[str] = None,
-        replay: bool = False,
-    ) -> None:
-        if not from_id:
-            return
-        record = await self.ensure_session(session_id)
-        await self._ensure_dispatcher(record)
-        async with record.dispatch_lock:
-            if not (replay or from_id):
-                return
-            self._ensure_event_sequence(record)
-            self._prune_replay(record)
-            events = list(record.event_log)
-            if self._resolve_start_index(events, from_id) is None:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=self._resume_gap_detail(record, from_id),
-                )
 
     def _ensure_event_sequence(self, record: SessionRecord) -> None:
         seq = record.event_seq
