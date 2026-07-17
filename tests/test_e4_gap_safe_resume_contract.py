@@ -235,6 +235,7 @@ async def test_v1_count_and_age_boundary_gaps_are_typed_before_stream_headers(
         age_snapshot_response = await client.get(
             f"/v1/sessions/{age_record.session_id}"
         )
+        assert age_record.dispatcher_task is None
         age_response = await client.get(
             f"/v1/sessions/{age_record.session_id}/events",
             params={"from_id": "1"},
