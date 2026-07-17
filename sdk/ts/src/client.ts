@@ -4,6 +4,8 @@ import type {
   ModelCatalogResponse,
   SessionCreateRequest,
   SessionCreateResponse,
+  SessionInputRequest,
+  SessionInputResponse,
   SessionFileContent,
   SessionFileInfo,
   SessionSummary,
@@ -104,8 +106,8 @@ export const createBreadboardClient = (config: BreadboardClientConfig) => ({
     requestWithConfig<SessionCreateResponse>(config, "/v1/sessions", "POST", { body: payload }),
   listSessions: () => requestWithConfig<SessionSummary[]>(config, "/v1/sessions", "GET"),
   getSession: (sessionId: string) => requestWithConfig<SessionSummary>(config, `/v1/sessions/${sessionId}`, "GET"),
-  postInput: (sessionId: string, body: { content: string; attachments?: ReadonlyArray<string> }) =>
-    requestWithConfig<void>(config, `/v1/sessions/${sessionId}/input`, "POST", { body }),
+  postInput: (sessionId: string, body: SessionInputRequest) =>
+    requestWithConfig<SessionInputResponse>(config, `/v1/sessions/${sessionId}/input`, "POST", { body }),
   postCommand: (sessionId: string, body: Record<string, unknown>) =>
     requestWithConfig<void>(config, `/v1/sessions/${sessionId}/command`, "POST", { body }),
   deleteSession: (sessionId: string) => requestWithConfig<void>(config, `/v1/sessions/${sessionId}`, "DELETE"),

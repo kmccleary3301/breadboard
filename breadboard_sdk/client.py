@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional
 from urllib.parse import urlencode, urljoin
@@ -124,11 +125,21 @@ class BreadboardClient:
         return self._request("GET", f"/v1/sessions/{session_id}/records")
 
 
-    def post_input(self, session_id: str, *, content: str, attachments: List[str] | None = None) -> None:
-        payload: Dict[str, Any] = {"content": content}
+    def post_input(
+        self,
+        session_id: str,
+        *,
+        content: str,
+        attachments: List[str] | None = None,
+        client_message_id: str | None = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "content": content,
+            "client_message_id": client_message_id or str(uuid.uuid4()),
+        }
         if attachments:
             payload["attachments"] = list(attachments)
-        self._request("POST", f"/v1/sessions/{session_id}/input", body=payload)
+        return self._request("POST", f"/v1/sessions/{session_id}/input", body=payload)
 
     def post_command(self, session_id: str, *, command: str, payload: Dict[str, Any] | None = None) -> None:
         self._request("POST", f"/v1/sessions/{session_id}/command", body={"command": command, "payload": payload or {}})
