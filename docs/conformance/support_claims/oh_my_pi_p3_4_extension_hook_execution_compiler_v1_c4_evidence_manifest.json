@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:bd10922d4b1001efb40c22f1fa7675fb7fc2a3748a47422254a0fdca43072ccb"
+      "sha256": "sha256:f51115f4f212c3fa18578b77127f554bc28e102c69ea358aedca8303419ce912"
     },
     {
       "derived_from": [

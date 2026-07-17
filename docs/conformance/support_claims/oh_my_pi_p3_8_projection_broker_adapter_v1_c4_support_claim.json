@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json#sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 13,
+    "catalog_revision": 15,
     "segment_hash": "sha256:bc4ff56fee0f2757b6d0815269f08690550633ae775b9caf36881c32801350cc",
     "segment_id": "oh_my_pi_p3_8_projection_broker_adapter",
-    "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
+    "shared_segment_hash": "sha256:03b50e5fa7f2fcc39310deeea9fd1b1ad0248602ef180c1aa480d9491284f3d3"
   },
   "claim_id": "oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim",
   "claim_semantics": {

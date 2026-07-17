@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:30e0b79349e5aed34a59b95f2613eb636feeee72c63f0fb0248799ca5561d840"
+      "sha256": "sha256:4b3e6034d09e11e47aba466e6d3ef46e5083ca758274ae920aab0f7c9916142a"
     },
     {
       "derived_from": [

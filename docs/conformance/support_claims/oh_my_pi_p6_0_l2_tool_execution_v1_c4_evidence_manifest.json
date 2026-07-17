@@ -30,7 +30,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:dded425fd535bdbbe1dcc56e38c6eaccc0c2bced811bfd9f6299df0dd86fdabb"
+      "sha256": "sha256:d477a67e5d5e6f7c90433fffe831730ad8f6c4de054c0f4b4fee350fa4a4ad26"
     },
     {
       "derived_from": [
@@ -55,7 +55,7 @@
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     }
   ],
   "claim_id": "oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim",

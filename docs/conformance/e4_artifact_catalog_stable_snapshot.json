@@ -3,7 +3,7 @@
   "entries": [
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -11,7 +11,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "breadboard_self_runtime_records_v1:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "freeze",
@@ -83,11 +83,11 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json",
       "role_id": "breadboard_self_runtime_records_v1:target_probe_output",
-      "sha256": "sha256:40a66641b1850f63f1ca3362dea39cbd77a482e43b9d58ee57ed71ad612a272e"
+      "sha256": "sha256:bfdae4856b420f94f56962bb99cf48a4e47e08ada369d7ad32c0c798972a9b02"
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -95,7 +95,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "claude_code_north_star_capture_v1:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "capture",
@@ -207,7 +207,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -215,7 +215,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "codex_cli_e4_capture_probe_v1:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "capture",
@@ -371,7 +371,7 @@
     },
     {
       "artifact_kind": "config",
-      "bytes": 76786,
+      "bytes": 76822,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -379,7 +379,7 @@
       "media_type": "application/json",
       "path": "docs/conformance/e4_lane_inventory.json",
       "role_id": "e4_static:config/e4_lane_inventory",
-      "sha256": "sha256:4335e62f99ca27be6b2fc4ef340756df09435363dfca94d3e788a31e65ebfd2d"
+      "sha256": "sha256:88c4c84e9019fc01870e6893191ce22a3802c067f56fcd5c7b545019d7154aaf"
     },
     {
       "artifact_kind": "config",
@@ -397,7 +397,7 @@
     },
     {
       "artifact_kind": "report",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "scripts/e4_parity/seed_atomic_feature_ledger.py",
@@ -405,7 +405,7 @@
       "media_type": "application/json",
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "e4_static:report/bb_e4_atomic_feature_ledger_seed_json",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "config",
@@ -489,7 +489,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:capture",
-      "sha256": "sha256:e9ca423e58b93c5a76625c671c88f9b352e81b1d9b340f9307882b0a794af63f"
+      "sha256": "sha256:be22ac25be4212151fb120829a772bd8a2fdc27483e68148b059bc1e3bf66a06"
     },
     {
       "artifact_kind": "comparator",
@@ -505,7 +505,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:comparator",
-      "sha256": "sha256:1888e55d5c48e98ef1121156b1b2697d54730d9bf94c54245ff1829dec77b4c5"
+      "sha256": "sha256:bc6b25c41f93fead81b463b7d11caacb62997e71a5c4a65dff658a0822603bca"
     },
     {
       "artifact_kind": "schema",
@@ -517,7 +517,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/compiled_records.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:compiled_records",
-      "sha256": "sha256:cc5b2cd4e4a7679d1599081d3c93f17505f1ca66679092ccf414c8560081d163"
+      "sha256": "sha256:6412fc72d20d7d6b724e32b2bcf7ce9a05361f03c53ca01b04012eeae2b64acc"
     },
     {
       "artifact_kind": "freeze",
@@ -543,7 +543,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:parity_results",
-      "sha256": "sha256:7ce3ecd3df1c06d3bececf37ab83d3152203729de72781765a742d8d85bb6e21"
+      "sha256": "sha256:5f6b6d2fed7ecf149e25ef9c087b47cd02402fe7d2af397aa7919c2af270d856"
     },
     {
       "artifact_kind": "replay",
@@ -558,7 +558,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_2_context_resource_pack_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:replay",
-      "sha256": "sha256:42c25034e6599700f97607eccd9f264c5ecd36c4093bf430855af594cba384f8"
+      "sha256": "sha256:4964c8a81c81fc094ed6d97752c4c76dcd8449262003fe90f8a8266631da175d"
     },
     {
       "artifact_kind": "node_gate",
@@ -610,7 +610,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 5047,
+      "bytes": 5053,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -618,7 +618,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:capture",
-      "sha256": "sha256:a6571aac4acdd0833fda62f2c58c9888974b2d39689f2590454d7c39e41efe5a"
+      "sha256": "sha256:7a0e9aa4a4747e4d5e1751bf2f714a117b00ae2e1e5ac963c4a9b6208bb7abc3"
     },
     {
       "artifact_kind": "comparator",
@@ -634,7 +634,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:comparator",
-      "sha256": "sha256:8c505e256a5ecf141ff54a569e50b4f99c5491ed3e98ba67ef5dcbabd38af5f0"
+      "sha256": "sha256:1764b2a9cddf3f4c520eb674f26e38a479960ccc699e2283612a11a4f6b64ff5"
     },
     {
       "artifact_kind": "schema",
@@ -672,7 +672,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:parity_results",
-      "sha256": "sha256:4f4ea6e7db13fb1b1fd32eb4b10b0808f4f30a3eeb70e82c45b49577540f83c6"
+      "sha256": "sha256:fac080c0e727d178c3f93c8e78ed81b294d55b52c19246e5924aacc63857446b"
     },
     {
       "artifact_kind": "replay",
@@ -687,7 +687,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_3_capability_registry_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:replay",
-      "sha256": "sha256:eb5ac608cbb27fcd40a47e7a1dbeec468dbd3c91180badc9723a2a545f35d3dd"
+      "sha256": "sha256:163f39cd545b563cc426b800178ded385eb7d5a5a93a8f8a54748e8f95952cc3"
     },
     {
       "artifact_kind": "node_gate",
@@ -739,7 +739,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 5102,
+      "bytes": 5108,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -747,7 +747,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:capture",
-      "sha256": "sha256:58d2385505e26f65ea5c4a2c2e839adeafb68bc150a8991ff1046adc2e1da51b"
+      "sha256": "sha256:e32bae48d42b11073de8959f5d26b99978681f0783984167f9e5b8d94a328b70"
     },
     {
       "artifact_kind": "comparator",
@@ -763,7 +763,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:comparator",
-      "sha256": "sha256:2cae5e176aad70f56514a9c1d6a613ae31827afd836db4e2335fc6307904037e"
+      "sha256": "sha256:ffffa2c0de96ea56d3a8572efd5de039fdf0c759d6e8214631c4646f00735ecc"
     },
     {
       "artifact_kind": "schema",
@@ -801,7 +801,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:parity_results",
-      "sha256": "sha256:ef2919aa56ce490407dc06ed48ad1b131d59a7fc6cb7ef2eacef61bb52df9bfb"
+      "sha256": "sha256:b5276bbb873043e64f2f5cdba737b7cd697cbc7fb1166ccdbda6d6cbcbc50fce"
     },
     {
       "artifact_kind": "replay",
@@ -816,7 +816,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_4_extension_hook_execution_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:replay",
-      "sha256": "sha256:9c9bd8648a4b57722632657414272e54ae1ef03349a63f945709bf52f9bda138"
+      "sha256": "sha256:13b049eaa17247ecaf65f178e0d2360c8558e38ab6d520b0f2659d3cb6f6d565"
     },
     {
       "artifact_kind": "node_gate",
@@ -868,7 +868,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 4981,
+      "bytes": 4987,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -876,7 +876,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:capture",
-      "sha256": "sha256:cadae9c57e73639c5c858a99203403aacad2d51d45b630b6060aa3c1041ac9e4"
+      "sha256": "sha256:6a776b03bf1290f5940045d2170e56516bd1f5775a694f0398a5f2e96fe825aa"
     },
     {
       "artifact_kind": "comparator",
@@ -892,7 +892,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:comparator",
-      "sha256": "sha256:d67157252a9660a84c872d7b7090ce22a67a1bbfc90e27f46e52151870c74307"
+      "sha256": "sha256:9772186b764d95426926eedb725561605f4ff78e350249c0ab097efc9322df60"
     },
     {
       "artifact_kind": "schema",
@@ -930,7 +930,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:parity_results",
-      "sha256": "sha256:0fbac34c8be6914121ef3d5581cb87c2b16feab82f1f0575313d671029e22e23"
+      "sha256": "sha256:c264346f7f9b07df12aa5ac71876c62527e9819788d6b749eb46c6d84a7ba9df"
     },
     {
       "artifact_kind": "replay",
@@ -945,7 +945,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_5_resource_blob_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:replay",
-      "sha256": "sha256:9ae9735552e51660fd4216409844f2deb9889ac90ebbdfa700a09e9375878a3a"
+      "sha256": "sha256:2d8c2bbda80e1130ed3114dc1aada5ac45f1de341c12f6987c715e0dd1c0ca42"
     },
     {
       "artifact_kind": "node_gate",
@@ -997,7 +997,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 5102,
+      "bytes": 5108,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1005,7 +1005,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:capture",
-      "sha256": "sha256:3c319b5c6307ab15b53260eecab67e86f33ae2c6d62d980b488fb9f2b5a130e2"
+      "sha256": "sha256:25890e81ab15eb4f70fa8e8e282895a71df6e2e8b6d8f0e0bc6f4423bdf24e7c"
     },
     {
       "artifact_kind": "comparator",
@@ -1021,7 +1021,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/comparator_report.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:comparator",
-      "sha256": "sha256:625cac6ad2a2550d1d930acedad035d7b2cea2ba3b8f413a630b23f95c23741b"
+      "sha256": "sha256:0579d31e4453807c6a63d99f9da701654dee31fd164acbb1aec227ecab02bb48"
     },
     {
       "artifact_kind": "schema",
@@ -1059,7 +1059,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/parity_results.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:parity_results",
-      "sha256": "sha256:a7509379d9e9bea0ce554cf4f663cca6c1fe2a9fe6dc6bafa3e58d91e75f9c6c"
+      "sha256": "sha256:6a71d2c922cdcdb87722301a626e6757b864c1fa86c02dc7aa9f3f5c5d6505c0"
     },
     {
       "artifact_kind": "replay",
@@ -1074,7 +1074,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:replay",
-      "sha256": "sha256:e02024c641cad14e2bff6c72e59a7b795bcbaff039c185f781dc5853057c9dd7"
+      "sha256": "sha256:fd9e28b43dae49b8fb7766f1b2429e0d008c2637f7b0197d748286786a5c3156"
     },
     {
       "artifact_kind": "node_gate",
@@ -1126,7 +1126,7 @@
     },
     {
       "artifact_kind": "capture",
-      "bytes": 5014,
+      "bytes": 5020,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1134,7 +1134,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/raw_capture_manifest.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:capture",
-      "sha256": "sha256:9d662da152691b970c52fe62e7d9b3f740d858600d2c68444a910123733486f5"
+      "sha256": "sha256:ae861c31078fef3b862ccf641ae3e3930dafb4023b854f9702b5b5846e2c7c98"
     },
     {
       "artifact_kind": "comparator",
@@ -1150,7 +1150,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/comparator_report.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:comparator",
-      "sha256": "sha256:c3027b2bd2d0e4b385d9e7becde47e5314cff4beb59d480a26f50bb183771bfb"
+      "sha256": "sha256:09118d45c07d126ea0299f7bb132239e928bdfdf9c085eaf11504d953c1fa7c0"
     },
     {
       "artifact_kind": "schema",
@@ -1188,7 +1188,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/parity_results.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:parity_results",
-      "sha256": "sha256:014a27b3d4f220e39ed3de6efaef9e90c0390b8b45b900ca22cb6f204258dd63"
+      "sha256": "sha256:839e941ee148eedeea879a037a4414f35bbc81d5c03cc1822a018b15472a5047"
     },
     {
       "artifact_kind": "replay",
@@ -1203,7 +1203,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_8_projection_broker_adapter/bb_replay_result.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:replay",
-      "sha256": "sha256:56239d6a57b2554b97604639b9f6cca0df3d7fcfef1a60990f0f5522638c2f2b"
+      "sha256": "sha256:3408d24a3b7581ca5bc78d7145ef7202650d6804906230c425000e5ca4900da5"
     },
     {
       "artifact_kind": "node_gate",
@@ -1243,7 +1243,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1251,7 +1251,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "capture",
@@ -1334,7 +1334,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1342,7 +1342,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "capture",
@@ -1425,7 +1425,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1433,7 +1433,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "capture",
@@ -1516,7 +1516,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1524,7 +1524,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "capture",
@@ -1607,7 +1607,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1615,7 +1615,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "capture",
@@ -1738,7 +1738,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1746,7 +1746,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "capture",
@@ -2042,7 +2042,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2050,7 +2050,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "opencode_north_star_capture_v1:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "artifact_kind": "capture",
@@ -2312,186 +2312,35 @@
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_setup_and_capture_report.json",
       "role_id": "pi_p5_l1_cli_config_context_tool_surface:target_setup_report",
       "sha256": "sha256:158fc96b623da590f0c0a57220808d360b82d18540978decc2b6bce78cf5982f"
-    },
-    {
-      "artifact_kind": "config",
-      "bytes": 672,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "agent_configs/misc/pi_p5_l2_extension_session_residual_v1.yaml",
-      "role_id": "pi_p5_l2_extension_session_residual:agent_config",
-      "sha256": "sha256:756fdbcab340647580f6cf4a090ea566420e58387c61a83c3d7e9302987c35b1"
-    },
-    {
-      "artifact_kind": "capture",
-      "bytes": 4300,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json",
-      "role_id": "pi_p5_l2_extension_session_residual:capture",
-      "sha256": "sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec"
-    },
-    {
-      "artifact_kind": "comparator",
-      "bytes": 8099,
-      "derived_from": [
-        "pi_p5_l2_extension_session_residual:capture",
-        "pi_p5_l2_extension_session_residual:replay",
-        "pi_p5_l2_extension_session_residual:target_probe_output"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json",
-      "role_id": "pi_p5_l2_extension_session_residual:comparator",
-      "sha256": "sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043"
-    },
-    {
-      "artifact_kind": "freeze",
-      "bytes": 68654,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "config/e4_target_freeze_manifest.yaml",
-      "role_id": "pi_p5_l2_extension_session_residual:freeze_manifest",
-      "sha256": "sha256:6d7979a411879d2ef6ca291745bd3df35a97a72b51fdcc90088fb7b66a82a27e"
-    },
-    {
-      "artifact_kind": "parity_results",
-      "bytes": 442,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json",
-      "role_id": "pi_p5_l2_extension_session_residual:parity_results",
-      "sha256": "sha256:346b3bf965105867ecab099e0b154f8388cdc83c027853716e1b59c81dbd9e21"
-    },
-    {
-      "artifact_kind": "replay",
-      "bytes": 16517,
-      "derived_from": [
-        "pi_p5_l2_extension_session_residual:capture",
-        "pi_p5_l2_extension_session_residual:target_probe_output"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json",
-      "role_id": "pi_p5_l2_extension_session_residual:replay",
-      "sha256": "sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f"
-    },
-    {
-      "artifact_kind": "secret_scan",
-      "bytes": 1409,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json",
-      "role_id": "pi_p5_l2_extension_session_residual:secret_scan_report",
-      "sha256": "sha256:f033e4e2b70364f8b0c178252c862a98d91aa7d9e08a4c56375e4ea448ac42d7"
-    },
-    {
-      "artifact_kind": "freeze",
-      "bytes": 4755355,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
-      "role_id": "pi_p5_l2_extension_session_residual:source_archive",
-      "sha256": "sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b"
-    },
-    {
-      "artifact_kind": "freeze",
-      "bytes": 1746,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
-      "role_id": "pi_p5_l2_extension_session_residual:source_freeze",
-      "sha256": "sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602"
-    },
-    {
-      "artifact_kind": "node_gate",
-      "bytes": 10838,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json",
-      "role_id": "pi_p5_l2_extension_session_residual:target_probe_output",
-      "sha256": "sha256:96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde"
-    },
-    {
-      "artifact_kind": "script",
-      "bytes": 14355,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs",
-      "role_id": "pi_p5_l2_extension_session_residual:target_probe_script",
-      "sha256": "sha256:d84700ffe82039146008260f2cf43b5e8b8488571e99543d251a2fe9694bae47"
-    },
-    {
-      "artifact_kind": "report",
-      "bytes": 4099,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json",
-      "role_id": "pi_p5_l2_extension_session_residual:target_setup_report",
-      "sha256": "sha256:185b925ae0bbfa60e43eb3394b11c58e063541b8591f8b475f94ab10896646a0"
     }
   ],
   "generated_at_utc": "2026-07-03T00:00:00Z",
   "integrity": {
-    "entries_hash": "sha256:06d138f930529aff4bb45d3c75ebf7515d9fbba1171fdd3e923b9b8c809ffd47",
-    "entry_count": 191,
-    "segments_hash": "sha256:52f4ae1850a7555b72198c48cc5048dc18a93c77cce7563d7da3531c599beafa",
-    "stable_entries_hash": "sha256:06d138f930529aff4bb45d3c75ebf7515d9fbba1171fdd3e923b9b8c809ffd47"
+    "entries_hash": "sha256:4e805baee831c6181d73dd263f1154a316644bdc15de71cf212a1d2739b73f11",
+    "entry_count": 179,
+    "segments_hash": "sha256:7e586417b2bb11210ddf93a78eb732f35861c6810bfc6a55abe3df2ee668083c",
+    "stable_entries_hash": "sha256:4e805baee831c6181d73dd263f1154a316644bdc15de71cf212a1d2739b73f11"
   },
-  "revision": 15,
+  "revision": 16,
   "schema_version": "bb.e4.artifact_catalog.v2",
   "segments": [
     {
-      "entries_hash": "sha256:ffbf48fb68616d5d6264a184636427662b0f7ade206da932ac5a31da0ad89995",
+      "entries_hash": "sha256:fe81c35d624723ca1de0b3f779632ee2e9fb86f9263bc708194927c64fadcae6",
       "entry_count": 7,
       "segment_id": "breadboard_self_runtime_records_v1",
-      "stable_entries_hash": "sha256:ffbf48fb68616d5d6264a184636427662b0f7ade206da932ac5a31da0ad89995"
+      "stable_entries_hash": "sha256:fe81c35d624723ca1de0b3f779632ee2e9fb86f9263bc708194927c64fadcae6"
     },
     {
-      "entries_hash": "sha256:008ee9df97fbb3e2ffb4e7bf2f7c0ae2b448fe010f40eace8e1215e29920ac0e",
+      "entries_hash": "sha256:5fc86aca74152ca67f0776d972a51f2777af5da738db83fdef5d368b58c5551f",
       "entry_count": 9,
       "segment_id": "claude_code_north_star_capture_v1",
-      "stable_entries_hash": "sha256:008ee9df97fbb3e2ffb4e7bf2f7c0ae2b448fe010f40eace8e1215e29920ac0e"
+      "stable_entries_hash": "sha256:5fc86aca74152ca67f0776d972a51f2777af5da738db83fdef5d368b58c5551f"
     },
     {
-      "entries_hash": "sha256:549a2a1af732bfdae2579752dbbd1fee6060a229d75042ded14535046da6a6cf",
+      "entries_hash": "sha256:9db45bc906143350f121b0006c8c355eb66dea057dba497b93fdd72256beffbd",
       "entry_count": 13,
       "segment_id": "codex_cli_e4_capture_probe_v1",
-      "stable_entries_hash": "sha256:549a2a1af732bfdae2579752dbbd1fee6060a229d75042ded14535046da6a6cf"
+      "stable_entries_hash": "sha256:9db45bc906143350f121b0006c8c355eb66dea057dba497b93fdd72256beffbd"
     },
     {
       "entries_hash": "sha256:173df2852ee9ba93b44a27ffebe2c599eecb1654ddb350c710b8780af1fa8411",
@@ -2500,76 +2349,76 @@
       "stable_entries_hash": "sha256:173df2852ee9ba93b44a27ffebe2c599eecb1654ddb350c710b8780af1fa8411"
     },
     {
-      "entries_hash": "sha256:826cdb3bc4e2c223fa35c650209435578997ac3968213011ce0202b0c82eedd3",
+      "entries_hash": "sha256:6d7c6b4429a00cc9471221b022da622cc1f4548261cf056ae85c107d20f89dbc",
       "entry_count": 10,
       "segment_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
-      "stable_entries_hash": "sha256:826cdb3bc4e2c223fa35c650209435578997ac3968213011ce0202b0c82eedd3"
+      "stable_entries_hash": "sha256:6d7c6b4429a00cc9471221b022da622cc1f4548261cf056ae85c107d20f89dbc"
     },
     {
-      "entries_hash": "sha256:b6a418b6a5cc4f72d3020552ab88eb38927d5a9711bb16b950733cf2dc9a29c4",
+      "entries_hash": "sha256:e51cc6735fc3d61266d2f85a7328ae3182ae08c0db8bcf82857e40057ef6b8a6",
       "entry_count": 10,
       "segment_id": "oh_my_pi_p3_3_capability_registry_compiler",
-      "stable_entries_hash": "sha256:b6a418b6a5cc4f72d3020552ab88eb38927d5a9711bb16b950733cf2dc9a29c4"
+      "stable_entries_hash": "sha256:e51cc6735fc3d61266d2f85a7328ae3182ae08c0db8bcf82857e40057ef6b8a6"
     },
     {
-      "entries_hash": "sha256:d74fd736276736a7cd0c5d108187744a3151736c483b68ae3b7c2c59455b2b72",
+      "entries_hash": "sha256:dfca9305a302f0a5376706ddad25cc74c8ad926057d46baa1fee0bcd6634fa32",
       "entry_count": 10,
       "segment_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
-      "stable_entries_hash": "sha256:d74fd736276736a7cd0c5d108187744a3151736c483b68ae3b7c2c59455b2b72"
+      "stable_entries_hash": "sha256:dfca9305a302f0a5376706ddad25cc74c8ad926057d46baa1fee0bcd6634fa32"
     },
     {
-      "entries_hash": "sha256:df3f4de7803a95a3be7e2849e2f468c287b8661436e18e314849d98927c4a05d",
+      "entries_hash": "sha256:cd5d77b6b10e0861c66f099da296290667ba618d76c52d5ef51746b8adba2735",
       "entry_count": 10,
       "segment_id": "oh_my_pi_p3_5_resource_blob_compiler",
-      "stable_entries_hash": "sha256:df3f4de7803a95a3be7e2849e2f468c287b8661436e18e314849d98927c4a05d"
+      "stable_entries_hash": "sha256:cd5d77b6b10e0861c66f099da296290667ba618d76c52d5ef51746b8adba2735"
     },
     {
-      "entries_hash": "sha256:55cb98412c697b6cd301bae2f5030f284d361d574e55566f0193d4977a081cae",
+      "entries_hash": "sha256:99bd5699dbbac26d7ef2dafe11b895751a67234ddb47cd54911f9baae5889088",
       "entry_count": 10,
       "segment_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
-      "stable_entries_hash": "sha256:55cb98412c697b6cd301bae2f5030f284d361d574e55566f0193d4977a081cae"
+      "stable_entries_hash": "sha256:99bd5699dbbac26d7ef2dafe11b895751a67234ddb47cd54911f9baae5889088"
     },
     {
-      "entries_hash": "sha256:8eda6293481d76dad253f4886309332918e97e35907fc6f32df7f5292b17452a",
+      "entries_hash": "sha256:bc4ff56fee0f2757b6d0815269f08690550633ae775b9caf36881c32801350cc",
       "entry_count": 10,
       "segment_id": "oh_my_pi_p3_8_projection_broker_adapter",
-      "stable_entries_hash": "sha256:8eda6293481d76dad253f4886309332918e97e35907fc6f32df7f5292b17452a"
+      "stable_entries_hash": "sha256:bc4ff56fee0f2757b6d0815269f08690550633ae775b9caf36881c32801350cc"
     },
     {
-      "entries_hash": "sha256:7e264169e9a95f270bad69792d5c6bf835ed3554c36d8489d81e024757d4487a",
+      "entries_hash": "sha256:3ef30de09abf570c835ea6966f180643a54724827ce099ce4020cb70b304ff61",
       "entry_count": 7,
       "segment_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
-      "stable_entries_hash": "sha256:7e264169e9a95f270bad69792d5c6bf835ed3554c36d8489d81e024757d4487a"
+      "stable_entries_hash": "sha256:3ef30de09abf570c835ea6966f180643a54724827ce099ce4020cb70b304ff61"
     },
     {
-      "entries_hash": "sha256:197b60e70637b6791a2a4a9399af1d6feafe976a570de4a0d21851466103d370",
+      "entries_hash": "sha256:4443c6792f84866d9a477b349129ad25e5cfb351aff23f33123ca6d58a36623f",
       "entry_count": 7,
       "segment_id": "oh_my_pi_p6_0_l2_tool_execution",
-      "stable_entries_hash": "sha256:197b60e70637b6791a2a4a9399af1d6feafe976a570de4a0d21851466103d370"
+      "stable_entries_hash": "sha256:4443c6792f84866d9a477b349129ad25e5cfb351aff23f33123ca6d58a36623f"
     },
     {
-      "entries_hash": "sha256:a625791947007fa3cc99f592421476f93f924603e9c68e7135dbd927a5833ba4",
+      "entries_hash": "sha256:76a9cbae242be96804b5ef3bc52fc86249ae28b61f0b2dde6c1b8bdfe40fdd3b",
       "entry_count": 7,
       "segment_id": "oh_my_pi_p6_0_l3_command_network_hook",
-      "stable_entries_hash": "sha256:a625791947007fa3cc99f592421476f93f924603e9c68e7135dbd927a5833ba4"
+      "stable_entries_hash": "sha256:76a9cbae242be96804b5ef3bc52fc86249ae28b61f0b2dde6c1b8bdfe40fdd3b"
     },
     {
-      "entries_hash": "sha256:bf6df7d059749b2bd0c5287782613dac73a93aee8065792260a03e063ccb20b8",
+      "entries_hash": "sha256:170b5f07aa53253a4d96cb8ae93fd0849d2f1ca05d79b534a82fc1b91f3c6e14",
       "entry_count": 7,
       "segment_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
-      "stable_entries_hash": "sha256:bf6df7d059749b2bd0c5287782613dac73a93aee8065792260a03e063ccb20b8"
+      "stable_entries_hash": "sha256:170b5f07aa53253a4d96cb8ae93fd0849d2f1ca05d79b534a82fc1b91f3c6e14"
     },
     {
-      "entries_hash": "sha256:c6d9c145a39fcc60d3f8811aa36831dc7cfb44f2d5688db5c670c966ea185d24",
+      "entries_hash": "sha256:19ecc93926860f765530d3acdfe9a4299f84e5694249a7b97ac0ac6ca14ab475",
       "entry_count": 10,
       "segment_id": "oh_my_pi_p6_0_l5_memory_compaction",
-      "stable_entries_hash": "sha256:c6d9c145a39fcc60d3f8811aa36831dc7cfb44f2d5688db5c670c966ea185d24"
+      "stable_entries_hash": "sha256:19ecc93926860f765530d3acdfe9a4299f84e5694249a7b97ac0ac6ca14ab475"
     },
     {
-      "entries_hash": "sha256:fc87c556a43efe851e324752f8fd05d1ae26b3f3770436cde09142431803b509",
+      "entries_hash": "sha256:0fedfd8dc2878de0839203551d04c84f08f6d4bc9ae74a0baed5105880a9da37",
       "entry_count": 8,
       "segment_id": "oh_my_pi_p6_0_l6_tui_projection",
-      "stable_entries_hash": "sha256:fc87c556a43efe851e324752f8fd05d1ae26b3f3770436cde09142431803b509"
+      "stable_entries_hash": "sha256:0fedfd8dc2878de0839203551d04c84f08f6d4bc9ae74a0baed5105880a9da37"
     },
     {
       "entries_hash": "sha256:f75fc511e99a1b81e0ab1dac50b7c6cf3d386f26fd77f2900b2d6ce93ec4a186",
@@ -2578,10 +2427,10 @@
       "stable_entries_hash": "sha256:f75fc511e99a1b81e0ab1dac50b7c6cf3d386f26fd77f2900b2d6ce93ec4a186"
     },
     {
-      "entries_hash": "sha256:e12f25fa4a9667b51952366c034f5efd41d9f59fb502e0aabde8fe1455cb5b83",
+      "entries_hash": "sha256:bfb92a701404218b185ed97ea238ad175ed043ce2ae5f76ebefe3c16a9d2b7a2",
       "entry_count": 9,
       "segment_id": "opencode_north_star_capture_v1",
-      "stable_entries_hash": "sha256:e12f25fa4a9667b51952366c034f5efd41d9f59fb502e0aabde8fe1455cb5b83"
+      "stable_entries_hash": "sha256:bfb92a701404218b185ed97ea238ad175ed043ce2ae5f76ebefe3c16a9d2b7a2"
     },
     {
       "entries_hash": "sha256:f6728a024aefe55e3456dcdc6eb8c142505ab0887612bee12e2a7505a96c9e9d",
@@ -2590,16 +2439,10 @@
       "stable_entries_hash": "sha256:f6728a024aefe55e3456dcdc6eb8c142505ab0887612bee12e2a7505a96c9e9d"
     },
     {
-      "entries_hash": "sha256:5d183f71524302dac5164fd28d3b85cf497ec0c7df15e7d368bfd0d9f00e0176",
-      "entry_count": 12,
-      "segment_id": "pi_p5_l2_extension_session_residual",
-      "stable_entries_hash": "sha256:5d183f71524302dac5164fd28d3b85cf497ec0c7df15e7d368bfd0d9f00e0176"
-    },
-    {
-      "entries_hash": "sha256:91961d33d65dd3c8f56fc2af71df17a5a6abfccbe9fee3a0cf2a51a00443e9e0",
+      "entries_hash": "sha256:03b50e5fa7f2fcc39310deeea9fd1b1ad0248602ef180c1aa480d9491284f3d3",
       "entry_count": 3,
       "segment_id": "shared",
-      "stable_entries_hash": "sha256:91961d33d65dd3c8f56fc2af71df17a5a6abfccbe9fee3a0cf2a51a00443e9e0"
+      "stable_entries_hash": "sha256:03b50e5fa7f2fcc39310deeea9fd1b1ad0248602ef180c1aa480d9491284f3d3"
     }
   ]
 }
