@@ -164,7 +164,7 @@ type TurnOwnedLoggedEvent<TKind extends string, TPayload> =
 
 
 export type InputObservedEvent = TurnOwnedLoggedEvent<"input_observed", { readonly text: string }>
-export type TurnStartedEvent = TurnOwnedLoggedEvent<"turn_started", ExactEmptyPayload | CanonicalJsonObject>
+export type TurnStartedEvent = TurnOwnedLoggedEvent<"turn_started", ExactEmptyPayload>
 export type AssistantTextDeltaEvent = TurnOwnedLoggedEvent<"assistant_text_delta", { readonly text: string }>
 export type AssistantTextCompletedEvent = TurnOwnedLoggedEvent<"assistant_text_completed", { readonly text: string | null }>
 export type TurnCompletedEvent = TurnOwnedLoggedEvent<"turn_completed", ExactEmptyPayload>
@@ -300,6 +300,11 @@ export interface CanonicalE4Client {
   create(request: CreateSessionRequest): Promise<OpenedSession>
   attach(request: AttachSessionRequest): Promise<OpenedSession>
 }
+
+export type OpenedSessionRuntime = OpenedSession
+export type CancelReceipt = CancellationReceipt
+export type ObserveEvents = ObserveSessionRequest
+export type SubmitTextTurn = SubmitInput
 
 
 type RawObject = { readonly [key: string]: unknown }
@@ -596,7 +601,7 @@ export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => 
     case "turn_start": return {
       ...turnBase(),
       kind: "turn_started",
-      payload: isRawObject(payload) && Object.keys(payload).length === 0 ? decodeExactEmptyPayload(payload) : jsonPayload("turn_started"),
+      payload: decodeExactEmptyPayload(payload),
     }
     case "conversation.compaction.start": return { ...turnBase(), kind: "conversation_compaction_started", payload: jsonPayload("conversation_compaction_started") }
     case "conversation.compaction.end": return { ...turnBase(), kind: "conversation_compaction_completed", payload: jsonPayload("conversation_compaction_completed") }
@@ -853,7 +858,7 @@ interface RequestContext {
 }
 
 const buildUrl = (context: RequestContext, path: string, query?: readonly (readonly [string, string])[]): URL => {
-  const url = new URL(path, context.baseUrl.endsWith("/") ? context.baseUrl : `${context.baseUrl}/`)
+  const url = new URL(`${context.baseUrl.replace(/\/$/, "")}${path}`)
   for (const [key, value] of query ?? []) url.searchParams.set(key, value)
   return url
 }

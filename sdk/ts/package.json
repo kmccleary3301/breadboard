@@ -16,9 +16,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:types": "tsc --noEmit --strict --target ES2022 --module NodeNext --moduleResolution NodeNext test/canonical-surface.types.ts",
     "gate:bb89n14": "node scripts/p30-bb89n14-gate.mjs",
     "test:gate:bb89n14": "node --test test/p30-bb89n14-gate.test.mjs",
-    "test": "npm run build && node --test test/*.test.mjs test/*.test.ts"
+    "test": "npm run build && npm run test:types && node --test test/*.test.mjs test/*.test.ts"
   },
   "dependencies": {
     "eventsource-parser": "^1.1.2"

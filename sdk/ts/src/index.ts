@@ -3,6 +3,7 @@ export { streamSessionEvents, type EventStreamOptions, type StreamConfig } from 
 export * from "./session-runtime.js"
 export * from "./session-evidence.js"
 export * from "./lifecycle-client.js"
+export * from "./endpoint-client.js"
 
 export type {
   EventType,

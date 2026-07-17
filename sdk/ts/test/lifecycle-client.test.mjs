@@ -43,6 +43,7 @@ const identityResponse = (overrides = {}) => ({
     started_at: "2026-07-17T00:00:00Z",
     started_at_unix: 1_768_521_600,
     pid: 4321,
+    os_process_start_token: "darwin:1768521600:123456",
   },
   launch: { launch_id: LAUNCH_ID, source: "supervisor" },
   artifact_revision: {
@@ -55,6 +56,7 @@ const identityResponse = (overrides = {}) => ({
     contract_id: P30_SESSION_CONTRACT_ID,
     schema_sha256: P30_SESSION_SCHEMA_SHA256,
     compatibility: "compatible",
+    sessionReplayContractDigest: sessionRuntime.replayConfigurationDigest,
   },
   session_readiness: { ready: true, reason: "ready" },
   ...overrides,
@@ -310,6 +312,30 @@ test("handshake uses the exact prefixed identity route and returns an immutable 
     protocolVersion: "1.0",
     sessionContractId: P30_SESSION_CONTRACT_ID,
     sessionSchemaSha256: P30_SESSION_SCHEMA_SHA256,
+    sessionReplayContractDigest: sessionRuntime.replayConfigurationDigest,
+    liveness: { status: "live" },
+    process: {
+      engineInstanceId: INSTANCE_ID,
+      engineBootId: BOOT_ID,
+      startedAt: "2026-07-17T00:00:00Z",
+      startedAtUnix: 1_768_521_600,
+      pid: 4321,
+      osProcessStartToken: "darwin:1768521600:123456",
+    },
+    launch: { launchId: LAUNCH_ID, source: "supervisor" },
+    artifactRevision: {
+      engineArtifactSha256: `sha256:${"a".repeat(64)}`,
+      servedBackendCommit: null,
+      servedBackendDirty: null,
+    },
+    protocol: { protocolVersion: "1.0" },
+    sessionContract: {
+      contractId: P30_SESSION_CONTRACT_ID,
+      schemaSha256: P30_SESSION_SCHEMA_SHA256,
+      compatibility: "compatible",
+      sessionReplayContractDigest: sessionRuntime.replayConfigurationDigest,
+    },
+    sessionReadiness: { ready: true, reason: "ready" },
   })
   assert.equal(Object.isFrozen(bound.binding), true)
   assert.equal(Object.isFrozen(bound), true)
@@ -322,7 +348,7 @@ test("handshake uses the exact prefixed identity route and returns an immutable 
   assert.deepEqual(resolvedTokens, ["resolved-bearer-1"])
 
   const forbidden = [
-    "spawn", "signal", "sendSignal", "recordHardSignalDecision", "pid", "processId",
+    "spawn", "signal", "sendSignal", "pid", "processId",
     "createSession", "attachSession", "deleteSession", "deleteOwner", "deleteClient", "delete",
   ]
   for (const name of forbidden) {
@@ -332,11 +358,13 @@ test("handshake uses the exact prefixed identity route and returns an immutable 
   assert.deepEqual(
     [
       "acquireOwner", "renewOwner", "releaseOwner", "registerClient", "renewClient",
-      "detachClient", "beginControlDrain", "recordGracefulControl", "rollbackDrain",
+      "detachClient", "beginControlDrain", "recordGracefulControl", "recordHardSignalDecision",
+      "rollbackDrain",
     ].filter((name) => typeof bound[name] === "function").sort(),
     [
-      "acquireOwner", "beginControlDrain", "detachClient", "recordGracefulControl", "registerClient",
-      "releaseOwner", "renewClient", "renewOwner", "rollbackDrain",
+      "acquireOwner", "beginControlDrain", "detachClient", "recordGracefulControl",
+      "recordHardSignalDecision", "registerClient", "releaseOwner", "renewClient", "renewOwner",
+      "rollbackDrain",
     ],
   )
 })
@@ -523,6 +551,9 @@ test("drain calls use only the canonical control routes and enforce graceful out
     jsonResponse(drainResponse("rollback_permitted")),
     jsonResponse(drainResponse("hard_signal_decision_pending")),
     jsonResponse(drainResponse("hard_signal_decision_pending")),
+    jsonResponse(drainResponse("signal_sent")),
+    jsonResponse(drainResponse("rollback_permitted")),
+    jsonResponse(drainResponse("process_exited")),
     jsonResponse(drainResponse("rolled_back")),
   ]
   const { bound, requests } = await bindClient({ responses })
@@ -545,6 +576,9 @@ test("drain calls use only the canonical control routes and enforce graceful out
   assert.equal((await bound.recordGracefulControl({ ...drainControlInput(), outcome: "definitive_rejection" })).result, "rollback_permitted")
   assert.equal((await bound.recordGracefulControl({ ...drainControlInput(), outcome: "timeout" })).result, "hard_signal_decision_pending")
   assert.equal((await bound.recordGracefulControl({ ...drainControlInput(), outcome: "uncertain" })).result, "hard_signal_decision_pending")
+  assert.equal((await bound.recordHardSignalDecision({ ...drainControlInput(), outcome: "sent" })).result, "signal_sent")
+  assert.equal((await bound.recordHardSignalDecision({ ...drainControlInput(), outcome: "abandoned" })).result, "rollback_permitted")
+  assert.equal((await bound.recordHardSignalDecision({ ...drainControlInput(), outcome: "process_exited" })).result, "process_exited")
   assert.equal((await bound.rollbackDrain(drainControlInput())).result, "rolled_back")
 
   assert.deepEqual(requests.slice(1).map(({ method, url }) => [method, url]), [
@@ -553,6 +587,9 @@ test("drain calls use only the canonical control routes and enforce graceful out
     ["POST", "https://breadboard.test/control/v1/engine/control/graceful-result"],
     ["POST", "https://breadboard.test/control/v1/engine/control/graceful-result"],
     ["POST", "https://breadboard.test/control/v1/engine/control/graceful-result"],
+    ["POST", "https://breadboard.test/control/v1/engine/control/signal-decision"],
+    ["POST", "https://breadboard.test/control/v1/engine/control/signal-decision"],
+    ["POST", "https://breadboard.test/control/v1/engine/control/signal-decision"],
     ["POST", "https://breadboard.test/control/v1/engine/control/drain-rollback"],
   ])
   assert.deepEqual(JSON.parse(requests[1].body), {
@@ -578,20 +615,19 @@ test("drain calls use only the canonical control routes and enforce graceful out
     { ...gracefulBody, outcome: "timeout" },
     { ...gracefulBody, outcome: "uncertain" },
   ])
-  assert.deepEqual(JSON.parse(requests[6].body), {
-    engine_instance_id: INSTANCE_ID,
-    engine_boot_id: BOOT_ID,
-    launch_id: LAUNCH_ID,
-    owner_generation: 1,
-    drain_generation: 2,
-  })
+  assert.deepEqual(requests.slice(6, 9).map(({ body }) => JSON.parse(body)), [
+    { ...gracefulBody, outcome: "sent" },
+    { ...gracefulBody, outcome: "abandoned" },
+    { ...gracefulBody, outcome: "process_exited" },
+  ])
+  assert.deepEqual(JSON.parse(requests[9].body), gracefulBody)
   assert.equal(requests[1].headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
   assert.equal(requests[1].headers.get("x-breadboard-registration-credential"), REGISTRATION_CREDENTIAL)
   for (const request of requests.slice(2)) {
     assert.equal(request.headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
     assert.equal(request.headers.get("x-breadboard-registration-credential"), null)
   }
-  assert.equal(requests.some(({ url }) => url.includes("signal-decision")), false)
+  assert.equal(requests.filter(({ url }) => url.endsWith("/signal-decision")).length, 3)
   assertNoSecrets(requests.slice(1).map(({ body }) => body), OWNER_CREDENTIAL, REGISTRATION_CREDENTIAL)
 })
 
@@ -604,6 +640,9 @@ test("identity handshake rejects closed-schema violations and incompatible readi
     ["identity schema substitution", (value) => { value.schema_version = ENGINE_OWNER_SCHEMA_VERSION }, "protocol"],
     ["session contract id mismatch", (value) => { value.session_contract.contract_id = "p30-e4-session-v2" }, "session-schema-mismatch"],
     ["session schema digest mismatch", (value) => { value.session_contract.schema_sha256 = `sha256:${"0".repeat(64)}` }, "session-schema-mismatch"],
+    ["session replay digest mismatch", (value) => {
+      value.session_contract.sessionReplayContractDigest = `sha256:${"0".repeat(64)}`
+    }, "session-schema-mismatch"],
     ["incompatible session", (value) => {
       value.session_contract.compatibility = "incompatible"
       value.session_readiness = { ready: false, reason: "session_contract_mismatch" }

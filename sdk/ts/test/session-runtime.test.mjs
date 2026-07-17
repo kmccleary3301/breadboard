@@ -243,7 +243,11 @@ test("closed decoder covers all canonical logged families and rejects unsupporte
   const runtimeError = decodeLoggedSessionEvent(logged(1, "error", { code: "provider_timeout", message: "raw secret" }))
   assert.deepEqual(runtimeError.payload.error, { code: "provider_timeout", message: "[redacted]" })
   assert.equal(runtimeError.scope, "turn")
-  assert.deepEqual(decodeLoggedSessionEvent(logged(1, "turn_start", { mode: "interactive" })).payload, { mode: "interactive" })
+  assert.equal(decodeLoggedSessionEvent(logged(1, "turn_start", {})).payload, decodeExactEmptyPayload({}))
+  assert.throws(
+    () => decodeLoggedSessionEvent(logged(1, "turn_start", { mode: "interactive" })),
+    /invalid_exact_empty_payload/,
+  )
   const { input_id: _inputId, turn_id: _turnId, ...sessionOnlyTool } = logged(1, "tool_call", { call_id: "call-1" })
   assert.throws(() => decodeLoggedSessionEvent(sessionOnlyTool), /missing_turn_correlation/)
   assert.throws(() => decodeLoggedSessionEvent(logged(1, "not_a_canonical_event", {})), /unsupported_event_family/)
@@ -308,7 +312,7 @@ test("create and attach use only canonical URLs; submit, cancel, and local close
   const client = createCanonicalE4Client({ baseUrl: "https://breadboard.test/root", authToken: "private-token", fetch })
   const runtime = await client.create({ configPath: "agent.yaml", task: "", maxSteps: 4, permissionMode: "ask" })
   assert.equal(runtime.sessionId, "session-1")
-  assert.equal(requests[0].url, "https://breadboard.test/v1/sessions")
+  assert.equal(requests[0].url, "https://breadboard.test/root/v1/sessions")
   assert.equal(requests[0].method, "POST")
   assert.deepEqual(JSON.parse(requests[0].body), {
     config_path: "agent.yaml",
@@ -316,7 +320,7 @@ test("create and attach use only canonical URLs; submit, cancel, and local close
     max_steps: 4,
     permission_mode: "ask",
   })
-  assert.equal(requests[1].url, "https://breadboard.test/v1/sessions/session-1")
+  assert.equal(requests[1].url, "https://breadboard.test/root/v1/sessions/session-1")
   assert.equal(requests[1].method, "GET")
 
   const structured = Object.freeze({ text: "body", attachments: Object.freeze(["attachment-1"]), clientMessageId: "message-1" })
@@ -328,12 +332,12 @@ test("create and attach use only canonical URLs; submit, cancel, and local close
     client_message_id: "message-1",
     attachments: ["attachment-1"],
   })
-  assert.equal(requests[2].url, "https://breadboard.test/v1/sessions/session-1/input")
+  assert.equal(requests[2].url, "https://breadboard.test/root/v1/sessions/session-1/input")
 
   const cancellation = await runtime.cancel({ turnId: "turn-1", cancellationRequestKey: "cancel-key-1", reason: "timeout" })
   assert.equal(cancellation.cancellationRequestId, "cancel-1")
   assert.deepEqual(JSON.parse(requests[3].body), { cancellation_request_key: "cancel-key-1", reason: "timeout" })
-  assert.equal(requests[3].url, "https://breadboard.test/v1/sessions/session-1/turns/turn-1/cancel")
+  assert.equal(requests[3].url, "https://breadboard.test/root/v1/sessions/session-1/turns/turn-1/cancel")
 
   await runtime.close()
   await runtime.close()
@@ -347,7 +351,7 @@ test("create and attach use only canonical URLs; submit, cancel, and local close
   assert.equal(attachedSnapshot.queuedTurnCount, 2)
   assert.equal(requests[4].method, "GET")
   assert.equal(requests[5].method, "GET")
-  assert.equal(requests.slice(4).every((request) => request.url === "https://breadboard.test/v1/sessions/session-2"), true)
+  assert.equal(requests.slice(4).every((request) => request.url === "https://breadboard.test/root/v1/sessions/session-2"), true)
 })
 
 test("bounded JSON readers reject oversized and stalled success and error bodies", async () => {

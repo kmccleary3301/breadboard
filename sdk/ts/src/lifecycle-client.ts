@@ -1,3 +1,8 @@
+import {
+  replayConfigurationDigest,
+  type ReplayContractDigest,
+} from "./session-runtime.js"
+
 export const ENGINE_IDENTITY_SCHEMA_VERSION = "bb.engine_identity.v1" as const
 export const ENGINE_OWNER_SCHEMA_VERSION = "bb.engine_owner.v1" as const
 export const ENGINE_CLIENT_REGISTRATION_SCHEMA_VERSION = "bb.engine_client_registration.v1" as const
@@ -13,6 +18,7 @@ const REDACTED_BODY = "[redacted]" as const
 
 export type LifecycleMode = "local-owned" | "local-external" | "remote"
 export type GracefulControlOutcome = "accepted" | "definitive_rejection" | "timeout" | "uncertain"
+export type HardSignalDecisionOutcome = "sent" | "abandoned" | "process_exited"
 
 export interface LifecycleSessionContractExpectation {
   readonly contractId: typeof P30_SESSION_CONTRACT_ID
@@ -106,6 +112,46 @@ export class LifecycleE4ClientError extends Error {
   }
 }
 
+export interface LifecycleEngineLivenessFacts {
+  readonly status: "live"
+}
+
+export interface LifecycleEngineProcessFacts {
+  readonly engineInstanceId: string
+  readonly engineBootId: string
+  readonly startedAt: string
+  readonly startedAtUnix: number
+  readonly pid: number
+  readonly osProcessStartToken: string
+}
+
+export interface LifecycleEngineLaunchFacts {
+  readonly launchId: string
+  readonly source: "supervisor" | "external_unmanaged"
+}
+
+export interface LifecycleEngineArtifactRevisionFacts {
+  readonly engineArtifactSha256: string
+  readonly servedBackendCommit: string | null
+  readonly servedBackendDirty: boolean | null
+}
+
+export interface LifecycleEngineProtocolFacts {
+  readonly protocolVersion: typeof ENGINE_PROTOCOL_VERSION
+}
+
+export interface LifecycleEngineSessionContractFacts {
+  readonly contractId: typeof P30_SESSION_CONTRACT_ID
+  readonly schemaSha256: typeof P30_SESSION_SCHEMA_SHA256
+  readonly compatibility: "compatible"
+  readonly sessionReplayContractDigest: ReplayContractDigest
+}
+
+export interface LifecycleEngineSessionReadinessFacts {
+  readonly ready: true
+  readonly reason: "ready"
+}
+
 export interface LifecycleEngineBinding {
   readonly endpoint: string
   readonly engineInstanceId: string
@@ -114,6 +160,14 @@ export interface LifecycleEngineBinding {
   readonly protocolVersion: typeof ENGINE_PROTOCOL_VERSION
   readonly sessionContractId: typeof P30_SESSION_CONTRACT_ID
   readonly sessionSchemaSha256: typeof P30_SESSION_SCHEMA_SHA256
+  readonly sessionReplayContractDigest: ReplayContractDigest
+  readonly liveness: LifecycleEngineLivenessFacts
+  readonly process: LifecycleEngineProcessFacts
+  readonly launch: LifecycleEngineLaunchFacts
+  readonly artifactRevision: LifecycleEngineArtifactRevisionFacts
+  readonly protocol: LifecycleEngineProtocolFacts
+  readonly sessionContract: LifecycleEngineSessionContractFacts
+  readonly sessionReadiness: LifecycleEngineSessionReadinessFacts
 }
 
 export interface LifecycleRequestOptions {
@@ -166,6 +220,12 @@ export interface GracefulControlInput extends OwnerCredentialInput {
   readonly ownerGeneration: number
   readonly drainGeneration: number
   readonly outcome: GracefulControlOutcome
+}
+
+export interface HardSignalDecisionInput extends OwnerCredentialInput {
+  readonly ownerGeneration: number
+  readonly drainGeneration: number
+  readonly outcome: HardSignalDecisionOutcome
 }
 
 export interface RollbackDrainInput extends OwnerCredentialInput {
@@ -271,6 +331,9 @@ export interface BoundLifecycleE4Client {
   beginControlDrain(input: BeginControlDrainInput): Promise<DrainControlResponse & { readonly result: "draining" }>
   recordGracefulControl(input: GracefulControlInput): Promise<DrainControlResponse & {
     readonly result: "shutdown_started" | "rollback_permitted" | "hard_signal_decision_pending"
+  }>
+  recordHardSignalDecision(input: HardSignalDecisionInput): Promise<DrainControlResponse & {
+    readonly result: "rollback_permitted" | "signal_sent" | "process_exited"
   }>
   rollbackDrain(input: RollbackDrainInput): Promise<DrainControlResponse & { readonly result: "rolled_back" }>
 }
@@ -856,6 +919,7 @@ const decodeHandshake = (
     "started_at",
     "started_at_unix",
     "pid",
+    "os_process_start_token",
   ], "identity_process_shape_mismatch")
   const engineInstanceId = validateAuthorityId(
     expectString(own(process, "engine_instance_id"), "engine_instance_id_invalid"),
@@ -867,8 +931,13 @@ const decodeHandshake = (
   )
   const startedAt = expectString(own(process, "started_at"), "engine_started_at_invalid")
   if (!isRfc3339DateTime(startedAt)) protocolError("engine_started_at_invalid")
-  expectNumber(own(process, "started_at_unix"), 0, "engine_started_at_unix_invalid")
-  expectInteger(own(process, "pid"), 1, "engine_process_identity_invalid")
+  const startedAtUnix = expectNumber(own(process, "started_at_unix"), 0, "engine_started_at_unix_invalid")
+  const pid = expectInteger(own(process, "pid"), 1, "engine_process_identity_invalid")
+  const osProcessStartToken = expectPattern(
+    own(process, "os_process_start_token"),
+    /^[A-Za-z0-9][A-Za-z0-9:._-]{0,255}$/,
+    "os_process_start_token_invalid",
+  )
 
   const launch = expectObject(own(root, "launch"), "identity_launch_invalid")
   expectExactKeys(launch, ["launch_id", "source"], "identity_launch_shape_mismatch")
@@ -876,7 +945,11 @@ const decodeHandshake = (
     expectString(own(launch, "launch_id"), "launch_id_invalid"),
     "launch_id_invalid",
   )
-  expectEnum(own(launch, "source"), ["supervisor", "external_unmanaged"] as const, "launch_source_invalid")
+  const launchSource = expectEnum(
+    own(launch, "source"),
+    ["supervisor", "external_unmanaged"] as const,
+    "launch_source_invalid",
+  )
 
   const artifact = expectObject(own(root, "artifact_revision"), "identity_artifact_invalid")
   expectExactKeys(artifact, [
@@ -884,11 +957,19 @@ const decodeHandshake = (
     "served_backend_commit",
     "served_backend_dirty",
   ], "identity_artifact_shape_mismatch")
-  expectPattern(own(artifact, "engine_artifact_sha256"), SCHEMA_DIGEST_PATTERN, "engine_artifact_invalid")
-  const servedCommit = own(artifact, "served_backend_commit")
-  if (servedCommit !== null) expectPattern(servedCommit, /^[0-9a-f]{40}$/, "served_backend_commit_invalid")
-  const servedDirty = own(artifact, "served_backend_dirty")
-  if (servedDirty !== null) expectBoolean(servedDirty, "served_backend_dirty_invalid")
+  const engineArtifactSha256 = expectPattern(
+    own(artifact, "engine_artifact_sha256"),
+    SCHEMA_DIGEST_PATTERN,
+    "engine_artifact_invalid",
+  )
+  const servedCommitValue = own(artifact, "served_backend_commit")
+  const servedBackendCommit = servedCommitValue === null
+    ? null
+    : expectPattern(servedCommitValue, /^[0-9a-f]{40}$/, "served_backend_commit_invalid")
+  const servedDirtyValue = own(artifact, "served_backend_dirty")
+  const servedBackendDirty = servedDirtyValue === null
+    ? null
+    : expectBoolean(servedDirtyValue, "served_backend_dirty_invalid")
 
   const protocol = expectObject(own(root, "protocol"), "identity_protocol_invalid")
   expectExactKeys(protocol, ["protocol_version"], "identity_protocol_shape_mismatch")
@@ -899,6 +980,7 @@ const decodeHandshake = (
     "contract_id",
     "schema_sha256",
     "compatibility",
+    "sessionReplayContractDigest",
   ], "session_contract_shape_mismatch")
   const contractId = expectString(own(sessionContract, "contract_id"), "session_contract_id_invalid")
   const schemaSha256 = expectPattern(own(sessionContract, "schema_sha256"), SCHEMA_DIGEST_PATTERN, "session_schema_digest_invalid")
@@ -906,6 +988,11 @@ const decodeHandshake = (
     own(sessionContract, "compatibility"),
     ["compatible", "incompatible"] as const,
     "session_compatibility_invalid",
+  )
+  const sessionReplayContractDigest = expectPattern(
+    own(sessionContract, "sessionReplayContractDigest"),
+    SCHEMA_DIGEST_PATTERN,
+    "session_replay_contract_digest_invalid",
   )
 
   const readiness = expectObject(own(root, "session_readiness"), "session_readiness_invalid")
@@ -922,8 +1009,34 @@ const decodeHandshake = (
   if (contractId !== expected.contractId || schemaSha256 !== expected.schemaSha256) {
     schemaFailure("session-schema-mismatch", "session_contract_echo_mismatch")
   }
+  if (sessionReplayContractDigest !== replayConfigurationDigest) {
+    schemaFailure("session-schema-mismatch", "session_replay_contract_digest_mismatch")
+  }
   if (!ready) schemaFailure("session-schema-mismatch", reason)
 
+  const livenessFacts = Object.freeze({ status: "live" as const })
+  const processFacts = Object.freeze({
+    engineInstanceId,
+    engineBootId,
+    startedAt,
+    startedAtUnix,
+    pid,
+    osProcessStartToken,
+  })
+  const launchFacts = Object.freeze({ launchId, source: launchSource })
+  const artifactRevisionFacts = Object.freeze({
+    engineArtifactSha256,
+    servedBackendCommit,
+    servedBackendDirty,
+  })
+  const protocolFacts = Object.freeze({ protocolVersion: ENGINE_PROTOCOL_VERSION })
+  const sessionContractFacts = Object.freeze({
+    contractId: P30_SESSION_CONTRACT_ID,
+    schemaSha256: P30_SESSION_SCHEMA_SHA256,
+    compatibility: "compatible" as const,
+    sessionReplayContractDigest: replayConfigurationDigest,
+  })
+  const sessionReadinessFacts = Object.freeze({ ready: true as const, reason: "ready" as const })
   return Object.freeze({
     endpoint,
     engineInstanceId,
@@ -932,6 +1045,14 @@ const decodeHandshake = (
     protocolVersion: ENGINE_PROTOCOL_VERSION,
     sessionContractId: P30_SESSION_CONTRACT_ID,
     sessionSchemaSha256: P30_SESSION_SCHEMA_SHA256,
+    sessionReplayContractDigest: replayConfigurationDigest,
+    liveness: livenessFacts,
+    process: processFacts,
+    launch: launchFacts,
+    artifactRevision: artifactRevisionFacts,
+    protocol: protocolFacts,
+    sessionContract: sessionContractFacts,
+    sessionReadiness: sessionReadinessFacts,
   })
 }
 
@@ -1464,6 +1585,37 @@ const createBoundClient = (
         ? "rollback_permitted"
         : "hard_signal_decision_pending"
     const narrowed = expectMethodResult(response, [expectedResult] as const, "graceful_control_result_mismatch", raw)
+    if (narrowed.drainGeneration !== drainGeneration) responseProtocolError(raw, "drain_generation_echo_mismatch")
+    return narrowed
+  },
+  recordHardSignalDecision: async (input: HardSignalDecisionInput) => {
+    const ownerGeneration = validatePositiveInteger(input.ownerGeneration, "owner_generation_invalid")
+    const drainGeneration = validatePositiveInteger(input.drainGeneration, "drain_generation_invalid")
+    const outcome = expectEnum(
+      input.outcome,
+      ["sent", "abandoned", "process_exited"] as const,
+      "hard_signal_outcome_invalid",
+    )
+    const raw = await requestJson(
+      context,
+      "/v1/engine/control/signal-decision",
+      "POST",
+      {
+        ...bindingBody(binding),
+        owner_generation: ownerGeneration,
+        drain_generation: drainGeneration,
+        outcome,
+      },
+      ownerHeaders(input.ownerCredential),
+      input.signal,
+    )
+    const response = decodeResponse(raw, (value) => decodeDrainResponse(value, binding))
+    const expectedResult = outcome === "sent"
+      ? "signal_sent"
+      : outcome === "abandoned"
+        ? "rollback_permitted"
+        : "process_exited"
+    const narrowed = expectMethodResult(response, [expectedResult] as const, "hard_signal_decision_result_mismatch", raw)
     if (narrowed.drainGeneration !== drainGeneration) responseProtocolError(raw, "drain_generation_echo_mismatch")
     return narrowed
   },
