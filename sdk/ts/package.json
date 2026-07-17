@@ -16,6 +16,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "gate:bb89n14": "node scripts/p30-bb89n14-gate.mjs",
+    "test:gate:bb89n14": "node --test test/p30-bb89n14-gate.test.mjs",
     "test": "npm run build && node --test test/*.test.mjs test/*.test.ts"
   },
   "dependencies": {
