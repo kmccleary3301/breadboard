@@ -5,7 +5,7 @@ target_family: pi
 target_version: '@mariozechner/pi-coding-agent@0.57.1'
 package_ref: null
 kind: target_support
-status: accepted
+status: superseded
 points: 40
 capture:
   strategy: adapter
@@ -77,6 +77,7 @@ compare:
         value: read-only-no-secret
         description: read-only no-secret sandbox is claimed
 claim:
+  status: accepted
   scope:
     behaviors:
       - bb.extension_hook_execution.v1
