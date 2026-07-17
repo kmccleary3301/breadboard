@@ -280,6 +280,20 @@ class TestLSPClusterManager:
         assert isinstance(deployment_status["deployed_languages"], list)
         assert isinstance(deployment_status["failed_languages"], list)
         assert isinstance(deployment_status["total_servers"], int)
+
+    @patch('breadboard.lsp_deployment.LSPManagerV2')
+    def test_unknown_enabled_language_is_rejected(
+        self, mock_lsp_manager, cluster_manager, test_workspace
+    ):
+        deployment_status = cluster_manager.deploy_lsp_cluster(
+            [str(test_workspace)],
+            enabled_languages=["pyhton"],
+        )
+
+        assert deployment_status["deployed_languages"] == []
+        assert deployment_status["failed_languages"] == ["pyhton"]
+        assert deployment_status["total_servers"] == 0
+        mock_lsp_manager.options.assert_not_called()
     
     def test_server_load_balancing(self, cluster_manager):
         """Test server load balancing logic"""
@@ -417,6 +431,7 @@ class TestDeploymentIntegration:
         cluster_manager = deploy_lsp_system(config, [str(test_workspace)])
         
         assert isinstance(cluster_manager, LSPClusterManager)
+        assert set(cluster_manager.lsp_pools) == {"python"}
         
         # Test health check
         health = cluster_manager.health_check()
@@ -438,6 +453,7 @@ class TestDeploymentIntegration:
         # Should handle gracefully
         cluster_manager = deploy_lsp_system(invalid_config, [str(test_workspace)])
         assert isinstance(cluster_manager, LSPClusterManager)
+        assert cluster_manager.lsp_pools == {}
         
         # Cleanup
         cluster_manager.shutdown_all()
@@ -459,6 +475,8 @@ class TestDeploymentIntegration:
         cluster_manager = deploy_lsp_system(config, workspaces)
         
         assert isinstance(cluster_manager, LSPClusterManager)
+        assert set(cluster_manager.lsp_pools) == {"python"}
+        assert len(cluster_manager.lsp_pools["python"]) == len(workspaces)
         
         # Cleanup
         cluster_manager.shutdown_all()

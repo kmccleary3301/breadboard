@@ -1,72 +1,80 @@
 from __future__ import annotations
-
-from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus
-from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry
-from agentic_coder_prototype.api.cli_bridge.session_runner import SessionRunner
-
-
-def test_session_runner_tracks_pending_permissions_for_rehydration() -> None:
-    registry = SessionRegistry()
-    session = SessionRecord(session_id="sess_1", status=SessionStatus.RUNNING)
-    request = SessionCreateRequest(config_path="dummy.yml", task="hi", stream=False)
-    runner = SessionRunner(session=session, registry=registry, request=request)
-
-    runner._rehydrate_pending_permissions(
-        "permission_request",
-        {
-            "event_version": 1,
-            "request_id": "permission_1",
-            "items": [
-                {"item_id": "permission_1_item_1", "category": "shell", "pattern": "echo hi", "metadata": {}},
-            ],
-        },
-    )
-
-    pending = session.metadata.get("pending_permissions")
-    assert isinstance(pending, list) and pending
-    assert pending[0].get("source") == "session"
-    assert pending[0].get("request_id") == "permission_1"
-
-    runner._rehydrate_pending_permissions("permission_response", {"request_id": "permission_1", "responses": {"default": "once"}})
-    assert "pending_permissions" not in session.metadata
-
-
-def test_session_runner_tracks_task_permission_requests_separately() -> None:
-    registry = SessionRegistry()
-    session = SessionRecord(session_id="sess_2", status=SessionStatus.RUNNING)
-    request = SessionCreateRequest(config_path="dummy.yml", task="hi", stream=False)
-    runner = SessionRunner(session=session, registry=registry, request=request)
-
-    runner._rehydrate_pending_permissions(
-        "task_event",
-        {
-            "kind": "permission_request",
-            "sessionId": "task_abc",
-            "subagent_type": "general",
-            "payload": {
-                "event_version": 1,
-                "request_id": "permission_2",
-                "items": [
-                    {"item_id": "permission_2_item_1", "category": "shell", "pattern": "echo hi", "metadata": {}},
-                ],
-            },
-        },
-    )
-
-    pending = session.metadata.get("pending_permissions")
-    assert isinstance(pending, list) and pending
-    assert pending[0].get("source") == "task"
-    assert pending[0].get("task_session_id") == "task_abc"
-    assert pending[0].get("request_id") == "permission_2"
-
-    runner._rehydrate_pending_permissions(
-        "task_event",
-        {
-            "kind": "permission_response",
-            "sessionId": "task_abc",
-            "subagent_type": "general",
-            "payload": {"request_id": "permission_2", "responses": {"default": "once"}},
-        },
-    )
-    assert "pending_permissions" not in session.metadata
-
+import asyncio, threading, pytest; from breadboard.product.harness.lock import EffectiveHarnessLock; from breadboard.product.runtime.session import Session as ProductSession
+from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.permissions import load_permission_rules, upsert_permission_rule; from agentic_coder_prototype.permissions.broker import PermissionBroker
+from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus; from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry; from agentic_coder_prototype.api.cli_bridge.session_runner import SessionRunner, _canonical_permission_resolution
+def _runner(session_id: str = "session") -> SessionRunner: return SessionRunner(session=SessionRecord(session_id=session_id, status=SessionStatus.RUNNING), registry=SessionRegistry(), request=SessionCreateRequest(config_path="dummy.yml", task="task", stream=False))
+def _product_runner(session_id: str) -> tuple[SessionRunner, ProductSession]: runner = _runner(session_id); session = ProductSession.start(EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}), "task", session_id=session_id); runner.session.product_session = session; return runner, session
+async def _initialized() -> None: pass
+def test_pending_permissions_rehydrate_and_remain_scoped() -> None:
+    runner = _runner(); runner._rehydrate_pending_permissions("permission_request", {"request_id": "session", "items": []}); task = {"kind": "permission_request", "sessionId": "task-1", "subagent_type": "general", "payload": {"request_id": "task", "items": []}}; runner._rehydrate_pending_permissions("task_event", task); assert [(item["source"], item.get("task_session_id"), item.get("subagent_type"), item["request_id"]) for item in runner.session.metadata["pending_permissions"]] == [("session", None, None, "session"), ("task", "task-1", "general", "task")]
+    task.update(kind="permission_response", payload={"request_id": "task", "responses": {"default": "once"}}); runner._rehydrate_pending_permissions("task_event", task); assert len(runner.session.metadata["pending_permissions"]) == 2; runner._rehydrate_pending_permissions("permission_response", {"request_id": "session", "responses": {"default": "once"}}); runner._rehydrate_pending_permissions("task_event", task); assert "pending_permissions" not in runner.session.metadata
+    for source, task_id in (("task", "a"), ("session", None), ("task", "b")): runner._update_pending_permissions("permission_request", {"request_id": "shared", "items": []}, source=source, task_session_id=task_id)
+    runner._update_pending_permissions("permission_response", {"request_id": "shared", "response": "once"}, source="task", task_session_id="a"); assert [runner._pending_permission_key(item) for item in runner.session.metadata["pending_permissions"]] == [("session", "", "shared"), ("task", "b", "shared")]
+@pytest.mark.parametrize(("expected", "aliases"), [("once", "allow approve approved ok okay yes y allow-once allow_once once"), ("always", "allow-always allow_always always"), ("reject", "deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop reject")])
+def test_permission_aliases_match_broker(expected: str, aliases: str) -> None: assert {_canonical_permission_resolution(alias, None) for alias in aliases.split()} == {expected}
+def test_unknown_permission_decision_is_rejected() -> None:
+    with pytest.raises(ValueError, match="no valid decisions"): _canonical_permission_resolution("sure", None)
+@pytest.mark.asyncio
+@pytest.mark.parametrize("echo_order", [("permission_response", "task_event"), ("task_event", "permission_response")])
+async def test_command_then_scoped_broker_echo_consumes_fifo_entry_once(echo_order: tuple[str, str]) -> None: runner, session = _product_runner("echo"); task = {"kind": "permission_request", "sessionId": "task-a", "payload": {"request_id": "shared", "items": []}}; runner._rehydrate_pending_permissions("task_event", task); runner._rehydrate_pending_permissions("permission_request", {"request_id": "shared", "items": []}); runner._permission_queue = asyncio.Queue(); await runner.handle_command("respond_permission", {"request_id": "shared", "response": "allow_once"}); echoes = {"permission_response": ("permission_response", {"request_id": "shared", "response": "once"}), "task_event": ("task_event", {**task, "kind": "permission_response", "payload": {"request_id": "shared", "response": "once"}})}; [runner._rehydrate_pending_permissions(*echoes[kind]) for kind in echo_order]; assert "pending_permissions" not in runner.session.metadata and not runner._consumed_permission_responses; assert [event.kind for event in session.events[1:]] == ["approval.requested", "approval.resolved", "approval.requested", "approval.resolved"]
+@pytest.mark.asyncio
+async def test_failing_approval_sink_suppresses_pending_and_bridge_event() -> None:
+    runner, session = _product_runner("sink-failure"); session._sink = type("Failing", (), {"append": lambda *_: (_ for _ in ()).throw(OSError("sink unavailable"))})()
+    with pytest.raises(OSError, match="sink unavailable"): await runner._emit_debug_permission_request({"request_id": "undurable"})
+    assert "pending_permissions" not in runner.session.metadata; assert runner.session.event_queue.empty()
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("payload", "expected"), [({"response": "allow-once"}, {"a": "once", "b": "once"}), ({"responses": {"items": {"a": "allow_once", "b": "allow-always"}}}, {"a": "once", "b": "always"})])
+async def test_real_broker_receives_the_persisted_canonical_decision(payload: dict[str, object], expected: dict[str, str]) -> None: runner, session = _product_runner("broker-" + expected["b"]); runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "items": []}); runner._permission_queue = asyncio.Queue(); delivered = (await runner.handle_command("respond_permission", {"request_id": "permission-1", **payload}))["delivered"]; actual = PermissionBroker()._parse_permission_response_item(delivered, request_id="permission-1", item_ids=["a", "b"]); assert actual == expected; assert session.events[-1].payload["decision"] == _canonical_permission_resolution(None, {"items": actual})
+@pytest.mark.asyncio
+async def test_always_rule_commit_failure_restores_real_workspace(monkeypatch, tmp_path) -> None:
+    runner, session = _product_runner("always"); runner._workspace_path = tmp_path; runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"}); runner._permission_queue = asyncio.Queue(); assert upsert_permission_rule(tmp_path, category="shell", pattern="safe.sh", decision="allow")
+    async def fail(*_a, **_kw): raise OSError("metadata unavailable")  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(runner.registry, "update_metadata", fail)
+    with pytest.raises(OSError, match="metadata unavailable"): await runner.handle_command("permission_decision", {"request_id": "permission-1", "decision": "always", "rule": "*.sh"})
+    assert [(rule.pattern, rule.decision) for rule in load_permission_rules(tmp_path)] == [("safe.sh", "allow")]; assert "permission_rules" not in runner.session.metadata and session.read_model.status == "failed"
+def test_runtime_response_is_buffered_and_published_in_fifo_order() -> None:
+    runner, session = _product_runner("provider")
+    def run_task(*_a, **kw): [kw["event_emitter"]("task_event", {"kind": kind, "sessionId": task_id, "payload": {"request_id": request_id, **({"response": "once"} if kind == "permission_response" else {})}}) for kind, task_id, request_id in (("permission_request", "task-a", "first"), ("permission_request", "task-b", "second"), ("permission_response", "task-b", "second"), ("permission_response", "task-a", "first"))]; return {"completion_summary": {"completed": True}}  # type: ignore[no-untyped-def]
+    runner._agent = type("Agent", (), {"_local_mode": True, "config": {}, "run_task": run_task})(); runner._execute_task("task"); responses = [event.payload["payload"]["request_id"] for event in runner.session.event_queue._queue if event and event.type is EventType.TASK_EVENT and event.payload.get("kind") == "permission_response"]; assert responses == ["first", "second"] and "pending_permissions" not in runner.session.metadata; assert [(event.kind, event.payload.get("request_id")) for event in session.events[1:]] == [("approval.requested", "first"), ("approval.resolved", "first"), ("approval.requested", "second"), ("approval.resolved", "second")]
+def test_runtime_response_resolves_fifo_head_before_projection() -> None:
+    runner, session = _product_runner("provider-failure"); runner._rehydrate_pending_permissions("permission_request", {"request_id": "first"}); runner._rehydrate_pending_permissions("permission_request", {"request_id": "second"}); sink = session._sink; session._sink = type("Failing", (), {"append": lambda *_: (_ for _ in ()).throw(OSError("sink unavailable"))})()
+    with pytest.raises(OSError, match="sink unavailable"): runner._rehydrate_pending_permissions("permission_response", {"request_id": "first", "response": "once"})
+    assert [item["request_id"] for item in runner.session.metadata["pending_permissions"]] == ["first", "second"]; session._sink = type("FailNext", (), {"append": lambda _, event: (_ for _ in ()).throw(OSError("activation unavailable")) if event.kind == "approval.requested" else None})()
+    with pytest.raises(OSError, match="activation unavailable"): runner._rehydrate_pending_permissions("permission_response", {"request_id": "first", "response": "once"})
+    assert [item["request_id"] for item in runner.session.metadata["pending_permissions"]] == ["second"] and session.read_model.status == "running"; session._sink = sink; runner._rehydrate_pending_permissions("permission_request", {"request_id": "second"}); assert [(event.kind, event.payload.get("request_id")) for event in session.events[-2:]] == [("approval.resolved", "first"), ("approval.requested", "second")]
+@pytest.mark.asyncio
+async def test_concurrent_set_mode_failure_wins_oneshot_completion(monkeypatch) -> None:
+    runner, session = _product_runner("mode"); calls, committed, started, release = [], [True], threading.Event(), threading.Event(); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); runner._agent = type("Agent", (), {"_local_mode": True, "config": {"mode": "old"}, "apply_runtime_overrides": lambda self, value: (calls.append(("apply", value["mode"])), self.config.update(value) if committed[0] else None, committed[0])[-1], "run_task": lambda *_a, **_kw: (started.set(), release.wait(timeout=1), {"completion_summary": {"completed": True}})[-1]})(); await runner.handle_command("set_mode", {"mode": "review"}, durable_reconfigure=lambda cfg: calls.append(("append", cfg["mode"]))); committed[0] = False; monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized); running = asyncio.create_task(runner._run()); assert await asyncio.to_thread(started.wait, 1)
+    with pytest.raises(RuntimeError, match="failed to apply mode"): await runner.handle_command("set_mode", {"mode": "broken"}, durable_reconfigure=lambda cfg: calls.append(("append", cfg["mode"])))
+    release.set(); await running; visible = {event.type for event in runner.session.event_queue._queue if event}; assert calls[-2:] == [("append", "broken"), ("apply", "broken")] and runner.session.metadata["mode"] == "review"; assert (runner.session.status, session.read_model.status, runner.session.completion_summary) == (SessionStatus.FAILED, "failed", None) and not visible.intersection({EventType.COMPLETION, EventType.RUN_FINISHED})
+@pytest.mark.asyncio
+async def test_stop_wakes_oneshot_and_wins_terminal_status(monkeypatch) -> None:
+    runner, session = _product_runner("stopped"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized); monkeypatch.setattr(runner, "_execute_task", lambda _task: (runner._request_stop("race"), {"completion_summary": {"completed": True}})[1]); await runner._run()
+    assert (runner.session.status, session.read_model.status, runner._stop_event.is_set()) == (SessionStatus.STOPPED, "canceled", True); assert None in runner._input_queue._queue
+@pytest.mark.asyncio
+async def test_oneshot_success_is_hidden_until_durable_complete(monkeypatch) -> None:
+    runner, session = _product_runner("completion"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); runner._agent = type("Agent", (), {"_local_mode": True, "config": {}, "run_task": lambda *_a, **kw: (kw["event_emitter"]("completion", {"summary": {}}), kw["event_emitter"]("run_finished", {"completed": True}), {"completion_summary": {"completed": True}})[-1]})(); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized); session._sink = type("Failing", (), {"append": lambda *_: (_ for _ in ()).throw(OSError("sink unavailable"))})()
+    with pytest.raises(OSError, match="sink unavailable"): await runner._run()
+    visible = {event.type for event in runner.session.event_queue._queue if event is not None}; assert not visible.intersection({EventType.COMPLETION, EventType.RUN_FINISHED}) and runner.session.completion_summary is None
+@pytest.mark.asyncio
+async def test_post_complete_metadata_failure_keeps_terminal_authority(monkeypatch) -> None:
+    runner, session = _product_runner("post-complete"); observed = []; runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); runner._agent = type("Agent", (), {"_local_mode": True, "config": {}, "run_task": lambda *_a, **kw: (kw["event_emitter"]("completion", {"summary": {"provider": True}}), kw["event_emitter"]("run_finished", {"completed": True}), {"completion_summary": {"completed": True}})[-1]})(); monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized)
+    async def fail(*_a, **_kw): observed.append(session.read_model.status); raise OSError("metadata unavailable")  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(runner.registry, "update_metadata", fail); await runner._run(); record = await runner.registry.get(runner.session.session_id); visible = {event.type for event in runner.session.event_queue._queue if event}; assert observed == ["completed"] and record is not None and (record.status, session.read_model.status) == (SessionStatus.COMPLETED, "completed") and not visible.intersection({EventType.ERROR, EventType.COMPLETION, EventType.RUN_FINISHED}) and None in runner.session.event_queue._queue
+@pytest.mark.asyncio
+@pytest.mark.parametrize("one_shot", [False, True])
+async def test_provider_terminal_events_are_payload_faithful_and_exactly_once(monkeypatch, one_shot: bool) -> None:
+    runner, _ = _product_runner("terminal"); completion, finished = {"summary": {"provider": True}, "opaque": "completion"}, {"completed": True, "opaque": "finished"}; barrier = threading.Barrier(2)
+    def run_task(*_a, **kw): emit = lambda: (barrier.wait(timeout=1), kw["event_emitter"]("completion", completion, turn=7), barrier.wait(timeout=1), kw["event_emitter"]("run_finished", finished, turn=8)); threads = [threading.Thread(target=emit, daemon=True) for _ in range(2)]; [thread.start() for thread in threads]; [thread.join(timeout=2) for thread in threads]; assert all(not thread.is_alive() for thread in threads); return {"completion_summary": {"completed": True}}  # type: ignore[no-untyped-def]
+    runner._agent = type("Agent", (), {"_local_mode": True, "config": {}, "run_task": run_task})(); runner.session.metadata.update({"cli_session_kind": "oneshot"} if one_shot else {}); monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized); _ = await runner.registry.create(runner.session) if one_shot else runner._execute_task("task"); await runner._run() if one_shot else None; assert [(event.type, event.payload, event.turn, event.classification, event.family, event.actor, event.visibility) for event in runner.session.event_queue._queue if event and event.type in {EventType.COMPLETION, EventType.RUN_FINISHED}] == [(EventType.COMPLETION, completion, 7, "bridge_host", "host.completion", "service", "host"), (EventType.RUN_FINISHED, finished, 8, "bridge_host", "host.run_finished", "service", "host")]
+class _GateLock:
+    def __init__(self) -> None: self.lock, self.gate, self.attempts = threading.RLock(), threading.Barrier(2), 0
+    def __enter__(self) -> "_GateLock": self.attempts += 1; self.gate.wait(timeout=1); self.lock.acquire(); return self
+    def __exit__(self, *_args: object) -> None: self.lock.release()
+def test_runner_serializes_concurrent_product_transitions() -> None:
+    runner, session = _product_runner("concurrent"); gate, errors = _GateLock(), []; runner._product_session_lock = gate
+    def submit(content: str) -> None:
+        try: asyncio.run(runner.enqueue_input(content))
+        except BaseException as error: errors.append(error)
+    threads = [threading.Thread(target=submit, args=(content,), daemon=True) for content in ("first", "second")]; [thread.start() for thread in threads]; [thread.join(timeout=2) for thread in threads]
+    assert gate.attempts == 2 and not errors and all(not thread.is_alive() for thread in threads); assert ([event.sequence for event in session.events], runner._input_queue.qsize()) == ([1, 2, 3], 2)

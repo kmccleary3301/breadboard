@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -13,7 +14,7 @@ from types import SimpleNamespace
 from typing import Any, AsyncIterator, Optional, Sequence
 
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard.product.runtime.artifacts import ArtifactStore, _sync_directory
 from breadboard.product.runtime.ports import JsonlEventSink
 from breadboard.product.runtime.session import Session as ProductSession
 
@@ -21,63 +22,63 @@ from fastapi import HTTPException, UploadFile, status
 
 from .events import EventType, SessionEvent
 from .models import (
-    ATPReplBatchRequest,
-    ATPReplBatchResponse,
-    ATPReplError,
-    ATPReplMetrics,
-    ATPReplRequest,
-    ATPReplResponse,
-    ATPReplSorry,
-    AttachmentHandle,
-    AttachmentUploadResponse,
-    ModelCatalogEntry,
-    ModelCatalogResponse,
-    SkillCatalogResponse,
-    CTreeSnapshotResponse,
-    SessionCommandRequest,
-    SessionCommandResponse,
-    SessionCreateRequest,
-    SessionCreateResponse,
-    SessionFileContent,
-    SessionFileInfo,
-    SessionInputRequest,
-    SessionInputResponse,
-    SessionStatus,
+    ATPReplBatchRequest, ATPReplBatchResponse, ATPReplError, ATPReplMetrics, ATPReplRequest, ATPReplResponse,
+    ATPReplSorry, AttachmentHandle, AttachmentUploadResponse, ModelCatalogEntry, ModelCatalogResponse,
+    SkillCatalogResponse, CTreeSnapshotResponse, SessionCommandRequest, SessionCommandResponse,
+    SessionCreateRequest, SessionCreateResponse, SessionFileContent, SessionFileInfo, SessionInputRequest,
+    SessionInputResponse, SessionStatus,
 )
 from .atp_diagnostics import build_atp_harness_diagnostic
 from .registry import SessionRecord, SessionRegistry
 from .session_runner import SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
-from ...compilation.effective_config_graph import compile_effective_config_graph
 from ...compilation.v2_loader import load_agent_config
 from ...compilation.effective_operation_policy import policy_pack_for_config_authority
-from .runtime_emission import default_runtime_record_root, emit_session_start_records, primitive_emission_enabled
+from .runtime_emission import _sanitize_persisted_runtime_config, compile_runtime_effective_config_graph, default_runtime_record_root, emit_session_start_records, primitive_emission_enabled
 from ...provider import runtime_codex as runtime_codex_module
 from ...provider_routing import provider_router
 
 logger = logging.getLogger(__name__)
 
-
 def _load_bridge_chaos_metadata() -> dict[str, float] | None:
-    latency = max(0, int(os.environ.get("BREADBOARD_CLI_LATENCY_MS", "0")))
-    jitter = max(0, int(os.environ.get("BREADBOARD_CLI_JITTER_MS", "0")))
-    try:
-        drop = float(os.environ.get("BREADBOARD_CLI_DROP_RATE", "0"))
-    except ValueError:
-        drop = 0.0
+    latency, jitter = (max(0, int(os.environ.get(name, "0")))
+                       for name in ("BREADBOARD_CLI_LATENCY_MS", "BREADBOARD_CLI_JITTER_MS"))
+    try: drop = float(os.environ.get("BREADBOARD_CLI_DROP_RATE", "0"))
+    except ValueError: drop = 0.0
     drop = max(0.0, min(1.0, drop))
-    if latency == 0 and jitter == 0 and drop == 0:
-        return None
-    return {
-        "latencyMs": float(latency),
-        "jitterMs": float(jitter),
-        "dropRate": drop,
-    }
+    if latency == jitter == drop == 0: return None
+    return {"latencyMs": float(latency), "jitterMs": float(jitter), "dropRate": drop}
 
 
 def _env_flag(name: str) -> bool:
     return (os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"})
 
+
+_START_PENDING, _START_COMMITTED = ".start.pending", ".start.committed"
+
+def _event_root() -> Path:
+    return Path(os.environ.get("BREADBOARD_SESSION_EVENT_ROOT", Path.home() / ".breadboard" / "session_events")).resolve()
+
+def _sync_tree(root: Path) -> None:
+    for path in (root, *root.rglob("*")):
+        if path.is_file():
+            with path.open("rb") as stream: os.fsync(stream.fileno())
+    for path in sorted((root, *(item for item in root.rglob("*") if item.is_dir())), key=lambda item: len(item.parts), reverse=True): _sync_directory(path)
+
+def _cleanup_incomplete_starts() -> None:
+    record_root, event_root = default_runtime_record_root(), _event_root()
+    for staged in record_root.glob(".*.records.starting") if record_root.is_dir() else ():
+        session_id = staged.name[1:-len(".records.starting")]; shutil.rmtree(event_root / session_id, ignore_errors=True) if not (record_root / session_id / _START_COMMITTED).is_file() else None; shutil.rmtree(staged, ignore_errors=True)
+    for bundle in record_root.iterdir() if record_root.is_dir() else ():
+        if bundle.is_dir() and (bundle / _START_PENDING).exists() and not (bundle / _START_COMMITTED).exists(): shutil.rmtree(bundle, ignore_errors=True); shutil.rmtree(event_root / bundle.name, ignore_errors=True)
+    for staged in event_root.glob(".*.events.starting") if event_root.is_dir() else ():
+        session_id = staged.name[1:-len(".events.starting")]; authority, target = record_root / session_id / _START_COMMITTED, event_root / session_id
+        if authority.is_file():
+            target.mkdir(parents=True, exist_ok=True)
+            for path in staged.iterdir(): (target / path.name).exists() or path.replace(target / path.name)
+            shutil.rmtree(staged, ignore_errors=True); _sync_tree(target)
+        else: shutil.rmtree(staged, ignore_errors=True)
+    for root in (record_root, event_root): _sync_directory(root) if root.is_dir() else None
 
 class SessionService:
     """Facade that coordinates the registry, runners, and FastAPI endpoints."""
@@ -89,75 +90,87 @@ class SessionService:
         self._atp_repl_service: Any | None = None
         self._atp_service_initialized = False
         self._atp_runtime_capabilities: dict[str, Any] = {}
+        _cleanup_incomplete_starts()
 
     @staticmethod
     def _runtime_lock(session_id: str, runtime_config: dict[str, Any], source_ref: str) -> EffectiveHarnessLock:
-        graph = compile_effective_config_graph(
-            graph_id=f"session:{session_id}",
-            layers=[{
-                "layer_id": "runtime:effective", "source_kind": "runtime", "scope": "session",
-                "precedence": 0, "values": runtime_config, "source_ref": source_ref,
-            }],
-        )
-        return EffectiveHarnessLock._from_record(graph)
+        return EffectiveHarnessLock._from_record(compile_runtime_effective_config_graph(session_id, runtime_config, source_ref))
+    def _publication_boundary(self, _name: str) -> None: pass
+    def _publish_start_bundle(
+        self, session_id: str, staged_record_dir: Path, staging_record_root: Path, runtime_record_dir: Path, staged_event_dir: Path, event_dir: Path, publish_records: bool,
+    ) -> None:
+        bundle = staged_record_dir if publish_records else staged_event_dir
+        if publish_records:
+            bundle.mkdir(parents=True, exist_ok=True); (bundle / _START_PENDING).write_text(session_id + "\n", encoding="utf-8")
+            _sync_tree(bundle); _sync_tree(staged_event_dir); self._publication_boundary("records")
+            if runtime_record_dir == event_dir:
+                for path in staged_event_dir.iterdir(): path.replace(bundle / path.name)
+                shutil.rmtree(staged_event_dir); _sync_tree(bundle)
+            self._publication_boundary("events")
+        else: _sync_tree(bundle); self._publication_boundary("records"); self._publication_boundary("events")
+        temporary, marker = bundle / f"{_START_COMMITTED}.tmp", bundle / _START_COMMITTED
+        with temporary.open("xb") as stream:
+            stream.write((session_id + "\n").encode()); stream.flush(); os.fsync(stream.fileno())
+        os.replace(temporary, marker); _sync_directory(bundle); self._publication_boundary("commit")
+        target = runtime_record_dir if publish_records else event_dir; bundle.replace(target); _sync_directory(target.parent); self._publication_boundary("authority")
+        if publish_records: shutil.rmtree(staging_record_root, ignore_errors=True)
+        if publish_records and runtime_record_dir != event_dir: staged_event_dir.replace(event_dir); _sync_directory(event_dir.parent)
 
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
-        session_id = str(uuid.uuid4())
-        metadata = dict(request.metadata or {})
-        if self._bridge_chaos:
-            metadata.setdefault("bridgeChaos", self._bridge_chaos)
-        metadata.setdefault("config_path", request.config_path)
-        record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata)
-        runner = SessionRunner(session=record, registry=self.registry, request=request)
-        runtime_config = runner.prepare_runtime_config()
-        runtime_lock = self._runtime_lock(session_id, runtime_config, request.config_path)
-        product_session = ProductSession.start(
-            runtime_lock, request.task, session_id=session_id,
-            sink=JsonlEventSink(Path(os.environ.get("BREADBOARD_SESSION_EVENT_ROOT", Path.home() / ".breadboard" / "session_events")) / session_id / "session_events.jsonl"),
-        )
-        metadata["session_contract"] = product_session.read_model.as_dict()
-        if primitive_emission_enabled():
-            emitted_paths = emit_session_start_records(session_id=session_id, request=request)
-            metadata.setdefault("runtime_records", emitted_paths)
-            metadata.setdefault("runtime_record_dir", str(default_runtime_record_root() / session_id))
-        record.product_session = product_session
-        record.runner = runner
-        record.product_artifacts = {}
-        await self.registry.create(record)
-        await self._ensure_dispatcher(record)
-        await self._maybe_prewarm_request_runtime(request, metadata)
-        await runner.start()
-        logger.info("Session %s created", session_id)
-        return SessionCreateResponse(
-            session_id=session_id,
-            status=record.status,
-            created_at=record.created_at,
-            logging_dir=record.logging_dir,
-        )
-
-    async def _maybe_prewarm_request_runtime(
-        self,
-        request: SessionCreateRequest,
-        metadata: Dict[str, Any],
-    ) -> None:
-        if not self._should_prewarm_request_runtime(metadata):
-            return
+        session_id, metadata = str(uuid.uuid4()), dict(request.metadata or {}); metadata.setdefault("config_path", request.config_path)
+        if self._bridge_chaos: metadata.setdefault("bridgeChaos", self._bridge_chaos)
+        record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata); runner = SessionRunner(session=record, registry=self.registry, request=request)
+        runtime_config = runner.prepare_runtime_config(); persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config); runtime_graph = compile_runtime_effective_config_graph(session_id, persisted_runtime_config, request.config_path); runtime_lock = EffectiveHarnessLock._from_record(runtime_graph)
+        emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = default_runtime_record_root() / session_id, _event_root() / session_id
+        staging_record_root = runtime_record_dir.parent / f".{session_id}.records.starting"
+        staged_record_dir, staged_event_dir = staging_record_root / session_id, event_dir.with_name(f".{session_id}.events.starting")
+        if emit_primitives: metadata.setdefault("runtime_record_dir", str(runtime_record_dir))
+        if event_dir.exists() or emit_primitives and runtime_record_dir.exists(): raise RuntimeError(f"session bundle already exists: {session_id}")
+        record.runner, record.product_artifacts, published = runner, {}, False
         try:
-            await asyncio.to_thread(self._prewarm_request_runtime_sync, request, metadata)
-        except Exception as exc:
-            logger.debug("Codex prewarm skipped: %s", exc)
+            if emit_primitives:
+                staged_paths = emit_session_start_records(
+                    session_id=session_id, request=request, output_root=staging_record_root,
+                    effective_runtime_config=runtime_config,
+                )
+                metadata.setdefault("runtime_records", {name: str(runtime_record_dir / Path(path).relative_to(staged_record_dir)) for name, path in staged_paths.items()})
+            event_sink = JsonlEventSink(staged_event_dir / "session_events.jsonl")
+            product_session = ProductSession.start(runtime_lock, request.task if request.task.strip() else "interactive session awaiting input",
+                                                   session_id=session_id, sink=event_sink)
+            record.product_session = product_session; metadata["session_contract"] = product_session.read_model.as_dict()
+            async with self.registry._lock:
+                self._publish_start_bundle(session_id, staged_record_dir, staging_record_root, runtime_record_dir, staged_event_dir, event_dir, emit_primitives)
+                event_sink.path = event_dir / "session_events.jsonl"; self.registry._records[session_id] = record
+            published = True; await self._ensure_dispatcher(record)
+            await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
+            await runner.start()
+        except Exception:
+            published = published or ((runtime_record_dir if emit_primitives else event_dir) / _START_COMMITTED).is_file()
+            try: runner.transition_product_session("fail", "session_setup_failed", "session setup failed")
+            except Exception: logger.exception("Failed to terminalize session %s after setup failure", session_id)
+            try: await runner.stop()
+            except Exception: logger.exception("Failed to stop session %s after setup failure", session_id)
+            if record.dispatcher_task and not record.dispatcher_task.done():
+                await record.event_queue.put(None); await asyncio.gather(record.dispatcher_task, return_exceptions=True)
+            if not published:
+                self.registry._records.pop(session_id, None)
+                for path in (runtime_record_dir, staging_record_root, event_dir, staged_event_dir): shutil.rmtree(path, ignore_errors=True)
+                for root in (runtime_record_dir.parent, event_dir.parent):
+                    if root.exists(): _sync_directory(root)
+            else: await self.registry.update_status(session_id, SessionStatus.FAILED)
+            raise
+        logger.info("Session %s created", session_id)
+        return SessionCreateResponse(session_id=session_id, status=record.status, created_at=record.created_at, logging_dir=record.logging_dir)
+
+    async def _maybe_prewarm_request_runtime(self, request: SessionCreateRequest, metadata: Dict[str, Any], runtime_config: dict[str, Any]) -> None:
+        if not self._should_prewarm_request_runtime(metadata): return
+        try: await asyncio.to_thread(self._prewarm_request_runtime_sync, request, metadata, runtime_config)
+        except Exception as exc: logger.debug("Codex prewarm skipped: %s", exc)
 
     def _should_prewarm_request_runtime(self, metadata: Dict[str, Any]) -> bool:
-        session_kind = str(metadata.get("cli_session_kind") or "").strip().lower()
-        return bool(
-            metadata.get("non_interactive_cli_session")
-            or session_kind == "oneshot"
-            or session_kind == "interactive"
-            or session_kind == "repl"
-        )
+        return bool(metadata.get("non_interactive_cli_session") or str(metadata.get("cli_session_kind") or "").strip().lower() in {"oneshot", "interactive", "repl"})
 
-    def _prewarm_request_runtime_sync(self, request: SessionCreateRequest, metadata: Dict[str, Any]) -> None:
-        config = load_agent_config(request.config_path)
+    def _prewarm_request_runtime_sync(self, request: SessionCreateRequest, metadata: Dict[str, Any], config: dict[str, Any]) -> None:
         providers = config.get("providers", {}) if isinstance(config, dict) else {}
         selected_model = (
             metadata.get("model")
@@ -213,19 +226,12 @@ class SessionService:
 
     async def _ensure_dispatcher(self, record: SessionRecord) -> None:
         task = record.dispatcher_task
-        if task and not task.done():
-            return
-        loop = asyncio.get_running_loop()
-        record.dispatcher_task = loop.create_task(self._dispatch_events(record))
+        if getattr(record, "_dispatcher_complete", False) or task and not task.done(): return
+        record.dispatcher_task = asyncio.get_running_loop().create_task(self._dispatch_events(record))
 
     async def _register_subscriber(
-        self,
-        record: SessionRecord,
-        queue: "asyncio.Queue[Optional[SessionEvent]]",
-        *,
-        replay: bool = False,
-        limit: Optional[int] = None,
-        from_id: Optional[str] = None,
+        self, record: SessionRecord, queue: "asyncio.Queue[Optional[SessionEvent]]", *,
+        replay: bool = False, limit: Optional[int] = None, from_id: Optional[str] = None,
         validated: bool = False,
     ) -> None:
         replay_enabled = replay or bool(from_id)
@@ -253,8 +259,7 @@ class SessionService:
                         events = events[start_index:]
                 if isinstance(limit, int) and limit > 0:
                     events = events[-limit:]
-                for event in events:
-                    queue.put_nowait(event)
+                for event in events: queue.put_nowait(event)
             else:
                 # Snapshot-on-reconnect: if the client connects without replay/from_id,
                 # push the most recent todo snapshot into its queue so the TUI can
@@ -280,7 +285,8 @@ class SessionService:
                             {"call_id": f"todo:snapshot:connect:{uuid.uuid4().hex[:8]}", "todo": envelope},
                         )
                     )
-            record.subscribers.add(queue)
+            if getattr(record, "_dispatcher_complete", False): queue.put_nowait(None)
+            else: record.subscribers.add(queue)
 
     async def _unregister_subscriber(
         self,
@@ -314,12 +320,12 @@ class SessionService:
                             # Drop on overflow; subscribers are best-effort observers.
                             continue
         async with record.dispatch_lock:
-            if record.subscribers:
-                for subscriber in list(record.subscribers):
-                    try:
-                        subscriber.put_nowait(None)
-                    except asyncio.QueueFull:
-                        continue
+            setattr(record, "_dispatcher_complete", True); subscribers = list(record.subscribers)
+            for subscriber in subscribers:
+                try:
+                    subscriber.put_nowait(None)
+                except asyncio.QueueFull:
+                    continue
 
     async def list_sessions(self):
         return await self.registry.list()
@@ -334,48 +340,25 @@ class SessionService:
     ) -> dict[str, Any]:
         record = await self.ensure_session(session_id)
         metadata = record.metadata if isinstance(record.metadata, dict) else {}
-        runtime_dir_raw = metadata.get("runtime_record_dir")
-        runtime_dir = Path(str(runtime_dir_raw)) if runtime_dir_raw else default_runtime_record_root() / session_id
-        records_dir = runtime_dir / "records"
+        runtime_dir = Path(str(metadata["runtime_record_dir"])) if metadata.get("runtime_record_dir") else default_runtime_record_root() / session_id
         rows: list[dict[str, Any]] = []
-        if records_dir.is_dir():
-            for path in sorted(records_dir.glob("*.jsonl")):
-                try:
-                    lines = path.read_text(encoding="utf-8").splitlines()
-                except OSError:
-                    continue
+        committed = not (runtime_dir / _START_PENDING).exists() or (runtime_dir / _START_COMMITTED).exists()
+        if committed:
+            for path in sorted((runtime_dir / "records").glob("*.jsonl")):
+                try: lines = path.read_text(encoding="utf-8").splitlines()
+                except OSError: continue
                 for line_no, line in enumerate(lines, start=1):
-                    if not line.strip():
-                        continue
-                    try:
-                        payload = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
+                    if not line.strip(): continue
+                    try: payload = json.loads(line)
+                    except json.JSONDecodeError: continue
                     row_record = payload.get("record") if isinstance(payload, dict) and isinstance(payload.get("record"), dict) else payload
-                    row_schema = None
-                    if isinstance(row_record, dict):
-                        row_schema = row_record.get("schema_version")
-                    if row_schema is None and isinstance(payload, dict):
-                        row_schema = payload.get("schema_version")
-                    if schema_version and row_schema != schema_version:
-                        continue
-                    rows.append(
-                        {
-                            "schema_version": row_schema,
-                            "path": str(path),
-                            "line": line_no,
-                            "record": row_record,
-                        }
-                    )
-        safe_offset = max(0, int(offset))
-        safe_limit = max(1, min(int(limit), 1000))
-        return {
-            "session_id": session_id,
-            "records": rows[safe_offset : safe_offset + safe_limit],
-            "offset": safe_offset,
-            "limit": safe_limit,
-            "total": len(rows),
-        }
+                    row_schema = row_record.get("schema_version") if isinstance(row_record, dict) else None
+                    if row_schema is None and isinstance(payload, dict): row_schema = payload.get("schema_version")
+                    if not schema_version or row_schema == schema_version:
+                        rows.append({"schema_version": row_schema, "path": str(path), "line": line_no, "record": row_record})
+        safe_offset, safe_limit = max(0, int(offset)), max(1, min(int(limit), 1000))
+        return {"session_id": session_id, "records": rows[safe_offset:safe_offset + safe_limit],
+                "offset": safe_offset, "limit": safe_limit, "total": len(rows)}
 
     async def list_skills(self, session_id: str) -> SkillCatalogResponse:
         record = await self.ensure_session(session_id)
@@ -477,31 +460,20 @@ class SessionService:
         return None
 
     async def stop_session(self, session_id: str) -> None:
-        record = await self.ensure_session(session_id)
+        record = await self.ensure_session(session_id); runner: Optional[SessionRunner] = getattr(record, "runner", None)
+        if runner: await runner.stop()
         product_session: ProductSession | None = getattr(record, "product_session", None)
-        if product_session and product_session.read_model.status not in {"completed", "failed", "canceled"}:
-            product_session.cancel()
-        runner: Optional[SessionRunner] = getattr(record, "runner", None)
-        if runner:
-            await runner.stop()
-        await self.registry.update_status(session_id, SessionStatus.STOPPED)
-        await self.registry.delete(session_id)
+        terminal_status = {"canceled": SessionStatus.STOPPED, "completed": SessionStatus.COMPLETED, "failed": SessionStatus.FAILED}.get(
+            getattr(getattr(product_session, "read_model", None), "status", None))
+        if terminal_status is not None: await self.registry.update_status(session_id, terminal_status)
 
     async def send_input(self, session_id: str, payload: SessionInputRequest) -> SessionInputResponse:
         record = await self.ensure_session(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
-        product_session: ProductSession | None = getattr(record, "product_session", None)
         try:
-            if product_session and product_session.read_model.status != "running":
-                raise RuntimeError(f"cannot accept input while session is {product_session.read_model.status}")
-            accepted_content = await runner.enqueue_input(payload.content, attachments=list(payload.attachments or []))
-            if product_session:
-                artifacts = getattr(record, "product_artifacts", {})
-                refs = [artifacts[attachment_id] for attachment_id in payload.attachments or [] if attachment_id in artifacts]
-                product_session.input(accepted_content or payload.content, refs)
-                record.metadata["session_contract"] = product_session.read_model.as_dict()
+            await runner.enqueue_input(payload.content, attachments=list(payload.attachments or []))
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except RuntimeError as exc:
@@ -513,25 +485,24 @@ class SessionService:
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
-        product_session: ProductSession | None = getattr(record, "product_session", None)
+        def durable_reconfigure(runtime_config: dict[str, Any]) -> None:
+            runner.transition_product_session(
+                "reconfigure", self._runtime_lock(session_id, runtime_config, runner.request.config_path),
+                payload.command)
         try:
-            detail = await runner.handle_command(payload.command, payload.payload)
-            if product_session and payload.command in {"set_model", "set_skills"}:
-                product_session.reconfigure(
-                    self._runtime_lock(session_id, runner.current_runtime_config(), runner.request.config_path),
-                    payload.command,
-                )
-                record.metadata["session_contract"] = product_session.read_model.as_dict()
-            if product_session and payload.command in {"permission_decision", "respond_permission", "permission_response"}:
-                request_id, decision = detail.get("request_id"), detail.get("decision")
-                if isinstance(request_id, str) and isinstance(decision, str):
-                    product_session.resolve_approval(request_id, decision)
-                    record.metadata["session_contract"] = product_session.read_model.as_dict()
+            detail = await runner.handle_command(
+                payload.command,
+                payload.payload,
+                durable_reconfigure=durable_reconfigure if payload.command in {"set_model", "set_mode", "set_skills"} else None,
+            )
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except NotImplementedError as exc:
             raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
         except RuntimeError as exc:
+            product_session: ProductSession | None = getattr(record, "product_session", None)
+            if product_session and product_session.read_model.status == "failed":
+                await self.registry.update_status(session_id, SessionStatus.FAILED)
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return SessionCommandResponse(detail=detail)
 
