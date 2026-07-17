@@ -1,4 +1,3 @@
-import { createParser, type EventSourceParseCallback, type ParsedEvent, type ReconnectInterval } from "eventsource-parser"
 
 declare const sessionIdBrand: unique symbol
 declare const inputIdBrand: unique symbol
@@ -304,6 +303,31 @@ export interface CanonicalE4Client {
 
 
 type RawObject = { readonly [key: string]: unknown }
+
+const MAX_JSON_RESPONSE_BYTES = 1024 * 1024
+const MAX_ERROR_RESPONSE_BYTES = 64 * 1024
+const MAX_SSE_CHUNK_BYTES = 1024 * 1024
+const MAX_SSE_FRAME_BYTES = 512 * 1024
+const MAX_SSE_LINE_BYTES = MAX_SSE_FRAME_BYTES
+const MAX_SSE_DATA_LINE_COUNT = 4096
+const MAX_SSE_EVENT_DATA_BYTES = 256 * 1024
+const MAX_SSE_EVENT_ID_BYTES = 1024
+const MAX_SSE_PENDING_EVENT_BYTES = 256 * 1024
+const MAX_SSE_PENDING_EVENT_COUNT = 2048
+
+const utf8ByteLength = (value: string): number => {
+  let bytes = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code <= 0x7f) bytes += 1
+    else if (code <= 0x7ff) bytes += 2
+    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length && value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff) {
+      bytes += 4
+      index += 1
+    } else bytes += 3
+  }
+  return bytes
+}
 
 const isRawObject = (value: unknown): value is RawObject =>
   typeof value === "object" && value !== null && !Array.isArray(value)
@@ -620,19 +644,199 @@ export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => 
 
 interface SafeErrorEnvelope {
   readonly code: string | null
-  readonly detail: RawObject | null
   readonly turnId: TurnId | null
 }
 
-const parseSafeErrorEnvelope = async (response: Response): Promise<SafeErrorEnvelope> => {
-  const value = await response.json().catch(() => null) as unknown
-  if (!isRawObject(value)) return { code: null, detail: null, turnId: null }
-  const rawCode = own(value, "error")
-  const code = typeof rawCode === "string" && /^[a-z0-9_.-]{1,128}$/.test(rawCode) ? rawCode : null
+class ResponseBodyLimitError extends Error {}
+class ResponseBodyProgressError extends Error {}
+
+interface ResponseReaderState {
+  readonly reader: ReadableStreamDefaultReader<Uint8Array>
+  pending: Promise<ReadableStreamReadResult<Uint8Array>> | null
+  released: boolean
+}
+
+const INPUT_ERROR_CODES = ["input_idempotency_conflict"] as const
+const CANCELLATION_ERROR_CODES = ["turn_not_found", "turn_already_terminal", "cancellation_already_requested"] as const
+const STREAM_ERROR_CODES = ["resume_window_exceeded"] as const
+
+const createDeferred = <T>(): {
+  readonly promise: Promise<T>
+  readonly resolve: (value: T | PromiseLike<T>) => void
+  readonly reject: (reason?: unknown) => void
+} => {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+const abortError = (): Error => {
+  const error = new Error("aborted")
+  error.name = "AbortError"
+  return error
+}
+
+const cancelResponseBody = (body: ReadableStream<Uint8Array> | null): void => {
+  if (body === null) return
+  try {
+    void body.cancel().catch(() => undefined)
+  } catch {
+    // A hostile Response implementation must not delay or replace the closed failure.
+  }
+}
+
+const cancelReader = (state: ResponseReaderState): void => {
+  try {
+    void state.reader.cancel().catch(() => undefined)
+  } catch {
+    // Cancellation is best-effort; the read race owns liveness.
+  }
+}
+
+const releaseReaderWhenIdle = (state: ResponseReaderState): void => {
+  if (state.released) return
+  const pending = state.pending
+  if (pending !== null) {
+    void pending.then(
+      () => releaseReaderWhenIdle(state),
+      () => releaseReaderWhenIdle(state),
+    ).catch(() => undefined)
+    return
+  }
+  state.released = true
+  try {
+    state.reader.releaseLock()
+  } catch {
+    // A reader whose implementation violates settlement ordering remains safely locked.
+  }
+}
+
+const readReaderAbortably = (
+  state: ResponseReaderState,
+  signal: AbortSignal,
+): Promise<ReadableStreamReadResult<Uint8Array>> => {
+  if (signal.aborted) {
+    cancelReader(state)
+    return Promise.reject(abortError())
+  }
+  const rawRead = state.reader.read()
+  state.pending = rawRead
+  const clearPending = () => {
+    if (state.pending === rawRead) state.pending = null
+  }
+  void rawRead.then(clearPending, clearPending)
+  const { promise, resolve, reject } = createDeferred<ReadableStreamReadResult<Uint8Array>>()
+  let settled = false
+  const onAbort = () => {
+    if (settled) return
+    settled = true
+    cancelReader(state)
+    reject(abortError())
+  }
+  const onValue = (value: ReadableStreamReadResult<Uint8Array>) => {
+    if (settled) return
+    settled = true
+    signal.removeEventListener("abort", onAbort)
+    resolve(value)
+  }
+  const onError = (error: unknown) => {
+    if (settled) return
+    settled = true
+    signal.removeEventListener("abort", onAbort)
+    reject(error)
+  }
+  signal.addEventListener("abort", onAbort, { once: true })
+  if (signal.aborted) onAbort()
+  void rawRead.then(onValue, onError)
+  return promise
+}
+
+const contentLengthExceeds = (response: Response, limit: number): boolean => {
+  const contentLength = response.headers.get("content-length")
+  if (contentLength === null || !/^\d+$/.test(contentLength)) return false
+  const normalized = contentLength.replace(/^0+/, "") || "0"
+  const maximum = String(limit)
+  return normalized.length > maximum.length || (normalized.length === maximum.length && normalized > maximum)
+}
+
+const readBoundedResponseBytes = async (
+  response: Response,
+  limit: number,
+  controller: AbortController,
+): Promise<Uint8Array> => {
+  if (contentLengthExceeds(response, limit)) {
+    controller.abort()
+    cancelResponseBody(response.body)
+    throw new ResponseBodyLimitError()
+  }
+  if (response.body === null) return new Uint8Array()
+  const state: ResponseReaderState = { reader: response.body.getReader(), pending: null, released: false }
+  let bytes = new Uint8Array()
+  let totalBytes = 0
+  try {
+    while (true) {
+      const result = await readReaderAbortably(state, controller.signal)
+      if (result.done) break
+      const chunkBytes = result.value.byteLength
+      if (chunkBytes === 0) {
+        controller.abort()
+        cancelReader(state)
+        throw new ResponseBodyProgressError()
+      }
+      const requiredBytes = totalBytes + chunkBytes
+      if (requiredBytes > limit) {
+        controller.abort()
+        cancelReader(state)
+        throw new ResponseBodyLimitError()
+      }
+      if (requiredBytes > bytes.byteLength) {
+        let capacity = bytes.byteLength === 0 ? Math.min(1024, limit) : bytes.byteLength
+        while (capacity < requiredBytes) capacity = Math.min(limit, capacity * 2)
+        const grown = new Uint8Array(capacity)
+        grown.set(bytes.subarray(0, totalBytes))
+        bytes = grown
+      }
+      bytes.set(result.value, totalBytes)
+      totalBytes = requiredBytes
+    }
+  } finally {
+    releaseReaderWhenIdle(state)
+  }
+  return bytes.subarray(0, totalBytes)
+}
+
+const readBoundedResponseJson = async (
+  response: Response,
+  limit: number,
+  controller: AbortController,
+): Promise<unknown> => JSON.parse(new TextDecoder().decode(await readBoundedResponseBytes(response, limit, controller))) as unknown
+
+const parseSafeErrorEnvelope = async (
+  response: Response,
+  controller: AbortController,
+  allowedCodes: readonly string[],
+  correlationCodes: readonly string[] = [],
+): Promise<SafeErrorEnvelope> => {
+  let value: unknown
+  try {
+    value = await readBoundedResponseJson(response, MAX_ERROR_RESPONSE_BYTES, controller)
+  } catch (error) {
+    if (error instanceof ResponseBodyLimitError || error instanceof ResponseBodyProgressError || error instanceof SyntaxError) return { code: null, turnId: null }
+    throw error
+  }
+  if (!isRawObject(value)) return { code: null, turnId: null }
   const detail = isRawObject(own(value, "detail")) ? own(value, "detail") as RawObject : null
-  const rawTurnId = detail === null ? null : own(detail, "turn_id")
-  const turnId = typeof rawTurnId === "string" && rawTurnId.length > 0 ? rawTurnId as TurnId : null
-  return { code, detail, turnId }
+  const rawCode = typeof own(value, "error") === "string" ? own(value, "error") : detail === null ? null : own(detail, "code")
+  const code = typeof rawCode === "string" && allowedCodes.includes(rawCode) ? rawCode : null
+  const rawTurnId = code !== null && correlationCodes.includes(code) && detail !== null ? own(detail, "turn_id") : null
+  const turnId = typeof rawTurnId === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(rawTurnId)
+    ? rawTurnId as TurnId
+    : null
+  return { code, turnId }
 }
 
 const pathForSession = (sessionId: SessionId | string, suffix = ""): string =>
@@ -679,16 +883,32 @@ const requestJson = async (
       redirect: "error",
     })
     if (!response.ok) {
-      const safe = await parseSafeErrorEnvelope(response)
+      const allowedCodes = response.status === 409 && method === "POST" && path.endsWith("/input")
+        ? INPUT_ERROR_CODES
+        : response.status === 409 && method === "POST" && path.endsWith("/cancel")
+          ? CANCELLATION_ERROR_CODES
+          : []
+      const safe = await parseSafeErrorEnvelope(response, controller, allowedCodes, INPUT_ERROR_CODES)
       if (response.status === 404) {
         const sessionId = path.split("/")[3] ?? "unknown"
         throw new CanonicalE4ClientError({ kind: "session-not-found", sessionId: sessionId as SessionId })
       }
       throw new CanonicalE4ClientError({ kind: "http", status: response.status, code: safe.code, body: REDACTED_VALUE, ...(safe.turnId === null ? {} : { turnId: safe.turnId }) })
     }
-    return await response.json().catch(() => {
-      throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_json_response" })
-    }) as unknown
+    try {
+      return await readBoundedResponseJson(response, MAX_JSON_RESPONSE_BYTES, controller)
+    } catch (error) {
+      if (error instanceof ResponseBodyLimitError) {
+        throw new CanonicalE4ClientError({ kind: "protocol", code: "response_body_too_large" })
+      }
+      if (error instanceof ResponseBodyProgressError) {
+        throw new CanonicalE4ClientError({ kind: "protocol", code: "response_body_no_progress" })
+      }
+      if (error instanceof SyntaxError) {
+        throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_json_response" })
+      }
+      throw error
+    }
   } catch (error) {
     if (error instanceof CanonicalE4ClientError) throw error
     if (isAbortError(error)) {
@@ -729,13 +949,25 @@ const uploadAttachments = async (
       redirect: "error",
     })
     if (!response.ok) {
-      const safe = await parseSafeErrorEnvelope(response)
+      const safe = await parseSafeErrorEnvelope(response, controller, [])
       if (response.status === 404) throw new CanonicalE4ClientError({ kind: "session-not-found", sessionId })
       throw new CanonicalE4ClientError({ kind: "http", status: response.status, code: safe.code, body: REDACTED_VALUE })
     }
-    const value = await response.json().catch(() => {
-      throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_attachment_upload_response" })
-    }) as unknown
+    let value: unknown
+    try {
+      value = await readBoundedResponseJson(response, MAX_JSON_RESPONSE_BYTES, controller)
+    } catch (error) {
+      if (error instanceof ResponseBodyLimitError) {
+        throw new CanonicalE4ClientError({ kind: "protocol", code: "response_body_too_large" })
+      }
+      if (error instanceof ResponseBodyProgressError) {
+        throw new CanonicalE4ClientError({ kind: "protocol", code: "response_body_no_progress" })
+      }
+      if (error instanceof SyntaxError) {
+        throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_attachment_upload_response" })
+      }
+      throw error
+    }
     if (!isRawObject(value) || !Array.isArray(own(value, "attachments"))) {
       throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_attachment_upload_response" })
     }
@@ -869,6 +1101,120 @@ const createRequestBody = (request: CreateSessionRequest): RawObject => ({
 interface RawSseItem {
   readonly data: string
   readonly eventId: string | null
+  readonly byteLength: number
+}
+
+class BoundedSseDecoder {
+  private lineBuffer = new Uint8Array()
+  private lineBytes = 0
+  private readonly lineEncoder = new TextEncoder()
+  private readonly lineDecoder = new TextDecoder()
+  private frameBytes = 0
+  private dataParts: string[] = []
+  private dataBytes = 0
+  private lastEventId: string | null = null
+  private pendingCr = false
+
+  constructor(
+    private readonly onEvent: (data: string, eventId: string | null) => void,
+    private readonly fail: (code: string) => never,
+  ) {}
+
+  feed(text: string): void {
+    let offset = 0
+    if (this.pendingCr) {
+      this.pendingCr = false
+      this.finishLine()
+      if (text.startsWith("\n")) offset = 1
+    }
+    let segmentStart = offset
+    while (offset < text.length) {
+      const code = text.charCodeAt(offset)
+      if (code !== 0x0a && code !== 0x0d) {
+        offset += 1
+        continue
+      }
+      this.appendLineSegment(text.slice(segmentStart, offset))
+      if (code === 0x0d && offset + 1 === text.length) {
+        this.pendingCr = true
+        offset += 1
+        segmentStart = offset
+        break
+      }
+      if (code === 0x0d && text.charCodeAt(offset + 1) === 0x0a) offset += 1
+      this.finishLine()
+      offset += 1
+      segmentStart = offset
+    }
+    this.appendLineSegment(text.slice(segmentStart))
+  }
+
+  finish(): void {
+    if (this.pendingCr) {
+      this.pendingCr = false
+      this.finishLine()
+    }
+    if (this.frameBytes !== 0 || this.lineBytes !== 0 || this.dataParts.length !== 0) {
+      this.fail("truncated_sse_frame")
+    }
+  }
+
+  private appendLineSegment(segment: string): void {
+    if (segment.length === 0) return
+    const bytes = utf8ByteLength(segment)
+    if (this.frameBytes + bytes > MAX_SSE_FRAME_BYTES) this.fail("sse_frame_too_large")
+    if (this.lineBytes + bytes > MAX_SSE_LINE_BYTES) this.fail("sse_line_too_large")
+    const requiredBytes = this.lineBytes + bytes
+    if (requiredBytes > this.lineBuffer.byteLength) {
+      let capacity = Math.max(64, this.lineBuffer.byteLength)
+      while (capacity < requiredBytes) capacity = Math.min(MAX_SSE_LINE_BYTES, capacity * 2)
+      const grown = new Uint8Array(capacity)
+      grown.set(this.lineBuffer.subarray(0, this.lineBytes))
+      this.lineBuffer = grown
+    }
+    const encoded = this.lineEncoder.encodeInto(segment, this.lineBuffer.subarray(this.lineBytes, requiredBytes))
+    if (encoded.read !== segment.length || encoded.written !== bytes) this.fail("invalid_sse_utf8")
+    this.lineBytes = requiredBytes
+    this.frameBytes += bytes
+  }
+
+  private finishLine(): void {
+    if (this.frameBytes + 1 > MAX_SSE_FRAME_BYTES) this.fail("sse_frame_too_large")
+    this.frameBytes += 1
+    const line = this.lineDecoder.decode(this.lineBuffer.subarray(0, this.lineBytes))
+    this.lineBytes = 0
+    if (line.length === 0) {
+      this.dispatchEvent()
+      this.frameBytes = 0
+      return
+    }
+    if (line.startsWith(":")) return
+    const colon = line.indexOf(":")
+    const field = colon === -1 ? line : line.slice(0, colon)
+    let value = colon === -1 ? "" : line.slice(colon + 1)
+    if (value.startsWith(" ")) value = value.slice(1)
+    if (field === "data") {
+      const separatorBytes = this.dataParts.length === 0 ? 0 : 1
+      const valueBytes = utf8ByteLength(value)
+      if (this.dataBytes + separatorBytes + valueBytes > MAX_SSE_EVENT_DATA_BYTES) this.fail("sse_event_data_too_large")
+      if (this.dataParts.length >= MAX_SSE_DATA_LINE_COUNT) this.fail("sse_data_line_count_exceeded")
+      this.dataBytes += separatorBytes + valueBytes
+      this.dataParts.push(value)
+      return
+    }
+    if (field === "id" && !value.includes("\0")) {
+      if (utf8ByteLength(value) > MAX_SSE_EVENT_ID_BYTES) this.fail("sse_event_id_too_large")
+      this.lastEventId = value
+    }
+  }
+
+  private dispatchEvent(): void {
+    if (this.dataParts.length === 0) return
+    const data = this.dataParts.join("\n")
+    this.dataParts = []
+    this.dataBytes = 0
+    this.onEvent(data, this.lastEventId)
+  }
 }
 
 class RuntimeSession implements OpenedSession {
@@ -1009,8 +1355,7 @@ class RuntimeSession implements OpenedSession {
     if (request.signal?.aborted) throw new CanonicalE4ClientError({ kind: "caller-abort" })
     this.assertOpen()
     const controller = new AbortController()
-    let resolveFinished!: () => void
-    const finished = new Promise<void>((resolve) => { resolveFinished = resolve })
+    const { promise: finished, resolve: resolveFinished } = createDeferred<void>()
     this.activeStreams.set(controller, finished)
     const onCallerAbort = () => controller.abort()
     request.signal?.addEventListener("abort", onCallerAbort, { once: true })
@@ -1028,7 +1373,7 @@ class RuntimeSession implements OpenedSession {
         redirect: "error",
       })
       if (!response.ok) {
-        const safe = await parseSafeErrorEnvelope(response)
+        const safe = await parseSafeErrorEnvelope(response, controller, response.status === 409 ? STREAM_ERROR_CODES : [])
         if (response.status === 404) throw new CanonicalE4ClientError({ kind: "session-not-found", sessionId: this.sessionId })
         if (response.status === 409 && safe.code === "resume_window_exceeded") {
           throw new CanonicalE4ClientError({
@@ -1050,35 +1395,42 @@ class RuntimeSession implements OpenedSession {
         }
       }
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder("utf-8", { fatal: true })
+      const readerState: ResponseReaderState = { reader: response.body.getReader(), pending: null, released: false }
+      const textDecoder = new TextDecoder("utf-8", { fatal: true })
       const pending: RawSseItem[] = []
       let pendingIndex = 0
-      let sseTail = ""
+      let pendingBytes = 0
       let sawOpen = false
       let openHeadSequence = 0
-      const parser = createParser(((event: ParsedEvent | ReconnectInterval) => {
-        if (event.type === "event" && "data" in event) pending.push({ data: event.data, eventId: event.id ?? null })
-      }) as EventSourceParseCallback)
-      const feedSse = (text: string): void => {
-        parser.feed(text)
-        const normalizedTail = `${sseTail}${text}`.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-        const boundary = normalizedTail.lastIndexOf("\n\n")
-        sseTail = boundary === -1 ? normalizedTail : normalizedTail.slice(boundary + 2)
+      const failSseLimit = (code: string): never => {
+        controller.abort()
+        cancelReader(readerState)
+        throw new CanonicalE4ClientError({ kind: "protocol", code })
       }
+      const sseDecoder = new BoundedSseDecoder((data, eventId) => {
+        const itemBytes = utf8ByteLength(data) + (eventId === null ? 0 : utf8ByteLength(eventId))
+        if (pending.length - pendingIndex >= MAX_SSE_PENDING_EVENT_COUNT) failSseLimit("sse_pending_event_count_exceeded")
+        if (pendingBytes + itemBytes > MAX_SSE_PENDING_EVENT_BYTES) failSseLimit("sse_pending_event_bytes_exceeded")
+        pendingBytes += itemBytes
+        pending.push({ data, eventId, byteLength: itemBytes })
+      }, failSseLimit)
       try {
         while (true) {
-          const result = await reader.read()
+          const result = await readReaderAbortably(readerState, controller.signal)
+          if (!result.done && result.value.byteLength > MAX_SSE_CHUNK_BYTES) failSseLimit("sse_chunk_too_large")
+          if (!result.done && result.value.byteLength === 0) failSseLimit("sse_chunk_no_progress")
           let decoded: string
           try {
-            decoded = result.done ? decoder.decode() : decoder.decode(result.value, { stream: true })
+            decoded = result.done ? textDecoder.decode() : textDecoder.decode(result.value, { stream: true })
           } catch {
             throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_sse_utf8" })
           }
-          if (decoded.length > 0) feedSse(decoded)
+          if (decoded.length > 0) sseDecoder.feed(decoded)
+          if (result.done) sseDecoder.finish()
           while (pendingIndex < pending.length) {
             const item = pending[pendingIndex]
             pendingIndex += 1
+            pendingBytes -= item.byteLength
             let raw: unknown
             try { raw = JSON.parse(item.data) as unknown } catch { throw new CanonicalE4ClientError({ kind: "protocol", code: "malformed_sse_json" }) }
             if (!isRawObject(raw)) throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_sse_envelope" })
@@ -1113,9 +1465,7 @@ class RuntimeSession implements OpenedSession {
                 continue
               }
               if (rawType === "stream.gap") {
-                const payload = own(raw, "payload")
-                const code = isRawObject(payload) && typeof own(payload, "code") === "string" ? own(payload, "code") as string : "subscriber_overflow"
-                throw new CanonicalE4ClientError({ kind: "resume-gap", code, lastAppliedEventId: this.lastAppliedEventId, lastAppliedSequence: this.lastAppliedSequence })
+                throw new CanonicalE4ClientError({ kind: "resume-gap", code: "subscriber_overflow", lastAppliedEventId: this.lastAppliedEventId, lastAppliedSequence: this.lastAppliedSequence })
               }
               throw new CanonicalE4ClientError({ kind: "protocol", code: "unsupported_non_cursor_event" })
             }
@@ -1152,18 +1502,16 @@ class RuntimeSession implements OpenedSession {
           }
           pending.length = 0
           pendingIndex = 0
-          if (result.done) {
-            if (sseTail.length > 0) throw new CanonicalE4ClientError({ kind: "protocol", code: "truncated_sse_frame" })
-            break
-          }
+          pendingBytes = 0
+          if (result.done) break
         }
         if (!sawOpen && !this.closed) throw new CanonicalE4ClientError({ kind: "protocol", code: "missing_stream_open" })
         if (sawOpen && !this.closed && this.lastAppliedSequence < openHeadSequence) {
           throw new CanonicalE4ClientError({ kind: "resume-gap", code: "stream_truncated_before_open_head", lastAppliedEventId: this.lastAppliedEventId, lastAppliedSequence: this.lastAppliedSequence })
         }
       } finally {
-        reader.releaseLock()
-        await response.body.cancel().catch(() => undefined)
+        cancelReader(readerState)
+        releaseReaderWhenIdle(readerState)
       }
     } catch (error) {
       if (this.closed && isAbortError(error)) return
@@ -1174,7 +1522,7 @@ class RuntimeSession implements OpenedSession {
     } finally {
       request.signal?.removeEventListener("abort", onCallerAbort)
       this.activeStreams.delete(controller)
-      resolveFinished()
+      resolveFinished(undefined)
     }
   }
 
