@@ -282,6 +282,11 @@ class SessionService:
         async with record.dispatch_lock:
             self._ensure_event_sequence(record)
             self._prune_replay(record)
+            if replay and not from_id and record.replay_history_partial:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=self._resume_gap_detail(record, None),
+                )
             events = list(record.event_log)
             if from_id:
                 start_index = self._resolve_start_index(events, from_id)
@@ -377,13 +382,14 @@ class SessionService:
                 if event.stable_cursor:
                     previous_sequence = record.event_seq
                     original_event_sequence = event.seq
+                    previous_history_partial = record.replay_history_partial
                     record.event_seq += 1
                     if event.seq is None:
                         event.seq = record.event_seq
                     else:
                         record.event_seq = max(record.event_seq, int(event.seq))
                     record.event_log.append(event)
-                    self._prune_replay(record)
+                    pruned_events = self._prune_replay(record)
                     try:
                         await self.registry.persist(
                             record,
@@ -405,6 +411,9 @@ class SessionService:
                             record.event_log.pop()
                         record.event_seq = previous_sequence
                         event.seq = original_event_sequence
+                        for pruned_event in reversed(pruned_events):
+                            record.event_log.appendleft(pruned_event)
+                        record.replay_history_partial = previous_history_partial
                         persistence_failed = True
                         for subscriber in list(record.subscribers.values()):
                             self._mark_subscription_gap(
@@ -482,6 +491,13 @@ class SessionService:
 
     async def list_sessions(self):
         return await self.registry.list()
+    async def session_snapshot(self, session_id: str):
+        record = await self.ensure_session(session_id)
+        await self._ensure_dispatcher(record)
+        async with record.dispatch_lock:
+            self._ensure_event_sequence(record)
+            self._prune_replay(record)
+            return record.to_summary()
 
     async def list_session_records(
         self,
@@ -590,16 +606,18 @@ class SessionService:
                 seq = max(seq, int(event.seq))
         record.event_seq = seq
 
-    def _prune_replay(self, record: SessionRecord) -> None:
+    def _prune_replay(self, record: SessionRecord) -> list[SessionEvent]:
         cutoff = int(time.time() * 1000) - REPLAY_RETENTION_MAX_AGE_MS
+        removed: list[SessionEvent] = []
         while record.event_log and (
             len(record.event_log) > REPLAY_RETENTION_MAX_EVENTS
             or int(record.event_log[0].created_at) < cutoff
         ):
-            record.event_log.popleft()
+            removed.append(record.event_log.popleft())
             record.replay_history_partial = True
+        return removed
 
-    def _resume_gap_detail(self, record: SessionRecord, from_id: str) -> dict[str, Any]:
+    def _resume_gap_detail(self, record: SessionRecord, from_id: Optional[str]) -> dict[str, Any]:
         replay = replay_retention_facts(
             record.event_log,
             head_sequence=record.event_seq,
@@ -642,6 +660,10 @@ class SessionService:
             runner: Optional[SessionRunner] = getattr(record, "runner", None)
             if runner:
                 await runner.stop()
+            dispatcher = record.dispatcher_task
+            if dispatcher is not None and not dispatcher.done():
+                await record.event_queue.put(None)
+                await dispatcher
             await self.registry.update_status(session_id, SessionStatus.STOPPED)
         await self.registry.delete(session_id)
 

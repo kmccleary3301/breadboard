@@ -229,6 +229,9 @@ async def test_v1_count_and_age_boundary_gaps_are_typed_before_stream_headers(
             f"/v1/sessions/{count_record.session_id}/events",
             params={"from_id": "1"},
         )
+        age_snapshot_response = await client.get(
+            f"/v1/sessions/{age_record.session_id}"
+        )
         age_response = await client.get(
             f"/v1/sessions/{age_record.session_id}/events",
             params={"from_id": "1"},
@@ -253,6 +256,9 @@ async def test_v1_count_and_age_boundary_gaps_are_typed_before_stream_headers(
         }
     assert count_response.json()["detail"]["first_retained_sequence"] == 2
     assert age_response.json()["detail"]["first_retained_sequence"] is None
+    assert age_snapshot_response.status_code == 200
+    assert age_snapshot_response.json()["earliestRetainedSequence"] is None
+    assert age_snapshot_response.json()["retainedHistory"] == "partial"
 
     await _stop_dispatcher(count_record)
     await _stop_dispatcher(age_record)
@@ -328,7 +334,9 @@ async def test_subscriber_overflow_emits_one_terminal_gap_and_stops_later_delive
     await _stop_dispatcher(record)
 
 @pytest.mark.asyncio
-async def test_durable_persist_failure_never_fans_out_stable_event() -> None:
+async def test_durable_persist_failure_never_fans_out_stable_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class PersistFailingRegistry(SessionRegistry):
         fail_persist = False
 
@@ -342,22 +350,41 @@ async def test_durable_persist_failure_never_fans_out_stable_event() -> None:
                 raise OSError("deterministic persist failure")
             await super().persist(record, terminal_event=terminal_event)
 
+    now_ms = 2_000_000_000_000
+    clock = {"now_ms": now_ms}
+    monkeypatch.setattr(
+        service_module.time,
+        "time",
+        lambda: clock["now_ms"] / 1000,
+    )
     registry = PersistFailingRegistry()
     service = SessionService(registry)
-    record = SessionRecord(session_id="persist-failure", status=SessionStatus.RUNNING)
-    await registry.create(record)
-    prepared = await service.prepare_event_stream(record.session_id)
-    stream = service.prepared_event_stream(prepared)
-
-    registry.fail_persist = True
-    await record.event_queue.put(
+    record = SessionRecord(
+        session_id="persist-failure",
+        status=SessionStatus.RUNNING,
+        event_seq=1,
+    )
+    record.event_log.append(
         _logged_event(
             record.session_id,
             1,
-            event_type=EventType.TURN_COMPLETED,
+            created_at=now_ms - REPLAY_RETENTION_MAX_AGE_MS,
+        )
+    )
+    await registry.create(record)
+    prepared = await service.prepare_event_stream(record.session_id)
+    stream = service.prepared_event_stream(prepared)
+    clock["now_ms"] += 1
+
+    registry.fail_persist = True
+    await record.event_queue.put(
+        SessionEvent(
+            EventType.TURN_COMPLETED,
+            record.session_id,
+            {},
+            created_at=clock["now_ms"],
             input_id="input-failure",
             turn_id="turn-failure",
-            payload={},
         )
     )
     assert record.dispatcher_task is not None
@@ -372,8 +399,9 @@ async def test_durable_persist_failure_never_fans_out_stable_event() -> None:
         "event_id": None,
     }
     assert gap.payload["recovery"]["action"] == SNAPSHOT_RECOVERY_ACTION
-    assert record.event_seq == 0
-    assert list(record.event_log) == []
+    assert record.event_seq == 1
+    assert [event.seq for event in record.event_log] == [1]
+    assert record.replay_history_partial is False
     assert record.terminal_event_envelopes == []
     with pytest.raises(StopAsyncIteration):
         await stream.__anext__()
@@ -524,6 +552,12 @@ async def test_terminal_and_idempotency_state_survives_restart_and_replay_expiry
     assert rehydrated.event_seq == 3
     assert list(rehydrated.event_log) == []
 
+    with pytest.raises(HTTPException) as partial_replay:
+        await restarted_service.prepare_event_stream(record.session_id, replay=True)
+    assert partial_replay.value.status_code == 409
+    assert partial_replay.value.detail["code"] == "resume_window_exceeded"
+    assert partial_replay.value.detail["last_event_id"] is None
+
     replayed_submit = await restarted_service.send_input(
         record.session_id,
         SessionInputRequest(
@@ -558,6 +592,7 @@ async def test_terminal_and_idempotency_state_survives_restart_and_replay_expiry
     assert replayed_cancel.disposition == "deduplicated"
     assert replayed_cancel.cancellation_request_id == "cancel-request-1"
     assert replayed_cancel.turn_id == "turn-3"
+    await _stop_dispatcher(rehydrated)
 
 
 @pytest.mark.asyncio
@@ -593,6 +628,7 @@ async def test_destructive_delete_is_repeat_idempotent_and_state_stays_absent(tm
 
     await service.stop_session(record.session_id)
     await service.stop_session(record.session_id)
+    await registry.persist(record)
     assert list(state_root.glob("*.json")) == []
 
     with pytest.raises(HTTPException) as lookup:

@@ -242,6 +242,8 @@ class SessionRegistry:
         terminal_event: SessionEvent | None = None,
     ) -> None:
         async with self._lock:
+            if self._records.get(record.session_id) is not record:
+                return
             retained: Dict[str, Any] | None = None
             if terminal_event is not None:
                 candidate = self._retained_terminal_envelope(terminal_event)

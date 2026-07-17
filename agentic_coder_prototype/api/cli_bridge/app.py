@@ -670,8 +670,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         responses={404: {"model": ErrorResponse}},
     )
     async def get_session(session_id: str, svc: SessionService = Depends(get_service)):
-        record = await svc.ensure_session(session_id)
-        return record.to_summary()
+        return await svc.session_snapshot(session_id)
 
     @app.get(
         "/v1/sessions/{session_id}/records",
