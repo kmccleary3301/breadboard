@@ -107,6 +107,67 @@ BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
 RuntimeEventContract = Dict[str, Optional[str]]
 TranslatedRuntimeEvent = Tuple[EventType, Dict[str, Any], Optional[int], RuntimeEventContract]
 
+_CTREE_EVENT_SCALAR_FIELDS = (
+    "kind",
+    "schema_version",
+    "node_count",
+    "event_count",
+    "link_count",
+    "top_level_count",
+    "ready_count",
+    "last_id",
+    "stage",
+    "collapsed",
+    "has_prompt_summary",
+)
+_CTREE_EVENT_COMPONENTS = ("snapshot", "compiler", "collapse", "runner")
+_CTREE_EVENT_MAX_HASHES = 32
+_CTREE_EVENT_MAX_TEXT = 128
+
+
+def _ctree_event_component_summary(value: Any) -> Dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    summary: Dict[str, Any] = {}
+    for key in _CTREE_EVENT_SCALAR_FIELDS:
+        candidate = value.get(key)
+        if isinstance(candidate, bool) or isinstance(candidate, int):
+            summary[key] = candidate
+        elif isinstance(candidate, str) and len(candidate) <= _CTREE_EVENT_MAX_TEXT:
+            summary[key] = candidate
+    hashes = value.get("hashes")
+    if isinstance(hashes, dict):
+        bounded_hashes: Dict[str, str] = {}
+        for key in sorted(key for key in hashes if isinstance(key, str)):
+            candidate = hashes.get(key)
+            if (
+                len(bounded_hashes) >= _CTREE_EVENT_MAX_HASHES
+                or not isinstance(key, str)
+                or len(key) > _CTREE_EVENT_MAX_TEXT
+                or not isinstance(candidate, str)
+                or len(candidate) > _CTREE_EVENT_MAX_TEXT
+            ):
+                continue
+            bounded_hashes[key] = candidate
+        if bounded_hashes:
+            summary["hashes"] = bounded_hashes
+    return summary
+
+
+def project_ctree_snapshot_event(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Project a bounded notification while the full snapshot remains endpoint-owned."""
+
+    projection: Dict[str, Any] = {"projection": "summary"}
+    for key in _CTREE_EVENT_COMPONENTS:
+        summary = _ctree_event_component_summary(payload.get(key))
+        if summary:
+            projection[key] = summary
+    if len(projection) == 1:
+        summary = _ctree_event_component_summary(payload)
+        if summary:
+            projection["snapshot"] = summary
+    return projection
+
 
 
 
@@ -1553,6 +1614,7 @@ class SessionRunner:
                 try:
                     if isinstance(payload, dict):
                         self._ctree_snapshot_cache = dict(payload)
+                        payload = project_ctree_snapshot_event(payload)
                 except Exception:
                     pass
             try:
