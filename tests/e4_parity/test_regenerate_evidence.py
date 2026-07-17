@@ -449,6 +449,15 @@ def test_lane_def_reverify_stages_refresh_their_declared_json_reports() -> None:
     ]
 
     assert lane_stages
+    assert all(
+        driver.LANE_DEFS[stage.stage_id.removeprefix("lane_def_reverify_")]["status"] == "accepted"
+        for stage in lane_stages
+    )
+    assert {
+        f"lane_def_reverify_{lane_id}"
+        for lane_id, lane_def in driver.LANE_DEFS.items()
+        if lane_def["status"] == "superseded"
+    }.isdisjoint({stage.stage_id for stage in lane_stages})
     for stage in lane_stages:
         assert stage.read_only is False
         json_out_index = stage.argv.index("--json-out")

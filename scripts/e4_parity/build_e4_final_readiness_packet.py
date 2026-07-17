@@ -146,6 +146,16 @@ def _accepted_lanes() -> tuple[dict[str, Any], ...]:
     return tuple(lane for lane in lanes if isinstance(lane, dict) and lane.get("status") == "accepted")
 
 
+def _accounted_lanes() -> tuple[dict[str, Any], ...]:
+    lanes = _inventory()["lanes"]
+    return tuple(
+        lane
+        for lane in lanes
+        if isinstance(lane, dict)
+        and (lane.get("status") == "accepted" or lane.get("evidence_status") == "accepted")
+    )
+
+
 def _scored_lanes() -> tuple[dict[str, Any], ...]:
     """Return accepted lanes that participate in the Phase-16 score authority."""
     return tuple(lane for lane in _accepted_lanes() if int(lane.get("points", 0)) > 0)
@@ -255,7 +265,11 @@ def _projected_score_row_points_for_expected(kind: str | None = None) -> int:
 
 
 def _expected_target_support_claim_count() -> int:
-    return len(_lanes_by_kind("target_support"))
+    return sum(
+        1
+        for lane in _accounted_lanes()
+        if int(lane.get("points", 0)) > 0 and lane.get("kind") == "target_support"
+    )
 
 
 def _projected_score_row_points(kind: str | None = None) -> int:
@@ -269,7 +283,11 @@ def _expected_target_support_claims() -> int:
 
 
 def _expected_non_target_claims() -> int:
-    return len(_lanes_by_kind("non_target_accounting"))
+    return sum(
+        1
+        for lane in _accounted_lanes()
+        if int(lane.get("points", 0)) > 0 and lane.get("kind") == "non_target_accounting"
+    )
 
 
 def expected_points() -> int:
