@@ -404,9 +404,8 @@ def test_catalog_omits_superseded_lane_with_unavailable_historical_artifacts(
 ) -> None:
     paths = _write_catalog_fixture(tmp_path, monkeypatch)
     inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
-    lane_def_path = paths["checkout"] / "config/e4_lanes/lane_alpha.yaml"
-    inventory["lanes"][0]["lane_def_ref"] = _relative(lane_def_path, paths["checkout"])
-    _write_json(lane_def_path, {"lane_id": "lane_alpha", "status": "superseded"})
+    inventory["lanes"][0]["status"] = "superseded"
+    inventory["lanes"][0]["evidence_status"] = "accepted"
     _write_json(paths["inventory"], inventory)
     for key in ("capture", "comparator", "support_claim", "evidence_manifest"):
         paths[key].unlink()

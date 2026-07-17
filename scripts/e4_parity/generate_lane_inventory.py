@@ -183,13 +183,13 @@ def lane_inventory_row(lane_def: Mapping[str, Any]) -> dict[str, Any]:
         )
         if isinstance(packet_feature_id, str) and packet_feature_id:
             ledger_feature_ids = [packet_feature_id]
-    return {
+    row = {
         "lane_id": lane_id,
         "config_id": config_id,
         "claim_id": _claim_id(lane_def),
         "phase": _phase(lane_id, lane_def),
         "kind": lane_def["kind"],
-        "status": lane_def.get("claim", {}).get("status", lane_def["status"]),
+        "status": lane_def["status"],
         "points": lane_def["points"],
         "target_family": lane_def["target_family"],
         "target_version": lane_def["target_version"],
@@ -210,6 +210,10 @@ def lane_inventory_row(lane_def: Mapping[str, Any]) -> dict[str, Any]:
         "score_row_id": score_row.get("score_row_id", ""),
         "artifacts_root": lane_def.get("artifacts_root"),
     }
+    retained_evidence_status = lane_def.get("claim", {}).get("status")
+    if isinstance(retained_evidence_status, str) and retained_evidence_status != lane_def["status"]:
+        row["evidence_status"] = retained_evidence_status
+    return row
 
 
 def build_inventory(lane_defs: Mapping[str, Mapping[str, Any]]) -> dict[str, Any]:
