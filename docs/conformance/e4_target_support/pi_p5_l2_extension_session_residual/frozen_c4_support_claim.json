@@ -200,11 +200,11 @@
     "No target behavior outside the observed extension loader/runner and SessionManager residual APIs is claimed.",
     "No broad Pi customization parity beyond extension-discovered resources, registered tool/command/flag surface, and session lifecycle hooks is claimed."
   ],
-  "freeze_ref": "config/e4_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:34b38f0eb690e8940d6b8c6bd8cf623c795f9239fab75343f1aea3b46bdc1d6f",
+  "freeze_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:368abb149bb533f7fc7396a4143e7a03f1cd18db1a7bde95d98c8bc556c245e3",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_38725eb172b28cb1#sha256:080dea42d884060dc15454f1cf1ea9c912b76e3a66ec8ef8bc0ad08e7de079b1"
+    "config/e4_lanes/evidence_inputs/e4_lane_ledger_seed_extensions.v1.json#feat_38725eb172b28cb1#sha256:727c926eb2c2bb31d2599702099f9f48f3caa264ca6fa8a5dc05d63c563b61d0"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",

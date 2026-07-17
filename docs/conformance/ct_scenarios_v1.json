@@ -5528,6 +5528,53 @@
           {
             "checks": [
               {
+                "equals": true,
+                "path": "ok"
+              },
+              {
+                "length_equals": 0,
+                "path": "errors"
+              },
+              {
+                "equals": "oh_my_pi_p3_7_memory_work_compiler_v1",
+                "path": "claimed_scope.config_id"
+              },
+              {
+                "equals": "oh_my_pi_p3_7_memory_work_compiler",
+                "path": "claimed_scope.lane_id"
+              },
+              {
+                "equals": "no-provider",
+                "path": "claimed_scope.provider_model"
+              },
+              {
+                "equals": "read-only",
+                "path": "claimed_scope.sandbox_mode"
+              }
+            ],
+            "path": "artifacts/conformance/node_gate/ct_frozen_oh_my_pi_p3_7_memory_work_compiler.json"
+          }
+        ]
+      },
+      "command": [
+        "python",
+        "scripts/e4_parity/validate_frozen_e4_evidence.py",
+        "--validation-report",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_validation_report.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_frozen_oh_my_pi_p3_7_memory_work_compiler.json"
+      ],
+      "description": "oh_my_pi_p3_7_memory_work_compiler: validate hash-bound frozen evidence for a retired producer",
+      "gate_level": "P3-support",
+      "test_id": "CT-P3-OHMYPI-P37-MEMORY-WORK-C4",
+      "timeout_seconds": 60
+    },
+    {
+      "assertions": {
+        "json_files": [
+          {
+            "checks": [
+              {
                 "description": "comparator report is ok",
                 "id": "ok_true",
                 "op": "equals",
@@ -5680,6 +5727,53 @@
       "gate_level": "P5-support",
       "test_id": "CT-P5-PI-L1-CLI-CONFIG-CONTEXT-TOOL-C4",
       "timeout_seconds": 240
+    },
+    {
+      "assertions": {
+        "json_files": [
+          {
+            "checks": [
+              {
+                "equals": true,
+                "path": "ok"
+              },
+              {
+                "length_equals": 0,
+                "path": "errors"
+              },
+              {
+                "equals": "pi_p5_l2_extension_session_residual_v1",
+                "path": "claimed_scope.config_id"
+              },
+              {
+                "equals": "pi_p5_l2_extension_session_residual",
+                "path": "claimed_scope.lane_id"
+              },
+              {
+                "equals": "no-provider",
+                "path": "claimed_scope.provider_model"
+              },
+              {
+                "equals": "read-only-no-secret",
+                "path": "claimed_scope.sandbox_mode"
+              }
+            ],
+            "path": "artifacts/conformance/node_gate/ct_frozen_pi_p5_l2_extension_session_residual.json"
+          }
+        ]
+      },
+      "command": [
+        "python",
+        "scripts/e4_parity/validate_frozen_e4_evidence.py",
+        "--validation-report",
+        "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_validation_report.json",
+        "--json-out",
+        "artifacts/conformance/node_gate/ct_frozen_pi_p5_l2_extension_session_residual.json"
+      ],
+      "description": "pi_p5_l2_extension_session_residual: validate hash-bound frozen evidence for a retired producer",
+      "gate_level": "P5-support",
+      "test_id": "CT-P5-PI-L2-EXTENSION-SESSION-RESIDUAL-C4",
+      "timeout_seconds": 60
     },
     {
       "assertions": {

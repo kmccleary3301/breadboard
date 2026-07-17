@@ -1,9 +1,9 @@
 {
   "artifacts": [
     {
-      "path": "config/e4_target_freeze_manifest.yaml",
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml",
       "role": "freeze_manifest",
-      "sha256": "sha256:eb8e4807da21d37e88280deb188f533d5e789e66196246e7c7417347c486dac5"
+      "sha256": "sha256:5eb46e9bb2601b71aef89b50e8a8f7816f8174585d7fd9a92767037374e361e7"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json",
@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:d64eda500b55a699483f6661d3d9498a23c3dbef19db20fd2c4528e4a956fc18"
+      "sha256": "sha256:e503f86220f14d4a1f346e34b931eaad4aede6ab44b17ce6086d59a90b28964f"
     },
     {
       "derived_from": [

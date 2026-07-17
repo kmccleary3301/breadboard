@@ -1,0 +1,66 @@
+{
+  "accepted_as_capture_ref": true,
+  "capture_class": "raw_target_capture",
+  "captured_artifacts": [
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json",
+      "role": "target_setup",
+      "sha256": "sha256:185b925ae0bbfa60e43eb3394b11c58e063541b8591f8b475f94ab10896646a0"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json",
+      "role": "target_probe",
+      "sha256": "sha256:96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.stdout.txt",
+      "role": "module_probe_stdout",
+      "sha256": "sha256:8c3a988e88b1566502749ac66584de65d01bd1776e6f929f3c73e540c413ee30"
+    },
+    {
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.stderr.txt",
+      "role": "module_probe_stderr",
+      "sha256": "sha256:1eccbf75a6ed019df08db35cee4f9f1cd9e571228be9d84255b7d9e578a1dfe1"
+    }
+  ],
+  "config_id": "pi_p5_l2_extension_session_residual_v1",
+  "generated_at_utc": "2026-07-03T10:45:00Z",
+  "lane_id": "pi_p5_l2_extension_session_residual",
+  "lineage_rationale": "Pi residual capture runs @mariozechner/pi-coding-agent 0.57.1 from the frozen local source archive in an isolated no-secret target workspace, observing extension hook registration/execution and session resume/fork/compaction APIs without provider inference.",
+  "provider_model": "no-provider",
+  "raw_source_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json#sha256:185b925ae0bbfa60e43eb3394b11c58e063541b8591f8b475f94ab10896646a0",
+  "raw_source_status": "canonical_raw_present",
+  "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
+  "sandbox_mode": "read-only-no-secret",
+  "schema_version": "bb.e4.raw_capture_manifest.v1",
+  "scope_exclusions": [
+    "no provider-authenticated inference",
+    "no network behavior",
+    "no UI rendering",
+    "no broad Pi customization outside observed extension/session APIs"
+  ],
+  "source_artifacts": [
+    "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
+    "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs",
+    "agent_configs/misc/pi_p5_l2_extension_session_residual_v1.yaml"
+  ],
+  "source_hashes": {
+    "agent_configs/misc/pi_p5_l2_extension_session_residual_v1.yaml": "sha256:756fdbcab340647580f6cf4a090ea566420e58387c61a83c3d7e9302987c35b1",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs": "sha256:d84700ffe82039146008260f2cf43b5e8b8488571e99543d251a2fe9694bae47",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json": "sha256:96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde",
+    "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json": "sha256:185b925ae0bbfa60e43eb3394b11c58e063541b8591f8b475f94ab10896646a0",
+    "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip": "sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b",
+    "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json": "sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602"
+  },
+  "target_family": "pi",
+  "target_source": {
+    "package": "@mariozechner/pi-coding-agent",
+    "repository": "https://github.com/badlogic/pi-mono.git",
+    "source_archive_ref": "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip#sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b",
+    "version": "0.57.1"
+  },
+  "target_version": "@mariozechner/pi-coding-agent@0.57.1"
+}

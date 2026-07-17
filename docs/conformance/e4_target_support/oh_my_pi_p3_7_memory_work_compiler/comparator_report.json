@@ -1,0 +1,74 @@
+{
+  "assertions": [
+    {
+      "expected": true,
+      "name": "schema_validation_passed",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": true,
+      "name": "primary_primitive_present",
+      "observed": true,
+      "status": "passed"
+    },
+    {
+      "expected": "bb.memory_compaction_plan.v1:oh_my_pi_p3_7_memory_work_compiler_plan",
+      "name": "work_checkpoint_refs_memory_plan",
+      "observed": "bb.memory_compaction_plan.v1:oh_my_pi_p3_7_memory_work_compiler_plan",
+      "status": "passed"
+    },
+    {
+      "expected": [
+        1,
+        1
+      ],
+      "name": "memory_plan_has_transcript_and_summary",
+      "observed": [
+        1,
+        1
+      ],
+      "status": "passed"
+    }
+  ],
+  "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+  "details": [
+    {
+      "name": "schema_validation_passed",
+      "status": "passed"
+    },
+    {
+      "name": "primary_primitive_present",
+      "status": "passed"
+    },
+    {
+      "name": "work_checkpoint_refs_memory_plan",
+      "status": "passed"
+    },
+    {
+      "name": "memory_plan_has_transcript_and_summary",
+      "status": "passed"
+    }
+  ],
+  "failed": 0,
+  "input_hashes": {
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json": "sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e",
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/compiled_records.json": "sha256:184fc6e1846aa2a808d6d881830793cb77ea48d97a851aebf732f4d6256c8074",
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json": "sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72"
+  },
+  "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+  "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+  "schema_version": "bb.e4.comparator_report.v1",
+  "scope": {
+    "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+    "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+    "p3_item": "P3.7",
+    "phase": "P3",
+    "provider_model": "no-provider",
+    "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+    "sandbox_mode": "read-only",
+    "target_family": "oh_my_pi",
+    "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+  },
+  "warned": 0
+}
