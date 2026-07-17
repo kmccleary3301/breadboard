@@ -183,7 +183,24 @@ def _lane_arg(lane: Mapping[str, Any], flag: str) -> str:
     raise RuntimeError(f"inventory lane {lane.get('lane_id')!r} missing {flag}")
 
 
+def _retired_lane_evidence_path(lane: Mapping[str, Any], filename: str) -> Path | None:
+    if lane.get("status") == "accepted" or lane.get("evidence_status") != "accepted":
+        return None
+    artifacts_root = lane.get("artifacts_root")
+    if not isinstance(artifacts_root, str) or not artifacts_root:
+        raise RuntimeError(
+            f"retired inventory lane {lane.get('lane_id')!r} missing artifacts_root"
+        )
+    return _resolve_read_reference(
+        f"{artifacts_root}/{filename}",
+        label=f"retired lane {lane.get('lane_id')!r} {filename}",
+    )
+
+
 def _lane_support_claim_path(lane: Mapping[str, Any]) -> Path:
+    retired_path = _retired_lane_evidence_path(lane, "frozen_c4_support_claim.json")
+    if retired_path is not None:
+        return retired_path
     return _resolve_read_reference(
         _lane_arg(lane, "--support-claim"),
         label=f"lane {lane.get('lane_id')!r} support claim",
@@ -191,6 +208,9 @@ def _lane_support_claim_path(lane: Mapping[str, Any]) -> Path:
 
 
 def _lane_evidence_manifest_path(lane: Mapping[str, Any]) -> Path:
+    retired_path = _retired_lane_evidence_path(lane, "frozen_c4_evidence_manifest.json")
+    if retired_path is not None:
+        return retired_path
     return _resolve_read_reference(
         _lane_arg(lane, "--evidence-manifest"),
         label=f"lane {lane.get('lane_id')!r} evidence manifest",
