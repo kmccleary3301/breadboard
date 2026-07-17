@@ -62,6 +62,27 @@ def test_probe_argv_capture_does_not_become_builder() -> None:
     assert row["builder"] is None
 
 
+def test_lane_inventory_row_uses_packet_feature_id_without_claim_artifacts() -> None:
+    lane_def = _lane_def()
+    lane_def["normalize"] = {
+        "config": {"packet_constants": {"feature_id": "feat_demo_packet"}}
+    }
+
+    row = lane_inventory_row(lane_def)
+
+    assert row["ledger_feature_ids"] == ["feat_demo_packet"]
+
+
+def test_lane_inventory_row_preserves_retained_claim_status() -> None:
+    lane_def = _lane_def()
+    lane_def["status"] = "superseded"
+    lane_def["claim"]["status"] = "accepted"
+
+    row = lane_inventory_row(lane_def)
+
+    assert row["status"] == "accepted"
+
+
 def test_build_inventory_sorts_lane_defs() -> None:
     inventory = build_inventory({"z_lane": _lane_def("oh_my_pi_p9_z"), "a_lane": _lane_def("oh_my_pi_p9_a")})
     assert inventory["schema_version"] == "bb.e4.lane_inventory.v2"

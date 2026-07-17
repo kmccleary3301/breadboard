@@ -215,6 +215,20 @@
         "exclusions"
       ],
       "properties": {
+        "status": {
+          "enum": [
+            "planned",
+            "captured",
+            "replayed",
+            "compared",
+            "claimed",
+            "accepted",
+            "blocked",
+            "superseded",
+            "scaffolded"
+          ],
+          "description": "Optional retained evidence status when it differs from the producer lane lifecycle status."
+        },
         "scope": {
           "type": "object",
           "additionalProperties": false,

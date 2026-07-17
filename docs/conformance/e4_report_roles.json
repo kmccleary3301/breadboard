@@ -1167,6 +1167,16 @@
       "role_key": "work_item_replay"
     },
     {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent_v2",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent_v2:evidence_manifest",
+      "role_key": "evidence_manifest"
+    },
+    {
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent_v2",
+      "role_id": "oh_my_pi_p6_6_task_job_subagent_v2:node_gate",
+      "role_key": "node_gate"
+    },
+    {
       "lane_id": "codex_cli_e4_capture_probe_v1",
       "role_id": "codex_cli_e4_capture_probe_v1:atomic_feature_ledger",
       "role_key": "atomic_feature_ledger"

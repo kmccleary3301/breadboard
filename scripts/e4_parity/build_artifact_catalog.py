@@ -707,6 +707,18 @@ def _lane_entry(
     )
 
 
+def _lane_producer_is_accepted(lane: Mapping[str, Any]) -> bool:
+    lane_def_ref = lane.get("lane_def_ref")
+    if lane_def_ref is None:
+        return True
+    if not isinstance(lane_def_ref, str) or not lane_def_ref:
+        raise ValueError("inventory lane_def_ref must be a non-empty string")
+    lane_def = load_json(resolve_registered_path(lane_def_ref))
+    if not isinstance(lane_def, Mapping):
+        raise ValueError(f"lane definition must be an object: {lane_def_ref}")
+    return lane_def.get("status") == "accepted"
+
+
 def _lane_entries(
     inventory: Mapping[str, Any],
     external_path_role_ids: Mapping[str, str],
@@ -724,6 +736,10 @@ def _lane_entries(
         artifact_roles = lane.get("artifact_roles", {})
         if not isinstance(lane_id, str) or not lane_id:
             raise ValueError("inventory lane_id must be a non-empty string")
+        if lane.get("status") != "accepted":
+            continue
+        if not _lane_producer_is_accepted(lane):
+            continue
         if not isinstance(artifact_roles, Mapping):
             raise ValueError(f"lane {lane_id} artifact_roles must be an object")
         manifest_path = _evidence_manifest_path(lane)
