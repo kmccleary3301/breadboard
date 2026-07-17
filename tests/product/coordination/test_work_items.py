@@ -38,8 +38,10 @@ def _work_item(status: str = "running", retry: bool = False) -> dict[str, Any]:
     elif status == "canceled": item.cancel("operator", "canceled")
     return _record(item.read_model)
 def _semantic_error(record: dict[str, Any], pointer: str, message: str) -> None:
-    with pytest.raises(PrimitiveCompileError) as caught: validate_record(get_spec("bb.work_item.v2"), record)
-    assert (pointer, message) in caught.value.errors
+    for operation in (validate_record, finalize_record):
+        with pytest.raises(PrimitiveCompileError) as caught:
+            operation(get_spec("bb.work_item.v2"), record)
+        assert (pointer, message) in caught.value.errors
 def _fails(error: type[BaseException], action: Any, match: str | None = None) -> None:
     with pytest.raises(error, match=match): action()
 class DelayedProjector(CoordinationProjector):
@@ -52,13 +54,16 @@ class DelayedProjector(CoordinationProjector):
         if name == "_view" and current_thread().name.startswith("delayed") and object.__getattribute__(self, "published").is_set():
             assert object.__getattribute__(self, "release").wait(5)
         return object.__getattribute__(self, name)
-def test_candidate_contracts_accept_reducer_states_but_cannot_finalize() -> None:
+def test_v2_contracts_validate_and_finalize_reducer_states() -> None:
     for status in ("blocked", "ready", "leased", "running", "waiting", "paused", "completed", "failed", "canceled"):
-        assert validate_record(get_spec("bb.work_item.v2"), _work_item(status)) == _work_item(status)
-    assert validate_record(get_spec("bb.work_item.v2"), _work_item(retry=True)) == _work_item(retry=True)
+        record = _work_item(status)
+        assert validate_record(get_spec("bb.work_item.v2"), record) == record
+        assert finalize_record(get_spec("bb.work_item.v2"), record) == record
+    retry_record = _work_item(retry=True)
+    assert validate_record(get_spec("bb.work_item.v2"), retry_record) == retry_record
+    assert finalize_record(get_spec("bb.work_item.v2"), retry_record) == retry_record
     validate_record(get_spec("bb.work_placement.v1"), {"schema_version": "bb.work_placement.v1", **WorkPlacement("placement-1", "work-1", "attempt-1", "worker-1", "session-1", "target-a", "2026-07-17T00:00:04Z").as_dict()})
     validate_record(get_spec("bb.coordination_view.v1"), {"schema_version": "bb.coordination_view.v1", "view_id": "view-1", "projected_at": "2026-07-17T00:00:04Z", "source_event_count": 1, "items": [], "delegation_edges": [], "placements": []})
-    _fails(PrimitiveCompileError, lambda: finalize_record(get_spec("bb.work_item.v2"), _work_item()), "validation-only")
 @pytest.mark.parametrize("status", ["completed", "failed", "waiting", "paused"])
 def test_v2_rejects_empty_or_mismatched_closed_attempts(status: str) -> None:
     empty = _work_item(status); empty["attempts"] = []; _semantic_error(empty, "/attempts", f"{status} Work Item requires a matching closed current attempt")
@@ -93,7 +98,10 @@ def test_v1_schema_and_examples_remain_frozen() -> None:
     for name, digest in expected.items():
         directory = "schemas" if name.endswith("schema.json") else "examples"; path = Path(__file__).resolve().parents[3] / "contracts/kernel" / directory / name
         assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
-        if directory == "examples": validate_record(get_spec("bb.work_item.v1"), json.loads(path.read_text()))
+        if directory == "examples":
+            record = json.loads(path.read_text())
+            assert validate_record(get_spec("bb.work_item.v1"), record) == record
+            _fails(PrimitiveCompileError, lambda: finalize_record(get_spec("bb.work_item.v1"), record), "validation-only")
 def test_projection_lifecycle_correlation_reciprocity_and_ordering() -> None:
     parent = _new(); _run(parent)
     assert parent.attach_placement(WorkPlacement("p-z", "work-1", "attempt-1", "worker-1", "session-1", "target-a", "2026-07-17T00:00:04Z")).status == "running"

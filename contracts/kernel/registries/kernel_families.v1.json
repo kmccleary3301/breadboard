@@ -111,6 +111,7 @@
       "description": "coordination_delegated_verification_reference_slice contract family.",
       "id": "coordination_delegated_verification_reference_slice",
       "metadata": {
+        "generation_policy": "candidate_only",
         "schema_versions": [
           "bb.coordination_delegated_verification_reference_slice.v1"
         ]
@@ -121,6 +122,7 @@
       "description": "coordination_intervention_reference_slice contract family.",
       "id": "coordination_intervention_reference_slice",
       "metadata": {
+        "generation_policy": "candidate_only",
         "schema_versions": [
           "bb.coordination_intervention_reference_slice.v1"
         ]
@@ -131,6 +133,7 @@
       "description": "coordination_longrun_reference_slice contract family.",
       "id": "coordination_longrun_reference_slice",
       "metadata": {
+        "generation_policy": "candidate_only",
         "schema_versions": [
           "bb.coordination_longrun_reference_slice.v1"
         ]
@@ -141,6 +144,7 @@
       "description": "coordination_multi_worker_reference_slice contract family.",
       "id": "coordination_multi_worker_reference_slice",
       "metadata": {
+        "generation_policy": "candidate_only",
         "schema_versions": [
           "bb.coordination_multi_worker_reference_slice.v1"
         ]
@@ -151,6 +155,7 @@
       "description": "coordination_pack contract family.",
       "id": "coordination_pack",
       "metadata": {
+        "generation_policy": "candidate_only",
         "schema_versions": [
           "bb.coordination_pack.v3"
         ]
@@ -161,6 +166,7 @@
       "description": "coordination_reference_slice contract family.",
       "id": "coordination_reference_slice",
       "metadata": {
+        "generation_policy": "candidate_only",
         "schema_versions": [
           "bb.coordination_reference_slice.v1"
         ]
@@ -171,6 +177,7 @@
       "description": "coordination_slice contract family.",
       "id": "coordination_slice",
       "metadata": {
+        "generation_policy": "candidate_only",
         "schema_versions": [
           "bb.coordination_slice.v2"
         ]
@@ -212,6 +219,7 @@
       "description": "distributed_task_descriptor contract family.",
       "id": "distributed_task_descriptor",
       "metadata": {
+        "generation_policy": "candidate_only",
         "schema_versions": [
           "bb.distributed_task_descriptor.v1"
         ]
@@ -692,6 +700,7 @@
       "description": "task contract family.",
       "id": "task",
       "metadata": {
+        "generation_policy": "candidate_only",
         "schema_versions": [
           "bb.task.v1"
         ]

@@ -34,7 +34,7 @@ from .session_runner import SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from ...compilation.v2_loader import load_agent_config
 from ...compilation.effective_operation_policy import policy_pack_for_config_authority
-from .runtime_emission import _sanitize_persisted_runtime_config, compile_runtime_effective_config_graph, default_runtime_record_root, emit_session_start_records, primitive_emission_enabled
+from .runtime_emission import DEFAULT_INTERACTIVE_SESSION_TITLE, _sanitize_persisted_runtime_config, compile_runtime_effective_config_graph, default_runtime_record_root, emit_session_start_records, primitive_emission_enabled
 from ...provider import runtime_codex as runtime_codex_module
 from ...provider_routing import provider_router
 
@@ -119,6 +119,7 @@ class SessionService:
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
         session_id, metadata = str(uuid.uuid4()), dict(request.metadata or {}); metadata.setdefault("config_path", request.config_path)
         if self._bridge_chaos: metadata.setdefault("bridgeChaos", self._bridge_chaos)
+        session_title = request.task if request.task.strip() else DEFAULT_INTERACTIVE_SESSION_TITLE
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata); runner = SessionRunner(session=record, registry=self.registry, request=request)
         runtime_config = runner.prepare_runtime_config(); persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config); runtime_graph = compile_runtime_effective_config_graph(session_id, persisted_runtime_config, request.config_path); runtime_lock = EffectiveHarnessLock._from_record(runtime_graph)
         emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = default_runtime_record_root() / session_id, _event_root() / session_id
@@ -130,20 +131,20 @@ class SessionService:
         try:
             if emit_primitives:
                 staged_paths = emit_session_start_records(
-                    session_id=session_id, request=request, output_root=staging_record_root,
+                    session_id=session_id, request=request, title=session_title, output_root=staging_record_root,
                     effective_runtime_config=runtime_config,
                 )
                 metadata.setdefault("runtime_records", {name: str(runtime_record_dir / Path(path).relative_to(staged_record_dir)) for name, path in staged_paths.items()})
             event_sink = JsonlEventSink(staged_event_dir / "session_events.jsonl")
-            product_session = ProductSession.start(runtime_lock, request.task if request.task.strip() else "interactive session awaiting input",
-                                                   session_id=session_id, sink=event_sink)
+            product_session = ProductSession.start(runtime_lock, session_title, session_id=session_id, sink=event_sink)
             record.product_session = product_session; metadata["session_contract"] = product_session.read_model.as_dict()
             async with self.registry._lock:
+                runner.schedule_start()
                 self._publish_start_bundle(session_id, staged_record_dir, staging_record_root, runtime_record_dir, staged_event_dir, event_dir, emit_primitives)
                 event_sink.path = event_dir / "session_events.jsonl"; self.registry._records[session_id] = record
+                runner.authorize_start()
             published = True; await self._ensure_dispatcher(record)
             await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
-            await runner.start()
         except Exception:
             published = published or ((runtime_record_dir if emit_primitives else event_dir) / _START_COMMITTED).is_file()
             try: runner.transition_product_session("fail", "session_setup_failed", "session setup failed")

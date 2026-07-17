@@ -117,88 +117,53 @@
       "tier": "evidence"
     },
     {
-      "consumers": [
-        {
-          "kind": "evidence_machinery",
-          "path": "scripts/build_python_reference_contract_fixtures.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence high.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.coordination_delegated_verification_reference_slice.v1",
-      "tier": "evidence"
+      "tier": "frozen_legacy"
     },
     {
-      "consumers": [
-        {
-          "kind": "evidence_machinery",
-          "path": "scripts/build_python_reference_contract_fixtures.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence high.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.coordination_intervention_reference_slice.v1",
-      "tier": "evidence"
+      "tier": "frozen_legacy"
     },
     {
-      "consumers": [
-        {
-          "kind": "evidence_machinery",
-          "path": "scripts/build_python_reference_contract_fixtures.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence high.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.coordination_longrun_reference_slice.v1",
-      "tier": "evidence"
+      "tier": "frozen_legacy"
     },
     {
-      "consumers": [
-        {
-          "kind": "evidence_machinery",
-          "path": "scripts/build_python_reference_contract_fixtures.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence high.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.coordination_multi_worker_reference_slice.v1",
-      "tier": "evidence"
+      "tier": "frozen_legacy"
     },
     {
-      "consumers": [
-        {
-          "kind": "runtime_emission",
-          "path": "agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "Runtime-emission baseline identified by Phase 20 direction assessment.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.coordination_pack.v3",
-      "tier": "runtime_protocol"
+      "tier": "frozen_legacy"
     },
     {
-      "consumers": [
-        {
-          "kind": "evidence_machinery",
-          "path": "scripts/build_python_reference_contract_fixtures.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence high.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.coordination_reference_slice.v1",
-      "tier": "evidence"
+      "tier": "frozen_legacy"
     },
     {
-      "consumers": [
-        {
-          "kind": "runtime_emission",
-          "path": "agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "Runtime-emission baseline identified by Phase 20 direction assessment.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.coordination_slice.v2",
-      "tier": "runtime_protocol"
+      "tier": "frozen_legacy"
     },
     {
       "consumers": [],
@@ -232,16 +197,11 @@
       "tier": "host_protocol"
     },
     {
-      "consumers": [
-        {
-          "kind": "evidence_machinery",
-          "path": "scripts/build_python_reference_contract_fixtures.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "S5a confidence high.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.distributed_task_descriptor.v1",
-      "tier": "host_protocol"
+      "tier": "frozen_legacy"
     },
     {
       "consumers": [],
@@ -802,16 +762,11 @@
       "tier": "host_protocol"
     },
     {
-      "consumers": [
-        {
-          "kind": "evidence_machinery",
-          "path": "scripts/build_python_reference_contract_fixtures.py"
-        }
-      ],
-      "disposition": "keep",
-      "notes": "E2 audit found only reference-fixture production; classified as evidence.",
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.task.v1",
-      "tier": "evidence"
+      "tier": "frozen_legacy"
     },
     {
       "consumers": [
@@ -1018,14 +973,19 @@
     {
       "consumers": [],
       "disposition": "freeze",
-      "notes": "E6 reopen confirmed agentic_coder_prototype/api/cli_bridge/runtime_emission.py:140-185 and :292-313 produce and validate records, but agentic_coder_prototype/api/cli_bridge/service.py:301-348 only transports opaque records and no product code interprets bb.work_item.v1 fields; production emission alone does not earn keep.",
+      "notes": "Frozen for accepted evidence and not eligible for new production.",
       "schema_id": "bb.work_item.v1",
-      "tier": "runtime_protocol"
+      "tier": "frozen_legacy"
     },
     {
-      "consumers": [],
-      "disposition": "freeze",
-      "notes": "NS05A validate-only successor candidate; generation remains disabled.",
+      "consumers": [
+        {
+          "kind": "runtime_emission",
+          "path": "agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+        }
+      ],
+      "disposition": "keep",
+      "notes": "Authoritative Work Item v2 runtime emission.",
       "schema_id": "bb.work_item.v2",
       "tier": "runtime_protocol"
     },

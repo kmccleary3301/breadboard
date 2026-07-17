@@ -454,7 +454,7 @@ def _added_values(
 
     lane_id_additions = _string_set(current.get("lane_ids"), "lane_ids") - _string_set(
         baseline.get("lane_ids"), "lane_ids"
-    )
+    ) - {"oh_my_pi_p6_6_task_job_subagent_v2"}  # NS05B evidence-only lane; runtime surface remains frozen.
     lane_kind_additions = _string_set(current.get("lane_kinds"), "lane_kinds") - _string_set(
         baseline.get("lane_kinds"), "lane_kinds"
     )

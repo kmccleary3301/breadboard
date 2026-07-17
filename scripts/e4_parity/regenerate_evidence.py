@@ -446,28 +446,6 @@ STAGES: tuple[Stage, ...] = (
         ),
     ),
     Stage(
-        stage_id="p3_7_memory_work",
-        phase="claims_manifests_node_gates_lane_def_v2",
-        label="Regenerate P3.7 through lane_def v2 capture adapter.",
-        argv=(
-            PYTHON,
-            "scripts/e4_parity/run_lane.py",
-            "--lane",
-            "oh_my_pi_p3_7_memory_work_compiler",
-            "--stage",
-            "capture",
-            "--promote-accepted",
-            "--defer-promotion-refresh",
-            "--json",
-        ),
-        depends_on=("p3_6_protocol_provider_policy",),
-        writes=(
-            "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
-            "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json",
-        ),
-    ),
-    Stage(
         stage_id="p3_8_projection_broker",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate P3.8 through lane_def v2 capture adapter.",
@@ -482,7 +460,7 @@ STAGES: tuple[Stage, ...] = (
             "--defer-promotion-refresh",
             "--json",
         ),
-        depends_on=("p3_7_memory_work",),
+        depends_on=("p3_6_protocol_provider_policy",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
             "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
@@ -512,28 +490,6 @@ STAGES: tuple[Stage, ...] = (
         ),
     ),
     Stage(
-        stage_id="pi_p5_extension_session_residual",
-        phase="claims_manifests_node_gates_lane_def_v2",
-        label="Regenerate Pi P5 residual extension/session through lane_def v2 capture adapter.",
-        argv=(
-            PYTHON,
-            "scripts/e4_parity/run_lane.py",
-            "--lane",
-            "pi_p5_l2_extension_session_residual",
-            "--stage",
-            "capture",
-            "--promote-accepted",
-            "--defer-promotion-refresh",
-            "--json",
-        ),
-        depends_on=("pi_p5_cli_config_context_tool_surface",),
-        writes=(
-            "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
-            "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json",
-        ),
-    ),
-    Stage(
         stage_id="oh_my_pi_l5_memory_compaction",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate Oh-My-Pi P6 L5 through lane_def v2 capture adapter.",
@@ -548,7 +504,7 @@ STAGES: tuple[Stage, ...] = (
             "--defer-promotion-refresh",
             "--json",
         ),
-        depends_on=("pi_p5_extension_session_residual",),
+        depends_on=("pi_p5_cli_config_context_tool_surface",),
         writes=(
             "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
             "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
@@ -578,29 +534,6 @@ STAGES: tuple[Stage, ...] = (
         ),
     ),
     Stage(
-        stage_id="materialize_oh_my_pi_p66_lane_lock",
-        phase="lane_artifacts",
-        label="Compile the P6.6 lane lock and materialize its pinned source extraction.",
-        argv=(
-            PYTHON,
-            "scripts/e4_parity/compile_lane_lock.py",
-            "compile",
-            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml",
-        ),
-        depends_on=("oh_my_pi_l6_tui_projection",),
-        reads=(
-            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.manifest.yaml",
-            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.payloads.yaml",
-            "config/e4_lanes/source_freezes/oh_my_pi_main_5356713e_git_tracked.zip",
-            "scripts/e4_parity/compile_lane_lock.py",
-        ),
-        writes=(
-            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.lock.json",
-            "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.packet_constants.v1.json",
-            "../docs_tmp/phase_20/derived/oh_my_pi_main_5356713e_extracted",
-        ),
-    ),
-    Stage(
         stage_id="oh_my_pi_p66_task_job_subagent",
         phase="claims_manifests_node_gates_lane_def_v2",
         label="Regenerate Oh-My-Pi P6.6 through lane_def v2 capture adapter.",
@@ -608,19 +541,19 @@ STAGES: tuple[Stage, ...] = (
             PYTHON,
             "scripts/e4_parity/run_lane.py",
             "--lane",
-            "oh_my_pi_p6_6_task_job_subagent",
+            "oh_my_pi_p6_6_task_job_subagent_v2",
             "--stage",
             "capture",
             "--promote-accepted",
             "--defer-promotion-refresh",
             "--json",
         ),
-        depends_on=("materialize_oh_my_pi_p66_lane_lock",),
+        depends_on=("oh_my_pi_l6_tui_projection",),
         writes=(
-            "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent",
-            "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
-            "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
-            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
+            "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent_v2",
+            "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v2_c4_support_claim.json",
+            "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v2_c4_evidence_manifest.json",
+            "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_v2.json",
         ),
     ),
     Stage(
@@ -937,6 +870,7 @@ def _lane_capture_writes(stage: Stage) -> tuple[str, ...] | None:
                 )
             )
         )
+        if not _reverify_argv(lane_def): outputs += tuple(path for path in stage.writes if path.startswith(_NODE_GATE_OUTPUT_PREFIX))
         if outputs:
             writes.extend(outputs)
         else:

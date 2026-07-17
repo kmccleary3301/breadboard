@@ -15,17 +15,9 @@
           "bb.config_mutation_record.v1.schema.json",
           "bb.context_resource_pack.v1.schema.json",
           "bb.contract_tiers.v1.schema.json",
-          "bb.coordination_delegated_verification_reference_slice.v1.schema.json",
-          "bb.coordination_intervention_reference_slice.v1.schema.json",
-          "bb.coordination_longrun_reference_slice.v1.schema.json",
-          "bb.coordination_multi_worker_reference_slice.v1.schema.json",
-          "bb.coordination_pack.v3.schema.json",
-          "bb.coordination_reference_slice.v1.schema.json",
-          "bb.coordination_slice.v2.schema.json",
           "bb.coordination_view.v1.schema.json",
           "bb.coordination_verification_result.v1.schema.json",
           "bb.directive.v1.schema.json",
-          "bb.distributed_task_descriptor.v1.schema.json",
           "bb.effective_config_graph.v1.schema.json",
           "bb.effective_operation_policy.v1.schema.json",
           "bb.effective_tool_surface.v1.schema.json",
@@ -54,7 +46,6 @@
           "bb.session_transcript.v2.schema.json",
           "bb.side_effect_broker.v1.schema.json",
           "bb.signal.v1.schema.json",
-          "bb.task.v1.schema.json",
           "bb.terminal_cleanup_result.v1.schema.json",
           "bb.terminal_interaction.v1.schema.json",
           "bb.terminal_output_delta.v1.schema.json",
@@ -68,7 +59,6 @@
           "bb.tool_spec.v2.schema.json",
           "bb.transcript_continuation_patch.v1.schema.json",
           "bb.wake_subscription.v1.schema.json",
-          "bb.work_item.v1.schema.json",
           "bb.work_item.v2.schema.json",
           "bb.work_placement.v1.schema.json"
         ]
@@ -116,6 +106,14 @@
       "id": "legacy_frozen",
       "metadata": {
         "schemas": [
+          "bb.coordination_delegated_verification_reference_slice.v1.schema.json",
+          "bb.coordination_intervention_reference_slice.v1.schema.json",
+          "bb.coordination_longrun_reference_slice.v1.schema.json",
+          "bb.coordination_multi_worker_reference_slice.v1.schema.json",
+          "bb.coordination_pack.v3.schema.json",
+          "bb.coordination_reference_slice.v1.schema.json",
+          "bb.coordination_slice.v2.schema.json",
+          "bb.distributed_task_descriptor.v1.schema.json",
           "bb.e4.artifact_catalog.v1.schema.json",
           "bb.e4.lane_def.v1.schema.json",
           "bb.e4.lane_inventory.v1.schema.json",
@@ -126,10 +124,12 @@
           "bb.environment_selector.v1.schema.json",
           "bb.kernel_event.v1.schema.json",
           "bb.session_transcript.v1.schema.json",
+          "bb.task.v1.schema.json",
           "bb.tool_call.v1.schema.json",
           "bb.tool_execution_outcome.v1.schema.json",
           "bb.tool_model_render.v1.schema.json",
-          "bb.tool_spec.v1.schema.json"
+          "bb.tool_spec.v1.schema.json",
+          "bb.work_item.v1.schema.json"
         ]
       },
       "status": "active"
