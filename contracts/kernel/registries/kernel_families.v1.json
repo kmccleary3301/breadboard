@@ -178,6 +178,17 @@
       "status": "active"
     },
     {
+      "description": "Candidate-only Coordination View projection family.",
+      "id": "coordination_view",
+      "metadata": {
+        "generation_policy": "candidate_only",
+        "schema_versions": [
+          "bb.coordination_view.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
       "description": "coordination_verification_result contract family.",
       "id": "coordination_verification_result",
       "metadata": {
@@ -846,7 +857,19 @@
       "id": "work_item",
       "metadata": {
         "schema_versions": [
-          "bb.work_item.v1"
+          "bb.work_item.v1",
+          "bb.work_item.v2"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "Candidate-only Work Placement attachment family.",
+      "id": "work_placement",
+      "metadata": {
+        "generation_policy": "candidate_only",
+        "schema_versions": [
+          "bb.work_placement.v1"
         ]
       },
       "status": "active"

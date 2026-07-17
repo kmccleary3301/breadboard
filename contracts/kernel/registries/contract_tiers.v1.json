@@ -201,6 +201,13 @@
       "tier": "runtime_protocol"
     },
     {
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "NS05A validate-only candidate; no production producer or public surface.",
+      "schema_id": "bb.coordination_view.v1",
+      "tier": "runtime_protocol"
+    },
+    {
       "consumers": [
         {
           "kind": "evidence_machinery",
@@ -1014,6 +1021,20 @@
       "notes": "E6 reopen confirmed agentic_coder_prototype/api/cli_bridge/runtime_emission.py:140-185 and :292-313 produce and validate records, but agentic_coder_prototype/api/cli_bridge/service.py:301-348 only transports opaque records and no product code interprets bb.work_item.v1 fields; production emission alone does not earn keep.",
       "schema_id": "bb.work_item.v1",
       "tier": "runtime_protocol"
+    },
+    {
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "NS05A validate-only successor candidate; generation remains disabled.",
+      "schema_id": "bb.work_item.v2",
+      "tier": "runtime_protocol"
+    },
+    {
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "NS05A validate-only correlation candidate; lifecycle state stays on Work Item.",
+      "schema_id": "bb.work_placement.v1",
+      "tier": "host_protocol"
     }
   ],
   "registry_id": "contract_tiers",

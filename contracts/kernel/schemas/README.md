@@ -40,6 +40,7 @@ Status: `active`
 | `bb.coordination_pack.v3` | BreadBoard Coordination Pack V3 | `runtime_protocol` |
 | `bb.coordination_reference_slice.v1` | bb.coordination_reference_slice.v1 | `evidence` |
 | `bb.coordination_slice.v2` | BreadBoard Coordination Slice V2 | `runtime_protocol` |
+| `bb.coordination_view.v1` | BreadBoard Coordination View V1 candidate | `runtime_protocol` |
 | `bb.coordination_verification_result.v1` | bb.coordination_verification_result.v1 | `evidence` |
 | `bb.directive.v1` | bb.directive.v1 | `host_protocol` |
 | `bb.distributed_task_descriptor.v1` | bb.distributed_task_descriptor.v1 | `host_protocol` |
@@ -86,6 +87,8 @@ Status: `active`
 | `bb.transcript_continuation_patch.v1` | bb.transcript_continuation_patch.v1 | `host_protocol` |
 | `bb.wake_subscription.v1` | bb.wake_subscription.v1 | `host_protocol` |
 | `bb.work_item.v1` | BreadBoard work item V1 | `runtime_protocol` |
+| `bb.work_item.v2` | BreadBoard Work Item V2 candidate | `runtime_protocol` |
+| `bb.work_placement.v1` | BreadBoard Work Placement V1 candidate | `host_protocol` |
 
 ### e4
 

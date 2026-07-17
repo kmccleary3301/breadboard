@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Mapping
@@ -18,6 +20,8 @@ _COMMON_SCHEMA_NAME = "bb.kernel.common.v1.schema.json"
 _COMMON_SCHEMA_URI = f"https://breadboard.dev/contracts/kernel/schemas/{_COMMON_SCHEMA_NAME}"
 _E4_COMMON_SCHEMA_NAME = "bb.e4.common.v1.schema.json"
 _E4_COMMON_SCHEMA_URI = f"https://breadboard.dev/contracts/kernel/schemas/{_E4_COMMON_SCHEMA_NAME}"
+_VALIDATION_ONLY_ID_FIELDS = {"bb.coordination_view.v1": "view_id", "bb.work_item.v2": "work_item_id", "bb.work_placement.v1": "placement_id"}
+VALIDATION_ONLY_SCHEMA_VERSIONS = frozenset(_VALIDATION_ONLY_ID_FIELDS)
 
 
 class PrimitiveCompileError(ValueError):
@@ -79,11 +83,12 @@ def sha256_ref(data: bytes) -> str:
 def finalize_record(spec: PrimitiveSpec, record: Mapping[str, Any], *, validate: bool = True) -> dict[str, Any]:
     """Finalize one primitive record at the compile boundary.
 
-    The boundary only stamps the schema version, applies a pure normalizer when supplied,
+    The boundary rejects validation-only specs; otherwise it stamps the schema version, applies a pure normalizer,
     computes a self content hash when the spec declares one, and validates the result. It
     never fills semantic defaults or coerces invalid values.
     """
 
+    if spec.schema_version in VALIDATION_ONLY_SCHEMA_VERSIONS: raise PrimitiveCompileError(schema_version=spec.schema_version, record_id=_record_id(record, spec.id_field), errors=[("", "schema is validation-only and cannot be finalized")], hint="use validate_record")
     result = copy.deepcopy(dict(record))
     result["schema_version"] = spec.schema_version
 
@@ -106,6 +111,7 @@ def finalize_record(spec: PrimitiveSpec, record: Mapping[str, Any], *, validate:
         _validate_record(spec, result)
 
     return result
+def validate_record(spec: PrimitiveSpec, record: Mapping[str, Any]) -> dict[str, Any]: result = copy.deepcopy(dict(record)); _validate_record(spec, result, semantic=True); return result
 
 
 _CORE_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
@@ -138,7 +144,7 @@ _CORE_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
     ("bb.session_transcript.v2", "session_id", None),
     ("bb.registry.v1", "registry_id", None),
     ("bb.lane_validation_report.v1", "lane_id", None),
-)
+) + tuple((version, id_field, None) for version, id_field in _VALIDATION_ONLY_ID_FIELDS.items())
 
 _E4_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
     ("bb.e4.support_claim.v2", "claim_id", None),
@@ -234,15 +240,57 @@ def _validator(schema_path: Path) -> Draft202012Validator:
     )
 
 
-def _validate_record(spec: PrimitiveSpec, record: Mapping[str, Any]) -> None:
+def _validate_record(spec: PrimitiveSpec, record: Mapping[str, Any], *, semantic: bool = False) -> None:
     validator = _validator(spec.schema_path)
     errors = [(_json_pointer(error.absolute_path), error.message) for error in validator.iter_errors(record)]
+    if semantic and spec.schema_version == "bb.work_item.v2":
+        errors.extend(_work_item_v2_semantic_errors(record))
     if errors:
         raise PrimitiveCompileError(
             schema_version=spec.schema_version,
             record_id=_record_id(record, spec.id_field),
             errors=errors,
         )
+
+
+def _work_item_v2_semantic_errors(record: Mapping[str, Any]) -> list[tuple[str, str]]:
+    errors: list[tuple[str, str]] = []
+    attempts = record.get("attempts")
+    if not isinstance(attempts, list):
+        return errors
+    check = lambda condition, pointer, message: errors.append((pointer, message)) if condition else None
+    seen = {field: set() for field in ("attempt_id", "session_ref")}
+    for index, attempt in ((index, attempt) for index, attempt in enumerate(attempts) if isinstance(attempt, Mapping)):
+        check(attempt.get("number") != index + 1, f"/attempts/{index}/number", f"attempt number must be {index + 1} at this position")
+        errors.extend((f"/attempts/{index}/{field}", f"{field} must be unique across attempts") for field, identities in seen.items() if isinstance(identity := attempt.get(field), str) and (identity in identities or identities.add(identity)))
+    status, current = record.get("status"), attempts[-1] if attempts and isinstance(attempts[-1], Mapping) else None
+    dependencies, satisfied, budget, work_item_id, children, active_lease, used_lease_ids, resume_policy = (record.get(field) for field in ("dependency_refs", "satisfied_dependency_refs", "budget", "work_item_id", "child_work_item_ids", "active_lease", "used_lease_ids", "resume_policy"))
+    check(status in (current_messages := {"completed": "completed Work Item requires a matching closed current attempt", "failed": "failed Work Item requires a matching closed current attempt", "waiting": "waiting Work Item requires a matching closed current attempt", "paused": "paused Work Item requires a matching closed current attempt", "running": "running Work Item requires the running attempt to be current"}) and (current is None or current.get("status") != status), "/attempts", current_messages.get(status, ""))
+    check(status in {"completed", "failed", "canceled"} and current is not None and current.get("status") == status and record.get("terminal_reason") != current.get("reason"), "/terminal_reason", f"must match the current {status} attempt reason")
+    check(status == "running" and current is not None and current.get("status") == "running" and isinstance(active_lease, Mapping) and active_lease.get("worker_id") != current.get("worker_id"), "/active_lease/worker_id", "must match the current running attempt worker_id")
+    resume_mode = resume_policy.get("mode") if isinstance(resume_policy, Mapping) else None
+    check(status in {"waiting", "paused"} and resume_mode == "never", "/resume_policy/mode", f"{status} Work Item cannot use never resume policy"); check(status in {"waiting", "paused"} and resume_mode == "checkpoint" and current is not None and not isinstance(current.get("checkpoint_ref"), str), f"/attempts/{len(attempts) - 1}/checkpoint_ref", "checkpoint resume policy requires the current attempt checkpoint_ref")
+    if isinstance(active_lease, Mapping):
+        lease_id, acquired_at, expires_at = (active_lease.get(field) for field in ("lease_id", "acquired_at", "expires_at"))
+        check(isinstance(used_lease_ids, list) and isinstance(lease_id, str) and (not used_lease_ids or used_lease_ids[-1] != lease_id), "/active_lease/lease_id", "must be the last used_lease_ids entry")
+        if isinstance(acquired_at, str) and isinstance(expires_at, str):
+            with suppress(TypeError, ValueError):
+                check(datetime.fromisoformat(expires_at.replace("Z", "+00:00")) <= datetime.fromisoformat(acquired_at.replace("Z", "+00:00")), "/active_lease/expires_at", "must be later than active_lease.acquired_at")
+                check(status == "running" and current is not None and isinstance(current.get("started_at"), str) and datetime.fromisoformat(current["started_at"].replace("Z", "+00:00")) >= datetime.fromisoformat(expires_at.replace("Z", "+00:00")), f"/attempts/{len(attempts) - 1}/started_at", "must be earlier than active_lease.expires_at")
+    check(isinstance(used_lease_ids, list) and len(used_lease_ids) < len(attempts), "/used_lease_ids", "must contain at least one acquired lease ID per attempt")
+    if isinstance(dependencies, list) and isinstance(satisfied, list):
+        dependency_set, satisfied_set = ({value for value in refs if isinstance(value, str)} for refs in (dependencies, satisfied))
+        errors.extend((f"/satisfied_dependency_refs/{index}", "must also appear in dependency_refs") for index, dependency_ref in enumerate(satisfied) if isinstance(dependency_ref, str) and dependency_ref not in dependency_set)
+        check(status == "blocked" and dependency_set == satisfied_set, "/status", "blocked Work Item requires at least one unsatisfied dependency")
+        check(status not in {"blocked", "canceled"} and dependency_set != satisfied_set, "/satisfied_dependency_refs", f"all dependencies must be satisfied while status is {status}")
+    limits, usage = (budget.get("limits"), budget.get("usage")) if isinstance(budget, Mapping) else (None, None)
+    for limit_name, usage_name in ((("token_limit", "tokens"), ("cost_limit_microusd", "cost_microusd"), ("wall_time_limit_ms", "wall_time_ms")) if isinstance(limits, Mapping) and isinstance(usage, Mapping) else ()):
+        limit, amount = limits.get(limit_name), usage.get(usage_name)
+        check(isinstance(limit, int) and not isinstance(limit, bool) and isinstance(amount, int) and amount > limit, f"/budget/usage/{usage_name}", f"must not exceed budget.limits.{limit_name}")
+    check(isinstance(work_item_id, str) and record.get("parent_work_item_id") == work_item_id, "/parent_work_item_id", "must not equal work_item_id")
+    errors.extend((f"/child_work_item_ids/{index}", "must not equal work_item_id") for index, child_work_item_id in enumerate(children if isinstance(children, list) else ()) if isinstance(work_item_id, str) and child_work_item_id == work_item_id)
+    check(record.get("latest_checkpoint_ref") != next((attempt.get("checkpoint_ref") for attempt in reversed(attempts) if isinstance(attempt, Mapping) and isinstance(attempt.get("checkpoint_ref"), str)), None), "/latest_checkpoint_ref", "must match the latest non-null attempt checkpoint_ref")
+    return errors
 
 
 def _record_id(record: Any, id_field: str) -> str | None:
@@ -272,6 +320,7 @@ __all__ = [
     "SPEC_REGISTRY",
     "canonical_record_bytes",
     "finalize_record",
+    "validate_record",
     "get_spec",
     "sha256_ref",
 ]

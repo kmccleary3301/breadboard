@@ -121,6 +121,14 @@
       "superseded_by": null
     },
     {
+      "default_for_generation": false,
+      "family": "coordination_view",
+      "lifecycle": "validate_only",
+      "notes": "NS05A candidate projection; no active producer or public surface.",
+      "schema_id": "bb.coordination_view.v1",
+      "superseded_by": null
+    },
+    {
       "default_for_generation": true,
       "family": "coordination_verification_result",
       "lifecycle": "active_production",
@@ -675,9 +683,25 @@
       "lifecycle": "active_production",
       "schema_id": "bb.work_item.v1",
       "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "work_item",
+      "lifecycle": "validate_only",
+      "notes": "NS05A candidate lifecycle; bb.work_item.v1 remains the generation default.",
+      "schema_id": "bb.work_item.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "work_placement",
+      "lifecycle": "validate_only",
+      "notes": "NS05A candidate attachment; no active producer or public surface.",
+      "schema_id": "bb.work_placement.v1",
+      "superseded_by": null
     }
   ],
-  "generated_at_utc": "2026-07-09T00:00:00Z",
+  "generated_at_utc": "2026-07-17T00:00:00Z",
   "registry_id": "schema_lifecycle",
   "schema_version": "bb.schema_lifecycle.v1"
 }

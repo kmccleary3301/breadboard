@@ -45,6 +45,9 @@ ALLOWED_SCHEMA_IDS = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
     "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json",
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json",  # NS05A / AM24
+    "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json",  # NS05A / AM24
+    "https://breadboard.dev/contracts/kernel/schemas/bb.work_placement.v1.schema.json",  # NS05A / AM24
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only

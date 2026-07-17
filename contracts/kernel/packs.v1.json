@@ -22,6 +22,7 @@
           "bb.coordination_pack.v3.schema.json",
           "bb.coordination_reference_slice.v1.schema.json",
           "bb.coordination_slice.v2.schema.json",
+          "bb.coordination_view.v1.schema.json",
           "bb.coordination_verification_result.v1.schema.json",
           "bb.directive.v1.schema.json",
           "bb.distributed_task_descriptor.v1.schema.json",
@@ -67,7 +68,9 @@
           "bb.tool_spec.v2.schema.json",
           "bb.transcript_continuation_patch.v1.schema.json",
           "bb.wake_subscription.v1.schema.json",
-          "bb.work_item.v1.schema.json"
+          "bb.work_item.v1.schema.json",
+          "bb.work_item.v2.schema.json",
+          "bb.work_placement.v1.schema.json"
         ]
       },
       "status": "active"

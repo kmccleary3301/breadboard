@@ -86,6 +86,11 @@
       "schema_version": "bb.coordination_slice.v2"
     },
     {
+      "example_path": "contracts/kernel/examples/coordination_view_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_view.v1.schema.json",
+      "schema_version": "bb.coordination_view.v1"
+    },
+    {
       "example_path": "contracts/kernel/examples/coordination_verification_result_v1_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json",
       "schema_version": "bb.coordination_verification_result.v1"
@@ -469,8 +474,18 @@
       "example_path": "contracts/kernel/examples/work_item_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.work_item.v1.schema.json",
       "schema_version": "bb.work_item.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/work_item_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.work_item.v2.schema.json",
+      "schema_version": "bb.work_item.v2"
+    },
+    {
+      "example_path": "contracts/kernel/examples/work_placement_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.work_placement.v1.schema.json",
+      "schema_version": "bb.work_placement.v1"
     }
   ],
-  "generated_at_utc": "2026-07-03T00:00:00Z",
+  "generated_at_utc": "2026-07-17T00:00:00Z",
   "schema_version": "bb.kernel.examples_manifest.v1"
 }
