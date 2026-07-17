@@ -659,6 +659,19 @@ STAGES: tuple[Stage, ...] = (
         writes=("docs/conformance/e4_artifact_catalog_full_snapshot.json",),
     ),
     Stage(
+        stage_id="refresh_ct_scenarios",
+        phase="reports",
+        label="Project accepted inventory lanes into the executable CT scenario manifest.",
+        argv=(
+            PYTHON,
+            "scripts/e4_parity/generate_ct_rows.py",
+            "--out",
+            "docs/conformance/ct_scenarios_v1.json",
+        ),
+        depends_on=("catalog_full",),
+        writes=("docs/conformance/ct_scenarios_v1.json",),
+    ),
+    Stage(
         stage_id="ct_scenarios",
         phase="reports",
         label="Run CT scenarios to produce result and rows JSON for matrix sync.",
@@ -673,7 +686,7 @@ STAGES: tuple[Stage, ...] = (
             PINNED_GENERATED_AT_UTC,
             "--zero-durations",
         ),
-        depends_on=("catalog_full",),
+        depends_on=("refresh_ct_scenarios",),
         writes=(
             "artifacts/conformance/ct_scenarios_result_e4_1000.json",
             "artifacts/conformance/ct_scenarios_rows_e4_1000.json",

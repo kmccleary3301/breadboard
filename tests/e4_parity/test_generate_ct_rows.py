@@ -305,6 +305,19 @@ def test_upsert_inventory_scenarios_rewrites_only_inventory_rows(tmp_path: Path)
     generated_rows = ct_generator.generate_inventory_scenarios(inventory)
     stale_row = copy.deepcopy(generated_rows[0])
     stale_row["gate_level"] = "stale"
+    retired_lane = next(
+        lane
+        for lane in inventory["lanes"]
+        if lane.get("ct") is not None and lane.get("status") != "accepted"
+    )
+    retired_row = {
+        "test_id": retired_lane["ct"]["test_id"],
+        "gate_level": "retired",
+        "description": "Retired inventory row",
+        "timeout_seconds": 1,
+        "command": ["python", "retired.py", "--json-out", "artifacts/retired.json"],
+        "assertions": {"json_files": [{"path": "artifacts/retired.json", "checks": []}]},
+    }
     unrelated_row = {
         "test_id": "CT-UNRELATED-LEGACY",
         "gate_level": "legacy",
@@ -316,13 +329,20 @@ def test_upsert_inventory_scenarios_rewrites_only_inventory_rows(tmp_path: Path)
     manifest_path = tmp_path / "ct_scenarios_v1.json"
     inventory_path = tmp_path / "e4_lane_inventory.json"
     _write_json(inventory_path, inventory)
-    _write_json(manifest_path, {"schema_version": "fixture", "scenarios": [unrelated_row, stale_row]})
+    _write_json(
+        manifest_path,
+        {
+            "schema_version": "fixture",
+            "scenarios": [unrelated_row, retired_row, stale_row],
+        },
+    )
 
     rows = ct_generator.upsert_inventory_scenarios(manifest_path, inventory_path)
     manifest = _read_json(manifest_path)
 
     assert rows == generated_rows
     assert manifest["scenarios"][0] == unrelated_row
+    assert retired_row["test_id"] not in {row["test_id"] for row in manifest["scenarios"]}
     assert manifest["scenarios"][1:] == generated_rows
 
 def test_check_cli_accepts_current_inventory_and_manifest(tmp_path: Path) -> None:
@@ -351,3 +371,31 @@ def test_check_cli_rejects_tampered_corresponding_manifest_row(tmp_path: Path) -
     completed = _check_cli(tampered_manifest, tmp_path / "ct_scenarios_v1.json")
 
     assert completed.returncode != 0
+
+
+def test_check_cli_rejects_retired_inventory_row(tmp_path: Path) -> None:
+    """Check mode rejects CT rows whose inventory producer is no longer accepted."""
+    inventory = _read_json(LIVE_INVENTORY)
+    retired_lane = next(
+        lane
+        for lane in inventory["lanes"]
+        if lane.get("ct") is not None and lane.get("status") != "accepted"
+    )
+    manifest = copy.deepcopy(_read_json(LIVE_MANIFEST))
+    manifest["scenarios"].append(
+        {
+            "test_id": retired_lane["ct"]["test_id"],
+            "gate_level": "retired",
+            "description": "Retired inventory row",
+            "timeout_seconds": 1,
+            "command": ["python", "retired.py", "--json-out", "artifacts/retired.json"],
+            "assertions": {"json_files": [{"path": "artifacts/retired.json", "checks": []}]},
+        }
+    )
+    stale_manifest = tmp_path / "ct_scenarios_v1_retired.json"
+    _write_json(stale_manifest, manifest)
+
+    completed = _check_cli(stale_manifest, tmp_path / "ct_scenarios_v1.json")
+
+    assert completed.returncode != 0
+    assert "<retired>" in completed.stdout
