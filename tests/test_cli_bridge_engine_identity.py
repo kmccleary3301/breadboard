@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import json
 import os
 import subprocess
@@ -126,18 +125,37 @@ async def test_identity_is_stable_and_exact_within_one_process(tmp_path: Path) -
 
 
 def test_module_reload_preserves_process_identity() -> None:
-    from agentic_coder_prototype.api.cli_bridge import engine_identity_config
+    repo_root = Path(__file__).resolve().parents[1]
+    program = """
+import importlib
+import json
+from agentic_coder_prototype.api.cli_bridge import engine_identity_config
 
-    before = engine_identity_config.get_engine_process_identity()
-    reloaded = importlib.reload(engine_identity_config)
-    after = reloaded.get_engine_process_identity()
-
-    assert after.pid == before.pid
-    assert after.engine_instance_id == before.engine_instance_id
-    assert after.engine_boot_id == before.engine_boot_id
-    assert after.launch_id == before.launch_id
-    assert after.started_at_unix == before.started_at_unix
-    assert after.engine_artifact_sha256 == before.engine_artifact_sha256
+before = engine_identity_config.get_engine_process_identity()
+after = importlib.reload(engine_identity_config).get_engine_process_identity()
+fields = (
+    "pid",
+    "engine_instance_id",
+    "engine_boot_id",
+    "launch_id",
+    "os_process_start_token",
+    "started_at_unix",
+    "engine_artifact_sha256",
+)
+print(json.dumps({
+    "before": {field: getattr(before, field) for field in fields},
+    "after": {field: getattr(after, field) for field in fields},
+}))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    identities = json.loads(completed.stdout)
+    assert identities["after"] == identities["before"]
 
 
 def test_preloaded_fork_rotates_process_identity() -> None:
