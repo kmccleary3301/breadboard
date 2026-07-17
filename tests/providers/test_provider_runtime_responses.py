@@ -307,7 +307,7 @@ def test_responses_stream_emits_assistant_delta_events(monkeypatch):
         ("assistant.message.start", {"item_id": "msg_1"}, 3),
         ("assistant.message.delta", {"item_id": "msg_1", "delta": "Hello"}, 3),
         ("assistant.message.delta", {"item_id": "msg_1", "delta": " there"}, 3),
-        ("assistant.message.end", {"item_id": "msg_1"}, 3),
+        ("assistant.message.end", {"item_id": "msg_1", "text": "Hello there"}, 3),
     ]
 
 

@@ -1402,7 +1402,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             self._stream_emit_event(
                 context,
                 "assistant.message.end",
-                {"item_id": item_id},
+                {"item_id": item_id, "text": "".join(streamed_output_text.get(item_id, []))},
                 turn_index=turn_index,
             )
 
