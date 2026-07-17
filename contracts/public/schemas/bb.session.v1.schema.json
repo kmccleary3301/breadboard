@@ -2,27 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://breadboard.dev/contracts/public/schemas/bb.session.v1.schema.json",
   "title": "BreadBoard Session V1",
-  "type": "object",
-  "additionalProperties": false,
+  "type": "object", "additionalProperties": false,
   "required": ["schema_version", "session_id", "status", "effective_lock_hash", "task_hash", "event_count", "pending_approval", "terminal_outcome"],
-  "properties": {
-    "schema_version": {"const": "bb.session.v1"},
-    "session_id": {"type": "string", "minLength": 1},
-    "status": {"enum": ["running", "awaiting_approval", "paused", "completed", "failed", "canceled"]},
-    "effective_lock_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "task_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "event_count": {"type": "integer", "minimum": 1},
-    "pending_approval": {"type": ["string", "null"]},
-    "terminal_outcome": {
-      "oneOf": [
-        {"type": "null"},
-        {
-          "type": "object",
-          "required": ["outcome"],
-          "properties": {"outcome": {"enum": ["completed", "failed", "canceled"]}},
-          "additionalProperties": true
-        }
-      ]
-    }
-  }
+  "properties": {"schema_version": {"const": "bb.session.v1"}, "session_id": {"type": "string", "minLength": 1}, "status": {"enum": ["running", "awaiting_approval", "paused", "completed", "failed", "canceled"]}, "effective_lock_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"}, "task_hash": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}(?![\\s\\S])"}, "event_count": {"type": "integer", "minimum": 1}, "pending_approval": {"type": ["string", "null"]}, "terminal_outcome": {"oneOf": [{"type": "null"}, {"type": "object", "required": ["outcome", "summary"], "properties": {"outcome": {"const": "completed"}, "summary": {"type": "string"}}}, {"type": "object", "required": ["outcome", "error", "detail"], "properties": {"outcome": {"const": "failed"}, "error": {"type": "string", "minLength": 1}, "detail": {"type": "string", "minLength": 1}}}, {"type": "object", "required": ["outcome", "reason"], "properties": {"outcome": {"const": "canceled"}, "reason": {"type": "string"}}, "additionalProperties": true}]}},
+  "allOf": [{"if": {"properties": {"status": {"const": "awaiting_approval"}}, "required": ["status"]}, "then": {"properties": {"pending_approval": {"type": "string", "minLength": 1}}}, "else": {"properties": {"pending_approval": {"type": "null"}}}}, {"if": {"properties": {"status": {"enum": ["awaiting_approval", "paused", "completed", "failed", "canceled"]}}, "required": ["status"]}, "then": {"properties": {"event_count": {"minimum": 2}}}}, {"if": {"properties": {"status": {"enum": ["running", "awaiting_approval", "paused"]}}, "required": ["status"]}, "then": {"properties": {"terminal_outcome": {"type": "null"}}}}, {"if": {"properties": {"status": {"const": "completed"}}, "required": ["status"]}, "then": {"properties": {"terminal_outcome": {"type": "object", "required": ["outcome"], "properties": {"outcome": {"const": "completed"}}}}}}, {"if": {"properties": {"status": {"const": "failed"}}, "required": ["status"]}, "then": {"properties": {"terminal_outcome": {"type": "object", "required": ["outcome"], "properties": {"outcome": {"const": "failed"}}}}}}, {"if": {"properties": {"status": {"const": "canceled"}}, "required": ["status"]}, "then": {"properties": {"terminal_outcome": {"type": "object", "required": ["outcome"], "properties": {"outcome": {"const": "canceled"}}}}}}]
 }
