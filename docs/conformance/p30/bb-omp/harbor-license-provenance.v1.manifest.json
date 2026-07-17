@@ -1,0 +1,37 @@
+{
+  "schema_version": "p30.harbor_license_provenance.v1",
+  "matrix_sha256": "e6bae987ffc0c6bbc5fad384a3eab858cc287b1e482ad188379d762e2aaad87d",
+  "owner_projection_schema": "p30-p24-salvage-owner-v1",
+  "owner_projection_sha256": "7e8518ff5e1a744530094008225bd0da5051cb9632211c2d170dfb0493404c5a",
+  "record_sha256": "sha256:edc6b2d43680cd731e3899efcb0280154bfc304d0b4046dc27c7c4b2588a9bb6",
+  "row_id_set_sha256": "sha256:eace187b78991a722212df10a9ec36ecb13b660d8646fc072c2ef0e436d48978",
+  "row_count": 104,
+  "disposition_counts": {
+    "port": 2,
+    "rewrite": 38,
+    "discard": 64
+  },
+  "harbor_counts": {
+    "BB-NEW": 2,
+    "REWRITE-NO-COPY": 38,
+    "DISCARD-NO-HARBOR": 36,
+    "OMP-MIT-CLEAN": 28
+  },
+  "completed_ticket": "bb-89n.15",
+  "completed_rows": [
+    "ADP-RT-005",
+    "ADP-RT-006",
+    "ADP-RT-007",
+    "ADP-RT-008",
+    "ADP-RT-009",
+    "ADP-RT-018",
+    "ADP-RT-019",
+    "ADP-RT-022",
+    "ADP-RT-023",
+    "ADP-RT-025",
+    "ADP-RT-027"
+  ],
+  "completed_row_count": 11,
+  "pending_row_count": 93,
+  "record_state": "template-with-bb-89n.15-subset-complete"
+}

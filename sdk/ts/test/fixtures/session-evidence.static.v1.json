@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "bb.p30.session_evidence.v1",
+  "redactionPolicyVersion": "bb.p30.session_evidence.redaction.v1",
+  "evidenceClass": "static-fixture",
+  "journeyId": "P30-SESSION-TARGETED-CANCEL",
+  "provenance": {
+    "kind": "static-fixture",
+    "sourceTicket": "bb-89n.15"
+  },
+  "records": [
+    {
+      "recordKind": "snapshot",
+      "sessionId": "session-static-1",
+      "status": "running",
+      "turnAdmission": "idle",
+      "activeTurnId": null,
+      "queuedTurnCount": 0,
+      "cursor": {
+        "earliestRetainedSequence": 1,
+        "earliestRetainedEventId": "event-static-1",
+        "headSequence": 7,
+        "headEventId": "event-static-7",
+        "retainedHistory": "complete",
+        "replayContractDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "terminalTurns": [
+        {
+          "inputId": "input-static-1",
+          "turnId": "turn-static-1",
+          "outcome": "cancelled",
+          "originalDisposition": "started"
+        }
+      ]
+    },
+    {
+      "recordKind": "cancellation",
+      "cancellationRequestId": "cancel-request-static-1",
+      "cancellationRequestKey": "cancel-key-static-1",
+      "inputId": "input-static-1",
+      "turnId": "turn-static-1",
+      "disposition": "cancellation_requested",
+      "originalDisposition": "cancellation_requested"
+    },
+    {
+      "recordKind": "event",
+      "eventId": "event-static-7",
+      "sequence": 7,
+      "sessionId": "session-static-1",
+      "inputId": "input-static-1",
+      "turnId": "turn-static-1",
+      "occurredAtMs": 1784304000000,
+      "eventKind": "turn_cancelled",
+      "display": {
+        "kind": "cancellation-status",
+        "reason": "user_requested"
+      }
+    },
+    {
+      "recordKind": "failure",
+      "details": {
+        "kind": "protocol",
+        "code": "malformed_frame",
+        "eventId": "event-static-7",
+        "sequence": 7
+      },
+      "display": {
+        "kind": "protocol-error",
+        "code": "malformed_frame"
+      }
+    },
+    {
+      "recordKind": "failure",
+      "details": {
+        "kind": "resume-gap",
+        "code": "resume_window_exceeded",
+        "lastAppliedEventId": "event-static-7",
+        "lastAppliedSequence": 7
+      },
+      "display": {
+        "kind": "gap-error",
+        "code": "resume_window_exceeded"
+      }
+    },
+    {
+      "recordKind": "local-close",
+      "sessionId": "session-static-1",
+      "backendSessionDeletion": "not-requested",
+      "display": {
+        "kind": "local-close",
+        "status": "closed-locally"
+      }
+    }
+  ]
+}

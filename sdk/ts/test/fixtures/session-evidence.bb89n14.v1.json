@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "bb.p30.session_evidence.v1",
+  "redactionPolicyVersion": "bb.p30.session_evidence.redaction.v1",
+  "evidenceClass": "runtime-capture",
+  "journeyId": "P30-SESSION-NEW-TURN-RECONNECT",
+  "provenance": {
+    "kind": "runtime-capture",
+    "sourceTicket": "bb-89n.14",
+    "captureSchemaVersion": "bb.p30.bb89n14.gate_evidence.v1",
+    "captureSha256": "sha256:ea7e08f731debafcd502f4195d1063fc56caab82e6cc0e5a30191017ec2c438f",
+    "backendCommit": "0149b4d975b8b501d0d089ba56b1fadf6e775bd3",
+    "clientCommit": "a8c952273a1191ab6ecd4e02d3ba47e00dc42f72",
+    "configurationSha256": "sha256:d06dd8d5287a419413f8419383dcf24811fdfac95e8f77a11e9ed7ca2ed027e0"
+  },
+  "records": [
+    {
+      "recordKind": "submit",
+      "clientMessageId": "bb89n14-main-420b4228-69d0-44f0-b18e-b5d6b7563027",
+      "inputId": "input-930689f3-82b9-47e9-9987-3780107ee2d8",
+      "turnId": "turn-caa8ff99-8e07-47e8-abbf-a7f006ef9e8a",
+      "disposition": "started",
+      "originalDisposition": "started"
+    },
+    {
+      "recordKind": "stable-cursor",
+      "sessionId": "db924641-64f6-433f-a027-fcfd837ed8ba",
+      "eventId": "17e9be93-1d45-4c80-859d-56d9bbcde022",
+      "sequence": 3,
+      "resumeMode": "exclusive",
+      "gapObserved": false,
+      "duplicateApplied": false
+    },
+    {
+      "recordKind": "event",
+      "eventId": "17e9be93-1d45-4c80-859d-56d9bbcde022",
+      "sequence": 3,
+      "sessionId": "db924641-64f6-433f-a027-fcfd837ed8ba",
+      "inputId": "input-930689f3-82b9-47e9-9987-3780107ee2d8",
+      "turnId": "turn-caa8ff99-8e07-47e8-abbf-a7f006ef9e8a",
+      "occurredAtMs": 1784304844248,
+      "eventKind": "input_observed",
+      "display": {
+        "kind": "user-text",
+        "text": "[redacted]",
+        "redacted": true,
+        "categories": ["credential"]
+      }
+    },
+    {
+      "recordKind": "event",
+      "eventId": "66dc26a7-d979-4db2-b9e8-571618780963",
+      "sequence": 48,
+      "sessionId": "db924641-64f6-433f-a027-fcfd837ed8ba",
+      "inputId": "input-930689f3-82b9-47e9-9987-3780107ee2d8",
+      "turnId": "turn-caa8ff99-8e07-47e8-abbf-a7f006ef9e8a",
+      "occurredAtMs": 1784304846687,
+      "eventKind": "assistant_text_completed",
+      "display": {
+        "kind": "assistant-text",
+        "text": "[redacted]",
+        "redacted": true,
+        "categories": ["credential"]
+      }
+    },
+    {
+      "recordKind": "event",
+      "eventId": "e64ebc14-a813-4502-9639-a4569faf9f9a",
+      "sequence": 61,
+      "sessionId": "db924641-64f6-433f-a027-fcfd837ed8ba",
+      "inputId": "input-930689f3-82b9-47e9-9987-3780107ee2d8",
+      "turnId": "turn-caa8ff99-8e07-47e8-abbf-a7f006ef9e8a",
+      "occurredAtMs": 1784304846829,
+      "eventKind": "turn_completed",
+      "display": null
+    }
+  ]
+}
