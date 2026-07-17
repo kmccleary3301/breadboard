@@ -6,7 +6,9 @@ import hashlib
 import json
 import os
 import re
+import select
 import secrets
+import stat
 import threading
 import time
 from dataclasses import dataclass
@@ -41,6 +43,7 @@ P30_SESSION_CONTRACT_SCHEMA_VERSION = "bb.p30.e4_session.v1"
 # false until the contract change is explicitly reviewed and this digest is updated.
 P30_SESSION_SCHEMA_SHA256 = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
 ENGINE_LAUNCH_ID_ENV = "BREADBOARD_ENGINE_LAUNCH_ID"
+ENGINE_BOOTSTRAP_FD_ENV = "BREADBOARD_LIFECYCLE_BOOTSTRAP_FD"
 _ENGINE_SOURCE_ROOT = Path(__file__).resolve().parents[2]
 _OPAQUE_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
@@ -96,6 +99,131 @@ class EngineProcessIdentity:
     engine_artifact_sha256: str
 
 
+
+class LaunchBootstrapVerifier:
+    """One-use verifier whose credential arrives only through a protected descriptor."""
+
+    def __init__(self, secret: bytearray, identity: EngineProcessIdentity) -> None:
+        self._binding = (
+            identity.launch_id,
+            identity.engine_boot_id,
+            identity.engine_instance_id,
+        )
+        self._digest: bytearray | None = bytearray(self._bound_digest(secret, self._binding))
+        self._consumed = False
+
+    @staticmethod
+    def _bound_digest(secret: bytearray, binding: tuple[str, str, str]) -> bytes:
+        digest = hashlib.sha256(b"breadboard-p30-launch-bootstrap-v1\0")
+        for value in binding:
+            encoded = value.encode("ascii")
+            digest.update(len(encoded).to_bytes(2, "big"))
+            digest.update(encoded)
+        digest.update(len(secret).to_bytes(2, "big"))
+        digest.update(secret)
+        return digest.digest()
+
+    @classmethod
+    def from_inherited_fd(
+        cls,
+        fd: int,
+        identity: EngineProcessIdentity,
+        *,
+        startup_deadline_seconds: float = 1.0,
+    ) -> "LaunchBootstrapVerifier":
+        material = bytearray()
+        try:
+            descriptor = os.fstat(fd)
+            if descriptor.st_uid != os.geteuid():
+                raise EngineIdentityConfigError("launch bootstrap descriptor owner is invalid")
+            if stat.S_ISREG(descriptor.st_mode) and descriptor.st_mode & 0o077:
+                raise EngineIdentityConfigError("launch bootstrap descriptor permissions are invalid")
+            if startup_deadline_seconds <= 0:
+                raise EngineIdentityConfigError("launch bootstrap startup deadline is invalid")
+            os.set_blocking(fd, False)
+            deadline = time.monotonic() + startup_deadline_seconds
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise EngineIdentityConfigError(
+                        "launch bootstrap descriptor did not reach EOF before the startup deadline"
+                    )
+                readable, _, _ = select.select([fd], [], [], remaining)
+                if not readable:
+                    raise EngineIdentityConfigError(
+                        "launch bootstrap descriptor did not reach EOF before the startup deadline"
+                    )
+                try:
+                    chunk = os.read(fd, 44)
+                except BlockingIOError:
+                    continue
+                if not chunk:
+                    break
+                material.extend(chunk)
+                if len(material) > 43:
+                    raise EngineIdentityConfigError("launch bootstrap descriptor payload is invalid")
+            if len(material) != 43 or _OPAQUE_ID_PATTERN.fullmatch(
+                material.decode("ascii", "ignore")
+            ) is None:
+                raise EngineIdentityConfigError("launch bootstrap descriptor payload is invalid")
+            return cls(material, identity)
+        finally:
+            for index in range(len(material)):
+                material[index] = 0
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+
+    @classmethod
+    def from_environ(
+        cls,
+        environ: dict[str, str],
+        identity: EngineProcessIdentity,
+    ) -> "LaunchBootstrapVerifier | None":
+        raw_fd = environ.pop(ENGINE_BOOTSTRAP_FD_ENV, None)
+        if raw_fd is None:
+            return None
+        if not raw_fd.isascii() or not raw_fd.isdecimal():
+            raise EngineIdentityConfigError("launch bootstrap descriptor must be a decimal integer")
+        fd = int(raw_fd)
+        if fd < 3:
+            raise EngineIdentityConfigError("launch bootstrap descriptor must not use a standard stream")
+        return cls.from_inherited_fd(fd, identity)
+
+    @property
+    def consumed(self) -> bool:
+        return self._consumed
+
+    @property
+    def verifier_wiped(self) -> bool:
+        return self._digest is None
+
+    def consume(self, supplied: bytearray, identity: EngineProcessIdentity) -> bool:
+        candidate = bytearray()
+        try:
+            if self._consumed or self._digest is None:
+                return False
+            binding = (
+                identity.launch_id,
+                identity.engine_boot_id,
+                identity.engine_instance_id,
+            )
+            if binding != self._binding:
+                return False
+            candidate.extend(self._bound_digest(supplied, binding))
+            if not secrets.compare_digest(candidate, self._digest):
+                return False
+            self._consumed = True
+            for index in range(len(self._digest)):
+                self._digest[index] = 0
+            self._digest = None
+            return True
+        finally:
+            for value in (supplied, candidate):
+                for index in range(len(value)):
+                    value[index] = 0
+
 def engine_source_artifact_sha256(source_root: Path) -> str:
     """Hash the exact Python source artifact served by this engine process."""
 
@@ -147,23 +275,36 @@ def _new_process_identity(pid: int) -> EngineProcessIdentity:
     )
 
 
+def _new_process_identity_and_bootstrap(
+    pid: int,
+) -> tuple[EngineProcessIdentity, LaunchBootstrapVerifier | None]:
+    identity = _new_process_identity(pid)
+    return identity, LaunchBootstrapVerifier.from_environ(os.environ, identity)
+
+
 class _ProcessIdentityProvider:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._identity: EngineProcessIdentity | None = _new_process_identity(os.getpid())
+        self._identity, self._bootstrap_verifier = _new_process_identity_and_bootstrap(os.getpid())
         if hasattr(os, "register_at_fork"):
             os.register_at_fork(after_in_child=self._after_fork)
 
     def _after_fork(self) -> None:
         self._lock = threading.Lock()
         self._identity = None
+        self._bootstrap_verifier = None
 
     def get(self) -> EngineProcessIdentity:
         pid = os.getpid()
         with self._lock:
             if self._identity is None or self._identity.pid != pid:
-                self._identity = _new_process_identity(pid)
+                self._identity, self._bootstrap_verifier = _new_process_identity_and_bootstrap(pid)
             return self._identity
+
+    def bootstrap_verifier(self) -> LaunchBootstrapVerifier | None:
+        self.get()
+        with self._lock:
+            return self._bootstrap_verifier
 
 
 # importlib.reload preserves the module dictionary. Keeping the provider when it
@@ -174,6 +315,10 @@ if "_PROCESS_IDENTITY_PROVIDER" not in globals():
 
 def get_engine_process_identity() -> EngineProcessIdentity:
     return _PROCESS_IDENTITY_PROVIDER.get()
+
+
+def get_launch_bootstrap_verifier() -> LaunchBootstrapVerifier | None:
+    return _PROCESS_IDENTITY_PROVIDER.bootstrap_verifier()
 
 
 def _contract_schema(model: type[Any]) -> dict[str, Any]:

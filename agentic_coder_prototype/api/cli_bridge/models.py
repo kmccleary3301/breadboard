@@ -179,6 +179,140 @@ class EngineIdentityReadinessResponse(_StrictEngineIdentityModel):
         return self
 
 
+class _StrictLifecycleModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class EngineAuthorityBinding(_StrictLifecycleModel):
+    engine_instance_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    engine_boot_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    launch_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+
+
+class OwnerAcquireRequest(EngineAuthorityBinding):
+    expected_owner_generation: int = Field(..., ge=0)
+
+
+class OwnerLeaseRequest(EngineAuthorityBinding):
+    owner_generation: int = Field(..., ge=1)
+
+
+class OwnerLeaseResponse(EngineAuthorityBinding):
+    schema_version: Literal["bb.engine_owner.v1"] = "bb.engine_owner.v1"
+    result: Literal["acquired", "renewed", "released", "already_released"]
+    owner_generation: int = Field(..., ge=1)
+    expires_at_unix: float | None = Field(default=None, ge=0)
+    lease_ttl_seconds: Literal[30] = 30
+    renewal_interval_seconds: Literal[10] = 10
+
+    @model_validator(mode="after")
+    def _validate_result_expiry(self) -> "OwnerLeaseResponse":
+        has_live_lease = self.result in {"acquired", "renewed"}
+        if has_live_lease != (self.expires_at_unix is not None):
+            raise ValueError("owner result and expiry are contradictory")
+        return self
+
+
+class ClientRegisterRequest(_StrictLifecycleModel):
+    engine_instance_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    client_instance_id: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    workspace_id: str = Field(..., pattern=r"^workspace:v1:sha256:[0-9a-f]{64}$")
+    lifecycle_mode: Literal["local-owned", "local-external", "remote", "off"]
+    first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
+    first_slice_schema_sha256: Literal[
+        "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    ] = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+
+
+class ClientLeaseRequest(_StrictLifecycleModel):
+    engine_instance_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    registration_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    registration_generation: int = Field(..., ge=1)
+    client_instance_id: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+
+
+class ClientRegistrationResponse(_StrictLifecycleModel):
+    schema_version: Literal["bb.engine_client_registration.v1"] = "bb.engine_client_registration.v1"
+    result: Literal["registered", "renewed", "detached", "already_detached"]
+    engine_instance_id: str
+    registration_id: str
+    registration_generation: int = Field(..., ge=1)
+    client_instance_id: str
+    workspace_id: str
+    lifecycle_mode: Literal["local-owned", "local-external", "remote"]
+    first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
+    first_slice_schema_sha256: Literal[
+        "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    ] = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    registered_at_unix: float = Field(..., ge=0)
+    expires_at_unix: float | None = Field(default=None, ge=0)
+    admission_epoch: int = Field(..., ge=0)
+    lease_ttl_seconds: Literal[30] = 30
+    renewal_interval_seconds: Literal[10] = 10
+
+    @model_validator(mode="after")
+    def _validate_result_expiry(self) -> "ClientRegistrationResponse":
+        has_live_registration = self.result in {"registered", "renewed"}
+        if has_live_registration != (self.expires_at_unix is not None):
+            raise ValueError("client registration result and expiry are contradictory")
+        return self
+
+
+class BeginControlDrainRequest(EngineAuthorityBinding):
+    owner_generation: int = Field(..., ge=1)
+    registration_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    requester_registration_generation: int = Field(..., ge=1)
+    requester_client_instance_id: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    expected_admission_epoch: int = Field(..., ge=0)
+
+
+class DrainControlRequest(EngineAuthorityBinding):
+    owner_generation: int = Field(..., ge=1)
+    drain_generation: int = Field(..., ge=1)
+
+
+class GracefulControlResultRequest(DrainControlRequest):
+    outcome: Literal["accepted", "definitive_rejection", "timeout", "uncertain"]
+
+
+class HardSignalDecisionRequest(DrainControlRequest):
+    outcome: Literal["sent", "abandoned", "process_exited"]
+
+
+class DrainControlResponse(EngineAuthorityBinding):
+    schema_version: Literal["bb.engine_drain_control.v1"] = "bb.engine_drain_control.v1"
+    result: Literal[
+        "draining",
+        "shutdown_started",
+        "rollback_permitted",
+        "hard_signal_decision_pending",
+        "signal_sent",
+        "process_exited",
+        "rolled_back",
+    ]
+    drain_generation: int = Field(..., ge=1)
+    admission_epoch: int = Field(..., ge=0)
+    session_admission_open: bool
+    turn_admission_open: bool
+    registrations_open: bool
+    signal_permitted: bool
+
+    @model_validator(mode="after")
+    def _validate_result_state(self) -> "DrainControlResponse":
+        admission_open = (
+            self.session_admission_open,
+            self.turn_admission_open,
+            self.registrations_open,
+        )
+        expected_open = self.result == "rolled_back"
+        if any(value != expected_open for value in admission_open):
+            raise ValueError("drain result and admission state are contradictory")
+        expected_signal = self.result == "hard_signal_decision_pending"
+        if self.signal_permitted != expected_signal:
+            raise ValueError("drain result and signal permission are contradictory")
+        return self
+
+
 class AttachmentHandle(BaseModel):
     """Response payload describing a stored attachment."""
 

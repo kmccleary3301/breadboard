@@ -25,6 +25,17 @@ from .events import (
     replay_retention_facts,
 )
 from .models import (
+    BeginControlDrainRequest,
+    ClientLeaseRequest,
+    ClientRegisterRequest,
+    ClientRegistrationResponse,
+    DrainControlRequest,
+    DrainControlResponse,
+    GracefulControlResultRequest,
+    HardSignalDecisionRequest,
+    OwnerAcquireRequest,
+    OwnerLeaseRequest,
+    OwnerLeaseResponse,
     ATPReplBatchRequest,
     ATPReplBatchResponse,
     ATPReplError,
@@ -52,6 +63,8 @@ from .models import (
 )
 from .engine_identity_config import (
     P30_SESSION_SCHEMA_SHA256,
+    get_engine_process_identity,
+    get_launch_bootstrap_verifier,
     p30_session_schema_sha256,
 )
 from .atp_diagnostics import build_atp_harness_diagnostic
@@ -124,7 +137,11 @@ class SessionService:
             or os.environ.get("BREADBOARD_SESSION_STATE_ROOT")
             or (default_runtime_record_root() / "session_state")
         )
-        self.registry = registry or SessionRegistry(configured_state_root)
+        self.registry = registry or SessionRegistry(
+            configured_state_root,
+            process_identity=get_engine_process_identity(),
+            bootstrap_verifier=get_launch_bootstrap_verifier(),
+        )
         self._subscriber_queue_maxsize = max(
             1,
             subscriber_queue_maxsize
@@ -154,23 +171,153 @@ class SessionService:
             )
         return SessionContractReadiness(ready=True, reason="ready")
 
+    async def acquire_owner(
+        self,
+        request: OwnerAcquireRequest,
+        *,
+        owner_credential: bytearray,
+        bootstrap_credential: bytearray | None = None,
+    ) -> OwnerLeaseResponse:
+        return await self.registry.acquire_owner(
+            request,
+            owner_credential=owner_credential,
+            bootstrap_credential=bootstrap_credential,
+        )
+
+    async def renew_owner(
+        self,
+        request: OwnerLeaseRequest,
+        *,
+        owner_credential: bytearray,
+    ) -> OwnerLeaseResponse:
+        return await self.registry.renew_owner(
+            request,
+            owner_credential=owner_credential,
+        )
+
+    async def release_owner(
+        self,
+        request: OwnerLeaseRequest,
+        *,
+        owner_credential: bytearray,
+    ) -> OwnerLeaseResponse:
+        return await self.registry.release_owner(
+            request,
+            owner_credential=owner_credential,
+        )
+
+    async def register_client(
+        self,
+        request: ClientRegisterRequest,
+        *,
+        registration_credential: bytearray,
+    ) -> ClientRegistrationResponse:
+        return await self.registry.register_client(
+            request,
+            registration_credential=registration_credential,
+        )
+
+    async def renew_client(
+        self,
+        request: ClientLeaseRequest,
+        *,
+        registration_credential: bytearray,
+    ) -> ClientRegistrationResponse:
+        return await self.registry.renew_client(
+            request,
+            registration_credential=registration_credential,
+        )
+
+    async def detach_client(
+        self,
+        request: ClientLeaseRequest,
+        *,
+        registration_credential: bytearray,
+    ) -> ClientRegistrationResponse:
+        return await self.registry.detach_client(
+            request,
+            registration_credential=registration_credential,
+        )
+
+    async def begin_control_drain(
+        self,
+        request: BeginControlDrainRequest,
+        *,
+        owner_credential: bytearray,
+        registration_credential: bytearray,
+    ) -> DrainControlResponse:
+        return await self.registry.begin_control_drain(
+            request,
+            owner_credential=owner_credential,
+            registration_credential=registration_credential,
+        )
+
+    async def record_graceful_control(
+        self,
+        request: GracefulControlResultRequest,
+        *,
+        owner_credential: bytearray,
+    ) -> DrainControlResponse:
+        return await self.registry.record_graceful_control(
+            request,
+            owner_credential=owner_credential,
+        )
+
+    async def record_hard_signal_decision(
+        self,
+        request: HardSignalDecisionRequest,
+        *,
+        owner_credential: bytearray,
+    ) -> DrainControlResponse:
+        return await self.registry.record_hard_signal_decision(
+            request,
+            owner_credential=owner_credential,
+        )
+
+    async def rollback_control_drain(
+        self,
+        request: DrainControlRequest,
+        *,
+        owner_credential: bytearray,
+    ) -> DrainControlResponse:
+        return await self.registry.rollback_control_drain(
+            request,
+            owner_credential=owner_credential,
+        )
+
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
         session_id = str(uuid.uuid4())
         metadata = dict(request.metadata or {})
         if self._bridge_chaos:
             metadata.setdefault("bridgeChaos", self._bridge_chaos)
         metadata.setdefault("config_path", request.config_path)
-        if primitive_emission_enabled():
-            emitted_paths = emit_session_start_records(session_id=session_id, request=request)
-            metadata.setdefault("runtime_records", emitted_paths)
-            metadata.setdefault("runtime_record_dir", str(default_runtime_record_root() / session_id))
-        record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata)
-        await self.registry.create(record)
-        await self._ensure_dispatcher(record)
-        await self._maybe_prewarm_request_runtime(request, metadata)
+        record = SessionRecord(
+            session_id=session_id,
+            status=SessionStatus.STARTING,
+            metadata=metadata,
+        )
         runner = SessionRunner(session=record, registry=self.registry, request=request)
         record.runner = runner
-        await runner.start()
+        metadata = record.metadata
+        await self.registry.admit_session(record, runner)
+
+        if primitive_emission_enabled():
+            try:
+                emitted_paths = emit_session_start_records(
+                    session_id=session_id,
+                    request=request,
+                )
+            except Exception:
+                logger.warning("Session start evidence emission failed")
+            else:
+                metadata.setdefault("runtime_records", emitted_paths)
+                metadata.setdefault(
+                    "runtime_record_dir",
+                    str(default_runtime_record_root() / session_id),
+                )
+        await self._maybe_prewarm_request_runtime(request, metadata)
+        await self._ensure_dispatcher(record)
+        runner.start_execution()
         logger.info("Session %s created", session_id)
         return SessionCreateResponse(
             session_id=session_id,
@@ -188,8 +335,8 @@ class SessionService:
             return
         try:
             await asyncio.to_thread(self._prewarm_request_runtime_sync, request, metadata)
-        except Exception as exc:
-            logger.debug("Codex prewarm skipped: %s", exc)
+        except Exception:
+            logger.debug("Codex prewarm skipped")
 
     def _should_prewarm_request_runtime(self, metadata: Dict[str, Any]) -> bool:
         session_kind = str(metadata.get("cli_session_kind") or "").strip().lower()
@@ -406,52 +553,53 @@ class SessionService:
             if event is None:
                 break
             persistence_failed = False
-            async with record.dispatch_lock:
-                if event.stable_cursor:
-                    previous_sequence = record.event_seq
-                    original_event_sequence = event.seq
-                    previous_event_log = tuple(record.event_log)
-                    previous_history_partial = record.replay_history_partial
-                    record.event_seq += 1
-                    if event.seq is None:
-                        event.seq = record.event_seq
-                    else:
-                        record.event_seq = max(record.event_seq, int(event.seq))
-                    record.event_log.append(event)
-                    self._prune_replay(record)
-                    try:
-                        await self.registry.persist(
-                            record,
-                            terminal_event=event
-                            if event.type
-                            in {
-                                EventType.TURN_COMPLETED,
-                                EventType.TURN_FAILED,
-                                EventType.TURN_CANCELLED,
-                            }
-                            else None,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "Durable event persistence failed for session %s",
-                            record.session_id,
-                        )
-                        record.event_log.clear()
-                        record.event_log.extend(previous_event_log)
-                        record.event_seq = previous_sequence
-                        event.seq = original_event_sequence
-                        record.replay_history_partial = previous_history_partial
-                        persistence_failed = True
-                        for subscriber in list(record.subscribers.values()):
-                            self._mark_subscription_gap(
+            async with self.registry.event_persistence_authority():
+                async with record.dispatch_lock:
+                    if event.stable_cursor:
+                        previous_sequence = record.event_seq
+                        original_event_sequence = event.seq
+                        previous_event_log = tuple(record.event_log)
+                        previous_history_partial = record.replay_history_partial
+                        record.event_seq += 1
+                        if event.seq is None:
+                            event.seq = record.event_seq
+                        else:
+                            record.event_seq = max(record.event_seq, int(event.seq))
+                        record.event_log.append(event)
+                        self._prune_replay(record)
+                        try:
+                            await self.registry.persist(
                                 record,
-                                subscriber,
-                                code="durable_persist_failed",
-                                recovery_action=SNAPSHOT_RECOVERY_ACTION,
+                                terminal_event=event
+                                if event.type
+                                in {
+                                    EventType.TURN_COMPLETED,
+                                    EventType.TURN_FAILED,
+                                    EventType.TURN_CANCELLED,
+                                }
+                                else None,
                             )
-                if not persistence_failed:
-                    for subscriber in list(record.subscribers.values()):
-                        self._enqueue_subscription(record, subscriber, event)
+                        except Exception:
+                            logger.error(
+                                "Durable event persistence failed for session %s",
+                                record.session_id,
+                            )
+                            record.event_log.clear()
+                            record.event_log.extend(previous_event_log)
+                            record.event_seq = previous_sequence
+                            event.seq = original_event_sequence
+                            record.replay_history_partial = previous_history_partial
+                            persistence_failed = True
+                            for subscriber in list(record.subscribers.values()):
+                                self._mark_subscription_gap(
+                                    record,
+                                    subscriber,
+                                    code="durable_persist_failed",
+                                    recovery_action=SNAPSHOT_RECOVERY_ACTION,
+                                )
+                    if not persistence_failed:
+                        for subscriber in list(record.subscribers.values()):
+                            self._enqueue_subscription(record, subscriber, event)
             if persistence_failed:
                 break
         async with record.dispatch_lock:

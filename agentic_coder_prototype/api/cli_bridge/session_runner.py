@@ -168,6 +168,7 @@ class SessionRunner:
         self.agent_factory = agent_factory or self._default_factory
 
         self._task: Optional[asyncio.Task[None]] = None
+        self._prepared = False
         self._agent: Optional[Any] = None
         self._stop_event = asyncio.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -216,19 +217,39 @@ class SessionRunner:
             force_local_mode=force_local_mode,
         )
 
-    async def start(self) -> None:
-        if self._task:
+    async def start(self, *, admission_serialized: bool = False) -> None:
+        await self.prepare_start(admission_serialized=admission_serialized)
+        self.start_execution()
+
+    async def prepare_start(self, *, admission_serialized: bool = False) -> None:
+        """Stage the initial turn without making session execution runnable."""
+
+        if self._prepared or self._task:
             raise RuntimeError("runner already started")
-        loop = asyncio.get_running_loop()
-        self._loop = loop
+        self._loop = asyncio.get_running_loop()
         initial_task = (self.request.task or "").strip()
         if initial_task:
-            await self.submit_input(
+            submit = (
+                self._submit_input_without_authority
+                if admission_serialized
+                else self.submit_input
+            )
+            await submit(
                 initial_task,
                 attachments=[],
                 client_message_id=f"session-create:{self.session.session_id}",
             )
-        self._task = loop.create_task(self._run(), name=f"kyle-session-{self.session.session_id}")
+        self._prepared = True
+
+    def start_execution(self) -> None:
+        if not self._prepared or self._loop is None:
+            raise RuntimeError("runner was not prepared")
+        if self._task:
+            raise RuntimeError("runner already started")
+        self._task = self._loop.create_task(
+            self._run(),
+            name=f"kyle-session-{self.session.session_id}",
+        )
 
     async def stop(self) -> None:
         if self._closed:
@@ -240,6 +261,21 @@ class SessionRunner:
             await self._task
 
     async def submit_input(
+        self,
+        content: str,
+        *,
+        attachments: Optional[list[str]],
+        client_message_id: str,
+    ) -> SessionInputResponse:
+        return await self.registry.admit_turn(
+            lambda: self._submit_input_without_authority(
+                content,
+                attachments=attachments,
+                client_message_id=client_message_id,
+            )
+        )
+
+    async def _submit_input_without_authority(
         self,
         content: str,
         *,

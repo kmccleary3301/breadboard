@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.openapi.utils import get_openapi
@@ -42,6 +42,12 @@ from .engine_identity_config import (
     get_engine_process_identity,
 )
 from .models import (
+    BeginControlDrainRequest,
+    ClientLeaseRequest,
+    ClientRegisterRequest,
+    ClientRegistrationResponse,
+    DrainControlRequest,
+    DrainControlResponse,
     AttachmentUploadResponse,
     ErrorEnvelope,
     ErrorResponse,
@@ -53,12 +59,17 @@ from .models import (
     EngineProtocolIdentity,
     EngineSessionContractIdentity,
     EngineSessionReadiness,
+    GracefulControlResultRequest,
+    HardSignalDecisionRequest,
     ModelCatalogResponse,
     ProviderAuthAttachRequest,
     ProviderAuthAttachResponse,
     ProviderAuthDetachRequest,
     ProviderAuthDetachResponse,
     ProviderAuthStatusResponse,
+    OwnerAcquireRequest,
+    OwnerLeaseRequest,
+    OwnerLeaseResponse,
     SessionCommandRequest,
     SessionCommandResponse,
     SessionCreateRequest,
@@ -76,7 +87,7 @@ from .models import (
 from agentic_coder_prototype.api.e4 import create_e4_router
 from agentic_coder_prototype.api.e4.models import E4ApiError
 from .service import SessionService
-from .registry import SessionRecord
+from .registry import LifecycleAuthorityError, SessionRecord
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 
@@ -418,6 +429,40 @@ _P30_SSE_ENCODER = _encode_sse_event
 _P30_SESSION_EVENT_ASDICT = SessionEvent.asdict
 _P30_SESSION_RECORD_TO_SUMMARY = SessionRecord.to_summary
 
+def _authority_credential_buffers(
+    *values: tuple[str | None, str],
+) -> tuple[bytearray | None, ...]:
+    buffers: list[bytearray | None] = []
+    try:
+        for raw, error_code in values:
+            if raw is None:
+                buffers.append(None)
+                continue
+            try:
+                credential = bytearray(raw, "ascii")
+            except UnicodeEncodeError as exc:
+                raise LifecycleAuthorityError(
+                    error_code,
+                    "authority proof was rejected",
+                ) from exc
+            buffers.append(credential)
+            if not 32 <= len(credential) <= 256 or any(
+                value
+                not in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+                for value in credential
+            ):
+                raise LifecycleAuthorityError(
+                    error_code,
+                    "authority proof was rejected",
+                )
+        return tuple(buffers)
+    except BaseException:
+        for credential in buffers:
+            if credential is not None:
+                for index in range(len(credential)):
+                    credential[index] = 0
+        raise
+
 
 def create_app(service: SessionService | None = None, include_atp_routes: bool | None = None) -> FastAPI:
     engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
@@ -436,15 +481,49 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             content=ErrorEnvelope(error=exc.error, detail=exc.detail_text, path=exc.path).model_dump(),
         )
 
+    @app.exception_handler(LifecycleAuthorityError)
+    async def _lifecycle_authority_error_handler(
+        _request: Request,
+        exc: LifecycleAuthorityError,
+    ) -> JSONResponse:
+        if exc.code.endswith("_expired"):
+            status_code = status.HTTP_410_GONE
+        elif exc.code in {
+            "bootstrap_invalid",
+            "bootstrap_consumed",
+            "bootstrap_unavailable",
+            "owner_identity_mismatch",
+            "registration_identity_mismatch",
+        }:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_409_CONFLICT
+        return JSONResponse(
+            status_code=status_code,
+            content=ErrorEnvelope(error=exc.code, detail=exc.detail, path=None).model_dump(),
+        )
+
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=_http_error_content(exc))
 
     @app.exception_handler(RequestValidationError)
     async def _validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        safe_errors = [
+            {
+                key: item[key]
+                for key in ("type", "loc", "msg", "url")
+                if key in item
+            }
+            for item in exc.errors()
+        ]
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=ErrorEnvelope(error="invalid_request", detail={"errors": exc.errors()}, path=None).model_dump(),
+            content=ErrorEnvelope(
+                error="invalid_request",
+                detail={"errors": safe_errors},
+                path=None,
+            ).model_dump(),
         )
 
     legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
@@ -1129,6 +1208,218 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def download_artifact(session_id: str, artifact: str, svc: SessionService = Depends(get_service)):
         path = await svc.resolve_artifact_path(session_id, artifact)
         return FileResponse(path)
+
+    @app.post(
+        "/v1/engine/owner/acquire",
+        response_model=OwnerLeaseResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def acquire_engine_owner(
+        payload: OwnerAcquireRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        bootstrap_proof: str | None = Header(
+            default=None,
+            alias="X-Breadboard-Bootstrap-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> OwnerLeaseResponse:
+        owner_credential, bootstrap_credential = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+            (bootstrap_proof, "bootstrap_invalid"),
+        )
+        assert owner_credential is not None
+        return await svc.acquire_owner(
+            payload,
+            owner_credential=owner_credential,
+            bootstrap_credential=bootstrap_credential,
+        )
+
+    @app.post(
+        "/v1/engine/owner/renew",
+        response_model=OwnerLeaseResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def renew_engine_owner(
+        payload: OwnerLeaseRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> OwnerLeaseResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.renew_owner(
+            payload,
+            owner_credential=owner_credential,
+        )
+
+    @app.post(
+        "/v1/engine/owner/release",
+        response_model=OwnerLeaseResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def release_engine_owner(
+        payload: OwnerLeaseRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> OwnerLeaseResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.release_owner(
+            payload,
+            owner_credential=owner_credential,
+        )
+
+    @app.post(
+        "/v1/engine/clients/register",
+        response_model=ClientRegistrationResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    )
+    async def register_engine_client(
+        payload: ClientRegisterRequest,
+        registration_proof: str = Header(
+            ...,
+            alias="X-Breadboard-Registration-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> ClientRegistrationResponse:
+        (registration_credential,) = _authority_credential_buffers(
+            (registration_proof, "registration_identity_mismatch"),
+        )
+        assert registration_credential is not None
+        return await svc.register_client(
+            payload,
+            registration_credential=registration_credential,
+        )
+
+    @app.post(
+        "/v1/engine/clients/renew",
+        response_model=ClientRegistrationResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def renew_engine_client(
+        payload: ClientLeaseRequest,
+        registration_proof: str = Header(
+            ...,
+            alias="X-Breadboard-Registration-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> ClientRegistrationResponse:
+        (registration_credential,) = _authority_credential_buffers(
+            (registration_proof, "registration_identity_mismatch"),
+        )
+        assert registration_credential is not None
+        return await svc.renew_client(
+            payload,
+            registration_credential=registration_credential,
+        )
+
+    @app.post(
+        "/v1/engine/clients/detach",
+        response_model=ClientRegistrationResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def detach_engine_client(
+        payload: ClientLeaseRequest,
+        registration_proof: str = Header(
+            ...,
+            alias="X-Breadboard-Registration-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> ClientRegistrationResponse:
+        (registration_credential,) = _authority_credential_buffers(
+            (registration_proof, "registration_identity_mismatch"),
+        )
+        assert registration_credential is not None
+        return await svc.detach_client(
+            payload,
+            registration_credential=registration_credential,
+        )
+
+    @app.post(
+        "/v1/engine/control/drain",
+        response_model=DrainControlResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def begin_engine_control_drain(
+        payload: BeginControlDrainRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        registration_proof: str = Header(
+            ...,
+            alias="X-Breadboard-Registration-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> DrainControlResponse:
+        owner_credential, registration_credential = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+            (registration_proof, "registration_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        assert registration_credential is not None
+        return await svc.begin_control_drain(
+            payload,
+            owner_credential=owner_credential,
+            registration_credential=registration_credential,
+        )
+
+    @app.post(
+        "/v1/engine/control/graceful-result",
+        response_model=DrainControlResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def record_engine_graceful_control(
+        payload: GracefulControlResultRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> DrainControlResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.record_graceful_control(
+            payload,
+            owner_credential=owner_credential,
+        )
+
+    @app.post(
+        "/v1/engine/control/signal-decision",
+        response_model=DrainControlResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def record_engine_signal_decision(
+        payload: HardSignalDecisionRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> DrainControlResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.record_hard_signal_decision(
+            payload,
+            owner_credential=owner_credential,
+        )
+
+    @app.post(
+        "/v1/engine/control/drain-rollback",
+        response_model=DrainControlResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def rollback_engine_control_drain(
+        payload: DrainControlRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> DrainControlResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.rollback_control_drain(
+            payload,
+            owner_credential=owner_credential,
+        )
 
     @app.get(
         "/v1/engine/identity",
