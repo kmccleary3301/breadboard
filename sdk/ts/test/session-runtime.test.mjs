@@ -21,6 +21,74 @@ const jsonResponse = (value, status = 200) => new Response(JSON.stringify(value)
   headers: { "content-type": "application/json" },
 })
 
+const JSON_RESPONSE_LIMIT_BYTES = 1024 * 1024
+const OVERSIZED_JSON_BYTES = new TextEncoder().encode(JSON.stringify({ padding: "x".repeat(2 * 1024 * 1024) }))
+const SAFE_SSE_CHUNK_BYTES = 60 * 1024
+
+const jsonBodyAtSize = (targetBytes) => {
+  const encoder = new TextEncoder()
+  const prefix = '{"padding":"'
+  const suffix = '"}'
+  const payloadBytes = targetBytes - encoder.encode(`${prefix}${suffix}`).byteLength
+  const multibyteCount = Math.floor(payloadBytes / 3)
+  const asciiCount = payloadBytes - multibyteCount * 3
+  return encoder.encode(`${prefix}${"€".repeat(multibyteCount)}${"x".repeat(asciiCount)}${suffix}`)
+}
+
+const stalledByteResponse = (chunks, options = {}) => {
+  const state = { cancelled: false }
+  const response = new Response(new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk)
+    },
+    cancel() {
+      state.cancelled = true
+      if (options.cancelMode === "reject") return Promise.reject(new Error("cancel rejected"))
+      if (options.cancelMode === "never") return new Promise(() => {})
+    },
+  }), {
+    status: options.status ?? 200,
+    headers: (() => {
+      const headers = new Headers(options.headers ?? { "content-type": options.contentType ?? "application/json" })
+      for (const value of options.contentLengths ?? (options.contentLength === undefined ? [] : [options.contentLength])) {
+        headers.append("content-length", String(value))
+      }
+      return headers
+    })(),
+  })
+  return { response, state }
+}
+
+const closedByteResponse = (chunks, contentType = "text/event-stream") => new Response(new ReadableStream({
+  start(controller) {
+    for (const chunk of chunks) controller.enqueue(chunk)
+    controller.close()
+  },
+}), { headers: { "content-type": contentType } })
+
+const oneByteResponse = (bytes, contentType = "application/json") => {
+  let offset = 0
+  return new Response(new ReadableStream({
+    pull(controller) {
+      if (offset === bytes.byteLength) {
+        controller.close()
+        return
+      }
+      controller.enqueue(bytes.subarray(offset, offset + 1))
+      offset += 1
+    },
+  }), { headers: { "content-type": contentType } })
+}
+
+const splitSseBytes = (value, chunkBytes = SAFE_SSE_CHUNK_BYTES) => {
+  const bytes = new TextEncoder().encode(value)
+  const chunks = []
+  for (let offset = 0; offset < bytes.byteLength; offset += chunkBytes) {
+    chunks.push(bytes.subarray(offset, offset + chunkBytes))
+  }
+  return chunks
+}
+
 const replayFacts = async (overrides = {}) => {
   const withoutDigest = {
     replayRetention: {
@@ -282,6 +350,161 @@ test("create and attach use only canonical URLs; submit, cancel, and local close
   assert.equal(requests.slice(4).every((request) => request.url === "https://breadboard.test/v1/sessions/session-2"), true)
 })
 
+test("bounded JSON readers reject oversized and stalled success and error bodies", async () => {
+  let createSignal
+  const createBody = stalledByteResponse([], { contentLength: OVERSIZED_JSON_BYTES.byteLength })
+  const createFailure = await failureOf(() => createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async (_input, init = {}) => {
+      createSignal = init.signal
+      return createBody.response
+    },
+  }).create({ configPath: "agent.yaml" }))
+  assert.deepEqual(createFailure, { kind: "protocol", code: "response_body_too_large" })
+  assert.equal(createSignal.aborted, true)
+  assert.equal(createBody.state.cancelled, true)
+
+  let snapshotSignal
+  const snapshotBody = stalledByteResponse([OVERSIZED_JSON_BYTES])
+  const snapshotFailure = await failureOf(() => createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async (_input, init = {}) => {
+      snapshotSignal = init.signal
+      return snapshotBody.response
+    },
+  }).attach({ sessionId: "session-1" }))
+  assert.deepEqual(snapshotFailure, { kind: "protocol", code: "response_body_too_large" })
+  assert.equal(snapshotSignal.aborted, true)
+  assert.equal(snapshotBody.state.cancelled, true)
+
+  let submitSignal
+  const submitBody = stalledByteResponse([OVERSIZED_JSON_BYTES])
+  const submitResponses = [jsonResponse(await snapshot()), submitBody.response]
+  const submitRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async (_input, init = {}) => {
+      submitSignal = init.signal
+      return submitResponses.shift()
+    },
+  }).attach({ sessionId: "session-1" })
+  const submitFailure = await failureOf(() => submitRuntime.submit({ text: "body", clientMessageId: "message-oversized" }))
+  assert.deepEqual(submitFailure, { kind: "protocol", code: "response_body_too_large" })
+  assert.equal(submitSignal.aborted, true)
+  assert.equal(submitBody.state.cancelled, true)
+
+  const errorBody = stalledByteResponse([OVERSIZED_JSON_BYTES], { status: 500 })
+  const errorResponses = [jsonResponse(await snapshot()), errorBody.response]
+  const errorRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => errorResponses.shift(),
+  }).attach({ sessionId: "session-1" })
+  const errorFailure = await failureOf(() => errorRuntime.submit({ text: "body", clientMessageId: "message-error" }))
+  assert.deepEqual(errorFailure, { kind: "http", status: 500, code: null, body: "[redacted]" })
+  assert.equal(errorBody.state.cancelled, true)
+
+  let streamErrorSignal
+  const streamErrorBody = stalledByteResponse([], {
+    status: 503,
+    contentLength: OVERSIZED_JSON_BYTES.byteLength,
+  })
+  const streamErrorResponses = [jsonResponse(await snapshot()), streamErrorBody.response]
+  const streamErrorRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async (_input, init = {}) => {
+      streamErrorSignal = init.signal
+      return streamErrorResponses.shift()
+    },
+  }).attach({ sessionId: "session-1" })
+  const streamErrorFailure = await failureOf(() => streamErrorRuntime.events().next())
+  assert.deepEqual(streamErrorFailure, { kind: "http", status: 503, code: null, body: "[redacted]" })
+  assert.equal(streamErrorSignal.aborted, true)
+  assert.equal(streamErrorBody.state.cancelled, true)
+})
+
+
+test("bounded JSON readers enforce exact bytes, delivered bytes, malformed lengths, and abort liveness", async () => {
+  const exact = jsonBodyAtSize(JSON_RESPONSE_LIMIT_BYTES)
+  const over = jsonBodyAtSize(JSON_RESPONSE_LIMIT_BYTES + 1)
+  assert.equal(exact.byteLength, JSON_RESPONSE_LIMIT_BYTES)
+  assert.equal(over.byteLength, JSON_RESPONSE_LIMIT_BYTES + 1)
+
+  const exactFailure = await failureOf(() => createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => new Response(exact, {
+      headers: { "content-type": "application/json", "content-length": String(exact.byteLength) },
+    }),
+  }).create({ configPath: "agent.yaml" }))
+  assert.deepEqual(exactFailure, { kind: "protocol", code: "invalid_session_id" })
+
+  const overLengthFailure = await failureOf(() => createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => stalledByteResponse([], { contentLength: over.byteLength }).response,
+  }).create({ configPath: "agent.yaml" }))
+  assert.deepEqual(overLengthFailure, { kind: "protocol", code: "response_body_too_large" })
+
+  const cumulativeBody = stalledByteResponse([
+    over.subarray(0, JSON_RESPONSE_LIMIT_BYTES / 2),
+    over.subarray(JSON_RESPONSE_LIMIT_BYTES / 2, JSON_RESPONSE_LIMIT_BYTES),
+    over.subarray(JSON_RESPONSE_LIMIT_BYTES),
+  ])
+  const cumulativeFailure = await failureOf(() => createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => cumulativeBody.response,
+  }).create({ configPath: "agent.yaml" }))
+  assert.deepEqual(cumulativeFailure, { kind: "protocol", code: "response_body_too_large" })
+  assert.equal(cumulativeBody.state.cancelled, true)
+
+  for (const contentLengths of [["invalid"], ["1", "2"]]) {
+    const malformedLengthBody = stalledByteResponse([over], { contentLengths })
+    const malformedLengthFailure = await failureOf(() => createCanonicalE4Client({
+      baseUrl: "https://breadboard.test",
+      fetch: async () => malformedLengthBody.response,
+    }).create({ configPath: "agent.yaml" }))
+    assert.deepEqual(malformedLengthFailure, { kind: "protocol", code: "response_body_too_large" })
+    assert.equal(malformedLengthBody.state.cancelled, true)
+  }
+
+  const deliveredBody = stalledByteResponse([over], {
+    headers: {
+      "content-type": "application/json",
+      "content-encoding": "gzip",
+      "content-length": "128",
+    },
+  })
+  const deliveredFailure = await failureOf(() => createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => deliveredBody.response,
+  }).create({ configPath: "agent.yaml" }))
+  assert.deepEqual(deliveredFailure, { kind: "protocol", code: "response_body_too_large" })
+  assert.equal(deliveredBody.state.cancelled, true)
+
+  const zeroChunkBody = stalledByteResponse([new Uint8Array(), new Uint8Array()])
+  const zeroChunkFailure = await failureOf(() => createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => zeroChunkBody.response,
+  }).create({ configPath: "agent.yaml" }))
+  assert.deepEqual(zeroChunkFailure, { kind: "protocol", code: "response_body_no_progress" })
+  assert.equal(zeroChunkBody.state.cancelled, true)
+
+  const oneByteSnapshot = new TextEncoder().encode(JSON.stringify(await snapshot()))
+  const oneByteRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => oneByteResponse(oneByteSnapshot),
+  }).attach({ sessionId: "session-1" })
+  assert.equal(oneByteRuntime.sessionId, "session-1")
+
+  for (const options of [{ cancelMode: "never" }, { cancelMode: "reject", contentLengths: ["invalid"] }]) {
+    const stalled = stalledByteResponse([Uint8Array.of(0x7b)], options)
+    const stalledFailure = await failureOf(() => createCanonicalE4Client({
+      baseUrl: "https://breadboard.test",
+      requestTimeoutMs: 20,
+      fetch: async () => stalled.response,
+    }).create({ configPath: "agent.yaml" }))
+    assert.deepEqual(stalledFailure, { kind: "timeout" })
+    assert.equal(stalled.state.cancelled, true)
+  }
+})
+
 test("attachment uploads resolve to handles without mutation or silent dropping", async () => {
   const requests = []
   const responses = [
@@ -484,6 +707,72 @@ test("local close terminates a stream suspended at delivery without committing i
   await runtime.close()
   assert.equal((await events.next()).done, true)
   assert.equal(requests.some((request) => request.method === "DELETE"), false)
+})
+
+test("local close settles stalled SSE reads when cancellation rejects or never settles", async () => {
+  for (const cancelMode of ["reject", "never"]) {
+    const body = stalledByteResponse([], { contentType: "text/event-stream", cancelMode })
+    let resolveStreamStarted
+    const streamStarted = new Promise((resolve) => { resolveStreamStarted = resolve })
+    const responses = [jsonResponse(await snapshot()), body.response]
+    const runtime = await createCanonicalE4Client({
+      baseUrl: "https://breadboard.test",
+      fetch: async () => {
+        const response = responses.shift()
+        if (responses.length === 0) resolveStreamStarted()
+        return response
+      },
+    }).attach({ sessionId: "session-1" })
+    const events = runtime.events()
+    const next = events.next()
+    await streamStarted
+    const closing = runtime.close()
+    await Promise.race([
+      closing,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`local close stalled after ${cancelMode} cancellation`)), 250)),
+    ])
+    assert.equal((await next).done, true)
+    assert.equal(body.state.cancelled, true)
+  }
+})
+
+test("zero-byte SSE chunks fail closed and caller abort settles after one-byte progress", async () => {
+  const zeroBody = stalledByteResponse([new Uint8Array(), new Uint8Array()], { contentType: "text/event-stream" })
+  const zeroResponses = [jsonResponse(await snapshot()), zeroBody.response]
+  const zeroRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => zeroResponses.shift(),
+  }).attach({ sessionId: "session-1" })
+  assert.deepEqual(await failureOf(() => zeroRuntime.events().next()), { kind: "protocol", code: "sse_chunk_no_progress" })
+  assert.equal(zeroBody.state.cancelled, true)
+
+  let resolveDelivered
+  const delivered = new Promise((resolve) => { resolveDelivered = resolve })
+  let sent = false
+  let cancelled = false
+  const stalledBody = new Response(new ReadableStream({
+    pull(controller) {
+      if (sent) return
+      sent = true
+      controller.enqueue(Uint8Array.of(0x64))
+      resolveDelivered()
+    },
+    cancel() {
+      cancelled = true
+      return new Promise(() => {})
+    },
+  }), { headers: { "content-type": "text/event-stream" } })
+  const stalledResponses = [jsonResponse(await snapshot()), stalledBody]
+  const stalledRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => stalledResponses.shift(),
+  }).attach({ sessionId: "session-1" })
+  const controller = new AbortController()
+  const pending = stalledRuntime.events({ signal: controller.signal }).next()
+  await delivered
+  controller.abort()
+  assert.deepEqual(await failureOf(() => pending), { kind: "caller-abort" })
+  assert.equal(cancelled, true)
 })
 
 test("attach rejects cross-session snapshots and concurrent observation", async () => {
@@ -689,6 +978,195 @@ test("truncated and invalid-UTF8 SSE frames fail as protocol errors", async () =
   assert.equal(invalid.code, "invalid_sse_utf8")
 })
 
+test("incremental SSE scanning preserves CRLF, fields, multibyte data, and one-event cursor semantics", async () => {
+  const open = await openEnvelope({
+    earliestRetainedSequence: 1,
+    earliestRetainedEventId: "event-1",
+    headSequence: 1,
+    headEventId: "event-1",
+  })
+  const event = logged(1, "user_message", { text: "€" })
+  const eventJson = JSON.stringify(event)
+  const splitAt = eventJson.indexOf(",") + 1
+  const wire = [
+    ": open comment\r\n",
+    "unknown: ignored\r\n",
+    `data: ${JSON.stringify(open)}\r\n\r\n`,
+    ": event comment\r\n",
+    "event: canonical\r\n",
+    "id: 1\r\n",
+    `data: ${eventJson.slice(0, splitAt)}\r\n`,
+    `data: ${eventJson.slice(splitAt)}\r\n\r\n`,
+  ].join("")
+  const bytes = new TextEncoder().encode(wire)
+  const oneByteChunks = Array.from(bytes, (_value, index) => bytes.subarray(index, index + 1))
+  const responses = [jsonResponse(await snapshot()), closedByteResponse(oneByteChunks)]
+  const runtime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => responses.shift(),
+  }).attach({ sessionId: "session-1" })
+  const events = runtime.events()
+  const observed = await events.next()
+  assert.equal(observed.value.eventId, "event-1")
+  assert.equal(observed.value.payload.text, "€")
+  assert.equal((await events.next()).done, true)
+
+  const unterminated = new TextEncoder().encode('data: {"stable_cursor":\r\ndata: false}\r\n')
+  const incompleteResponses = [jsonResponse(await snapshot()), closedByteResponse(splitSseBytes(new TextDecoder().decode(unterminated), 1))]
+  const incompleteRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => incompleteResponses.shift(),
+  }).attach({ sessionId: "session-1" })
+  assert.deepEqual(await failureOf(() => incompleteRuntime.events().next()), { kind: "protocol", code: "truncated_sse_frame" })
+})
+
+test("SSE frame byte accounting accepts an exact multibyte boundary and rejects boundary plus one", async () => {
+  const frameLimit = 512 * 1024
+  const open = await openEnvelope()
+  const openFrame = `data: ${JSON.stringify(open)}\r\n\r\n`
+  const payloadAt = (bytes) => `${"€".repeat(Math.floor(bytes / 3))}${"x".repeat(bytes % 3)}`
+  const exactFrame = `:${payloadAt(frameLimit - 3)}\r\n\r\n`
+  const exactResponses = [
+    jsonResponse(await snapshot()),
+    closedByteResponse([new TextEncoder().encode(`${openFrame}${exactFrame}`)]),
+  ]
+  const exactRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => exactResponses.shift(),
+  }).attach({ sessionId: "session-1" })
+  assert.equal((await exactRuntime.events().next()).done, true)
+
+  const overFrame = new TextEncoder().encode(`${openFrame}:${payloadAt(frameLimit - 2)}\r\n\r\n`)
+  const overBody = stalledByteResponse([overFrame], { contentType: "text/event-stream" })
+  const overResponses = [jsonResponse(await snapshot()), overBody.response]
+  const overRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => overResponses.shift(),
+  }).attach({ sessionId: "session-1" })
+  assert.deepEqual(await failureOf(() => overRuntime.events().next()), { kind: "protocol", code: "sse_frame_too_large" })
+  assert.equal(overBody.state.cancelled, true)
+})
+
+test("SSE resource limits reject oversized chunks, tails, frames, data, and pending queues", async () => {
+  const streamFailure = async (chunks) => {
+    const body = stalledByteResponse(chunks, { contentType: "text/event-stream" })
+    const responses = [jsonResponse(await snapshot()), body.response]
+    const runtime = await createCanonicalE4Client({
+      baseUrl: "https://breadboard.test",
+      fetch: async () => responses.shift(),
+    }).attach({ sessionId: "session-1" })
+    const failure = await failureOf(() => runtime.events().next())
+    assert.equal(body.state.cancelled, true)
+    return failure
+  }
+
+  const oversizedChunk = new Uint8Array(2 * 1024 * 1024)
+  oversizedChunk.fill(0x61)
+  assert.deepEqual(await streamFailure([oversizedChunk]), { kind: "protocol", code: "sse_chunk_too_large" })
+
+  const unfinishedTailChunks = Array.from({ length: 13 }, () => {
+    const chunk = new Uint8Array(SAFE_SSE_CHUNK_BYTES)
+    chunk.fill(0x61)
+    return chunk
+  })
+  assert.deepEqual(await streamFailure(unfinishedTailChunks), { kind: "protocol", code: "sse_frame_too_large" })
+
+  const oversizedFrame = `x: ${"a".repeat(600 * 1024)}\n\n`
+  assert.deepEqual(await streamFailure(splitSseBytes(oversizedFrame)), { kind: "protocol", code: "sse_frame_too_large" })
+
+  const oversizedEventData = `data: ${"a".repeat(300 * 1024)}\n\n`
+  assert.deepEqual(await streamFailure(splitSseBytes(oversizedEventData)), { kind: "protocol", code: "sse_event_data_too_large" })
+
+  const oversizedEventId = new TextEncoder().encode(`id: ${"x".repeat(1025)}\ndata: {}\n\n`)
+  assert.deepEqual(await streamFailure([oversizedEventId]), { kind: "protocol", code: "sse_event_id_too_large" })
+
+  const pendingCount = new TextEncoder().encode(Array.from({ length: 2049 }, () => "data: {}\n\n").join(""))
+  assert.deepEqual(await streamFailure([pendingCount]), { kind: "protocol", code: "sse_pending_event_count_exceeded" })
+
+  const pendingBytes = new TextEncoder().encode(`data: ${"a".repeat(240 * 1024)}\n\ndata: ${"b".repeat(240 * 1024)}\n\ndata: ${"c".repeat(64 * 1024)}\n\n`)
+  assert.deepEqual(await streamFailure([pendingBytes]), { kind: "protocol", code: "sse_pending_event_bytes_exceeded" })
+})
+
+test("every SSE resource limit accepts its exact boundary and rejects boundary plus one", async () => {
+  const encoder = new TextEncoder()
+  const streamFailure = async (bytes) => {
+    const body = stalledByteResponse([bytes], { contentType: "text/event-stream" })
+    const responses = [jsonResponse(await snapshot()), body.response]
+    const runtime = await createCanonicalE4Client({
+      baseUrl: "https://breadboard.test",
+      fetch: async () => responses.shift(),
+    }).attach({ sessionId: "session-1" })
+    const failure = await failureOf(() => runtime.events().next())
+    assert.equal(body.state.cancelled, true)
+    return failure
+  }
+  const commentFramesAtSize = (targetBytes) => {
+    const frames = []
+    let remaining = targetBytes
+    while (remaining > 0) {
+      const frameBytes = Math.min(512 * 1024, remaining)
+      assert.ok(frameBytes >= 3)
+      frames.push(`:${"x".repeat(frameBytes - 3)}\n\n`)
+      remaining -= frameBytes
+    }
+    return frames.join("")
+  }
+  const invalidEnvelope = "data: {}\n\n"
+  const chunkAtSize = (targetBytes) => encoder.encode(`${invalidEnvelope}${commentFramesAtSize(targetBytes - invalidEnvelope.length)}`)
+
+  const chunkLimit = 1024 * 1024
+  assert.deepEqual(await streamFailure(chunkAtSize(chunkLimit)), { kind: "protocol", code: "invalid_stream_event_type" })
+  assert.deepEqual(await streamFailure(chunkAtSize(chunkLimit + 1)), { kind: "protocol", code: "sse_chunk_too_large" })
+
+  const eventDataLimit = 256 * 1024
+  assert.deepEqual(
+    await streamFailure(encoder.encode(`data: ${"a".repeat(eventDataLimit)}\n\n`)),
+    { kind: "protocol", code: "malformed_sse_json" },
+  )
+  assert.deepEqual(
+    await streamFailure(encoder.encode(`data: ${"a".repeat(eventDataLimit + 1)}\n\n`)),
+    { kind: "protocol", code: "sse_event_data_too_large" },
+  )
+
+  const eventIdLimit = 1024
+  assert.deepEqual(
+    await streamFailure(encoder.encode(`id: ${"x".repeat(eventIdLimit)}\ndata: {}\n\n`)),
+    { kind: "protocol", code: "invalid_stream_event_type" },
+  )
+  assert.deepEqual(
+    await streamFailure(encoder.encode(`id: ${"x".repeat(eventIdLimit + 1)}\ndata: {}\n\n`)),
+    { kind: "protocol", code: "sse_event_id_too_large" },
+  )
+
+  const pendingEventLimit = 2048
+  assert.deepEqual(
+    await streamFailure(encoder.encode("data: {}\n\n".repeat(pendingEventLimit))),
+    { kind: "protocol", code: "invalid_stream_event_type" },
+  )
+  assert.deepEqual(
+    await streamFailure(encoder.encode("data: {}\n\n".repeat(pendingEventLimit + 1))),
+    { kind: "protocol", code: "sse_pending_event_count_exceeded" },
+  )
+
+  const pendingByteLimit = 256 * 1024
+  const pendingBytesAt = (bytes) => encoder.encode(`data: ${"a".repeat(240 * 1024)}\n\ndata: ${"b".repeat(bytes - 240 * 1024)}\n\n`)
+  assert.deepEqual(await streamFailure(pendingBytesAt(pendingByteLimit)), { kind: "protocol", code: "malformed_sse_json" })
+  assert.deepEqual(
+    await streamFailure(pendingBytesAt(pendingByteLimit + 1)),
+    { kind: "protocol", code: "sse_pending_event_bytes_exceeded" },
+  )
+
+  const dataLineLimit = 4096
+  assert.deepEqual(
+    await streamFailure(encoder.encode(`${"data:\n".repeat(dataLineLimit)}\n`)),
+    { kind: "protocol", code: "malformed_sse_json" },
+  )
+  assert.deepEqual(
+    await streamFailure(encoder.encode(`${"data:\n".repeat(dataLineLimit + 1)}\n`)),
+    { kind: "protocol", code: "sse_data_line_count_exceeded" },
+  )
+})
+
 test("HTTP failures preserve safe correlation only and redact response bodies", async () => {
   const secret = "sk-private-value"
   const responses = [
@@ -700,11 +1178,34 @@ test("HTTP failures preserve safe correlation only and redact response bodies", 
   assert.deepEqual(failure, { kind: "idempotency-conflict", sessionId: "session-1", turnId: "turn-safe" })
   assert.equal(JSON.stringify(failure).includes(secret), false)
 
-  const rawResponses = [jsonResponse(await snapshot()), jsonResponse({ error: "internal", detail: { secret } }, 500)]
+  const rawResponses = [jsonResponse(await snapshot()), jsonResponse({ error: "input_idempotency_conflict", detail: { secret, turn_id: secret } }, 500)]
   const runtime2 = await createCanonicalE4Client({ baseUrl: "https://breadboard.test", fetch: async () => rawResponses.shift() }).attach({ sessionId: "session-1" })
   const rawFailure = await failureOf(() => runtime2.submit({ text: "body", clientMessageId: "message-2" }))
-  assert.deepEqual(rawFailure, { kind: "http", status: 500, code: "internal", body: "[redacted]" })
+  assert.deepEqual(rawFailure, { kind: "http", status: 500, code: null, body: "[redacted]" })
   assert.equal(JSON.stringify(rawFailure).includes(secret), false)
+
+  const secretResponses = [
+    jsonResponse(await snapshot()),
+    jsonResponse({ error: secret, detail: { turn_id: `${secret}\ncontrol` } }, 409),
+  ]
+  const secretRuntime = await createCanonicalE4Client({ baseUrl: "https://breadboard.test", fetch: async () => secretResponses.shift() }).attach({ sessionId: "session-1" })
+  const secretFailure = await failureOf(() => secretRuntime.submit({ text: "body", clientMessageId: "message-3" }))
+  assert.deepEqual(secretFailure, { kind: "admission-conflict", sessionId: "session-1", code: null })
+  assert.equal(JSON.stringify(secretFailure).includes(secret), false)
+
+  for (const [index, turnId] of [`turn-safe\n${secret}`, `turn-${"x".repeat(129)}`].entries()) {
+    const invalidCorrelationResponses = [
+      jsonResponse(await snapshot()),
+      jsonResponse({ error: "input_idempotency_conflict", detail: { turn_id: turnId } }, 409),
+    ]
+    const invalidCorrelationRuntime = await createCanonicalE4Client({
+      baseUrl: "https://breadboard.test",
+      fetch: async () => invalidCorrelationResponses.shift(),
+    }).attach({ sessionId: "session-1" })
+    const invalidCorrelation = await failureOf(() => invalidCorrelationRuntime.submit({ text: "body", clientMessageId: `message-invalid-${index}` }))
+    assert.deepEqual(invalidCorrelation, { kind: "idempotency-conflict", sessionId: "session-1", turnId: null })
+    assert.equal(JSON.stringify(invalidCorrelation).includes(turnId), false)
+  }
 })
 
 test("events outside the exact retained digest bound fail as unretained replay", async () => {
