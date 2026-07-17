@@ -601,7 +601,7 @@ def load_python_reference_contract_fixtures() -> Dict[str, Dict[str, Any]]:
     return fixtures
 
 
-def write_active_python_reference_contract_fixtures() -> None:
+def write_python_reference_contract_fixtures() -> None:
     for rel, payload in load_python_reference_contract_fixtures().items():
         if rel in FROZEN_REFERENCE_FIXTURE_PATHS:
             continue
@@ -611,5 +611,5 @@ def write_active_python_reference_contract_fixtures() -> None:
 
 
 if __name__ == "__main__":
-    write_active_python_reference_contract_fixtures()
+    write_python_reference_contract_fixtures()
     print("ok")

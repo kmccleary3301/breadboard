@@ -10,7 +10,7 @@ from scripts.build_python_reference_contract_fixtures import (
     FROZEN_REFERENCE_FIXTURE_PATHS,
     build_active_python_reference_contract_fixtures,
     load_python_reference_contract_fixtures,
-    write_active_python_reference_contract_fixtures,
+    write_python_reference_contract_fixtures,
 )
 
 
@@ -77,7 +77,7 @@ def test_active_fixture_writer_skips_frozen_paths(monkeypatch, tmp_path: Path) -
     monkeypatch.setattr(fixture_builder, "FIXTURE_ROOT", tmp_path)
     monkeypatch.setattr(fixture_builder, "build_active_python_reference_contract_fixtures", lambda: generated)
 
-    write_active_python_reference_contract_fixtures()
+    write_python_reference_contract_fixtures()
 
     assert frozen_bytes == {rel: (tmp_path / rel).read_bytes() for rel in EXPECTED_FROZEN_PATHS}
     for rel, payload in active.items():
@@ -94,5 +94,5 @@ def test_active_fixture_writer_rejects_tampered_frozen_input_before_output(
     monkeypatch.setattr(fixture_builder, "build_active_python_reference_contract_fixtures", lambda: {"active.json": {}})
 
     with pytest.raises(ValueError, match=f"frozen reference fixture digest mismatch: {relative_path}"):
-        write_active_python_reference_contract_fixtures()
+        write_python_reference_contract_fixtures()
     assert not (tmp_path / "active.json").exists()

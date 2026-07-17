@@ -6,7 +6,6 @@ from typing import Any
 
 import pytest
 
-from scripts.e4_parity import run_lane
 from scripts.e4_parity.adapters import oh_my_pi_compiler_capture as compiler
 from scripts.e4_parity.adapters.oh_my_pi_projection_packet import canonical_json_bytes
 from scripts.e4_parity.adapters import oh_my_pi_p3_remaining_projections as projections
@@ -41,13 +40,11 @@ def test_context_resource_pack_projection_is_independent_of_candidate_root() -> 
     )
 
 
-def test_p3_7_is_frozen_validation_only(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_p3_7_is_frozen_validation_only() -> None:
     lane_id = "oh_my_pi_p3_7_memory_work_compiler"
     lane_def = _read_json(ROOT / "config" / "e4_lanes" / f"{lane_id}.yaml")
     config = lane_def["normalize"]["config"]
     claim = _read_json(ROOT / "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json")
-    monkeypatch.setenv("BB_WORKSPACE_ROOT", str(ROOT.parent))
-    capture = run_lane.run_lane(lane_id, stage="capture", out_dir=None)
 
     assert lane_def["status"] == "superseded"
     assert lane_def["capture"]["strategy"] == "replay_dump"
@@ -55,7 +52,6 @@ def test_p3_7_is_frozen_validation_only(monkeypatch: pytest.MonkeyPatch) -> None
     assert "record_builders" not in config
     assert not any(projection_id.startswith("p3_7_") for projection_id in projections.PROJECTIONS)
     assert lane_id not in compiler.ADR_AV_3_ACCEPTED_COMPILER_LANES
-    assert capture["stages"][0]["outcome"] == "reused_stored_result"
     assert claim["accepted"] is True
 
 

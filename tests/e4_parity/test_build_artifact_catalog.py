@@ -398,6 +398,25 @@ def test_build_catalog_is_deterministic_valid_and_covers_lane_and_static_roles(
     assert sha256_ref(canonical_record_bytes(mutated_entries)) != first["integrity"]["entries_hash"]
 
 
+def test_catalog_omits_superseded_lane_with_unavailable_historical_artifacts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paths = _write_catalog_fixture(tmp_path, monkeypatch)
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    lane_def_path = paths["checkout"] / "config/e4_lanes/lane_alpha.yaml"
+    inventory["lanes"][0]["lane_def_ref"] = _relative(lane_def_path, paths["checkout"])
+    _write_json(lane_def_path, {"lane_id": "lane_alpha", "status": "superseded"})
+    _write_json(paths["inventory"], inventory)
+    for key in ("capture", "comparator", "support_claim", "evidence_manifest"):
+        paths[key].unlink()
+
+    _run_catalog_cli(paths)
+    catalog = json.loads(paths["output"].read_text(encoding="utf-8"))
+
+    assert not any(entry.get("lane_id") == "lane_alpha" for entry in catalog["entries"])
+
+
 def test_bootstrap_catalog_omits_derived_lane_roles_and_unreferenced_static_outputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

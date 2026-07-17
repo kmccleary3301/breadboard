@@ -719,6 +719,7 @@
       },
       "kind": "non_target_accounting",
       "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+      "lane_def_ref": "config/e4_lanes/oh_my_pi_p3_7_memory_work_compiler.yaml",
       "ledger_feature_ids": [
         "feat_b650fa627d57aa92"
       ],
@@ -1343,6 +1344,69 @@
       "sandbox_mode": "read-only",
       "score_row_id": "score_p6_oh_my_pi_p66_task_job_subagent",
       "status": "accepted",
+      "target_family": "oh_my_pi",
+      "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
+    },
+    {
+      "artifact_roles": {
+        "evidence_manifest": "oh_my_pi_p6_6_task_job_subagent_v2:evidence_manifest",
+        "node_gate": "oh_my_pi_p6_6_task_job_subagent_v2:node_gate"
+      },
+      "artifacts_root": "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent_v2",
+      "builder": null,
+      "claim_id": "oh_my_pi_p6_6_task_job_subagent_v2_c4_support_claim",
+      "comparator_id": "oh_my_pi_stored_report_replay",
+      "config_id": "oh_my_pi_p6_6_task_job_subagent_v2",
+      "ct": {
+        "command": {
+          "argv": [
+            ".venv/bin/python",
+            "scripts/validate_e4_c4_chain.py",
+            "--config-id",
+            "oh_my_pi_p6_6_task_job_subagent_v2",
+            "--support-claim",
+            "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v2_c4_support_claim.json",
+            "--evidence-manifest",
+            "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v2_c4_evidence_manifest.json",
+            "--json-out",
+            "artifacts/conformance/node_gate/ct_p6_ohmypi_p66_task_job_subagent_v2.json"
+          ],
+          "cwd": "."
+        },
+        "gate_level": "C4",
+        "test_id": "CT-P6-OHMYPI-P66-TASK-JOB-SUBAGENT-V2"
+      },
+      "kind": "target_support",
+      "lane_id": "oh_my_pi_p6_6_task_job_subagent_v2",
+      "ledger_feature_ids": [
+        "feat_969fb5f75178e4cf"
+      ],
+      "phase": "P6",
+      "points": 20,
+      "primitives": [
+        "bb.work_item.v2"
+      ],
+      "provider_model": "anthropic/claude-haiku-4-5",
+      "reverify_command": {
+        "argv": [
+          ".venv/bin/python",
+          "scripts/validate_e4_c4_chain.py",
+          "--config-id",
+          "oh_my_pi_p6_6_task_job_subagent_v2",
+          "--support-claim",
+          "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v2_c4_support_claim.json",
+          "--evidence-manifest",
+          "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v2_c4_evidence_manifest.json",
+          "--json-out",
+          "artifacts/conformance/node_gate/ct_p6_ohmypi_p66_task_job_subagent_v2.json",
+          "--check-only"
+        ],
+        "cwd": "."
+      },
+      "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+      "sandbox_mode": "read-only",
+      "score_row_id": "",
+      "status": "captured",
       "target_family": "oh_my_pi",
       "target_version": "@oh-my-pi/pi-coding-agent@16.2.13"
     },

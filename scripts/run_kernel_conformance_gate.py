@@ -8,12 +8,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.compare_kernel_conformance_engines import main as compare_main
-from scripts.build_python_reference_contract_fixtures import write_active_python_reference_contract_fixtures
+from scripts.build_python_reference_contract_fixtures import write_python_reference_contract_fixtures
 from scripts.release.validate_kernel_contract_fixtures import validate_kernel_contract_fixtures
 
 
 def main() -> int:
-    write_active_python_reference_contract_fixtures()
+    write_python_reference_contract_fixtures()
     errors = validate_kernel_contract_fixtures()
     if errors:
         for error in errors:

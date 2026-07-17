@@ -174,13 +174,22 @@ def lane_inventory_row(lane_def: Mapping[str, Any]) -> dict[str, Any]:
     support_claim = _support_claim(reverify)
     score_row = _score_row_for_support_claim(support_claim_path)
     ledger_feature_ids = _feature_ids_from_refs(score_row.get("ledger_row_refs")) or _feature_ids_from_refs(support_claim.get("ledger_row_refs"))
+    if not ledger_feature_ids:
+        packet_feature_id = (
+            lane_def.get("normalize", {})
+            .get("config", {})
+            .get("packet_constants", {})
+            .get("feature_id")
+        )
+        if isinstance(packet_feature_id, str) and packet_feature_id:
+            ledger_feature_ids = [packet_feature_id]
     return {
         "lane_id": lane_id,
         "config_id": config_id,
         "claim_id": _claim_id(lane_def),
         "phase": _phase(lane_id, lane_def),
         "kind": lane_def["kind"],
-        "status": lane_def["status"],
+        "status": lane_def.get("claim", {}).get("status", lane_def["status"]),
         "points": lane_def["points"],
         "target_family": lane_def["target_family"],
         "target_version": lane_def["target_version"],

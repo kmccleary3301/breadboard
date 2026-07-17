@@ -123,6 +123,7 @@
     }
   },
   "claim": {
+    "status": "accepted",
     "scope": {
       "behaviors": [
         "bb.work_item.v1"
