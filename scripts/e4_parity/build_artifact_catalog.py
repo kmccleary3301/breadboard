@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any, Collection, Iterable, Mapping, Sequence
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
 if str(ROOT) not in sys.path:
@@ -713,7 +715,7 @@ def _lane_producer_is_accepted(lane: Mapping[str, Any]) -> bool:
         return True
     if not isinstance(lane_def_ref, str) or not lane_def_ref:
         raise ValueError("inventory lane_def_ref must be a non-empty string")
-    lane_def = load_json(resolve_registered_path(lane_def_ref))
+    lane_def = yaml.safe_load(resolve_registered_path(lane_def_ref).read_text(encoding="utf-8"))
     if not isinstance(lane_def, Mapping):
         raise ValueError(f"lane definition must be an object: {lane_def_ref}")
     return lane_def.get("status") == "accepted"

@@ -1608,6 +1608,7 @@
       },
       "kind": "target_support",
       "lane_id": "pi_p5_l2_extension_session_residual",
+      "lane_def_ref": "config/e4_lanes/pi_p5_l2_extension_session_residual.yaml",
       "ledger_feature_ids": [
         "feat_38725eb172b28cb1"
       ],
