@@ -226,15 +226,15 @@ async def test_v1_count_and_age_boundary_gaps_are_typed_before_stream_headers(
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-        list_response = await client.get("/v1/sessions")
         count_response = await client.get(
             f"/v1/sessions/{count_record.session_id}/events",
             params={"from_id": "1"},
         )
+        assert [event.seq for event in age_record.event_log] == [1]
+        assert age_record.dispatcher_task is None
         age_snapshot_response = await client.get(
             f"/v1/sessions/{age_record.session_id}"
         )
-        assert age_record.dispatcher_task is None
         age_response = await client.get(
             f"/v1/sessions/{age_record.session_id}/events",
             params={"from_id": "1"},
@@ -262,15 +262,46 @@ async def test_v1_count_and_age_boundary_gaps_are_typed_before_stream_headers(
     assert age_snapshot_response.status_code == 200
     assert age_snapshot_response.json()["earliestRetainedSequence"] is None
     assert age_snapshot_response.json()["retainedHistory"] == "partial"
-    assert list_response.status_code == 200
-    listed_age = next(
-        item for item in list_response.json() if item["session_id"] == age_record.session_id
-    )
-    assert listed_age["earliestRetainedSequence"] is None
-    assert listed_age["retainedHistory"] == "partial"
 
     await _stop_dispatcher(count_record)
     await _stop_dispatcher(age_record)
+
+@pytest.mark.asyncio
+async def test_v1_list_prunes_expired_history_without_starting_dispatcher(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now_ms = 2_000_000_000_000
+    monkeypatch.setattr(service_module.time, "time", lambda: now_ms / 1000)
+    registry = SessionRegistry()
+    service = SessionService(registry)
+    record = SessionRecord(
+        session_id="list-age-boundary",
+        status=SessionStatus.COMPLETED,
+        event_seq=1,
+    )
+    record.event_log.append(
+        _logged_event(
+            record.session_id,
+            1,
+            created_at=now_ms - REPLAY_RETENTION_MAX_AGE_MS - 1,
+        )
+    )
+    await registry.create(record)
+    app = create_app(service, include_atp_routes=False)
+    assert [event.seq for event in record.event_log] == [1]
+    assert record.dispatcher_task is None
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.get("/v1/sessions")
+
+    assert response.status_code == 200
+    listed = next(
+        item for item in response.json() if item["session_id"] == record.session_id
+    )
+    assert listed["earliestRetainedSequence"] is None
+    assert listed["retainedHistory"] == "partial"
+    assert record.dispatcher_task is None
 
 
 @pytest.mark.asyncio
