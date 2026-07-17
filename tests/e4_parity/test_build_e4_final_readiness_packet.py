@@ -125,6 +125,48 @@ def _patch_ct_artifacts(monkeypatch: Any, paths: dict[str, Path]) -> None:
     monkeypatch.setattr(builder, "CT_MATRIX_SYNC_SUMMARY_PATH", paths["summary"])
 
 
+def test_managed_score_rows_include_retired_inventory_producers(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        builder,
+        "_inventory",
+        lambda: {
+            "lanes": [
+                {"status": "accepted", "score_row_id": "score_current"},
+                {"status": "superseded", "score_row_id": "score_retired"},
+            ]
+        },
+    )
+
+    assert builder.managed_score_row_ids() == {
+        "score_current",
+        "score_retired",
+        builder.P8_SCORE_ROW_ID,
+    }
+
+
+def test_retired_scored_lanes_use_hash_bound_frozen_validators() -> None:
+    retired_lanes = [
+        lane
+        for lane in builder._scored_lanes()
+        if lane.get("status") != "accepted"
+    ]
+
+    assert retired_lanes
+    for lane in retired_lanes:
+        validator_path = builder._lane_node_gate_path(lane)
+        validator = json.loads(validator_path.read_text(encoding="utf-8"))
+
+        assert validator_path.name == "frozen_c4_validation_report.json"
+        assert validator["ok"] is True
+        assert validator["accepted"] is True
+        assert validator["hashes"]["support_claim"] == builder.sha256_path(
+            builder._lane_support_claim_path(lane)
+        )
+        assert validator["hashes"]["evidence_manifest"] == builder.sha256_path(
+            builder._lane_evidence_manifest_path(lane)
+        )
+
+
 def test_prune_stale_current_artifacts_drops_missing_repo_relative_path(
     tmp_path: Path,
     monkeypatch: Any,

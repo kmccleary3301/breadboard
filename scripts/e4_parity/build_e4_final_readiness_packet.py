@@ -141,31 +141,33 @@ def _inventory() -> dict[str, Any]:
     return lane_inventory.load_inventory(INVENTORY_PATH)
 
 
+def _inventory_lanes() -> tuple[dict[str, Any], ...]:
+    return tuple(lane for lane in _inventory()["lanes"] if isinstance(lane, dict))
+
+
 def _accepted_lanes() -> tuple[dict[str, Any], ...]:
-    lanes = _inventory()["lanes"]
-    return tuple(lane for lane in lanes if isinstance(lane, dict) and lane.get("status") == "accepted")
+    return tuple(lane for lane in _inventory_lanes() if lane.get("status") == "accepted")
 
 
 def _accounted_lanes() -> tuple[dict[str, Any], ...]:
-    lanes = _inventory()["lanes"]
     return tuple(
         lane
-        for lane in lanes
-        if isinstance(lane, dict)
-        and (lane.get("status") == "accepted" or lane.get("evidence_status") == "accepted")
+        for lane in _inventory_lanes()
+        if lane.get("status") == "accepted" or lane.get("evidence_status") == "accepted"
     )
 
 
 def _scored_lanes() -> tuple[dict[str, Any], ...]:
-    """Return accepted lanes that participate in the Phase-16 score authority."""
-    return tuple(lane for lane in _accepted_lanes() if int(lane.get("points", 0)) > 0)
+    """Return evidence-accounted lanes that participate in Phase-16 score authority."""
+    return tuple(lane for lane in _accounted_lanes() if int(lane.get("points", 0)) > 0)
 
 
 def _lanes_by_kind(kind: str) -> tuple[dict[str, Any], ...]:
     return tuple(lane for lane in _scored_lanes() if lane.get("kind") == kind)
 
+
 def _accepted_lane_points(kind: str | None = None) -> int:
-    lanes = _accepted_lanes() if kind is None else _lanes_by_kind(kind)
+    lanes = _scored_lanes() if kind is None else _lanes_by_kind(kind)
     return sum(int(lane.get("points", 0)) for lane in lanes)
 
 
@@ -196,6 +198,16 @@ def _lane_evidence_manifest_path(lane: Mapping[str, Any]) -> Path:
 
 
 def _lane_node_gate_path(lane: Mapping[str, Any]) -> Path:
+    if lane.get("status") != "accepted" and lane.get("evidence_status") == "accepted":
+        artifacts_root = lane.get("artifacts_root")
+        if not isinstance(artifacts_root, str) or not artifacts_root:
+            raise RuntimeError(
+                f"retired inventory lane {lane.get('lane_id')!r} missing artifacts_root"
+            )
+        return _resolve_read_reference(
+            f"{artifacts_root}/frozen_c4_validation_report.json",
+            label=f"retired lane {lane.get('lane_id')!r} frozen node gate",
+        )
     return _resolve_read_reference(
         _lane_arg(lane, "--json-out"),
         label=f"lane {lane.get('lane_id')!r} node gate",
@@ -225,7 +237,7 @@ def _projected_score_rows() -> list[dict[str, Any]]:
         if isinstance(row, Mapping) and isinstance(row.get("score_row_id"), str)
     }
     rows = [dict(row) for row in subledger.get("score_rows", []) if isinstance(row, Mapping) and row.get("score_row_id") not in managed_score_row_ids()]
-    for lane in _accepted_lanes():
+    for lane in _scored_lanes():
         row_id = _lane_score_row_id(lane)
         existing = existing_by_score_row_id.get(row_id)
         rows.append(build_lane_score_row(lane, existing if isinstance(existing, Mapping) else None))
@@ -554,23 +566,27 @@ def ref(path: Path) -> str:
 
 
 def accepted_support_claim_paths() -> list[Path]:
-    return [_lane_support_claim_path(lane) for lane in _accepted_lanes()]
+    return [_lane_support_claim_path(lane) for lane in _scored_lanes()]
 
 
 def accepted_evidence_manifest_paths() -> list[Path]:
-    return [_lane_evidence_manifest_path(lane) for lane in _accepted_lanes()]
+    return [_lane_evidence_manifest_path(lane) for lane in _scored_lanes()]
 
 
 def accepted_node_gate_paths() -> list[Path]:
-    return [_lane_node_gate_path(lane) for lane in _accepted_lanes()]
+    return [_lane_node_gate_path(lane) for lane in _scored_lanes()]
 
 
 def managed_score_row_ids() -> set[str]:
-    return {_lane_score_row_id(lane) for lane in _accepted_lanes()} | {P8_SCORE_ROW_ID}
+    return {
+        score_row_id
+        for lane in _inventory_lanes()
+        if isinstance((score_row_id := lane.get("score_row_id")), str) and score_row_id
+    } | {P8_SCORE_ROW_ID}
 
 
 def c4_validator_paths() -> list[tuple[Path, str]]:
-    return [(_lane_node_gate_path(lane), _validator_ref_key(lane)) for lane in _accepted_lanes()]
+    return [(_lane_node_gate_path(lane), _validator_ref_key(lane)) for lane in _scored_lanes()]
 
 
 def builder_ref_paths() -> dict[str, str]:
@@ -708,7 +724,7 @@ def write_blocked_final_outputs(errors: list[str]) -> dict[str, Any]:
 
 
 def upsert_c4_artifacts(payload: dict[str, Any], list_key: str) -> None:
-    for lane in _accepted_lanes():
+    for lane in _scored_lanes():
         role_prefix = str(lane["lane_id"])
         upsert_artifact_list(payload, list_key, _lane_support_claim_path(lane), f"{role_prefix}_support_claim")
         upsert_artifact_list(payload, list_key, _lane_evidence_manifest_path(lane), f"{role_prefix}_evidence_manifest")
@@ -1036,7 +1052,7 @@ def update_score_subledger() -> dict[str, Any]:
         if isinstance(row, Mapping) and isinstance(row.get("score_row_id"), str)
     }
     rows = [row for row in subledger["score_rows"] if row.get("score_row_id") not in managed_score_row_ids()]
-    for lane in _accepted_lanes():
+    for lane in _scored_lanes():
         row_id = _lane_score_row_id(lane)
         existing = existing_by_score_row_id.get(row_id)
         rows.append(build_lane_score_row(lane, existing if isinstance(existing, Mapping) else None))
@@ -1050,7 +1066,7 @@ def update_score_subledger() -> dict[str, Any]:
     subledger["notes"] = [
         "Rows with kind=non_target_accounting are not target-support claims.",
         "Rows with kind=target_support_claim map one accepted support claim to one exact score row, ledger row refs, and a live node_gate validator ref.",
-        f"Inventory-backed accepted non-target lanes contribute {_accepted_lane_points('non_target_accounting')} non-target C4 lineage points.",
+        f"Inventory-backed evidence-accounted non-target lanes contribute {_accepted_lane_points('non_target_accounting')} non-target C4 lineage points.",
         f"Inventory-backed target-support lanes contribute {expected_target_support_points()} exact-scope target-support points.",
         "P8 contributes 35 final-readiness points after all weighted E4 items validate at 1000/1000.",
     ]
@@ -1410,7 +1426,7 @@ def write_final_manifest() -> dict[str, Any]:
         (CT_MATRIX_SYNC_SUMMARY_MD_PATH, "ct_matrix_sync_summary_md_e4_1000"),
         *[(path, role) for path, role in c4_validator_paths()],
     ]
-    for lane in _accepted_lanes():
+    for lane in _scored_lanes():
         role_prefix = str(lane["lane_id"])
         artifact_paths.append((_lane_support_claim_path(lane), f"{role_prefix}_support_claim"))
         artifact_paths.append((_lane_evidence_manifest_path(lane), f"{role_prefix}_evidence_manifest"))
