@@ -46,7 +46,7 @@
     {
       "path": "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:a1c79716cc152963d7f38ee052b623a2e01b32b1c3884b0ef3b8a2cf7acf7560"
+      "sha256": "sha256:18d81b5d6519a94a75eeb720e901ea0c0268990517d501a0defa040c460aff52"
     },
     {
       "derived_from": [
@@ -71,7 +71,7 @@
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     }
   ],
   "claim_id": "claude_code_haiku45_north_star_capture_v1_c4_support_claim",

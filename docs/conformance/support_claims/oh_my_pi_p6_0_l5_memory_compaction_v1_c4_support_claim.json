@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 13,
-    "segment_hash": "sha256:c6d9c145a39fcc60d3f8811aa36831dc7cfb44f2d5688db5c670c966ea185d24",
+    "catalog_revision": 15,
+    "segment_hash": "sha256:19ecc93926860f765530d3acdfe9a4299f84e5694249a7b97ac0ac6ca14ab475",
     "segment_id": "oh_my_pi_p6_0_l5_memory_compaction",
-    "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
+    "shared_segment_hash": "sha256:03b50e5fa7f2fcc39310deeea9fd1b1ad0248602ef180c1aa480d9491284f3d3"
   },
   "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
   "claim_semantics": {

@@ -13,47 +13,47 @@
     {
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json",
       "role": "target_probe_output",
-      "sha256": "sha256:40a66641b1850f63f1ca3362dea39cbd77a482e43b9d58ee57ed71ad612a272e"
+      "sha256": "sha256:bfdae4856b420f94f56962bb99cf48a4e47e08ada369d7ad32c0c798972a9b02"
     },
     {
       "derived_from": [
         "agent_configs/atp_hilbert_like_gpt54_v1.yaml#sha256:210358b767fae2ba93f7c22100980b4335c99456b8d29fe2fabbf665972fc470",
-        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json#sha256:40a66641b1850f63f1ca3362dea39cbd77a482e43b9d58ee57ed71ad612a272e",
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json#sha256:bfdae4856b420f94f56962bb99cf48a4e47e08ada369d7ad32c0c798972a9b02",
         "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json#sha256:691e22260f4a083e88469c155658afa0e4681a83b2e2f68f199abca8147c7548",
         "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.kernel_event.v2.jsonl#sha256:4a4fe71c21e31c96bbc0213858c01575973f9ef8f5a2993b358fc5fdc0b41758",
         "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/records/bb.session_transcript.v2.jsonl#sha256:af6e3902fbfa9bcd14781c7e619eb3134e62fa7f8f1cf00b6a419a8d3d3d8672"
       ],
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:8515d0352fc769e79dcf622311b094828431760e45c7031f72056d6522471dd4"
+      "sha256": "sha256:c0dc180790883c7aac8b69d7a031f2e9e5bf7b7bb6d8eb44b711176f6959b406"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:8515d0352fc769e79dcf622311b094828431760e45c7031f72056d6522471dd4",
-        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json#sha256:40a66641b1850f63f1ca3362dea39cbd77a482e43b9d58ee57ed71ad612a272e"
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:c0dc180790883c7aac8b69d7a031f2e9e5bf7b7bb6d8eb44b711176f6959b406",
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json#sha256:bfdae4856b420f94f56962bb99cf48a4e47e08ada369d7ad32c0c798972a9b02"
       ],
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:9a2a1c377235053ecc53fcaf2a31358d1488724d1a0b51170440c4e21c8e6e2d"
+      "sha256": "sha256:eedabe9fd505c1566702f401fd7e3cb61736e9de53eaf42bc00bc04958dc3048"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:8515d0352fc769e79dcf622311b094828431760e45c7031f72056d6522471dd4",
-        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json#sha256:9a2a1c377235053ecc53fcaf2a31358d1488724d1a0b51170440c4e21c8e6e2d",
-        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json#sha256:40a66641b1850f63f1ca3362dea39cbd77a482e43b9d58ee57ed71ad612a272e"
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json#sha256:c0dc180790883c7aac8b69d7a031f2e9e5bf7b7bb6d8eb44b711176f6959b406",
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json#sha256:eedabe9fd505c1566702f401fd7e3cb61736e9de53eaf42bc00bc04958dc3048",
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json#sha256:bfdae4856b420f94f56962bb99cf48a4e47e08ada369d7ad32c0c798972a9b02"
       ],
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:6c90b0d8e88de5df32c8d4a2827e05432d7da0e40c4e759a9e6e117ec5acba36"
+      "sha256": "sha256:31d2015ed299409bb09515c8be51fab5568a297fe83d1aad29ae70c8cdcf9595"
     },
     {
       "path": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:075c07c6155e5415dec8c1a6ef8477fdaa07d8f7084ebf42943cf2f68157152d"
+      "sha256": "sha256:e310ba705cd640e7f419a2a6f09e8ed2396267b62b2ac82391eabfacb71f7f53"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json#sha256:6c90b0d8e88de5df32c8d4a2827e05432d7da0e40c4e759a9e6e117ec5acba36"
+        "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json#sha256:31d2015ed299409bb09515c8be51fab5568a297fe83d1aad29ae70c8cdcf9595"
       ],
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/parity_results.json",
       "role": "parity_results",
@@ -74,7 +74,7 @@
       "exists": true,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role": "atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
     },
     {
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/runtime_records/manifest.json",
