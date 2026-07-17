@@ -31,22 +31,22 @@
   "config_id": "pi_p5_l2_extension_session_residual_v1",
   "error_count": 0,
   "errors": [],
-  "evidence_manifest": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+  "evidence_manifest": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_evidence_manifest.json",
   "gate_errors": [],
   "hashes": {
-    "evidence_manifest": "sha256:a8c3b21e6725b48769325cad91e30b808db81ff96823993c295a9d8a98f695de",
+    "evidence_manifest": "sha256:d1c8010491f2c07564bc4518ba94fb489fd99f459102109ad7e2728595090d0e",
     "freeze_manifest": "sha256:de628cd1c653dca7a011c3953f678f1c630c73b1647dd673801ddbeaa037d0e5",
     "freeze_manifest_row": "sha256:34b38f0eb690e8940d6b8c6bd8cf623c795f9239fab75343f1aea3b46bdc1d6f",
-    "support_claim": "sha256:7dc01670aa11fa7a7cccacea4c5513c0f9fc15a27c2934eb123c4b2d141d43d2"
+    "support_claim": "sha256:dcff72423049f786bd82f63ae9bf4bcccc9ee7e698165e414b6c2b899badca7b"
   },
   "ok": true,
   "pin_stale_count": 0,
   "refs": {
-    "evidence_manifest": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+    "evidence_manifest": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_evidence_manifest.json",
     "freeze_manifest": "breadboard_repo_integration_main_20260326/config/e4_target_freeze_manifest.yaml",
-    "support_claim": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json"
+    "support_claim": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_support_claim.json"
   },
   "schema_version": "bb.e4.c4_chain_validation_report.v1",
   "semantic_count": 0,
-  "support_claim": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json"
+  "support_claim": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_support_claim.json"
 }
