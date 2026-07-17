@@ -190,6 +190,8 @@ def _lane_def_reverify_stages(
     previous = depends_on
     for lane_id in sorted(lane_defs):
         lane_def = lane_defs[lane_id]
+        if lane_def.get("status") != "accepted":
+            continue
         command = lane_def.get("reverify_command")
         argv = command.get("argv") if isinstance(command, dict) else None
         if not (isinstance(argv, list) and all(isinstance(item, str) for item in argv)):

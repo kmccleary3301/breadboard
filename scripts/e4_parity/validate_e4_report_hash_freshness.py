@@ -190,8 +190,21 @@ def _accepted_inventory_lanes() -> tuple[dict[str, Any], ...]:
     return tuple(lane for lane in lanes if isinstance(lane, dict) and lane.get("status") == "accepted")
 
 
+def _accounted_inventory_lanes() -> tuple[dict[str, Any], ...]:
+    inventory = lane_inventory.load_inventory(INVENTORY_PATH)
+    lanes = inventory.get("lanes")
+    if not isinstance(lanes, list):
+        raise ValueError(f"{INVENTORY_PATH} must contain lanes list")
+    return tuple(
+        lane
+        for lane in lanes
+        if isinstance(lane, dict)
+        and (lane.get("status") == "accepted" or lane.get("evidence_status") == "accepted")
+    )
+
+
 def _inventory_non_target_claim_count() -> int:
-    return sum(1 for lane in _accepted_inventory_lanes() if lane.get("kind") == "non_target_accounting")
+    return sum(1 for lane in _accounted_inventory_lanes() if lane.get("kind") == "non_target_accounting")
 
 
 def _lane_ct_output(lane: Mapping[str, Any]) -> str:
