@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import os
@@ -11,6 +12,7 @@ import secrets
 import stat
 import threading
 import time
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +26,7 @@ from .events import (
     REPLAY_RETENTION_MAX_AGE_MS,
     REPLAY_RETENTION_MAX_EVENTS,
     SNAPSHOT_RECOVERY_ACTION,
+    replay_configuration_digest,
 )
 from .models import (
     ErrorEnvelope,
@@ -42,6 +45,9 @@ P30_SESSION_CONTRACT_SCHEMA_VERSION = "bb.p30.e4_session.v1"
 # This value is intentionally fixed. A landed session-schema change makes readiness
 # false until the contract change is explicitly reviewed and this digest is updated.
 P30_SESSION_SCHEMA_SHA256 = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+P30_SESSION_REPLAY_CONTRACT_DIGEST = (
+    "sha256:a107aea87bdc7075d68495d3c0bf2b68e85e38a2b2fef1000bf3f1eaee77f743"
+)
 ENGINE_LAUNCH_ID_ENV = "BREADBOARD_ENGINE_LAUNCH_ID"
 ENGINE_BOOTSTRAP_FD_ENV = "BREADBOARD_LIFECYCLE_BOOTSTRAP_FD"
 _ENGINE_SOURCE_ROOT = Path(__file__).resolve().parents[2]
@@ -90,6 +96,7 @@ class EngineIdentityConfigError(RuntimeError):
 @dataclass(frozen=True)
 class EngineProcessIdentity:
     pid: int
+    os_process_start_token: str
     engine_instance_id: str
     engine_boot_id: str
     launch_id: str
@@ -247,6 +254,120 @@ def engine_source_artifact_sha256(source_root: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
+@dataclass(frozen=True)
+class _OSProcessStart:
+    token: str
+    started_at_unix: float
+
+
+class _DarwinProcBSDInfo(ctypes.Structure):
+    _fields_ = [
+        ("pbi_flags", ctypes.c_uint32),
+        ("pbi_status", ctypes.c_uint32),
+        ("pbi_xstatus", ctypes.c_uint32),
+        ("pbi_pid", ctypes.c_uint32),
+        ("pbi_ppid", ctypes.c_uint32),
+        ("pbi_uid", ctypes.c_uint32),
+        ("pbi_gid", ctypes.c_uint32),
+        ("pbi_ruid", ctypes.c_uint32),
+        ("pbi_rgid", ctypes.c_uint32),
+        ("pbi_svuid", ctypes.c_uint32),
+        ("pbi_svgid", ctypes.c_uint32),
+        ("rfu_1", ctypes.c_uint32),
+        ("pbi_comm", ctypes.c_char * 16),
+        ("pbi_name", ctypes.c_char * 32),
+        ("pbi_nfiles", ctypes.c_uint32),
+        ("pbi_pgid", ctypes.c_uint32),
+        ("pbi_pjobc", ctypes.c_uint32),
+        ("e_tdev", ctypes.c_uint32),
+        ("e_tpgid", ctypes.c_uint32),
+        ("pbi_nice", ctypes.c_int32),
+        ("pbi_start_tvsec", ctypes.c_uint64),
+        ("pbi_start_tvusec", ctypes.c_uint64),
+    ]
+
+
+def _darwin_process_start(pid: int) -> _OSProcessStart:
+    try:
+        libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
+        proc_pidinfo = libproc.proc_pidinfo
+        proc_pidinfo.argtypes = [
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_uint64,
+            ctypes.c_void_p,
+            ctypes.c_int,
+        ]
+        proc_pidinfo.restype = ctypes.c_int
+        info = _DarwinProcBSDInfo()
+        size = ctypes.sizeof(info)
+        read_size = proc_pidinfo(pid, 3, 0, ctypes.byref(info), size)
+    except (AttributeError, OSError, TypeError, ValueError) as exc:
+        raise EngineIdentityConfigError(
+            "OS process start identity is unavailable"
+        ) from exc
+    if (
+        read_size != size
+        or info.pbi_pid != pid
+        or info.pbi_start_tvsec <= 0
+        or info.pbi_start_tvusec >= 1_000_000
+    ):
+        raise EngineIdentityConfigError("OS process start identity is unavailable")
+    return _OSProcessStart(
+        token=f"darwin:{info.pbi_start_tvsec}:{info.pbi_start_tvusec}",
+        started_at_unix=(
+            float(info.pbi_start_tvsec) + float(info.pbi_start_tvusec) / 1_000_000
+        ),
+    )
+
+
+def _linux_process_start(pid: int) -> _OSProcessStart:
+    try:
+        stat_payload = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+        stat_fields = stat_payload[stat_payload.rindex(")") + 2 :].split()
+        start_ticks = int(stat_fields[19])
+        clock_ticks = int(os.sysconf("SC_CLK_TCK"))
+        boot_id = Path("/proc/sys/kernel/random/boot_id").read_text(
+            encoding="ascii"
+        ).strip()
+        boot_time_line = next(
+            line
+            for line in Path("/proc/stat").read_text(encoding="ascii").splitlines()
+            if line.startswith("btime ")
+        )
+        boot_time = int(boot_time_line.split()[1])
+    except (IndexError, OSError, StopIteration, ValueError) as exc:
+        raise EngineIdentityConfigError(
+            "OS process start identity is unavailable"
+        ) from exc
+    if (
+        start_ticks <= 0
+        or clock_ticks <= 0
+        or re.fullmatch(r"[0-9a-f-]{36}", boot_id) is None
+    ):
+        raise EngineIdentityConfigError("OS process start identity is unavailable")
+    return _OSProcessStart(
+        token=f"linux:{boot_id}:{start_ticks}",
+        started_at_unix=float(boot_time) + float(start_ticks) / float(clock_ticks),
+    )
+
+
+def _read_os_process_start(pid: int) -> _OSProcessStart:
+    if pid <= 0:
+        raise EngineIdentityConfigError("OS process start identity is unavailable")
+    if sys.platform == "darwin":
+        return _darwin_process_start(pid)
+    if sys.platform.startswith("linux"):
+        return _linux_process_start(pid)
+    raise EngineIdentityConfigError("OS process start identity is unavailable")
+
+
+def os_process_start_token(pid: int) -> str:
+    """Return the kernel-derived start token for an extant process."""
+
+    return _read_os_process_start(pid).token
+
+
 def resolve_launch_identity(environ: Mapping[str, str]) -> tuple[str, str]:
     """Resolve supervisor metadata or create an explicit unmanaged fallback."""
 
@@ -261,16 +382,17 @@ def resolve_launch_identity(environ: Mapping[str, str]) -> tuple[str, str]:
 
 
 def _new_process_identity(pid: int) -> EngineProcessIdentity:
-    started_at_unix = time.time()
+    process_start = _read_os_process_start(pid)
     launch_id, launch_source = resolve_launch_identity(os.environ)
     return EngineProcessIdentity(
         pid=pid,
+        os_process_start_token=process_start.token,
         engine_instance_id=secrets.token_urlsafe(32),
         engine_boot_id=secrets.token_urlsafe(32),
         launch_id=launch_id,
         launch_source=launch_source,
-        started_at=datetime.fromtimestamp(started_at_unix, tz=timezone.utc),
-        started_at_unix=started_at_unix,
+        started_at=datetime.fromtimestamp(process_start.started_at_unix, tz=timezone.utc),
+        started_at_unix=process_start.started_at_unix,
         engine_artifact_sha256=engine_source_artifact_sha256(_ENGINE_SOURCE_ROOT),
     )
 

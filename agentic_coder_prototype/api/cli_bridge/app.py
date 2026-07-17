@@ -40,6 +40,7 @@ from .engine_identity_config import (
     P30_SESSION_ROUTE_BINDINGS,
     p30_session_contract_schema,
     get_engine_process_identity,
+    replay_configuration_digest,
 )
 from .models import (
     BeginControlDrainRequest,
@@ -1428,8 +1429,10 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def engine_identity_readiness(
         svc: SessionService = Depends(get_service),
     ) -> EngineIdentityReadinessResponse:
+        session_replay_contract_digest = replay_configuration_digest()
         contract_readiness = svc.p30_session_contract_readiness(
-            _p30_session_contract_descriptor(app, svc)
+            _p30_session_contract_descriptor(app, svc),
+            session_replay_contract_digest=session_replay_contract_digest,
         )
         process_identity = get_engine_process_identity()
         served_backend_commit = ENGINE_PROVENANCE.get("commit")
@@ -1444,6 +1447,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             process=EngineProcessStart(
                 engine_instance_id=process_identity.engine_instance_id,
                 engine_boot_id=process_identity.engine_boot_id,
+                os_process_start_token=process_identity.os_process_start_token,
                 started_at=process_identity.started_at,
                 started_at_unix=process_identity.started_at_unix,
                 pid=process_identity.pid,
@@ -1461,6 +1465,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             session_contract=EngineSessionContractIdentity(
                 contract_id=P30_SESSION_CONTRACT_ID,
                 schema_sha256=P30_SESSION_SCHEMA_SHA256,
+                session_replay_contract_digest=session_replay_contract_digest,
                 compatibility=(
                     "compatible"
                     if contract_readiness.ready

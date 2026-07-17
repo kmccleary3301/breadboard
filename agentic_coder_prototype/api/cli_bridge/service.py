@@ -63,6 +63,7 @@ from .models import (
 )
 from .engine_identity_config import (
     P30_SESSION_SCHEMA_SHA256,
+    P30_SESSION_REPLAY_CONTRACT_DIGEST,
     get_engine_process_identity,
     get_launch_bootstrap_verifier,
     p30_session_schema_sha256,
@@ -157,6 +158,8 @@ class SessionService:
     def p30_session_contract_readiness(
         self,
         contract_descriptor: dict[str, Any],
+        *,
+        session_replay_contract_digest: str,
     ) -> SessionContractReadiness:
         http_contract = contract_descriptor.get("http")
         if not isinstance(http_contract, dict) or http_contract.get("missing_routes"):
@@ -164,7 +167,11 @@ class SessionService:
                 ready=False,
                 reason="session_contract_missing",
             )
-        if p30_session_schema_sha256(contract_descriptor) != P30_SESSION_SCHEMA_SHA256:
+        if (
+            p30_session_schema_sha256(contract_descriptor) != P30_SESSION_SCHEMA_SHA256
+            or session_replay_contract_digest
+            != P30_SESSION_REPLAY_CONTRACT_DIGEST
+        ):
             return SessionContractReadiness(
                 ready=False,
                 reason="session_contract_mismatch",

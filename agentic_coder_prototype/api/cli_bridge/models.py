@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator, validator
 
+from .events import replay_configuration_digest
+
 
 class SessionStatus(str, enum.Enum):
     """Lifecycle marker for a session."""
@@ -97,7 +99,7 @@ class ErrorResponse(ErrorEnvelope):
     pass
 
 class _StrictEngineIdentityModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
 class EngineLiveness(_StrictEngineIdentityModel):
@@ -116,6 +118,12 @@ class EngineProcessStart(_StrictEngineIdentityModel):
         min_length=43,
         max_length=43,
         pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    os_process_start_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]*$",
     )
     started_at: datetime
     started_at_unix: float = Field(..., ge=0)
@@ -147,6 +155,11 @@ class EngineSessionContractIdentity(_StrictEngineIdentityModel):
     schema_sha256: Literal[
         "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
     ] = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    session_replay_contract_digest: str = Field(
+        ...,
+        alias="sessionReplayContractDigest",
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
     compatibility: Literal["compatible", "incompatible"]
 
 
@@ -176,6 +189,12 @@ class EngineIdentityReadinessResponse(_StrictEngineIdentityModel):
         compatible = self.session_contract.compatibility == "compatible"
         if compatible != self.session_readiness.ready:
             raise ValueError("session compatibility and readiness are inconsistent")
+        if (
+            compatible
+            and self.session_contract.session_replay_contract_digest
+            != replay_configuration_digest()
+        ):
+            raise ValueError("session replay contract identity does not match")
         return self
 
 

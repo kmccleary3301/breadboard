@@ -14,6 +14,8 @@ from fastapi.routing import APIRoute
 from pydantic import TypeAdapter, ValidationError
 
 from agentic_coder_prototype.api.cli_bridge.events import SessionEvent
+from agentic_coder_prototype.api.cli_bridge import events as events_module
+from agentic_coder_prototype.api.cli_bridge.events import replay_configuration_digest
 from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord
 from agentic_coder_prototype.api.cli_bridge.app import (
     _compute_engine_provenance,
@@ -24,8 +26,10 @@ from agentic_coder_prototype.api.cli_bridge.engine_identity_config import (
     ENGINE_LAUNCH_ID_ENV,
     P30_SESSION_CONTRACT_ID,
     P30_SESSION_SCHEMA_SHA256,
+    P30_SESSION_REPLAY_CONTRACT_DIGEST,
     engine_source_artifact_sha256,
     get_engine_process_identity,
+    os_process_start_token,
     p30_session_schema_sha256,
 )
 from agentic_coder_prototype.api.cli_bridge.models import EngineIdentityReadinessResponse
@@ -66,6 +70,7 @@ def _identity_subprocess(
         "print(json.dumps({'pid': identity.pid, "
         "'engine_instance_id': identity.engine_instance_id, "
         "'engine_boot_id': identity.engine_boot_id, "
+        "'os_process_start_token': identity.os_process_start_token, "
         "'launch_id': identity.launch_id, "
         "'launch_source': identity.launch_source, "
         "'started_at_unix': identity.started_at_unix, "
@@ -108,6 +113,7 @@ async def test_identity_is_stable_and_exact_within_one_process(tmp_path: Path) -
         "engine_instance_id",
         "engine_boot_id",
         "started_at",
+        "os_process_start_token",
         "started_at_unix",
         "pid",
     }
@@ -117,9 +123,16 @@ async def test_identity_is_stable_and_exact_within_one_process(tmp_path: Path) -
     assert payload["protocol"] == {"protocol_version": "1.0"}
     assert payload["session_contract"] == {
         "contract_id": P30_SESSION_CONTRACT_ID,
+        "sessionReplayContractDigest": P30_SESSION_REPLAY_CONTRACT_DIGEST,
         "schema_sha256": P30_SESSION_SCHEMA_SHA256,
         "compatibility": "compatible",
     }
+    assert payload["session_contract"]["sessionReplayContractDigest"] == (
+        replay_configuration_digest()
+    )
+    assert payload["process"]["os_process_start_token"] == os_process_start_token(
+        payload["process"]["pid"]
+    )
     assert payload["session_readiness"] == {"ready": True, "reason": "ready"}
     EngineIdentityReadinessResponse.model_validate(payload)
 
@@ -175,6 +188,7 @@ if child_pid == 0:
         "pid": child.pid,
         "engine_instance_id": child.engine_instance_id,
         "engine_boot_id": child.engine_boot_id,
+        "os_process_start_token": child.os_process_start_token,
         "started_at_unix": child.started_at_unix,
     }
     os.write(write_fd, json.dumps(payload).encode("utf-8"))
@@ -189,6 +203,7 @@ print(json.dumps({
         "pid": parent.pid,
         "engine_instance_id": parent.engine_instance_id,
         "engine_boot_id": parent.engine_boot_id,
+        "os_process_start_token": parent.os_process_start_token,
         "started_at_unix": parent.started_at_unix,
     },
     "child": child_payload,
@@ -209,6 +224,9 @@ print(json.dumps({
     assert identities["parent"]["pid"] != identities["child"]["pid"]
     assert identities["parent"]["engine_instance_id"] != identities["child"]["engine_instance_id"]
     assert identities["parent"]["engine_boot_id"] != identities["child"]["engine_boot_id"]
+    assert identities["parent"]["os_process_start_token"] != (
+        identities["child"]["os_process_start_token"]
+    )
     assert identities["parent"]["started_at_unix"] != identities["child"]["started_at_unix"]
 
 
@@ -297,6 +315,34 @@ async def test_missing_required_session_route_is_not_ready(tmp_path: Path) -> No
     assert payload["session_readiness"] == {
         "ready": False,
         "reason": "session_contract_missing",
+    }
+
+
+@pytest.mark.asyncio
+async def test_changed_replay_configuration_is_advertised_but_not_ready(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        events_module,
+        "REPLAY_RETENTION_MAX_EVENTS",
+        events_module.REPLAY_RETENTION_MAX_EVENTS + 1,
+    )
+
+    response = await _get_identity(create_app(SessionService(state_root=tmp_path)))
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["session_contract"]["sessionReplayContractDigest"] == (
+        replay_configuration_digest()
+    )
+    assert payload["session_contract"]["sessionReplayContractDigest"] != (
+        P30_SESSION_REPLAY_CONTRACT_DIGEST
+    )
+    assert payload["session_contract"]["compatibility"] == "incompatible"
+    assert payload["session_readiness"] == {
+        "ready": False,
+        "reason": "session_contract_mismatch",
     }
 
 
@@ -556,6 +602,9 @@ async def test_identity_model_rejects_malformed_backend_payloads(tmp_path: Path)
     malformed_payloads.append(extra)
     bad_instance = deepcopy(payload)
     bad_instance["process"]["engine_instance_id"] = "guessable"
+    bad_start_token = deepcopy(payload)
+    bad_start_token["process"]["os_process_start_token"] = ""
+    malformed_payloads.append(bad_start_token)
     malformed_payloads.append(bad_instance)
     wrong_contract = deepcopy(payload)
     wrong_contract["session_contract"]["contract_id"] = "other-contract"
@@ -563,6 +612,11 @@ async def test_identity_model_rejects_malformed_backend_payloads(tmp_path: Path)
     wrong_digest = deepcopy(payload)
     wrong_digest["session_contract"]["schema_sha256"] = "sha256:" + "0" * 64
     malformed_payloads.append(wrong_digest)
+    wrong_replay = deepcopy(payload)
+    wrong_replay["session_contract"]["sessionReplayContractDigest"] = (
+        "sha256:" + "0" * 64
+    )
+    malformed_payloads.append(wrong_replay)
 
     contradictory_states = (
         ("compatible", False, "ready"),

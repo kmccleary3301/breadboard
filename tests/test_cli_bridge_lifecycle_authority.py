@@ -89,6 +89,7 @@ class Clock:
 def identity() -> EngineProcessIdentity:
     return EngineProcessIdentity(
         pid=12345,
+        os_process_start_token="darwin:1000:0",
         engine_instance_id=secrets.token_urlsafe(32),
         engine_boot_id=secrets.token_urlsafe(32),
         launch_id=secrets.token_urlsafe(32),
@@ -1307,6 +1308,82 @@ async def test_sent_signal_or_process_exit_can_never_rollback(outcome: str, expe
         await _rollback_control_drain(registry, drain_control(process_identity, drained.drain_generation))
     assert failure.value.code == "drain_recovery_failed"
     assert registry.authority_snapshot()["session_admission_open"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcome", "expected_result"),
+    [
+        ("sent", "signal_sent"),
+        ("abandoned", "rollback_permitted"),
+        ("process_exited", "process_exited"),
+    ],
+)
+async def test_signal_decision_route_is_typed_secret_safe_and_generation_bound(
+    outcome: str,
+    expected_result: str,
+) -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    drained = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                drained.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    app = create_app(SessionService(registry=registry))
+    client = TestClient(app)
+    operation = app.openapi()["paths"][
+        "/v1/engine/control/signal-decision"
+    ]["post"]
+    request_schema = operation["requestBody"]["content"]["application/json"]["schema"]
+    response_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
+    assert request_schema["$ref"].endswith("/HardSignalDecisionRequest")
+    assert response_schema["$ref"].endswith("/DrainControlResponse")
+
+    request = HardSignalDecisionRequest(
+        **drain_control(process_identity, drained.drain_generation).model_dump(),
+        outcome=outcome,
+    )
+    stale = client.post(
+        "/v1/engine/control/signal-decision",
+        json=request.model_copy(update={"owner_generation": 2}).model_dump(mode="json"),
+        headers={"X-Breadboard-Owner-Credential": OWNER_SECRET},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["error"] == "owner_generation_conflict"
+    assert registry.authority_snapshot()["drain_phase"] == (
+        "hard_signal_decision_pending"
+    )
+
+    response = client.post(
+        "/v1/engine/control/signal-decision",
+        json=request.model_dump(mode="json"),
+        headers={"X-Breadboard-Owner-Credential": OWNER_SECRET},
+    )
+    assert response.status_code == 200
+    assert response.json() == {
+        "schema_version": "bb.engine_drain_control.v1",
+        "engine_instance_id": process_identity.engine_instance_id,
+        "engine_boot_id": process_identity.engine_boot_id,
+        "launch_id": process_identity.launch_id,
+        "result": expected_result,
+        "drain_generation": drained.drain_generation,
+        "admission_epoch": drained.admission_epoch,
+        "session_admission_open": False,
+        "turn_admission_open": False,
+        "registrations_open": False,
+        "signal_permitted": False,
+    }
+    assert OWNER_SECRET not in stale.text
+    assert OWNER_SECRET not in response.text
 
 
 @pytest.mark.asyncio
