@@ -50,6 +50,10 @@ from .models import (
     SessionTurnCancelRequest,
     SessionTurnCancelResponse,
 )
+from .engine_identity_config import (
+    P30_SESSION_SCHEMA_SHA256,
+    p30_session_schema_sha256,
+)
 from .atp_diagnostics import build_atp_harness_diagnostic
 from .registry import (
     SessionRecord,
@@ -93,6 +97,12 @@ def _env_flag(name: str) -> bool:
 
 
 @dataclass(frozen=True)
+class SessionContractReadiness:
+    ready: bool
+    reason: str
+
+
+@dataclass(frozen=True)
 class PreparedEventStream:
     record: SessionRecord
     queue: "asyncio.Queue[Optional[SessionEvent]]"
@@ -126,6 +136,23 @@ class SessionService:
         self._atp_repl_service: Any | None = None
         self._atp_service_initialized = False
         self._atp_runtime_capabilities: dict[str, Any] = {}
+
+    def p30_session_contract_readiness(
+        self,
+        contract_descriptor: dict[str, Any],
+    ) -> SessionContractReadiness:
+        http_contract = contract_descriptor.get("http")
+        if not isinstance(http_contract, dict) or http_contract.get("missing_routes"):
+            return SessionContractReadiness(
+                ready=False,
+                reason="session_contract_missing",
+            )
+        if p30_session_schema_sha256(contract_descriptor) != P30_SESSION_SCHEMA_SHA256:
+            return SessionContractReadiness(
+                ready=False,
+                reason="session_contract_mismatch",
+            )
+        return SessionContractReadiness(ready=True, reason="ready")
 
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
         session_id = str(uuid.uuid4())

@@ -16,23 +16,43 @@ from typing import Any, AsyncIterator, Dict
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.openapi.utils import get_openapi
+
+from fastapi.routing import APIRoute
 
 try:
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
 if load_dotenv is not None:
-    _REPO_ROOT = Path(__file__).resolve().parents[3]
     for _candidate in (_REPO_ROOT / ".env", _REPO_ROOT / ".env.local"):
         if _candidate.exists():
             load_dotenv(_candidate, override=False)
 
 from .events import SessionEvent, PROTOCOL_VERSION
+from .engine_identity_config import (
+    ENGINE_IDENTITY_SCHEMA_VERSION,
+    P30_SESSION_CONTRACT_ID,
+    P30_SESSION_SCHEMA_SHA256,
+    P30_SESSION_ROUTE_BINDINGS,
+    p30_session_contract_schema,
+    get_engine_process_identity,
+)
 from .models import (
     AttachmentUploadResponse,
     ErrorEnvelope,
     ErrorResponse,
+    EngineArtifactRevision,
+    EngineIdentityReadinessResponse,
+    EngineLaunchIdentity,
+    EngineLiveness,
+    EngineProcessStart,
+    EngineProtocolIdentity,
+    EngineSessionContractIdentity,
+    EngineSessionReadiness,
     ModelCatalogResponse,
     ProviderAuthAttachRequest,
     ProviderAuthAttachResponse,
@@ -56,6 +76,7 @@ from .models import (
 from agentic_coder_prototype.api.e4 import create_e4_router
 from agentic_coder_prototype.api.e4.models import E4ApiError
 from .service import SessionService
+from .registry import SessionRecord
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 
@@ -149,7 +170,7 @@ def _drop_legacy_routes(app: FastAPI) -> None:
     ]
 
 
-def _run_git_command(args: list[str], cwd: Path) -> str | None:
+def _run_git_command(args: list[str], cwd: Path, *, allow_empty: bool = False) -> str | None:
     try:
         completed = subprocess.run(
             ["git", *args],
@@ -164,7 +185,7 @@ def _run_git_command(args: list[str], cwd: Path) -> str | None:
     if completed.returncode != 0:
         return None
     value = (completed.stdout or "").strip()
-    return value or None
+    return value if value or allow_empty else None
 
 
 def _compute_engine_provenance(repo_root: Path) -> dict[str, Any]:
@@ -177,7 +198,7 @@ def _compute_engine_provenance(repo_root: Path) -> dict[str, Any]:
     if (repo_root / ".git").exists() or _run_git_command(["rev-parse", "--show-toplevel"], repo_root):
         commit = _run_git_command(["rev-parse", "HEAD"], repo_root)
         branch = _run_git_command(["rev-parse", "--abbrev-ref", "HEAD"], repo_root)
-        status = _run_git_command(["status", "--porcelain"], repo_root)
+        status = _run_git_command(["status", "--porcelain"], repo_root, allow_empty=True)
         revision.update(
             {
                 "commit": commit,
@@ -201,6 +222,142 @@ def _build_engine_identity(app: FastAPI) -> dict[str, Any]:
         "pid": os.getpid(),
         "served_revision": dict(ENGINE_PROVENANCE),
     }
+
+def _p30_session_contract_descriptor(
+    app: FastAPI,
+    service: SessionService,
+) -> dict[str, Any]:
+    document = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    operations: list[dict[str, Any]] = []
+    handler_bindings: list[dict[str, Any]] = []
+    missing_routes: list[str] = []
+    referenced_schemas: set[str] = set()
+
+    def collect_refs(value: Any) -> None:
+        if isinstance(value, dict):
+            reference = value.get("$ref")
+            if isinstance(reference, str) and reference.startswith("#/components/schemas/"):
+                referenced_schemas.add(reference.rsplit("/", 1)[-1])
+            for item in value.values():
+                collect_refs(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect_refs(item)
+
+    for method, path, expected_handler, service_method in P30_SESSION_ROUTE_BINDINGS:
+        matches = [
+            route
+            for route in app.routes
+            if isinstance(route, APIRoute)
+            and route.path == path
+            and method in route.methods
+        ]
+        operation = document.get("paths", {}).get(path, {}).get(method.lower())
+        if len(matches) != 1 or not isinstance(operation, dict):
+            missing_routes.append(f"{method} {path}")
+            continue
+        route = matches[0]
+        http_operation = {
+            "method": method,
+            "path": path,
+            "parameters": operation.get("parameters", []),
+            "requestBody": operation.get("requestBody"),
+            "responses": operation.get("responses", {}),
+        }
+        collect_refs(http_operation)
+        operations.append(http_operation)
+        bound_method = getattr(service, service_method, None)
+        implementation = getattr(bound_method, "__func__", bound_method)
+        expected_implementation = getattr(SessionService, service_method, None)
+        handler_bindings.append(
+            {
+                "method": method,
+                "path": path,
+                "handler": getattr(route.endpoint, "__name__", None),
+                "expected_handler": expected_handler,
+                "service_method": service_method,
+                "binding_exact": implementation is expected_implementation,
+            }
+        )
+
+    prepared_stream = getattr(service, "prepared_event_stream", None)
+    prepared_implementation = getattr(prepared_stream, "__func__", prepared_stream)
+    handler_bindings.append(
+        {
+            "method": "GET",
+            "path": "/v1/sessions/{session_id}/events",
+            "handler": "prepared_event_stream",
+            "expected_handler": "prepared_event_stream",
+            "service_method": "prepared_event_stream",
+            "binding_exact": (
+                prepared_implementation is SessionService.prepared_event_stream
+            ),
+        }
+    )
+    handler_bindings.append(
+        {
+            "method": "GET",
+            "path": "/v1/sessions/{session_id}/events",
+            "handler": getattr(_encode_sse_event, "__name__", None),
+            "expected_handler": "_encode_sse_event",
+            "service_method": None,
+            "serialization": "compact_session_event_asdict_v1",
+            "binding_exact": _encode_sse_event is _P30_SSE_ENCODER,
+        }
+    )
+
+    handler_bindings.append(
+        {
+            "method": "GET",
+            "path": "/v1/sessions/{session_id}/events",
+            "handler": "SessionEvent.asdict",
+            "expected_handler": "SessionEvent.asdict",
+            "service_method": None,
+            "serialization": "session_event_envelope_v1",
+            "binding_exact": SessionEvent.asdict is _P30_SESSION_EVENT_ASDICT,
+        }
+    )
+
+    handler_bindings.append(
+        {
+            "method": "GET",
+            "path": "/v1/sessions/{session_id}",
+            "handler": "SessionRecord.to_summary",
+            "expected_handler": "SessionRecord.to_summary",
+            "service_method": None,
+            "serialization": "retained_session_summary_v1",
+            "binding_exact": SessionRecord.to_summary is _P30_SESSION_RECORD_TO_SUMMARY,
+        }
+    )
+
+    schemas = document.get("components", {}).get("schemas", {})
+    pending = list(referenced_schemas)
+    while pending:
+        schema_name = pending.pop()
+        schema = schemas.get(schema_name)
+        if not isinstance(schema, dict):
+            continue
+        before = set(referenced_schemas)
+        collect_refs(schema)
+        pending.extend(sorted(referenced_schemas - before))
+
+    return p30_session_contract_schema(
+        http_contract={
+            "operations": operations,
+            "schemas": {
+                name: schemas[name]
+                for name in sorted(referenced_schemas)
+                if name in schemas
+            },
+            "missing_routes": missing_routes,
+            "delivery_chaos_config": getattr(
+                app.state,
+                "p30_session_chaos_config",
+                None,
+            ),
+        },
+        handler_bindings=handler_bindings,
+    )
 
 
 def _configured_extension_enabled(config: Dict[str, Any] | None, ext_id: str) -> bool | None:
@@ -257,6 +414,9 @@ def _encode_sse_event(event: SessionEvent) -> bytes:
     payload = json.dumps(event.asdict(), separators=(",", ":"))
     cursor_line = f"id: {event.seq}\n" if event.stable_cursor and event.seq is not None else ""
     return f"{cursor_line}data: {payload}\n\n".encode("utf-8")
+_P30_SSE_ENCODER = _encode_sse_event
+_P30_SESSION_EVENT_ASDICT = SessionEvent.asdict
+_P30_SESSION_RECORD_TO_SUMMARY = SessionRecord.to_summary
 
 
 def create_app(service: SessionService | None = None, include_atp_routes: bool | None = None) -> FastAPI:
@@ -305,6 +465,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             tags=["e4"],
         )
     chaos_config = _load_chaos_config()
+    app.state.p30_session_chaos_config = chaos_config
     required_token = (os.environ.get("BREADBOARD_API_TOKEN") or "").strip()
     extension_config = None
     mounted_extensions: list[str] = []
@@ -968,6 +1129,58 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def download_artifact(session_id: str, artifact: str, svc: SessionService = Depends(get_service)):
         path = await svc.resolve_artifact_path(session_id, artifact)
         return FileResponse(path)
+
+    @app.get(
+        "/v1/engine/identity",
+        response_model=EngineIdentityReadinessResponse,
+    )
+    async def engine_identity_readiness(
+        svc: SessionService = Depends(get_service),
+    ) -> EngineIdentityReadinessResponse:
+        contract_readiness = svc.p30_session_contract_readiness(
+            _p30_session_contract_descriptor(app, svc)
+        )
+        process_identity = get_engine_process_identity()
+        served_backend_commit = ENGINE_PROVENANCE.get("commit")
+        if not isinstance(served_backend_commit, str) or len(served_backend_commit) != 40:
+            served_backend_commit = None
+        served_backend_dirty = ENGINE_PROVENANCE.get("dirty")
+        if not isinstance(served_backend_dirty, bool):
+            served_backend_dirty = None
+        return EngineIdentityReadinessResponse(
+            schema_version=ENGINE_IDENTITY_SCHEMA_VERSION,
+            liveness=EngineLiveness(),
+            process=EngineProcessStart(
+                engine_instance_id=process_identity.engine_instance_id,
+                engine_boot_id=process_identity.engine_boot_id,
+                started_at=process_identity.started_at,
+                started_at_unix=process_identity.started_at_unix,
+                pid=process_identity.pid,
+            ),
+            launch=EngineLaunchIdentity(
+                launch_id=process_identity.launch_id,
+                source=process_identity.launch_source,
+            ),
+            artifact_revision=EngineArtifactRevision(
+                engine_artifact_sha256=process_identity.engine_artifact_sha256,
+                served_backend_commit=served_backend_commit,
+                served_backend_dirty=served_backend_dirty,
+            ),
+            protocol=EngineProtocolIdentity(protocol_version=PROTOCOL_VERSION),
+            session_contract=EngineSessionContractIdentity(
+                contract_id=P30_SESSION_CONTRACT_ID,
+                schema_sha256=P30_SESSION_SCHEMA_SHA256,
+                compatibility=(
+                    "compatible"
+                    if contract_readiness.ready
+                    else "incompatible"
+                ),
+            ),
+            session_readiness=EngineSessionReadiness(
+                ready=contract_readiness.ready,
+                reason=contract_readiness.reason,
+            ),
+        )
 
     if atp_routes_enabled:
         from .atp_router import build_atp_router

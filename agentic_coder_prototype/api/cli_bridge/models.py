@@ -6,7 +6,7 @@ import enum
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, validator
 
 
 class SessionStatus(str, enum.Enum):
@@ -95,6 +95,88 @@ class ErrorResponse(ErrorEnvelope):
     """Backward-compatible OpenAPI name for legacy response declarations."""
 
     pass
+
+class _StrictEngineIdentityModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class EngineLiveness(_StrictEngineIdentityModel):
+    status: Literal["live"] = "live"
+
+
+class EngineProcessStart(_StrictEngineIdentityModel):
+    engine_instance_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    engine_boot_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    started_at: datetime
+    started_at_unix: float = Field(..., ge=0)
+    pid: int = Field(..., ge=1)
+
+
+class EngineLaunchIdentity(_StrictEngineIdentityModel):
+    launch_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    source: Literal["supervisor", "external_unmanaged"]
+
+
+class EngineArtifactRevision(_StrictEngineIdentityModel):
+    engine_artifact_sha256: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    served_backend_commit: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    served_backend_dirty: Optional[bool] = None
+
+
+class EngineProtocolIdentity(_StrictEngineIdentityModel):
+    protocol_version: Literal["1.0"] = "1.0"
+
+
+class EngineSessionContractIdentity(_StrictEngineIdentityModel):
+    contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
+    schema_sha256: Literal[
+        "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    ] = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    compatibility: Literal["compatible", "incompatible"]
+
+
+class EngineSessionReadiness(_StrictEngineIdentityModel):
+    ready: bool
+    reason: Literal["ready", "session_contract_missing", "session_contract_mismatch"]
+
+    @model_validator(mode="after")
+    def _validate_readiness_reason(self) -> "EngineSessionReadiness":
+        if self.ready != (self.reason == "ready"):
+            raise ValueError("session readiness and reason are inconsistent")
+        return self
+
+
+class EngineIdentityReadinessResponse(_StrictEngineIdentityModel):
+    schema_version: Literal["bb.engine_identity.v1"] = "bb.engine_identity.v1"
+    liveness: EngineLiveness
+    process: EngineProcessStart
+    launch: EngineLaunchIdentity
+    artifact_revision: EngineArtifactRevision
+    protocol: EngineProtocolIdentity
+    session_contract: EngineSessionContractIdentity
+    session_readiness: EngineSessionReadiness
+
+    @model_validator(mode="after")
+    def _validate_contract_state(self) -> "EngineIdentityReadinessResponse":
+        compatible = self.session_contract.compatibility == "compatible"
+        if compatible != self.session_readiness.ready:
+            raise ValueError("session compatibility and readiness are inconsistent")
+        return self
 
 
 class AttachmentHandle(BaseModel):
