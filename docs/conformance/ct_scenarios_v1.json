@@ -5561,8 +5561,8 @@
         "scripts/e4_parity/validate_frozen_e4_evidence.py",
         "--validation-report",
         "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_validation_report.json",
-        "--validation-report-sha256",
-        "sha256:4303af2d4fd8ae2d629bac06ab06cf22817edc36b064b4204895f08b650273f2",
+        "--retired-evidence-pins",
+        "config/e4_retired_evidence_pins.json",
         "--json-out",
         "artifacts/conformance/node_gate/ct_frozen_oh_my_pi_p3_7_memory_work_compiler.json"
       ],
@@ -5769,8 +5769,8 @@
         "scripts/e4_parity/validate_frozen_e4_evidence.py",
         "--validation-report",
         "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_validation_report.json",
-        "--validation-report-sha256",
-        "sha256:6a7447053d471958515936e453b3d0027266d1afa1fb39e02f5a5a13b1ec0014",
+        "--retired-evidence-pins",
+        "config/e4_retired_evidence_pins.json",
         "--json-out",
         "artifacts/conformance/node_gate/ct_frozen_pi_p5_l2_extension_session_residual.json"
       ],

@@ -92,16 +92,13 @@
   "reverify_command": {
     "argv": [
       ".venv/bin/python",
-      "scripts/validate_e4_c4_chain.py",
-      "--config-id",
-      "oh_my_pi_p3_7_memory_work_compiler_v1",
-      "--support-claim",
-      "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
-      "--evidence-manifest",
-      "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+      "scripts/e4_parity/validate_frozen_e4_evidence.py",
+      "--validation-report",
+      "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_validation_report.json",
+      "--retired-evidence-pins",
+      "config/e4_retired_evidence_pins.json",
       "--json-out",
-      "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json",
-      "--check-only"
+      "artifacts/conformance/node_gate/ct_frozen_oh_my_pi_p3_7_memory_work_compiler.json"
     ],
     "cwd": "."
   },

@@ -34,10 +34,10 @@
   "evidence_manifest": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_evidence_manifest.json",
   "gate_errors": [],
   "hashes": {
-    "evidence_manifest": "sha256:a757449994dca9cd844940f6dc638df73a5e2cfbeb5fc9f7031c2d783c5a3575",
+    "evidence_manifest": "sha256:425f9f55c2a1b63576af8910e765259da134c06bec7922b5c65887a0ef990d8e",
     "freeze_manifest": "sha256:bec77f0821ff03f790536a728229e6fb892be6eae11e1f5f294279f3042c8999",
     "freeze_manifest_row": "sha256:368abb149bb533f7fc7396a4143e7a03f1cd18db1a7bde95d98c8bc556c245e3",
-    "support_claim": "sha256:228fc4ed2ac0779742702c344fd564ef6f782634c1ecec83249ed745b22ef216"
+    "support_claim": "sha256:93a2430cd5e07faadd537ff7c9e27c0fb065ff8a69f5e161b3b2d663211ed822"
   },
   "ok": true,
   "pin_stale_count": 0,

@@ -253,18 +253,21 @@ def validate(
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate a hash-bound frozen E4 evidence chain.")
     parser.add_argument("--validation-report", required=True)
-    parser.add_argument("--validation-report-sha256", required=True)
+    hash_source = parser.add_mutually_exclusive_group(required=True); hash_source.add_argument("--validation-report-sha256"); hash_source.add_argument("--retired-evidence-pins")
     parser.add_argument("--json-out", required=True)
     args = parser.parse_args(argv)
-    output = Path(args.json_out)
-    if not output.is_absolute():
-        output = ROOT / output
+    output = Path(args.json_out); output = output if output.is_absolute() else ROOT / output
+    expected_hash = args.validation_report_sha256
     try:
         report_path = _resolve(args.validation_report, label="frozen validation report")
-        result = validate(
-            report_path,
-            expected_validation_report_hash=args.validation_report_sha256,
-        )
+        if args.retired_evidence_pins:
+            pins = _load_json(_resolve(args.retired_evidence_pins, label="retired evidence pins")); scope = _load_json(report_path).get("claimed_scope")
+            lane_id = scope.get("lane_id") if isinstance(scope, Mapping) else None; pin = pins.get("lanes", {}).get(lane_id) if isinstance(pins.get("lanes"), Mapping) else None
+            if not isinstance(pin, Mapping): raise ValueError(f"retired evidence pin for lane {lane_id!r} is missing")
+            if pin.get("validation_report") != args.validation_report: raise ValueError("retired evidence pin validation_report does not match the requested report")
+            expected_hash = pin.get("sha256")
+        if not isinstance(expected_hash, str): raise ValueError("frozen validation report hash source did not provide a digest")
+        result = validate(report_path, expected_validation_report_hash=expected_hash)
     except (FileNotFoundError, OSError, ReferenceResolutionError, ValueError, json.JSONDecodeError) as exc:
         result = {
             "schema_version": "bb.e4.frozen_evidence_validation.v1",
@@ -274,7 +277,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "claimed_scope": {},
             "validation_report": args.validation_report,
             "validation_report_hash": None,
-            "expected_validation_report_hash": args.validation_report_sha256,
+            "expected_validation_report_hash": expected_hash,
             "validated_paths": {},
         }
     output.parent.mkdir(parents=True, exist_ok=True)

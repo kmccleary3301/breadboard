@@ -29,10 +29,10 @@
   "evidence_manifest": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json",
   "gate_errors": [],
   "hashes": {
-    "evidence_manifest": "sha256:eb1f68f8a1fc3185c922570d2fdf5fdcc589fd9b9a1e5d23d3a9463caf3e4ec7",
+    "evidence_manifest": "sha256:255519f1c99681e490c0459c21362a0ba38fb63640953bd6c515eca3df835ca2",
     "freeze_manifest": "sha256:5eb46e9bb2601b71aef89b50e8a8f7816f8174585d7fd9a92767037374e361e7",
     "freeze_manifest_row": "sha256:f931b518016ae1c13d2d1389ec59595b79b79e6360a979e310605421c407c9c6",
-    "support_claim": "sha256:e503f86220f14d4a1f346e34b931eaad4aede6ab44b17ce6086d59a90b28964f"
+    "support_claim": "sha256:9bc13276d9c8c8739649b6c660e15049e8fea979344ca0952ac388da1477021b"
   },
   "ok": true,
   "pin_stale_count": 0,

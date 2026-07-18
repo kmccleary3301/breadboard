@@ -118,8 +118,8 @@ def test_lane_inventory_row_reports_retired_producer_and_uses_frozen_evidence(
         "scripts/e4_parity/validate_frozen_e4_evidence.py",
         "--validation-report",
         report,
-        "--validation-report-sha256",
-        digest,
+        "--retired-evidence-pins",
+        "config/e4_retired_evidence_pins.json",
         "--json-out",
         "artifacts/conformance/node_gate/ct_frozen_oh_my_pi_p9_demo.json",
     ]

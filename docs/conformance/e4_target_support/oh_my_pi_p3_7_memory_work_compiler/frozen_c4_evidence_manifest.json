@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:e503f86220f14d4a1f346e34b931eaad4aede6ab44b17ce6086d59a90b28964f"
+      "sha256": "sha256:9bc13276d9c8c8739649b6c660e15049e8fea979344ca0952ac388da1477021b"
     },
     {
       "derived_from": [
