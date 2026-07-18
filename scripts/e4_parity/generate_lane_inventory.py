@@ -19,6 +19,8 @@ ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
 SCORE_SUBLEDGER_PATH = WORKSPACE / "docs_tmp" / "phase_15" / "BB_E4_SCORE_SUBLEDGER.json"
 _SCORE_SUBLEDGER_CACHE: dict[str, Any] | None = None
+RETIRED_EVIDENCE_PINS_PATH = ROOT / "config" / "e4_retired_evidence_pins.json"
+_RETIRED_EVIDENCE_PINS_CACHE: dict[str, Any] | None = None
 GENERATED_AT_UTC = "2026-07-07T00:25:00Z"
 
 _MANIFEST_ROLE_TO_INVENTORY_KEY = {
@@ -37,9 +39,19 @@ def _flag_value(argv: Sequence[Any], flag: str) -> str | None:
     return None
 
 
-def _artifact_roles(lane_id: str, reverify: Mapping[str, Any]) -> dict[str, str]:
+def _artifact_roles(
+    lane_id: str,
+    reverify: Mapping[str, Any],
+    *,
+    manifest_path: str | None = None,
+) -> dict[str, str]:
     argv = reverify.get("argv")
-    manifest_path = _flag_value(argv, "--evidence-manifest") if isinstance(argv, Sequence) else None
+    if manifest_path is None:
+        manifest_path = (
+            _flag_value(argv, "--evidence-manifest")
+            if isinstance(argv, Sequence)
+            else None
+        )
     role_keys = {"evidence_manifest", "node_gate"}
     if manifest_path and (ROOT / manifest_path).exists():
         manifest_file = ROOT / manifest_path
@@ -63,15 +75,6 @@ def _support_claim_path(reverify: Mapping[str, Any]) -> str | None:
     argv = reverify.get("argv")
     return _flag_value(argv, "--support-claim") if isinstance(argv, Sequence) else None
 
-
-def _support_claim(reverify: Mapping[str, Any]) -> Mapping[str, Any]:
-    path = _support_claim_path(reverify)
-    if path is None:
-        return {}
-    if not (ROOT / path).exists():
-        return {}
-    payload = json.loads((ROOT / path).read_text(encoding="utf-8"))
-    return payload if isinstance(payload, Mapping) else {}
 
 
 def _score_row_for_support_claim(support_claim_path: str | None) -> Mapping[str, Any]:
@@ -165,13 +168,79 @@ def _reverify_command(lane_def: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _load_retired_evidence_pins() -> Mapping[str, Any]:
+    global _RETIRED_EVIDENCE_PINS_CACHE
+    if _RETIRED_EVIDENCE_PINS_CACHE is None:
+        payload = json.loads(RETIRED_EVIDENCE_PINS_PATH.read_text(encoding="utf-8"))
+        if payload.get("schema_version") != "bb.e4.retired_evidence_pins.v1":
+            raise ValueError("retired evidence pins have an unsupported schema version")
+        pins = payload.get("lanes")
+        if not isinstance(pins, Mapping):
+            raise ValueError("retired evidence pins must contain a lanes object")
+        _RETIRED_EVIDENCE_PINS_CACHE = dict(pins)
+    return _RETIRED_EVIDENCE_PINS_CACHE
+
+
+def _frozen_evidence_binding(
+    lane_id: str,
+) -> tuple[dict[str, Any], str, str]:
+    pin = _load_retired_evidence_pins().get(lane_id)
+    if not isinstance(pin, Mapping):
+        raise ValueError(f"retired lane {lane_id!r} is missing a frozen evidence pin")
+    validation_report = pin.get("validation_report")
+    digest = pin.get("sha256")
+    if not isinstance(validation_report, str) or not validation_report:
+        raise ValueError(f"retired lane {lane_id!r} has an invalid frozen validation report path")
+    if not isinstance(digest, str) or not digest.startswith("sha256:") or len(digest) != 71:
+        raise ValueError(f"retired lane {lane_id!r} has an invalid frozen validation report hash")
+    report = json.loads((ROOT / validation_report).read_text(encoding="utf-8"))
+    support_claim_path = report.get("support_claim")
+    evidence_manifest_path = report.get("evidence_manifest")
+    if not isinstance(support_claim_path, str) or not support_claim_path:
+        raise ValueError(f"retired lane {lane_id!r} frozen report is missing support_claim")
+    if not isinstance(evidence_manifest_path, str) or not evidence_manifest_path:
+        raise ValueError(f"retired lane {lane_id!r} frozen report is missing evidence_manifest")
+    command = {
+        "argv": [
+            ".venv/bin/python",
+            "scripts/e4_parity/validate_frozen_e4_evidence.py",
+            "--validation-report",
+            validation_report,
+            "--validation-report-sha256",
+            digest,
+            "--json-out",
+            f"artifacts/conformance/node_gate/ct_frozen_{lane_id}.json",
+        ],
+        "cwd": ".",
+    }
+    return command, support_claim_path, evidence_manifest_path
+
+
 def lane_inventory_row(lane_def: Mapping[str, Any]) -> dict[str, Any]:
     lane_id = str(lane_def["lane_id"])
     config_id = str(lane_def["config_id"])
-    reverify = _reverify_command(lane_def)
+    source_reverify = _reverify_command(lane_def)
+    retained_evidence_status = lane_def.get("claim", {}).get("status")
+    evidence_manifest_path: str | None = None
+    if lane_def["status"] != "accepted" and retained_evidence_status == "accepted":
+        reverify, support_claim_path, evidence_manifest_path = (
+            _frozen_evidence_binding(lane_id)
+        )
+    else:
+        reverify = source_reverify
+        support_claim_path = _support_claim_path(source_reverify)
     ct_argv = [item for item in reverify["argv"] if item != "--check-only"]
-    support_claim_path = _support_claim_path(reverify)
-    support_claim = _support_claim(reverify)
+    if support_claim_path and (ROOT / support_claim_path).exists():
+        support_claim_payload = json.loads(
+            (ROOT / support_claim_path).read_text(encoding="utf-8")
+        )
+        support_claim = (
+            support_claim_payload
+            if isinstance(support_claim_payload, Mapping)
+            else {}
+        )
+    else:
+        support_claim = {}
     score_row = _score_row_for_support_claim(support_claim_path)
     ledger_feature_ids = _feature_ids_from_refs(score_row.get("ledger_row_refs")) or _feature_ids_from_refs(support_claim.get("ledger_row_refs"))
     if not ledger_feature_ids:
@@ -205,12 +274,15 @@ def lane_inventory_row(lane_def: Mapping[str, Any]) -> dict[str, Any]:
             "command": {"argv": ct_argv, "cwd": reverify["cwd"]},
         },
         "reverify_command": reverify,
-        "artifact_roles": _artifact_roles(lane_id, reverify),
+        "artifact_roles": _artifact_roles(
+            lane_id,
+            source_reverify,
+            manifest_path=evidence_manifest_path,
+        ),
         "ledger_feature_ids": ledger_feature_ids,
         "score_row_id": score_row.get("score_row_id", ""),
         "artifacts_root": lane_def.get("artifacts_root"),
     }
-    retained_evidence_status = lane_def.get("claim", {}).get("status")
     if isinstance(retained_evidence_status, str) and retained_evidence_status != lane_def["status"]:
         row["evidence_status"] = retained_evidence_status
     return row

@@ -702,15 +702,13 @@
         "command": {
           "argv": [
             ".venv/bin/python",
-            "scripts/validate_e4_c4_chain.py",
-            "--config-id",
-            "oh_my_pi_p3_7_memory_work_compiler_v1",
-            "--support-claim",
-            "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
-            "--evidence-manifest",
-            "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+            "scripts/e4_parity/validate_frozen_e4_evidence.py",
+            "--validation-report",
+            "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_validation_report.json",
+            "--validation-report-sha256",
+            "sha256:98d3837c6575b078ecfcf8092bba9a46b9427cfb59209f2fcf985154dfa748dd",
             "--json-out",
-            "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json"
+            "artifacts/conformance/node_gate/ct_frozen_oh_my_pi_p3_7_memory_work_compiler.json"
           ],
           "cwd": "."
         },
@@ -732,16 +730,13 @@
       "reverify_command": {
         "argv": [
           ".venv/bin/python",
-          "scripts/validate_e4_c4_chain.py",
-          "--config-id",
-          "oh_my_pi_p3_7_memory_work_compiler_v1",
-          "--support-claim",
-          "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
-          "--evidence-manifest",
-          "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+          "scripts/e4_parity/validate_frozen_e4_evidence.py",
+          "--validation-report",
+          "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_validation_report.json",
+          "--validation-report-sha256",
+          "sha256:98d3837c6575b078ecfcf8092bba9a46b9427cfb59209f2fcf985154dfa748dd",
           "--json-out",
-          "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json",
-          "--check-only"
+          "artifacts/conformance/node_gate/ct_frozen_oh_my_pi_p3_7_memory_work_compiler.json"
         ],
         "cwd": "."
       },
@@ -1591,15 +1586,13 @@
         "command": {
           "argv": [
             ".venv/bin/python",
-            "scripts/validate_e4_c4_chain.py",
-            "--config-id",
-            "pi_p5_l2_extension_session_residual_v1",
-            "--support-claim",
-            "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
-            "--evidence-manifest",
-            "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+            "scripts/e4_parity/validate_frozen_e4_evidence.py",
+            "--validation-report",
+            "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_validation_report.json",
+            "--validation-report-sha256",
+            "sha256:6a7447053d471958515936e453b3d0027266d1afa1fb39e02f5a5a13b1ec0014",
             "--json-out",
-            "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json"
+            "artifacts/conformance/node_gate/ct_frozen_pi_p5_l2_extension_session_residual.json"
           ],
           "cwd": "."
         },
@@ -1624,16 +1617,13 @@
       "reverify_command": {
         "argv": [
           ".venv/bin/python",
-          "scripts/validate_e4_c4_chain.py",
-          "--config-id",
-          "pi_p5_l2_extension_session_residual_v1",
-          "--support-claim",
-          "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
-          "--evidence-manifest",
-          "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+          "scripts/e4_parity/validate_frozen_e4_evidence.py",
+          "--validation-report",
+          "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_validation_report.json",
+          "--validation-report-sha256",
+          "sha256:6a7447053d471958515936e453b3d0027266d1afa1fb39e02f5a5a13b1ec0014",
           "--json-out",
-          "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json",
-          "--check-only"
+          "artifacts/conformance/node_gate/ct_frozen_pi_p5_l2_extension_session_residual.json"
         ],
         "cwd": "."
       },
