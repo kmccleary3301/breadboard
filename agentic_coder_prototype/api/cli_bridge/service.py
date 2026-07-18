@@ -25,7 +25,7 @@ from .models import (
 )
 from .atp_diagnostics import build_atp_harness_diagnostic
 from .registry import SessionRecord, SessionRegistry
-from .session_runner import SessionRunner
+from .session_runner import MAX_INLINE_ATTACHMENT_BYTES, SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from ...compilation.v2_loader import load_agent_config
 from ...compilation.effective_operation_policy import policy_pack_for_config_authority
@@ -539,11 +539,14 @@ class SessionService:
         if not runner: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
         workspace_dir = runner.get_workspace_dir()
         if not workspace_dir: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workspace not ready")
-        staged_uploads = []
+        staged_uploads = []; staged_bytes = 0
         for index, upload in enumerate(files, start=1):
             try: data = await upload.read()
             except Exception as exc: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"failed to read upload: {exc}") from exc
-            if data: staged_uploads.append((index, upload, data))
+            if data:
+                staged_bytes += len(data)
+                if staged_bytes > MAX_INLINE_ATTACHMENT_BYTES: raise HTTPException(status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=f"attachments exceed {MAX_INLINE_ATTACHMENT_BYTES}-byte inline handoff limit")
+                staged_uploads.append((index, upload, data))
         if not staged_uploads: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no attachment data found")
         attachment_entries: list[dict[str, Any]] = []; handles: list[AttachmentHandle] = []; created_dirs: list[str] = []; created_refs = set()
         anchor, workspace_root, descriptor, windows_handles = _open_workspace_breadboard(workspace_dir); artifact_fd = attachment_fd = None

@@ -44,6 +44,7 @@ from .models import SessionCreateRequest, SessionStatus
 from .registry import SessionRecord, SessionRegistry
 logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
+MAX_INLINE_ATTACHMENT_BYTES = 16 * 1024
 _PERMISSION_ALIASES = {alias: decision for decision, aliases in {
     "once": "once allow approve approved ok okay yes y allow-once allow_once", "always": "always allow-always allow_always",
     "reject": "reject deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop",
@@ -245,12 +246,14 @@ class SessionRunner:
         if not content or not content.strip():
             raise ValueError("input content must not be empty")
         content = self._sanitize_interactive_input_content(content)
-        attachment_ids = [item.strip() for item in (attachments or []) if isinstance(item, str) and item.strip()]
+        attachment_ids = list(dict.fromkeys(item.strip() for item in (attachments or []) if isinstance(item, str) and item.strip()))
         payload = {"content": content, "attachments": attachment_ids}
         with self._product_session_lock:
             artifacts = getattr(self.session, "product_artifacts", {})
             unknown = [item for item in attachment_ids if not isinstance(artifacts, dict) or item not in artifacts]
             if unknown: raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
+            total_bytes = sum(int(getattr(artifacts[item], "size_bytes", MAX_INLINE_ATTACHMENT_BYTES + 1)) for item in attachment_ids)
+            if total_bytes > MAX_INLINE_ATTACHMENT_BYTES: raise ValueError(f"selected attachments exceed {MAX_INLINE_ATTACHMENT_BYTES}-byte inline handoff limit")
             product_session = getattr(self.session, "product_session", None)
             if product_session is not None:
                 product_session.input(content, [artifacts[item] for item in attachment_ids])

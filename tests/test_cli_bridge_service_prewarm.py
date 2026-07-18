@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from breadboard.product.runtime import ports as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
 from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
 from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.api.cli_bridge.service import SessionService
+from agentic_coder_prototype.api.cli_bridge.session_runner import MAX_INLINE_ATTACHMENT_BYTES
 from agentic_coder_prototype.api.cli_bridge.runtime_emission import _tool_names
 from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides; from agentic_coder_prototype.compilation.v2_loader import load_agent_config
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
@@ -182,6 +183,16 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     assert raced_upload.attachments and await service.registry.get(response.session_id) is None and manifest_path.is_file() and record.dispatcher_task.done()
     with pytest.raises(HTTPException) as missing: await service.ensure_session(response.session_id)
     assert missing.value.status_code == 404
+@pytest.mark.asyncio
+async def test_attachment_size_limit_is_rejected_before_durable_input(monkeypatch, tmp_path) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path, workspace=str(tmp_path / "workspace")); oversized = _Upload(); oversized.data = b"x" * (MAX_INLINE_ATTACHMENT_BYTES + 1); before = (record.product_session.events, dict(record.product_artifacts), record.runner._input_queue.qsize())
+    with pytest.raises(HTTPException) as upload_error: await service.upload_attachments(response.session_id, [oversized])
+    assert upload_error.value.status_code == 413 and before == (record.product_session.events, record.product_artifacts, record.runner._input_queue.qsize())
+    first = _Upload(); first.data = b"a" * (MAX_INLINE_ATTACHMENT_BYTES // 2 + 1); second = _Upload(); second.data = b"b" * (MAX_INLINE_ATTACHMENT_BYTES // 2 + 1)
+    first_id = (await service.upload_attachments(response.session_id, [first])).attachments[0].id; second_id = (await service.upload_attachments(response.session_id, [second])).attachments[0].id; events = record.product_session.events
+    with pytest.raises(HTTPException) as selection_error: await service.send_input(response.session_id, SessionInputRequest(content="inspect", attachments=[first_id, second_id]))
+    assert selection_error.value.status_code == 400 and record.product_session.events == events and record.runner._input_queue.empty()
+    await _stop(record)
 @pytest.mark.asyncio
 async def test_attachment_storage_rejects_workspace_symlink_escape(monkeypatch, tmp_path) -> None:
     if os.name == "nt": pytest.skip("symlink privilege is not portable on Windows")
