@@ -2819,7 +2819,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 231320,
+      "bytes": 225537,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2827,7 +2827,7 @@
       "media_type": null,
       "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:atomic_feature_ledger",
-      "sha256": "sha256:0d01e52aff3f738ceaefc585a654e0da28df4910113535c96bcc81a84ec37205"
+      "sha256": "sha256:b60182dc5a4eaf6221dad2cff690365ec0c89ae5884d3267ce099f873d9a93b1"
     },
     {
       "artifact_kind": "capture",
@@ -2880,7 +2880,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:evidence_manifest",
-      "sha256": "sha256:a1399b711fc7bf52a9c257172e015b2cd60a4ed48ae3d185c924f24b3b8cbef6"
+      "sha256": "sha256:03fba8bf085277acb4a9aa8feb86c22e265a45b5976e769c8d42af660385ed85"
     },
     {
       "artifact_kind": "freeze",
@@ -2918,7 +2918,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:node_gate",
-      "sha256": "sha256:a042cc90c59c6064b517743eda1e1599ff88224a6ddfbb3a1692aa36fbe9caa1"
+      "sha256": "sha256:d153baa4925b53e5e19dbdf6a6a1d66c990f200ba89b351af2ba496d7b32ef01"
     },
     {
       "artifact_kind": "parity_results",
@@ -2983,7 +2983,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:support_claim",
-      "sha256": "sha256:6c6099c0b630810b895a31ee73cad21f66d52330f29c60a3e5dcd9432ad9a54e"
+      "sha256": "sha256:f7fa281fa11c6677927d1f8c70a8479db622ea505bc508b0029ace59ce8639cd"
     },
     {
       "artifact_kind": "node_gate",
@@ -3448,12 +3448,12 @@
   ],
   "generated_at_utc": "2026-07-03T00:00:00Z",
   "integrity": {
-    "entries_hash": "sha256:71c56bf607f52d3ba0d0fc77da4ccc7b0d69d458d9d01a5b075fae399de7252e",
+    "entries_hash": "sha256:1527f668d91370513279f7da7c7964ca453c464128c4755f7d87592c080ef1b1",
     "entry_count": 265,
-    "segments_hash": "sha256:308bbe5a596d240a6dd46bda2f5f8d9e177ffae2026e54b9d42ac51e3ced38c3",
-    "stable_entries_hash": "sha256:ef31c9d911781e7b9dea4e4b6fffda9dacee88322720f10c2aab9beb7b8fca37"
+    "segments_hash": "sha256:c4434db764defd532c9bc7afee6cf3b40cd037634c80c98c92452bfa11543654",
+    "stable_entries_hash": "sha256:45ba69186e3831e3598b05e3e083cf21dd2793483477fb61843f10ffffeef3d0"
   },
-  "revision": 13,
+  "revision": 14,
   "schema_version": "bb.e4.artifact_catalog.v2",
   "segments": [
     {
@@ -3553,10 +3553,10 @@
       "stable_entries_hash": "sha256:0fedfd8dc2878de0839203551d04c84f08f6d4bc9ae74a0baed5105880a9da37"
     },
     {
-      "entries_hash": "sha256:d5cce761c2f81dfa7f65ab662d524886354736bf5b8861fe00592f7c1b6dbaa1",
+      "entries_hash": "sha256:e2d0ddf68d722422d7978ba62d1ec5687ebf8046a59b53fe5aa4fa9d833d245e",
       "entry_count": 19,
       "segment_id": "oh_my_pi_p6_6_task_job_subagent",
-      "stable_entries_hash": "sha256:f75fc511e99a1b81e0ab1dac50b7c6cf3d386f26fd77f2900b2d6ce93ec4a186"
+      "stable_entries_hash": "sha256:e945a356f0b23f38747078e342000bfc482a3631790007dbcd3492b4725a5df0"
     },
     {
       "entries_hash": "sha256:7473025d955b1c09c3b20a81eb652aef7f4d199d4f04cd1e196a1b9b66467215",

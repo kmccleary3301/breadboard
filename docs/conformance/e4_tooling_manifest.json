@@ -45,10 +45,10 @@
       "sha256": "sha256:83ba2212147904d5ab25a2f096610b01d274ca9eaec795d933ae043e3530e25c"
     },
     {
-      "bytes": 50350,
+      "bytes": 50266,
       "path": "scripts/e4_parity/adapters/pi_p5_l2_capture.py",
       "role_id": "e4_static:script/pi_p5_l2_capture_adapter",
-      "sha256": "sha256:4f87c0441e05527c8f3cbe7a7690467027f2e718be6b9a5817141d16e8422e51"
+      "sha256": "sha256:826e05b88556bbb7bcca7d4887b784b0b10516fb2233aa2daaf24fbc4a9d71b6"
     },
     {
       "bytes": 64906,

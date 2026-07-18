@@ -1987,7 +1987,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 231320,
+      "bytes": 225537,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -1995,7 +1995,7 @@
       "media_type": null,
       "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:atomic_feature_ledger",
-      "sha256": "sha256:0d01e52aff3f738ceaefc585a654e0da28df4910113535c96bcc81a84ec37205"
+      "sha256": "sha256:b60182dc5a4eaf6221dad2cff690365ec0c89ae5884d3267ce099f873d9a93b1"
     },
     {
       "artifact_kind": "capture",
@@ -2460,12 +2460,12 @@
   ],
   "generated_at_utc": "2026-07-03T00:00:00Z",
   "integrity": {
-    "entries_hash": "sha256:ef31c9d911781e7b9dea4e4b6fffda9dacee88322720f10c2aab9beb7b8fca37",
+    "entries_hash": "sha256:45ba69186e3831e3598b05e3e083cf21dd2793483477fb61843f10ffffeef3d0",
     "entry_count": 189,
-    "segments_hash": "sha256:d01a2c637cd60d429d090e3e554feb6ab0b590c1f0b89fd06ef68526325fe266",
-    "stable_entries_hash": "sha256:ef31c9d911781e7b9dea4e4b6fffda9dacee88322720f10c2aab9beb7b8fca37"
+    "segments_hash": "sha256:1cfe8454b96c9c1bd859a2dc64dec8da6563603274b7f2bfbf3617ffeaa0962b",
+    "stable_entries_hash": "sha256:45ba69186e3831e3598b05e3e083cf21dd2793483477fb61843f10ffffeef3d0"
   },
-  "revision": 15,
+  "revision": 16,
   "schema_version": "bb.e4.artifact_catalog.v2",
   "segments": [
     {
@@ -2565,10 +2565,10 @@
       "stable_entries_hash": "sha256:0fedfd8dc2878de0839203551d04c84f08f6d4bc9ae74a0baed5105880a9da37"
     },
     {
-      "entries_hash": "sha256:f75fc511e99a1b81e0ab1dac50b7c6cf3d386f26fd77f2900b2d6ce93ec4a186",
+      "entries_hash": "sha256:e945a356f0b23f38747078e342000bfc482a3631790007dbcd3492b4725a5df0",
       "entry_count": 15,
       "segment_id": "oh_my_pi_p6_6_task_job_subagent",
-      "stable_entries_hash": "sha256:f75fc511e99a1b81e0ab1dac50b7c6cf3d386f26fd77f2900b2d6ce93ec4a186"
+      "stable_entries_hash": "sha256:e945a356f0b23f38747078e342000bfc482a3631790007dbcd3492b4725a5df0"
     },
     {
       "entries_hash": "sha256:bfb92a701404218b185ed97ea238ad175ed043ce2ae5f76ebefe3c16a9d2b7a2",
