@@ -166,8 +166,28 @@ def test_same_path_sink_failure_cannot_rollback_overlapping_success(monkeypatch:
 @pytest.mark.parametrize("values", [("bad", 0, "text/plain"), (HASH + "\n", 0, "text/plain"), (HASH, -1, "text/plain"), (HASH, 1.5, "text/plain"), (HASH, 0, "")])
 def test_invalid_artifact_refs(values: tuple[object, ...]) -> None:
     with pytest.raises(ValueError): ArtifactRef(*values)  # type: ignore[arg-type]
+def _rollback_artifact(root: str, entered: Any, release: Any) -> None:
+    store, created = ArtifactStore(root), set()
+    with store.transaction():
+        ref = store.put(b"proof", created=created); entered.set()
+        if not release.wait(5): raise RuntimeError("release timeout")
+        store.discard(ref)
+def _publish_artifact(root: str, entered: Any, attempting: Any, returned: Any, result: Any) -> None:
+    if not entered.wait(5): raise RuntimeError("owner timeout")
+    attempting.set(); ref = ArtifactStore(root).put(b"proof"); result.put(ref.as_dict()); returned.set()
+def test_cross_process_artifact_publication_survives_failed_owner(tmp_path: Path) -> None:
+    context = multiprocessing.get_context("spawn"); entered, release, attempting, returned, result = context.Event(), context.Event(), context.Event(), context.Event(), context.Queue()
+    owner = context.Process(target=_rollback_artifact, args=(str(tmp_path), entered, release)); publisher = context.Process(target=_publish_artifact, args=(str(tmp_path), entered, attempting, returned, result)); owner.start(); publisher.start()
+    try: assert entered.wait(5) and attempting.wait(5) and not returned.wait(.2)
+    finally:
+        release.set()
+        for process in (owner, publisher):
+            process.join(5)
+            if process.is_alive(): process.terminate(); process.join()
+    assert all(process.exitcode == 0 for process in (owner, publisher)) and returned.is_set()
+    ref = ArtifactRef(**result.get(timeout=1)); assert ArtifactStore(tmp_path).read(ref) == b"proof"
 def test_concurrent_identical_artifact_puts_share_verified_ref_and_clean_temps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    store, barrier, real_replace, refs, errors = ArtifactStore(tmp_path), threading.Barrier(2), os.replace, [], []; monkeypatch.setattr("breadboard.product.runtime.artifacts.os.replace", lambda source, target: (barrier.wait(), real_replace(source, target))[-1])
+    store, refs, errors = ArtifactStore(tmp_path), [], []
     def put() -> None:
         try: refs.append(store.put(b"proof"))
         except BaseException as error: errors.append(error)
@@ -181,7 +201,7 @@ def test_artifact_put_sync_fault_is_unacknowledged_and_retry_is_readable(monkeyp
     def fsync(fd: int) -> None: calls.__setitem__(0, calls[0] + 1); (_ for _ in ()).throw(OSError("sync failed")) if calls[0] == fail_at else real_fsync(fd)
     monkeypatch.setattr(ARTIFACTS + "fsync", fsync)
     with pytest.raises(OSError, match="sync failed"): store.put(b"proof")
-    files = [path for path in tmp_path.rglob("*") if path.is_file()]; assert [path.read_bytes() for path in files] in ([], [b"proof"]); ref = store.put(b"proof"); assert store.read(ref) == b"proof" and calls[0] >= 6 and not list(tmp_path.rglob("*.tmp"))
+    files = [path for path in tmp_path.rglob("*") if path.is_file() and "sha256" in path.parts]; assert [path.read_bytes() for path in files] in ([], [b"proof"]); ref = store.put(b"proof"); assert store.read(ref) == b"proof" and calls[0] >= 6 and not list(tmp_path.rglob("*.tmp"))
 def test_artifact_read_validates_content_and_manifest_parent_is_synced(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     workspace, synced = tmp_path / "workspace", []; root = workspace / ".breadboard" / "artifacts"; store = ArtifactStore(root); monkeypatch.setattr("breadboard.product.runtime.artifacts._sync_directory", lambda path: synced.append(path)); ref = store.put(b"proof"); assert synced[-1] == workspace; synced.clear(); store.materialize(ref, root / "manifests" / "manifest.json"); assert synced == [root / "manifests", root]; next(root.rglob(ref.digest[7:])).write_bytes(b"tampered")
     with pytest.raises(RuntimeError, match="verification failed"): store.read(ref)

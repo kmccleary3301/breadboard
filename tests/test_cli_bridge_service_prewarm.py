@@ -164,24 +164,28 @@ async def test_start_publication_boundaries_are_invisible_and_retryable(monkeypa
 @pytest.mark.parametrize("shared_root", [False, True])
 def test_startup_removes_incomplete_and_recovers_committed_projection(monkeypatch, tmp_path, shared_root) -> None:
     records_root = tmp_path / "records"; events_root = records_root if shared_root else tmp_path / "events"; monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root))
-    for path in (records_root / "incomplete", events_root / "incomplete", records_root / ".staged.records.starting", events_root / "staged", records_root / ".committed.records.starting", records_root / "committed", events_root / "committed", events_root / ".other.events.starting", records_root / "recoverable", events_root / ".recoverable.events.starting"): path.mkdir(parents=True, exist_ok=True)
+    for path in (records_root / "incomplete", events_root / "incomplete", records_root / ".staged.records.starting", events_root / "staged", records_root / "..crash.records.starting.dead.start-owner", events_root / "..crash.events.starting.dead.start-owner", records_root / ".committed.records.starting", records_root / "committed", events_root / "committed", events_root / ".other.events.starting", records_root / "recoverable", events_root / ".recoverable.events.starting"): path.mkdir(parents=True, exist_ok=True)
     (records_root / "incomplete" / ".start.pending").write_text("incomplete\n"); (records_root / "committed" / ".start.pending").write_text("committed\n"); (records_root / "committed" / ".start.committed").write_text("committed\n"); (events_root / "committed" / "session_events.jsonl").write_text("{}\n"); (records_root / "recoverable" / ".start.committed").write_text("recoverable\n"); (events_root / ".recoverable.events.starting" / "session_events.jsonl").write_text('{"kind":"session.started"}\n'); SessionService()
     assert {path.name for path in records_root.iterdir()} == {"committed", "recoverable"} and {path.name for path in events_root.iterdir()} == {"committed", "recoverable"} and (records_root / "committed" / ".start.committed").is_file() and (events_root / "recoverable" / "session_events.jsonl").is_file()
 @pytest.mark.asyncio
 async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(monkeypatch, tmp_path) -> None:
     Upload = _Upload
     workspace = tmp_path / "workspace"; service, response, record = await _create(monkeypatch, tmp_path, workspace=str(workspace))
-    uploaded = await service.upload_attachments(response.session_id, [Upload()]); attachment_id = uploaded.attachments[0].id
+    upload = Upload(); upload.filename = "résumé.txt"; uploaded = await service.upload_attachments(response.session_id, [upload]); attachment_id = uploaded.attachments[0].id
     digest = record.metadata["artifact_manifest_ref"]["digest"].removeprefix("sha256:"); manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.{digest}.json"; manifest = json.loads(manifest_path.read_text()); assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == digest; empty = Upload(); empty.data = b""; attachment_root = workspace / ".breadboard" / "attachments"; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata), {path.name for path in attachment_root.iterdir()})
     attachment_path = next((attachment_root / attachment_id).iterdir()); attachment_path.write_bytes(b"tampered")
-    with pytest.raises(RuntimeError, match="attachment verification failed"): record.runner._format_attachment_helper([attachment_id])
-    attachment_path.write_bytes(b"proof")
-    assert record.product_artifacts[attachment_id].digest in record.runner._format_attachment_helper([attachment_id])
+    assert record.product_artifacts[attachment_id].digest in record.runner._format_attachment_helper([attachment_id]) and attachment_path.read_bytes() == b"proof"
     empty_error, missing_error = await asyncio.gather(service.upload_attachments(response.session_id, [empty]), service.send_input(response.session_id, SessionInputRequest(content="use it", attachments=["missing"])), return_exceptions=True)
     assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata, {path.name for path in attachment_root.iterdir()}) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
+    cas_root = workspace / ".breadboard" / "artifacts" / "sha256"; cas_before = {path.relative_to(cas_root): path.read_bytes() for path in cas_root.rglob("*") if path.is_file()}
     real_put, calls = ArtifactStore.put, []; monkeypatch.setattr(ArtifactStore, "put", lambda store, *args, **kwargs: (_ for _ in ()).throw(OSError("write failed")) if (calls.append(1) or len(calls) == 2) else real_put(store, *args, **kwargs))
     with pytest.raises(OSError, match="write failed"): await service.upload_attachments(response.session_id, [Upload(), Upload()])
     assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata, {path.name for path in attachment_root.iterdir()})
+    assert cas_before == {path.relative_to(cas_root): path.read_bytes() for path in cas_root.rglob("*") if path.is_file()}
+    if os.name != "nt":
+        outside, attachment_dir = tmp_path / "outside-helper", attachment_path.parent; outside.mkdir(); attachment_path.unlink(); attachment_dir.rmdir(); attachment_dir.symlink_to(outside, target_is_directory=True)
+        with pytest.raises(OSError): record.runner._format_attachment_helper([attachment_id])
+        assert not list(outside.iterdir())
     await service.delete_session(response.session_id); assert await service.registry.get(response.session_id) is None and manifest_path.is_file() and record.dispatcher_task.done()
     with pytest.raises(HTTPException) as missing: await service.ensure_session(response.session_id)
     assert missing.value.status_code == 404

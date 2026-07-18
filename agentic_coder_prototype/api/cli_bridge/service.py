@@ -114,6 +114,7 @@ class SessionService:
         self._atp_repl_service: Any | None = None
         self._atp_service_initialized = False
         self._atp_runtime_capabilities: dict[str, Any] = {}
+        self._attachment_lock = asyncio.Lock()
         _cleanup_incomplete_starts()
     @staticmethod
     def _runtime_lock(session_id: str, runtime_config: dict[str, Any], source_ref: str) -> EffectiveHarnessLock:
@@ -523,11 +524,11 @@ class SessionService:
                 await self.registry.update_status(session_id, SessionStatus.FAILED)
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return SessionCommandResponse(detail=detail)
-    async def upload_attachments(
-        self,
-        session_id: str,
-        files: Sequence[UploadFile],
-        metadata: Optional[dict[str, Any]] = None,
+    async def upload_attachments(self, session_id: str, files: Sequence[UploadFile], metadata: Optional[dict[str, Any]] = None) -> AttachmentUploadResponse:
+        async with self._attachment_lock:
+            return await self._upload_attachments_locked(session_id, files, metadata)
+    async def _upload_attachments_locked(
+        self, session_id: str, files: Sequence[UploadFile], metadata: Optional[dict[str, Any]] = None,
     ) -> AttachmentUploadResponse:
         if not files: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided")
         record = await self.ensure_session(session_id); runner: Optional[SessionRunner] = getattr(record, "runner", None)
@@ -540,10 +541,10 @@ class SessionService:
             except Exception as exc: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"failed to read upload: {exc}") from exc
             if data: staged_uploads.append((index, upload, data))
         if not staged_uploads: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no attachment data found")
-        attachment_entries: list[dict[str, Any]] = []; handles: list[AttachmentHandle] = []; created_dirs: list[str] = []
+        attachment_entries: list[dict[str, Any]] = []; handles: list[AttachmentHandle] = []; created_dirs: list[str] = []; created_refs = set()
         anchor, workspace_root, descriptor, windows_handles = _open_workspace_breadboard(workspace_dir); artifact_fd = attachment_fd = None
         artifact_root, attachment_root = anchor / "artifacts", anchor / "attachments"; artifact_refs = dict(getattr(record, "product_artifacts", {}))
-        manifest_path: Path | None = None; manifest_fd = None; manifest_name = None; registered_before = dict(getattr(runner, "_attachment_store", {}))
+        manifest_path: Path | None = None; manifest_fd = None; manifest_name = None; transaction = None; registered_before = dict(getattr(runner, "_attachment_store", {}))
         try:
             if descriptor is not None:
                 artifact_fd = _open_directory(descriptor, "artifacts")
@@ -551,6 +552,7 @@ class SessionService:
                 except BaseException: os.close(artifact_fd); artifact_fd = None; raise
                 os.fsync(descriptor)
             artifact_store = ArtifactStore(artifact_root, descriptor=artifact_fd)
+            candidate_transaction = artifact_store.transaction(); candidate_transaction.__enter__(); transaction = candidate_transaction
             if attachment_fd is None: attachment_root.mkdir(parents=True, exist_ok=True)
             if os.name == "nt":
                 windows_handles.append(_windows_handle(artifact_root, directory=True)); windows_handles.append(_windows_handle(attachment_root, directory=True))
@@ -560,7 +562,7 @@ class SessionService:
                     if attachment_fd is not None: target_fd = _open_directory(attachment_fd, attachment_id)
                     else: target_fd = None; (attachment_root / attachment_id).mkdir(parents=True, exist_ok=True)
                     try:
-                        artifact_ref = artifact_store.put(data, media_type=upload.content_type or "application/octet-stream")
+                        artifact_ref = artifact_store.put(data, media_type=upload.content_type or "application/octet-stream", created=created_refs)
                         if target_fd is not None: artifact_store.materialize_at(artifact_ref, target_fd, filename)
                         else: artifact_store.materialize(artifact_ref, attachment_root / attachment_id / filename)
                         artifact_refs[attachment_id] = artifact_ref
@@ -569,7 +571,7 @@ class SessionService:
                     logical_target = workspace_root / ".breadboard" / "attachments" / attachment_id / filename
                     handles.append(AttachmentHandle(id=attachment_id, filename=filename, mime=upload.content_type, size_bytes=len(data)))
                     attachment_entries.append({"id": attachment_id, "filename": filename, "absolute_path": str(logical_target), "relative_path": str(logical_target.relative_to(workspace_root)), "metadata": metadata or {}})
-                manifest = artifact_store.manifest(session_id, artifact_refs); manifest_ref = artifact_store.put_json(manifest)
+                manifest = artifact_store.manifest(session_id, artifact_refs); manifest_ref = artifact_store.put_json(manifest, created=created_refs)
                 manifest_name = f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json"
                 if artifact_fd is not None: manifest_fd = _open_directory(artifact_fd, "manifests"); artifact_store.materialize_at(manifest_ref, manifest_fd, manifest_name); os.fsync(artifact_fd)
                 else: manifest_path = artifact_root / "manifests" / manifest_name; artifact_store.materialize(manifest_ref, manifest_path)
@@ -603,9 +605,11 @@ class SessionService:
                         try: manifest_path.unlink(missing_ok=True)
                         finally: _close_windows_handle(manifest_lock)
                     for parent in {attachment_root, manifest_path.parent if manifest_path is not None else artifact_root}: _sync_directory(parent) if parent.is_dir() else None
+                for artifact_ref in created_refs: artifact_store.discard(artifact_ref)
                 if hasattr(runner, "_attachment_store"): runner._attachment_store = registered_before
                 raise
         finally:
+            if transaction is not None: transaction.__exit__(None, None, None)
             for open_descriptor in (manifest_fd, artifact_fd, attachment_fd, descriptor):
                 if open_descriptor is not None: os.close(open_descriptor)
             for handle in reversed(windows_handles): _close_windows_handle(handle)

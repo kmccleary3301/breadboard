@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence, List, Tuple
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard.product.runtime.artifacts import ArtifactStore, _close_windows_handle, _open_directory, _read_at, _validate_artifact_name, _windows_file_descriptor, _windows_handle
 from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides
 from agentic_coder_prototype.compilation.effective_operation_policy import policy_pack_for_config_authority
 from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointManager
@@ -205,20 +205,17 @@ class SessionRunner:
             overrides=overrides,
             force_local_mode=force_local_mode,
         )
-
     async def start(self) -> None:
         if self._task:
             raise RuntimeError("runner already started")
         loop = asyncio.get_running_loop()
         self._loop = loop
         self._task = loop.create_task(self._run(), name=f"kyle-session-{self.session.session_id}")
-
     def _signal_control(self, kind: str) -> bool:
         queue = getattr(self, "_control_queue", None)
         put = (getattr(queue, "put_nowait", None) or getattr(queue, "put", None)) if queue is not None else None
         if not callable(put): return False
         put({"kind": kind}); return True
-
     def _request_stop(self, reason: str) -> bool:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
@@ -235,14 +232,12 @@ class SessionRunner:
                         elif callable(request_stop): request_stop()
                 except Exception: pass
             return stopping
-
     async def stop(self) -> None:
         if self._closed:
             return
         self._request_stop("operator request")
         if self._task and not self._task.done():
             await self._task
-
     async def enqueue_input(self, content: str, attachments: Optional[list[str]] = None) -> str:
         if self._closed:
             raise RuntimeError("session is closed")
@@ -261,7 +256,6 @@ class SessionRunner:
                 self.session.metadata["session_contract"] = product_session.read_model.as_dict()
             self._input_queue.put_nowait(payload)
         return content
-
     def transition_product_session(self, transition: str, *args: Any) -> None:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
@@ -272,7 +266,6 @@ class SessionRunner:
                 return
             getattr(product_session, transition)(*args)
             self.session.metadata["session_contract"] = product_session.read_model.as_dict()
-
     def _sanitize_interactive_input_content(self, content: str) -> str:
         """Remove an exact prior-prompt prefix accidentally repeated by the TUI.
 
@@ -302,7 +295,6 @@ class SessionRunner:
             self._persist_metadata_snapshot_threadsafe()
             return suffix.lstrip()
         return raw
-
     async def handle_command(
         self,
         command: str,
@@ -312,7 +304,6 @@ class SessionRunner:
     ) -> Dict[str, Any]:
         if self._closed:
             raise RuntimeError("session is closed")
-
         payload = payload or {}
         match command:
             case "list_checkpoints":
@@ -494,25 +485,20 @@ class SessionRunner:
                 child_session_id = payload.get("child_session_id") or payload.get("childSessionId")
                 parent_session_id = payload.get("parent_session_id") or payload.get("parentSessionId")
                 target_session_id = payload.get("target_session_id") or payload.get("targetSessionId")
-
                 def _norm(value: Any) -> Optional[str]:
                     if not isinstance(value, str):
                         return None
                     trimmed = value.strip()
                     return trimmed or None
-
                 child_session_id = _norm(child_session_id)
                 parent_session_id = _norm(parent_session_id)
                 target_session_id = _norm(target_session_id)
-
                 if command == "session_parent":
                     resolved_target = target_session_id or parent_session_id or child_session_id
                 else:
                     resolved_target = target_session_id or child_session_id or parent_session_id
-
                 if not resolved_target:
                     return {"status": "ok", "command": command, "switched": False, "reason": "target_missing"}
-
                 target_record = await self.registry.get(resolved_target)
                 if target_record is None:
                     return {
@@ -522,7 +508,6 @@ class SessionRunner:
                         "reason": "target_not_found",
                         "target_session_id": resolved_target,
                     }
-
                 return {
                     "status": "ok",
                     "command": command,
@@ -550,10 +535,8 @@ class SessionRunner:
                 response = payload.get("response") or payload.get("decision") or payload.get("default")
                 responses = payload.get("responses")
                 items = payload.get("items")
-
                 if not isinstance(request_id, str) or not request_id.strip():
                     raise ValueError("respond_permission requires non-empty 'request_id'/'permission_id'/'id'")
-
                 if isinstance(items, dict) and not isinstance(responses, dict):
                     responses = {"items": dict(items)}
                 canonical_responses = (
@@ -578,7 +561,6 @@ class SessionRunner:
                         return {"status": "ok", "request_id": normalized_request_id, "decision": resolution, "delivered": response_payload, "debug": True}
                     self.transition_product_session("fail", "permission_delivery_failed", "no permission request is active")
                     raise RuntimeError("no permission request is active")
-
                 if canonical_responses is not None:
                     item: Dict[str, Any] = {"request_id": normalized_request_id, "responses": canonical_responses}
                 else:
@@ -603,7 +585,6 @@ class SessionRunner:
                 return {"status": "ok", "request_id": normalized_request_id, "decision": resolution, "delivered": item}
             case _:
                 raise ValueError(f"Unsupported command: {command}")
-
     def _load_base_config(self) -> Dict[str, Any]:
         if isinstance(self._base_config_cache, dict):
             return dict(self._base_config_cache)
@@ -615,7 +596,6 @@ class SessionRunner:
             cfg = {}
         self._base_config_cache = dict(cfg)
         return dict(self._base_config_cache)
-
     def prepare_runtime_config(self) -> Dict[str, Any]:
         """Freeze the exact base configuration and overrides passed to the agent."""
         if self._prepared_runtime_config is not None:
@@ -634,7 +614,6 @@ class SessionRunner:
             overrides.setdefault("permissions.webfetch.default", "ask")
             self.request.permission_mode = permission_mode
             self.session.metadata["permission_mode"] = permission_mode
-
         base_cfg = self._load_base_config()
         workspace_guess_path = self._resolve_workspace_guess(base_cfg)
         if workspace_guess_path:
@@ -651,14 +630,11 @@ class SessionRunner:
                 if key in overrides and isinstance(existing, list) and isinstance(value, list):
                     value = existing + [item for item in value if item not in existing]
                 overrides[key] = value
-
         self.request.overrides = overrides
         self._prepared_runtime_config = apply_dotted_overrides(base_cfg, overrides)
         return dict(self._prepared_runtime_config)
-
     def current_runtime_config(self) -> Dict[str, Any]:
         return dict(getattr(self._agent, "config", None) or self.prepare_runtime_config())
-
     def _resolve_workspace_guess(self, base_cfg: Dict[str, Any]) -> Optional[Path]:
         candidate: Any = self.request.workspace
         if not candidate and isinstance(base_cfg, dict):
@@ -673,7 +649,6 @@ class SessionRunner:
             return path.resolve()
         except Exception:
             return None
-
     def _parse_replay_path(self, task_text: str) -> Optional[Path]:
         text = (task_text or "").strip()
         if not text:
@@ -693,7 +668,6 @@ class SessionRunner:
         else:
             path = path.resolve()
         return path
-
     async def _maybe_publish_todo_snapshot(self, workspace_dir: Optional[Path], *, call_id: str) -> None:
         if not self._todo_enabled or not workspace_dir:
             return
@@ -706,14 +680,12 @@ class SessionRunner:
             EventType.TOOL_RESULT,
             {"call_id": call_id, "todo": envelope},
         )
-
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
             return
         overrides = dict(self.request.overrides or {})
         try:
             from agentic_coder_prototype.auth.store import DEFAULT_PROVIDER_AUTH_STORE
-
             openai_auth = DEFAULT_PROVIDER_AUTH_STORE.get("openai")
             if openai_auth is not None:
                 if openai_auth.api_key:
@@ -749,14 +721,12 @@ class SessionRunner:
                 self._checkpoint_manager.create_checkpoint("Session start")
         except Exception:
             self._checkpoint_manager = None
-
     async def _execute_replay_task(self, task_text: str) -> Dict[str, Any]:
         replay_path = self._parse_replay_path(task_text)
         if replay_path is None:
             raise ValueError("replay task missing path (expected replay:<path>)")
         if not replay_path.exists():
             raise FileNotFoundError(f"replay fixture not found: {replay_path}")
-
         try:
             meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
             meta = dict(meta)
@@ -765,14 +735,12 @@ class SessionRunner:
             self._persist_metadata_snapshot_threadsafe()
         except Exception:
             pass
-
         published_completion = False
         published_run_finished = False
         published_events = 0
         metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
         terminal_events: list[TranslatedRuntimeEvent] = []
-
         with replay_path.open("r", encoding="utf-8") as f:
             for raw_line in f:
                 if self._stop_event.is_set():
@@ -783,7 +751,6 @@ class SessionRunner:
                 entry = json.loads(line)
                 if not isinstance(entry, dict):
                     continue
-
                 delay_ms = entry.get("delay_ms", entry.get("delayMs", 0))
                 try:
                     delay_ms_val = max(0, int(delay_ms))
@@ -791,12 +758,10 @@ class SessionRunner:
                     delay_ms_val = 0
                 if delay_ms_val:
                     await asyncio.sleep(delay_ms_val / 1000.0)
-
                 type_raw = entry.get("type") or entry.get("event_type") or entry.get("eventType")
                 if not isinstance(type_raw, str) or not type_raw.strip():
                     continue
                 evt_type = EventType(type_raw.strip())
-
                 payload_raw = entry.get("payload")
                 if payload_raw is None:
                     payload_raw = entry.get("data")
@@ -804,13 +769,11 @@ class SessionRunner:
                     payload: Dict[str, Any] = dict(payload_raw)
                 else:
                     payload = {"value": payload_raw}
-
                 turn_raw = entry.get("turn")
                 try:
                     turn = int(turn_raw) if isinstance(turn_raw, (int, float, str)) and str(turn_raw).strip() else None
                 except Exception:
                     turn = None
-
                 if evt_type in {EventType.TOOL_RESULT, EventType.TOOL_RESULT_DOT}:
                     todo_update = payload.get("todo")
                     if isinstance(todo_update, dict):
@@ -819,18 +782,15 @@ class SessionRunner:
                             self._persist_metadata_snapshot_threadsafe()
                         except Exception:
                             pass
-
                 if one_shot and evt_type in {EventType.COMPLETION, EventType.RUN_FINISHED}:
                     terminal_events.append((evt_type, payload, turn, {}))
                 else:
                     await self.publish_event_async(evt_type, payload, turn=turn)
                 published_events += 1
-
                 if evt_type is EventType.COMPLETION:
                     published_completion = True
                 elif evt_type is EventType.RUN_FINISHED:
                     published_run_finished = True
-
         completion_summary: Dict[str, Any] = {"completed": True, "reason": "replay"}
         if not published_completion:
             payload = {"summary": completion_summary, "mode": self._mode}
@@ -839,14 +799,12 @@ class SessionRunner:
         if not published_run_finished:
             payload = {"eventCount": published_events, "completed": True, "reason": "replay", "logging_dir": None}
             terminal_events.append((EventType.RUN_FINISHED, payload, None, {})) if one_shot else await self.publish_event_async(EventType.RUN_FINISHED, payload)
-
         return {
             "completion_summary": completion_summary,
             "reward_metrics": None,
             "logging_dir": None,
             "_terminal_events": terminal_events,
         }
-
     async def _run(self) -> None:
         session_started_at = time.monotonic()
         await self.registry.update_status(self.session.session_id, SessionStatus.RUNNING)
@@ -857,7 +815,6 @@ class SessionRunner:
             # working directory unless explicitly overridden by the caller.
             os.environ.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
             base_cfg = self.prepare_runtime_config()
-
             try:
                 todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
             except Exception:
@@ -879,12 +836,10 @@ class SessionRunner:
                     await self.publish_event_async(EventType.SKILLS_SELECTION, {"selection": selection})
             except Exception:
                 pass
-
             initial_task = (self.request.task or "").strip()
             if initial_task:
                 self._accepted_task_texts.append(initial_task)
                 self._input_queue.put_nowait({"content": initial_task, "attachments": []})
-
             while not self._stop_event.is_set():
                 try:
                     next_input = await self._input_queue.get()
@@ -892,7 +847,6 @@ class SessionRunner:
                     break
                 if next_input is None:
                     break
-
                 await self._resume_event.wait()
                 if self._stop_event.is_set(): self._input_queue.task_done(); break
                 task_payload = dict(next_input)
@@ -903,16 +857,14 @@ class SessionRunner:
                     after_execute_task_at = time.monotonic()
                 else:
                     attachment_ids = task_payload.get("attachments") or []
-                    attachment_text = self._format_attachment_helper(attachment_ids)
-                    if attachment_text:
-                        task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
-                    if task_text.strip():
-                        self._accepted_task_texts.append(task_text)
-                        self._accepted_task_texts = self._accepted_task_texts[-20:]
-
                     await self._ensure_agent_initialized()
                     if self._stop_event.is_set(): self._input_queue.task_done(); break
                     after_agent_init_at = time.monotonic()
+                    attachment_text = self._format_attachment_helper(attachment_ids)
+                    if attachment_text: task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
+                    if task_text.strip():
+                        self._accepted_task_texts.append(task_text)
+                        self._accepted_task_texts = self._accepted_task_texts[-20:]
                     if self._profile_timing_enabled:
                         self._active_bridge_timing_context = {
                             "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
@@ -957,7 +909,6 @@ class SessionRunner:
                 self._input_queue.task_done()
                 if one_shot:
                     break
-
             product_session = getattr(self.session, "product_session", None)
             if product_session is None:
                 metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
@@ -978,7 +929,6 @@ class SessionRunner:
         finally:
             self._closed = True
             await self._enqueue_termination()
-
     def _load_todo_envelope_from_disk(self, workspace_dir: Path) -> Optional[Dict[str, Any]]:
         try:
             store = TodoStore(str(workspace_dir), load_existing=True)
@@ -986,14 +936,12 @@ class SessionRunner:
             return project_store_snapshot_to_tui_envelope(snapshot, scope_key="main", scope_label="main")
         except Exception:
             return None
-
     async def _enqueue_termination(self) -> None:
         queue = self.session.event_queue
         try:
             await queue.put(None)
         except asyncio.QueueFull:  # pragma: no cover - defensive
             logger.warning("Event queue full while terminating session %s", self.session.session_id)
-
     def _rollback_runtime_overrides(self, overrides: Dict[str, Any], restore: Optional[tuple[str, bool, Any]] = None) -> bool:
         try: rolled_back = not self._agent or self._agent.apply_runtime_overrides(overrides) is not False
         except Exception: logger.exception("Failed to roll back runtime configuration"); return False
@@ -1001,7 +949,6 @@ class SessionRunner:
             if restore[1]: self._agent.config[restore[0]] = restore[2]
             else: self._agent.config.pop(restore[0], None)
         return rolled_back
-
     def _apply_model_override(self) -> bool:
         if not self._agent or not self._model_override:
             return True
@@ -1012,7 +959,6 @@ class SessionRunner:
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to apply model override: %s", exc)
             return False
-
     def _persist_metadata_snapshot_threadsafe(self) -> None:
         loop = self._loop
         if not loop or not loop.is_running():
@@ -1024,7 +970,6 @@ class SessionRunner:
             )
         except Exception:
             pass
-
     def _debug_permissions_enabled(self) -> bool:
         try:
             meta = self.session.metadata or {}
@@ -1033,7 +978,6 @@ class SessionRunner:
         except Exception:
             pass
         return bool(os.environ.get("BREADBOARD_DEBUG_PERMISSIONS"))
-
     async def _emit_debug_permission_request(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         data = dict(payload or {})
         request_id = data.get("request_id") or f"debug-perm-{uuid.uuid4().hex[:8]}"
@@ -1055,13 +999,11 @@ class SessionRunner:
         self._update_pending_permissions("permission_request", event_payload, source="session")
         await self.publish_event_async(EventType.PERMISSION_REQUEST, event_payload)
         return event_payload
-
     def _pending_permission_key(self, entry: Dict[str, Any]) -> tuple[str, str, str]:
         source = str(entry.get("source") or "session")
         task_id = str(entry.get("task_session_id") or "")
         req_id = str(entry.get("request_id") or entry.get("id") or "")
         return source, task_id, req_id
-
     def _infer_permission_category(self, request_id: str) -> Optional[str]:
         pending = self.session.metadata.get("pending_permissions")
         if not isinstance(pending, list):
@@ -1084,7 +1026,6 @@ class SessionRunner:
                         return cat.strip().lower()
             return None
         return None
-
     def _update_pending_permissions(
         self, kind: str, info: Dict[str, Any], *, source: str = "session",
         task_session_id: Optional[str] = None, subagent_type: Optional[str] = None,
@@ -1153,7 +1094,6 @@ class SessionRunner:
                 else: self.session.metadata.pop("pending_permissions", None)
             self._persist_metadata_snapshot_threadsafe()
             return ready
-
     def _rehydrate_pending_permissions(
         self, event_type: str, payload: Dict[str, Any],
     ) -> Optional[List[Dict[str, Any]]]:
@@ -1170,11 +1110,9 @@ class SessionRunner:
             source="task", task_session_id=str((payload or {}).get("sessionId") or ""),
             subagent_type=str((payload or {}).get("subagent_type") or ""),
         )
-
     def _execute_task(self, task_text: str) -> Dict[str, Any]:
         if not self._agent:
             raise RuntimeError("agent missing")
-
         execute_started_at = time.monotonic()
         emitted_flags: Dict[Any, bool] = {"assistant": False, EventType.COMPLETION: False, EventType.RUN_FINISHED: False}
         self._published_events = 0
@@ -1189,7 +1127,6 @@ class SessionRunner:
                 emitted_flags[evt_type] = True
                 if one_shot: terminal_events.append((evt_type, evt_payload, evt_turn, evt_contract))
                 else: self.publish_event(evt_type, evt_payload, turn=evt_turn, classification=evt_contract.get("classification"), family=evt_contract.get("family"), actor=evt_contract.get("actor"), visibility=evt_contract.get("visibility"))
-
         def handle_runtime_event(event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> None:
             if event_type == "ctree_node":
                 try:
@@ -1238,14 +1175,11 @@ class SessionRunner:
                 for deferred in ready_responses[1:]:
                     deferred_type, deferred_payload = deferred.get("_runtime_event", (event_type, deferred))
                     handle_runtime_event(str(deferred_type), dict(deferred_payload), turn=turn)
-
         remote_stream_enabled = bool(os.environ.get("BREADBOARD_ENABLE_REMOTE_STREAM", ""))
         if isinstance(self.request.metadata, dict) and "enable_remote_stream" in self.request.metadata:
             remote_stream_enabled = bool(self.request.metadata.get("enable_remote_stream"))
-
         permission_mode = (self.request.permission_mode or self.session.metadata.get("permission_mode") or "").strip().lower()
         interactive_permissions = permission_mode in {"prompt", "ask", "interactive"}
-
         logger.info(
             "session(%s) task=%s stream=%s local=%s remote_toggle=%s",
             self.session.session_id,
@@ -1254,10 +1188,8 @@ class SessionRunner:
             is_local_agent,
             remote_stream_enabled,
         )
-
         if self._model_override:
             self._apply_model_override()
-
         if interactive_permissions:
             try:
                 perms = getattr(self._agent, "config", {}).setdefault("permissions", {})  # type: ignore[attr-defined]
@@ -1272,7 +1204,6 @@ class SessionRunner:
                 perms["options"] = opts
             except Exception:
                 pass
-
         if not is_local_agent and (interactive_permissions or (self.request.stream and remote_stream_enabled)):
             try:
                 from ray.util.queue import Queue
@@ -1282,11 +1213,9 @@ class SessionRunner:
                 event_queue = Queue()
                 queue_stop, queue_thread = self._start_queue_pump(event_queue, handle_runtime_event)
                 logger.info("session(%s) remote event queue initialized", self.session.session_id)
-
         if interactive_permissions:
             if is_local_agent:
                 import queue as pyqueue
-
                 permission_queue = pyqueue.Queue()
             else:
                 try:
@@ -1297,10 +1226,8 @@ class SessionRunner:
             self._permission_queue = permission_queue
         else:
             self._permission_queue = None
-
         if is_local_agent:
             import queue as pyqueue
-
             control_queue = pyqueue.Queue()
         else:
             try:
@@ -1310,7 +1237,6 @@ class SessionRunner:
             else:
                 control_queue = RayQueue()
         self._control_queue = control_queue
-
         start_time = time.time()
         run_task_started_at = time.monotonic()
         try:
@@ -1336,7 +1262,6 @@ class SessionRunner:
                         kernel_emitter_run_dir = str(Path(config_plane_stream).resolve().parents[1])
                 if kernel_emitter_run_dir:
                     from agentic_coder_prototype.runtime.kernel_emitter import primitive_emission_mode
-
                     kernel_emitter_mode = primitive_emission_mode("strict")
             except Exception:
                 kernel_emitter_run_dir = None
@@ -1368,7 +1293,6 @@ class SessionRunner:
                 queue_thread.join()
             if event_queue is not None:
                 self._drain_event_queue(event_queue, handle_runtime_event)
-
         elapsed_ms = int((time.time() - start_time) * 1000)
         after_queue_drain_at = time.monotonic()
         completion = result.get("completion_summary") or {}
@@ -1457,7 +1381,6 @@ class SessionRunner:
         if self._profile_timing_enabled:
             result_payload["bridge_timing"] = dict(completion_payload.get("bridge_timing") or {})
         return result_payload
-
     async def publish_event_async(
         self,
         event_type: EventType,
@@ -1481,7 +1404,6 @@ class SessionRunner:
             visibility=visibility,
         )
         await self._enqueue_event_async(event)
-
     def publish_event(
         self,
         event_type: EventType,
@@ -1509,7 +1431,6 @@ class SessionRunner:
             running_loop = asyncio.get_running_loop()
         except RuntimeError:
             running_loop = None
-
         if loop and loop.is_running():
             if running_loop and running_loop is loop:
                 loop.create_task(self._enqueue_event_async(event))
@@ -1517,23 +1438,19 @@ class SessionRunner:
             future = asyncio.run_coroutine_threadsafe(self._enqueue_event_async(event), loop)
             future.result()
             return
-
         try:
             self.session.event_queue.put_nowait(event)
             self._published_events += 1
         except asyncio.QueueFull:  # pragma: no cover - defensive
             logger.warning("Event queue full for session %s, dropping event", self.session.session_id)
-
     async def _enqueue_event_async(self, event: SessionEvent) -> None:
         await self.session.event_queue.put(event)
         self._published_events += 1
-
     def _touch_last_activity(self) -> None:
         try:
             self.session.last_activity_at = datetime.now(timezone.utc)
         except Exception:
             pass
-
     def _start_queue_pump(
         self,
         event_queue: Any,
@@ -1541,9 +1458,7 @@ class SessionRunner:
     ) -> tuple[Any, Any]:
         import threading
         from queue import Empty
-
         stop_signal = threading.Event()
-
         def runner() -> None:
             while not stop_signal.is_set():
                 try:
@@ -1559,18 +1474,15 @@ class SessionRunner:
                 if event_type is None:
                     break
                 handle_event(event_type, payload, turn=turn)
-
         thread = threading.Thread(target=runner, daemon=True)
         thread.start()
         return stop_signal, thread
-
     def _drain_event_queue(
         self,
         event_queue: Any,
         handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
     ) -> None:
         from queue import Empty
-
         while True:
             try:
                 item = event_queue.get_nowait()
@@ -1586,7 +1498,6 @@ class SessionRunner:
                 continue
             handle_event(event_type, payload, turn=turn)
         logger.info("session(%s) published %s events", self.session.session_id, self._published_events)
-
     def get_workspace_dir(self) -> Optional[Path]:
         if self._workspace_path:
             self._workspace_path.mkdir(parents=True, exist_ok=True)
@@ -1598,14 +1509,39 @@ class SessionRunner:
             self._workspace_path = path
             return path
         return None
-
     def register_attachments(self, entries: Sequence[Dict[str, Any]]) -> None:
         for entry in entries:
             attachment_id = entry.get("id")
             if not attachment_id:
                 continue
             self._attachment_store[str(attachment_id)] = dict(entry)
-
+    def _restore_attachment(self, attachment_id: str, filename: str, artifact_ref: Any) -> None:
+        _validate_artifact_name(attachment_id)
+        if not filename or filename in {".", ".."} or os.path.basename(filename) != filename or "\0" in filename: raise ValueError("attachment filename must be a basename")
+        workspace = self.get_workspace_dir()
+        if workspace is None: raise RuntimeError("workspace not ready")
+        metadata, artifacts, attachments = workspace / ".breadboard", workspace / ".breadboard" / "artifacts", workspace / ".breadboard" / "attachments"
+        if os.name == "nt":
+            handles: list[int] = []
+            try:
+                for path in (workspace, metadata, artifacts, attachments, attachments / attachment_id): handles.append(_windows_handle(path, directory=True, create=False))
+                store = ArtifactStore(artifacts); trusted = store.read(artifact_ref); destination = attachments / attachment_id / filename
+                store.materialize(artifact_ref, destination)
+                with os.fdopen(_windows_file_descriptor(destination, create=False), "rb") as stream: actual = stream.read()
+            finally:
+                for handle in reversed(handles): _close_windows_handle(handle)
+        else:
+            descriptors: list[int] = [os.open(workspace, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))]
+            try:
+                metadata_fd = _open_directory(descriptors[-1], ".breadboard", create=False); descriptors.append(metadata_fd)
+                artifact_fd = _open_directory(metadata_fd, "artifacts", create=False); descriptors.append(artifact_fd)
+                store = ArtifactStore(artifacts, descriptor=artifact_fd); trusted = store.read(artifact_ref)
+                attachment_fd = _open_directory(metadata_fd, "attachments", create=False); descriptors.append(attachment_fd)
+                target_fd = _open_directory(attachment_fd, attachment_id, create=False); descriptors.append(target_fd)
+                store.materialize_at(artifact_ref, target_fd, filename); actual = _read_at(target_fd, filename)
+            finally:
+                for descriptor in reversed(descriptors): os.close(descriptor)
+        if actual != trusted: raise RuntimeError(f"attachment verification failed: {attachment_id}")
     def _format_attachment_helper(self, attachment_ids: Sequence[str]) -> str:
         if not attachment_ids:
             return ""
@@ -1620,14 +1556,11 @@ class SessionRunner:
             abs_path_value = info.get("absolute_path"); abs_path = Path(abs_path_value).resolve() if abs_path_value else None
             if workspace_dir and rel_path:
                 destination = workspace_dir / rel_path
-                if abs_path and abs_path.exists() and not destination.exists(): destination.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(abs_path, destination)
-                if artifact_ref is not None:
-                    trusted = ArtifactStore(workspace_dir / ".breadboard" / "artifacts").read(artifact_ref)
-                    if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != trusted: raise RuntimeError(f"attachment verification failed: {key}")
+                if artifact_ref is not None: self._restore_attachment(key, str(info.get("filename") or destination.name), artifact_ref)
+                elif abs_path and abs_path.exists() and not destination.exists(): destination.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(abs_path, destination)
             digest = getattr(artifact_ref, "digest", "unverified")
             helper_lines.append(f"[Attachment {index}: {info.get('filename')} -> {rel_path or 'unknown'} ({digest})]")
         return "\n".join(helper_lines)
-
     def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
         if not logging_dir:
             return None
@@ -1638,23 +1571,19 @@ class SessionRunner:
             return json.loads(run_path.read_text(encoding="utf-8"))
         except Exception:
             return None
-
     def _normalize_usage_payload(self, usage: Dict[str, Any], *, latency_ms: Optional[int] = None) -> Dict[str, Any]:
         if not isinstance(usage, dict):
             return {}
-
         def _to_int(value: Any) -> int:
             try:
                 return int(value)
             except Exception:
                 return 0
-
         def _to_float(value: Any) -> Optional[float]:
             try:
                 return float(value)
             except Exception:
                 return None
-
         prompt_tokens = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
         completion_tokens = _to_int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
         total_tokens = _to_int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
@@ -1668,7 +1597,6 @@ class SessionRunner:
                 latency_ms_val = int(latency_s * 1000)
         if not latency_ms_val and latency_ms is not None:
             latency_ms_val = int(latency_ms)
-
         normalized: Dict[str, Any] = {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
@@ -1683,12 +1611,10 @@ class SessionRunner:
         if latency_ms_val:
             normalized["latency_ms"] = latency_ms_val
         return normalized
-
     def _usage_from_run_summary(self, summary: Dict[str, Any]) -> Dict[str, Any]:
         diagnostics = summary.get("turn_diagnostics")
         if not isinstance(diagnostics, list):
             return {}
-
         totals: Dict[str, Any] = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -1699,7 +1625,6 @@ class SessionRunner:
         latency_total = 0.0
         cost_total = 0.0
         saw_usage = False
-
         for entry in diagnostics:
             if not isinstance(entry, dict):
                 continue
@@ -1722,7 +1647,6 @@ class SessionRunner:
             latency_value = entry.get("latency_seconds") or entry.get("latency_s")
             if isinstance(latency_value, (int, float)):
                 latency_total += float(latency_value)
-
         if not saw_usage:
             return {}
         totals["total_tokens"] = totals["total_tokens"] or (totals["prompt_tokens"] + totals["completion_tokens"])
@@ -1732,7 +1656,6 @@ class SessionRunner:
         if cost_total:
             normalized["cost_usd"] = cost_total
         return normalized
-
     def _extract_usage_metrics(
         self,
         result: Dict[str, Any],
@@ -1756,7 +1679,6 @@ class SessionRunner:
         if elapsed_ms:
             return {"latency_ms": int(elapsed_ms)}
         return {}
-
     def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         call = payload.get("call") or payload.get("tool_call") or payload.get("tool")
         if not isinstance(call, dict):
@@ -1786,7 +1708,6 @@ class SessionRunner:
         if progress is not None and "progress" not in normalized:
             normalized["progress"] = progress
         return normalized
-
     def _normalize_tool_result_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized = dict(payload)
         message = normalized.get("message")
@@ -1808,7 +1729,6 @@ class SessionRunner:
         if artifact_ref is not None:
             normalized["artifact_ref"] = artifact_ref
         return normalized
-
     def _extract_artifact_ref(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         candidate = payload.get("artifact_ref")
         if isinstance(candidate, dict):
