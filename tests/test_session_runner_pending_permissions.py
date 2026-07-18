@@ -31,7 +31,7 @@ async def test_always_rule_commit_failure_restores_real_workspace(monkeypatch, t
     async def fail(*_a, **_kw): raise OSError("metadata unavailable")  # type: ignore[no-untyped-def]
     monkeypatch.setattr(runner.registry, "update_metadata", fail)
     with pytest.raises(OSError, match="metadata unavailable"): await runner.handle_command("permission_decision", {"request_id": "permission-1", "decision": "always", "rule": "*.sh"})
-    assert [(rule.pattern, rule.decision) for rule in load_permission_rules(tmp_path)] == [("safe.sh", "allow")]; assert "permission_rules" not in runner.session.metadata and session.read_model.status == "failed"
+    assert [(rule.pattern, rule.decision) for rule in load_permission_rules(tmp_path)] == [("safe.sh", "allow")]; assert "permission_rules" not in runner.session.metadata and session.read_model.status == "failed"; assert runner._permission_queue.empty()
 def test_runtime_response_is_buffered_and_published_in_fifo_order() -> None:
     runner, session = _product_runner("provider")
     def run_task(*_a, **kw): [kw["event_emitter"]("task_event", {"kind": kind, "sessionId": task_id, "payload": {"request_id": request_id, **({"response": "once"} if kind == "permission_response" else {})}}) for kind, task_id, request_id in (("permission_request", "task-a", "first"), ("permission_request", "task-b", "second"), ("permission_response", "task-b", "second"), ("permission_response", "task-a", "first"))]; return {"completion_summary": {"completed": True}}  # type: ignore[no-untyped-def]

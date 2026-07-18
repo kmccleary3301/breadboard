@@ -394,7 +394,6 @@ class SessionRunner:
                 }
                 category = self._infer_permission_category(request_id.strip()) if rule else None
                 workspace_dir = self.get_workspace_dir() if rule else None
-                detail = await self.handle_command("respond_permission", permission_payload)
                 if rule:
                     before = dict(self.session.metadata or {}); metadata = dict(before)
                     rules = list(metadata.get("permission_rules") or []); rules.append(
@@ -414,6 +413,7 @@ class SessionRunner:
                         self.session.metadata = before
                         self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision")
                         raise
+                detail = await self.handle_command("respond_permission", permission_payload)
                 if normalized in {"deny-stop", "deny_stop"} or bool(payload.get("stop")):
                     await self.handle_command("stop", {})
                 return {"status": "ok", "request_id": request_id.strip(), "decision": response_value, "delivered": detail}
