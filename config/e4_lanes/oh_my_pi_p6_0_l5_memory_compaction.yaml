@@ -632,6 +632,7 @@
                 "sha256": "sha256:d0cf4d3ecad55e9e174565165122df86272968b12c7b2fabb13fd1a0a6776e35"
               },
               {
+                "bytes": 123094,
                 "exists": true,
                 "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
                 "role": "atomic_feature_ledger",
