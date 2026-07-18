@@ -33,6 +33,8 @@ def test_frozen_evidence_validator_accepts_hash_bound_retired_chain(
             str(SCRIPT),
             "--validation-report",
             validation_report.relative_to(ROOT).as_posix(),
+            "--validation-report-sha256",
+            f"sha256:{hashlib.sha256(validation_report.read_bytes()).hexdigest()}",
             "--json-out",
             str(output),
         ],
@@ -141,12 +143,31 @@ def test_frozen_evidence_validator_rejects_tampered_manifest_artifact(
         },
     )
 
-    assert validator.validate(validation_report)["ok"] is True
+    expected_validation_report_hash = sha256(validation_report)
+    assert validator.validate(
+        validation_report,
+        expected_validation_report_hash=expected_validation_report_hash,
+    )["ok"] is True
     write_json("evidence/payload.json", {"result": "tampered"})
 
-    result = validator.validate(validation_report)
+    result = validator.validate(
+        validation_report,
+        expected_validation_report_hash=expected_validation_report_hash,
+    )
 
     assert result["ok"] is False
     assert result["errors"] == [
         "frozen evidence manifest artifact hash mismatch: evidence/payload.json"
     ]
+
+
+def test_frozen_evidence_validator_rejects_unpinned_validation_report() -> None:
+    validation_report = FROZEN_REPORTS[0]
+
+    result = validator.validate(
+        validation_report,
+        expected_validation_report_hash="sha256:" + "0" * 64,
+    )
+
+    assert result["ok"] is False
+    assert result["errors"][0].startswith("frozen validation report hash mismatch:")

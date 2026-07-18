@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 DEFAULT_MANIFEST = ROOT / "docs" / "conformance" / "ct_scenarios_v1.json"
 DEFAULT_LANE_DEFS = DEFAULT_LANE_DEF_DIR
+DEFAULT_RETIRED_EVIDENCE_PINS = ROOT / "config" / "e4_retired_evidence_pins.json"
 
 
 class CtRowGenerationError(ValueError):
@@ -32,6 +33,27 @@ def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+def load_retired_evidence_pins(path: Path) -> dict[str, dict[str, str]]:
+    payload = load_json(path)
+    if not isinstance(payload, Mapping):
+        raise CtRowGenerationError("retired evidence pins must be an object")
+    if payload.get("schema_version") != "bb.e4.retired_evidence_pins.v1":
+        raise CtRowGenerationError("retired evidence pins schema_version must be bb.e4.retired_evidence_pins.v1")
+    raw_pins = payload.get("lanes")
+    if not isinstance(raw_pins, Mapping):
+        raise CtRowGenerationError("retired evidence pins lanes must be an object")
+    pins: dict[str, dict[str, str]] = {}
+    for lane_id, raw_pin in raw_pins.items():
+        if not isinstance(lane_id, str) or not isinstance(raw_pin, Mapping):
+            raise CtRowGenerationError("retired evidence pin entries must map lane IDs to objects")
+        report = raw_pin.get("validation_report")
+        digest = raw_pin.get("sha256")
+        if not isinstance(report, str) or not report:
+            raise CtRowGenerationError(f"retired evidence pin {lane_id!r} missing validation_report")
+        if not isinstance(digest, str) or not digest.startswith("sha256:") or len(digest) != 71:
+            raise CtRowGenerationError(f"retired evidence pin {lane_id!r} sha256 must be a digest")
+        pins[lane_id] = {"validation_report": report, "sha256": digest}
+    return pins
 
 def _json_out_from_argv(argv: Sequence[str]) -> str:
     for index, arg in enumerate(argv):
@@ -126,18 +148,30 @@ def _is_retired_evidence_lane(lane: Mapping[str, Any]) -> bool:
     return lane.get("status") != "accepted" and lane.get("evidence_status") == "accepted"
 
 
-def _retired_evidence_scenario(lane: Mapping[str, Any]) -> dict[str, Any]:
+def _retired_evidence_scenario(
+    lane: Mapping[str, Any],
+    retired_evidence_pins: Mapping[str, Mapping[str, str]],
+) -> dict[str, Any]:
     artifacts_root = lane.get("artifacts_root")
     ct = lane.get("ct")
+    lane_id = str(lane["lane_id"])
     if not isinstance(artifacts_root, str) or not artifacts_root:
         raise CtRowGenerationError(
-            f"retired lane {lane.get('lane_id', '<unknown>')} missing artifacts_root"
+            f"retired lane {lane_id!r} missing artifacts_root"
         )
     if not isinstance(ct, Mapping) or not isinstance(ct.get("test_id"), str):
         raise CtRowGenerationError(
-            f"retired lane {lane.get('lane_id', '<unknown>')} missing ct.test_id"
+            f"retired lane {lane_id!r} missing ct.test_id"
         )
-    lane_id = str(lane["lane_id"])
+    pin = retired_evidence_pins.get(lane_id)
+    if not isinstance(pin, Mapping):
+        raise CtRowGenerationError(f"retired lane {lane_id!r} missing frozen validation report pin")
+    report_path = f"{artifacts_root}/frozen_c4_validation_report.json"
+    if pin.get("validation_report") != report_path:
+        raise CtRowGenerationError(f"retired lane {lane_id!r} frozen validation report pin path mismatch")
+    report_hash = pin.get("sha256")
+    if not isinstance(report_hash, str):
+        raise CtRowGenerationError(f"retired lane {lane_id!r} missing frozen validation report hash")
     output_path = f"artifacts/conformance/node_gate/ct_frozen_{lane_id}.json"
     return {
         "assertions": {
@@ -159,7 +193,9 @@ def _retired_evidence_scenario(lane: Mapping[str, Any]) -> dict[str, Any]:
             "python",
             "scripts/e4_parity/validate_frozen_e4_evidence.py",
             "--validation-report",
-            f"{artifacts_root}/frozen_c4_validation_report.json",
+            report_path,
+            "--validation-report-sha256",
+            report_hash,
             "--json-out",
             output_path,
         ],
@@ -174,12 +210,15 @@ def generate_inventory_scenarios(
     inventory: Mapping[str, Any],
     *,
     lane_defs: Mapping[str, Mapping[str, Any]] | None = None,
+    retired_evidence_pins: Mapping[str, Mapping[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     lanes = inventory.get("lanes")
     if not isinstance(lanes, list):
         raise CtRowGenerationError("inventory.lanes must be a list")
     if lane_defs is None:
         lane_defs = load_lane_defs(DEFAULT_LANE_DEFS)
+    if retired_evidence_pins is None:
+        retired_evidence_pins = load_retired_evidence_pins(DEFAULT_RETIRED_EVIDENCE_PINS)
     scenarios: list[dict[str, Any]] = []
     for lane in lanes:
         if not isinstance(lane, Mapping):
@@ -189,7 +228,7 @@ def generate_inventory_scenarios(
             continue
         if lane.get("status") != "accepted":
             if _is_retired_evidence_lane(lane):
-                scenarios.append(_retired_evidence_scenario(lane))
+                scenarios.append(_retired_evidence_scenario(lane, retired_evidence_pins))
             continue
         if not isinstance(ct, Mapping):
             raise CtRowGenerationError(f"lane {lane.get('lane_id', '<unknown>')} ct must be object or null")
@@ -361,6 +400,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--out", default=None, help="write merged manifest to this path")
     parser.add_argument("--rows-out", default=None, help="write generated inventory rows to this path")
     parser.add_argument("--lane-defs", default=str(DEFAULT_LANE_DEFS), help="directory of bb.e4.lane_def.v1 YAML files")
+    parser.add_argument(
+        "--retired-evidence-pins",
+        default=str(DEFAULT_RETIRED_EVIDENCE_PINS),
+        help="hash pins for validation-only retired evidence",
+    )
     parser.add_argument("--check", action="store_true", help="fail if generated inventory rows differ from manifest rows")
     return parser.parse_args(argv)
 
@@ -371,7 +415,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     manifest_path = Path(args.manifest)
     inventory = load_json(inventory_path)
     manifest = load_json(manifest_path)
-    rows = generate_inventory_scenarios(inventory, lane_defs=load_lane_defs(Path(args.lane_defs)))
+    rows = generate_inventory_scenarios(
+        inventory,
+        lane_defs=load_lane_defs(Path(args.lane_defs)),
+        retired_evidence_pins=load_retired_evidence_pins(Path(args.retired_evidence_pins)),
+    )
 
     managed_test_ids = inventory_ct_test_ids(inventory)
     if args.rows_out:

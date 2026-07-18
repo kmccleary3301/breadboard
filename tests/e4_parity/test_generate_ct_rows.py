@@ -198,7 +198,18 @@ def test_generate_inventory_scenarios_validates_retired_frozen_evidence() -> Non
         },
     }
 
-    rows = ct_generator.generate_inventory_scenarios({"lanes": [lane]})
+    rows = ct_generator.generate_inventory_scenarios(
+        {"lanes": [lane]},
+        retired_evidence_pins={
+            "retired_lane": {
+                "validation_report": (
+                    "docs/conformance/e4_target_support/retired_lane/"
+                    "frozen_c4_validation_report.json"
+                ),
+                "sha256": "sha256:" + "1" * 64,
+            }
+        },
+    )
 
     assert rows == [
         {
@@ -222,6 +233,8 @@ def test_generate_inventory_scenarios_validates_retired_frozen_evidence() -> Non
                 "scripts/e4_parity/validate_frozen_e4_evidence.py",
                 "--validation-report",
                 "docs/conformance/e4_target_support/retired_lane/frozen_c4_validation_report.json",
+                "--validation-report-sha256",
+                "sha256:" + "1" * 64,
                 "--json-out",
                 "artifacts/conformance/node_gate/ct_frozen_retired_lane.json",
             ],

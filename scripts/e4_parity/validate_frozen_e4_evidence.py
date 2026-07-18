@@ -109,8 +109,23 @@ def _validate_freeze_reference(
         errors.append("frozen validation report freeze_manifest ref mismatch")
 
 
-def validate(validation_report_path: Path) -> dict[str, Any]:
+def validate(
+    validation_report_path: Path,
+    *,
+    expected_validation_report_hash: str,
+) -> dict[str, Any]:
     errors: list[str] = []
+    actual_validation_report_hash = _sha256(validation_report_path)
+    if (
+        not expected_validation_report_hash.startswith("sha256:")
+        or len(expected_validation_report_hash) != 71
+    ):
+        errors.append("expected frozen validation report hash must be a sha256 digest")
+    elif actual_validation_report_hash != expected_validation_report_hash:
+        errors.append(
+            "frozen validation report hash mismatch: "
+            f"expected {expected_validation_report_hash!r}, got {actual_validation_report_hash!r}"
+        )
     report = _load_json(validation_report_path)
     refs = report.get("refs")
     hashes = report.get("hashes")
@@ -231,6 +246,8 @@ def validate(validation_report_path: Path) -> dict[str, Any]:
         "errors": errors,
         "claimed_scope": dict(claimed_scope),
         "validation_report": validation_report_path.relative_to(ROOT).as_posix(),
+        "validation_report_hash": actual_validation_report_hash,
+        "expected_validation_report_hash": expected_validation_report_hash,
         "validated_paths": paths,
     }
 
@@ -238,6 +255,7 @@ def validate(validation_report_path: Path) -> dict[str, Any]:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate a hash-bound frozen E4 evidence chain.")
     parser.add_argument("--validation-report", required=True)
+    parser.add_argument("--validation-report-sha256", required=True)
     parser.add_argument("--json-out", required=True)
     args = parser.parse_args(argv)
     output = Path(args.json_out)
@@ -245,7 +263,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         output = ROOT / output
     try:
         report_path = _resolve(args.validation_report, label="frozen validation report")
-        result = validate(report_path)
+        result = validate(
+            report_path,
+            expected_validation_report_hash=args.validation_report_sha256,
+        )
     except (FileNotFoundError, OSError, ReferenceResolutionError, ValueError, json.JSONDecodeError) as exc:
         result = {
             "schema_version": "bb.e4.frozen_evidence_validation.v1",
@@ -254,6 +275,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "errors": [str(exc)],
             "claimed_scope": {},
             "validation_report": args.validation_report,
+            "validation_report_hash": None,
+            "expected_validation_report_hash": args.validation_report_sha256,
             "validated_paths": {},
         }
     output.parent.mkdir(parents=True, exist_ok=True)
