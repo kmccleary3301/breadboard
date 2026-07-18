@@ -197,6 +197,7 @@ def test_updated_manifest_refreshes_derived_from_hashes(tmp_path: Path) -> None:
         {
             "artifacts": [
                 {
+                    "bytes": 0,
                     "derived_from": [f"{dependency_path}#sha256:{'0' * 64}"],
                     "path": str(artifact_path),
                     "role": "parity_results",
@@ -216,6 +217,7 @@ def test_updated_manifest_refreshes_derived_from_hashes(tmp_path: Path) -> None:
     updated = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert updated["artifacts"][0]["derived_from"] == [generator.ref(dependency_path)]
     assert updated["artifacts"][0]["sha256"] == generator.sha256_path(artifact_path)
+    assert updated["artifacts"][0]["bytes"] == artifact_path.stat().st_size
 
 
 def test_updated_node_gate_only_syncs_refs_and_hashes(tmp_path: Path) -> None:
