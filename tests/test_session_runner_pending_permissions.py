@@ -71,6 +71,10 @@ async def test_concurrent_set_mode_failure_wins_oneshot_completion(monkeypatch) 
 async def test_stop_wakes_oneshot_and_wins_terminal_status(monkeypatch) -> None:
     runner, session = _product_runner("stopped"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized); monkeypatch.setattr(runner, "_execute_task", lambda _task: (runner._request_stop("race"), {"completion_summary": {"completed": True}})[1]); await runner._run()
     assert (runner.session.status, session.read_model.status, runner._stop_event.is_set()) == (SessionStatus.STOPPED, "canceled", True); assert None in runner._input_queue._queue
+def test_stop_signals_runtime_when_cancel_evidence_fails() -> None:
+    runner, session = _product_runner("stop-sink"); runner._control_queue = asyncio.Queue(); session._sink = type("Failing", (), {"append": lambda *_: (_ for _ in ()).throw(OSError("sink unavailable"))})()
+    with pytest.raises(OSError, match="sink unavailable"): runner._request_stop("operator")
+    assert runner._stop_event.is_set() and runner._resume_event.is_set() and runner._input_queue.get_nowait() is None and runner._control_queue.get_nowait() == {"kind": "stop"} and session.read_model.status == "running"
 @pytest.mark.asyncio
 async def test_stop_during_agent_initialization_never_executes_task(monkeypatch) -> None:
     runner, session = _product_runner("init-stop"); runner.session.metadata["cli_session_kind"] = "oneshot"; await runner.registry.create(runner.session); calls = []; monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {}); monkeypatch.setattr(runner, "_ensure_agent_initialized", lambda: asyncio.sleep(0, result=runner._request_stop("init"))); monkeypatch.setattr(runner, "_execute_task", lambda task: calls.append(task)); await runner._run(); assert calls == [] and session.read_model.status == "canceled"

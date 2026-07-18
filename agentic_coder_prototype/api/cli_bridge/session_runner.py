@@ -242,15 +242,17 @@ class SessionRunner:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
             stopping = not product_session or product_session.read_model.status not in {"completed", "failed", "canceled"}
-            if stopping: self.transition_product_session("cancel", reason)
-            self._stop_event.set(); self._resume_event.set(); self._input_queue.put_nowait(None)
             try:
-                if not self._signal_control("stop"):
-                    request_stop = getattr(getattr(self._agent, "agent", None), "request_stop", None)
-                    remote = getattr(request_stop, "remote", None)
-                    if callable(remote): remote()
-                    elif callable(request_stop): request_stop()
-            except Exception: pass
+                if stopping: self.transition_product_session("cancel", reason)
+            finally:
+                self._stop_event.set(); self._resume_event.set(); self._input_queue.put_nowait(None)
+                try:
+                    if not self._signal_control("stop"):
+                        request_stop = getattr(getattr(self._agent, "agent", None), "request_stop", None)
+                        remote = getattr(request_stop, "remote", None)
+                        if callable(remote): remote()
+                        elif callable(request_stop): request_stop()
+                except Exception: pass
             return stopping
 
     async def stop(self) -> None:
