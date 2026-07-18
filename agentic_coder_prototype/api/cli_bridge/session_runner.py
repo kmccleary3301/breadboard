@@ -958,10 +958,14 @@ class SessionRunner:
                 metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
                 one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
                 with self._product_session_lock:
-                    product_session = getattr(self.session, "product_session", None); product_status = getattr(product_session, "read_model", None)
-                    if one_shot and getattr(product_status, "status", None) == "running" and not self._stop_event.is_set():
-                        self.transition_product_session("complete")
-                    durable_success = getattr(getattr(product_session, "read_model", None), "status", None) == "completed" if one_shot else getattr(product_status, "status", None) not in {"failed", "canceled"}
+                    product_session = getattr(self.session, "product_session", None)
+                    if product_session is None:
+                        durable_success = True
+                    else:
+                        product_status = product_session.read_model
+                        if one_shot and product_status.status == "running" and not self._stop_event.is_set():
+                            self.transition_product_session("complete")
+                        durable_success = product_session.read_model.status == "completed" if one_shot else product_status.status not in {"failed", "canceled"}
                 if durable_success:
                     await self.registry.update_metadata(
                         self.session.session_id, completion_summary=result.get("completion_summary"),
@@ -978,11 +982,17 @@ class SessionRunner:
                 if one_shot:
                     break
 
-            product_session = getattr(self.session, "product_session", None); product_state = getattr(getattr(product_session, "read_model", None), "status", None)
-            if product_state == "running" and not self._stop_event.is_set(): self.transition_product_session("complete")
-            elif product_state not in {"completed", "failed", "canceled"}: self.transition_product_session("cancel", "runtime stopped")
-            product_state = product_session.read_model.status
-            final_status = {"completed": SessionStatus.COMPLETED, "failed": SessionStatus.FAILED, "canceled": SessionStatus.STOPPED}[product_state]
+            product_session = getattr(self.session, "product_session", None)
+            if product_session is None:
+                metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+                legacy_one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
+                final_status = SessionStatus.STOPPED if self._stop_event.is_set() and not legacy_one_shot else SessionStatus.COMPLETED
+            else:
+                product_state = product_session.read_model.status
+                if product_state == "running" and not self._stop_event.is_set(): self.transition_product_session("complete")
+                elif product_state not in {"completed", "failed", "canceled"}: self.transition_product_session("cancel", "runtime stopped")
+                product_state = product_session.read_model.status
+                final_status = {"completed": SessionStatus.COMPLETED, "failed": SessionStatus.FAILED, "canceled": SessionStatus.STOPPED}[product_state]
             await self.registry.update_status(self.session.session_id, final_status)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Session %s failed", self.session.session_id)
