@@ -6,7 +6,7 @@ from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
 from breadboard.product.runtime.events import KernelEvent, SessionView, rebuild
 from breadboard.product.runtime.ports import JsonlEventSink
-from breadboard.product.runtime.session import Session
+from breadboard.product.runtime.events import Session
 HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.ports.os.", "breadboard.product.runtime.artifacts.os."
 def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLock._from_record({"graph_hash": digest})
 _PAYLOADS = {
