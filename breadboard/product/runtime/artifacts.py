@@ -78,9 +78,14 @@ class ArtifactStore:
         if len(content) != ref.size_bytes or hashlib.sha256(content).hexdigest() != digest: raise RuntimeError("artifact verification failed")
         return content
     def materialize(self, ref: ArtifactRef, destination: str | Path) -> Path:
-        content, target = self.read(ref), Path(destination)
+        content, target, temporary = self.read(ref), Path(destination), None
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
+        try:
+            with tempfile.NamedTemporaryFile(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name); stream.write(content); stream.flush(); os.fsync(stream.fileno())
+            os.replace(temporary, target); _sync_directory(target.parent)
+        finally:
+            if temporary is not None: temporary.unlink(missing_ok=True)
         return target
     def manifest(self, session_id: str, artifacts: dict[str, ArtifactRef]) -> dict[str, Any]:
         if not isinstance(session_id, str) or not session_id: raise ValueError("manifest session_id must be a nonempty string")

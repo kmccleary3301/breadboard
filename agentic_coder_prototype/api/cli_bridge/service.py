@@ -54,7 +54,7 @@ def _env_flag(name: str) -> bool:
     return (os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"})
 
 
-_START_PENDING, _START_COMMITTED = ".start.pending", ".start.committed"
+_START_PENDING, _START_COMMITTED, _START_OWNER = ".start.pending", ".start.committed", ".start.owner"
 
 def _event_root() -> Path:
     return Path(os.environ.get("BREADBOARD_SESSION_EVENT_ROOT", Path.home() / ".breadboard" / "session_events")).resolve()
@@ -65,18 +65,29 @@ def _sync_tree(root: Path) -> None:
             with path.open("rb") as stream: os.fsync(stream.fileno())
     for path in sorted((root, *(item for item in root.rglob("*") if item.is_dir())), key=lambda item: len(item.parts), reverse=True): _sync_directory(path)
 
+def _start_active(path: Path) -> bool:
+    try:
+        pid = int((path / _START_OWNER).read_text(encoding="utf-8").strip())
+        os.kill(pid, 0); return True
+    except PermissionError: return True
+    except (OSError, ValueError): return False
+
 def _cleanup_incomplete_starts() -> None:
     record_root, event_root = default_runtime_record_root(), _event_root()
     for staged in record_root.glob(".*.records.starting") if record_root.is_dir() else ():
-        session_id = staged.name[1:-len(".records.starting")]; shutil.rmtree(event_root / session_id, ignore_errors=True) if not (record_root / session_id / _START_COMMITTED).is_file() else None; shutil.rmtree(staged, ignore_errors=True)
+        session_id = staged.name[1:-len(".records.starting")]
+        if _start_active(staged): continue
+        if not (record_root / session_id / _START_COMMITTED).is_file(): shutil.rmtree(event_root / session_id, ignore_errors=True)
+        shutil.rmtree(staged, ignore_errors=True)
     for bundle in record_root.iterdir() if record_root.is_dir() else ():
-        if bundle.is_dir() and (bundle / _START_PENDING).exists() and not (bundle / _START_COMMITTED).exists(): shutil.rmtree(bundle, ignore_errors=True); shutil.rmtree(event_root / bundle.name, ignore_errors=True)
+        if bundle.is_dir() and (bundle / _START_PENDING).exists() and not (bundle / _START_COMMITTED).exists() and not _start_active(bundle): shutil.rmtree(bundle, ignore_errors=True); shutil.rmtree(event_root / bundle.name, ignore_errors=True)
     for staged in event_root.glob(".*.events.starting") if event_root.is_dir() else ():
+        if _start_active(staged): continue
         session_id = staged.name[1:-len(".events.starting")]; authority, target = record_root / session_id / _START_COMMITTED, event_root / session_id
         if authority.is_file():
             target.mkdir(parents=True, exist_ok=True)
             for path in staged.iterdir(): (target / path.name).exists() or path.replace(target / path.name)
-            shutil.rmtree(staged, ignore_errors=True); _sync_tree(target)
+            (target / _START_OWNER).unlink(missing_ok=True); shutil.rmtree(staged, ignore_errors=True); _sync_tree(target)
         else: shutil.rmtree(staged, ignore_errors=True)
     for root in (record_root, event_root): _sync_directory(root) if root.is_dir() else None
 
@@ -100,6 +111,7 @@ class SessionService:
         self, session_id: str, staged_record_dir: Path, staging_record_root: Path, runtime_record_dir: Path, staged_event_dir: Path, event_dir: Path, publish_records: bool,
     ) -> None:
         bundle = staged_record_dir if publish_records else staged_event_dir
+        bundle.mkdir(parents=True, exist_ok=True); (bundle / _START_OWNER).write_text(str(os.getpid()), encoding="utf-8")
         if publish_records:
             bundle.mkdir(parents=True, exist_ok=True); (bundle / _START_PENDING).write_text(session_id + "\n", encoding="utf-8")
             _sync_tree(bundle); _sync_tree(staged_event_dir); self._publication_boundary("records")
@@ -115,6 +127,8 @@ class SessionService:
         target = runtime_record_dir if publish_records else event_dir; bundle.replace(target); _sync_directory(target.parent); self._publication_boundary("authority")
         if publish_records: shutil.rmtree(staging_record_root, ignore_errors=True)
         if publish_records and runtime_record_dir != event_dir: staged_event_dir.replace(event_dir); _sync_directory(event_dir.parent)
+        for owner in {target / _START_OWNER, event_dir / _START_OWNER}: owner.unlink(missing_ok=True)
+        for root in {target, event_dir}: _sync_directory(root) if root.is_dir() else None
 
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
         session_id, metadata = str(uuid.uuid4()), dict(request.metadata or {}); metadata.setdefault("config_path", request.config_path)
@@ -124,8 +138,11 @@ class SessionService:
         emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = default_runtime_record_root() / session_id, _event_root() / session_id
         staging_record_root = runtime_record_dir.parent / f".{session_id}.records.starting"
         staged_record_dir, staged_event_dir = staging_record_root / session_id, event_dir.with_name(f".{session_id}.events.starting")
-        if emit_primitives: metadata.setdefault("runtime_record_dir", str(runtime_record_dir))
         if event_dir.exists() or emit_primitives and runtime_record_dir.exists(): raise RuntimeError(f"session bundle already exists: {session_id}")
+        active_stages = {staged_event_dir, *({staging_record_root} if emit_primitives else set())}
+        for path in active_stages:
+            path.mkdir(parents=True, exist_ok=True); (path / _START_OWNER).write_text(str(os.getpid()), encoding="utf-8")
+        if emit_primitives: metadata.setdefault("runtime_record_dir", str(runtime_record_dir))
         record.runner, record.product_artifacts, published = runner, {}, False
         try:
             if emit_primitives:
@@ -144,8 +161,9 @@ class SessionService:
             published = True; await self._ensure_dispatcher(record)
             await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
             await runner.start()
-        except Exception:
+        except BaseException:
             published = published or ((runtime_record_dir if emit_primitives else event_dir) / _START_COMMITTED).is_file()
+            if published: (staged_event_dir / _START_OWNER).unlink(missing_ok=True)
             try: runner.transition_product_session("fail", "session_setup_failed", "session setup failed")
             except Exception: logger.exception("Failed to terminalize session %s after setup failure", session_id)
             try: await runner.stop()
@@ -466,6 +484,10 @@ class SessionService:
         terminal_status = {"canceled": SessionStatus.STOPPED, "completed": SessionStatus.COMPLETED, "failed": SessionStatus.FAILED}.get(
             getattr(getattr(product_session, "read_model", None), "status", None))
         if terminal_status is not None: await self.registry.update_status(session_id, terminal_status)
+    async def delete_session(self, session_id: str) -> None:
+        await self.stop_session(session_id)
+        await self.registry.delete(session_id)
+
 
     async def send_input(self, session_id: str, payload: SessionInputRequest) -> SessionInputResponse:
         record = await self.ensure_session(session_id)
@@ -560,10 +582,12 @@ class SessionService:
                     "metadata": metadata or {},
                 }
             )
-        record.product_artifacts = artifact_refs
-        record.metadata["artifact_manifest"] = artifact_store.manifest(session_id, artifact_refs)
         if not handles:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no attachment data found")
+        record.product_artifacts = artifact_refs
+        manifest = artifact_store.manifest(session_id, artifact_refs); manifest_ref = artifact_store.put_json(manifest)
+        artifact_store.materialize(manifest_ref, workspace_dir / ".breadboard" / "artifacts" / "manifests" / f"{session_id}.json")
+        record.metadata["artifact_manifest"], record.metadata["artifact_manifest_ref"] = manifest, manifest_ref.as_dict()
         runner.register_attachments(attachment_entries)
         return AttachmentUploadResponse(attachments=handles)
 

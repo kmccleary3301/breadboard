@@ -57,7 +57,7 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
     with pytest.raises(HTTPException) as error:
         await service.execute_command(response.session_id, request)
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["approval.resolved", "session.failed"]; assert record.status.value == "failed"
-    assert not persisted and "permission_rules" not in record.metadata
+    assert persisted == [True] and record.metadata["permission_rules"][0]["rule"] == "*.sh"
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.FAILED and type(record.product_session).restore(record.product_session.events).read_model.status == "failed"; await _stop(record)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("command", "payload"), [
@@ -65,14 +65,15 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
     ("set_skills", {"allowlist": ["test-skill"]}),
     ("set_mode", {"mode": "plan"}),
 ])
-async def test_reconfiguration_is_durable_before_runtime_mutation(monkeypatch, tmp_path, command, payload) -> None:
+async def test_failed_durable_reconfigure_rolls_back_runtime_mutation(monkeypatch, tmp_path, command, payload) -> None:
     service, response, record = await _create(monkeypatch, tmp_path); runner = record.runner
+    calls = []; model_config = runner.current_runtime_config(); model_config["providers"].pop("default_model", None); model_config["mode"] = runner._mode; runtime_config = model_config if command in {"set_model", "set_mode"} else {}; runner._agent = SimpleNamespace(config=runtime_config) if command == "set_model" else SimpleNamespace(config=runtime_config, apply_runtime_overrides=lambda overrides: calls.append(overrides) or model_config.update(overrides) or True)
     before_config, before_metadata, before_model, before_mode = runner.current_runtime_config(), dict(record.metadata), runner._model_override, runner._mode
     sink, record.product_session._sink = record.product_session._sink, _Failing()
     with pytest.raises(OSError, match="sink unavailable"):
         await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
     assert runner.current_runtime_config() == before_config; assert record.metadata == before_metadata; assert (runner._model_override, runner._mode) == (before_model, before_mode)
-    assert [event.kind for event in record.product_session.events] == ["session.started"]
+    assert [event.kind for event in record.product_session.events] == ["session.started"]; assert "default_model" not in runner._agent.config["providers"] if command == "set_model" else len(calls) == 2
     if command == "set_mode":
         record.product_session._sink = sink
         await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
@@ -90,7 +91,7 @@ async def test_runtime_failure_does_not_advance_registry_past_failed_sink(monkey
     await _stop(record)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("command", ["set_model", "set_skills"])
-async def test_reconfiguration_commit_failure_terminalizes_session(monkeypatch, tmp_path, command) -> None:
+async def test_runtime_reconfigure_failure_never_claims_effective_config(monkeypatch, tmp_path, command) -> None:
     class RejectingModelConfig(dict):
         def setdefault(self, *_args, **_kwargs): raise RuntimeError("model propagation failed")  # type: ignore[no-untyped-def]
     if command == "set_model": agent = SimpleNamespace(config=RejectingModelConfig()); payload = {"model": "openrouter/openai/gpt-5-nano"}
@@ -98,7 +99,7 @@ async def test_reconfiguration_commit_failure_terminalizes_session(monkeypatch, 
     service, response, record = await _create(monkeypatch, tmp_path); record.runner._agent = agent
     with pytest.raises(HTTPException) as error:
         await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
-    assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["session.reconfigured", "session.failed"]; assert record.status is SessionStatus.FAILED
+    assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["session.started", "session.failed"]; assert record.status is SessionStatus.FAILED
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.FAILED and record.product_session.events[-1].kind == "session.failed"; await _stop(record)
 @pytest.mark.asyncio
 async def test_setup_failure_terminalizes_registered_session(monkeypatch, tmp_path) -> None:
@@ -111,11 +112,12 @@ async def test_setup_failure_terminalizes_registered_session(monkeypatch, tmp_pa
     assert (record.status.value, record.product_session.events[-1].kind) == ("failed", "session.failed"); assert record.product_session.read_model.terminal_outcome["error"] == "session_setup_failed"
     assert record.runner._stop_event.is_set() and record.dispatcher_task.done()
 @pytest.mark.asyncio
-async def test_initial_durable_start_failure_has_no_published_lifecycle(monkeypatch, tmp_path) -> None:
+@pytest.mark.parametrize("failure", [OSError, asyncio.CancelledError])
+async def test_initial_durable_start_failure_has_no_published_lifecycle(monkeypatch, tmp_path, failure) -> None:
     records_root, events_root, started = tmp_path / "records", tmp_path / "events", []; entered, released = threading.Event(), threading.Event()
     async def start(runner) -> None: started.append(runner)  # type: ignore[no-untyped-def]
     def emit(*, session_id, request, output_root, **_): path = output_root / session_id / "start.json"; path.parent.mkdir(parents=True); path.write_text("emitted", encoding="utf-8"); entered.set(); assert released.wait(2); return {"start": str(path)}  # type: ignore[no-untyped-def]
-    def fail_sync(_stream) -> None: raise OSError("initial append failed")  # type: ignore[no-untyped-def]
+    def fail_sync(_stream) -> None: raise failure("initial append failed")  # type: ignore[no-untyped-def]
     monkeypatch.setattr(RUNNER, start); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setattr(SERVICE + "emit_session_start_records", emit)
     monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "durable-start-failure"); monkeypatch.setattr(runtime_ports, "_sync", fail_sync)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root))
@@ -124,7 +126,7 @@ async def test_initial_durable_start_failure_has_no_published_lifecycle(monkeypa
     assert await asyncio.to_thread(entered.wait, 2); assert await service.registry.get("durable-start-failure") is None
     assert not (records_root / "durable-start-failure").exists() and not (events_root / "durable-start-failure").exists()
     released.set()
-    with pytest.raises(OSError, match="initial append failed"): await pending
+    with pytest.raises(failure, match="initial append failed"): await pending
     assert await service.registry.get("durable-start-failure") is None and started == []; assert not any(records_root.iterdir()) and not any(events_root.iterdir())
 @pytest.mark.asyncio
 @pytest.mark.parametrize("boundary", ["records", "events", "commit", "authority"])
@@ -140,6 +142,7 @@ async def test_start_publication_boundaries_are_invisible_and_retryable(monkeypa
         if armed and name == boundary: entered.set(); assert released.wait(2); armed = False; raise OSError(f"{name} publication failed")
     monkeypatch.setattr(service, "_publication_boundary", failpoint); request = SessionCreateRequest(config_path=CONFIG, task="task")
     pending = asyncio.create_task(asyncio.to_thread(lambda: asyncio.run(service.create_session(request)))); assert await asyncio.to_thread(entered.wait, 2); session_id = "publication-failure"; authority = (records_root if primitives else events_root) / session_id; assert session_id not in service.registry._records
+    active_paths = [path for path in (records_root / f".{session_id}.records.starting", events_root / f".{session_id}.events.starting", authority) if path.exists()]; SessionService(); assert active_paths and all(path.exists() for path in active_paths)
     if boundary == "authority":
         hidden_event = events_root / f".{session_id}.events.starting" / "session_events.jsonl"; assert (authority / ".start.committed").is_file() and ((events_root / session_id / "session_events.jsonl").is_file() or hidden_event.is_file())
     else: assert not (records_root / session_id).exists() and not (events_root / session_id).exists() and not (records_root / session_id / "records" / "config_plane.jsonl").exists()
@@ -157,6 +160,20 @@ def test_startup_removes_incomplete_and_recovers_committed_projection(monkeypatc
     for path in (records_root / "incomplete", events_root / "incomplete", records_root / ".staged.records.starting", events_root / "staged", records_root / ".committed.records.starting", records_root / "committed", events_root / "committed", events_root / ".other.events.starting", records_root / "recoverable", events_root / ".recoverable.events.starting"): path.mkdir(parents=True, exist_ok=True)
     (records_root / "incomplete" / ".start.pending").write_text("incomplete\n"); (records_root / "committed" / ".start.pending").write_text("committed\n"); (records_root / "committed" / ".start.committed").write_text("committed\n"); (events_root / "committed" / "session_events.jsonl").write_text("{}\n"); (records_root / "recoverable" / ".start.committed").write_text("recoverable\n"); (events_root / ".recoverable.events.starting" / "session_events.jsonl").write_text('{"kind":"session.started"}\n'); SessionService()
     assert {path.name for path in records_root.iterdir()} == {"committed", "recoverable"} and {path.name for path in events_root.iterdir()} == {"committed", "recoverable"} and (records_root / "committed" / ".start.committed").is_file() and (events_root / "recoverable" / "session_events.jsonl").is_file()
+@pytest.mark.asyncio
+async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(monkeypatch, tmp_path) -> None:
+    class Upload:
+        filename, content_type, data = "proof.txt", "text/plain", b"proof"
+        async def read(self) -> bytes: return self.data
+    workspace = tmp_path / "workspace"; service, response, record = await _create(monkeypatch, tmp_path, workspace=str(workspace))
+    uploaded = await service.upload_attachments(response.session_id, [Upload()]); attachment_id = uploaded.attachments[0].id
+    manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.json"; manifest = json.loads(manifest_path.read_text()); empty = Upload(); empty.data = b""; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata))
+    empty_error, missing_error = await asyncio.gather(service.upload_attachments(response.session_id, [empty]), service.send_input(response.session_id, SessionInputRequest(content="use it", attachments=["missing"])), return_exceptions=True)
+    assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
+    await service.delete_session(response.session_id); assert await service.registry.get(response.session_id) is None and manifest_path.is_file()
+    with pytest.raises(HTTPException) as missing: await service.ensure_session(response.session_id)
+    assert missing.value.status_code == 404
+
 @pytest.mark.asyncio
 async def test_completed_dispatch_replay_is_ordered_and_finite(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path)

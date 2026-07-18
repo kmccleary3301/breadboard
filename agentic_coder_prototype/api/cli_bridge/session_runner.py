@@ -168,6 +168,8 @@ class SessionRunner:
         self._task: Optional[asyncio.Task[None]] = None
         self._agent: Optional[Any] = None
         self._stop_event = asyncio.Event()
+        self._resume_event = asyncio.Event(); self._resume_event.set()
+        self._permission_decision_lock = asyncio.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._input_queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
         self._product_session_lock = threading.RLock()
@@ -226,10 +228,19 @@ class SessionRunner:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
             stopping = not product_session or product_session.read_model.status not in {"completed", "failed", "canceled"}
-            if stopping:
-                self.transition_product_session("cancel", reason)
-            self._stop_event.set()
-            self._input_queue.put_nowait(None)
+            if stopping: self.transition_product_session("cancel", reason)
+            self._stop_event.set(); self._resume_event.set(); self._input_queue.put_nowait(None)
+            queue = getattr(self, "_control_queue", None)
+            try:
+                if queue is not None:
+                    put = getattr(queue, "put_nowait", None) or getattr(queue, "put", None)
+                    if callable(put): put({"kind": "stop"})
+                else:
+                    request_stop = getattr(getattr(self._agent, "agent", None), "request_stop", None)
+                    remote = getattr(request_stop, "remote", None)
+                    if callable(remote): remote()
+                    elif callable(request_stop): request_stop()
+            except Exception: pass
             return stopping
 
     async def stop(self) -> None:
@@ -245,15 +256,15 @@ class SessionRunner:
         if not content or not content.strip():
             raise ValueError("input content must not be empty")
         content = self._sanitize_interactive_input_content(content)
-        attachment_ids = [item for item in (attachments or []) if isinstance(item, str) and item.strip()]
+        attachment_ids = [item.strip() for item in (attachments or []) if isinstance(item, str) and item.strip()]
         payload = {"content": content, "attachments": attachment_ids}
         with self._product_session_lock:
+            artifacts = getattr(self.session, "product_artifacts", {})
+            unknown = [item for item in attachment_ids if not isinstance(artifacts, dict) or item not in artifacts]
+            if unknown: raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
             product_session = getattr(self.session, "product_session", None)
             if product_session is not None:
-                artifacts = getattr(self.session, "product_artifacts", {})
-                refs = [artifacts[item] for item in attachment_ids
-                        if isinstance(artifacts, dict) and item in artifacts]
-                product_session.input(content, refs)
+                product_session.input(content, [artifacts[item] for item in attachment_ids])
                 self.session.metadata["session_contract"] = product_session.read_model.as_dict()
             self._input_queue.put_nowait(payload)
         return content
@@ -369,54 +380,39 @@ class SessionRunner:
                 await self.publish_event_async(EventType.CHECKPOINT_LIST, {"checkpoints": checkpoints})
                 return {"status": "ok", "checkpoint_id": checkpoint_id.strip(), "mode": mode, "prune": prune}
             case "permission_decision":
-                request_id = (
-                    payload.get("request_id")
-                    or payload.get("requestId")
-                    or payload.get("permission_id")
-                    or payload.get("permissionId")
-                    or payload.get("id")
-                )
-                decision = payload.get("decision") or payload.get("response")
-                rule = payload.get("rule")
-                scope = payload.get("scope")
-                note = payload.get("note")
-                if not isinstance(request_id, str) or not request_id.strip():
-                    raise ValueError("permission_decision requires non-empty 'request_id'")
-                if not isinstance(decision, str) or not decision.strip():
-                    raise ValueError("permission_decision requires non-empty 'decision'")
-                normalized = decision.strip().lower()
-                response_value = _canonical_permission_resolution(normalized, None)
-                # Permission broker accepts a dict item with request_id + response/decision.
-                # We use the simplest uniform response (applies to all items in a batch).
-                permission_payload = {
-                    "request_id": request_id.strip(),
-                    "response": response_value,
-                }
-                category = self._infer_permission_category(request_id.strip()) if rule else None
-                workspace_dir = self.get_workspace_dir() if rule else None
-                if rule:
-                    before = dict(self.session.metadata or {}); metadata = dict(before)
-                    rules = list(metadata.get("permission_rules") or []); rules.append(
-                        {"request_id": request_id.strip(), "decision": normalized, "rule": rule, "scope": scope, "note": note})
-                    metadata["permission_rules"] = rules
-                    persist_rule = (response_value == "always" or normalized in {"deny-always", "deny_always"}) and category and workspace_dir
-                    rule_path = workspace_dir / ".breadboard" / "permission_rules.json" if persist_rule else None
-                    prior_rule_file = rule_path.read_bytes() if rule_path and rule_path.exists() else None
-                    try:
+                async with self._permission_decision_lock:
+                    request_id = next((payload.get(key) for key in ("request_id", "requestId", "permission_id", "permissionId", "id") if payload.get(key)), None)
+                    decision = payload.get("decision") or payload.get("response")
+                    if not isinstance(request_id, str) or not request_id.strip(): raise ValueError("permission_decision requires non-empty 'request_id'")
+                    if not isinstance(decision, str) or not decision.strip(): raise ValueError("permission_decision requires non-empty 'decision'")
+                    request_id, normalized = request_id.strip(), decision.strip().lower()
+                    pending = self.session.metadata.get("pending_permissions")
+                    active = pending[0] if isinstance(pending, list) and pending and isinstance(pending[0], dict) else {}
+                    if str(active.get("request_id") or active.get("id") or "") != request_id: raise ValueError("permission request is not active")
+                    response_value = _canonical_permission_resolution(normalized, None)
+                    rule, scope, note = payload.get("rule"), payload.get("scope"), payload.get("note")
+                    category = self._infer_permission_category(request_id) if rule else None
+                    workspace_dir = self.get_workspace_dir() if rule else None
+                    if rule:
+                        metadata = dict(self.session.metadata or {}); rules = list(metadata.get("permission_rules") or [])
+                        rules.append({"request_id": request_id, "decision": normalized, "rule": rule, "scope": scope, "note": note})
+                        metadata["permission_rules"] = rules
+                        persist_rule = (response_value == "always" or normalized in {"deny-always", "deny_always"}) and category and workspace_dir
                         if persist_rule and upsert_permission_rule(
                             workspace_dir, category=category, pattern=str(rule).strip(),
                             decision="deny" if normalized.startswith("deny") else "allow", scope=str(scope or "project"),
-                        ) is False: raise RuntimeError("failed to persist permission rule")
-                        await self.registry.update_metadata(self.session.session_id, metadata=metadata)
-                    except Exception:
-                        if rule_path: rule_path.write_bytes(prior_rule_file) if prior_rule_file is not None else rule_path.unlink(missing_ok=True)
-                        self.session.metadata = before
-                        self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision")
-                        raise
-                detail = await self.handle_command("respond_permission", permission_payload)
-                if normalized in {"deny-stop", "deny_stop"} or bool(payload.get("stop")):
-                    await self.handle_command("stop", {})
-                return {"status": "ok", "request_id": request_id.strip(), "decision": response_value, "delivered": detail}
+                        ) is False:
+                            self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision")
+                            raise RuntimeError("failed to persist permission rule")
+                        try: await self.registry.update_metadata(self.session.session_id, metadata=metadata)
+                        except Exception:
+                            if not persist_rule:
+                                self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision")
+                                raise
+                            self.session.metadata = metadata; logger.warning("Permission metadata projection failed after durable rule commit", exc_info=True)
+                    detail = await self.handle_command("respond_permission", {"request_id": request_id, "response": response_value})
+                    if normalized in {"deny-stop", "deny_stop"} or bool(payload.get("stop")): await self.handle_command("stop", {})
+                    return {"status": "ok", "request_id": request_id, "decision": response_value, "delivered": detail}
             case "set_skills":
                 selection_payload = dict(payload or {})
                 if "selected" in selection_payload and "allowlist" not in selection_payload:
@@ -424,56 +420,34 @@ class SessionRunner:
                 with self._product_session_lock:
                     config = dict(getattr(self._agent, "config", {}) or {}) if self._agent else {}
                     selection = normalize_skill_selection(config, selection_payload)
-                    overrides = {"skills.allowlist": selection.get("allowlist") or [],
-                                 "skills.blocklist": selection.get("blocklist") or []}
-                    prepared = apply_dotted_overrides(self.current_runtime_config(), overrides)
-                    if durable_reconfigure is not None:
-                        durable_reconfigure(prepared)
-                    if self._agent:
-                        try:
-                            committed = self._agent.apply_runtime_overrides(overrides)
-                        except Exception:
-                            committed = False
-                        if committed is False:
-                            self.transition_product_session(
-                                "fail", "runtime_reconfigure_failed", "failed to apply skills configuration")
-                            raise RuntimeError("failed to apply skills configuration")
-                    self.session.metadata["skills_selection"] = selection
-                    self._prepared_runtime_config = prepared
-                    self._persist_metadata_snapshot_threadsafe()
-                    self._skills_catalog_cache = None
+                    overrides = {"skills.allowlist": selection.get("allowlist") or [], "skills.blocklist": selection.get("blocklist") or []}
+                    previous = self.current_runtime_config(); previous_skills = previous.get("skills") if isinstance(previous.get("skills"), dict) else {}
+                    rollback = {"skills.allowlist": previous_skills.get("allowlist") or [], "skills.blocklist": previous_skills.get("blocklist") or []}
+                    try:
+                        if self._agent and self._agent.apply_runtime_overrides(overrides) is False: raise RuntimeError("failed to apply skills configuration")
+                        prepared = apply_dotted_overrides(previous, overrides)
+                        if durable_reconfigure is not None: durable_reconfigure(prepared)
+                    except Exception as error:
+                        rolled_back = self._rollback_runtime_overrides(rollback)
+                        if not isinstance(error, OSError) or not rolled_back: self.transition_product_session("fail", "runtime_reconfigure_failed", "failed to apply skills configuration")
+                        raise
+                    self.session.metadata["skills_selection"] = selection; self._prepared_runtime_config = prepared
+                    self._persist_metadata_snapshot_threadsafe(); self._skills_catalog_cache = None
                     catalog_payload = self.get_skill_catalog()
                 await self.publish_event_async(EventType.SKILLS_SELECTION, {"selection": selection})
                 await self.publish_event_async(EventType.SKILLS_CATALOG, catalog_payload)
                 return {"status": "ok", "selection": selection, "catalog": catalog_payload.get("catalog")}
+            case "pause":
+                self._resume_event.clear()
+                try: self.transition_product_session("pause", str(payload.get("reason") or "operator request"))
+                except Exception: self._resume_event.set(); raise
+                return {"status": "ok", "paused": True}
+            case "resume":
+                self.transition_product_session("resume"); self._resume_event.set()
+                return {"status": "ok", "paused": False}
             case "stop":
                 stopping = self._request_stop("stop command")
-                if not stopping:
-                    return {"status": "ok", "stopping": False}
-                queue = getattr(self, "_control_queue", None)
-                if queue is not None:
-                    try:
-                        put_nowait = getattr(queue, "put_nowait", None)
-                        if callable(put_nowait):
-                            put_nowait({"kind": "stop"})
-                        else:
-                            queue.put({"kind": "stop"})
-                    except Exception:
-                        pass
-                else:
-                    # Fallback: request the active conductor loop stop if it is local/in-process.
-                    agent = getattr(self._agent, "agent", None)
-                    if agent is not None:
-                        try:
-                            req = getattr(agent, "request_stop", None)
-                            remote = getattr(req, "remote", None) if req is not None else None
-                            if callable(remote):
-                                remote()
-                            elif callable(req):
-                                req()
-                        except Exception:
-                            pass
-                await self.publish_event_async(EventType.TASK_EVENT, {"kind": "stop_requested"})
+                if stopping: await self.publish_event_async(EventType.TASK_EVENT, {"kind": "stop_requested"})
                 return {"status": "ok", "stopping": stopping}
             case "set_model":
                 model_value = payload.get("model")
@@ -488,17 +462,23 @@ class SessionRunner:
                 if (policy.model_allowlist is not None or policy.model_denylist) and not policy.is_model_allowed(model_value):
                     raise ValueError(f"set_model denied by policy: {model_value}")
                 with self._product_session_lock:
-                    prepared = apply_dotted_overrides(
-                        self.current_runtime_config(), {"providers.default_model": model_value})
-                    if durable_reconfigure is not None:
-                        durable_reconfigure(prepared)
-                    self._model_override = model_value
-                    if not self._apply_model_override():
-                        self.transition_product_session(
-                            "fail", "runtime_reconfigure_failed", "failed to apply model configuration")
-                        raise RuntimeError("failed to apply model configuration")
-                    self.session.metadata["model"] = model_value
-                    self._prepared_runtime_config = prepared
+                    previous, previous_model = self.current_runtime_config(), self._model_override
+                    agent_config = getattr(self._agent, "config", {}) if self._agent else {}; agent_providers = agent_config.get("providers") if isinstance(agent_config, dict) and isinstance(agent_config.get("providers"), dict) else {}; rollback_model = ("default_model" in agent_providers, agent_providers.get("default_model"))
+                    prepared = apply_dotted_overrides(previous, {"providers.default_model": model_value})
+                    try:
+                        self._model_override = model_value
+                        if not self._apply_model_override(): raise RuntimeError("failed to apply model configuration")
+                        if durable_reconfigure is not None: durable_reconfigure(prepared)
+                    except Exception as error:
+                        self._model_override = previous_model; rolled_back = True
+                        try:
+                            providers = self._agent.config.setdefault("providers", {}) if self._agent else {}
+                            if rollback_model[0]: providers["default_model"] = rollback_model[1]
+                            else: providers.pop("default_model", None)
+                        except Exception: rolled_back = False; logger.exception("Failed to roll back model configuration")
+                        if not isinstance(error, OSError) or not rolled_back: self.transition_product_session("fail", "runtime_reconfigure_failed", "failed to apply model configuration")
+                        raise
+                    self.session.metadata["model"] = model_value; self._prepared_runtime_config = prepared
                 return {"status": "ok", "model": model_value}
             case "set_mode":
                 mode_value = payload.get("mode")
@@ -506,18 +486,16 @@ class SessionRunner:
                     raise ValueError("set_mode requires non-empty 'mode'")
                 mode_value = mode_value.strip()
                 with self._product_session_lock:
-                    overrides = {"mode": mode_value}
-                    prepared = apply_dotted_overrides(self.current_runtime_config(), overrides)
-                    if durable_reconfigure is not None:
-                        durable_reconfigure(prepared)
-                    if self._agent:
-                        try: committed = self._agent.apply_runtime_overrides(overrides)
-                        except Exception: committed = False
-                        if committed is False:
-                            self.transition_product_session("fail", "runtime_reconfigure_failed", "failed to apply mode configuration")
-                            raise RuntimeError("failed to apply mode configuration")
-                    self._mode = mode_value; self.session.metadata["mode"] = mode_value
-                    self._prepared_runtime_config = prepared
+                    overrides = {"mode": mode_value}; previous, previous_mode = self.current_runtime_config(), self._mode
+                    prepared = apply_dotted_overrides(previous, overrides)
+                    try:
+                        if self._agent and self._agent.apply_runtime_overrides(overrides) is False: raise RuntimeError("failed to apply mode configuration")
+                        if durable_reconfigure is not None: durable_reconfigure(prepared)
+                    except Exception as error:
+                        rolled_back = self._rollback_runtime_overrides({"mode": previous.get("mode")}); self._mode = previous_mode
+                        if not isinstance(error, OSError) or not rolled_back: self.transition_product_session("fail", "runtime_reconfigure_failed", "failed to apply mode configuration")
+                        raise
+                    self._mode = mode_value; self.session.metadata["mode"] = mode_value; self._prepared_runtime_config = prepared
                 return {"status": "ok", "mode": mode_value}
             case "session_child_next" | "session_child_previous" | "session_parent":
                 child_session_id = payload.get("child_session_id") or payload.get("childSessionId")
@@ -920,6 +898,8 @@ class SessionRunner:
                 if next_input is None:
                     break
 
+                await self._resume_event.wait()
+                if self._stop_event.is_set(): self._input_queue.task_done(); break
                 task_payload = dict(next_input)
                 task_text = str(task_payload.get("content", ""))
                 task_received_at = time.monotonic()
@@ -1017,6 +997,10 @@ class SessionRunner:
             await queue.put(None)
         except asyncio.QueueFull:  # pragma: no cover - defensive
             logger.warning("Event queue full while terminating session %s", self.session.session_id)
+
+    def _rollback_runtime_overrides(self, overrides: Dict[str, Any]) -> bool:
+        try: return not self._agent or self._agent.apply_runtime_overrides(overrides) is not False
+        except Exception: logger.exception("Failed to roll back runtime configuration"); return False
 
     def _apply_model_override(self) -> bool:
         if not self._agent or not self._model_override:
