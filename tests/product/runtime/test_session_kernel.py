@@ -4,9 +4,8 @@ from pathlib import Path; from typing import Any
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
-from breadboard.product.runtime.events import KernelEvent, Session, SessionView, rebuild
-from breadboard.product.runtime.ports import JsonlEventSink
-HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.ports.os.", "breadboard.product.runtime.artifacts.os."
+from breadboard.product.runtime.events import JsonlEventSink, KernelEvent, Session, SessionView, rebuild
+HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.events.os.", "breadboard.product.runtime.artifacts.os."
 def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLock._from_record({"graph_hash": digest})
 _PAYLOADS = {
     "session.started": {"effective_lock_hash": HASH, "task_hash": HASH}, "input.accepted": {"content_hash": HASH, "attachments": []},

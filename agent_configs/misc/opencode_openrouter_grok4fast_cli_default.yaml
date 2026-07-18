@@ -1,4 +1,4 @@
-extends: opencode_grok4fast_general.yaml
+extends: opencode_grok4fast_c_fs_v2.yaml
 
 profile: { name: opencode-openrouter-grok4fast-cli-default }
 

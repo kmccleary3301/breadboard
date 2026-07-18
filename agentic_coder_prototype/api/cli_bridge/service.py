@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any, AsyncIterator, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import AnchoredStorage, ArtifactStore, Session as ProductSession
-from breadboard.product.runtime.ports import JsonlEventSink
+from breadboard.product.runtime.events import JsonlEventSink
 from fastapi import HTTPException, UploadFile, status
 from .events import EventType, SessionEvent
 from .models import (

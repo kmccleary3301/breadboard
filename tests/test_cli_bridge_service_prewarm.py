@@ -1,7 +1,7 @@
 from __future__ import annotations
 from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest, yaml
 from fastapi import HTTPException
-from breadboard.product.runtime import ports as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
+from breadboard.product.runtime import events as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
 from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
 from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.api.cli_bridge.service import SessionService
 from agentic_coder_prototype.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
