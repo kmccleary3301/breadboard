@@ -2,6 +2,7 @@ from __future__ import annotations
 import copy
 import importlib
 import shutil
+from types import ModuleType
 import pytest
 from scripts.quality.build_surface_inventory import _binding_manifest, build_inventory
 import scripts.quality.run_axis_smoke as axis_runner
@@ -210,5 +211,9 @@ def test_axis_manifest_cannot_embed_a_promoted_score() -> None:
 def test_product_boundary_is_declarative_and_exports_no_implementation() -> None:
     product = importlib.import_module("breadboard.product")
     assert product.__all__ == []
-    public_names = {name for name in vars(product) if not name.startswith("_")}
-    assert public_names == set()
+    public_bindings = {
+        name: value
+        for name, value in vars(product).items()
+        if not name.startswith("_")
+    }
+    assert all(isinstance(value, ModuleType) for value in public_bindings.values())

@@ -1,19 +1,19 @@
 """Session execution helpers for the CLI bridge."""
-
 from __future__ import annotations
-
 import asyncio
 import json
 import logging
+import threading
 import os
 import shutil
 import time
-import uuid
+import uuid, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence, List, Tuple
-
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from breadboard.product.runtime.artifacts import _validate_artifact_name
+from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides
 from agentic_coder_prototype.compilation.effective_operation_policy import policy_pack_for_config_authority
 from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointManager
 from agentic_coder_prototype.skills.registry import (
@@ -29,6 +29,7 @@ from agentic_coder_prototype.permissions import (
     load_permission_rules,
     upsert_permission_rule,
 )
+from agentic_coder_prototype.permissions.broker import PermissionBroker
 from agentic_coder_prototype.todo import TodoStore
 from agentic_coder_prototype.todo.projection import project_store_snapshot_to_tui_envelope
 from agentic_coder_prototype.state.session_state import (
@@ -36,20 +37,44 @@ from agentic_coder_prototype.state.session_state import (
     CANONICAL_KERNEL_EVENT_TYPES,
     PROJECTION_ONLY_RUNTIME_EVENT_TYPES,
 )
-
 from .events import EventType, SessionEvent
 from .event_normalization import normalize_task_event_payload
 from .models import SessionCreateRequest, SessionStatus
 from .registry import SessionRecord, SessionRegistry
-
 logger = logging.getLogger(__name__)
-
-
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
-
-
-# These runtime event types are treated as kernel-owned event families and are
-# bridged through mostly as-is, subject to payload normalization.
+MAX_ATTACHMENT_BYTES = 16 * 1024
+_PERMISSION_ALIASES = {alias: decision for decision, aliases in {
+    "once": "once allow approve approved ok okay yes y allow-once allow_once", "always": "always allow-always allow_always",
+    "reject": "reject deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop",
+}.items() for alias in aliases.split()}
+def _permission_response_tokens(value: Any) -> list[str]:
+    if isinstance(value, dict): return [token for nested in value.values() for token in _permission_response_tokens(nested)]
+    return [value.strip().lower()] if isinstance(value, str) and value.strip() else []
+def _permission_item_ids(request: Any) -> list[str]: return [str(item["item_id"]) for item in request.get("items", []) if isinstance(item, dict) and item.get("item_id")] if isinstance(request, dict) else []
+def _permission_default_response(config: Any) -> str: return PermissionBroker((config.get("permissions") or {}) if isinstance(config, dict) else {})._default_response
+def _canonical_permission_resolution(response: Any, responses: Any, requested_ids: Sequence[str] = (), missing_response: str = "reject") -> str:
+    explicit = responses.get("items") if isinstance(responses, dict) else None; wrapped = isinstance(explicit, dict)
+    if not wrapped and isinstance(responses, dict) and requested_ids and any(item_id in responses for item_id in requested_ids): explicit = responses
+    if isinstance(responses, dict) and "default" in responses: tokens = _permission_response_tokens(responses["default"])
+    elif isinstance(explicit, dict):
+        fallback = (responses.get("fallback") or responses.get("default_response") or missing_response) if wrapped else missing_response
+        tokens = [_permission_response_tokens(explicit.get(item_id, fallback)) for item_id in requested_ids] if requested_ids else [_permission_response_tokens(value) for value in explicit.values()]; tokens = [token for group in tokens for token in group]
+    else: tokens = _permission_response_tokens(responses if isinstance(responses, dict) else response)
+    values = [PermissionBroker._coerce_response(_PERMISSION_ALIASES.get(token, token)) for token in tokens]
+    if not values: raise ValueError("permission response contains no valid decisions")
+    return "reject" if "reject" in values else "always" if all(value == "always" for value in values) else "once"
+def _control_kind(item: Any) -> str: return "stop" if item is None else item.strip().lower() if isinstance(item, str) else str(item.get("kind") or item.get("type") or ("stop" if item.get("stop") else "")).strip().lower() if isinstance(item, dict) else ""
+class _PauseAwareControlQueue:
+    def __init__(self, queue: Any) -> None: self._queue = queue
+    def __getattr__(self, name: str) -> Any: return getattr(self._queue, name)
+    def get_nowait(self) -> Any:
+        item = self._queue.get_nowait()
+        while _control_kind(item) == "pause": item = self._queue.get()
+        return item
+def _canonical_permission_responses(responses: Dict[str, Any]) -> Dict[str, Any]:
+    return {key: _canonical_permission_responses(value) if isinstance(value, dict)
+            else _canonical_permission_resolution(value, None) for key, value in responses.items()}
 KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES = {
     "assistant_message",
     "user_message",
@@ -63,9 +88,6 @@ KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES = {
     "ctree_snapshot",
     "task_event",
 }
-
-# These runtime event types exist primarily for live client streaming and are
-# not yet part of the shared kernel truth surface.
 BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES = {
     "stream.gap",
     "assistant.message.start",
@@ -79,9 +101,6 @@ BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES = {
     "tool.exec.end",
     "assistant_delta",
 }
-
-# These are host-facing lifecycle/control artifacts emitted by the bridge or
-# session orchestration layer rather than the kernel contract itself.
 BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
     "conversation.compaction.start",
     "conversation.compaction.end",
@@ -97,13 +116,8 @@ BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
     "error",
     "run_finished",
 }
-
 RuntimeEventContract = Dict[str, Optional[str]]
 TranslatedRuntimeEvent = Tuple[EventType, Dict[str, Any], Optional[int], RuntimeEventContract]
-
-
-
-
 def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
     event_name = str(event_type or "")
     for registry, classification in (
@@ -132,13 +146,8 @@ def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
     if event_name in BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES or event_name in {"permission_request", "permission_response", "task_event", "ctree_snapshot"}:
         return {"classification": "bridge_host", "family": f"host.{event_name}", "actor": "service", "visibility": "host"}
     return {"classification": "legacy_unclassified", "family": "legacy.unclassified", "actor": "engine", "visibility": "audit"}
-
-
-
-
 class SessionRunner:
     """Coordinates agent execution, user inputs, and command handling for a session."""
-
     def __init__(
         self,
         *,
@@ -151,29 +160,32 @@ class SessionRunner:
         self.registry = registry
         self.request = request
         self.agent_factory = agent_factory or self._default_factory
-
         self._task: Optional[asyncio.Task[None]] = None
         self._agent: Optional[Any] = None
         self._stop_event = asyncio.Event()
+        self._resume_event = asyncio.Event(); self._resume_event.set()
+        self._permission_decision_lock = asyncio.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._input_queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
+        self._product_session_lock = threading.RLock()
         self._published_events = 0
         self._closed = False
         self._workspace_path: Optional[Path] = None
         self._attachment_store: Dict[str, Dict[str, Any]] = {}
+        self._active_attachment_capabilities: Dict[str, Dict[str, Any]] = {}
         self._permission_queue: Any = None
+        self._consumed_permission_responses: Dict[tuple[str, str, str], int] = {}
         self._control_queue: Any = None
         self._checkpoint_manager: Optional[CheckpointManager] = None
         self._skills_catalog_cache: Optional[Dict[str, Any]] = None
         self._ctree_snapshot_cache: Optional[Dict[str, Any]] = None
         self._ctree_last_node: Optional[Dict[str, Any]] = None
         self._base_config_cache: Optional[Dict[str, Any]] = None
+        self._prepared_runtime_config: Optional[Dict[str, Any]] = None
         self._todo_enabled: bool = False
         self._active_bridge_timing_context: Optional[Dict[str, float]] = None
         self._accepted_task_texts: List[str] = []
-
-        # Live overrides updated via commands
-        initial_metadata = dict(self.session.metadata or {})
+        initial_metadata = self.session.metadata
         initial_metadata.update(dict(request.metadata or {}))
         self.session.metadata = initial_metadata
         self._model_override: Optional[str] = initial_metadata.get("model")
@@ -182,7 +194,6 @@ class SessionRunner:
             os.environ.get("BREADBOARD_PROFILE_TIMING", "").strip().lower() in {"1", "true", "yes", "on"}
             or initial_metadata.get("profile_timing")
         )
-
     def _default_factory(
         self,
         config_path: str,
@@ -190,7 +201,6 @@ class SessionRunner:
         overrides: Optional[Dict[str, Any]],
     ) -> Any:
         from agentic_coder_prototype.agent import create_agent
-
         metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         force_local_mode = bool(metadata.get("cli_force_local_mode", True))
         return create_agent(
@@ -199,44 +209,78 @@ class SessionRunner:
             overrides=overrides,
             force_local_mode=force_local_mode,
         )
-
     async def start(self) -> None:
         if self._task:
             raise RuntimeError("runner already started")
         loop = asyncio.get_running_loop()
         self._loop = loop
         self._task = loop.create_task(self._run(), name=f"kyle-session-{self.session.session_id}")
-
+    def _signal_control(self, kind: str) -> bool:
+        queue = getattr(self, "_control_queue", None)
+        put = (getattr(queue, "put_nowait", None) or getattr(queue, "put", None)) if queue is not None else None
+        if not callable(put): return False
+        put({"kind": kind}); return True
+    def _install_control_queue(self, queue: Any) -> None:
+        with self._product_session_lock:
+            self._control_queue = queue
+            if queue is None: return
+            if self._stop_event.is_set(): queue.put({"kind": "stop"})
+            elif not self._resume_event.is_set(): queue.put({"kind": "pause"})
+    def _request_stop(self, reason: str) -> bool:
+        with self._product_session_lock:
+            product_session = getattr(self.session, "product_session", None)
+            stopping = not product_session or product_session.read_model.status not in {"completed", "failed", "canceled"}
+            try:
+                if stopping: self.transition_product_session("cancel", reason)
+            finally:
+                self._stop_event.set(); self._resume_event.set(); self._input_queue.put_nowait(None)
+                try: delivered = self._signal_control("stop")
+                except Exception: delivered = False
+                request_stop = getattr(getattr(self._agent, "agent", None), "request_stop", None) if not delivered else None; remote = getattr(request_stop, "remote", None)
+                try: remote() if callable(remote) else request_stop() if callable(request_stop) else None
+                except Exception: pass
+            return stopping
     async def stop(self) -> None:
         if self._closed:
             return
-        self._stop_event.set()
-        await self._input_queue.put(None)
+        self._request_stop("operator request")
         if self._task and not self._task.done():
             await self._task
-
-    async def enqueue_input(self, content: str, attachments: Optional[list[str]] = None) -> None:
+    async def enqueue_input(self, content: str, attachments: Optional[list[str]] = None) -> str:
         if self._closed:
             raise RuntimeError("session is closed")
         if not content or not content.strip():
             raise ValueError("input content must not be empty")
-        content = self._sanitize_interactive_input_content(content)
-        payload = {
-            "content": content,
-            "attachments": [
-                item for item in (attachments or []) if isinstance(item, str) and item.strip()
-            ],
-        }
-        await self._input_queue.put(payload)
-
+        attachment_ids = list(dict.fromkeys(item.strip() for item in (attachments or []) if isinstance(item, str) and item.strip()))
+        with self._product_session_lock:
+            artifacts = getattr(self.session, "product_artifacts", {})
+            unknown = [item for item in attachment_ids if not isinstance(artifacts, dict) or item not in artifacts]
+            if unknown: raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
+            total_bytes = sum(int(getattr(artifacts[item], "size_bytes", MAX_ATTACHMENT_BYTES + 1)) for item in attachment_ids)
+            if total_bytes > MAX_ATTACHMENT_BYTES: raise ValueError(f"selected attachments exceed {MAX_ATTACHMENT_BYTES}-byte handoff limit")
+            content = self._sanitize_interactive_input_content(content)
+            payload = {"content": content, "attachments": attachment_ids}
+            product_session = getattr(self.session, "product_session", None)
+            if product_session is not None:
+                product_session.input(content, [artifacts[item] for item in attachment_ids])
+                self.session.metadata["session_contract"] = product_session.read_model.as_dict()
+            self._input_queue.put_nowait(payload)
+        return content
+    def transition_product_session(self, transition: str, *args: Any) -> None:
+        with self._product_session_lock:
+            product_session = getattr(self.session, "product_session", None)
+            if product_session is None:
+                return
+            if transition in {"complete", "fail", "cancel"} and product_session.read_model.status in {
+                "completed", "failed", "canceled"}:
+                return
+            getattr(product_session, transition)(*args)
+            self.session.metadata["session_contract"] = product_session.read_model.as_dict()
     def _sanitize_interactive_input_content(self, content: str) -> str:
-        """Drop exact stale editor prefixes while preserving legitimate new turns.
+        """Remove an exact prior-prompt prefix accidentally repeated by the TUI.
 
-        The TUI submits each prompt as an independent POST. A live E4 run exposed
-        a path where the editor payload arrived as previous_prompt + current_prompt
-        with no separator. That turns one user turn into a contradictory compound
-        prompt. If the new payload has an exact prior accepted prompt as a prefix,
-        the suffix is the only semantically new user input.
+        Independent prompt POSTs must remain separate turns; only the nonempty suffix
+        of an exact prior accepted prompt is new input.
         """
         raw = str(content or "")
         if not raw:
@@ -261,11 +305,18 @@ class SessionRunner:
             self._persist_metadata_snapshot_threadsafe()
             return suffix.lstrip()
         return raw
-
-    async def handle_command(self, command: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _fail_control_transition(self, code: str, detail: str) -> None:
+        try: self.transition_product_session("fail", code, detail)
+        finally: self._request_stop(detail)
+    async def handle_command(
+        self,
+        command: str,
+        payload: Optional[Dict[str, Any]] = None,
+        *,
+        durable_reconfigure: Optional[Callable[[Dict[str, Any]], None]] = None,
+    ) -> Dict[str, Any]:
         if self._closed:
             raise RuntimeError("session is closed")
-
         payload = payload or {}
         match command:
             case "list_checkpoints":
@@ -294,9 +345,6 @@ class SessionRunner:
                     manager = CheckpointManager(workspace_dir)
                     self._checkpoint_manager = manager
                 prune = True
-                if mode == "conversation":
-                    # Best-effort only for now; code restore is the P0 deterministic requirement.
-                    prune = True
                 if mode in {"code", "both"}:
                     manager.restore_checkpoint(checkpoint_id.strip(), prune=prune)
                 if mode in {"conversation", "both"}:
@@ -326,179 +374,147 @@ class SessionRunner:
                 await self.publish_event_async(EventType.CHECKPOINT_LIST, {"checkpoints": checkpoints})
                 return {"status": "ok", "checkpoint_id": checkpoint_id.strip(), "mode": mode, "prune": prune}
             case "permission_decision":
-                request_id = (
-                    payload.get("request_id")
-                    or payload.get("requestId")
-                    or payload.get("permission_id")
-                    or payload.get("permissionId")
-                    or payload.get("id")
-                )
-                decision = payload.get("decision") or payload.get("response")
-                rule = payload.get("rule")
-                scope = payload.get("scope")
-                note = payload.get("note")
-                if not isinstance(request_id, str) or not request_id.strip():
-                    raise ValueError("permission_decision requires non-empty 'request_id'")
-                if not isinstance(decision, str) or not decision.strip():
-                    raise ValueError("permission_decision requires non-empty 'decision'")
-                normalized = decision.strip().lower()
-                if normalized in {"allow-once", "allow_once"}:
-                    response_value = "once"
-                elif normalized in {"allow-always", "allow_always"}:
-                    response_value = "always"
-                elif normalized in {"deny-once", "deny_once"}:
-                    response_value = "reject"
-                elif normalized in {"deny-always", "deny_always"}:
-                    response_value = "reject"
-                elif normalized in {"deny-stop", "deny_stop"}:
-                    response_value = "reject"
-                else:
-                    response_value = normalized
-                # Permission broker accepts a dict item with request_id + response/decision.
-                # We use the simplest uniform response (applies to all items in a batch).
-                permission_payload = {
-                    "request_id": request_id.strip(),
-                    "response": response_value,
-                }
-                if rule:
-                    try:
-                        rules = self.session.metadata.get("permission_rules")
-                        if not isinstance(rules, list):
-                            rules = []
-                        rules.append(
-                            {
-                                "request_id": request_id.strip(),
-                                "decision": normalized,
-                                "rule": rule,
-                                "scope": scope,
-                                "note": note,
-                            }
-                        )
-                        self.session.metadata["permission_rules"] = rules
-                        self._persist_metadata_snapshot_threadsafe()
-                    except Exception:
-                        pass
-                if (
-                    isinstance(rule, str)
-                    and rule.strip()
-                    and normalized in {"allow-always", "allow_always", "deny-always", "deny_always"}
-                ):
-                    category = self._infer_permission_category(request_id.strip())
-                    workspace_dir = self.get_workspace_dir()
-                    if category and workspace_dir:
-                        decision_value = "allow" if normalized.startswith("allow") else "deny"
+                async with self._permission_decision_lock:
+                    request_id = next((payload.get(key) for key in ("request_id", "requestId", "permission_id", "permissionId", "id") if payload.get(key)), None)
+                    decision = payload.get("decision") or payload.get("response")
+                    if not isinstance(request_id, str) or not request_id.strip(): raise ValueError("permission_decision requires non-empty 'request_id'")
+                    if not isinstance(decision, str) or not decision.strip(): raise ValueError("permission_decision requires non-empty 'decision'")
+                    request_id, normalized = request_id.strip(), decision.strip().lower()
+                    pending = self.session.metadata.get("pending_permissions")
+                    active = pending[0] if isinstance(pending, list) and pending and isinstance(pending[0], dict) else {}
+                    if str(active.get("request_id") or active.get("id") or "") != request_id: raise ValueError("permission request is not active")
+                    response_value = _canonical_permission_resolution(normalized, None)
+                    rule, scope, note = payload.get("rule"), payload.get("scope"), payload.get("note")
+                    category = self._infer_permission_category(request_id) if rule else None
+                    workspace_dir = self.get_workspace_dir() if rule else None
+                    if rule:
+                        metadata = dict(self.session.metadata or {}); rules = list(metadata.get("permission_rules") or [])
+                        rules.append({"request_id": request_id, "decision": normalized, "rule": rule, "scope": scope, "note": note})
+                        metadata["permission_rules"] = rules
+                        persist_rule = (response_value == "always" or normalized in {"deny-always", "deny_always"}) and category and workspace_dir
                         try:
-                            upsert_permission_rule(
-                                workspace_dir,
-                                category=category,
-                                pattern=rule.strip(),
-                                decision=decision_value,
-                                scope=str(scope or "project"),
-                            )
+                            persisted = not persist_rule or upsert_permission_rule(workspace_dir, category=category, pattern=str(rule).strip(), decision="deny" if normalized.startswith("deny") else "allow", scope=str(scope or "project"))
+                        except Exception as exc:
+                            self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision"); raise RuntimeError("failed to commit permission decision") from exc
+                        if not persisted:
+                            self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision"); raise RuntimeError("failed to persist permission rule")
+                        try: await self.registry.update_metadata(self.session.session_id, metadata=metadata)
                         except Exception:
-                            pass
-                detail = await self.handle_command("respond_permission", permission_payload)
-                if normalized in {"deny-stop", "deny_stop"} or bool(payload.get("stop")):
-                    await self.handle_command("stop", {})
-                return {"status": "ok", "delivered": detail}
+                            if not persist_rule:
+                                self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision")
+                                raise
+                            self.session.metadata = metadata; logger.warning("Permission metadata projection failed after durable rule commit", exc_info=True)
+                    detail = await self.handle_command("respond_permission", {"request_id": request_id, "response": response_value})
+                    if normalized in {"deny-stop", "deny_stop"} or bool(payload.get("stop")): await self.handle_command("stop", {})
+                    return {"status": "ok", "request_id": request_id, "decision": response_value, "delivered": detail}
             case "set_skills":
                 selection_payload = dict(payload or {})
                 if "selected" in selection_payload and "allowlist" not in selection_payload:
                     selection_payload["allowlist"] = selection_payload.get("selected")
-                config = dict(getattr(self._agent, "config", {}) or {}) if self._agent else {}
-                selection = normalize_skill_selection(config, selection_payload)
-                self.session.metadata["skills_selection"] = selection
-                if self._agent:
+                with self._product_session_lock:
+                    config = dict(getattr(self._agent, "config", {}) or {}) if self._agent else {}
+                    selection = normalize_skill_selection(config, selection_payload)
+                    overrides = {"skills.allowlist": selection.get("allowlist") or [], "skills.blocklist": selection.get("blocklist") or []}
+                    previous = self.current_runtime_config(); had_skills = "skills" in config; previous_skills = json.loads(json.dumps(config.get("skills"))) if had_skills else None
+                    rollback = {"skills.allowlist": (previous_skills or {}).get("allowlist") or [], "skills.blocklist": (previous_skills or {}).get("blocklist") or []}
                     try:
-                        overrides = {
-                            "skills.allowlist": selection.get("allowlist") or [],
-                            "skills.blocklist": selection.get("blocklist") or [],
-                        }
-                        self._agent.apply_runtime_overrides(overrides)
-                    except Exception:
-                        pass
-                self._persist_metadata_snapshot_threadsafe()
-                self._skills_catalog_cache = None
-                catalog_payload = self.get_skill_catalog()
+                        if self._agent and self._agent.apply_runtime_overrides(overrides) is False: raise RuntimeError("failed to apply skills configuration")
+                        prepared = apply_dotted_overrides(previous, overrides)
+                        if durable_reconfigure is not None: durable_reconfigure(prepared)
+                    except Exception as error:
+                        rolled_back = self._rollback_runtime_overrides(rollback, ("skills", had_skills, previous_skills))
+                        if not isinstance(error, OSError) or not rolled_back: self.transition_product_session("fail", "runtime_reconfigure_failed", "failed to apply skills configuration")
+                        raise
+                    self.session.metadata["skills_selection"] = selection; self._prepared_runtime_config = prepared
+                    self._persist_metadata_snapshot_threadsafe(); self._skills_catalog_cache = None
+                    catalog_payload = self.get_skill_catalog()
                 await self.publish_event_async(EventType.SKILLS_SELECTION, {"selection": selection})
                 await self.publish_event_async(EventType.SKILLS_CATALOG, catalog_payload)
                 return {"status": "ok", "selection": selection, "catalog": catalog_payload.get("catalog")}
-            case "stop":
-                queue = getattr(self, "_control_queue", None)
-                if queue is not None:
+            case "pause":
+                with self._product_session_lock:
+                    transitioned = False; was_resumed = self._resume_event.is_set()
+                    try: self._resume_event.clear(); self.transition_product_session("pause", str(payload.get("reason") or "operator request")); transitioned = True; self._signal_control("pause")
+                    except Exception: self._resume_event.set() if was_resumed else None; self._fail_control_transition("pause_control_failed", "failed to deliver pause control") if transitioned else None; raise
+                return {"status": "ok", "paused": True}
+            case "resume":
+                with self._product_session_lock:
+                    self.transition_product_session("resume")
                     try:
-                        put_nowait = getattr(queue, "put_nowait", None)
-                        if callable(put_nowait):
-                            put_nowait({"kind": "stop"})
-                        else:
-                            queue.put({"kind": "stop"})
-                    except Exception:
-                        pass
-                else:
-                    # Fallback: request the active conductor loop stop if it is local/in-process.
-                    agent = getattr(self._agent, "agent", None)
-                    if agent is not None:
-                        try:
-                            req = getattr(agent, "request_stop", None)
-                            remote = getattr(req, "remote", None) if req is not None else None
-                            if callable(remote):
-                                remote()
-                            elif callable(req):
-                                req()
-                        except Exception:
-                            pass
-                await self.publish_event_async(EventType.TASK_EVENT, {"kind": "stop_requested"})
-                return {"status": "ok", "stopping": True}
+                        pending = self.session.metadata.get("pending_permissions"); head = pending[0] if isinstance(pending, list) and pending and isinstance(pending[0], dict) else None; request = head.get("request") if head and isinstance(head.get("request"), dict) else {}
+                        self._update_pending_permissions("permission_request", request, source=str(head.get("source") or "session"), task_session_id=head.get("task_session_id"), subagent_type=head.get("subagent_type")) if head else None; self._signal_control("resume"); self._resume_event.set()
+                    except Exception: self._fail_control_transition("resume_control_failed", "failed to deliver resume control"); raise
+                return {"status": "ok", "paused": False}
+            case "stop":
+                stopping = self._request_stop("stop command")
+                if stopping: await self.publish_event_async(EventType.TASK_EVENT, {"kind": "stop_requested"})
+                return {"status": "ok", "stopping": stopping}
             case "set_model":
                 model_value = payload.get("model")
                 if not isinstance(model_value, str) or not model_value.strip():
                     raise ValueError("set_model requires non-empty 'model'")
-                try:
-                    cfg = dict(getattr(self._agent, "config", {}) or {}) if self._agent else load_agent_config(self.request.config_path)
-                except Exception:
-                    cfg = {}
+                model_value = model_value.strip()
+                cfg = self.current_runtime_config()
                 policy = policy_pack_for_config_authority(
-                    cfg,
-                    session_id=self.session.session_id,
-                    config_path=self.request.config_path,
+                    cfg, session_id=self.session.session_id, config_path=self.request.config_path,
                     logger=logger,
                 )
-                if (policy.model_allowlist is not None or policy.model_denylist) and not policy.is_model_allowed(model_value.strip()):
-                    raise ValueError(f"set_model denied by policy: {model_value.strip()}")
-                self._model_override = model_value.strip()
-                self.session.metadata["model"] = self._model_override
-                self._apply_model_override()
-                return {"status": "ok", "model": self._model_override}
+                if (policy.model_allowlist is not None or policy.model_denylist) and not policy.is_model_allowed(model_value):
+                    raise ValueError(f"set_model denied by policy: {model_value}")
+                with self._product_session_lock:
+                    previous, previous_model = self.current_runtime_config(), self._model_override
+                    agent_config = getattr(self._agent, "config", {}) if self._agent else {}; agent_providers = agent_config.get("providers") if isinstance(agent_config, dict) and isinstance(agent_config.get("providers"), dict) else {}; rollback_model = ("default_model" in agent_providers, agent_providers.get("default_model"))
+                    prepared = apply_dotted_overrides(previous, {"providers.default_model": model_value})
+                    try:
+                        self._model_override = model_value
+                        if not self._apply_model_override(): raise RuntimeError("failed to apply model configuration")
+                        if durable_reconfigure is not None: durable_reconfigure(prepared)
+                    except Exception as error:
+                        self._model_override = previous_model; rolled_back = True
+                        try:
+                            providers = self._agent.config.setdefault("providers", {}) if self._agent else {}
+                            if rollback_model[0]: providers["default_model"] = rollback_model[1]
+                            else: providers.pop("default_model", None)
+                        except Exception: rolled_back = False; logger.exception("Failed to roll back model configuration")
+                        if not isinstance(error, OSError) or not rolled_back: self.transition_product_session("fail", "runtime_reconfigure_failed", "failed to apply model configuration")
+                        raise
+                    self.session.metadata["model"] = model_value; self._prepared_runtime_config = prepared
+                return {"status": "ok", "model": model_value}
             case "set_mode":
                 mode_value = payload.get("mode")
                 if not isinstance(mode_value, str) or not mode_value.strip():
                     raise ValueError("set_mode requires non-empty 'mode'")
-                self._mode = mode_value.strip()
-                self.session.metadata["mode"] = self._mode
-                return {"status": "ok", "mode": self._mode}
+                mode_value = mode_value.strip()
+                with self._product_session_lock:
+                    overrides = {"mode": mode_value}; previous, previous_mode = self.current_runtime_config(), self._mode; agent_config = getattr(self._agent, "config", {}) if self._agent else {}; mode_restore = ("mode", "mode" in agent_config, agent_config.get("mode"))
+                    prepared = apply_dotted_overrides(previous, overrides)
+                    try:
+                        if self._agent and self._agent.apply_runtime_overrides(overrides) is False: raise RuntimeError("failed to apply mode configuration")
+                        if durable_reconfigure is not None: durable_reconfigure(prepared)
+                    except Exception as error:
+                        rolled_back = self._rollback_runtime_overrides({"mode": previous.get("mode")}, mode_restore); self._mode = previous_mode
+                        if not isinstance(error, OSError) or not rolled_back: self.transition_product_session("fail", "runtime_reconfigure_failed", "failed to apply mode configuration")
+                        raise
+                    self._mode = mode_value; self.session.metadata["mode"] = mode_value; self._prepared_runtime_config = prepared
+                return {"status": "ok", "mode": mode_value}
             case "session_child_next" | "session_child_previous" | "session_parent":
                 child_session_id = payload.get("child_session_id") or payload.get("childSessionId")
                 parent_session_id = payload.get("parent_session_id") or payload.get("parentSessionId")
                 target_session_id = payload.get("target_session_id") or payload.get("targetSessionId")
-
                 def _norm(value: Any) -> Optional[str]:
                     if not isinstance(value, str):
                         return None
                     trimmed = value.strip()
                     return trimmed or None
-
                 child_session_id = _norm(child_session_id)
                 parent_session_id = _norm(parent_session_id)
                 target_session_id = _norm(target_session_id)
-
                 if command == "session_parent":
                     resolved_target = target_session_id or parent_session_id or child_session_id
                 else:
                     resolved_target = target_session_id or child_session_id or parent_session_id
-
                 if not resolved_target:
                     return {"status": "ok", "command": command, "switched": False, "reason": "target_missing"}
-
                 target_record = await self.registry.get(resolved_target)
                 if target_record is None:
                     return {
@@ -508,7 +524,6 @@ class SessionRunner:
                         "reason": "target_not_found",
                         "target_session_id": resolved_target,
                     }
-
                 return {
                     "status": "ok",
                     "command": command,
@@ -536,70 +551,115 @@ class SessionRunner:
                 response = payload.get("response") or payload.get("decision") or payload.get("default")
                 responses = payload.get("responses")
                 items = payload.get("items")
-
                 if not isinstance(request_id, str) or not request_id.strip():
                     raise ValueError("respond_permission requires non-empty 'request_id'/'permission_id'/'id'")
-
+                if isinstance(items, dict) and not isinstance(responses, dict):
+                    responses = {"items": dict(items)}
+                canonical_responses = (
+                    _canonical_permission_responses(responses) if isinstance(responses, dict) else None
+                )
+                normalized_request_id = request_id.strip()
+                pending = self.session.metadata.get("pending_permissions"); pending_request = next((entry.get("request") for entry in pending if isinstance(entry, dict) and entry.get("request_id") == normalized_request_id), {}) if isinstance(pending, list) else {}; requested_ids = _permission_item_ids(pending_request)
+                resolution = _canonical_permission_resolution(response, canonical_responses, requested_ids, _permission_default_response(self.current_runtime_config()))
                 queue = getattr(self, "_permission_queue", None)
                 if queue is None:
                     if self._debug_permissions_enabled():
-                        response_payload: Dict[str, Any] = {"request_id": request_id.strip()}
-                        if isinstance(responses, dict):
-                            response_payload["responses"] = dict(responses)
-                        elif isinstance(response, str) and response.strip():
-                            response_payload["response"] = response.strip()
-                            response_payload["decision"] = response.strip()
-                        self._update_pending_permissions("permission_response", response_payload, source="session")
+                        response_payload: Dict[str, Any] = {"request_id": normalized_request_id}
+                        if canonical_responses is not None:
+                            response_payload["responses"] = canonical_responses
+                        else:
+                            response_payload["response"] = resolution
+                            response_payload["decision"] = resolution
+                        with self._product_session_lock:
+                            self._update_pending_permissions("permission_response", response_payload, source="session")
                         await self.publish_event_async(EventType.PERMISSION_RESPONSE, response_payload)
-                        return {"status": "ok", "request_id": request_id.strip(), "delivered": response_payload, "debug": True}
+                        return {"status": "ok", "request_id": normalized_request_id, "decision": resolution, "delivered": response_payload, "debug": True}
+                    self.transition_product_session("fail", "permission_delivery_failed", "no permission request is active")
                     raise RuntimeError("no permission request is active")
-
-                if isinstance(items, dict) and not isinstance(responses, dict):
-                    responses = {"items": dict(items)}
-
-                if isinstance(responses, dict):
-                    item: Dict[str, Any] = {"request_id": request_id.strip(), "responses": dict(responses)}
+                if canonical_responses is not None:
+                    item: Dict[str, Any] = {"request_id": normalized_request_id, "responses": canonical_responses}
                 else:
                     if not isinstance(response, str) or not response.strip():
                         raise ValueError("respond_permission requires non-empty 'response' when 'responses' is not provided")
-                    item = {"permission_id": request_id.strip(), "response": response.strip()}
-                try:
-                    put_nowait = getattr(queue, "put_nowait", None)
-                    if callable(put_nowait):
-                        put_nowait(item)
-                    else:
-                        queue.put(item)
-                except Exception as exc:
-                    raise RuntimeError(f"failed to deliver permission response: {exc}") from exc
-                return {"status": "ok", "request_id": request_id.strip(), "delivered": item}
+                    item = {"permission_id": normalized_request_id, "response": resolution}
+                with self._product_session_lock:
+                    self.transition_product_session("resolve_approval", normalized_request_id, resolution)
+                    try:
+                        put_nowait = getattr(queue, "put_nowait", None)
+                        if callable(put_nowait):
+                            put_nowait(item)
+                        else:
+                            queue.put(item)
+                    except Exception as exc:
+                        self.transition_product_session(
+                            "fail", "permission_delivery_failed", "failed to deliver permission response")
+                        raise RuntimeError(f"failed to deliver permission response: {exc}") from exc
+                    self._update_pending_permissions(
+                        "permission_response", item, source="session", consume_fifo=True
+                    )
+                return {"status": "ok", "request_id": normalized_request_id, "decision": resolution, "delivered": item}
             case _:
                 raise ValueError(f"Unsupported command: {command}")
-
     def _load_base_config(self) -> Dict[str, Any]:
-        if isinstance(self._base_config_cache, dict):
-            return dict(self._base_config_cache)
-        try:
-            cfg = load_agent_config(self.request.config_path)
-        except Exception:
-            cfg = {}
-        if not isinstance(cfg, dict):
-            cfg = {}
+        if isinstance(self._base_config_cache, dict): return dict(self._base_config_cache)
+        cfg = load_agent_config(self.request.config_path)
+        if not isinstance(cfg, dict): raise TypeError("agent config loader must return a mapping")
         self._base_config_cache = dict(cfg)
         return dict(self._base_config_cache)
-
+    def prepare_runtime_config(self) -> Dict[str, Any]:
+        """Freeze the exact base configuration and overrides passed to the agent."""
+        if self._prepared_runtime_config is not None:
+            return dict(self._prepared_runtime_config)
+        overrides = dict(self.request.overrides or {})
+        if isinstance(self._model_override, str) and self._model_override.strip():
+            overrides["providers.default_model"] = self._model_override.strip()
+        if isinstance(self._mode, str) and self._mode.strip():
+            overrides["mode"] = self._mode.strip()
+        permission_mode = (self.request.permission_mode or self.session.metadata.get("permission_mode") or "").strip().lower()
+        if permission_mode in {"prompt", "ask", "interactive"}:
+            overrides.setdefault("permissions.options.mode", "prompt")
+            overrides.setdefault("permissions.options.default_response", "reject")
+            overrides.setdefault("permissions.edit.default", "ask")
+            overrides.setdefault("permissions.shell.default", "ask")
+            overrides.setdefault("permissions.webfetch.default", "ask")
+            overrides.setdefault("permissions.read.default", "ask")
+            self.request.permission_mode = permission_mode
+            self.session.metadata["permission_mode"] = permission_mode
+        base_cfg = self._load_base_config()
+        workspace_guess_path = self._resolve_workspace_guess(base_cfg)
+        if workspace_guess_path:
+            self._workspace_path = workspace_guess_path
+            workspace = str(workspace_guess_path)
+            self.request.workspace = workspace
+            overrides["workspace.root"] = workspace
+            try:
+                rules = load_permission_rules(workspace_guess_path)
+            except Exception:
+                rules = []
+            for key, value in build_permission_overrides(base_cfg, rules).items() if rules else ():
+                existing = overrides.get(key)
+                if key in overrides and isinstance(existing, list) and isinstance(value, list):
+                    value = existing + [item for item in value if item not in existing]
+                overrides[key] = value
+        self.request.overrides = overrides
+        self._prepared_runtime_config = apply_dotted_overrides(base_cfg, overrides)
+        return dict(self._prepared_runtime_config)
+    def current_runtime_config(self) -> Dict[str, Any]:
+        return dict(config) if isinstance((config := getattr(self._agent, "config", None)), dict) else self.prepare_runtime_config()
     def _resolve_workspace_guess(self, base_cfg: Dict[str, Any]) -> Optional[Path]:
         candidate: Any = self.request.workspace
         if not candidate and isinstance(base_cfg, dict):
-            ws_cfg = base_cfg.get("workspace")
-            if isinstance(ws_cfg, dict):
-                candidate = ws_cfg.get("root") or ws_cfg.get("path")
-        if not candidate:
-            return None
+            workspace = base_cfg.get("workspace")
+            candidate = (workspace.get("root") or workspace.get("path")) if isinstance(workspace, dict) else None
+        candidate = candidate or f"tmp/agent_ws_{os.path.basename(self.request.config_path).split('.')[0]}"
         try:
-            return Path(str(candidate)).expanduser().resolve()
+            path = Path(str(candidate)).expanduser()
+            if not path.is_absolute():
+                root = Path(__file__).resolve().parents[3]
+                path = root / path if path.parts[:1] == ("tmp",) else root / "tmp" / path
+            return path.resolve()
         except Exception:
             return None
-
     def _parse_replay_path(self, task_text: str) -> Optional[Path]:
         text = (task_text or "").strip()
         if not text:
@@ -619,7 +679,6 @@ class SessionRunner:
         else:
             path = path.resolve()
         return path
-
     async def _maybe_publish_todo_snapshot(self, workspace_dir: Optional[Path], *, call_id: str) -> None:
         if not self._todo_enabled or not workspace_dir:
             return
@@ -632,14 +691,12 @@ class SessionRunner:
             EventType.TOOL_RESULT,
             {"call_id": call_id, "todo": envelope},
         )
-
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
             return
         overrides = dict(self.request.overrides or {})
         try:
             from agentic_coder_prototype.auth.store import DEFAULT_PROVIDER_AUTH_STORE
-
             openai_auth = DEFAULT_PROVIDER_AUTH_STORE.get("openai")
             if openai_auth is not None:
                 if openai_auth.api_key:
@@ -652,12 +709,14 @@ class SessionRunner:
                     overrides[f"provider_auth_runtime.openai.headers.{header_key}"] = str(header_value)
         except Exception:
             pass
-        self._agent = self.agent_factory(
-            self.request.config_path,
-            self.request.workspace,
-            overrides or None,
-        )
-        await asyncio.to_thread(self._agent.initialize)
+        frozen = self.current_runtime_config()
+        descriptor, snapshot = tempfile.mkstemp(suffix=".json")
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream: json.dump(frozen, stream, sort_keys=True); stream.flush(); os.fsync(stream.fileno())
+            self._agent = self.agent_factory(snapshot, self.request.workspace, overrides or None)
+            if hasattr(self._agent, "config_path"): self._agent.config_path = self.request.config_path
+            await asyncio.to_thread(self._agent.initialize)
+        finally: Path(snapshot).unlink(missing_ok=True)
         workspace_dir = Path(self._agent.workspace_dir).resolve()
         workspace_dir.mkdir(parents=True, exist_ok=True)
         self._workspace_path = workspace_dir
@@ -673,14 +732,12 @@ class SessionRunner:
                 self._checkpoint_manager.create_checkpoint("Session start")
         except Exception:
             self._checkpoint_manager = None
-
     async def _execute_replay_task(self, task_text: str) -> Dict[str, Any]:
         replay_path = self._parse_replay_path(task_text)
         if replay_path is None:
             raise ValueError("replay task missing path (expected replay:<path>)")
         if not replay_path.exists():
             raise FileNotFoundError(f"replay fixture not found: {replay_path}")
-
         try:
             meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
             meta = dict(meta)
@@ -689,11 +746,12 @@ class SessionRunner:
             self._persist_metadata_snapshot_threadsafe()
         except Exception:
             pass
-
         published_completion = False
         published_run_finished = False
         published_events = 0
-
+        metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+        one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
+        terminal_events: list[TranslatedRuntimeEvent] = []
         with replay_path.open("r", encoding="utf-8") as f:
             for raw_line in f:
                 if self._stop_event.is_set():
@@ -704,7 +762,6 @@ class SessionRunner:
                 entry = json.loads(line)
                 if not isinstance(entry, dict):
                     continue
-
                 delay_ms = entry.get("delay_ms", entry.get("delayMs", 0))
                 try:
                     delay_ms_val = max(0, int(delay_ms))
@@ -712,12 +769,10 @@ class SessionRunner:
                     delay_ms_val = 0
                 if delay_ms_val:
                     await asyncio.sleep(delay_ms_val / 1000.0)
-
                 type_raw = entry.get("type") or entry.get("event_type") or entry.get("eventType")
                 if not isinstance(type_raw, str) or not type_raw.strip():
                     continue
                 evt_type = EventType(type_raw.strip())
-
                 payload_raw = entry.get("payload")
                 if payload_raw is None:
                     payload_raw = entry.get("data")
@@ -725,13 +780,11 @@ class SessionRunner:
                     payload: Dict[str, Any] = dict(payload_raw)
                 else:
                     payload = {"value": payload_raw}
-
                 turn_raw = entry.get("turn")
                 try:
                     turn = int(turn_raw) if isinstance(turn_raw, (int, float, str)) and str(turn_raw).strip() else None
                 except Exception:
                     turn = None
-
                 if evt_type in {EventType.TOOL_RESULT, EventType.TOOL_RESULT_DOT}:
                     todo_update = payload.get("todo")
                     if isinstance(todo_update, dict):
@@ -740,31 +793,29 @@ class SessionRunner:
                             self._persist_metadata_snapshot_threadsafe()
                         except Exception:
                             pass
-
-                await self.publish_event_async(evt_type, payload, turn=turn)
+                if one_shot and evt_type in {EventType.COMPLETION, EventType.RUN_FINISHED}:
+                    terminal_events.append((evt_type, payload, turn, {}))
+                else:
+                    await self.publish_event_async(evt_type, payload, turn=turn)
                 published_events += 1
-
                 if evt_type is EventType.COMPLETION:
                     published_completion = True
                 elif evt_type is EventType.RUN_FINISHED:
                     published_run_finished = True
-
         completion_summary: Dict[str, Any] = {"completed": True, "reason": "replay"}
         if not published_completion:
-            await self.publish_event_async(EventType.COMPLETION, {"summary": completion_summary, "mode": self._mode})
+            payload = {"summary": completion_summary, "mode": self._mode}
+            terminal_events.append((EventType.COMPLETION, payload, None, {})) if one_shot else await self.publish_event_async(EventType.COMPLETION, payload)
             published_events += 1
         if not published_run_finished:
-            await self.publish_event_async(
-                EventType.RUN_FINISHED,
-                {"eventCount": published_events, "completed": True, "reason": "replay", "logging_dir": None},
-            )
-
+            payload = {"eventCount": published_events, "completed": True, "reason": "replay", "logging_dir": None}
+            terminal_events.append((EventType.RUN_FINISHED, payload, None, {})) if one_shot else await self.publish_event_async(EventType.RUN_FINISHED, payload)
         return {
             "completion_summary": completion_summary,
             "reward_metrics": None,
             "logging_dir": None,
+            "_terminal_events": terminal_events,
         }
-
     async def _run(self) -> None:
         session_started_at = time.monotonic()
         await self.registry.update_status(self.session.session_id, SessionStatus.RUNNING)
@@ -774,49 +825,7 @@ class SessionRunner:
             # sandboxes; for a Claude Code-style experience we must preserve the user's
             # working directory unless explicitly overridden by the caller.
             os.environ.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
-            overrides = dict(self.request.overrides or {})
-            permission_mode = (self.request.permission_mode or self.session.metadata.get("permission_mode") or "").strip().lower()
-            if permission_mode in {"prompt", "ask", "interactive"}:
-                overrides.setdefault("permissions.options.mode", "prompt")
-                overrides.setdefault("permissions.options.default_response", "reject")
-                overrides.setdefault("permissions.edit.default", "ask")
-                overrides.setdefault("permissions.shell.default", "ask")
-                overrides.setdefault("permissions.webfetch.default", "ask")
-                if not self.request.permission_mode:
-                    self.request.permission_mode = permission_mode
-                self.session.metadata["permission_mode"] = permission_mode
-
-            # Merge persisted project-scoped permission rules (allow/deny) into overrides.
-            base_cfg = self._load_base_config()
-            workspace_guess_path = self._resolve_workspace_guess(base_cfg)
-            if workspace_guess_path:
-                self._workspace_path = workspace_guess_path
-
-            if workspace_guess_path:
-                try:
-                    rules = load_permission_rules(workspace_guess_path)
-                except Exception:
-                    rules = []
-                if rules:
-                    merged = build_permission_overrides(base_cfg, rules)
-
-                    def _merge_list(existing: Any, extra: Any) -> Any:
-                        if not isinstance(existing, list) or not isinstance(extra, list):
-                            return extra
-                        out: list[Any] = []
-                        for item in list(existing) + list(extra):
-                            if item not in out:
-                                out.append(item)
-                        return out
-
-                    for key, value in merged.items():
-                        if key in overrides:
-                            overrides[key] = _merge_list(overrides.get(key), value)
-                        else:
-                            overrides[key] = value
-
-            self.request.overrides = overrides
-
+            base_cfg = self.prepare_runtime_config()
             try:
                 todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
             except Exception:
@@ -828,7 +837,6 @@ class SessionRunner:
                     self._checkpoint_manager = CheckpointManager(self._workspace_path)
                     self._checkpoint_manager.create_checkpoint("Session start")
             except Exception:
-                # Best-effort: checkpointing should not block starting a session.
                 self._checkpoint_manager = None
             try:
                 catalog_payload = self.get_skill_catalog()
@@ -838,13 +846,10 @@ class SessionRunner:
                     await self.publish_event_async(EventType.SKILLS_SELECTION, {"selection": selection})
             except Exception:
                 pass
-
             initial_task = (self.request.task or "").strip()
             if initial_task:
                 self._accepted_task_texts.append(initial_task)
                 self._input_queue.put_nowait({"content": initial_task, "attachments": []})
-
-            completed_one_shot = False
             while not self._stop_event.is_set():
                 try:
                     next_input = await self._input_queue.get()
@@ -852,77 +857,89 @@ class SessionRunner:
                     break
                 if next_input is None:
                     break
-
+                await self._resume_event.wait()
+                if self._stop_event.is_set(): self._input_queue.task_done(); break
                 task_payload = dict(next_input)
                 task_text = str(task_payload.get("content", ""))
                 task_received_at = time.monotonic()
                 if self._parse_replay_path(task_text) is not None:
                     result = await self._execute_replay_task(task_text)
+                    after_execute_task_at = time.monotonic()
+                else:
+                    attachment_ids = task_payload.get("attachments") or []
+                    await self._ensure_agent_initialized()
+                    if self._stop_event.is_set(): self._input_queue.task_done(); break
+                    after_agent_init_at = time.monotonic()
+                    accepted_text = task_text
+                    attachment_text = self._format_attachment_helper(attachment_ids)
+                    if attachment_text: task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
+                    if accepted_text.strip():
+                        self._accepted_task_texts.append(accepted_text)
+                        self._accepted_task_texts = self._accepted_task_texts[-20:]
+                    if self._profile_timing_enabled:
+                        self._active_bridge_timing_context = {
+                            "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
+                            "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
+                        }
+                    result = await asyncio.to_thread(self._execute_task, task_text)
+                    after_execute_task_at = time.monotonic()
+                    if self._profile_timing_enabled and isinstance(result, dict):
+                        timing = result.setdefault("bridge_timing", {})
+                        if isinstance(timing, dict):
+                            timing.update(
+                                {
+                                    "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
+                                    "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
+                                    "execute_task_wall_seconds": round(after_execute_task_at - after_agent_init_at, 6),
+                                }
+                            )
+                    self._active_bridge_timing_context = None
+                metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+                one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
+                with self._product_session_lock:
+                    product_session = getattr(self.session, "product_session", None)
+                    if product_session is None:
+                        durable_success = True
+                    else:
+                        product_status = product_session.read_model
+                        if one_shot and product_status.status == "running" and not self._stop_event.is_set():
+                            self.transition_product_session("complete")
+                        durable_success = product_session.read_model.status == "completed" if one_shot else product_status.status not in {"failed", "canceled"}
+                if durable_success:
                     await self.registry.update_metadata(
-                        self.session.session_id,
-                        completion_summary=result.get("completion_summary"),
-                        reward_summary=result.get("reward_metrics"),
-                        logging_dir=result.get("logging_dir"),
-                        metadata=self.session.metadata,
+                        self.session.session_id, completion_summary=result.get("completion_summary"),
+                        reward_summary=result.get("reward_metrics"), logging_dir=result.get("logging_dir"), metadata=self.session.metadata,
                     )
-                    self._input_queue.task_done()
-                    continue
-                attachment_ids = task_payload.get("attachments") or []
-                attachment_text = self._format_attachment_helper(attachment_ids)
-                if attachment_text:
-                    task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
-                if task_text.strip():
-                    self._accepted_task_texts.append(task_text)
-                    self._accepted_task_texts = self._accepted_task_texts[-20:]
-
-                await self._ensure_agent_initialized()
-                after_agent_init_at = time.monotonic()
-                if self._profile_timing_enabled:
-                    self._active_bridge_timing_context = {
-                        "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
-                        "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
-                    }
-                result = await asyncio.to_thread(self._execute_task, task_text)
-                after_execute_task_at = time.monotonic()
-                if self._profile_timing_enabled and isinstance(result, dict):
-                    timing = result.setdefault("bridge_timing", {})
-                    if isinstance(timing, dict):
-                        timing.update(
-                            {
-                                "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
-                                "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
-                                "execute_task_wall_seconds": round(after_execute_task_at - after_agent_init_at, 6),
-                            }
-                        )
-                self._active_bridge_timing_context = None
-                await self.registry.update_metadata(
-                    self.session.session_id,
-                    completion_summary=result.get("completion_summary"),
-                    reward_summary=result.get("reward_metrics"),
-                    logging_dir=result.get("logging_dir"),
-                    metadata=self.session.metadata,
-                )
+                    for event_type, event_payload, event_turn, event_contract in result.pop("_terminal_events", ()):
+                        await self.publish_event_async(event_type, event_payload, turn=event_turn, classification=event_contract.get("classification"), family=event_contract.get("family"), actor=event_contract.get("actor"), visibility=event_contract.get("visibility"))
                 after_registry_update_at = time.monotonic()
                 if self._profile_timing_enabled and isinstance(result, dict):
                     timing = result.setdefault("bridge_timing", {})
                     if isinstance(timing, dict):
                         timing["post_execute_registry_update_seconds"] = round(after_registry_update_at - after_execute_task_at, 6)
                 self._input_queue.task_done()
-                metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
-                if metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot":
-                    completed_one_shot = True
+                if one_shot:
                     break
-
-            final_status = SessionStatus.STOPPED if self._stop_event.is_set() and not completed_one_shot else SessionStatus.COMPLETED
+            product_session = getattr(self.session, "product_session", None)
+            if product_session is None:
+                metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+                legacy_one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
+                final_status = SessionStatus.STOPPED if self._stop_event.is_set() and not legacy_one_shot else SessionStatus.COMPLETED
+            else:
+                product_state = product_session.read_model.status
+                if product_state == "running" and not self._stop_event.is_set(): self.transition_product_session("complete")
+                elif product_state not in {"completed", "failed", "canceled"}: self.transition_product_session("cancel", "runtime stopped")
+                product_state = product_session.read_model.status
+                final_status = {"completed": SessionStatus.COMPLETED, "failed": SessionStatus.FAILED, "canceled": SessionStatus.STOPPED}[product_state]
             await self.registry.update_status(self.session.session_id, final_status)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Session %s failed", self.session.session_id)
-            await self.registry.update_status(self.session.session_id, SessionStatus.FAILED)
-            await self.publish_event_async(EventType.ERROR, {"message": str(exc)})
+            self.transition_product_session("fail", type(exc).__name__, "runtime failure")
+            product_state = getattr(getattr(getattr(self.session, "product_session", None), "read_model", None), "status", "failed"); await self.registry.update_status(self.session.session_id, {"completed": SessionStatus.COMPLETED, "failed": SessionStatus.FAILED, "canceled": SessionStatus.STOPPED}[product_state])
+            if product_state == "failed": await self.publish_event_async(EventType.ERROR, {"message": str(exc)})
         finally:
             self._closed = True
             await self._enqueue_termination()
-
     def _load_todo_envelope_from_disk(self, workspace_dir: Path) -> Optional[Dict[str, Any]]:
         try:
             store = TodoStore(str(workspace_dir), load_existing=True)
@@ -930,23 +947,29 @@ class SessionRunner:
             return project_store_snapshot_to_tui_envelope(snapshot, scope_key="main", scope_label="main")
         except Exception:
             return None
-
     async def _enqueue_termination(self) -> None:
         queue = self.session.event_queue
         try:
             await queue.put(None)
         except asyncio.QueueFull:  # pragma: no cover - defensive
             logger.warning("Event queue full while terminating session %s", self.session.session_id)
-
-    def _apply_model_override(self) -> None:
+    def _rollback_runtime_overrides(self, overrides: Dict[str, Any], restore: Optional[tuple[str, bool, Any]] = None) -> bool:
+        try: rolled_back = not self._agent or self._agent.apply_runtime_overrides(overrides) is not False
+        except Exception: logger.exception("Failed to roll back runtime configuration"); return False
+        if self._agent and restore:
+            if restore[1]: self._agent.config[restore[0]] = restore[2]
+            else: self._agent.config.pop(restore[0], None)
+        return rolled_back
+    def _apply_model_override(self) -> bool:
         if not self._agent or not self._model_override:
-            return
+            return True
         try:
             providers = self._agent.config.setdefault("providers", {})  # type: ignore[attr-defined]
             providers["default_model"] = self._model_override
+            return True
         except Exception as exc:  # pragma: no cover - defensive
             logger.warning("Failed to apply model override: %s", exc)
-
+            return False
     def _persist_metadata_snapshot_threadsafe(self) -> None:
         loop = self._loop
         if not loop or not loop.is_running():
@@ -958,7 +981,6 @@ class SessionRunner:
             )
         except Exception:
             pass
-
     def _debug_permissions_enabled(self) -> bool:
         try:
             meta = self.session.metadata or {}
@@ -967,7 +989,6 @@ class SessionRunner:
         except Exception:
             pass
         return bool(os.environ.get("BREADBOARD_DEBUG_PERMISSIONS"))
-
     async def _emit_debug_permission_request(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         data = dict(payload or {})
         request_id = data.get("request_id") or f"debug-perm-{uuid.uuid4().hex[:8]}"
@@ -989,13 +1010,11 @@ class SessionRunner:
         self._update_pending_permissions("permission_request", event_payload, source="session")
         await self.publish_event_async(EventType.PERMISSION_REQUEST, event_payload)
         return event_payload
-
     def _pending_permission_key(self, entry: Dict[str, Any]) -> tuple[str, str, str]:
         source = str(entry.get("source") or "session")
         task_id = str(entry.get("task_session_id") or "")
         req_id = str(entry.get("request_id") or entry.get("id") or "")
         return source, task_id, req_id
-
     def _infer_permission_category(self, request_id: str) -> Optional[str]:
         pending = self.session.metadata.get("pending_permissions")
         if not isinstance(pending, list):
@@ -1018,87 +1037,107 @@ class SessionRunner:
                         return cat.strip().lower()
             return None
         return None
-
     def _update_pending_permissions(
-        self,
-        kind: str,
-        info: Dict[str, Any],
-        *,
-        source: str = "session",
-        task_session_id: Optional[str] = None,
-        subagent_type: Optional[str] = None,
-    ) -> None:
-        req_id = (
-            info.get("request_id")
-            or info.get("requestId")
-            or info.get("permission_id")
-            or info.get("permissionId")
-            or info.get("id")
-        )
-        if not isinstance(req_id, str) or not req_id.strip():
-            return
+        self, kind: str, info: Dict[str, Any], *, source: str = "session",
+        task_session_id: Optional[str] = None, subagent_type: Optional[str] = None,
+        consume_fifo: bool = False,
+    ) -> Optional[List[Dict[str, Any]]]:
+        req_id = next((info.get(key) for key in ("request_id", "requestId", "permission_id", "permissionId", "id")
+                       if info.get(key)), None)
+        if not isinstance(req_id, str) or not req_id.strip(): return None
         request_id = req_id.strip()
-        pending = self.session.metadata.get("pending_permissions")
-        if not isinstance(pending, list):
-            pending = []
-
-        entry: Dict[str, Any] = {
-            "source": str(source or "session"),
-            "request_id": request_id,
-        }
-        if task_session_id:
-            entry["task_session_id"] = task_session_id
-        if subagent_type:
-            entry["subagent_type"] = subagent_type
-
-        if kind == "permission_request":
-            entry["request"] = dict(info or {})
-            normalized = [p for p in pending if self._pending_permission_key(p) != self._pending_permission_key(entry)]
-            normalized.append(entry)
-            self.session.metadata["pending_permissions"] = normalized
+        with self._product_session_lock:
+            pending = self.session.metadata.get("pending_permissions")
+            pending = pending if isinstance(pending, list) else []
+            entry: Dict[str, Any] = {"source": str(source or "session"), "request_id": request_id}
+            entry.update({key: value for key, value in (("task_session_id", task_session_id), ("subagent_type", subagent_type)) if value})
+            entry_key = self._pending_permission_key(entry); activate = None; ready = None
+            project_before_activation = kind == "permission_response"
+            if kind == "permission_request":
+                entry["request"] = dict(info or {})
+                match = next((i for i, item in enumerate(pending) if self._pending_permission_key(item) == entry_key), None)
+                normalized = list(pending); project_before_activation = match is not None
+                if match is None:
+                    normalized.append(entry); activate = entry if not pending else None
+                else:
+                    normalized[match] = entry; activate = entry if match == 0 else None
+            elif kind == "permission_response":
+                if not consume_fifo:
+                    suppressed = self._consumed_permission_responses.get(entry_key, 0)
+                    if suppressed:
+                        if suppressed == 1: self._consumed_permission_responses.pop(entry_key)
+                        else: self._consumed_permission_responses[entry_key] = suppressed - 1
+                        return None
+                match = next((i for i, item in enumerate(pending) if
+                              (str(item.get("request_id") or item.get("id") or "") == request_id if consume_fifo else self._pending_permission_key(item) == entry_key)), None)
+                normalized = list(pending)
+                if match is not None and not consume_fifo and match:
+                    normalized[match] = {**normalized[match], "deferred_response": dict(info)}; ready = []
+                elif match is not None:
+                    product_session = getattr(self.session, "product_session", None)
+                    if not consume_fifo:
+                        if product_session:
+                            request = normalized[match].get("request"); responses = info.get("responses") or info.get("items"); self.transition_product_session("resolve_approval", request_id, _canonical_permission_resolution(info.get("response") or info.get("decision"), responses, _permission_item_ids(request), _permission_default_response(self.current_runtime_config())))
+                        ready = [dict(info)]
+                    if consume_fifo:
+                        consumed_key = self._pending_permission_key(normalized[match]); self._consumed_permission_responses[consumed_key] = self._consumed_permission_responses.get(consumed_key, 0) + 1
+                    normalized.pop(match)
+                    while ready is not None and normalized and isinstance(normalized[0].get("deferred_response"), dict):
+                        self.session.metadata["pending_permissions"] = normalized; deferred = dict(normalized[0]["deferred_response"]); deferred_id = str(normalized[0].get("request_id") or "")
+                        if product_session:
+                            request = normalized[0].get("request") if isinstance(normalized[0].get("request"), dict) else {}; operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
+                            self.transition_product_session("request_approval", deferred_id, operation)
+                            self.transition_product_session("resolve_approval", deferred_id, _canonical_permission_resolution(deferred.get("response") or deferred.get("decision"), deferred.get("responses") or deferred.get("items"), _permission_item_ids(request), _permission_default_response(self.current_runtime_config())))
+                        normalized.pop(0); ready.append(deferred)
+                    activate = normalized[0] if match == 0 and normalized else None
+            else: return None
+            product_session = getattr(self.session, "product_session", None)
+            if project_before_activation:
+                if normalized: self.session.metadata["pending_permissions"] = normalized
+                else: self.session.metadata.pop("pending_permissions", None)
+            if product_session and activate and product_session.read_model.status == "running":
+                request = activate.get("request") if isinstance(activate.get("request"), dict) else {}
+                operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
+                product_session.request_approval(str(activate.get("request_id") or activate.get("id") or ""), operation)
+                self.session.metadata["session_contract"] = product_session.read_model.as_dict()
+            if not project_before_activation:
+                if normalized: self.session.metadata["pending_permissions"] = normalized
+                else: self.session.metadata.pop("pending_permissions", None)
             self._persist_metadata_snapshot_threadsafe()
-            return
-
-        if kind == "permission_response":
-            normalized = [p for p in pending if self._pending_permission_key(p) != self._pending_permission_key(entry)]
-            if normalized:
-                self.session.metadata["pending_permissions"] = normalized
-            else:
-                self.session.metadata.pop("pending_permissions", None)
-            self._persist_metadata_snapshot_threadsafe()
-
-    def _rehydrate_pending_permissions(self, event_type: str, payload: Dict[str, Any]) -> None:
+            return ready
+    def _rehydrate_pending_permissions(
+        self, event_type: str, payload: Dict[str, Any],
+    ) -> Optional[List[Dict[str, Any]]]:
         if event_type in {"permission_request", "permission_response"}:
-            self._update_pending_permissions(event_type, dict(payload or {}), source="session")
-            return
-        if event_type != "task_event":
-            return
+            info = {**dict(payload or {}), **({"_runtime_event": (event_type, dict(payload or {}))} if event_type == "permission_response" else {})}
+            return self._update_pending_permissions(event_type, info, source="session")
+        if event_type != "task_event": return None
         kind = str((payload or {}).get("kind") or "")
-        if kind not in {"permission_request", "permission_response"}:
-            return
+        if kind not in {"permission_request", "permission_response"}: return None
         child_payload = (payload or {}).get("payload") or {}
-        self._update_pending_permissions(
-            kind,
-            dict(child_payload) if isinstance(child_payload, dict) else {"payload": child_payload},
-            source="task",
-            task_session_id=str((payload or {}).get("sessionId") or ""),
+        child = dict(child_payload) if isinstance(child_payload, dict) else {"payload": child_payload}
+        if kind == "permission_response": child["_runtime_event"] = (event_type, dict(payload or {}))
+        return self._update_pending_permissions(kind, child,
+            source="task", task_session_id=str((payload or {}).get("sessionId") or ""),
             subagent_type=str((payload or {}).get("subagent_type") or ""),
         )
-
     def _execute_task(self, task_text: str) -> Dict[str, Any]:
         if not self._agent:
             raise RuntimeError("agent missing")
-
         execute_started_at = time.monotonic()
-        emitted_flags = {"assistant": False}
+        emitted_flags: Dict[Any, bool] = {"assistant": False, EventType.COMPLETION: False, EventType.RUN_FINISHED: False}
         self._published_events = 0
+        metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
+        one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
+        terminal_events: list[TranslatedRuntimeEvent] = []; terminal_lock = threading.Lock()
         is_local_agent = bool(getattr(self._agent, "_local_mode", False))
-        event_queue = None
-        permission_queue = None
-        control_queue = None
-        queue_stop = None
-        queue_thread = None
-
+        event_queue = permission_queue = control_queue = queue_stop = queue_thread = None
+        def claim_terminal(evt_type: EventType, evt_payload: Dict[str, Any], evt_turn: Optional[int], evt_contract: RuntimeEventContract) -> None:
+            with terminal_lock:
+                if emitted_flags[evt_type]: return
+                emitted_flags[evt_type] = True
+                if one_shot: terminal_events.append((evt_type, evt_payload, evt_turn, evt_contract))
+                else: self.publish_event(evt_type, evt_payload, turn=evt_turn, classification=evt_contract.get("classification"), family=evt_contract.get("family"), actor=evt_contract.get("actor"), visibility=evt_contract.get("visibility"))
         def handle_runtime_event(event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> None:
             if event_type == "ctree_node":
                 try:
@@ -1116,14 +1155,16 @@ class SessionRunner:
                         self._ctree_snapshot_cache = dict(payload)
                 except Exception:
                     pass
-            try:
-                self._rehydrate_pending_permissions(event_type, dict(payload or {}))
-            except Exception:
-                pass
+            ready_responses = self._rehydrate_pending_permissions(event_type, dict(payload or {}))
+            permission_response_event = event_type == "permission_response" or event_type == "task_event" and payload.get("kind") == "permission_response"
+            if permission_response_event and ready_responses == []:
+                return
             translated = self._translate_runtime_event(event_type, payload, turn)
             if not translated:
                 return
             evt_type, evt_payload, evt_turn, evt_contract = translated
+            if evt_type in {EventType.COMPLETION, EventType.RUN_FINISHED}:
+                claim_terminal(evt_type, evt_payload, evt_turn, evt_contract); return
             if evt_type in {
                 EventType.ASSISTANT_MESSAGE,
                 EventType.ASSISTANT_MESSAGE_START,
@@ -1141,14 +1182,15 @@ class SessionRunner:
                 actor=evt_contract.get("actor"),
                 visibility=evt_contract.get("visibility"),
             )
-
+            if permission_response_event and ready_responses:
+                for deferred in ready_responses[1:]:
+                    deferred_type, deferred_payload = deferred.get("_runtime_event", (event_type, deferred))
+                    handle_runtime_event(str(deferred_type), dict(deferred_payload), turn=turn)
         remote_stream_enabled = bool(os.environ.get("BREADBOARD_ENABLE_REMOTE_STREAM", ""))
         if isinstance(self.request.metadata, dict) and "enable_remote_stream" in self.request.metadata:
             remote_stream_enabled = bool(self.request.metadata.get("enable_remote_stream"))
-
         permission_mode = (self.request.permission_mode or self.session.metadata.get("permission_mode") or "").strip().lower()
         interactive_permissions = permission_mode in {"prompt", "ask", "interactive"}
-
         logger.info(
             "session(%s) task=%s stream=%s local=%s remote_toggle=%s",
             self.session.session_id,
@@ -1157,10 +1199,8 @@ class SessionRunner:
             is_local_agent,
             remote_stream_enabled,
         )
-
         if self._model_override:
             self._apply_model_override()
-
         if interactive_permissions:
             try:
                 perms = getattr(self._agent, "config", {}).setdefault("permissions", {})  # type: ignore[attr-defined]
@@ -1175,7 +1215,6 @@ class SessionRunner:
                 perms["options"] = opts
             except Exception:
                 pass
-
         if not is_local_agent and (interactive_permissions or (self.request.stream and remote_stream_enabled)):
             try:
                 from ray.util.queue import Queue
@@ -1185,11 +1224,9 @@ class SessionRunner:
                 event_queue = Queue()
                 queue_stop, queue_thread = self._start_queue_pump(event_queue, handle_runtime_event)
                 logger.info("session(%s) remote event queue initialized", self.session.session_id)
-
         if interactive_permissions:
             if is_local_agent:
                 import queue as pyqueue
-
                 permission_queue = pyqueue.Queue()
             else:
                 try:
@@ -1200,20 +1237,17 @@ class SessionRunner:
             self._permission_queue = permission_queue
         else:
             self._permission_queue = None
-
         if is_local_agent:
             import queue as pyqueue
-
-            control_queue = pyqueue.Queue()
+            control_queue = _PauseAwareControlQueue(pyqueue.Queue())
         else:
             try:
                 from ray.util.queue import Queue as RayQueue
             except ImportError:  # pragma: no cover
                 control_queue = None
             else:
-                control_queue = RayQueue()
-        self._control_queue = control_queue
-
+                control_queue = _PauseAwareControlQueue(RayQueue())
+        self._install_control_queue(control_queue)
         start_time = time.time()
         run_task_started_at = time.monotonic()
         try:
@@ -1225,6 +1259,7 @@ class SessionRunner:
                         task_context["task_type"] = self.session.metadata.get("task_type")
             except Exception:
                 task_context = {}
+            task_context["attachment_capabilities"] = dict(self._active_attachment_capabilities)
             kernel_emitter_run_dir = None
             kernel_emitter_mode = None
             try:
@@ -1239,7 +1274,6 @@ class SessionRunner:
                         kernel_emitter_run_dir = str(Path(config_plane_stream).resolve().parents[1])
                 if kernel_emitter_run_dir:
                     from agentic_coder_prototype.runtime.kernel_emitter import primitive_emission_mode
-
                     kernel_emitter_mode = primitive_emission_mode("strict")
             except Exception:
                 kernel_emitter_run_dir = None
@@ -1259,7 +1293,7 @@ class SessionRunner:
             run_task_completed_at = time.monotonic()
         finally:
             self._permission_queue = None
-            self._control_queue = None
+            self._install_control_queue(None)
             if queue_stop:
                 queue_stop.set()
                 if event_queue is not None:
@@ -1268,10 +1302,9 @@ class SessionRunner:
                     except Exception:  # pragma: no cover
                         pass
             if queue_thread:
-                queue_thread.join(timeout=2)
+                queue_thread.join()
             if event_queue is not None:
                 self._drain_event_queue(event_queue, handle_runtime_event)
-
         elapsed_ms = int((time.time() - start_time) * 1000)
         after_queue_drain_at = time.monotonic()
         completion = result.get("completion_summary") or {}
@@ -1324,7 +1357,7 @@ class SessionRunner:
             }
         if usage_payload:
             completion_payload["usage"] = usage_payload
-        self.publish_event(EventType.COMPLETION, completion_payload)
+        claim_terminal(EventType.COMPLETION, completion_payload, None, {})
         after_completion_publish_at = time.monotonic()
         if reward:
             self.publish_event(EventType.REWARD_UPDATE, {"summary": reward})
@@ -1350,16 +1383,16 @@ class SessionRunner:
                 "completion_event_publish_seconds": round(after_completion_publish_at - after_fallback_emit_at, 6),
                 "post_completion_to_run_finished_seconds": round(time.monotonic() - after_completion_publish_at, 6),
             }
-        self.publish_event(EventType.RUN_FINISHED, finish_payload)
+        claim_terminal(EventType.RUN_FINISHED, finish_payload, None, {})
         result_payload = {
             "completion_summary": completion,
             "reward_metrics": reward or None,
             "logging_dir": logging_dir,
+            "_terminal_events": terminal_events,
         }
         if self._profile_timing_enabled:
             result_payload["bridge_timing"] = dict(completion_payload.get("bridge_timing") or {})
         return result_payload
-
     async def publish_event_async(
         self,
         event_type: EventType,
@@ -1383,7 +1416,6 @@ class SessionRunner:
             visibility=visibility,
         )
         await self._enqueue_event_async(event)
-
     def publish_event(
         self,
         event_type: EventType,
@@ -1411,7 +1443,6 @@ class SessionRunner:
             running_loop = asyncio.get_running_loop()
         except RuntimeError:
             running_loop = None
-
         if loop and loop.is_running():
             if running_loop and running_loop is loop:
                 loop.create_task(self._enqueue_event_async(event))
@@ -1419,23 +1450,19 @@ class SessionRunner:
             future = asyncio.run_coroutine_threadsafe(self._enqueue_event_async(event), loop)
             future.result()
             return
-
         try:
             self.session.event_queue.put_nowait(event)
             self._published_events += 1
         except asyncio.QueueFull:  # pragma: no cover - defensive
             logger.warning("Event queue full for session %s, dropping event", self.session.session_id)
-
     async def _enqueue_event_async(self, event: SessionEvent) -> None:
         await self.session.event_queue.put(event)
         self._published_events += 1
-
     def _touch_last_activity(self) -> None:
         try:
             self.session.last_activity_at = datetime.now(timezone.utc)
         except Exception:
             pass
-
     def _start_queue_pump(
         self,
         event_queue: Any,
@@ -1443,9 +1470,7 @@ class SessionRunner:
     ) -> tuple[Any, Any]:
         import threading
         from queue import Empty
-
         stop_signal = threading.Event()
-
         def runner() -> None:
             while not stop_signal.is_set():
                 try:
@@ -1461,18 +1486,15 @@ class SessionRunner:
                 if event_type is None:
                     break
                 handle_event(event_type, payload, turn=turn)
-
         thread = threading.Thread(target=runner, daemon=True)
         thread.start()
         return stop_signal, thread
-
     def _drain_event_queue(
         self,
         event_queue: Any,
         handle_event: Callable[[str, Dict[str, Any], Optional[int]], None],
     ) -> None:
         from queue import Empty
-
         while True:
             try:
                 item = event_queue.get_nowait()
@@ -1488,7 +1510,6 @@ class SessionRunner:
                 continue
             handle_event(event_type, payload, turn=turn)
         logger.info("session(%s) published %s events", self.session.session_id, self._published_events)
-
     def get_workspace_dir(self) -> Optional[Path]:
         if self._workspace_path:
             self._workspace_path.mkdir(parents=True, exist_ok=True)
@@ -1500,35 +1521,23 @@ class SessionRunner:
             self._workspace_path = path
             return path
         return None
-
     def register_attachments(self, entries: Sequence[Dict[str, Any]]) -> None:
         for entry in entries:
             attachment_id = entry.get("id")
             if not attachment_id:
                 continue
             self._attachment_store[str(attachment_id)] = dict(entry)
-
     def _format_attachment_helper(self, attachment_ids: Sequence[str]) -> str:
-        if not attachment_ids:
-            return ""
-        workspace_dir = self.get_workspace_dir()
-        helper_lines: list[str] = []
-        for index, attachment_id in enumerate(attachment_ids, start=1):
-            key = str(attachment_id)
+        helper_lines: list[str] = []; self._active_attachment_capabilities = {}
+        for index, key in enumerate(dict.fromkeys(str(value) for value in attachment_ids), start=1):
             info = self._attachment_store.get(key)
-            if not info:
-                continue
-            rel_path = info.get("relative_path")
-            abs_path_value = info.get("absolute_path")
-            abs_path = Path(abs_path_value).resolve() if abs_path_value else None
-            if workspace_dir and rel_path:
-                destination = workspace_dir / rel_path
-                if abs_path and abs_path.exists() and not destination.exists():
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(abs_path, destination)
-            helper_lines.append(f"[Attachment {index}: {info.get('filename')} -> {rel_path or 'unknown'}]")
+            if not info: continue
+            artifact_ref = getattr(self.session, "product_artifacts", {}).get(key)
+            if artifact_ref is None: raise RuntimeError(f"attachment artifact missing: {key}")
+            filename = str(info.get("filename") or key); _validate_artifact_name(key); uri = f"attachment://{artifact_ref.digest}"
+            self._active_attachment_capabilities[uri] = artifact_ref.as_dict()
+            helper_lines.append(f"[Attachment {index}: name={json.dumps(filename, ensure_ascii=True)}; uri={uri}; size_bytes={artifact_ref.size_bytes}; read with read_file after normal authorization]")
         return "\n".join(helper_lines)
-
     def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
         if not logging_dir:
             return None
@@ -1539,23 +1548,19 @@ class SessionRunner:
             return json.loads(run_path.read_text(encoding="utf-8"))
         except Exception:
             return None
-
     def _normalize_usage_payload(self, usage: Dict[str, Any], *, latency_ms: Optional[int] = None) -> Dict[str, Any]:
         if not isinstance(usage, dict):
             return {}
-
         def _to_int(value: Any) -> int:
             try:
                 return int(value)
             except Exception:
                 return 0
-
         def _to_float(value: Any) -> Optional[float]:
             try:
                 return float(value)
             except Exception:
                 return None
-
         prompt_tokens = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
         completion_tokens = _to_int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
         total_tokens = _to_int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
@@ -1569,7 +1574,6 @@ class SessionRunner:
                 latency_ms_val = int(latency_s * 1000)
         if not latency_ms_val and latency_ms is not None:
             latency_ms_val = int(latency_ms)
-
         normalized: Dict[str, Any] = {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
@@ -1584,12 +1588,10 @@ class SessionRunner:
         if latency_ms_val:
             normalized["latency_ms"] = latency_ms_val
         return normalized
-
     def _usage_from_run_summary(self, summary: Dict[str, Any]) -> Dict[str, Any]:
         diagnostics = summary.get("turn_diagnostics")
         if not isinstance(diagnostics, list):
             return {}
-
         totals: Dict[str, Any] = {
             "prompt_tokens": 0,
             "completion_tokens": 0,
@@ -1600,7 +1602,6 @@ class SessionRunner:
         latency_total = 0.0
         cost_total = 0.0
         saw_usage = False
-
         for entry in diagnostics:
             if not isinstance(entry, dict):
                 continue
@@ -1623,7 +1624,6 @@ class SessionRunner:
             latency_value = entry.get("latency_seconds") or entry.get("latency_s")
             if isinstance(latency_value, (int, float)):
                 latency_total += float(latency_value)
-
         if not saw_usage:
             return {}
         totals["total_tokens"] = totals["total_tokens"] or (totals["prompt_tokens"] + totals["completion_tokens"])
@@ -1633,7 +1633,6 @@ class SessionRunner:
         if cost_total:
             normalized["cost_usd"] = cost_total
         return normalized
-
     def _extract_usage_metrics(
         self,
         result: Dict[str, Any],
@@ -1657,7 +1656,6 @@ class SessionRunner:
         if elapsed_ms:
             return {"latency_ms": int(elapsed_ms)}
         return {}
-
     def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         call = payload.get("call") or payload.get("tool_call") or payload.get("tool")
         if not isinstance(call, dict):
@@ -1687,7 +1685,6 @@ class SessionRunner:
         if progress is not None and "progress" not in normalized:
             normalized["progress"] = progress
         return normalized
-
     def _normalize_tool_result_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         normalized = dict(payload)
         message = normalized.get("message")
@@ -1709,7 +1706,6 @@ class SessionRunner:
         if artifact_ref is not None:
             normalized["artifact_ref"] = artifact_ref
         return normalized
-
     def _extract_artifact_ref(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         candidate = payload.get("artifact_ref")
         if isinstance(candidate, dict):
@@ -1916,14 +1912,7 @@ class SessionRunner:
         return evt, normalized_payload, turn, event_contract
 
     def _resolve_skill_catalog(self) -> Dict[str, Any]:
-        config: Dict[str, Any]
-        if self._agent is not None:
-            config = dict(getattr(self._agent, "config", {}) or {})
-        else:
-            try:
-                config = load_agent_config(self.request.config_path)
-            except Exception:
-                config = {}
+        config = self.current_runtime_config()
         workspace = self.get_workspace_dir()
         if not workspace:
             ws_cfg = (config.get("workspace") or {}) if isinstance(config, dict) else {}
