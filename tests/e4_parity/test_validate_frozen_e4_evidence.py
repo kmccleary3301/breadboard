@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,35 @@ FROZEN_REPORTS = [
     ROOT
     / "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_validation_report.json",
 ]
+
+
+def test_repo_only_frozen_chain_validates_without_workspace_root(tmp_path: Path) -> None:
+    validation_report = FROZEN_REPORTS[0]
+    output = tmp_path / "repo-only-validation.json"
+    env = dict(os.environ)
+    env.pop("BB_WORKSPACE_ROOT", None)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--validation-report",
+            validation_report.relative_to(ROOT).as_posix(),
+            "--validation-report-sha256",
+            f"sha256:{hashlib.sha256(validation_report.read_bytes()).hexdigest()}",
+            "--json-out",
+            str(output),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    report = json.loads(output.read_text(encoding="utf-8"))
+    assert report["ok"] is True
+    assert report["accepted"] is True
+    assert report["errors"] == []
 
 
 @pytest.mark.parametrize("validation_report", FROZEN_REPORTS)
@@ -57,7 +87,6 @@ def test_frozen_evidence_validator_rejects_tampered_manifest_artifact(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(validator, "ROOT", tmp_path)
-    monkeypatch.setattr(validator, "WORKSPACE", tmp_path.parent)
 
     def write_json(relative: str, payload: object) -> Path:
         path = tmp_path / relative

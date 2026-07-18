@@ -68,7 +68,7 @@
       "sha256": "sha256:02bf63d0ad808f59e71a52729fcc98eba8d01b7615ed0fa6b38da8baf40dac15"
     },
     {
-      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/source_freeze_provenance.json",
       "role": "source_freeze",
       "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
     }
@@ -84,6 +84,6 @@
   "generated_at_utc": "2026-07-03T07:30:00Z",
   "hash_algorithm": "sha256",
   "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-  "manifest_scope_note": "Every governed artifact for this P3.7 helper/runtime C4 chain is canonical repo evidence or source-freeze evidence under docs_tmp/phase_15/source_freezes. Scratch/tmp/shared roots are not promotion evidence.",
+  "manifest_scope_note": "Every governed artifact for this P3.7 helper/runtime C4 chain is checkout-local canonical evidence. Scratch/tmp/shared roots are not promotion evidence.",
   "schema_version": "bb.e4.evidence_manifest.v1"
 }

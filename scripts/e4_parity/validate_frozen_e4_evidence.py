@@ -18,8 +18,6 @@ from scripts.e4_parity.path_refs import (  # noqa: E402
 )
 from scripts.e4_parity.validators import hash_utils  # noqa: E402
 
-WORKSPACE = workspace_root_for_checkout(ROOT)
-
 
 def _load_json(path: Path) -> dict[str, Any]:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -44,7 +42,7 @@ def _resolve(reference: str, *, label: str) -> Path:
         checkout_root=ROOT,
         namespace=namespace,
         label=label,
-        workspace_root=WORKSPACE if namespace == "workspace_evidence" else None,
+        workspace_root=workspace_root_for_checkout(ROOT) if namespace == "workspace_evidence" else None,
     )
 
 
