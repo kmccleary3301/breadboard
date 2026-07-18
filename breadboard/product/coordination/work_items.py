@@ -217,7 +217,7 @@ def _apply(snapshot: WorkItemSnapshot, event: WorkItemEvent) -> WorkItemSnapshot
         if not isinstance(payload["placement"], Mapping): raise TypeError("placement must be a mapping")
         _reject(snapshot.active_lease is not None and snapshot.active_lease._expired_by(event.occurred_at), "placement occurred at or after lease expiry")
         placement = WorkPlacement(**dict(payload["placement"])); current = snapshot.current_attempt
-        if current is None or (placement.work_item_id, placement.attempt_id, placement.worker_id, placement.session_ref) != (snapshot.work_item_id, current.attempt_id, current.worker_id, current.session_ref): raise ValueError("placement does not match the active attempt")
+        _reject(current is None or (placement.work_item_id, placement.attempt_id, placement.worker_id, placement.session_ref) != (snapshot.work_item_id, current.attempt_id, current.worker_id, current.session_ref), "placement does not match the active attempt"); _reject(current is not None and not (_timestamp(current.started_at, "attempt.started_at") <= _timestamp(placement.attached_at, "placement.attached_at") <= _timestamp(event.occurred_at, "occurred_at")), "placement attached_at is outside the active attempt event interval")
         if any(row.placement_id == placement.placement_id or row.attempt_id == placement.attempt_id for row in snapshot.placements): raise ValueError("attempt already has a placement")
         return replace(snapshot, placements=(*snapshot.placements, placement))
     if kind == "budget.consumed":
@@ -267,9 +267,9 @@ def rebuild_work_item(events: Iterable[WorkItemEvent]) -> WorkItemSnapshot:
     rows = tuple(events)
     if not rows or rows[0].kind != "work_item.created": raise ValueError("event stream must begin with work_item.created")
     if rows[0].sequence != 1: raise ValueError("Work Item event stream must start at sequence 1")
-    snapshot = _created(rows[0])
+    snapshot = _created(rows[0]); previous_occurred_at = _timestamp(rows[0].occurred_at, "occurred_at")
     for expected, event in enumerate(rows[1:], 2):
-        if event.work_item_id != rows[0].work_item_id or event.sequence != expected: raise ValueError("event stream is not contiguous for one Work Item")
+        _reject(event.work_item_id != rows[0].work_item_id or event.sequence != expected, "event stream is not contiguous for one Work Item"); occurred_at = _timestamp(event.occurred_at, "occurred_at"); _reject(occurred_at < previous_occurred_at, "Work Item event timestamps must be nondecreasing"); previous_occurred_at = occurred_at
         snapshot = replace(_apply(snapshot, event), event_count=expected)
     return snapshot
 class WorkItem:
@@ -297,10 +297,10 @@ class WorkItem:
     def _require_fence(self, fence: str) -> None:
         actual = self._snapshot.active_lease.lease_id if fence == "lease" and self._snapshot.active_lease is not None else self._attempt_identity(self._snapshot) if fence == "attempt" else None
         _reject((self._lease_fence if fence == "lease" else self._attempt_fence) != actual, f"stale Work Item {fence} authority", RuntimeError)
-    def _fence_payload(self, values: Mapping[str, Any], *, lease: bool = False, latest: bool = False) -> dict[str, Any]:
+    def _fence_payload(self, expected_id: str, values: Mapping[str, Any], *, lease: bool = False, latest: bool = False) -> dict[str, Any]:
         fenced = self._snapshot.active_lease if lease else self._snapshot.attempts[-1] if latest and self._snapshot.attempts else self._snapshot.current_attempt
-        _reject(fenced is None and not lease, "command requires an attempt" if latest else "command requires an active attempt", RuntimeError)
-        return {("lease_id" if lease else "attempt_id"): "" if fenced is None else fenced.lease_id if lease else fenced.attempt_id, **values}
+        _reject(fenced is None, "command requires an active lease" if lease else "command requires an attempt" if latest else "command requires an active attempt", RuntimeError); authority = None if fenced is None else fenced.lease_id if lease else fenced.attempt_id; _reject(type(expected_id) is not str or not expected_id or expected_id != authority, f"stale Work Item {'lease' if lease else 'attempt'} authority", RuntimeError)
+        return {("lease_id" if lease else "attempt_id"): expected_id, **values}
     def _refresh(self) -> None:
         events = self._repository.read(self._work_item_id)
         if len(events) != len(self._events): self._events, self._snapshot = list(events), rebuild_work_item(events)
@@ -314,20 +314,20 @@ class WorkItem:
     def satisfy_dependency(self, dependency_ref: str) -> WorkItemSnapshot: return self._append("dependency.satisfied", lambda: {"dependency_ref": dependency_ref})
     def acquire_lease(self, worker_id: str, *, lease_id: str | None = None, expires_at: str | None = None) -> WorkItemSnapshot: return self._append("lease.acquired", lambda: {"lease_id": self._ids.new_id() if lease_id is None else lease_id, "worker_id": worker_id, "expires_at": expires_at})
     def release_lease(self, lease_id: str) -> WorkItemSnapshot: return self._append("lease.released", lambda: {"lease_id": lease_id}, fence="lease")
-    def start_attempt(self, session_ref: str, *, attempt_id: str | None = None) -> WorkItemSnapshot:
-        return self._append("attempt.started", lambda: self._fence_payload({"attempt_id": self._ids.new_id() if attempt_id is None else attempt_id, "session_ref": session_ref}, lease=True), fence="lease")
+    def start_attempt(self, session_ref: str, *, lease_id: str, attempt_id: str | None = None) -> WorkItemSnapshot:
+        return self._append("attempt.started", lambda: self._fence_payload(lease_id, {"attempt_id": self._ids.new_id() if attempt_id is None else attempt_id, "session_ref": session_ref}, lease=True), fence="lease")
     def attach_placement(self, placement: WorkPlacement) -> WorkItemSnapshot: return self._append("placement.attached", lambda: {"placement": placement.as_dict()}, fence="attempt")
-    def consume_budget(self, *, tokens: int = 0, cost_microusd: int = 0, wall_time_ms: int = 0) -> WorkItemSnapshot: return self._append("budget.consumed", lambda: self._fence_payload({"tokens": tokens, "cost_microusd": cost_microusd, "wall_time_ms": wall_time_ms}), fence="attempt")
-    def checkpoint(self, checkpoint_ref: str) -> WorkItemSnapshot: return self._append("checkpoint.recorded", lambda: self._fence_payload({"checkpoint_ref": checkpoint_ref}), fence="attempt")
-    def wait(self, wake_refs: Iterable[str], reason: str) -> WorkItemSnapshot: return self._append("work.waiting", lambda: self._fence_payload({"wake_refs": list(wake_refs), "reason": reason}), fence="attempt")
-    def wake(self, wake_ref: str) -> WorkItemSnapshot: return self._append("work.woken", lambda: self._fence_payload({"wake_ref": wake_ref}, latest=True), fence="attempt")
-    def pause(self, reason: str) -> WorkItemSnapshot: return self._append("work.paused", lambda: self._fence_payload({"reason": reason}), fence="attempt")
-    def resume(self, *, approved: bool = False) -> WorkItemSnapshot: return self._append("work.resumed", lambda: self._fence_payload({"approved": approved}, latest=True), fence="attempt")
-    def fail_attempt(self, reason: str, *, retryable: bool) -> WorkItemSnapshot:
+    def consume_budget(self, *, attempt_id: str, tokens: int = 0, cost_microusd: int = 0, wall_time_ms: int = 0) -> WorkItemSnapshot: return self._append("budget.consumed", lambda: self._fence_payload(attempt_id, {"tokens": tokens, "cost_microusd": cost_microusd, "wall_time_ms": wall_time_ms}), fence="attempt")
+    def checkpoint(self, checkpoint_ref: str, *, attempt_id: str) -> WorkItemSnapshot: return self._append("checkpoint.recorded", lambda: self._fence_payload(attempt_id, {"checkpoint_ref": checkpoint_ref}), fence="attempt")
+    def wait(self, wake_refs: Iterable[str], reason: str, *, attempt_id: str) -> WorkItemSnapshot: return self._append("work.waiting", lambda: self._fence_payload(attempt_id, {"wake_refs": list(wake_refs), "reason": reason}), fence="attempt")
+    def wake(self, wake_ref: str, *, attempt_id: str) -> WorkItemSnapshot: return self._append("work.woken", lambda: self._fence_payload(attempt_id, {"wake_ref": wake_ref}, latest=True), fence="attempt")
+    def pause(self, reason: str, *, attempt_id: str) -> WorkItemSnapshot: return self._append("work.paused", lambda: self._fence_payload(attempt_id, {"reason": reason}), fence="attempt")
+    def resume(self, *, attempt_id: str, approved: bool = False) -> WorkItemSnapshot: return self._append("work.resumed", lambda: self._fence_payload(attempt_id, {"approved": approved}, latest=True), fence="attempt")
+    def fail_attempt(self, reason: str, *, attempt_id: str, retryable: bool) -> WorkItemSnapshot:
         def payload() -> dict[str, Any]:
-            return self._fence_payload({"reason": reason, "retryable": retryable, "will_retry": retryable and self._snapshot.retry_policy.allows(reason) and len(self._snapshot.attempts) < self._snapshot.retry_policy.max_attempts and _budget_allows(self._snapshot.budget, self._snapshot.budget_usage)})
+            return self._fence_payload(attempt_id, {"reason": reason, "retryable": retryable, "will_retry": retryable and self._snapshot.retry_policy.allows(reason) and len(self._snapshot.attempts) < self._snapshot.retry_policy.max_attempts and _budget_allows(self._snapshot.budget, self._snapshot.budget_usage)})
         return self._append("attempt.failed", payload, fence="attempt")
-    def complete(self, summary: str = "completed") -> WorkItemSnapshot: return self._append("work.completed", lambda: self._fence_payload({"summary": summary}), fence="attempt")
+    def complete(self, summary: str = "completed", *, attempt_id: str) -> WorkItemSnapshot: return self._append("work.completed", lambda: self._fence_payload(attempt_id, {"summary": summary}), fence="attempt")
     def cancel(self, actor_id: str, reason: str = "operator request") -> WorkItemSnapshot:
         with self._lock:
             if self._appending: raise RuntimeError("cannot mutate Work Item while an append is in progress")
@@ -342,7 +342,7 @@ class WorkItem:
                     child_event = WorkItemEvent(child_id, len(child_events) + 1, "work.canceled", occurred_at, {"actor_id": actor_id, "reason": reason, "cleanup": child.cancellation_policy.cleanup, "child_work_item_ids": list(descendants)}); rebuild_work_item((*child_events, child_event)); expected[child_id] = len(child_events); events.append(child_event); pending.extend(reversed(descendants))
                 next_snapshot = rebuild_work_item((*self._events, parent_event)); self._repository.append(expected, events); self._events.append(parent_event); self._snapshot = next_snapshot; self._set_fences(next_snapshot); return next_snapshot
             finally: self._appending = False
-    def delegate(self, title: str, *, child_work_item_id: str | None = None, dependency_refs: Iterable[str] = (), retry_policy: RetryPolicy | None = None, resume_policy: ResumePolicy | None = None, cancellation_policy: CancellationPolicy | None = None, budget: Budget | None = None) -> "WorkItem":
+    def delegate(self, title: str, *, attempt_id: str, child_work_item_id: str | None = None, dependency_refs: Iterable[str] = (), retry_policy: RetryPolicy | None = None, resume_policy: ResumePolicy | None = None, cancellation_policy: CancellationPolicy | None = None, budget: Budget | None = None) -> "WorkItem":
         with self._lock:
             if self._appending: raise RuntimeError("cannot mutate Work Item while an append is in progress")
             self._refresh()
@@ -352,7 +352,7 @@ class WorkItem:
             if (expiry := self._expiry_event(occurred_at)) is not None: self._record(expiry); raise RuntimeError("cannot delegate after lease expiry")
             child_id = self._ids.new_id() if child_work_item_id is None else child_work_item_id
             child_event = WorkItemEvent(child_id, 1, "work_item.created", occurred_at, {"title": title, "parent_work_item_id": self._work_item_id, "dependency_refs": list(dependency_refs), "retry_policy": (retry_policy or RetryPolicy()).as_dict(), "resume_policy": (resume_policy or ResumePolicy()).as_dict(), "cancellation_policy": (cancellation_policy or CancellationPolicy()).as_dict(), "budget": (budget or Budget()).as_dict()})
-            parent_event = WorkItemEvent(self._work_item_id, len(self._events) + 1, "child.delegated", occurred_at, self._fence_payload({"child_work_item_id": child_id}))
+            parent_event = WorkItemEvent(self._work_item_id, len(self._events) + 1, "child.delegated", occurred_at, self._fence_payload(attempt_id, {"child_work_item_id": child_id}))
             parent_snapshot = rebuild_work_item((*self._events, parent_event))
             self._repository.append({self._work_item_id: len(self._events), child_id: 0}, (child_event, parent_event))
             self._events.append(parent_event); self._snapshot = parent_snapshot; self._set_fences(parent_snapshot)
@@ -360,8 +360,8 @@ class WorkItem:
     def _expiry_event(self, occurred_at: str) -> WorkItemEvent | None:
         lease = self._snapshot.active_lease
         if lease is None or not lease._expired_by(occurred_at): return None
-        if self._snapshot.current_attempt is None: return WorkItemEvent(self._work_item_id, len(self._events) + 1, "lease.expired", occurred_at, self._fence_payload({}, lease=True))
-        will_retry = self._snapshot.retry_policy.allows("lease expired") and len(self._snapshot.attempts) < self._snapshot.retry_policy.max_attempts and _budget_allows(self._snapshot.budget, self._snapshot.budget_usage); return WorkItemEvent(self._work_item_id, len(self._events) + 1, "attempt.expired", occurred_at, self._fence_payload({"lease_id": lease.lease_id, "will_retry": will_retry}))
+        if self._snapshot.current_attempt is None: return WorkItemEvent(self._work_item_id, len(self._events) + 1, "lease.expired", occurred_at, self._fence_payload(lease.lease_id, {}, lease=True))
+        will_retry = self._snapshot.retry_policy.allows("lease expired") and len(self._snapshot.attempts) < self._snapshot.retry_policy.max_attempts and _budget_allows(self._snapshot.budget, self._snapshot.budget_usage); return WorkItemEvent(self._work_item_id, len(self._events) + 1, "attempt.expired", occurred_at, self._fence_payload(self._snapshot.current_attempt.attempt_id, {"lease_id": lease.lease_id, "will_retry": will_retry}))
     def _record(self, event: WorkItemEvent) -> WorkItemSnapshot:
         next_events = [*self._events, event]; next_snapshot = rebuild_work_item(next_events); self._repository.append({self._work_item_id: len(self._events)}, (event,)); self._events, self._snapshot = next_events, next_snapshot; self._set_fences(next_snapshot); return next_snapshot
     def _append(self, kind: str, payload: Callable[[], Mapping[str, Any]], *, fence: str | None = None) -> WorkItemSnapshot:
