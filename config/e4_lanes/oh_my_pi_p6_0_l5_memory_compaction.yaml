@@ -128,6 +128,7 @@
   "normalize": {
     "config": {
       "packet_constants": {
+        "auto_bind_role_refs": true,
         "payload_templates": {
           "capture_ref": {
             "accepted_as_capture_ref": true,

@@ -21,6 +21,7 @@ from scripts.e4_parity.lane_definitions import (
 from scripts.e4_parity.path_refs import (
     ReferenceResolutionError,
     resolve_declared_reference,
+    workspace_root_for_checkout,
 )
 from scripts.e4_parity.adapters.oh_my_pi_p3_remaining_capture import (
     capture_p3_remaining,
@@ -45,7 +46,7 @@ from scripts.e4_parity.validators import hash_utils
 from scripts.e4_parity.validators.registries import schema_generation_default
 
 ROOT = Path(__file__).resolve().parents[3]
-WORKSPACE = ROOT.parent
+WORKSPACE = workspace_root_for_checkout(ROOT)
 
 GENERATED_AT_UTC = "2026-07-03T07:30:00Z"
 SUPPORT_CLAIM_GENERATED_AT_UTC = "2026-07-04T00:00:00Z"
@@ -486,6 +487,13 @@ def _capture_projection_packet(
         role: f"{logical_roles[role]}#{digest}"
         for role, digest in source_role_hashes.items()
     }
+    ledger_role = "atomic_feature_ledger"
+    ledger_path = "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    ledger_value = _read_json(LEDGER_PATH)
+    ledger_bytes = _json_bytes(ledger_value)
+    ledger_digest = _sha256_bytes(ledger_bytes)
+    source_role_hashes[ledger_role] = ledger_digest
+    source_input_refs[ledger_role] = f"{ledger_path}#{ledger_digest}"
     source_payloads = {
         role: projection_inputs[path]["value"]
         for role, path in logical_roles.items()
@@ -497,12 +505,15 @@ def _capture_projection_packet(
         for role, path in logical_roles.items()
         if path in projection_inputs
     }
+    source_values["artifact_catalog"] = _read_json(CATALOG_PATH)
+    source_values[ledger_role] = ledger_value
     source_bytes = {
         role: int(projection_inputs[path]["bytes"])
         for role, path in logical_roles.items()
         if is_source_role(role, path)
         and "bytes" in projection_inputs[path]
     }
+    source_bytes[ledger_role] = len(ledger_bytes)
     packet = build_projection_packet(
         lane_def,
         inventory_lane,
