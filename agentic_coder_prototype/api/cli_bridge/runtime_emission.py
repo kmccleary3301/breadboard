@@ -148,21 +148,6 @@ def _work_item_snapshot_record(snapshot: WorkItemSnapshot) -> dict[str, Any]:
     }
     return record
 
-def _coordination_slice(session_id: str, *, generated_at: str) -> dict[str, Any]:
-    return finalize_record(get_spec("bb.coordination_slice.v2"), {
-        "schema_version": "bb.coordination_slice.v2", "slice_id": f"{session_id}_coordination_slice",
-        "slice_kind": "reference", "generated_at_utc": generated_at,
-        "participants": [{"actor_kind": "service", "actor_id": "cli_bridge.session_service"}],
-        "records": {}, "metadata": {"session_id": session_id, "runtime_source": "cli_bridge"}})
-def _coordination_pack(session_id: str, *, generated_at: str, slices: list[Mapping[str, Any]]) -> dict[str, Any]:
-    return finalize_record(get_spec("bb.coordination_pack.v3"), {
-        "schema_version": "bb.coordination_pack.v3", "pack_id": f"{session_id}_coordination_pack",
-        "generated_at_utc": generated_at, "producer": {"actor_kind": "service", "actor_id": "cli_bridge.session_service"},
-        "source_dialects": ["bb.coordination_slice.v2", "bb.coordination_pack.v3"], "records": {"slices": list(slices)},
-        "migration": {"v1_acceptance": "read_only_accepted_evidence", "v2_acceptance": "read_write",
-                      "v3_write_mode": "preferred",
-                      "deprecation_notice": "v1/v2 coordination evidence remains readable; v3 is the grouped write envelope."},
-        "metadata": {"session_id": session_id, "runtime_source": "cli_bridge"}})
 def emit_session_start_records(
     *, session_id: str, request: SessionCreateRequest, title: str | None = None, repo_root: Path | None = None, generated_at: str | None = None, output_root: Path | None = None, effective_runtime_config: Mapping[str, Any] | None = None,
 ) -> dict[str, str]:
