@@ -1,9 +1,9 @@
 {
   "artifacts": [
     {
-      "path": "config/e4_target_freeze_manifest.yaml",
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_target_freeze_manifest.yaml",
       "role": "freeze_manifest",
-      "sha256": "sha256:368abb149bb533f7fc7396a4143e7a03f1cd18db1a7bde95d98c8bc556c245e3"
+      "sha256": "sha256:bec77f0821ff03f790536a728229e6fb892be6eae11e1f5f294279f3042c8999"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json",
@@ -30,9 +30,9 @@
       "sha256": "sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043"
     },
     {
-      "path": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:778cdf3d35f1743ee8dc74ae9d790af4686ad53cc560b699a8f21f75e7e86531"
+      "sha256": "sha256:93a2430cd5e07faadd537ff7c9e27c0fb065ff8a69f5e161b3b2d663211ed822"
     },
     {
       "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json",

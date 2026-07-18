@@ -671,7 +671,10 @@ jobs:
           workspace_evidence = {
               scenario["test_id"]
               for scenario in scenarios
-              if scenario.get("command", [None, None])[1:2] == ["scripts/validate_e4_c4_chain.py"]
+              if scenario.get("command", [None, None])[1:2] in (
+                  ["scripts/validate_e4_c4_chain.py"],
+                  ["scripts/e4_parity/validate_frozen_e4_evidence.py"],
+              )
           }
           if "CT-P7-CODEX-GPT55-C4-CHAIN" not in workspace_evidence:
               raise SystemExit("workspace-evidence CT routing is stale: P7 C4 chain not classified")
@@ -722,7 +725,10 @@ jobs:
           workspace_evidence = {
               scenario["test_id"]
               for scenario in manifest["scenarios"]
-              if scenario.get("command", [None, None])[1:2] == ["scripts/validate_e4_c4_chain.py"]
+              if scenario.get("command", [None, None])[1:2] in (
+                  ["scripts/validate_e4_c4_chain.py"],
+                  ["scripts/e4_parity/validate_frozen_e4_evidence.py"],
+              )
           }
           with Path("docs/conformance/CONFORMANCE_TEST_MATRIX_V1.csv").open(
               newline="", encoding="utf-8"

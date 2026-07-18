@@ -518,15 +518,10 @@ def test_p6_6_producer_declares_full_lane_root_for_fixed_point_watch_set(
     tmp_path: Path,
 ) -> None:
     """Every P6.6 lane output must participate in fixed-point drift detection."""
-    lane_write = "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent"
+    lane_write = "docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent_v2"
 
     lane_root = tmp_path / lane_write
-    lane_outputs = (
-        lane_root / "prevalidation_report.json",
-        lane_root / "raw/omp_joined_subagent_capture.command_report.json",
-        lane_root / "joined_sessions/session_001/record.jsonl",
-        lane_root / "detached_sessions/session_002/record.jsonl",
-    )
+    lane_outputs = tuple(lane_root / name for name in ("work_items.json", "prevalidation_report.json"))
     for path in lane_outputs:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("{}\n", encoding="utf-8")

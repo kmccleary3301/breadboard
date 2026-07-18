@@ -19,7 +19,6 @@ P3_LANE_IDS = [
     "oh_my_pi_p3_4_extension_hook_execution_compiler",
     "oh_my_pi_p3_5_resource_blob_compiler",
     "oh_my_pi_p3_6_protocol_provider_policy_compiler",
-    "oh_my_pi_p3_7_memory_work_compiler",
     "oh_my_pi_p3_8_projection_broker_adapter",
 ]
 
@@ -39,6 +38,24 @@ def test_context_resource_pack_projection_is_independent_of_candidate_root() -> 
     assert generated_cwd["content_hash"] == (
         "sha256:d15580757e216640dbb75339468c374e60e202c7a0339603f02605666dfcc9ab"
     )
+
+
+def test_p3_7_is_frozen_validation_only() -> None:
+    lane_id = "oh_my_pi_p3_7_memory_work_compiler"
+    lane_def = _read_json(ROOT / "config" / "e4_lanes" / f"{lane_id}.yaml")
+    config = lane_def["normalize"]["config"]
+    claim = _read_json(
+        ROOT
+        / "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json"
+    )
+
+    assert lane_def["status"] == "superseded"
+    assert lane_def["capture"]["strategy"] == "replay_dump"
+    assert lane_def["capture"]["adapter"] is None
+    assert "record_builders" not in config
+    assert not any(projection_id.startswith("p3_7_") for projection_id in projections.PROJECTIONS)
+    assert lane_id not in compiler.ADR_AV_3_ACCEPTED_COMPILER_LANES
+    assert claim["accepted"] is True
 
 
 @pytest.mark.parametrize("lane_id", P3_LANE_IDS)

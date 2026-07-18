@@ -166,6 +166,7 @@ class SessionRunner:
         self._resume_event = asyncio.Event(); self._resume_event.set()
         self._permission_decision_lock = asyncio.Lock()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._start_authority = asyncio.Event()
         self._input_queue: asyncio.Queue[Optional[Dict[str, Any]]] = asyncio.Queue()
         self._product_session_lock = threading.RLock()
         self._published_events = 0
@@ -209,12 +210,27 @@ class SessionRunner:
             overrides=overrides,
             force_local_mode=force_local_mode,
         )
-    async def start(self) -> None:
+
+    def schedule_start(self) -> None:
         if self._task:
             raise RuntimeError("runner already started")
         loop = asyncio.get_running_loop()
         self._loop = loop
-        self._task = loop.create_task(self._run(), name=f"kyle-session-{self.session.session_id}")
+        self._task = loop.create_task(self._run_after_start_authority(), name=f"kyle-session-{self.session.session_id}")
+
+    def authorize_start(self) -> None:
+        if not self._task:
+            raise RuntimeError("runner is not scheduled")
+        self._start_authority.set()
+
+    async def _run_after_start_authority(self) -> None:
+        await self._start_authority.wait()
+        await self._run()
+
+    async def start(self) -> None:
+        self.schedule_start()
+        self.authorize_start()
+
     def _signal_control(self, kind: str) -> bool:
         queue = getattr(self, "_control_queue", None)
         put = (getattr(queue, "put_nowait", None) or getattr(queue, "put", None)) if queue is not None else None
@@ -244,8 +260,13 @@ class SessionRunner:
         if self._closed:
             return
         self._request_stop("operator request")
+        if self._task and not self._start_authority.is_set():
+            self._task.cancel()
         if self._task and not self._task.done():
-            await self._task
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
     async def enqueue_input(self, content: str, attachments: Optional[list[str]] = None) -> str:
         if self._closed:
             raise RuntimeError("session is closed")

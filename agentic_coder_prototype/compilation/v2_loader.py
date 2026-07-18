@@ -488,18 +488,8 @@ def _validate_v2(doc: Dict[str, Any]) -> None:
 
 
 def _normalize_for_runtime(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Add compatibility fields expected by current runtime while keeping v2 structure.
-    - tools.defs_dir: map from tools.registry.paths[0]
-    """
+    """Add compatibility fields expected by the current runtime while keeping v2 structure."""
     out = {key: value for key, value in doc.items() if key != "dossier"}
-    tools = out.setdefault("tools", {}) or {}
-    registry = tools.get("registry") or {}
-    paths = registry.get("paths") or []
-    if paths and not tools.get("defs_dir"):
-        # pick the first registry path for current loader capabilities
-        tools["defs_dir"] = str(paths[0])
-    out["tools"] = tools
 
     # ensure subkeys exist
     out.setdefault("turn_strategy", doc.get("loop", {}).get("turn_strategy", {}))

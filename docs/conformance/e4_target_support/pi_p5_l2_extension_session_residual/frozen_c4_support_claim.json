@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 13,
-    "segment_hash": "sha256:5d183f71524302dac5164fd28d3b85cf497ec0c7df15e7d368bfd0d9f00e0176",
+    "catalog_revision": 9,
+    "segment_hash": "sha256:dcb1e4e7d101ecefa74be59b0198e55f24a26f7cd1820b4621132d237a54b3d7",
     "segment_id": "pi_p5_l2_extension_session_residual",
-    "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
+    "shared_segment_hash": "sha256:d5ce927049289ee43a5ba59e3c10648d34b52a5427cbf10946167254c5e3194e"
   },
   "claim_id": "pi_p5_l2_extension_session_residual_v1_c4_support_claim",
   "claim_semantics": {
@@ -182,7 +182,7 @@
     ]
   },
   "comparator_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json#sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043",
-  "evidence_manifest_ref": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+  "evidence_manifest_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_evidence_manifest.json",
   "exclusion_facets": {
     "excluded_behavior_classes": [
       "broad_target_parity",
@@ -200,11 +200,11 @@
     "No target behavior outside the observed extension loader/runner and SessionManager residual APIs is claimed.",
     "No broad Pi customization parity beyond extension-discovered resources, registered tool/command/flag surface, and session lifecycle hooks is claimed."
   ],
-  "freeze_ref": "config/e4_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:368abb149bb533f7fc7396a4143e7a03f1cd18db1a7bde95d98c8bc556c245e3",
+  "freeze_ref": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:368abb149bb533f7fc7396a4143e7a03f1cd18db1a7bde95d98c8bc556c245e3",
   "generated_at_utc": "2026-07-04T00:00:00Z",
   "kind": "target_support",
   "ledger_row_refs": [
-    "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json#feat_38725eb172b28cb1#sha256:f38df2ac0b0f5676cfe2f4472986f04a6c96f264f4c77374223d0e2b81c5049e"
+    "config/e4_lanes/evidence_inputs/e4_lane_ledger_seed_extensions.v1.json#feat_38725eb172b28cb1#sha256:727c926eb2c2bb31d2599702099f9f48f3caa264ca6fa8a5dc05d63c563b61d0"
   ],
   "metadata": {
     "generated_from_schema_version": "bb.e4.support_claim.v4",
@@ -225,16 +225,13 @@
   "reverify_command": {
     "argv": [
       ".venv/bin/python",
-      "scripts/validate_e4_c4_chain.py",
-      "--config-id",
-      "pi_p5_l2_extension_session_residual_v1",
-      "--support-claim",
-      "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
-      "--evidence-manifest",
-      "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+      "scripts/e4_parity/validate_frozen_e4_evidence.py",
+      "--validation-report",
+      "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_validation_report.json",
+      "--retired-evidence-pins",
+      "config/e4_retired_evidence_pins.json",
       "--json-out",
-      "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json",
-      "--check-only"
+      "artifacts/conformance/node_gate/ct_frozen_pi_p5_l2_extension_session_residual.json"
     ],
     "cwd": "."
   },

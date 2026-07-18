@@ -24,6 +24,7 @@ from agentic_coder_prototype.conformance.catalog_binding import (
     catalog_segments_hash,
     stable_entries_hash,
 )
+from scripts.e4_parity import seed_atomic_feature_ledger
 
 
 ACCEPTED_CLAIM_ID = "oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim"
@@ -734,18 +735,18 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
 
     response = local_client.get(
         "/v1/sessions/records-session/records",
-        params={"schema_version": "bb.work_item.v1", "offset": 0, "limit": 1},
+        params={"schema_version": "bb.work_item.v2", "offset": 0, "limit": 1},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["session_id"] == "records-session"
-    assert payload["total"] == 2
+    assert payload["total"] == 1
     assert payload["offset"] == 0
     assert payload["limit"] == 1
     assert len(payload["records"]) == 1
-    assert payload["records"][0]["schema_version"] == "bb.work_item.v1"
-    assert payload["records"][0]["record"]["state"]["status"] in {"queued", "running"}
+    assert payload["records"][0]["schema_version"] == "bb.work_item.v2"
+    assert payload["records"][0]["record"]["status"] == "running"
 
 
 def test_api_error_envelope_covers_auth_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -933,10 +934,8 @@ def test_e4_claim_detail_missing_evidence_manifest_returns_flat_error_envelope(
 def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("BREADBOARD_EMIT_PRIMITIVES", raising=False)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "runtime_records"))
-    async def _noop_start(self: object) -> None:
-        return None
-
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.start", _noop_start)
+    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.schedule_start", lambda _runner: None)
+    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.authorize_start", lambda _runner: None)
 
     client = TestClient(create_app())
 
@@ -956,24 +955,52 @@ def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyP
 def test_runtime_emission_records_are_served_by_e4_api(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     runtime_root = tmp_path / "runtime_records"
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(runtime_root))
+    session_id = "api_surface_runtime_session"
+    generated_at = "2026-07-04T00:00:00Z"
     paths = emit_session_start_records(
-        session_id="api_surface_runtime_session",
+        session_id=session_id,
         request=SessionCreateRequest(
             config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml",
             task="runtime emission probe",
         ),
-        generated_at="2026-07-04T00:00:00Z",
+        generated_at=generated_at,
     )
 
-    payloads = {name: Path(path).read_text(encoding="utf-8") for name, path in paths.items()}
+    payloads = {name: json.loads(Path(path).read_text(encoding="utf-8")) for name, path in paths.items()}
     assert set(payloads) == {
         "capability_registry",
         "effective_config_graph",
         "effective_operation_policy",
         "effective_tool_surface",
-        "work_item_queued",
-        "work_item_running",
-        "coordination_slice",
+        "work_item_created",
+        "work_item_lease_acquired",
+        "work_item_attempt_started",
+        "work_item_snapshot",
+    }
+    events = [
+        payloads["work_item_created"],
+        payloads["work_item_lease_acquired"],
+        payloads["work_item_attempt_started"],
+    ]
+    assert [(event["sequence"], event["kind"], event["occurred_at"]) for event in events] == [
+        (1, "work_item.created", generated_at),
+        (2, "lease.acquired", generated_at),
+        (3, "attempt.started", generated_at),
+    ]
+    assert {event["work_item_id"] for event in events} == {session_id}
+    assert events[0]["payload"]["cancellation_policy"]["cancellable_by"] == ["cli_bridge.session_service"]
+    assert events[1]["payload"]["worker_id"] == "session_runner"
+    assert events[2]["payload"]["session_ref"] == session_id
+
+    snapshot = payloads["work_item_snapshot"]
+    assert snapshot["schema_version"] == "bb.work_item.v2"
+    assert snapshot["work_item_id"] == session_id
+    assert snapshot["status"] == "running"
+    assert snapshot["event_count"] == 3
+    assert snapshot["placement_refs"] == []
+    assert snapshot["budget"] == {
+        "limits": {"token_limit": None, "cost_limit_microusd": None, "wall_time_limit_ms": None},
+        "usage": {"tokens": 0, "cost_microusd": 0, "wall_time_ms": 0},
     }
 
     client = TestClient(create_app())
@@ -983,44 +1010,23 @@ def test_runtime_emission_records_are_served_by_e4_api(monkeypatch: pytest.Monke
     )
     assert graph_records.status_code == 200
     assert [record["record"]["graph_id"] for record in graph_records.json()["records"]] == [
-        "api_surface_runtime_session_effective_config_graph"
+        f"{session_id}_effective_config_graph"
     ]
 
     work_records = client.get(
         "/v1/e4/records",
-        params={"schema_version": "bb.work_item.v1", "source": "runtime"},
+        params={"schema_version": "bb.work_item.v2", "source": "runtime"},
     )
     assert work_records.status_code == 200
-    states = {record["record"]["state"]["status"] for record in work_records.json()["records"]}
-    assert states == {"queued", "running"}
-
-def test_runtime_emission_dual_dialect_serves_coordination_pack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    runtime_root = tmp_path / "runtime_records"
-    monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(runtime_root))
-    monkeypatch.setenv("BREADBOARD_CONFIG_PLANE_DIALECT", "both")
-    paths = emit_session_start_records(
-        session_id="api_surface_dual_dialect_session",
-        request=SessionCreateRequest(
-            config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml",
-            task="runtime emission dialect probe",
-        ),
-        generated_at="2026-07-04T00:00:00Z",
-    )
-
-    assert {"coordination_slice", "coordination_pack"} <= set(paths)
-    pack = json.loads(Path(paths["coordination_pack"]).read_text(encoding="utf-8"))
-    assert pack["schema_version"] == "bb.coordination_pack.v3"
-    assert pack["records"]["slices"][0]["schema_version"] == "bb.coordination_slice.v2"
-
-    client = TestClient(create_app())
-    response = client.get(
-        "/v1/e4/records",
-        params={"schema_version": "bb.coordination_pack.v3", "source": "runtime"},
-    )
-    assert response.status_code == 200
-    assert [record["record"]["pack_id"] for record in response.json()["records"]] == [
-        "api_surface_dual_dialect_session_coordination_pack"
-    ]
+    assert [record["record"]["work_item_id"] for record in work_records.json()["records"]] == [session_id]
+    for retired_schema in ("bb.work_item.v1", "bb.coordination_slice.v2", "bb.coordination_pack.v3"):
+        retired_records = client.get(
+            "/v1/e4/records",
+            params={"schema_version": retired_schema, "source": "runtime"},
+        )
+        assert retired_records.status_code == 200
+        assert retired_records.json()["records"] == []
+    assert all(spec["semantic_key"] != "runtime_session_work_item_lifecycle_c3" for spec in seed_atomic_feature_ledger.SEED_SPECS)
 
 
 

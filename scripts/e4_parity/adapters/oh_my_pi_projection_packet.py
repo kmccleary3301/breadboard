@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Mapping
+from agentic_coder_prototype.conformance.catalog_binding import (
+    CATALOG_PATH,
+    catalog_segment_hash,
+    reusable_catalog_revision,
+)
 
 from scripts.e4_parity.validators import hash_utils
 
@@ -34,6 +39,50 @@ def _role_paths(lane_def: Mapping[str, Any]) -> dict[str, str]:
     config = _mapping(normalize.get("config"), "lane_def.normalize.config")
     roles = _mapping(config.get("roles"), "lane_def.normalize.config.roles")
     return {str(key): str(value) for key, value in roles.items()}
+
+
+def _refresh_support_claim_catalog_binding(
+    support_claim: Any,
+    catalog: Any,
+    lane_id: Any,
+) -> None:
+    if not isinstance(support_claim, dict) or not isinstance(catalog, Mapping):
+        return
+    prior_binding = support_claim.get("catalog_binding")
+    if not isinstance(prior_binding, Mapping):
+        return
+    if catalog.get("schema_version") != "bb.e4.artifact_catalog.v2":
+        raise ValueError("support-claim binding requires bb.e4.artifact_catalog.v2")
+
+    if "segment_id" in prior_binding:
+        if not isinstance(lane_id, str) or not lane_id:
+            raise ValueError("segmented support-claim binding requires lane_id")
+        binding_hashes = {
+            "segment_hash": catalog_segment_hash(catalog, lane_id),
+            "shared_segment_hash": catalog_segment_hash(catalog, "shared"),
+        }
+        support_claim["catalog_binding"] = {
+            "catalog_path": CATALOG_PATH,
+            "catalog_revision": reusable_catalog_revision(catalog, prior_binding, binding_hashes),
+            "segment_id": lane_id,
+            **binding_hashes,
+        }
+        return
+
+    if "catalog_hash" in prior_binding:
+        integrity = catalog.get("integrity")
+        stable_hash = integrity.get("stable_entries_hash") if isinstance(integrity, Mapping) else None
+        if not isinstance(stable_hash, str) or not stable_hash.startswith("sha256:"):
+            raise ValueError("artifact catalog integrity.stable_entries_hash is required")
+        binding_hashes = {"catalog_hash": stable_hash}
+        support_claim["catalog_binding"] = {
+            "catalog_path": CATALOG_PATH,
+            "catalog_revision": reusable_catalog_revision(catalog, prior_binding, binding_hashes),
+            **binding_hashes,
+        }
+        return
+
+    raise ValueError("support-claim catalog_binding must contain segment_id or catalog_hash")
 
 
 def _record_map(finalized_records: Mapping[str, Any] | list[Mapping[str, Any]]) -> dict[str, Any]:
@@ -111,6 +160,15 @@ def _referenced_roles(value: Any, path_to_role: Mapping[str, str]) -> set[str]:
         return roles
     if isinstance(value, Mapping):
         artifact_path = value.get("path")
+        refs = value.get("refs")
+        hashes = value.get("hashes")
+        if isinstance(refs, Mapping) and isinstance(hashes, Mapping):
+            for key, ref_value in refs.items():
+                if key not in hashes or not isinstance(ref_value, str):
+                    continue
+                role = path_to_role.get(ref_value.partition("#")[0])
+                if role is not None:
+                    roles.add(role)
         if isinstance(artifact_path, str) and artifact_path in path_to_role and any(
             key in value for key in ("bytes", "exists", "sha256")
         ):
@@ -145,6 +203,15 @@ def _bind_role_refs(
             )
         return value
     if isinstance(value, dict):
+        refs = value.get("refs")
+        hashes = value.get("hashes")
+        if isinstance(refs, Mapping) and isinstance(hashes, dict):
+            for key, ref_value in refs.items():
+                if key not in hashes or not isinstance(ref_value, str):
+                    continue
+                role = path_to_role.get(ref_value.partition("#")[0])
+                if role is not None and role in role_hashes:
+                    hashes[key] = role_hashes[role]
         artifact_path = value.get("path")
         if isinstance(artifact_path, str):
             role = path_to_role.get(artifact_path)
@@ -241,6 +308,10 @@ def _render_role_bytes(
     for role in [*required_roles, *role_paths]:
         path = role_paths.get(role)
         if path is not None:
+            path_to_role.setdefault(path, role)
+    for role, ref in resolved_refs.items():
+        path, separator, digest = ref.partition("#")
+        if separator and digest.startswith("sha256:"):
             path_to_role.setdefault(path, role)
     for role, digest in resolved_hashes.items():
         path = role_paths.get(role)
@@ -390,7 +461,9 @@ def build_projection_packet(
     lane_values["true"] = True
     values = dict(source_values or {})
     catalog = values.get("artifact_catalog")
+    support_claim = payloads.get("support_claim_ref")
     if isinstance(catalog, Mapping):
+        _refresh_support_claim_catalog_binding(support_claim, catalog, lane_values["lane_id"])
         integrity = catalog.get("integrity")
         stable_hash = integrity.get("stable_entries_hash") if isinstance(integrity, Mapping) else None
         revision = catalog.get("revision")
@@ -415,7 +488,11 @@ def build_projection_packet(
         matches = [row for row in ledger_rows or [] if isinstance(row, Mapping) and row.get("feature_id") == feature_ids[0]]
         if len(matches) == 1:
             digest = _row_hash(feature_ids[0], matches[0])
-            lane_values["ledger_row_ref"] = f"{role_paths['atomic_feature_ledger']}#{feature_ids[0]}#{digest}"
+            ledger_ref = (input_refs or {}).get("atomic_feature_ledger")
+            ledger_path = ledger_ref.partition("#")[0] if isinstance(ledger_ref, str) else role_paths.get("atomic_feature_ledger")
+            if not isinstance(ledger_path, str) or not ledger_path:
+                raise ValueError("atomic feature ledger path is required")
+            lane_values["ledger_row_ref"] = f"{ledger_path}#{feature_ids[0]}#{digest}"
     support_claim = payloads.get("support_claim_ref")
     if isinstance(support_claim, Mapping) and isinstance(support_claim.get("schema_version"), str):
         lane_values["support_claim_schema_version"] = support_claim["schema_version"]

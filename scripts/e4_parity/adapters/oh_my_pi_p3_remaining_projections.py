@@ -21,8 +21,6 @@ HELPER_COMPILER_BY_PROJECTION: dict[str, str] = {
     "p3_6_external_protocol_session": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
     "p3_6_provider_route": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
     "p3_6_effective_operation_policy": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_protocol_provider_policy_bundle",
-    "p3_7_memory_compaction_plan": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_memory_work_bundle",
-    "p3_7_work_item": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_memory_work_bundle",
     "p3_8_projection_event": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_projection_broker_bundle",
     "p3_8_side_effect_broker": "agentic_coder_prototype.compilation.helper_runtime_primitives.compile_projection_broker_bundle",
 }
@@ -178,27 +176,6 @@ def _select_protocol_provider_policy_record(record_key: str, fact_keys: tuple[st
     return project
 
 
-def _memory_work_bundle(context: Mapping[str, Any]) -> dict[str, Any]:
-    lane_id = _lane_id(context)
-    records = p3_lane_fixtures.memory_work_records(
-        run_id=_run_id(context),
-        plan_id=f"{lane_id}_plan",
-        work_item_id=f"{lane_id}_work_item",
-        generated_at=_generated_at(context),
-    )
-    return helper.compile_memory_work_bundle(memory_plan=records["memory_plan"], work_item=records["work_item"])
-
-
-def _select_memory_work_record(record_key: str, fact_keys: tuple[str, ...] = ()) -> Projection:
-    def project(context: Mapping[str, Any]) -> ProjectionResult:
-        records = _memory_work_bundle(context)
-        facts = {
-            "work_checkpoint_refs_memory_plan": records["work_item"]["state"]["checkpoint_ref"],
-            "memory_plan_has_transcript_and_summary": [len(records["memory_compaction_plan"]["transcript_refs"]), len(records["memory_compaction_plan"]["generated_refs"])],
-        }
-        return _result(record_key, records[record_key], {key: facts[key] for key in fact_keys})
-
-    return project
 
 
 def _projection_broker_bundle(context: Mapping[str, Any]) -> dict[str, Any]:
@@ -239,8 +216,6 @@ PROJECTIONS: dict[str, Projection] = {
     "p3_6_external_protocol_session": _select_protocol_provider_policy_record("external_protocol_session"),
     "p3_6_provider_route": _select_protocol_provider_policy_record("provider_route", ("fallback_selected_index",)),
     "p3_6_effective_operation_policy": _select_protocol_provider_policy_record("effective_operation_policy", ("policy_feeds_route",)),
-    "p3_7_memory_compaction_plan": _select_memory_work_record("memory_compaction_plan", ("memory_plan_has_transcript_and_summary",)),
-    "p3_7_work_item": _select_memory_work_record("work_item", ("work_checkpoint_refs_memory_plan",)),
     "p3_8_projection_event": _select_projection_broker_record("projection_event", ("projection_is_not_kernel_truth",)),
     "p3_8_side_effect_broker": _select_projection_broker_record("side_effect_broker", ("broker_audits_before_after_refs",)),
 }

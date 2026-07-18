@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 DEFAULT_MANIFEST = ROOT / "docs" / "conformance" / "ct_scenarios_v1.json"
 DEFAULT_LANE_DEFS = DEFAULT_LANE_DEF_DIR
+DEFAULT_RETIRED_EVIDENCE_PINS = ROOT / "config" / "e4_retired_evidence_pins.json"
 
 
 class CtRowGenerationError(ValueError):
@@ -32,6 +33,27 @@ def write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+def load_retired_evidence_pins(path: Path) -> dict[str, dict[str, str]]:
+    payload = load_json(path)
+    if not isinstance(payload, Mapping):
+        raise CtRowGenerationError("retired evidence pins must be an object")
+    if payload.get("schema_version") != "bb.e4.retired_evidence_pins.v1":
+        raise CtRowGenerationError("retired evidence pins schema_version must be bb.e4.retired_evidence_pins.v1")
+    raw_pins = payload.get("lanes")
+    if not isinstance(raw_pins, Mapping):
+        raise CtRowGenerationError("retired evidence pins lanes must be an object")
+    pins: dict[str, dict[str, str]] = {}
+    for lane_id, raw_pin in raw_pins.items():
+        if not isinstance(lane_id, str) or not isinstance(raw_pin, Mapping):
+            raise CtRowGenerationError("retired evidence pin entries must map lane IDs to objects")
+        report = raw_pin.get("validation_report")
+        digest = raw_pin.get("sha256")
+        if not isinstance(report, str) or not report:
+            raise CtRowGenerationError(f"retired evidence pin {lane_id!r} missing validation_report")
+        if not isinstance(digest, str) or not digest.startswith("sha256:") or len(digest) != 71:
+            raise CtRowGenerationError(f"retired evidence pin {lane_id!r} sha256 must be a digest")
+        pins[lane_id] = {"validation_report": report, "sha256": digest}
+    return pins
 
 def _json_out_from_argv(argv: Sequence[str]) -> str:
     for index, arg in enumerate(argv):
@@ -122,16 +144,81 @@ def _timeout_seconds(lane: Mapping[str, Any], lane_def: Mapping[str, Any] | None
     return 240 if lane.get("phase") == "P5" else 180
 
 
+def _is_retired_evidence_lane(lane: Mapping[str, Any]) -> bool:
+    return lane.get("status") != "accepted" and lane.get("evidence_status") == "accepted"
+
+
+def _retired_evidence_scenario(
+    lane: Mapping[str, Any],
+    retired_evidence_pins: Mapping[str, Mapping[str, str]],
+) -> dict[str, Any]:
+    artifacts_root = lane.get("artifacts_root")
+    ct = lane.get("ct")
+    lane_id = str(lane["lane_id"])
+    if not isinstance(artifacts_root, str) or not artifacts_root:
+        raise CtRowGenerationError(
+            f"retired lane {lane_id!r} missing artifacts_root"
+        )
+    if not isinstance(ct, Mapping) or not isinstance(ct.get("test_id"), str):
+        raise CtRowGenerationError(
+            f"retired lane {lane_id!r} missing ct.test_id"
+        )
+    pin = retired_evidence_pins.get(lane_id)
+    if not isinstance(pin, Mapping):
+        raise CtRowGenerationError(f"retired lane {lane_id!r} missing frozen validation report pin")
+    report_path = f"{artifacts_root}/frozen_c4_validation_report.json"
+    if pin.get("validation_report") != report_path:
+        raise CtRowGenerationError(f"retired lane {lane_id!r} frozen validation report pin path mismatch")
+    report_hash = pin.get("sha256")
+    if not isinstance(report_hash, str):
+        raise CtRowGenerationError(f"retired lane {lane_id!r} missing frozen validation report hash")
+    output_path = f"artifacts/conformance/node_gate/ct_frozen_{lane_id}.json"
+    return {
+        "assertions": {
+            "json_files": [
+                {
+                    "checks": [
+                        {"equals": True, "path": "ok"},
+                        {"length_equals": 0, "path": "errors"},
+                        {"equals": str(lane["config_id"]), "path": "claimed_scope.config_id"},
+                        {"equals": lane_id, "path": "claimed_scope.lane_id"},
+                        {"equals": str(lane["provider_model"]), "path": "claimed_scope.provider_model"},
+                        {"equals": str(lane["sandbox_mode"]), "path": "claimed_scope.sandbox_mode"},
+                    ],
+                    "path": output_path,
+                }
+            ]
+        },
+        "command": [
+            "python",
+            "scripts/e4_parity/validate_frozen_e4_evidence.py",
+            "--validation-report",
+            report_path,
+            "--retired-evidence-pins",
+            "config/e4_retired_evidence_pins.json",
+            "--json-out",
+            output_path,
+        ],
+        "description": f"{lane_id}: validate hash-bound frozen evidence for a retired producer",
+        "gate_level": _phase_gate_level(lane),
+        "test_id": str(ct["test_id"]),
+        "timeout_seconds": 60,
+    }
+
+
 def generate_inventory_scenarios(
     inventory: Mapping[str, Any],
     *,
     lane_defs: Mapping[str, Mapping[str, Any]] | None = None,
+    retired_evidence_pins: Mapping[str, Mapping[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     lanes = inventory.get("lanes")
     if not isinstance(lanes, list):
         raise CtRowGenerationError("inventory.lanes must be a list")
     if lane_defs is None:
         lane_defs = load_lane_defs(DEFAULT_LANE_DEFS)
+    if retired_evidence_pins is None:
+        retired_evidence_pins = load_retired_evidence_pins(DEFAULT_RETIRED_EVIDENCE_PINS)
     scenarios: list[dict[str, Any]] = []
     for lane in lanes:
         if not isinstance(lane, Mapping):
@@ -140,6 +227,8 @@ def generate_inventory_scenarios(
         if ct is None:
             continue
         if lane.get("status") != "accepted":
+            if _is_retired_evidence_lane(lane):
+                scenarios.append(_retired_evidence_scenario(lane, retired_evidence_pins))
             continue
         if not isinstance(ct, Mapping):
             raise CtRowGenerationError(f"lane {lane.get('lane_id', '<unknown>')} ct must be object or null")
@@ -169,15 +258,40 @@ def generate_inventory_scenarios(
     return sorted(scenarios, key=lambda item: item["test_id"])
 
 
+def inventory_ct_test_ids(inventory: Mapping[str, Any]) -> set[str]:
+    lanes = inventory.get("lanes")
+    if not isinstance(lanes, list):
+        raise CtRowGenerationError("inventory.lanes must be a list")
+    test_ids: set[str] = set()
+    for lane in lanes:
+        if not isinstance(lane, Mapping):
+            raise CtRowGenerationError("inventory lane must be an object")
+        ct = lane.get("ct")
+        if not isinstance(ct, Mapping):
+            continue
+        test_id = ct.get("test_id")
+        if isinstance(test_id, str):
+            test_ids.add(test_id)
+    return test_ids
+
+
 def merge_inventory_scenarios(
-    manifest: Mapping[str, Any], generated_rows: Sequence[Mapping[str, Any]]
+    manifest: Mapping[str, Any],
+    generated_rows: Sequence[Mapping[str, Any]],
+    *,
+    managed_test_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     payload = copy.deepcopy(dict(manifest))
     existing = payload.get("scenarios")
     if not isinstance(existing, list):
         raise CtRowGenerationError("manifest.scenarios must be a list")
     generated_by_id = {str(row["test_id"]): dict(row) for row in generated_rows}
-    merged = [row for row in existing if not (isinstance(row, Mapping) and row.get("test_id") in generated_by_id)]
+    inventory_owned_ids = set(generated_by_id) if managed_test_ids is None else managed_test_ids
+    merged = [
+        row
+        for row in existing
+        if not (isinstance(row, Mapping) and row.get("test_id") in inventory_owned_ids)
+    ]
     merged.extend(generated_by_id[test_id] for test_id in sorted(generated_by_id))
     payload["scenarios"] = merged
     return payload
@@ -191,7 +305,14 @@ def upsert_inventory_scenarios(
     inventory = load_json(inventory_path)
     manifest = load_json(manifest_path)
     rows = generate_inventory_scenarios(inventory, lane_defs=load_lane_defs(lane_defs_path))
-    write_json(manifest_path, merge_inventory_scenarios(manifest, rows))
+    write_json(
+        manifest_path,
+        merge_inventory_scenarios(
+            manifest,
+            rows,
+            managed_test_ids=inventory_ct_test_ids(inventory),
+        ),
+    )
     return rows
 
 
@@ -217,12 +338,14 @@ def field_level_diffs(
     generated_rows: Sequence[Mapping[str, Any]],
     *,
     ignored_fields: set[str] | None = None,
+    managed_test_ids: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     scenarios = manifest.get("scenarios")
     if not isinstance(scenarios, list):
         return [{"test_id": "<manifest>", "fields": ["scenarios"], "non_ignored_fields": ["scenarios"]}]
     ignored = ignored_fields or set()
     by_id = {str(row.get("test_id")): row for row in scenarios if isinstance(row, Mapping)}
+    generated_ids = {str(row["test_id"]) for row in generated_rows}
     diffs: list[dict[str, Any]] = []
     for row in generated_rows:
         test_id = str(row["test_id"])
@@ -239,11 +362,29 @@ def field_level_diffs(
                     "non_ignored_fields": [field for field in fields if field not in ignored],
                 }
             )
+    for test_id in sorted((managed_test_ids or set()) - generated_ids):
+        if test_id in by_id:
+            diffs.append(
+                {
+                    "test_id": test_id,
+                    "fields": ["<retired>"],
+                    "non_ignored_fields": ["<retired>"],
+                }
+            )
     return diffs
 
 
-def mismatches(manifest: Mapping[str, Any], generated_rows: Sequence[Mapping[str, Any]]) -> list[str]:
-    diffs = field_level_diffs(manifest, generated_rows)
+def mismatches(
+    manifest: Mapping[str, Any],
+    generated_rows: Sequence[Mapping[str, Any]],
+    *,
+    managed_test_ids: set[str] | None = None,
+) -> list[str]:
+    diffs = field_level_diffs(
+        manifest,
+        generated_rows,
+        managed_test_ids=managed_test_ids,
+    )
     errors: list[str] = []
     for diff in diffs:
         fields = diff["fields"]
@@ -259,6 +400,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--out", default=None, help="write merged manifest to this path")
     parser.add_argument("--rows-out", default=None, help="write generated inventory rows to this path")
     parser.add_argument("--lane-defs", default=str(DEFAULT_LANE_DEFS), help="directory of bb.e4.lane_def.v1 YAML files")
+    parser.add_argument(
+        "--retired-evidence-pins",
+        default=str(DEFAULT_RETIRED_EVIDENCE_PINS),
+        help="hash pins for validation-only retired evidence",
+    )
     parser.add_argument("--check", action="store_true", help="fail if generated inventory rows differ from manifest rows")
     return parser.parse_args(argv)
 
@@ -269,15 +415,36 @@ def main(argv: Sequence[str] | None = None) -> int:
     manifest_path = Path(args.manifest)
     inventory = load_json(inventory_path)
     manifest = load_json(manifest_path)
-    rows = generate_inventory_scenarios(inventory, lane_defs=load_lane_defs(Path(args.lane_defs)))
+    rows = generate_inventory_scenarios(
+        inventory,
+        lane_defs=load_lane_defs(Path(args.lane_defs)),
+        retired_evidence_pins=load_retired_evidence_pins(Path(args.retired_evidence_pins)),
+    )
 
+    managed_test_ids = inventory_ct_test_ids(inventory)
     if args.rows_out:
         write_json(Path(args.rows_out), rows)
     if args.out:
-        write_json(Path(args.out), merge_inventory_scenarios(manifest, rows))
+        write_json(
+            Path(args.out),
+            merge_inventory_scenarios(
+                manifest,
+                rows,
+                managed_test_ids=managed_test_ids,
+            ),
+        )
 
-    diffs = field_level_diffs(manifest, rows, ignored_fields={"description"})
-    errors = mismatches(manifest, rows) if args.check else []
+    diffs = field_level_diffs(
+        manifest,
+        rows,
+        ignored_fields={"description"},
+        managed_test_ids=managed_test_ids,
+    )
+    errors = (
+        mismatches(manifest, rows, managed_test_ids=managed_test_ids)
+        if args.check
+        else []
+    )
     print(
         json.dumps(
             {

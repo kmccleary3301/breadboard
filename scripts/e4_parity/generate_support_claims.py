@@ -421,6 +421,8 @@ def _updated_manifest(path: Path, claim_path: Path, claim: Mapping[str, Any]) ->
             resolved = resolve_ref(artifact_path)
             if resolved.is_file():
                 artifact["sha256"] = sha256_path(resolved)
+                if "bytes" in artifact:
+                    artifact["bytes"] = resolved.stat().st_size
         if role == "support_claim_ref":
             artifact["path"] = display(claim_path)
             artifact["sha256"] = sha256_path(claim_path)
