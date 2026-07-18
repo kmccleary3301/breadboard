@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
-import time
+import json, os
+import threading, time, uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 RULES_VERSION = 1
 RULES_REL_PATH = Path(".breadboard") / "permission_rules.json"
+_RULES_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -33,8 +34,16 @@ def _load_raw(path: Path) -> Dict[str, Any]:
 
 
 def _write_raw(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    path.parent.mkdir(parents=True, exist_ok=True); temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with temporary.open("xb") as stream: stream.write(json.dumps(payload, indent=2, sort_keys=True).encode()); stream.flush(); os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        descriptor = None
+        try: descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)); os.fsync(descriptor)
+        except OSError: pass
+        finally:
+            if descriptor is not None: os.close(descriptor)
+    finally: temporary.unlink(missing_ok=True)
 
 
 def load_permission_rules(workspace_dir: Path) -> List[PermissionRule]:
@@ -69,27 +78,38 @@ def upsert_permission_rule(
     scope: str = "project",
 ) -> bool:
     """Insert or update a single permission rule on disk."""
-    ws = Path(workspace_dir).resolve()
-    path = ws / RULES_REL_PATH
-    raw = _load_raw(path)
-    rules = raw.get("rules")
-    if not isinstance(rules, list):
-        rules = []
-
+    path = Path(workspace_dir).resolve() / RULES_REL_PATH
     cat = str(category or "").strip().lower()
     pat = str(pattern or "").strip()
     dec = str(decision or "").strip().lower()
     scp = str(scope or "project").strip().lower()
     if not cat or not pat or dec not in {"allow", "deny"}:
         return False
-
-    updated_at_ms = _now_ms()
-    replaced = False
-    next_rules: List[Dict[str, Any]] = []
-    for entry in rules:
-        if not isinstance(entry, dict):
-            continue
-        if str(entry.get("category") or "").strip().lower() == cat and str(entry.get("pattern") or "").strip() == pat:
+    with _RULES_LOCK:
+        raw = _load_raw(path)
+        rules = raw.get("rules")
+        if not isinstance(rules, list):
+            rules = []
+        updated_at_ms = _now_ms()
+        replaced = False
+        next_rules: List[Dict[str, Any]] = []
+        for entry in rules:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("category") or "").strip().lower() == cat and str(entry.get("pattern") or "").strip() == pat:
+                next_rules.append(
+                    {
+                        "category": cat,
+                        "pattern": pat,
+                        "decision": dec,
+                        "scope": scp,
+                        "updated_at_ms": updated_at_ms,
+                    }
+                )
+                replaced = True
+            else:
+                next_rules.append(dict(entry))
+        if not replaced:
             next_rules.append(
                 {
                     "category": cat,
@@ -99,27 +119,13 @@ def upsert_permission_rule(
                     "updated_at_ms": updated_at_ms,
                 }
             )
-            replaced = True
-        else:
-            next_rules.append(dict(entry))
-    if not replaced:
-        next_rules.append(
-            {
-                "category": cat,
-                "pattern": pat,
-                "decision": dec,
-                "scope": scp,
-                "updated_at_ms": updated_at_ms,
-            }
-        )
-
-    raw = {
-        "version": RULES_VERSION,
-        "updated_at_ms": updated_at_ms,
-        "rules": next_rules,
-    }
-    _write_raw(path, raw)
-    return True
+        raw = {
+            "version": RULES_VERSION,
+            "updated_at_ms": updated_at_ms,
+            "rules": next_rules,
+        }
+        _write_raw(path, raw)
+        return True
 
 
 def build_permission_overrides(config: Dict[str, Any], rules: List[PermissionRule]) -> Dict[str, Any]:

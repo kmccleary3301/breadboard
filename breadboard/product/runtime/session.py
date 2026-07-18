@@ -35,14 +35,8 @@ class Session:
     def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None) -> "Session":
         if not isinstance(lock, EffectiveHarnessLock): raise TypeError("Session.start requires an EffectiveHarnessLock")
         if not isinstance(task, str) or not task.strip(): raise ValueError("task must be non-empty")
-        active_clock = clock if clock is not None else SystemClock()
-        active_ids = ids if ids is not None else UUIDSource()
-        graph_hash = _graph_hash(lock)
-        active_session_id = session_id if session_id is not None else active_ids.new_id()
-        event = KernelEvent.create(active_session_id, 1, "session.started", active_clock.now(),
-                                   {"effective_lock_hash": graph_hash, "task_hash": _hash(task)})
-        active_sink = sink if sink is not None else NullEventSink()
-        active_sink.append(event)
+        active_clock, active_ids = clock if clock is not None else SystemClock(), ids if ids is not None else UUIDSource(); graph_hash, active_session_id = _graph_hash(lock), session_id if session_id is not None else active_ids.new_id()
+        event = KernelEvent.create(active_session_id, 1, "session.started", active_clock.now(), {"effective_lock_hash": graph_hash, "task_hash": _hash(task)}); active_sink = sink if sink is not None else NullEventSink(); active_sink.append(event)
         return cls((event,), clock=active_clock, sink=active_sink)
     @classmethod
     def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> "Session":
@@ -69,8 +63,7 @@ class Session:
         with self._transition_lock:
             self._require(action); self._appending = True
             try:
-                body = payload()
-                event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body)
+                body = payload(); event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body)
                 next_events = [*self._events, event]; next_view = rebuild(next_events); self._sink.append(event)
                 self._events, self._view = next_events, next_view; return next_view
             finally: self._appending = False

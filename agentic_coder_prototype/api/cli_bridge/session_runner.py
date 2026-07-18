@@ -53,12 +53,15 @@ _PERMISSION_ALIASES = {alias: decision for decision, aliases in {
     "reject": "reject deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop",
 }.items() for alias in aliases.split()}
 def _permission_response_tokens(value: Any) -> list[str]:
-    if isinstance(value, dict):
-        return [token for nested in value.values() for token in _permission_response_tokens(nested)]
+    if isinstance(value, dict): return [token for nested in value.values() for token in _permission_response_tokens(nested)]
     return [value.strip().lower()] if isinstance(value, str) and value.strip() else []
 
-def _canonical_permission_resolution(response: Any, responses: Any) -> str:
-    tokens = _permission_response_tokens(responses if isinstance(responses, dict) else response)
+def _canonical_permission_resolution(response: Any, responses: Any, requested_ids: Sequence[str] = ()) -> str:
+    if isinstance(responses, dict) and isinstance(responses.get("items"), dict):
+        explicit, fallback = responses["items"], responses.get("fallback") or responses.get("default_response") or "reject"
+        tokens = [_permission_response_tokens(explicit.get(item_id, fallback)) for item_id in requested_ids] if requested_ids else [_permission_response_tokens(value) for value in explicit.values()]
+        tokens = [token for group in tokens for token in group]
+    else: tokens = _permission_response_tokens(responses if isinstance(responses, dict) else response)
     values = [_PERMISSION_ALIASES.get(token, token) for token in tokens]
     if not values or any(value not in {"once", "always", "reject"} for value in values): raise ValueError("permission response contains no valid decisions")
     return "reject" if "reject" in values else "always" if all(value == "always" for value in values) else "once"
@@ -224,18 +227,20 @@ class SessionRunner:
         self._loop = loop
         self._task = loop.create_task(self._run(), name=f"kyle-session-{self.session.session_id}")
 
+    def _signal_control(self, kind: str) -> bool:
+        queue = getattr(self, "_control_queue", None)
+        put = (getattr(queue, "put_nowait", None) or getattr(queue, "put", None)) if queue is not None else None
+        if not callable(put): return False
+        put({"kind": kind}); return True
+
     def _request_stop(self, reason: str) -> bool:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
             stopping = not product_session or product_session.read_model.status not in {"completed", "failed", "canceled"}
             if stopping: self.transition_product_session("cancel", reason)
             self._stop_event.set(); self._resume_event.set(); self._input_queue.put_nowait(None)
-            queue = getattr(self, "_control_queue", None)
             try:
-                if queue is not None:
-                    put = getattr(queue, "put_nowait", None) or getattr(queue, "put", None)
-                    if callable(put): put({"kind": "stop"})
-                else:
+                if not self._signal_control("stop"):
                     request_stop = getattr(getattr(self._agent, "agent", None), "request_stop", None)
                     remote = getattr(request_stop, "remote", None)
                     if callable(remote): remote()
@@ -421,14 +426,14 @@ class SessionRunner:
                     config = dict(getattr(self._agent, "config", {}) or {}) if self._agent else {}
                     selection = normalize_skill_selection(config, selection_payload)
                     overrides = {"skills.allowlist": selection.get("allowlist") or [], "skills.blocklist": selection.get("blocklist") or []}
-                    previous = self.current_runtime_config(); previous_skills = previous.get("skills") if isinstance(previous.get("skills"), dict) else {}
-                    rollback = {"skills.allowlist": previous_skills.get("allowlist") or [], "skills.blocklist": previous_skills.get("blocklist") or []}
+                    previous = self.current_runtime_config(); had_skills = "skills" in config; previous_skills = json.loads(json.dumps(config.get("skills"))) if had_skills else None
+                    rollback = {"skills.allowlist": (previous_skills or {}).get("allowlist") or [], "skills.blocklist": (previous_skills or {}).get("blocklist") or []}
                     try:
                         if self._agent and self._agent.apply_runtime_overrides(overrides) is False: raise RuntimeError("failed to apply skills configuration")
                         prepared = apply_dotted_overrides(previous, overrides)
                         if durable_reconfigure is not None: durable_reconfigure(prepared)
                     except Exception as error:
-                        rolled_back = self._rollback_runtime_overrides(rollback)
+                        rolled_back = self._rollback_runtime_overrides(rollback, ("skills", had_skills, previous_skills))
                         if not isinstance(error, OSError) or not rolled_back: self.transition_product_session("fail", "runtime_reconfigure_failed", "failed to apply skills configuration")
                         raise
                     self.session.metadata["skills_selection"] = selection; self._prepared_runtime_config = prepared
@@ -439,11 +444,11 @@ class SessionRunner:
                 return {"status": "ok", "selection": selection, "catalog": catalog_payload.get("catalog")}
             case "pause":
                 self._resume_event.clear()
-                try: self.transition_product_session("pause", str(payload.get("reason") or "operator request"))
+                try: self.transition_product_session("pause", str(payload.get("reason") or "operator request")); self._signal_control("pause")
                 except Exception: self._resume_event.set(); raise
                 return {"status": "ok", "paused": True}
             case "resume":
-                self.transition_product_session("resume"); self._resume_event.set()
+                self.transition_product_session("resume"); self._signal_control("resume"); self._resume_event.set()
                 return {"status": "ok", "paused": False}
             case "stop":
                 stopping = self._request_stop("stop command")
@@ -486,13 +491,13 @@ class SessionRunner:
                     raise ValueError("set_mode requires non-empty 'mode'")
                 mode_value = mode_value.strip()
                 with self._product_session_lock:
-                    overrides = {"mode": mode_value}; previous, previous_mode = self.current_runtime_config(), self._mode
+                    overrides = {"mode": mode_value}; previous, previous_mode = self.current_runtime_config(), self._mode; agent_config = getattr(self._agent, "config", {}) if self._agent else {}; mode_restore = ("mode", "mode" in agent_config, agent_config.get("mode"))
                     prepared = apply_dotted_overrides(previous, overrides)
                     try:
                         if self._agent and self._agent.apply_runtime_overrides(overrides) is False: raise RuntimeError("failed to apply mode configuration")
                         if durable_reconfigure is not None: durable_reconfigure(prepared)
                     except Exception as error:
-                        rolled_back = self._rollback_runtime_overrides({"mode": previous.get("mode")}); self._mode = previous_mode
+                        rolled_back = self._rollback_runtime_overrides({"mode": previous.get("mode")}, mode_restore); self._mode = previous_mode
                         if not isinstance(error, OSError) or not rolled_back: self.transition_product_session("fail", "runtime_reconfigure_failed", "failed to apply mode configuration")
                         raise
                     self._mode = mode_value; self.session.metadata["mode"] = mode_value; self._prepared_runtime_config = prepared
@@ -566,8 +571,9 @@ class SessionRunner:
                 canonical_responses = (
                     _canonical_permission_responses(responses) if isinstance(responses, dict) else None
                 )
-                resolution = _canonical_permission_resolution(response, canonical_responses)
                 normalized_request_id = request_id.strip()
+                pending = self.session.metadata.get("pending_permissions"); pending_request = next((entry.get("request") for entry in pending if isinstance(entry, dict) and entry.get("request_id") == normalized_request_id), {}) if isinstance(pending, list) else {}; requested_ids = [str(item.get("item_id")) for item in pending_request.get("items", []) if isinstance(item, dict) and item.get("item_id")] if isinstance(pending_request, dict) else []
+                resolution = _canonical_permission_resolution(response, canonical_responses, requested_ids)
                 queue = getattr(self, "_permission_queue", None)
                 if queue is None:
                     if self._debug_permissions_enabled():
@@ -582,6 +588,7 @@ class SessionRunner:
                             self._update_pending_permissions("permission_response", response_payload, source="session")
                         await self.publish_event_async(EventType.PERMISSION_RESPONSE, response_payload)
                         return {"status": "ok", "request_id": normalized_request_id, "decision": resolution, "delivered": response_payload, "debug": True}
+                    self.transition_product_session("fail", "permission_delivery_failed", "no permission request is active")
                     raise RuntimeError("no permission request is active")
 
                 if canonical_responses is not None:
@@ -916,6 +923,7 @@ class SessionRunner:
                         self._accepted_task_texts = self._accepted_task_texts[-20:]
 
                     await self._ensure_agent_initialized()
+                    if self._stop_event.is_set(): self._input_queue.task_done(); break
                     after_agent_init_at = time.monotonic()
                     if self._profile_timing_enabled:
                         self._active_bridge_timing_context = {
@@ -998,9 +1006,13 @@ class SessionRunner:
         except asyncio.QueueFull:  # pragma: no cover - defensive
             logger.warning("Event queue full while terminating session %s", self.session.session_id)
 
-    def _rollback_runtime_overrides(self, overrides: Dict[str, Any]) -> bool:
-        try: return not self._agent or self._agent.apply_runtime_overrides(overrides) is not False
+    def _rollback_runtime_overrides(self, overrides: Dict[str, Any], restore: Optional[tuple[str, bool, Any]] = None) -> bool:
+        try: rolled_back = not self._agent or self._agent.apply_runtime_overrides(overrides) is not False
         except Exception: logger.exception("Failed to roll back runtime configuration"); return False
+        if self._agent and restore:
+            if restore[1]: self._agent.config[restore[0]] = restore[2]
+            else: self._agent.config.pop(restore[0], None)
+        return rolled_back
 
     def _apply_model_override(self) -> bool:
         if not self._agent or not self._model_override:

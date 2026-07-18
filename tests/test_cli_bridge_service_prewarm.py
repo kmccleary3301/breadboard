@@ -1,11 +1,11 @@
 from __future__ import annotations
-from types import SimpleNamespace; from pathlib import Path; import asyncio, json, threading, pytest
+from types import SimpleNamespace; from pathlib import Path; import asyncio, json, os, threading, pytest
 from fastapi import HTTPException
 from breadboard.product.runtime import ports as runtime_ports
 from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
 from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.api.cli_bridge.service import SessionService
 from agentic_coder_prototype.api.cli_bridge.runtime_emission import _tool_names
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides; from agentic_coder_prototype.compilation.v2_loader import load_agent_config
 
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
 RUNNER = "agentic_coder_prototype.api.cli_bridge.session_runner.SessionRunner.start"
@@ -67,7 +67,7 @@ async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_p
 ])
 async def test_failed_durable_reconfigure_rolls_back_runtime_mutation(monkeypatch, tmp_path, command, payload) -> None:
     service, response, record = await _create(monkeypatch, tmp_path); runner = record.runner
-    calls = []; model_config = runner.current_runtime_config(); model_config["providers"].pop("default_model", None); model_config["mode"] = runner._mode; runtime_config = model_config if command in {"set_model", "set_mode"} else {}; runner._agent = SimpleNamespace(config=runtime_config) if command == "set_model" else SimpleNamespace(config=runtime_config, apply_runtime_overrides=lambda overrides: calls.append(overrides) or model_config.update(overrides) or True)
+    calls = []; model_config = runner.current_runtime_config(); model_config["providers"].pop("default_model", None); model_config.pop("mode", None); runtime_config = model_config; runner._agent = SimpleNamespace(config=runtime_config) if command == "set_model" else SimpleNamespace(config=runtime_config, apply_runtime_overrides=lambda overrides: calls.append(overrides) or runtime_config.update(apply_dotted_overrides(runtime_config, overrides)) or True)
     before_config, before_metadata, before_model, before_mode = runner.current_runtime_config(), dict(record.metadata), runner._model_override, runner._mode
     sink, record.product_session._sink = record.product_session._sink, _Failing()
     with pytest.raises(OSError, match="sink unavailable"):

@@ -35,8 +35,8 @@ def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
             if type(ref.get("size_bytes")) is not int or ref["size_bytes"] < 0: raise ValueError("size_bytes must be a nonnegative integer")
     elif kind == "approval.requested": _string(payload.get("request_id"), "request_id"); _string(payload.get("operation"), "operation")
     elif kind == "approval.resolved":
-        _string(payload.get("request_id"), "request_id")
-        if _string(payload.get("decision"), "decision") not in _DECISIONS: raise ValueError("invalid approval decision")
+        _string(payload.get("request_id"), "request_id"); decision = _string(payload.get("decision"), "decision")
+        if decision not in _DECISIONS: raise ValueError("invalid approval decision")
     elif kind == "session.reconfigured": _sha256(payload.get("effective_lock_hash"), "effective_lock_hash"); _string(payload.get("reason"), "reason", False)
     elif kind == "session.paused": _string(payload.get("reason"), "reason", False)
     elif kind == "session.resumed" and payload: raise ValueError("session.resumed payload must be empty")
@@ -69,10 +69,7 @@ class KernelEvent:
     @classmethod
     def create(cls, session_id: str, sequence: int, kind: str, occurred_at: str, payload: Mapping[str, Any]) -> "KernelEvent":
         return cls(session_id, sequence, kind, occurred_at, payload)
-    def as_dict(self) -> dict[str, Any]:
-        return {"schema_version": self.schema_version, "session_id": self.session_id,
-                "sequence": self.sequence, "kind": self.kind, "occurred_at": self.occurred_at,
-                "payload": _plain(self.payload)}
+    def as_dict(self) -> dict[str, Any]: return {"schema_version": self.schema_version, "session_id": self.session_id, "sequence": self.sequence, "kind": self.kind, "occurred_at": self.occurred_at, "payload": _plain(self.payload)}
 @dataclass(frozen=True, slots=True)
 class SessionView:
     session_id: str; status: str; effective_lock_hash: str; task_hash: str; event_count: int
@@ -86,14 +83,9 @@ class SessionView:
         elif self.pending_approval is not None: raise ValueError("pending_approval requires awaiting_approval status")
         if self.status in {"completed", "failed", "canceled"}:
             if not isinstance(self.terminal_outcome, Mapping): raise ValueError("terminal_outcome must match terminal status")
-            terminal = _frozen(self.terminal_outcome); _validate_payload(f"session.{self.status}", terminal)
-            object.__setattr__(self, "terminal_outcome", terminal)
+            terminal = _frozen(self.terminal_outcome); _validate_payload(f"session.{self.status}", terminal); object.__setattr__(self, "terminal_outcome", terminal)
         elif self.terminal_outcome is not None: raise ValueError("terminal_outcome requires terminal status")
-    def as_dict(self) -> dict[str, Any]:
-        return {"schema_version": "bb.session.v1", "session_id": self.session_id,
-                "status": self.status, "effective_lock_hash": self.effective_lock_hash,
-                "task_hash": self.task_hash, "event_count": self.event_count,
-                "pending_approval": self.pending_approval, "terminal_outcome": _plain(self.terminal_outcome)}
+    def as_dict(self) -> dict[str, Any]: return {"schema_version": "bb.session.v1", "session_id": self.session_id, "status": self.status, "effective_lock_hash": self.effective_lock_hash, "task_hash": self.task_hash, "event_count": self.event_count, "pending_approval": self.pending_approval, "terminal_outcome": _plain(self.terminal_outcome)}
 def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     rows = tuple(events)
     if not rows or rows[0].kind != "session.started": raise ValueError("event stream must begin with session.started")
@@ -103,17 +95,12 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
         if event.session_id != start.session_id or event.sequence != expected: raise ValueError("event stream is not contiguous for one session")
         if expected == 1: continue
         if status not in _ALLOWED.get(event.kind, ()): raise ValueError(f"invalid {event.kind} transition from {status}")
-        if event.kind == "approval.requested":
-            pending, status = event.payload["request_id"], "awaiting_approval"
+        if event.kind == "approval.requested": pending, status = event.payload["request_id"], "awaiting_approval"
         elif event.kind == "approval.resolved":
             if pending != event.payload["request_id"]: raise ValueError("approval does not match the pending request")
             pending, status = None, "running"
-        elif event.kind == "session.reconfigured":
-            lock_hash = event.payload["effective_lock_hash"]
-        elif event.kind == "session.paused":
-            status = "paused"
-        elif event.kind == "session.resumed":
-            status = "running"
-        elif event.kind.startswith("session."):
-            pending, status, outcome = None, event.kind.removeprefix("session."), event.payload
+        elif event.kind == "session.reconfigured": lock_hash = event.payload["effective_lock_hash"]
+        elif event.kind == "session.paused": status = "paused"
+        elif event.kind == "session.resumed": status = "running"
+        elif event.kind.startswith("session."): pending, status, outcome = None, event.kind.removeprefix("session."), event.payload
     return SessionView(start.session_id, status, lock_hash, start.payload["task_hash"], len(rows), pending, outcome)
