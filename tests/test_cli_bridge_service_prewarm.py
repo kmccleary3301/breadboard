@@ -1,7 +1,7 @@
 from __future__ import annotations
 from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest
 from fastapi import HTTPException
-from breadboard.product.runtime import ports as runtime_ports
+from breadboard.product.runtime import ports as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
 from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
 from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.api.cli_bridge.service import SessionService
 from agentic_coder_prototype.api.cli_bridge.runtime_emission import _tool_names
@@ -13,6 +13,9 @@ SERVICE = "agentic_coder_prototype.api.cli_bridge.service."
 class _Failing:
     def append(self, _event) -> None: raise OSError("sink unavailable")  # type: ignore[no-untyped-def]
     def put_nowait(self, _item) -> None: raise RuntimeError("broker unavailable")  # type: ignore[no-untyped-def]
+class _Upload:
+    filename, content_type, data = "proof.txt", "text/plain", b"proof"
+    async def read(self) -> bytes: return self.data
 async def _stop(record) -> None:  # type: ignore[no-untyped-def]
     if record.dispatcher_task and not record.dispatcher_task.done(): await record.event_queue.put(None); await record.dispatcher_task
 async def _create(monkeypatch, tmp_path, *, service=None, task="Say hi", **fields):  # type: ignore[no-untyped-def]
@@ -162,17 +165,24 @@ def test_startup_removes_incomplete_and_recovers_committed_projection(monkeypatc
     assert {path.name for path in records_root.iterdir()} == {"committed", "recoverable"} and {path.name for path in events_root.iterdir()} == {"committed", "recoverable"} and (records_root / "committed" / ".start.committed").is_file() and (events_root / "recoverable" / "session_events.jsonl").is_file()
 @pytest.mark.asyncio
 async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(monkeypatch, tmp_path) -> None:
-    class Upload:
-        filename, content_type, data = "proof.txt", "text/plain", b"proof"
-        async def read(self) -> bytes: return self.data
+    Upload = _Upload
     workspace = tmp_path / "workspace"; service, response, record = await _create(monkeypatch, tmp_path, workspace=str(workspace))
     uploaded = await service.upload_attachments(response.session_id, [Upload()]); attachment_id = uploaded.attachments[0].id
-    digest = record.metadata["artifact_manifest_ref"]["digest"].removeprefix("sha256:"); manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.{digest}.json"; manifest = json.loads(manifest_path.read_text()); assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == digest; empty = Upload(); empty.data = b""; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata))
+    digest = record.metadata["artifact_manifest_ref"]["digest"].removeprefix("sha256:"); manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.{digest}.json"; manifest = json.loads(manifest_path.read_text()); assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == digest; empty = Upload(); empty.data = b""; attachment_root = workspace / ".breadboard" / "attachments"; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata), {path.name for path in attachment_root.iterdir()})
     empty_error, missing_error = await asyncio.gather(service.upload_attachments(response.session_id, [empty]), service.send_input(response.session_id, SessionInputRequest(content="use it", attachments=["missing"])), return_exceptions=True)
-    assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
-    await service.delete_session(response.session_id); assert await service.registry.get(response.session_id) is None and manifest_path.is_file()
+    assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata, {path.name for path in attachment_root.iterdir()}) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
+    real_put, calls = ArtifactStore.put, []; monkeypatch.setattr(ArtifactStore, "put", lambda store, *args, **kwargs: (_ for _ in ()).throw(OSError("write failed")) if (calls.append(1) or len(calls) == 2) else real_put(store, *args, **kwargs))
+    with pytest.raises(OSError, match="write failed"): await service.upload_attachments(response.session_id, [Upload(), Upload()])
+    assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata, {path.name for path in attachment_root.iterdir()})
+    await service.delete_session(response.session_id); assert await service.registry.get(response.session_id) is None and manifest_path.is_file() and record.dispatcher_task.done()
     with pytest.raises(HTTPException) as missing: await service.ensure_session(response.session_id)
     assert missing.value.status_code == 404
+@pytest.mark.asyncio
+async def test_attachment_storage_rejects_workspace_symlink_escape(monkeypatch, tmp_path) -> None:
+    if os.name == "nt": pytest.skip("symlink privilege is not portable on Windows")
+    workspace, outside = tmp_path / "workspace", tmp_path / "outside"; workspace.mkdir(); outside.mkdir(); (workspace / ".breadboard").symlink_to(outside, target_is_directory=True); service, response, _ = await _create(monkeypatch, tmp_path, workspace=str(workspace))
+    with pytest.raises(HTTPException) as error: await service.upload_attachments(response.session_id, [_Upload()])
+    assert error.value.status_code == 400 and not list(outside.iterdir())
 
 @pytest.mark.asyncio
 async def test_completed_dispatch_replay_is_ordered_and_finite(monkeypatch, tmp_path) -> None:

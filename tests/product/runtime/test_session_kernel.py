@@ -197,8 +197,8 @@ def test_artifact_put_sync_fault_is_unacknowledged_and_retry_is_readable(monkeyp
     monkeypatch.setattr(ARTIFACTS + "fsync", fsync)
     with pytest.raises(OSError, match="sync failed"): store.put(b"proof")
     files = [path for path in tmp_path.rglob("*") if path.is_file()]; assert [path.read_bytes() for path in files] in ([], [b"proof"]); ref = store.put(b"proof"); assert store.read(ref) == b"proof" and calls[0] >= 6 and not list(tmp_path.rglob("*.tmp"))
-def test_artifact_read_validates_content(tmp_path: Path) -> None:
-    store = ArtifactStore(tmp_path); ref = store.put(b"proof"); next(tmp_path.rglob(ref.digest[7:])).write_bytes(b"tampered")
+def test_artifact_read_validates_content_and_manifest_parent_is_synced(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root, synced = tmp_path / "artifacts", []; store = ArtifactStore(root); ref = store.put(b"proof"); monkeypatch.setattr("breadboard.product.runtime.artifacts._sync_directory", lambda path: synced.append(path)); store.materialize(ref, root / "manifests" / "manifest.json"); assert synced == [root / "manifests", root]; next(root.rglob(ref.digest[7:])).write_bytes(b"tampered")
     with pytest.raises(RuntimeError, match="verification failed"): store.read(ref)
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_json_artifacts_reject_nonfinite_numbers_before_write(tmp_path: Path, value: float) -> None:

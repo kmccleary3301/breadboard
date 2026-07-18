@@ -83,7 +83,7 @@ class ArtifactStore:
         try:
             with tempfile.NamedTemporaryFile(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp", delete=False) as stream:
                 temporary = Path(stream.name); stream.write(content); stream.flush(); os.fsync(stream.fileno())
-            os.replace(temporary, target); _sync_directory(target.parent)
+            os.replace(temporary, target); _sync_directory(target.parent); _sync_directory(target.parent.parent)
         finally:
             if temporary is not None: temporary.unlink(missing_ok=True)
         return target

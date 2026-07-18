@@ -342,8 +342,7 @@ class SessionService:
             for subscriber in subscribers:
                 try:
                     subscriber.put_nowait(None)
-                except asyncio.QueueFull:
-                    continue
+                except asyncio.QueueFull: subscriber.get_nowait(); subscriber.put_nowait(None)
 
     async def list_sessions(self):
         return await self.registry.list()
@@ -484,6 +483,8 @@ class SessionService:
         terminal_status = {"canceled": SessionStatus.STOPPED, "completed": SessionStatus.COMPLETED, "failed": SessionStatus.FAILED}.get(
             getattr(getattr(product_session, "read_model", None), "status", None))
         if terminal_status is not None: await self.registry.update_status(session_id, terminal_status)
+        dispatcher = getattr(record, "dispatcher_task", None)
+        if dispatcher and not dispatcher.done(): await record.event_queue.put(None); await dispatcher
     async def delete_session(self, session_id: str) -> None:
         await self.stop_session(session_id)
         await self.registry.delete(session_id)
@@ -534,61 +535,37 @@ class SessionService:
         files: Sequence[UploadFile],
         metadata: Optional[dict[str, Any]] = None,
     ) -> AttachmentUploadResponse:
-        if not files:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided")
-        record = await self.ensure_session(session_id)
-        runner: Optional[SessionRunner] = getattr(record, "runner", None)
-        if not runner:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
+        if not files: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no files provided")
+        record = await self.ensure_session(session_id); runner: Optional[SessionRunner] = getattr(record, "runner", None)
+        if not runner: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
         workspace_dir = runner.get_workspace_dir()
-        if not workspace_dir:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workspace not ready")
-
-        attachment_entries: list[dict[str, Any]] = []
-        handles: list[AttachmentHandle] = []
-        artifact_store = ArtifactStore(workspace_dir / ".breadboard" / "artifacts")
-        artifact_refs = getattr(record, "product_artifacts", {})
-        attachment_root = workspace_dir / ".breadboard" / "attachments"
-        attachment_root.mkdir(parents=True, exist_ok=True)
+        if not workspace_dir: raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="workspace not ready")
+        staged_uploads = []
         for index, upload in enumerate(files, start=1):
-            try:
-                data = await upload.read()
-            except Exception as exc:  # pragma: no cover - FastAPI wraps errors
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"failed to read upload: {exc}") from exc
-            if not data:
-                continue
-            attachment_id = f"att-{uuid.uuid4().hex[:10]}"
-            filename = self._sanitize_filename(upload.filename or f"attachment-{index}.bin")
-            target_dir = attachment_root / attachment_id
-            target_dir.mkdir(parents=True, exist_ok=True)
-            target_path = target_dir / filename
-            artifact_ref = artifact_store.put(data, media_type=upload.content_type or "application/octet-stream")
-            artifact_store.materialize(artifact_ref, target_path)
-            artifact_refs[attachment_id] = artifact_ref
-            rel_path = target_path.relative_to(workspace_dir)
-            handle = AttachmentHandle(
-                id=attachment_id,
-                filename=filename,
-                mime=upload.content_type,
-                size_bytes=len(data),
-            )
-            handles.append(handle)
-            attachment_entries.append(
-                {
-                    "id": attachment_id,
-                    "filename": filename,
-                    "absolute_path": str(target_path),
-                    "relative_path": str(rel_path),
-                    "metadata": metadata or {},
-                }
-            )
-        if not handles:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no attachment data found")
-        record.product_artifacts = artifact_refs
-        manifest = artifact_store.manifest(session_id, artifact_refs); manifest_ref = artifact_store.put_json(manifest)
-        artifact_store.materialize(manifest_ref, workspace_dir / ".breadboard" / "artifacts" / "manifests" / f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json")
-        record.metadata["artifact_manifest"], record.metadata["artifact_manifest_ref"] = manifest, manifest_ref.as_dict()
-        runner.register_attachments(attachment_entries)
+            try: data = await upload.read()
+            except Exception as exc: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"failed to read upload: {exc}") from exc
+            if data: staged_uploads.append((index, upload, data))
+        if not staged_uploads: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no attachment data found")
+        attachment_entries: list[dict[str, Any]] = []; handles: list[AttachmentHandle] = []; created_dirs: list[Path] = []
+        artifact_root = self._resolve_workspace_path(workspace_dir, ".breadboard/artifacts"); artifact_store = ArtifactStore(artifact_root)
+        artifact_refs = dict(getattr(record, "product_artifacts", {}))
+        attachment_root = self._resolve_workspace_path(workspace_dir, ".breadboard/attachments"); attachment_root.mkdir(parents=True, exist_ok=True)
+        manifest_path: Path | None = None
+        try:
+            for index, upload, data in staged_uploads:
+                attachment_id = f"att-{uuid.uuid4().hex[:10]}"; filename = self._sanitize_filename(upload.filename or f"attachment-{index}.bin")
+                target_dir = attachment_root / attachment_id; target_dir.mkdir(parents=True, exist_ok=True); created_dirs.append(target_dir); target_path = target_dir / filename
+                artifact_ref = artifact_store.put(data, media_type=upload.content_type or "application/octet-stream"); artifact_store.materialize(artifact_ref, target_path); artifact_refs[attachment_id] = artifact_ref
+                handles.append(AttachmentHandle(id=attachment_id, filename=filename, mime=upload.content_type, size_bytes=len(data)))
+                attachment_entries.append({"id": attachment_id, "filename": filename, "absolute_path": str(target_path), "relative_path": str(target_path.relative_to(workspace_dir)), "metadata": metadata or {}})
+            manifest = artifact_store.manifest(session_id, artifact_refs); manifest_ref = artifact_store.put_json(manifest)
+            manifest_path = artifact_store.materialize(manifest_ref, artifact_root / "manifests" / f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json")
+            runner.register_attachments(attachment_entries)
+        except BaseException:
+            for path in created_dirs: shutil.rmtree(path, ignore_errors=True)
+            if manifest_path is not None: manifest_path.unlink(missing_ok=True)
+            raise
+        record.product_artifacts = artifact_refs; record.metadata["artifact_manifest"], record.metadata["artifact_manifest_ref"] = manifest, manifest_ref.as_dict()
         return AttachmentUploadResponse(attachments=handles)
 
     @staticmethod
