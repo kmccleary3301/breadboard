@@ -39,7 +39,9 @@ def _anchored_rule_path(workspace_dir: Path) -> tuple[Path, int | None, list[int
         except BaseException:
             for handle in reversed(handles): AnchoredStorage.close_windows_handle(handle)
             raise
-    root_fd, metadata_fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)), None
+    expected = root.stat(follow_symlinks=False); root_fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)); actual = os.fstat(root_fd)
+    if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino): os.close(root_fd); raise OSError("workspace root changed")
+    metadata_fd = None
     try:
         try: os.mkdir(".breadboard", dir_fd=root_fd)
         except FileExistsError: pass

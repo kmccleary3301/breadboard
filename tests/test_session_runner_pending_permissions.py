@@ -48,12 +48,13 @@ async def test_durable_rule_remains_authoritative_when_metadata_projection_fails
     context = multiprocessing.get_context("spawn"); entered, release = context.Event(), context.Event(); holder = context.Process(target=_hold_rule_lock, args=(str(tmp_path), entered, release)); holder.start(); assert entered.wait(5); writer = context.Process(target=_upsert_process, args=(str(tmp_path), "blocked.sh")); writer.start(); writer.join(.2); assert writer.is_alive(); release.set(); holder.join(10); writer.join(10); assert holder.exitcode == writer.exitcode == 0
 @pytest.mark.skipif(os.name == "nt", reason="symlink creation requires privileges on Windows")
 def test_permission_rules_reject_workspace_metadata_symlink(monkeypatch, tmp_path) -> None:
-    outside = tmp_path / "outside"; outside.mkdir(); metadata = tmp_path / ".breadboard"; metadata.symlink_to(outside, target_is_directory=True)
-    assert load_permission_rules(tmp_path) == []; pytest.raises(OSError, upsert_permission_rule, tmp_path, category="shell", pattern="escape.sh", decision="allow"); assert not list(outside.iterdir()); metadata.unlink(); metadata.mkdir(); lock_target = outside / "lock"; lock_path = metadata / "permission_rules.json.lock"; lock_path.symlink_to(lock_target); pytest.raises(OSError, upsert_permission_rule, tmp_path, category="shell", pattern="lock.sh", decision="allow"); assert not lock_target.exists(); lock_path.unlink()
+    outside = tmp_path / "outside"; outside.mkdir(); metadata = tmp_path / ".breadboard"; metadata.symlink_to(outside, target_is_directory=True); assert load_permission_rules(tmp_path) == []; pytest.raises(OSError, upsert_permission_rule, tmp_path, category="shell", pattern="escape.sh", decision="allow"); assert not list(outside.iterdir()); metadata.unlink(); metadata.mkdir(); lock_target = outside / "lock"; lock_path = metadata / "permission_rules.json.lock"; lock_path.symlink_to(lock_target); pytest.raises(OSError, upsert_permission_rule, tmp_path, category="shell", pattern="lock.sh", decision="allow"); assert not lock_target.exists(); lock_path.unlink()
     real_write, old = rules_store.AnchoredStorage.write_at, tmp_path / ".breadboard-old"
     def swap_write(*args, **kwargs): metadata.rename(old); metadata.symlink_to(outside, target_is_directory=True); return real_write(*args, **kwargs)  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(rules_store.AnchoredStorage, "write_at", staticmethod(swap_write)); assert upsert_permission_rule(tmp_path, category="shell", pattern="anchored.sh", decision="allow")
-    assert not list(outside.iterdir()) and b"anchored.sh" in (old / "permission_rules.json").read_bytes()
+    monkeypatch.setattr(rules_store.AnchoredStorage, "write_at", staticmethod(swap_write)); assert upsert_permission_rule(tmp_path, category="shell", pattern="anchored.sh", decision="allow"); assert not list(outside.iterdir()) and b"anchored.sh" in (old / "permission_rules.json").read_bytes()
+    workspace, outside_root, moved, real_open, swapped = tmp_path / "root", tmp_path / "outside-root", tmp_path / "root-old", os.open, [False]; workspace.mkdir(); outside_root.mkdir()
+    def swap_root(path, flags, *args, **kwargs): (workspace.rename(moved), workspace.symlink_to(outside_root, target_is_directory=True), swapped.__setitem__(0, True)) if Path(path) == workspace and not swapped[0] else None; return real_open(path, flags, *args, **kwargs)  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(rules_store.os, "open", swap_root); pytest.raises(OSError, upsert_permission_rule, workspace, category="shell", pattern="root-race.sh", decision="allow"); assert not list(outside_root.iterdir())
 @pytest.mark.asyncio
 async def test_directory_fsync_failure_never_releases_always_decision(monkeypatch, tmp_path) -> None:
     runner, session = _product_runner("fsync"); runner._workspace_path = tmp_path; runner._rehydrate_pending_permissions("permission_request", {"request_id": "permission-1", "category": "shell"}); runner._permission_queue = asyncio.Queue(); real_fsync = os.fsync; monkeypatch.setattr(os, "fsync", lambda fd: (_ for _ in ()).throw(OSError("directory fsync failed")) if stat.S_ISDIR(os.fstat(fd).st_mode) else real_fsync(fd))
@@ -89,7 +90,7 @@ async def test_stop_wakes_oneshot_and_wins_terminal_status(monkeypatch) -> None:
 def test_stop_signals_runtime_when_cancel_evidence_fails() -> None:
     runner, session = _product_runner("stop-sink"); runner._control_queue = asyncio.Queue(); session._sink = type("Failing", (), {"append": lambda *_: (_ for _ in ()).throw(OSError("sink unavailable"))})()
     with pytest.raises(OSError, match="sink unavailable"): runner._request_stop("operator")
-    assert runner._stop_event.is_set() and runner._resume_event.is_set() and runner._input_queue.get_nowait() is None and runner._control_queue.get_nowait() == {"kind": "stop"} and session.read_model.status == "running"
+    assert runner._stop_event.is_set() and runner._resume_event.is_set() and runner._input_queue.get_nowait() is None and runner._control_queue.get_nowait() == {"kind": "stop"} and session.read_model.status == "running"; fallback = []; runner._agent = type("Agent", (), {"agent": type("Inner", (), {"request_stop": lambda self: fallback.append(True)})()})(); runner._signal_control = lambda _kind: (_ for _ in ()).throw(RuntimeError("control unavailable")); pytest.raises(OSError, runner._request_stop, "retry"); assert fallback == [True]  # type: ignore[method-assign]
 @pytest.mark.parametrize("final", ["resume", "stop"])
 def test_control_queue_holds_repeated_pause_until_resume_or_stop(final: str) -> None:
     raw, returned, result = queue.Queue(), threading.Event(), []
@@ -98,6 +99,8 @@ def test_control_queue_holds_repeated_pause_until_resume_or_stop(final: str) -> 
     thread.start(); assert not returned.wait(.1)
     raw.put({"kind": final}); thread.join(1)
     assert not thread.is_alive() and result == [{"kind": final}]
+@pytest.mark.asyncio
+async def test_duplicate_pause_does_not_open_local_gate() -> None: runner, _ = _product_runner("duplicate-pause"); await runner.handle_command("pause", {}); assert not runner._resume_event.is_set(); result = await asyncio.gather(runner.handle_command("pause", {}), return_exceptions=True); assert isinstance(result[0], RuntimeError) and not runner._resume_event.is_set()
 def test_resume_cannot_overtake_seeded_pause() -> None:
     runner, _ = _product_runner("seed-order"); asyncio.run(runner.handle_command("pause", {})); entered, release, resumed = threading.Event(), threading.Event(), threading.Event()
     class GatedQueue(queue.Queue):

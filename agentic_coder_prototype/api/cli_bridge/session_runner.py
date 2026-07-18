@@ -234,12 +234,10 @@ class SessionRunner:
                 if stopping: self.transition_product_session("cancel", reason)
             finally:
                 self._stop_event.set(); self._resume_event.set(); self._input_queue.put_nowait(None)
-                try:
-                    if not self._signal_control("stop"):
-                        request_stop = getattr(getattr(self._agent, "agent", None), "request_stop", None)
-                        remote = getattr(request_stop, "remote", None)
-                        if callable(remote): remote()
-                        elif callable(request_stop): request_stop()
+                try: delivered = self._signal_control("stop")
+                except Exception: delivered = False
+                request_stop = getattr(getattr(self._agent, "agent", None), "request_stop", None) if not delivered else None; remote = getattr(request_stop, "remote", None)
+                try: remote() if callable(remote) else request_stop() if callable(request_stop) else None
                 except Exception: pass
             return stopping
     async def stop(self) -> None:
@@ -307,6 +305,9 @@ class SessionRunner:
             self._persist_metadata_snapshot_threadsafe()
             return suffix.lstrip()
         return raw
+    def _fail_control_transition(self, code: str, detail: str) -> None:
+        try: self.transition_product_session("fail", code, detail)
+        finally: self._request_stop(detail)
     async def handle_command(
         self,
         command: str,
@@ -344,8 +345,6 @@ class SessionRunner:
                     manager = CheckpointManager(workspace_dir)
                     self._checkpoint_manager = manager
                 prune = True
-                if mode == "conversation":
-                    prune = True
                 if mode in {"code", "both"}:
                     manager.restore_checkpoint(checkpoint_id.strip(), prune=prune)
                 if mode in {"conversation", "both"}:
@@ -434,12 +433,17 @@ class SessionRunner:
                 return {"status": "ok", "selection": selection, "catalog": catalog_payload.get("catalog")}
             case "pause":
                 with self._product_session_lock:
-                    self._resume_event.clear()
-                    try: self.transition_product_session("pause", str(payload.get("reason") or "operator request")); self._signal_control("pause")
-                    except Exception: self._resume_event.set(); raise
+                    transitioned = False; was_resumed = self._resume_event.is_set()
+                    try: self._resume_event.clear(); self.transition_product_session("pause", str(payload.get("reason") or "operator request")); transitioned = True; self._signal_control("pause")
+                    except Exception: self._resume_event.set() if was_resumed else None; self._fail_control_transition("pause_control_failed", "failed to deliver pause control") if transitioned else None; raise
                 return {"status": "ok", "paused": True}
             case "resume":
-                with self._product_session_lock: self.transition_product_session("resume"); pending = self.session.metadata.get("pending_permissions"); head = pending[0] if isinstance(pending, list) and pending and isinstance(pending[0], dict) else None; request = head.get("request") if head and isinstance(head.get("request"), dict) else {}; self._update_pending_permissions("permission_request", request, source=str(head.get("source") or "session"), task_session_id=head.get("task_session_id"), subagent_type=head.get("subagent_type")) if head else None; self._signal_control("resume"); self._resume_event.set()
+                with self._product_session_lock:
+                    self.transition_product_session("resume")
+                    try:
+                        pending = self.session.metadata.get("pending_permissions"); head = pending[0] if isinstance(pending, list) and pending and isinstance(pending[0], dict) else None; request = head.get("request") if head and isinstance(head.get("request"), dict) else {}
+                        self._update_pending_permissions("permission_request", request, source=str(head.get("source") or "session"), task_session_id=head.get("task_session_id"), subagent_type=head.get("subagent_type")) if head else None; self._signal_control("resume"); self._resume_event.set()
+                    except Exception: self._fail_control_transition("resume_control_failed", "failed to deliver resume control"); raise
                 return {"status": "ok", "paused": False}
             case "stop":
                 stopping = self._request_stop("stop command")

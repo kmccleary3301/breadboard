@@ -4391,6 +4391,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
     def read_file(self, path: str) -> Dict[str, Any]:
         return self._ray_get(self.sandbox.read_text.remote(path))
+    def _private_workspace_path(self, path: str) -> bool: relative = Path(self._normalize_workspace_path(path)).relative_to(Path(self.workspace).resolve()).parts; return relative[:2] in {(".breadboard", "artifacts"), (".breadboard", "attachments")}
+    def _patch_touches_private_workspace(self, patch: str) -> bool: return any(self._private_workspace_path(match.group(1).strip().strip('"')) for match in re.finditer(r'^(?:\*\*\* (?:Add|Update|Delete) File:|\*\*\* Move to:|---|\+\+\+|(?:rename|copy) (?:from|to))\s+(?:[ab]/)?("?[^"\t\n]+"?)(?:\t.*)?$', str(patch), re.MULTILINE))
 
     def list_dir(self, path: str, depth: int = 1) -> Dict[str, Any]:
         # Always pass virtual paths when using VirtualizedSandbox; else pass normalized absolute
@@ -4529,7 +4531,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if normalized == "blob.put":
             return self._handle_blob_put_tool(tool_call)
         if normalized == "blob.put_file_slice":
-            return self._handle_blob_put_file_slice_tool(tool_call)
+            return {"error": "private workspace storage is unavailable to model tools"} if tool_call.get("expected_output") is None and self._private_workspace_path(str(args.get("path") or "")) else self._handle_blob_put_file_slice_tool(tool_call)
         if normalized == "blob.get":
             return self._handle_blob_get_tool(tool_call)
         if normalized == "blob.search":
@@ -4541,7 +4543,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
         if normalized == "create_file":
             target = self._normalize_workspace_path(str(args.get("path", "")))
-            return self.create_file(target)
+            return {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self.create_file(target)
         if normalized == "todo.write_board":
             return self._execute_todo_tool("todo.write_board", args)
         if normalized == "todo.list":
@@ -4560,9 +4562,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "__mvi_text_output": "Plan updated",
             }
         if normalized == "create_file_from_block":
-            target = self._normalize_workspace_path(str(args.get("file_name", "")))
-            content = str(args.get("content", ""))
-            return self._ray_get(self.sandbox.write_text.remote(target, content))
+            target = self._normalize_workspace_path(str(args.get("file_name", ""))); content = str(args.get("content", ""))
+            return {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self._ray_get(self.sandbox.write_text.remote(target, content))
         if normalized == "read_file":
             requested = str(args.get("path", ""))
             if requested.startswith("attachment://"):
@@ -4574,22 +4575,20 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 except Exception as exc: return {"error": f"attachment read failed: {exc}"}
                 return {"path": requested, "content": content.decode("utf-8", errors="replace"), "truncated": False, "offset": 0, "limit": None}
             target = self._normalize_workspace_path(requested)
-            return self.read_file(target)
+            return {"error": "artifact store is private; use an authorized attachment URI"} if self._private_workspace_path(target) else self.read_file(target)
         if normalized == "glob":
             pattern = str(args.get("pattern") or "")
             root = str(args.get("path") or ".")
             limit = args.get("limit")
-            return self._ray_get(self.sandbox.glob.remote(pattern, root, limit))
+            matches = self._ray_get(self.sandbox.glob.remote(pattern, root, None)); visible = [match for match in matches if not self._private_workspace_path(str(Path(root) / match))]; return visible[:int(limit)] if limit is not None and int(limit) >= 0 else visible
         if normalized == "grep":
             pattern = str(args.get("pattern") or "")
             root = str(args.get("path") or ".")
             include = args.get("include")
             limit = int(args.get("limit") or 100)
-            return self._ray_get(self.sandbox.grep.remote(pattern, root, include, limit))
+            result = self._ray_get(self.sandbox.grep.remote(pattern, root, include, 0)); result["matches"] = [row for row in result.get("matches", []) if not self._private_workspace_path(str(Path(root) / str(row.get("path", ""))))][:limit]; return result
         if normalized == "list_dir":
-            target = self._normalize_workspace_path(str(args.get("path", "")))
-            depth = int(args.get("depth", 1))
-            return self.list_dir(target, depth)
+            target = self._normalize_workspace_path(str(args.get("path", ""))); depth = int(args.get("depth", 1)); result = self.list_dir(target, depth); visible = [row for row in result.get("items", []) if not self._private_workspace_path(str(Path(target) / str(row.get("path", ""))))]; result["items"] = result["entries"] = visible; return result
         if normalized == "run_shell":
             expected_output = tool_call.get("expected_output")
             expected_status = tool_call.get("expected_status")
@@ -4633,6 +4632,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             return self.run_shell(command, timeout)
         if normalized == "apply_search_replace":
             target = self._normalize_workspace_path(str(args.get("file_name", "")))
+            if self._private_workspace_path(target): return {"error": "private workspace storage is unavailable to model tools"}
             search_text = str(args.get("search", ""))
             replace_text = str(args.get("replace", ""))
             try:
@@ -4644,6 +4644,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             return self._ray_get(self.sandbox.edit_replace.remote(target, search_text, replace_text, 1))
         if normalized == "apply_unified_patch":
             patch_source_text = str(args.get("patch") or args.get("input") or "")
+            if self._patch_touches_private_workspace(patch_source_text): return {"error": "private workspace storage is unavailable to model tools"}
             patch_text = patch_source_text
             if (
                 "*** Add File:" in patch_text

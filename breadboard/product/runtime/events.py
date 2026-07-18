@@ -5,6 +5,13 @@ from collections.abc import Callable, Iterable, Mapping; from dataclasses import
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from .artifacts import ArtifactRef
 def _sync(stream: Any) -> None: stream.flush(); os.fsync(stream.fileno())
+class _ProcessLock:
+    def __init__(self, path: Path) -> None: self.stream = os.fdopen(os.open(path.with_name(f".{path.name}.lock"), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600), "a+b", buffering=0)
+    def __enter__(self) -> "_ProcessLock":
+        if os.name == "nt": import msvcrt; self.stream.seek(0, os.SEEK_END); self.stream.write(b"\0") if not self.stream.tell() else None; self.stream.seek(0); msvcrt.locking(self.stream.fileno(), msvcrt.LK_LOCK, 1); self.unlock = lambda: (self.stream.seek(0), msvcrt.locking(self.stream.fileno(), msvcrt.LK_UNLCK, 1))
+        else: import fcntl; fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX); self.unlock = lambda: fcntl.flock(self.stream.fileno(), fcntl.LOCK_UN)
+        return self
+    def __exit__(self, *_: object) -> None: self.unlock(); self.stream.close()
 class Clock(Protocol):
     def now(self) -> str: ...
 class IdSource(Protocol):
@@ -16,12 +23,13 @@ class SystemClock:
 class UUIDSource:
     def new_id(self) -> str: return str(uuid4())
 class _SinkState:
-    def __init__(self) -> None: self.lock, self.poisoned = RLock(), None
+    def __init__(self) -> None: self.lock, self.poisoned = RLock(), set()
 _STATES = tuple(_SinkState() for _ in range(256))
 class JsonlEventSink:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).resolve(); path, state = self.path, _STATES[hash(self.path) % len(_STATES)]
-        with state.lock: self._mkdir_parent(path.parent); self._recover(path, state)
+        with state.lock: self._mkdir_parent(path.parent)
+        with state.lock, _ProcessLock(path): self._recover(path, state)
     def _mkdir_parent(self, path: Path) -> None:
         if path.exists(): return
         self._mkdir_parent(path.parent)
@@ -33,7 +41,7 @@ class JsonlEventSink:
     def _recover(self, path: Path, state: _SinkState) -> None:
         wal, temporary = self._transaction_paths(path); temporary.unlink(missing_ok=True)
         try:
-            if not wal.exists(): return
+            if not wal.exists(): state.poisoned.discard(path); return
             offset = int(wal.read_text(encoding="ascii"))
             if path.exists():
                 with path.open("r+b", buffering=0) as stream:
@@ -42,7 +50,8 @@ class JsonlEventSink:
                     stream.truncate(offset); _sync(stream)
             elif offset: raise ValueError("event transaction references a missing log")
             wal.unlink(); self._sync_parent(path)
-        except BaseException: state.poisoned = path if state.poisoned is None else True; raise RuntimeError("event sink recovery failed")
+            state.poisoned.discard(path)
+        except BaseException: state.poisoned.add(path); raise RuntimeError("event sink recovery failed")
     def _begin(self, path: Path, offset: int) -> None:
         wal, temporary = self._transaction_paths(path); data = str(offset).encode("ascii"); descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:
@@ -54,8 +63,8 @@ class JsonlEventSink:
         wal, temporary = self._transaction_paths(path); temporary.unlink(missing_ok=True); wal.unlink(missing_ok=True); self._sync_parent(path)
     def append(self, event: object) -> None:
         payload = (json.dumps(event.as_dict(), sort_keys=True, separators=(",", ":")) + "\n").encode(); path = Path(self.path).resolve(); state = _STATES[hash(path) % len(_STATES)]  # type: ignore[attr-defined]
-        with state.lock:
-            if state.poisoned is True or state.poisoned == path: raise RuntimeError("event sink is poisoned after an unconfirmed rollback")
+        with state.lock, _ProcessLock(path):
+            if path in state.poisoned: raise RuntimeError("event sink is poisoned after an unconfirmed rollback")
             self._recover(path, state)
             try: stream = path.open("x+b", buffering=0); created = True
             except FileExistsError: stream = path.open("a+b", buffering=0); created = False
@@ -69,7 +78,7 @@ class JsonlEventSink:
                     try:
                         stream.seek(offset); stream.truncate(); _sync(stream); self._finish(path)
                         if created: stream.close(); path.unlink(); self._sync_parent(path)
-                    except BaseException: state.poisoned = path if state.poisoned is None else True
+                    except BaseException: state.poisoned.add(path)
                     raise
             finally:
                 try: stream.close()
@@ -178,9 +187,7 @@ def _check(condition: bool, error: type[Exception], message: str) -> None:
 class Session:
     """Single lifecycle owner; conductor/provider/tool details stay behind adapters."""
     def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> None:
-        self._transition_lock = RLock(); self._appending = False; self._events = list(events)
-        self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink()
-        self._view = rebuild(self._events)
+        self._transition_lock = RLock(); self._appending = False; self._events = list(events); self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink(); self._view = rebuild(self._events)
     @classmethod
     def start(cls, lock: EffectiveHarnessLock, task: str, *, session_id: str | None = None, clock: Clock | None = None, ids: IdSource | None = None, sink: EventSink | None = None) -> "Session":
         if not isinstance(lock, EffectiveHarnessLock): raise TypeError("Session.start requires an EffectiveHarnessLock")
@@ -212,7 +219,6 @@ class Session:
         with self._transition_lock:
             self._require(action); self._appending = True
             try:
-                body = payload(); event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body)
-                next_events = [*self._events, event]; next_view = rebuild(next_events); self._sink.append(event)
+                body = payload(); event = KernelEvent.create(self._view.session_id, len(self._events) + 1, kind, self._clock.now(), body); next_events = [*self._events, event]; next_view = rebuild(next_events); self._sink.append(event)
                 self._events, self._view = next_events, next_view; return next_view
             finally: self._appending = False

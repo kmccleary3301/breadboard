@@ -60,7 +60,11 @@ def _open_workspace_breadboard(workspace_dir: Path) -> tuple[Path, Path, int | N
         except OSError as exc:
             for handle in reversed(handles): AnchoredStorage.close_windows_handle(handle)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid workspace metadata path") from exc
-    root_fd, metadata_fd = os.open(workspace_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)), None
+    try: expected = workspace_root.stat(follow_symlinks=False); root_fd = os.open(workspace_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+    except OSError as exc: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid workspace root") from exc
+    actual = os.fstat(root_fd)
+    if (expected.st_dev, expected.st_ino) != (actual.st_dev, actual.st_ino): os.close(root_fd); raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace root changed")
+    metadata_fd = None
     try:
         try: os.mkdir(".breadboard", dir_fd=root_fd)
         except FileExistsError: pass
@@ -524,6 +528,7 @@ class SessionService:
         except RuntimeError as exc:
             product_session: ProductSession | None = getattr(record, "product_session", None)
             if product_session and product_session.read_model.status == "failed":
+                await runner.stop()
                 await self.registry.update_status(session_id, SessionStatus.FAILED)
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return SessionCommandResponse(detail=detail)
