@@ -26,7 +26,7 @@ def default_tool_defs_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "implementations" / "tools" / "defs"
 
 
-def _resolve_tool_defs_dir(defs_dir: str | Path | None) -> Path:
+def resolve_tool_defs_dir(defs_dir: str | Path | None) -> Path:
     if defs_dir is None:
         return default_tool_defs_dir()
     candidate = Path(defs_dir).expanduser()
@@ -106,7 +106,7 @@ def load_tool_registry(
     *,
     aliases: Mapping[str, str] | None = None,
 ) -> ToolRegistry:
-    defs_path = _resolve_tool_defs_dir(defs_dir)
+    defs_path = resolve_tool_defs_dir(defs_dir)
     if not defs_path.is_dir():
         raise FileNotFoundError(f"Tools definitions directory not found: {defs_path}")
 
@@ -144,7 +144,7 @@ def registry_from_config(config: Mapping[str, Any] | None) -> ToolRegistry:
         paths = registry_cfg.get("paths")
         if isinstance(paths, list) and paths:
             defs_dir = paths[0]
-    resolved_defs_dir = str(_resolve_tool_defs_dir(defs_dir))
+    resolved_defs_dir = str(resolve_tool_defs_dir(defs_dir))
     aliases = {str(key): str(value) for key, value in (tools_cfg.get("aliases") or {}).items()}
     if not aliases:
         return cached_tool_registry(resolved_defs_dir)
