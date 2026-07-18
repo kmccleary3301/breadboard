@@ -5109,6 +5109,172 @@ export const GENERATED_SCHEMA_OBJECTS = {
       }
     }
   },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json",
+    "title": "BreadBoard Coordination View V1 candidate",
+    "description": "Disposable projection rebuilt from authoritative Work Item event streams.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "view_id",
+      "projected_at",
+      "source_event_count",
+      "items",
+      "delegation_edges",
+      "placements"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.coordination_view.v1"
+      },
+      "view_id": {
+        "$ref": "#/$defs/id"
+      },
+      "projected_at": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "source_event_count": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "items": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "$ref": "#/$defs/item"
+        }
+      },
+      "delegation_edges": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "$ref": "#/$defs/edge"
+        }
+      },
+      "placements": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "$ref": "bb.work_placement.v1.schema.json"
+        }
+      }
+    },
+    "$defs": {
+      "id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "ids": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "item": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "work_item_id",
+          "title",
+          "status",
+          "parent_work_item_id",
+          "child_work_item_ids",
+          "active_worker_id",
+          "current_attempt_id",
+          "current_session_ref",
+          "event_count"
+        ],
+        "properties": {
+          "work_item_id": {
+            "$ref": "#/$defs/id"
+          },
+          "title": {
+            "$ref": "#/$defs/id"
+          },
+          "status": {
+            "enum": [
+              "blocked",
+              "ready",
+              "leased",
+              "running",
+              "waiting",
+              "paused",
+              "completed",
+              "failed",
+              "canceled"
+            ]
+          },
+          "parent_work_item_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "child_work_item_ids": {
+            "$ref": "#/$defs/ids"
+          },
+          "active_worker_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_attempt_id": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_session_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "event_count": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "edge": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "parent_work_item_id",
+          "child_work_item_id"
+        ],
+        "properties": {
+          "parent_work_item_id": {
+            "$ref": "#/$defs/id"
+          },
+          "child_work_item_id": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      }
+    }
+  },
   "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json",
@@ -17750,6 +17916,737 @@ export const GENERATED_SCHEMA_OBJECTS = {
         }
       }
     }
+  },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json": {
+    "$comment": "Attempt ordering, cross-field equality, identity uniqueness, dependency subset, and parent/self equality are enforced by validate_record semantic validation because JSON Schema 2020-12 cannot compare sibling item values.",
+    "$defs": {
+      "attempt": {
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "running"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "properties": {
+                "ended_at": {
+                  "type": "null"
+                },
+                "reason": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "ended_at": {
+                  "$ref": "#/$defs/id"
+                },
+                "reason": {
+                  "$ref": "#/$defs/id"
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "attempt_id": {
+            "$ref": "#/$defs/id"
+          },
+          "checkpoint_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ended_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "number": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "session_ref": {
+            "$ref": "#/$defs/id"
+          },
+          "started_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "running",
+              "waiting",
+              "paused",
+              "failed",
+              "completed",
+              "canceled"
+            ]
+          },
+          "worker_id": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "required": [
+          "attempt_id",
+          "number",
+          "session_ref",
+          "worker_id",
+          "status",
+          "started_at",
+          "ended_at",
+          "reason",
+          "checkpoint_ref"
+        ],
+        "type": "object"
+      },
+      "budget": {
+        "additionalProperties": false,
+        "properties": {
+          "limits": {
+            "additionalProperties": false,
+            "properties": {
+              "cost_limit_microusd": {
+                "$ref": "#/$defs/nullable_natural"
+              },
+              "token_limit": {
+                "$ref": "#/$defs/nullable_natural"
+              },
+              "wall_time_limit_ms": {
+                "$ref": "#/$defs/nullable_natural"
+              }
+            },
+            "required": [
+              "token_limit",
+              "cost_limit_microusd",
+              "wall_time_limit_ms"
+            ],
+            "type": "object"
+          },
+          "usage": {
+            "additionalProperties": false,
+            "properties": {
+              "cost_microusd": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "tokens": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "wall_time_ms": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "tokens",
+              "cost_microusd",
+              "wall_time_ms"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "limits",
+          "usage"
+        ],
+        "type": "object"
+      },
+      "cancellation_policy": {
+        "additionalProperties": false,
+        "properties": {
+          "cancellable_by": {
+            "$ref": "#/$defs/ids"
+          },
+          "cleanup": {
+            "enum": [
+              "discard_outputs",
+              "keep_partial_outputs",
+              "checkpoint_then_stop"
+            ]
+          },
+          "mode": {
+            "enum": [
+              "never",
+              "cooperative",
+              "immediate"
+            ]
+          },
+          "propagate_to_children": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mode",
+          "cancellable_by",
+          "propagate_to_children",
+          "cleanup"
+        ],
+        "type": "object"
+      },
+      "id": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "ids": {
+        "items": {
+          "$ref": "#/$defs/id"
+        },
+        "type": "array",
+        "uniqueItems": true
+      },
+      "lease": {
+        "additionalProperties": false,
+        "properties": {
+          "acquired_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lease_id": {
+            "$ref": "#/$defs/id"
+          },
+          "worker_id": {
+            "$ref": "#/$defs/id"
+          }
+        },
+        "required": [
+          "lease_id",
+          "worker_id",
+          "acquired_at",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "nullable_natural": {
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "resume_policy": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "never",
+              "restart",
+              "checkpoint"
+            ]
+          },
+          "requires_approval": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mode",
+          "requires_approval"
+        ],
+        "type": "object"
+      },
+      "retry_policy": {
+        "additionalProperties": false,
+        "properties": {
+          "max_attempts": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "retry_on_any_failure": {
+            "type": "boolean"
+          },
+          "retryable_reasons": {
+            "$ref": "#/$defs/ids"
+          }
+        },
+        "required": [
+          "max_attempts",
+          "retry_on_any_failure",
+          "retryable_reasons"
+        ],
+        "type": "object"
+      }
+    },
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json",
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "else": {
+          "properties": {
+            "active_lease": {
+              "type": "null"
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "leased",
+                "running"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "active_lease": {
+              "$ref": "#/$defs/lease"
+            }
+          }
+        }
+      },
+      {
+        "else": {
+          "properties": {
+            "attempts": {
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "running"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "maxContains": 0,
+              "minContains": 0
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "status": {
+              "const": "running"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "attempts": {
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "running"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              },
+              "maxContains": 1,
+              "minContains": 1
+            }
+          }
+        }
+      },
+      {
+        "else": {
+          "properties": {
+            "wake_refs": {
+              "maxItems": 0
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "status": {
+              "const": "waiting"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "wake_refs": {
+              "minItems": 1
+            }
+          }
+        }
+      },
+      {
+        "else": {
+          "properties": {
+            "terminal_reason": {
+              "type": "null"
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "status": {
+              "enum": [
+                "completed",
+                "failed",
+                "canceled"
+              ]
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "terminal_reason": {
+              "$ref": "#/$defs/id"
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "completed"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "attempts": {
+              "minItems": 1,
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "completed"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "failed"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "attempts": {
+              "minItems": 1,
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "failed"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "waiting"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "attempts": {
+              "minItems": 1,
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "waiting"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "paused"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "attempts": {
+              "minItems": 1,
+              "contains": {
+                "properties": {
+                  "status": {
+                    "const": "paused"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "status": {
+              "const": "blocked"
+            }
+          },
+          "required": [
+            "status"
+          ]
+        },
+        "then": {
+          "properties": {
+            "dependency_refs": {
+              "minItems": 1
+            }
+          }
+        }
+      }
+    ],
+    "properties": {
+      "active_lease": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/lease"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "attempts": {
+        "items": {
+          "$ref": "#/$defs/attempt"
+        },
+        "type": "array"
+      },
+      "budget": {
+        "$ref": "#/$defs/budget"
+      },
+      "cancellation_policy": {
+        "$ref": "#/$defs/cancellation_policy"
+      },
+      "child_work_item_ids": {
+        "$ref": "#/$defs/ids"
+      },
+      "dependency_refs": {
+        "$ref": "#/$defs/ids"
+      },
+      "event_count": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "latest_checkpoint_ref": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/id"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "parent_work_item_id": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/id"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "placement_refs": {
+        "$ref": "#/$defs/ids"
+      },
+      "resume_policy": {
+        "$ref": "#/$defs/resume_policy"
+      },
+      "retry_policy": {
+        "$ref": "#/$defs/retry_policy"
+      },
+      "satisfied_dependency_refs": {
+        "$ref": "#/$defs/ids"
+      },
+      "schema_version": {
+        "const": "bb.work_item.v2"
+      },
+      "status": {
+        "enum": [
+          "blocked",
+          "ready",
+          "leased",
+          "running",
+          "waiting",
+          "paused",
+          "completed",
+          "failed",
+          "canceled"
+        ]
+      },
+      "terminal_reason": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/id"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "title": {
+        "$ref": "#/$defs/id"
+      },
+      "wake_refs": {
+        "$ref": "#/$defs/ids"
+      },
+      "work_item_id": {
+        "$ref": "#/$defs/id"
+      },
+      "used_lease_ids": {
+        "$ref": "#/$defs/ids"
+      }
+    },
+    "required": [
+      "schema_version",
+      "work_item_id",
+      "title",
+      "status",
+      "parent_work_item_id",
+      "child_work_item_ids",
+      "dependency_refs",
+      "satisfied_dependency_refs",
+      "wake_refs",
+      "retry_policy",
+      "resume_policy",
+      "cancellation_policy",
+      "budget",
+      "active_lease",
+      "attempts",
+      "placement_refs",
+      "latest_checkpoint_ref",
+      "terminal_reason",
+      "event_count",
+      "used_lease_ids"
+    ],
+    "title": "BreadBoard Work Item V2 candidate",
+    "type": "object"
+  },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.work_placement.v1.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.work_placement.v1.schema.json",
+    "title": "BreadBoard Work Placement V1 candidate",
+    "description": "Correlation-only attachment; lifecycle authority remains in bb.work_item.v2.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "placement_id",
+      "work_item_id",
+      "attempt_id",
+      "worker_id",
+      "session_ref",
+      "execution_target_ref",
+      "attached_at"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.work_placement.v1"
+      },
+      "placement_id": {
+        "$ref": "#/$defs/id"
+      },
+      "work_item_id": {
+        "$ref": "#/$defs/id"
+      },
+      "attempt_id": {
+        "$ref": "#/$defs/id"
+      },
+      "worker_id": {
+        "$ref": "#/$defs/id"
+      },
+      "session_ref": {
+        "$ref": "#/$defs/id"
+      },
+      "execution_target_ref": {
+        "$ref": "#/$defs/id"
+      },
+      "attached_at": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "$defs": {
+      "id": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
   }
 } as const satisfies Record<string, object>
 
@@ -17772,6 +18669,7 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_reference_slice.v1.schema.json": ["bb.coordination_reference_slice.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_slice.v2.schema.json": ["bb.coordination_slice.v2.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json": ["bb.coordination_verification_result.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json": ["bb.coordination_view.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json": ["bb.directive.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json": ["bb.distributed_task_descriptor.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.artifact_catalog.v1.schema.json": ["bb.e4.artifact_catalog.v1.schema.json"],
@@ -17845,7 +18743,9 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.transcript_continuation_patch.v1.schema.json": ["bb.transcript_continuation_patch.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.unsupported_case.v1.schema.json": ["bb.unsupported_case.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.wake_subscription.v1.schema.json": ["bb.wake_subscription.v1.schema.json"],
-  "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v1.schema.json": ["bb.work_item.v1.schema.json"]
+  "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v1.schema.json": ["bb.work_item.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json": ["bb.work_item.v2.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.work_placement.v1.schema.json": ["bb.work_placement.v1.schema.json"]
 }
 
 export const GENERATED_SCHEMAS: Record<string, { schema: object; validate: ValidateFunction }> = {}

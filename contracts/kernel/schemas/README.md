@@ -33,16 +33,9 @@ Status: `active`
 | `bb.config_mutation_record.v1` | BreadBoard config mutation record | `config_algebra` |
 | `bb.context_resource_pack.v1` | BreadBoard context resource pack | `config_algebra` |
 | `bb.contract_tiers.v1` | Consumer-backed tier registry for the published contract estate | `evidence` |
-| `bb.coordination_delegated_verification_reference_slice.v1` | bb.coordination_delegated_verification_reference_slice.v1 | `evidence` |
-| `bb.coordination_intervention_reference_slice.v1` | bb.coordination_intervention_reference_slice.v1 | `evidence` |
-| `bb.coordination_longrun_reference_slice.v1` | bb.coordination_longrun_reference_slice.v1 | `evidence` |
-| `bb.coordination_multi_worker_reference_slice.v1` | bb.coordination_multi_worker_reference_slice.v1 | `evidence` |
-| `bb.coordination_pack.v3` | BreadBoard Coordination Pack V3 | `runtime_protocol` |
-| `bb.coordination_reference_slice.v1` | bb.coordination_reference_slice.v1 | `evidence` |
-| `bb.coordination_slice.v2` | BreadBoard Coordination Slice V2 | `runtime_protocol` |
 | `bb.coordination_verification_result.v1` | bb.coordination_verification_result.v1 | `evidence` |
+| `bb.coordination_view.v1` | BreadBoard Coordination View V1 candidate | `runtime_protocol` |
 | `bb.directive.v1` | bb.directive.v1 | `host_protocol` |
-| `bb.distributed_task_descriptor.v1` | bb.distributed_task_descriptor.v1 | `host_protocol` |
 | `bb.effective_config_graph.v1` | BreadBoard effective config graph | `runtime_protocol` |
 | `bb.effective_operation_policy.v1` | BreadBoard effective operation policy V1 | `runtime_protocol` |
 | `bb.effective_tool_surface.v1` | bb.effective_tool_surface.v1.schema.json | `runtime_protocol` |
@@ -71,7 +64,6 @@ Status: `active`
 | `bb.session_transcript.v2` | BreadBoard Session Transcript V2 | `runtime_protocol` |
 | `bb.side_effect_broker.v1` | BreadBoard side effect broker V1 | `host_protocol` |
 | `bb.signal.v1` | bb.signal.v1 | `host_protocol` |
-| `bb.task.v1` | bb.task.v1 | `evidence` |
 | `bb.terminal_cleanup_result.v1` | bb.terminal_cleanup_result.v1.schema.json | `host_protocol` |
 | `bb.terminal_interaction.v1` | bb.terminal_interaction.v1.schema.json | `host_protocol` |
 | `bb.terminal_output_delta.v1` | bb.terminal_output_delta.v1.schema.json | `host_protocol` |
@@ -85,7 +77,8 @@ Status: `active`
 | `bb.tool_spec.v2` | BreadBoard Tool Spec V2 | `config_algebra` |
 | `bb.transcript_continuation_patch.v1` | bb.transcript_continuation_patch.v1 | `host_protocol` |
 | `bb.wake_subscription.v1` | bb.wake_subscription.v1 | `host_protocol` |
-| `bb.work_item.v1` | BreadBoard work item V1 | `runtime_protocol` |
+| `bb.work_item.v2` | BreadBoard Work Item V2 candidate | `runtime_protocol` |
+| `bb.work_placement.v1` | BreadBoard Work Placement V1 candidate | `host_protocol` |
 
 ### e4
 
@@ -131,6 +124,14 @@ Status: `active`
 
 | Schema | Title | Tier |
 | --- | --- | --- |
+| `bb.coordination_delegated_verification_reference_slice.v1` | bb.coordination_delegated_verification_reference_slice.v1 | `frozen_legacy` |
+| `bb.coordination_intervention_reference_slice.v1` | bb.coordination_intervention_reference_slice.v1 | `frozen_legacy` |
+| `bb.coordination_longrun_reference_slice.v1` | bb.coordination_longrun_reference_slice.v1 | `frozen_legacy` |
+| `bb.coordination_multi_worker_reference_slice.v1` | bb.coordination_multi_worker_reference_slice.v1 | `frozen_legacy` |
+| `bb.coordination_pack.v3` | BreadBoard Coordination Pack V3 | `frozen_legacy` |
+| `bb.coordination_reference_slice.v1` | bb.coordination_reference_slice.v1 | `frozen_legacy` |
+| `bb.coordination_slice.v2` | BreadBoard Coordination Slice V2 | `frozen_legacy` |
+| `bb.distributed_task_descriptor.v1` | bb.distributed_task_descriptor.v1 | `frozen_legacy` |
 | `bb.e4.artifact_catalog.v1` | BreadBoard E4 artifact catalog V1 | `frozen_legacy` |
 | `bb.e4.lane_def.v1` | BreadBoard E4 lane definition V1 | `frozen_legacy` |
 | `bb.e4.lane_inventory.v1` | BreadBoard E4 lane inventory V1 | `frozen_legacy` |
@@ -141,7 +142,9 @@ Status: `active`
 | `bb.environment_selector.v1` | bb.environment_selector.v1.schema.json | `frozen_legacy` |
 | `bb.kernel_event.v1` | BreadBoard Kernel Event V1 | `frozen_legacy` |
 | `bb.session_transcript.v1` | BreadBoard Session Transcript V1 | `frozen_legacy` |
+| `bb.task.v1` | bb.task.v1 | `frozen_legacy` |
 | `bb.tool_call.v1` | BreadBoard Tool Call V1 | `frozen_legacy` |
 | `bb.tool_execution_outcome.v1` | BreadBoard Tool Execution Outcome V1 | `frozen_legacy` |
 | `bb.tool_model_render.v1` | BreadBoard Tool Model Render V1 | `frozen_legacy` |
 | `bb.tool_spec.v1` | BreadBoard Tool Spec V1 | `frozen_legacy` |
+| `bb.work_item.v1` | BreadBoard work item V1 | `frozen_legacy` |

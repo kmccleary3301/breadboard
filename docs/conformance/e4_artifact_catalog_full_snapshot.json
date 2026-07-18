@@ -3,7 +3,7 @@
   "entries": [
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -11,7 +11,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "breadboard_self_runtime_records_v1:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -29,7 +29,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/raw_capture_manifest.json",
       "role_id": "breadboard_self_runtime_records_v1:capture",
-      "sha256": "sha256:8515d0352fc769e79dcf622311b094828431760e45c7031f72056d6522471dd4"
+      "sha256": "sha256:53dec2ef86d2d52053476032664b47f83ce131c316b6bab9fc71413416fbf9d7"
     },
     {
       "artifact_kind": "comparator",
@@ -45,7 +45,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/comparator_report.json",
       "role_id": "breadboard_self_runtime_records_v1:comparator",
-      "sha256": "sha256:6c90b0d8e88de5df32c8d4a2827e05432d7da0e40c4e759a9e6e117ec5acba36"
+      "sha256": "sha256:ad2b785e7b78b6e828dd604f57abf6143da8ce8eb15d425c9ee16a5b8a41ec42"
     },
     {
       "artifact_kind": "evidence_manifest",
@@ -59,7 +59,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_evidence_manifest.json",
       "role_id": "breadboard_self_runtime_records_v1:evidence_manifest",
-      "sha256": "sha256:e3e378885d77c591c8abd9ccfe2ecfc74d0e7cf6a17ab07eaa2e8321200739a2"
+      "sha256": "sha256:127cc51502c29bd0422de478bee33a91678ae3c830a11afb4980ee0202112994"
     },
     {
       "artifact_kind": "freeze",
@@ -85,7 +85,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_north_star_breadboard_self_runtime_records_c4_chain.json",
       "role_id": "breadboard_self_runtime_records_v1:node_gate",
-      "sha256": "sha256:5a2d10133f69ae892e117143723b3734f0530675e7384a932b8c9e8ebbf091f1"
+      "sha256": "sha256:99b25b81777bfa4d89f85f697a4de6d369dea3fe1f27fc30e50f8328cb25539d"
     },
     {
       "artifact_kind": "parity_results",
@@ -138,7 +138,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/bb_replay_result.json",
       "role_id": "breadboard_self_runtime_records_v1:replay",
-      "sha256": "sha256:9a2a1c377235053ecc53fcaf2a31358d1488724d1a0b51170440c4e21c8e6e2d"
+      "sha256": "sha256:c397766970071ff7bb297bf0050f1e52494c5449ba31962f9da792d2814e1e1e"
     },
     {
       "artifact_kind": "secret_scan",
@@ -174,7 +174,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/breadboard_self_runtime_records_v1_c4_support_claim.json",
       "role_id": "breadboard_self_runtime_records_v1:support_claim",
-      "sha256": "sha256:075c07c6155e5415dec8c1a6ef8477fdaa07d8f7084ebf42943cf2f68157152d"
+      "sha256": "sha256:c2a308f97f621a2d0c378f3bd68edf67a63221bd112cdfce4c091cddd2d8410c"
     },
     {
       "artifact_kind": "config",
@@ -198,7 +198,7 @@
       "media_type": null,
       "path": "docs/conformance/e4_target_support/breadboard_self_runtime_records_v1/target_probe_output.json",
       "role_id": "breadboard_self_runtime_records_v1:target_probe_output",
-      "sha256": "sha256:40a66641b1850f63f1ca3362dea39cbd77a482e43b9d58ee57ed71ad612a272e"
+      "sha256": "sha256:a92e477911247ed0818827dcaf27cbd18ec3ac630976fa369020b55afb58c972"
     },
     {
       "artifact_kind": "node_gate",
@@ -214,7 +214,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -222,7 +222,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "claude_code_north_star_capture_v1:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -267,7 +267,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json",
       "role_id": "claude_code_north_star_capture_v1:evidence_manifest",
-      "sha256": "sha256:fc10062fac58e113cfb4b81605d721e56303cb6dd4f67488964abc19b1f00ea4"
+      "sha256": "sha256:bd76440a6e765ca48c969f12a2336d78ad1db6558f39047d4c417ea75ea34371"
     },
     {
       "artifact_kind": "freeze",
@@ -293,7 +293,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_north_star_claude_code_capture_c4_chain.json",
       "role_id": "claude_code_north_star_capture_v1:node_gate",
-      "sha256": "sha256:6231c9b7622293a244f059576157a45409ac9914092e7253fc3f1f11137cc436"
+      "sha256": "sha256:07f4e87098202a9778fb375ba5d598f47e8c2fc396032e3e44868caaa63af61d"
     },
     {
       "artifact_kind": "parity_results",
@@ -346,7 +346,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
       "role_id": "claude_code_north_star_capture_v1:support_claim",
-      "sha256": "sha256:a1c79716cc152963d7f38ee052b623a2e01b32b1c3884b0ef3b8a2cf7acf7560"
+      "sha256": "sha256:bc2f81fec8a1bfa7d579ec68b424ad209645ac972ed5da8b791418b847514eca"
     },
     {
       "artifact_kind": "config",
@@ -386,7 +386,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -394,7 +394,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "codex_cli_e4_capture_probe_v1:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -437,7 +437,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
       "role_id": "codex_cli_e4_capture_probe_v1:evidence_manifest",
-      "sha256": "sha256:58e065c3d1ae63b223ac0dade56b884c82d3f9e59bdd98f61fe6a5fae1d5a494"
+      "sha256": "sha256:9a096f6f8606bc9e7c431cd86c1e7b94d88ad8e71b9ca00619b1427090caa5e0"
     },
     {
       "artifact_kind": "freeze",
@@ -463,7 +463,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p7_codex_gpt55_c4_chain.json",
       "role_id": "codex_cli_e4_capture_probe_v1:node_gate",
-      "sha256": "sha256:34fc64bf91c3dcd4c05257108ba26d4feae4bcc58c4bb438e229d2acb9dbe1c7"
+      "sha256": "sha256:99dace321c5d2dc1afc9772104673bc4c728149afb032eadd678cd8c300c817b"
     },
     {
       "artifact_kind": "parity_results",
@@ -574,7 +574,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
       "role_id": "codex_cli_e4_capture_probe_v1:support_claim",
-      "sha256": "sha256:6e75cf991174f3a484fd1fa4bf8d872403aad38e0d1affca9e2ff6ff66ebe674"
+      "sha256": "sha256:6cc6efa8af7d5d87bb204a8ddddd635dc08df61c551d2cd142316ae056b537c7"
     },
     {
       "artifact_kind": "config",
@@ -602,7 +602,7 @@
     },
     {
       "artifact_kind": "config",
-      "bytes": 74290,
+      "bytes": 76822,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -610,11 +610,11 @@
       "media_type": "application/json",
       "path": "docs/conformance/e4_lane_inventory.json",
       "role_id": "e4_static:config/e4_lane_inventory",
-      "sha256": "sha256:8a8a684088fca836cb2aee96eed140cbb9d124bacdba917ddb812c52eb4c0568"
+      "sha256": "sha256:88c4c84e9019fc01870e6893191ce22a3802c067f56fcd5c7b545019d7154aaf"
     },
     {
       "artifact_kind": "config",
-      "bytes": 68175,
+      "bytes": 68517,
       "derived_from": [
         "e4_static:config/e4_lane_inventory"
       ],
@@ -624,11 +624,11 @@
       "media_type": "application/json",
       "path": "docs/conformance/e4_report_roles.json",
       "role_id": "e4_static:config/e4_report_roles",
-      "sha256": "sha256:f002145f116ddbac82292527254b5c2e14b38855d9ee42b4029ee063a67a160a"
+      "sha256": "sha256:506e0d3c04d9ee0dd5cb26fc1e8792dc54a21cd57daee481f2a4617d8645fa39"
     },
     {
       "artifact_kind": "report",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "scripts/e4_parity/seed_atomic_feature_ledger.py",
@@ -636,7 +636,7 @@
       "media_type": "application/json",
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "e4_static:report/bb_e4_atomic_feature_ledger_seed_json",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "config",
@@ -702,7 +702,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:evidence_manifest",
-      "sha256": "sha256:dcdcbfe914fba1da838512c22067e9dad7b49485908b1b50746331b97409d0b0"
+      "sha256": "sha256:70a7bd512fd191cde432bce1e893cedfd7e8c401b854e996367f088c68a2b946"
     },
     {
       "artifact_kind": "freeze",
@@ -728,7 +728,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p31_effective_config_graph_c4_chain.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:node_gate",
-      "sha256": "sha256:30a4764f972fe7173e9c0aaf3c8d5bda9f17edde29186328df8fcf1b0c7f327d"
+      "sha256": "sha256:2959c8f81ee051e1a2feb6cda761084fb049b72dcc52676b726b77170332f10e"
     },
     {
       "artifact_kind": "parity_results",
@@ -805,7 +805,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_1_effective_config_graph_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_1_effective_config_graph_compiler:support_claim",
-      "sha256": "sha256:61d79c9f40c7d38095ba6c2b735dafeb3f65426f1fec649eed9d24537eb23136"
+      "sha256": "sha256:8eab0b692ce1827d31d64f19e9441b19016c1ad2bd2fccfca60d16be647b85a0"
     },
     {
       "artifact_kind": "node_gate",
@@ -883,7 +883,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:evidence_manifest",
-      "sha256": "sha256:a1b0c8cf3f4fd9d59d7bc77b2dde9d6ad9f75bdb913cb3cbd93650c396041fa5"
+      "sha256": "sha256:a6417b9812793551018d322583d16995d819156b2bbbaeb6c82b1476366de62a"
     },
     {
       "artifact_kind": "freeze",
@@ -909,7 +909,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p32_context_resource_pack_c4_chain.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:node_gate",
-      "sha256": "sha256:a7e3ea03ddd7f42464571d5708e654b8a3bcd87d7040443bbc2dd3382c2314d8"
+      "sha256": "sha256:a457dc739c1628cb2e30f283b25baa2cad2df58aa7e725c1862857100bb6d138"
     },
     {
       "artifact_kind": "parity_results",
@@ -986,7 +986,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_2_context_resource_pack_compiler:support_claim",
-      "sha256": "sha256:6d605eaef000c45e62ef2a21812527bddbdfe3cc06ad143b7a37500e12345613"
+      "sha256": "sha256:66cbf2680ae1d8031e0cdf5debf811a04a7bb0496afa7db2398f3936147a37ce"
     },
     {
       "artifact_kind": "node_gate",
@@ -1064,7 +1064,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:evidence_manifest",
-      "sha256": "sha256:a8ed9f751f566b55acad0448d810d8b16a293f89f45e2ec6669e6830e0d65d15"
+      "sha256": "sha256:983412a0af3900da1cbddb8d0da433310c040c62f0be80c1ea6e370d6ddc7616"
     },
     {
       "artifact_kind": "freeze",
@@ -1090,7 +1090,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p33_capability_registry_c4_chain.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:node_gate",
-      "sha256": "sha256:458929776f3843520f6af2a5c5daa66092965c40deb65104b99b20ceb2040f04"
+      "sha256": "sha256:9c58ecc15d7126a88e10b7f18651ccead793c4c1496995d05ffb3600730b5e12"
     },
     {
       "artifact_kind": "parity_results",
@@ -1167,7 +1167,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_3_capability_registry_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_3_capability_registry_compiler:support_claim",
-      "sha256": "sha256:b47aa57cf3d9b946303b33b1c2f0dba9303b92f30e11b2c813522a96d0092c83"
+      "sha256": "sha256:1d6f912d375fc194c6e8ffa2a5ad4bd6c2c5bc663a6198f4cfb1260f7e04b3d6"
     },
     {
       "artifact_kind": "node_gate",
@@ -1245,7 +1245,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:evidence_manifest",
-      "sha256": "sha256:806be9feb148a6b40ccbcc214a13b962c47eee63512932344c09f4c949ca3c84"
+      "sha256": "sha256:70c57a6947e9e730fdec24f724acc404205733c43593fa06e3f1669393125fb7"
     },
     {
       "artifact_kind": "freeze",
@@ -1271,7 +1271,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p34_extension_hook_c4_chain.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:node_gate",
-      "sha256": "sha256:6b0fe7e55f1c074902e7baf290dcf73d9413c3818d3cc67aa6c1304610b9f17d"
+      "sha256": "sha256:5537eef97450da9f55c0e28d5aca20e6389d1851beb1ccad566201dc3c03dacb"
     },
     {
       "artifact_kind": "parity_results",
@@ -1348,7 +1348,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_4_extension_hook_execution_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_4_extension_hook_execution_compiler:support_claim",
-      "sha256": "sha256:bd10922d4b1001efb40c22f1fa7675fb7fc2a3748a47422254a0fdca43072ccb"
+      "sha256": "sha256:b5eee66fd45fd39f655f0dff32e10fda7a037aa608bd5c894f012d26181eef43"
     },
     {
       "artifact_kind": "node_gate",
@@ -1426,7 +1426,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:evidence_manifest",
-      "sha256": "sha256:4aea2cff8c7932004c19695fd6f1d28ea75bfa09974003a0484d08125f12c340"
+      "sha256": "sha256:cbe0ce0a7e7a23d6f5cf7934560ac329f480e71e3a52c182a67b35884020ae4b"
     },
     {
       "artifact_kind": "freeze",
@@ -1452,7 +1452,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p35_resource_blob_c4_chain.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:node_gate",
-      "sha256": "sha256:b4ec1b35a4b558ad88806971c2d00acbdd61df8903c0e2a2867a21a4d5e1e0f8"
+      "sha256": "sha256:797fe11fd2799c6f95c8b8d3e887db9a18b352c6d689c3220265c024a8f32965"
     },
     {
       "artifact_kind": "parity_results",
@@ -1529,7 +1529,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_5_resource_blob_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_5_resource_blob_compiler:support_claim",
-      "sha256": "sha256:c7638e5e027140cefef18bd4bfdced45b7c769fc1e89e2c551df2ecf923f5635"
+      "sha256": "sha256:6d5fbf96a19010cd92ca5f46ac5849eaa18f32761d83d62a88659f3225f996ef"
     },
     {
       "artifact_kind": "node_gate",
@@ -1607,7 +1607,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:evidence_manifest",
-      "sha256": "sha256:828e385e07a7ae88b60c2c4e247c78649b05d10ae5610cc82de9fd7eea4d3ab7"
+      "sha256": "sha256:3872ec4fa1312b2069b4d1446a1f28eddca4cbf176b68aa1aa72ea05d703ab06"
     },
     {
       "artifact_kind": "freeze",
@@ -1633,7 +1633,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p36_protocol_provider_policy_c4_chain.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:node_gate",
-      "sha256": "sha256:1f309080234a3803c328c5854950214b885737ec83e0dc50131aee61c6ac7dca"
+      "sha256": "sha256:d7077950df7e136fd0df0c1f424e467b39fbe3d86d5024ee830e6ed699e5a1f2"
     },
     {
       "artifact_kind": "parity_results",
@@ -1710,7 +1710,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:support_claim",
-      "sha256": "sha256:f40e84fc97312947ad9aae81c61038d4fb401ca1f8fbf2d62955b657bb6f0e75"
+      "sha256": "sha256:bcdcb8577e3af01721b236f9ee19edf10df11ab8d9f738b4c62abb4957bfc3b6"
     },
     {
       "artifact_kind": "node_gate",
@@ -1723,187 +1723,6 @@
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_6_protocol_provider_policy_compiler/prevalidation_report.json",
       "role_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler:validator_output",
       "sha256": "sha256:f29ea64acc8b7dfad355bd7f1c829047fdf6fd689177c17c18163b3ab0c5ad68"
-    },
-    {
-      "artifact_kind": "config",
-      "bytes": 557,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "agent_configs/misc/oh_my_pi_p3_7_memory_work_compiler_v1.yaml",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:agent_config",
-      "sha256": "sha256:02bf63d0ad808f59e71a52729fcc98eba8d01b7615ed0fa6b38da8baf40dac15"
-    },
-    {
-      "artifact_kind": "capture",
-      "bytes": 4965,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:capture",
-      "sha256": "sha256:7cb8a75c681e858d0c697ebed24551cc102409afdcbfde234276802b6d0d6828"
-    },
-    {
-      "artifact_kind": "comparator",
-      "bytes": 2275,
-      "derived_from": [
-        "oh_my_pi_p3_7_memory_work_compiler:capture",
-        "oh_my_pi_p3_7_memory_work_compiler:compiled_records",
-        "oh_my_pi_p3_7_memory_work_compiler:replay"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:comparator",
-      "sha256": "sha256:5018880ebc35ba442553a66541371b21c0992436670da3dc18e07595e7d30e19"
-    },
-    {
-      "artifact_kind": "schema",
-      "bytes": 7412,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/compiled_records.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:compiled_records",
-      "sha256": "sha256:184fc6e1846aa2a808d6d881830793cb77ea48d97a851aebf732f4d6256c8074"
-    },
-    {
-      "artifact_kind": "evidence_manifest",
-      "bytes": 4677,
-      "derived_from": [
-        "oh_my_pi_p3_7_memory_work_compiler:support_claim"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:evidence_manifest",
-      "sha256": "sha256:173a53d40e5cb50b3882e0ec90efd977c4cd7b2529f9ae0ffb352deac7e84bf4"
-    },
-    {
-      "artifact_kind": "freeze",
-      "bytes": 68654,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "config/e4_target_freeze_manifest.yaml",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:freeze_manifest",
-      "sha256": "sha256:6d7979a411879d2ef6ca291745bd3df35a97a72b51fdcc90088fb7b66a82a27e"
-    },
-    {
-      "artifact_kind": "node_gate",
-      "bytes": 2009,
-      "derived_from": [
-        "oh_my_pi_p3_7_memory_work_compiler:evidence_manifest"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p37_memory_work_c4_chain.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:node_gate",
-      "sha256": "sha256:5f69a59b074919251d1b090bdd6465d1d9f3c856ac621889f82b8f34e1106c61"
-    },
-    {
-      "artifact_kind": "parity_results",
-      "bytes": 439,
-      "derived_from": [
-        "oh_my_pi_p3_7_memory_work_compiler:comparator"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:parity_results",
-      "sha256": "sha256:64e2734be1354ffdea697fec66ca8f0efeed86e57fa150d45bd5c4d75a30f6ac"
-    },
-    {
-      "artifact_kind": "replay",
-      "bytes": 8446,
-      "derived_from": [
-        "oh_my_pi_p3_7_memory_work_compiler:capture",
-        "oh_my_pi_p3_7_memory_work_compiler:compiled_records"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:replay",
-      "sha256": "sha256:5e555daee1dd17ad7796b6c813fda5483e32339f1f559b4edc1491d7fe051e77"
-    },
-    {
-      "artifact_kind": "node_gate",
-      "bytes": 416,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/schema_validation_report.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:schema_validation",
-      "sha256": "sha256:dc7125da298679304d3e9a5e7b7e378192a808552ba64d5a97e98409bbefded5"
-    },
-    {
-      "artifact_kind": "secret_scan",
-      "bytes": 243,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/secret_scan_report.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:secret_scan_report",
-      "sha256": "sha256:2173d93d68a7a1d6348c3f99b44fdca88f67129d51da94942f3e36f2de04ba57"
-    },
-    {
-      "artifact_kind": "freeze",
-      "bytes": 1601,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:source_freeze",
-      "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
-    },
-    {
-      "artifact_kind": "support_claim",
-      "bytes": 5977,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:support_claim",
-      "sha256": "sha256:c4cdb7f0967631773c28871c9de1413189b20505cd6b24e5f009dbd793e72660"
-    },
-    {
-      "artifact_kind": "node_gate",
-      "bytes": 474,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/prevalidation_report.json",
-      "role_id": "oh_my_pi_p3_7_memory_work_compiler:validator_output",
-      "sha256": "sha256:1eee90f7fc5558e828a0864f53795bfc2cd71c83a449298f92c6f3aa78d031f4"
     },
     {
       "artifact_kind": "config",
@@ -1969,7 +1788,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:evidence_manifest",
-      "sha256": "sha256:024444c6e00b7d4989c6b27b1bba2441d204f32e2226d8eecc5070e03912cbfd"
+      "sha256": "sha256:e70e35ddd266d7fa64f72677118cee2c3eeee75d7a7f456043477d49d9f6980d"
     },
     {
       "artifact_kind": "freeze",
@@ -1995,7 +1814,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p3_oh_my_pi_p38_projection_broker_c4_chain.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:node_gate",
-      "sha256": "sha256:2029181580e28f4826132dda78e700ab0376cd886729ebccd95d51a66d52089f"
+      "sha256": "sha256:bb12eb1a52f7d220a54d6aa7ab99053f81c2ccd555ee38ef933e1ead0260b2b1"
     },
     {
       "artifact_kind": "parity_results",
@@ -2072,7 +1891,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p3_8_projection_broker_adapter_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p3_8_projection_broker_adapter:support_claim",
-      "sha256": "sha256:30e0b79349e5aed34a59b95f2613eb636feeee72c63f0fb0248799ca5561d840"
+      "sha256": "sha256:bb891326f1df019bab9c214d921935625e9fcc0d98605d99a2043809bf89f45e"
     },
     {
       "artifact_kind": "node_gate",
@@ -2088,7 +1907,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2096,7 +1915,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -2137,7 +1956,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:evidence_manifest",
-      "sha256": "sha256:a50adc688f7c08e3fd3f790b497920a074198e110a6076156f7eacab973e3c48"
+      "sha256": "sha256:66a25f45a8d3ce0aa3b53b45389e02ac226fc26e994e6deeb85a3bcd91cae0d3"
     },
     {
       "artifact_kind": "freeze",
@@ -2163,7 +1982,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:node_gate",
-      "sha256": "sha256:de2db6d099c87ba383f9d122aea48edc2aa3be4aca068c3f9955cd8836093516"
+      "sha256": "sha256:9177e68f3151f5877c03601acf0e53979eccba0dbd88f08c16e4308324b23b6d"
     },
     {
       "artifact_kind": "parity_results",
@@ -2215,7 +2034,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l1_config_context_tool_surface:support_claim",
-      "sha256": "sha256:06294b359f3c3c1cbf33bbcf827a19ed8f0b01a8dfbec9e4dfd3f475901614b9"
+      "sha256": "sha256:175a5e1238bd3a9e27f98de3c33d9f71a848c8fca88cbe78b9b3ccf95060add5"
     },
     {
       "artifact_kind": "node_gate",
@@ -2231,7 +2050,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2239,7 +2058,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -2280,7 +2099,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:evidence_manifest",
-      "sha256": "sha256:80895ca79d49a461ac7e5e03a0a8ba946d411ab941cd7a52ada2bd4627337c97"
+      "sha256": "sha256:e5baf8ef67d90a3a76f21979be352fabd18fe0bf2d86868aa77d6e09794340c4"
     },
     {
       "artifact_kind": "freeze",
@@ -2306,7 +2125,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l2_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:node_gate",
-      "sha256": "sha256:284b6b90856f5b0c062207d99af54ca6b4190bc61d07dc97f497f34ac1d13adf"
+      "sha256": "sha256:b9ca18b4b2bc9ee52d38ab895b7d71df75b7de895d6eac85a837c72da1f02b2e"
     },
     {
       "artifact_kind": "parity_results",
@@ -2358,7 +2177,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l2_tool_execution:support_claim",
-      "sha256": "sha256:dded425fd535bdbbe1dcc56e38c6eaccc0c2bced811bfd9f6299df0dd86fdabb"
+      "sha256": "sha256:f7e5e02c11a68645b25fd7a99001007418461bcd858783386a9ebb58feb9398e"
     },
     {
       "artifact_kind": "node_gate",
@@ -2374,7 +2193,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2382,7 +2201,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -2423,7 +2242,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:evidence_manifest",
-      "sha256": "sha256:f35a4f72fce76a06097be49944fffb12c3704d60f472a5743ff48bed03e3af40"
+      "sha256": "sha256:dfd9863d7b035d4b7d138a05f52be35ba71ec57ca88f037edc054d6670d5f992"
     },
     {
       "artifact_kind": "freeze",
@@ -2449,7 +2268,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l3_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:node_gate",
-      "sha256": "sha256:fb78ae146351267bd3d15de27051ce987d903624ea8c7e5268baaab28004851e"
+      "sha256": "sha256:e693c478b4d29a200fc92c9df1b1c52e9495cf6b029ad03d504ced1bafaf1425"
     },
     {
       "artifact_kind": "parity_results",
@@ -2501,7 +2320,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l3_command_network_hook:support_claim",
-      "sha256": "sha256:8a28d9adad1dd1100ffc345e6930c400f8739434544f9456ed55532b9a5641a2"
+      "sha256": "sha256:81238e2b0e3cf59697c298224574e53818fe8deb2773ae44ccab4e392cad72ab"
     },
     {
       "artifact_kind": "node_gate",
@@ -2517,7 +2336,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2525,7 +2344,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -2566,7 +2385,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:evidence_manifest",
-      "sha256": "sha256:6a4f0b1764e492d813abebe0a028582cbed6fad4cd791309d3bab9418634d59f"
+      "sha256": "sha256:7def6d1d389e3933cda6978b4620d9dfb417ee58c4a92a25ae0ca7519424acb5"
     },
     {
       "artifact_kind": "freeze",
@@ -2592,7 +2411,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l4_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:node_gate",
-      "sha256": "sha256:86986f9ff5d15386944b4e641eb00f5bcd8f3d245753bf7b6b4c3d11e5bbf333"
+      "sha256": "sha256:a84ea2ba1f4edda02e400003a89a3bc66317df7aee028f87807798f9e50885c3"
     },
     {
       "artifact_kind": "parity_results",
@@ -2644,7 +2463,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l4_mcp_browser_resource:support_claim",
-      "sha256": "sha256:dafaf9198af04f98e7be6cb7a22376aea3a4c93943e75d86fcd255991d092494"
+      "sha256": "sha256:381a9afe298c8cc09c6c243421eefdadff6148c25daf6d238ea6e0e1358b53b5"
     },
     {
       "artifact_kind": "node_gate",
@@ -2660,7 +2479,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2668,7 +2487,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -2711,7 +2530,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:evidence_manifest",
-      "sha256": "sha256:64f37bc69eb6bb276a65bde1d4a80a3366dd0cd0e14ace1001f731695e781468"
+      "sha256": "sha256:2220284ab2ec69ddccd832c111334eb69875c2b3bb69b93d35a428f55b95241d"
     },
     {
       "artifact_kind": "freeze",
@@ -2749,7 +2568,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l5_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:node_gate",
-      "sha256": "sha256:cb20afc6f4ddcd61e479a9e23835cda598f09f12bfcaab224c64da4094b7a8f4"
+      "sha256": "sha256:77c947ed1716834f0733191b9a7f285078659d92b0a4554d1cd4e95cb65e62de"
     },
     {
       "artifact_kind": "parity_results",
@@ -2803,7 +2622,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l5_memory_compaction:support_claim",
-      "sha256": "sha256:f5cc46e3e85ef8ebc07e404bb921692517b92c193209d8a6c4419b7fb3517c0b"
+      "sha256": "sha256:19cea96348d73fe666b67f85c78ada458640c1cb3748bc089a11430037f95a63"
     },
     {
       "artifact_kind": "node_gate",
@@ -2843,7 +2662,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -2851,7 +2670,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -2893,7 +2712,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:evidence_manifest",
-      "sha256": "sha256:1a6d574d81b0bc6253e3afc1c1d7bdb3f035f941e6881e636ae663595c170e7f"
+      "sha256": "sha256:08e4308f75b6313e663d2e1d417d1baf9c328fe8d2d6d1de6e7a807a114e607e"
     },
     {
       "artifact_kind": "freeze",
@@ -2919,7 +2738,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_l6_c4_chain.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:node_gate",
-      "sha256": "sha256:f5cab4a67c7bcd069c24f8b1a42eedce4be4be911db8ce069748fae21bd5fd54"
+      "sha256": "sha256:665e3479c6336ed4eac1aff10c122c5caa8d252cb971a15511768b3465e1a71d"
     },
     {
       "artifact_kind": "parity_results",
@@ -2984,7 +2803,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_0_l6_tui_projection:support_claim",
-      "sha256": "sha256:0ebafe90322a126f75dcb809979434494e99b9a0f6ea83ed30c0565cd99ccbb0"
+      "sha256": "sha256:2542b3b80da8773b9741666c3c325d8ec21db36a1991ee2e3b6e716ec330c771"
     },
     {
       "artifact_kind": "node_gate",
@@ -3000,7 +2819,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 231320,
+      "bytes": 225537,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3008,7 +2827,7 @@
       "media_type": null,
       "path": "config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:atomic_feature_ledger",
-      "sha256": "sha256:0d01e52aff3f738ceaefc585a654e0da28df4910113535c96bcc81a84ec37205"
+      "sha256": "sha256:b60182dc5a4eaf6221dad2cff690365ec0c89ae5884d3267ce099f873d9a93b1"
     },
     {
       "artifact_kind": "capture",
@@ -3061,7 +2880,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:evidence_manifest",
-      "sha256": "sha256:06b9aa709d641d16f8e7304003c0c7f04321348750c43fbf27a870d7db602def"
+      "sha256": "sha256:69c49908e0c3d0dda79302db85d4186bbe850f5ef40218f21153475460c3920a"
     },
     {
       "artifact_kind": "freeze",
@@ -3099,7 +2918,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p6_oh_my_pi_p66_task_job_subagent_c4_chain.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:node_gate",
-      "sha256": "sha256:099476c4ed1230d9661d7c277ed5a9df19ba565b5e762a3e4f16431b29cef88c"
+      "sha256": "sha256:31f6c5baf4f461b86648c2e06af555f6b14940a8eb68bb7930d4469410daf9ea"
     },
     {
       "artifact_kind": "parity_results",
@@ -3164,7 +2983,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
       "role_id": "oh_my_pi_p6_6_task_job_subagent:support_claim",
-      "sha256": "sha256:54ca3d7d50c357b6f2ab04e5400e519fa6f1ac3b656b79024b6dd8359842983a"
+      "sha256": "sha256:4e36824a552be2442a4995c6731d01b82d05acd369423fb5d583ae2f332b2725"
     },
     {
       "artifact_kind": "node_gate",
@@ -3251,7 +3070,7 @@
     },
     {
       "artifact_kind": "ledger",
-      "bytes": 123094,
+      "bytes": 122253,
       "derived_from": [],
       "exists": true,
       "generated_by": "manual",
@@ -3259,7 +3078,7 @@
       "media_type": null,
       "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
       "role_id": "opencode_north_star_capture_v1:atomic_feature_ledger",
-      "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+      "sha256": "sha256:29b1bd89a13d980cf8a0081fcacf1fe7e4565e9b5b0fac5180fe30fda17e94a5"
     },
     {
       "artifact_kind": "capture",
@@ -3304,7 +3123,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json",
       "role_id": "opencode_north_star_capture_v1:evidence_manifest",
-      "sha256": "sha256:78ae527164a136d0ab69354955f3cd64b976f93e2f55dac4f90dc75678b46967"
+      "sha256": "sha256:a5e0a078de70b71f9ddb31f8313be6a9dc138e12452b68eecb00ba65509df7e2"
     },
     {
       "artifact_kind": "freeze",
@@ -3330,7 +3149,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_north_star_opencode_capture_c4_chain.json",
       "role_id": "opencode_north_star_capture_v1:node_gate",
-      "sha256": "sha256:aa6233ebc0cc2b4d252579b1cb63200f278ba34fcd8c4a27316bc5b51c0dae85"
+      "sha256": "sha256:f216e77f4a8676704e81d3587169c3a4c0bd3e5232996c944bae865fa7d879c9"
     },
     {
       "artifact_kind": "parity_results",
@@ -3383,7 +3202,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
       "role_id": "opencode_north_star_capture_v1:support_claim",
-      "sha256": "sha256:e5d3eeefa2fa199efb7a0de20772d6305f484dff8c1f5d05c07d4cf0d1a7990c"
+      "sha256": "sha256:02d9e27985e7977f6855edee521ace9e84f48d561ce88e1bed60f887b2454cf5"
     },
     {
       "artifact_kind": "config",
@@ -3473,7 +3292,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
       "role_id": "pi_p5_l1_cli_config_context_tool_surface:evidence_manifest",
-      "sha256": "sha256:8bfd9ce47b8bf287d79f2992c5b5375878cb53488ce4f2c7f2acc8b4450de0c4"
+      "sha256": "sha256:d54490aa62abceecd80b7331fda89566caaf246a7fd1d948946e96b0944a7317"
     },
     {
       "artifact_kind": "freeze",
@@ -3499,7 +3318,7 @@
       "media_type": null,
       "path": "artifacts/conformance/node_gate/ct_p5_pi_l1_cli_config_context_tool_surface_c4_chain.json",
       "role_id": "pi_p5_l1_cli_config_context_tool_surface:node_gate",
-      "sha256": "sha256:cb1a0aeefe5c77a3838265ab4c072c5d32f1ff49ebca8c5058f147e34854e406"
+      "sha256": "sha256:f864ddcd6f3621c9fe74bcf95c81dc4c3872178cdb9400c42b1078a1d1370efa"
     },
     {
       "artifact_kind": "parity_results",
@@ -3576,7 +3395,7 @@
       "media_type": null,
       "path": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
       "role_id": "pi_p5_l1_cli_config_context_tool_surface:support_claim",
-      "sha256": "sha256:85fbe041a9c40a2dc01fcdc44fd863e451d477bf7bd7010fc8ca9f61e8e0151e"
+      "sha256": "sha256:15c9d6c4ddac23490a198d69eeeb3f14642d21c1a4a90e8f09a9481f898a80f2"
     },
     {
       "artifact_kind": "node_gate",
@@ -3625,352 +3444,137 @@
       "path": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/prevalidation_report.json",
       "role_id": "pi_p5_l1_cli_config_context_tool_surface:validator_output",
       "sha256": "sha256:183cd0cdbf0cc6944e4fb3dc47c60b186c9aff0e8763cb1b8a63e89a3e446d3b"
-    },
-    {
-      "artifact_kind": "config",
-      "bytes": 672,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "agent_configs/misc/pi_p5_l2_extension_session_residual_v1.yaml",
-      "role_id": "pi_p5_l2_extension_session_residual:agent_config",
-      "sha256": "sha256:756fdbcab340647580f6cf4a090ea566420e58387c61a83c3d7e9302987c35b1"
-    },
-    {
-      "artifact_kind": "capture",
-      "bytes": 4300,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json",
-      "role_id": "pi_p5_l2_extension_session_residual:capture",
-      "sha256": "sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec"
-    },
-    {
-      "artifact_kind": "comparator",
-      "bytes": 8099,
-      "derived_from": [
-        "pi_p5_l2_extension_session_residual:capture",
-        "pi_p5_l2_extension_session_residual:replay",
-        "pi_p5_l2_extension_session_residual:target_probe_output"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json",
-      "role_id": "pi_p5_l2_extension_session_residual:comparator",
-      "sha256": "sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043"
-    },
-    {
-      "artifact_kind": "evidence_manifest",
-      "bytes": 5029,
-      "derived_from": [
-        "pi_p5_l2_extension_session_residual:support_claim"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
-      "role_id": "pi_p5_l2_extension_session_residual:evidence_manifest",
-      "sha256": "sha256:5577c631e436efa72bab7aaed82dab120fc02335533b334710d8a23b77ff28f5"
-    },
-    {
-      "artifact_kind": "freeze",
-      "bytes": 68654,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "config/e4_target_freeze_manifest.yaml",
-      "role_id": "pi_p5_l2_extension_session_residual:freeze_manifest",
-      "sha256": "sha256:6d7979a411879d2ef6ca291745bd3df35a97a72b51fdcc90088fb7b66a82a27e"
-    },
-    {
-      "artifact_kind": "node_gate",
-      "bytes": 2112,
-      "derived_from": [
-        "pi_p5_l2_extension_session_residual:evidence_manifest"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "artifacts/conformance/node_gate/ct_p5_pi_l2_extension_session_residual_c4_chain.json",
-      "role_id": "pi_p5_l2_extension_session_residual:node_gate",
-      "sha256": "sha256:72ed5a44e84edfc0932f7461cc10f88430b75c0af0099f19237a8fe67be1412d"
-    },
-    {
-      "artifact_kind": "parity_results",
-      "bytes": 442,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json",
-      "role_id": "pi_p5_l2_extension_session_residual:parity_results",
-      "sha256": "sha256:346b3bf965105867ecab099e0b154f8388cdc83c027853716e1b59c81dbd9e21"
-    },
-    {
-      "artifact_kind": "replay",
-      "bytes": 16517,
-      "derived_from": [
-        "pi_p5_l2_extension_session_residual:capture",
-        "pi_p5_l2_extension_session_residual:target_probe_output"
-      ],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json",
-      "role_id": "pi_p5_l2_extension_session_residual:replay",
-      "sha256": "sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f"
-    },
-    {
-      "artifact_kind": "secret_scan",
-      "bytes": 1409,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json",
-      "role_id": "pi_p5_l2_extension_session_residual:secret_scan_report",
-      "sha256": "sha256:f033e4e2b70364f8b0c178252c862a98d91aa7d9e08a4c56375e4ea448ac42d7"
-    },
-    {
-      "artifact_kind": "freeze",
-      "bytes": 4755355,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
-      "role_id": "pi_p5_l2_extension_session_residual:source_archive",
-      "sha256": "sha256:bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b"
-    },
-    {
-      "artifact_kind": "freeze",
-      "bytes": 1746,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
-      "role_id": "pi_p5_l2_extension_session_residual:source_freeze",
-      "sha256": "sha256:273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602"
-    },
-    {
-      "artifact_kind": "support_claim",
-      "bytes": 10361,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
-      "role_id": "pi_p5_l2_extension_session_residual:support_claim",
-      "sha256": "sha256:778cdf3d35f1743ee8dc74ae9d790af4686ad53cc560b699a8f21f75e7e86531"
-    },
-    {
-      "artifact_kind": "node_gate",
-      "bytes": 10838,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json",
-      "role_id": "pi_p5_l2_extension_session_residual:target_probe_output",
-      "sha256": "sha256:96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde"
-    },
-    {
-      "artifact_kind": "script",
-      "bytes": 14355,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs",
-      "role_id": "pi_p5_l2_extension_session_residual:target_probe_script",
-      "sha256": "sha256:d84700ffe82039146008260f2cf43b5e8b8488571e99543d251a2fe9694bae47"
-    },
-    {
-      "artifact_kind": "report",
-      "bytes": 4099,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json",
-      "role_id": "pi_p5_l2_extension_session_residual:target_setup_report",
-      "sha256": "sha256:185b925ae0bbfa60e43eb3394b11c58e063541b8591f8b475f94ab10896646a0"
-    },
-    {
-      "artifact_kind": "node_gate",
-      "bytes": 638,
-      "derived_from": [],
-      "exists": true,
-      "generated_by": "manual",
-      "lane_id": "pi_p5_l2_extension_session_residual",
-      "media_type": null,
-      "path": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/prevalidation_report.json",
-      "role_id": "pi_p5_l2_extension_session_residual:validator_output",
-      "sha256": "sha256:049cbe20737a74146df0e5e0b0fad6be80daf2f6810a6d498c98dee08ee62ca9"
     }
   ],
   "generated_at_utc": "2026-07-03T00:00:00Z",
   "integrity": {
-    "entries_hash": "sha256:137a8f0411441e94566ab0e39bcadd2313b95ca512e645ce28f77978f6cab3de",
-    "entry_count": 295,
-    "segments_hash": "sha256:34c49ab6b9a08491bd7226855c65134bfbac5897b056cf7f5b75313a5cfe722d",
-    "stable_entries_hash": "sha256:a1a9ca3612cf90d5a6ffe6c8949619b6b83a635257be453cf53b629b12d870b4"
+    "entries_hash": "sha256:6e9798b53f003067ab5ce15f0c565d469a21fdd58ab1020e79c3770ea0d65b35",
+    "entry_count": 265,
+    "segments_hash": "sha256:45b39b587de0b8e16492a9fadd0bb4133685d815f7c6797545408e818c06569d",
+    "stable_entries_hash": "sha256:31da10e0e38aa1080f4c47a13ed0ca0532a05801fb93b7fa863676bcb786db4c"
   },
-  "revision": 12,
+  "revision": 15,
   "schema_version": "bb.e4.artifact_catalog.v2",
   "segments": [
     {
-      "entries_hash": "sha256:5ce47b5792316672fd418cec6cd610b68685c5da15f40538eb2f11e54673a657",
+      "entries_hash": "sha256:1d34791b9ced4e7e02df71a134bcf45e06cdb04dcbec08f2c98f245746320670",
       "entry_count": 16,
       "segment_id": "breadboard_self_runtime_records_v1",
-      "stable_entries_hash": "sha256:21438111816b2d33edb5ea542eaf3c5c38944840870053314c98ffde615b57a1"
+      "stable_entries_hash": "sha256:54a4e17cbe372a6e417541f4df038d769722d63164a1043b51fafa3a1a4361f9"
     },
     {
-      "entries_hash": "sha256:9c702f3c7a7a71a71729ca5f95c3e2e9c58aeef201fc337760dc632fac6962a9",
+      "entries_hash": "sha256:5353f90c47024c7012d645e0f40482e96487dfbfb4a2c15009453ffed188a24d",
       "entry_count": 13,
       "segment_id": "claude_code_north_star_capture_v1",
-      "stable_entries_hash": "sha256:008ee9df97fbb3e2ffb4e7bf2f7c0ae2b448fe010f40eace8e1215e29920ac0e"
+      "stable_entries_hash": "sha256:5ead12f1d64167ea27e238bb7a6e4095482f4f89ad1be90a50e23f99895a8fd0"
     },
     {
-      "entries_hash": "sha256:0fe4d5c54584b59281e53ff052f31e6f47246210d5a987c39f66dbce08cc09a9",
+      "entries_hash": "sha256:609958d2721f8e8ee1f11f938dca5e7221fb2a9a7b72c748088e983a25c87d81",
       "entry_count": 17,
       "segment_id": "codex_cli_e4_capture_probe_v1",
-      "stable_entries_hash": "sha256:549a2a1af732bfdae2579752dbbd1fee6060a229d75042ded14535046da6a6cf"
+      "stable_entries_hash": "sha256:886fc0efc9c0fe098688b5ba5358e32f9e2c3869185c3fa5afea47d1196a0e78"
     },
     {
-      "entries_hash": "sha256:ba6d4ba70f0d59829ae4f28ce9c84238eccf4f7245274829fa5270a7263a0b82",
+      "entries_hash": "sha256:899c9fe16d05e2079a94e46a6bbd9e7c61e0810a037c0c83404d7340c8d01676",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_1_effective_config_graph_compiler",
       "stable_entries_hash": "sha256:82c812a11846c37cf8fb17de6cd3eb78a489528709cb8b7470fef60030b4da11"
     },
     {
-      "entries_hash": "sha256:ab2574c70d470a4b87160c5a5d3d8825a15aa4321d747ffa09077cb2e04ab88b",
+      "entries_hash": "sha256:285064f698addd9668f4f970ed7238d05662df77c917d6f75d7ba05d77cd0a36",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_2_context_resource_pack_compiler",
       "stable_entries_hash": "sha256:6d7c6b4429a00cc9471221b022da622cc1f4548261cf056ae85c107d20f89dbc"
     },
     {
-      "entries_hash": "sha256:eeb268dd4ae0b48e79a9ac876149ec89a87d8900b7ebccd461368c6a4b637b97",
+      "entries_hash": "sha256:2ece3d62fe04421427bafe76ea5efad127db640231518cee4156f3f7559c9649",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_3_capability_registry_compiler",
       "stable_entries_hash": "sha256:e51cc6735fc3d61266d2f85a7328ae3182ae08c0db8bcf82857e40057ef6b8a6"
     },
     {
-      "entries_hash": "sha256:d697b41611092960a55bb45df3d53d091b2a448c5fdc96a0fa72040240240941",
+      "entries_hash": "sha256:56e93b1ea0635e7ef2195c2f77c169b9ea152d0ce58601ddb502617fb3bb32d1",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_4_extension_hook_execution_compiler",
       "stable_entries_hash": "sha256:dfca9305a302f0a5376706ddad25cc74c8ad926057d46baa1fee0bcd6634fa32"
     },
     {
-      "entries_hash": "sha256:1cf83eeaf0c10e0c6ee64c311f82a0ab9071754e9e71e8ba260bb91b2f2392b3",
+      "entries_hash": "sha256:49f87bbc758513231af2abeac327bd9e79e72b089d34e086b7b022148cddc69b",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_5_resource_blob_compiler",
       "stable_entries_hash": "sha256:cd5d77b6b10e0861c66f099da296290667ba618d76c52d5ef51746b8adba2735"
     },
     {
-      "entries_hash": "sha256:25be6084b4f339778665c2d438fefb32c5f829fe79897baf12a49dc228aa9d2e",
+      "entries_hash": "sha256:155b544f485e7a7b95193fc71b42acc8c6a72b9fb587f41279e7796657851fb2",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_6_protocol_provider_policy_compiler",
       "stable_entries_hash": "sha256:99bd5699dbbac26d7ef2dafe11b895751a67234ddb47cd54911f9baae5889088"
     },
     {
-      "entries_hash": "sha256:498938bd2a273eae9b9e4bf511f12e08581ad009e407cc358154d3f43250a78e",
-      "entry_count": 14,
-      "segment_id": "oh_my_pi_p3_7_memory_work_compiler",
-      "stable_entries_hash": "sha256:9029189846bfa032580020e9c17a39984f647c3cadec246f58279dc546b17308"
-    },
-    {
-      "entries_hash": "sha256:bf2430bf2ce7c886dafbe17111f1767e89ed457a6c226f934e03513c61e562c3",
+      "entries_hash": "sha256:3e252d57ad03a7297e250c3ba87af78409fb93f7609f92d9aedc43e0b1953d0b",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p3_8_projection_broker_adapter",
       "stable_entries_hash": "sha256:bc4ff56fee0f2757b6d0815269f08690550633ae775b9caf36881c32801350cc"
     },
     {
-      "entries_hash": "sha256:63a542369ec668714e6cf779d7941ec2437f5f6adbdc433414eb9a402d7b7778",
+      "entries_hash": "sha256:91e9007fa34c379771d7c16f77399d32ebd075c0e37095048c0442d743e7ab02",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
-      "stable_entries_hash": "sha256:7e264169e9a95f270bad69792d5c6bf835ed3554c36d8489d81e024757d4487a"
+      "stable_entries_hash": "sha256:7444a0038a0353c38e8a266bb4c0c914de6d385e4f8a311de61c1a7b684ce952"
     },
     {
-      "entries_hash": "sha256:fc3a721af2918f8be028222a2b30926c9046a4a6da65acb28815d381f9a92154",
+      "entries_hash": "sha256:8451d892535ee2b03204698d6a13db0c97af7d465491c23fa923fa7b71033491",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l2_tool_execution",
-      "stable_entries_hash": "sha256:197b60e70637b6791a2a4a9399af1d6feafe976a570de4a0d21851466103d370"
+      "stable_entries_hash": "sha256:91aecbe2122e5c568e727b76f1c09ef5003a6d9dd83e7343c0281a7183d9b33a"
     },
     {
-      "entries_hash": "sha256:a45585742bb033005af21ba5eb2eccd12c1751b983ecec268b4064ca10e0681d",
+      "entries_hash": "sha256:d6c0f1412c4798c347d7afce942ab9f0fa9f8f2a188f70ba7399b28a46fd60fd",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l3_command_network_hook",
-      "stable_entries_hash": "sha256:a625791947007fa3cc99f592421476f93f924603e9c68e7135dbd927a5833ba4"
+      "stable_entries_hash": "sha256:4547063447fb86ea13a42e39e1c987ea94ff2518664264cbfbdaf33259cf1c45"
     },
     {
-      "entries_hash": "sha256:c3d93478744b633b074c05a6c063d53b36b176dbb85ebc0051605a185d0760f9",
+      "entries_hash": "sha256:9c02ad0398fc2b06303eb6832a20d7a9f3d58675ef7fed72441e14c57c0fc849",
       "entry_count": 11,
       "segment_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
-      "stable_entries_hash": "sha256:bf6df7d059749b2bd0c5287782613dac73a93aee8065792260a03e063ccb20b8"
+      "stable_entries_hash": "sha256:749b4fd4f7848abf072ef835c5db61d338d814aa14ba3fe3145406674511ab4e"
     },
     {
-      "entries_hash": "sha256:25dccadcbba893d2c3681962455919f1934ae3414a4cf2d2378b86db3b922a55",
+      "entries_hash": "sha256:bed3027467b73defaca02c967658776fe247c7bf8eae18005cf60080e7a4cd2c",
       "entry_count": 14,
       "segment_id": "oh_my_pi_p6_0_l5_memory_compaction",
-      "stable_entries_hash": "sha256:c6d9c145a39fcc60d3f8811aa36831dc7cfb44f2d5688db5c670c966ea185d24"
+      "stable_entries_hash": "sha256:dcd27d6d815ce306e87ce30838cdf9975eb3ce68ad7a405624a43a54280c5722"
     },
     {
-      "entries_hash": "sha256:72f28e0f3833314872339f2e32846022c45767e9d3fec2a97df5fe9d22502a32",
+      "entries_hash": "sha256:d072157b38d962aa52781c409386dea1d8267cc93b1624f6f0bd7e00c0a0e071",
       "entry_count": 12,
       "segment_id": "oh_my_pi_p6_0_l6_tui_projection",
-      "stable_entries_hash": "sha256:fc87c556a43efe851e324752f8fd05d1ae26b3f3770436cde09142431803b509"
+      "stable_entries_hash": "sha256:dfc2a1b8a65e2a42cf59ba695cfe26c868c355c7490af56b742d9a55f926647f"
     },
     {
-      "entries_hash": "sha256:822d8eb5ae4abc598f43535aa11cd073903b289182f6fb742f6bffee5a40e80e",
+      "entries_hash": "sha256:25053d2e8506c66e0f5b269b9d7075bb9c4fd97dc19ae2c655d33dbe38d8de1c",
       "entry_count": 19,
       "segment_id": "oh_my_pi_p6_6_task_job_subagent",
-      "stable_entries_hash": "sha256:f75fc511e99a1b81e0ab1dac50b7c6cf3d386f26fd77f2900b2d6ce93ec4a186"
+      "stable_entries_hash": "sha256:e945a356f0b23f38747078e342000bfc482a3631790007dbcd3492b4725a5df0"
     },
     {
-      "entries_hash": "sha256:c1aeb6c99d22f66ba57776c6741e1fcfffa2323ecee3fc86dabc9347864d01e0",
+      "entries_hash": "sha256:f8f35f58f533f6e92301cb369df64eeb121bcadf588ea765bf6364e3889f8880",
       "entry_count": 13,
       "segment_id": "opencode_north_star_capture_v1",
-      "stable_entries_hash": "sha256:e12f25fa4a9667b51952366c034f5efd41d9f59fb502e0aabde8fe1455cb5b83"
+      "stable_entries_hash": "sha256:e65be8dc2f173b68a357f09fb7021d68eb14942d410639dd33ea265ae8e52aa9"
     },
     {
-      "entries_hash": "sha256:f46b61003202dae51007e776973c344191e49e7cd91d2d612acf83bd9d63c904",
+      "entries_hash": "sha256:66fd3490aac4a201c8f095fc61da32826d24005be64bf754167e8c3ec5b3f517",
       "entry_count": 16,
       "segment_id": "pi_p5_l1_cli_config_context_tool_surface",
       "stable_entries_hash": "sha256:f6728a024aefe55e3456dcdc6eb8c142505ab0887612bee12e2a7505a96c9e9d"
     },
     {
-      "entries_hash": "sha256:c2e434c04e3a845271f06f74d11936cc28e60a57fa567ed655b820cb019d8940",
-      "entry_count": 16,
-      "segment_id": "pi_p5_l2_extension_session_residual",
-      "stable_entries_hash": "sha256:5d183f71524302dac5164fd28d3b85cf497ec0c7df15e7d368bfd0d9f00e0176"
-    },
-    {
-      "entries_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1",
+      "entries_hash": "sha256:68f713e106b021a5a01aa372a484c13bf2136638a9013a1fe77bf08d5c75f654",
       "entry_count": 3,
       "segment_id": "shared",
-      "stable_entries_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
+      "stable_entries_hash": "sha256:68f713e106b021a5a01aa372a484c13bf2136638a9013a1fe77bf08d5c75f654"
     }
   ]
 }

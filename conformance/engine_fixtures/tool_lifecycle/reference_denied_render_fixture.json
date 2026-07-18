@@ -3,24 +3,24 @@
   "fixture_id": "tool_render_denied_python_reference",
   "comparator_class": "model-visible-equal",
   "support_tier": "reference-engine",
-  "contract": "bb.tool_model_render.v1",
+  "contract": "bb.tool_model_render.v2",
   "reference_output": {
-    "schemaVersion": "bb.tool_model_render.v1",
-    "callId": "call-run-shell-denied-1",
+    "schema_version": "bb.tool_model_render.v2",
+    "call_id": "call-run-shell-denied-1",
     "parts": [
       {
-        "tool": "run_shell",
-        "terminal_state": "denied",
-        "status": "error",
-        "error": "blocked by policy",
-        "preview": "blocked by policy",
+        "part_kind": "error",
+        "content": "blocked by policy",
         "truncated": false
       }
     ],
-    "visibility": "model",
+    "visibility": {
+      "model_visible": true,
+      "provider_visible": true,
+      "host_visible": true
+    },
     "truncation": {
-      "applied": false,
-      "max_preview_chars": 120
+      "truncated": false
     },
     "metadata": {
       "tool": "run_shell",

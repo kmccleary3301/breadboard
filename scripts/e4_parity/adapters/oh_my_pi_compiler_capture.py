@@ -9,7 +9,7 @@ from typing import Any, Callable, Mapping
 import yaml
 
 from agentic_coder_prototype.compilation.effective_config_graph import finalize_effective_config_graph, graph_content_hash
-from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
+from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec, validate_record
 from agentic_coder_prototype.conformance.catalog_binding import catalog_segment_hash, reusable_catalog_revision
 from scripts.e4_parity import build_primitive_projection as primitive_projection
 from scripts.e4_parity import lane_inventory_utils as lane_inventory
@@ -21,6 +21,7 @@ from scripts.e4_parity.lane_definitions import (
 from scripts.e4_parity.path_refs import (
     ReferenceResolutionError,
     resolve_declared_reference,
+    workspace_root_for_checkout,
 )
 from scripts.e4_parity.adapters.oh_my_pi_p3_remaining_capture import (
     capture_p3_remaining,
@@ -37,15 +38,15 @@ from scripts.e4_parity.adapters.oh_my_pi_p3_1_projection import (
 )
 from scripts.e4_parity.adapters.oh_my_pi_p3_remaining_projections import PROJECTIONS as P3_PROJECTIONS
 from scripts.e4_parity.adapters.oh_my_pi_p6_6_work_item_projection import (
-    PROJECTION_ID as TASK_PROJECTION_ID,
-    project_work_items,
+    PROJECTION_ID as WORK_ITEM_V2_PROJECTION_ID,
+    project_work_item_v2_snapshots,
 )
 from scripts.e4_parity.adapters.oh_my_pi_projection_packet import build_projection_packet
 from scripts.e4_parity.validators import hash_utils
 from scripts.e4_parity.validators.registries import schema_generation_default
 
 ROOT = Path(__file__).resolve().parents[3]
-WORKSPACE = ROOT.parent
+WORKSPACE = workspace_root_for_checkout(ROOT)
 
 GENERATED_AT_UTC = "2026-07-03T07:30:00Z"
 SUPPORT_CLAIM_GENERATED_AT_UTC = "2026-07-04T00:00:00Z"
@@ -64,7 +65,6 @@ ADR_AV_3_ACCEPTED_COMPILER_LANES = frozenset(
         "oh_my_pi_p3_4_extension_hook_execution_compiler",
         "oh_my_pi_p3_5_resource_blob_compiler",
         "oh_my_pi_p3_6_protocol_provider_policy_compiler",
-        "oh_my_pi_p3_7_memory_work_compiler",
         "oh_my_pi_p3_8_projection_broker_adapter",
         "oh_my_pi_p6_0_l5_memory_compaction",
         "oh_my_pi_p6_0_l6_tui_projection",
@@ -85,14 +85,14 @@ def _merge_projection_tables(*tables: Mapping[str, Projection]) -> dict[str, Pro
     return merged
 
 
-TASK_PROJECTIONS: dict[str, Projection] = {TASK_PROJECTION_ID: project_work_items}
+WORK_ITEM_V2_PROJECTIONS: dict[str, Projection] = {WORK_ITEM_V2_PROJECTION_ID: project_work_item_v2_snapshots}
 
 PROJECTIONS: dict[str, Projection] = _merge_projection_tables(
     P3_1_PROJECTIONS,
     P3_PROJECTIONS,
     L5_PROJECTIONS,
     L6_PROJECTIONS,
-    TASK_PROJECTIONS,
+    WORK_ITEM_V2_PROJECTIONS,
 )
 L1_DIR = ROOT / "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface"
 L1_RAW_CAPTURE_PATH = L1_DIR / "raw_capture_manifest.json"
@@ -365,6 +365,8 @@ def _projection_context(
 def _finalize_projected_record(schema_version: str, value: Mapping[str, Any]) -> dict[str, Any]:
     if schema_version == "bb.effective_config_graph.v1":
         return finalize_effective_config_graph(value)
+    if schema_version == "bb.work_item.v2":
+        return validate_record(get_spec(schema_version), value)
     spec = get_spec(schema_version)
     if spec.hash_field is not None and spec.hash_field in value:
         spec = replace(spec, hash_field=None)
@@ -485,6 +487,13 @@ def _capture_projection_packet(
         role: f"{logical_roles[role]}#{digest}"
         for role, digest in source_role_hashes.items()
     }
+    ledger_role = "atomic_feature_ledger"
+    ledger_path = "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    ledger_value = _read_json(LEDGER_PATH)
+    ledger_bytes = _json_bytes(ledger_value)
+    ledger_digest = _sha256_bytes(ledger_bytes)
+    source_role_hashes[ledger_role] = ledger_digest
+    source_input_refs[ledger_role] = f"{ledger_path}#{ledger_digest}"
     source_payloads = {
         role: projection_inputs[path]["value"]
         for role, path in logical_roles.items()
@@ -496,12 +505,15 @@ def _capture_projection_packet(
         for role, path in logical_roles.items()
         if path in projection_inputs
     }
+    source_values["artifact_catalog"] = _read_json(CATALOG_PATH)
+    source_values[ledger_role] = ledger_value
     source_bytes = {
         role: int(projection_inputs[path]["bytes"])
         for role, path in logical_roles.items()
         if is_source_role(role, path)
         and "bytes" in projection_inputs[path]
     }
+    source_bytes[ledger_role] = len(ledger_bytes)
     packet = build_projection_packet(
         lane_def,
         inventory_lane,
@@ -764,7 +776,14 @@ def capture(
 ) -> dict[str, Any]:
     _validate_config(lane_def)
     if inventory_lane is None:
-        raise ValueError("oh_my_pi_compiler_capture requires inventory lane metadata")
+        packet = _normalize_config(lane_def).get("packet_constants", {})
+        ct = lane_def.get("ct")
+        inventory_lane = {
+            "lane_id": lane_def["lane_id"],
+            "claim_id": packet.get("claim_id"),
+            "ledger_feature_ids": [packet.get("feature_id")],
+            "ct": ct,
+        }
     builders, projected_records, derived_facts, projection_inputs = _execute_record_builders(lane_def, inventory_lane)
     lane_id = str(lane_def["lane_id"])
     config_id = str(lane_def["config_id"])

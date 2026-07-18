@@ -45,6 +45,9 @@ ALLOWED_SCHEMA_IDS = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
     "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json",
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json",  # NS05A / AM24
+    "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json",  # NS05A / AM24
+    "https://breadboard.dev/contracts/kernel/schemas/bb.work_placement.v1.schema.json",  # NS05A / AM24
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
@@ -67,10 +70,14 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "plan §3 H2/H3 + AM17a/AM17b-r",
     },
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json": {
-        "packet": "H3",
-        "sha256": "0da3ccca218daaba4ff0f3964f7070ae146815a912ea2379cbfae88a5b5475aa",
-        "class": "plan_mandated_evolution",
-        "ref": "plan §3 H2/H3 + AM17a/AM17b-r",
+        "packet": "NS05B",
+        "sha256": "03e8ccfdc737dee5c6f27ea99cc3adf5ba3b612a2acdd6329235df2448639ad3",
+        "class": "tightening",
+    },
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json": {
+        "packet": "NS05B",
+        "sha256": "f934e81462fffaaac05f755c84374dd78be7dfd2e81ca2fee436feae3ddda5bc",
+        "class": "tightening",
     },
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json": {
         "packet": "bb-31n",
@@ -451,7 +458,7 @@ def _added_values(
 
     lane_id_additions = _string_set(current.get("lane_ids"), "lane_ids") - _string_set(
         baseline.get("lane_ids"), "lane_ids"
-    )
+    ) - {"oh_my_pi_p6_6_task_job_subagent_v2"}  # NS05B evidence-only lane; runtime surface remains frozen.
     lane_kind_additions = _string_set(current.get("lane_kinds"), "lane_kinds") - _string_set(
         baseline.get("lane_kinds"), "lane_kinds"
     )

@@ -34,7 +34,12 @@ def _json_out_target(command: list[str]) -> str:
 
 
 def _accepted_ct_lanes(inventory: dict[str, Any]) -> list[dict[str, Any]]:
-    return [lane for lane in inventory["lanes"] if lane.get("ct") is not None and lane.get("status") == "accepted"]
+    return [
+        lane
+        for lane in inventory["lanes"]
+        if lane.get("ct") is not None
+        and (lane.get("status") == "accepted" or lane.get("evidence_status") == "accepted")
+    ]
 
 
 def _check_cli(manifest: Path, out: Path) -> subprocess.CompletedProcess[str]:
@@ -170,6 +175,77 @@ def test_generate_inventory_scenarios_normalizes_inventory_ct_rows() -> None:
         assert row["assertions"]["json_files"][0]["path"] == _json_out_target(row["command"])
 
 
+def test_generate_inventory_scenarios_validates_retired_frozen_evidence() -> None:
+    lane = {
+        "lane_id": "retired_lane",
+        "config_id": "retired_lane_v1",
+        "phase": "P3",
+        "status": "superseded",
+        "evidence_status": "accepted",
+        "provider_model": "no-provider",
+        "sandbox_mode": "read-only",
+        "artifacts_root": "docs/conformance/e4_target_support/retired_lane",
+        "ct": {
+            "test_id": "CT-RETIRED-C4",
+            "command": {
+                "argv": [
+                    "python",
+                    "scripts/validate_e4_c4_chain.py",
+                    "--json-out",
+                    "artifacts/conformance/node_gate/retired.json",
+                ]
+            },
+        },
+    }
+
+    rows = ct_generator.generate_inventory_scenarios(
+        {"lanes": [lane]},
+        retired_evidence_pins={
+            "retired_lane": {
+                "validation_report": (
+                    "docs/conformance/e4_target_support/retired_lane/"
+                    "frozen_c4_validation_report.json"
+                ),
+                "sha256": "sha256:" + "1" * 64,
+            }
+        },
+    )
+
+    assert rows == [
+        {
+            "assertions": {
+                "json_files": [
+                    {
+                        "checks": [
+                            {"equals": True, "path": "ok"},
+                            {"length_equals": 0, "path": "errors"},
+                            {"equals": "retired_lane_v1", "path": "claimed_scope.config_id"},
+                            {"equals": "retired_lane", "path": "claimed_scope.lane_id"},
+                            {"equals": "no-provider", "path": "claimed_scope.provider_model"},
+                            {"equals": "read-only", "path": "claimed_scope.sandbox_mode"},
+                        ],
+                        "path": "artifacts/conformance/node_gate/ct_frozen_retired_lane.json",
+                    }
+                ]
+            },
+            "command": [
+                "python",
+                "scripts/e4_parity/validate_frozen_e4_evidence.py",
+                "--validation-report",
+                "docs/conformance/e4_target_support/retired_lane/frozen_c4_validation_report.json",
+                "--retired-evidence-pins",
+                "config/e4_retired_evidence_pins.json",
+                "--json-out",
+                "artifacts/conformance/node_gate/ct_frozen_retired_lane.json",
+            ],
+            "description": "retired_lane: validate hash-bound frozen evidence for a retired producer",
+            "gate_level": "P3-support",
+            "test_id": "CT-RETIRED-C4",
+            "timeout_seconds": 60,
+        }
+    ]
+
+
 def test_lane_def_data_projects_new_ct_row_without_python_lane_branch(tmp_path: Path) -> None:
     """A new accepted CT lane can source row text, timeout, and result checks from lane_def data."""
     lane_id = "synthetic_data_owned_lane"
@@ -300,11 +376,24 @@ def test_live_inventory_generated_rows_match_manifest_rows(tmp_path: Path) -> No
 
 
 def test_upsert_inventory_scenarios_rewrites_only_inventory_rows(tmp_path: Path) -> None:
-    """Builder hooks can replace all inventory-owned CT rows without disturbing unrelated scenarios."""
+    """Builder hooks replace active and frozen-evidence CT rows without disturbing unrelated scenarios."""
     inventory = _read_json(LIVE_INVENTORY)
     generated_rows = ct_generator.generate_inventory_scenarios(inventory)
     stale_row = copy.deepcopy(generated_rows[0])
     stale_row["gate_level"] = "stale"
+    retired_lane = next(
+        lane
+        for lane in inventory["lanes"]
+        if lane.get("ct") is not None and lane.get("status") != "accepted"
+    )
+    retired_row = {
+        "test_id": retired_lane["ct"]["test_id"],
+        "gate_level": "retired",
+        "description": "Retired inventory row",
+        "timeout_seconds": 1,
+        "command": ["python", "retired.py", "--json-out", "artifacts/retired.json"],
+        "assertions": {"json_files": [{"path": "artifacts/retired.json", "checks": []}]},
+    }
     unrelated_row = {
         "test_id": "CT-UNRELATED-LEGACY",
         "gate_level": "legacy",
@@ -316,7 +405,13 @@ def test_upsert_inventory_scenarios_rewrites_only_inventory_rows(tmp_path: Path)
     manifest_path = tmp_path / "ct_scenarios_v1.json"
     inventory_path = tmp_path / "e4_lane_inventory.json"
     _write_json(inventory_path, inventory)
-    _write_json(manifest_path, {"schema_version": "fixture", "scenarios": [unrelated_row, stale_row]})
+    _write_json(
+        manifest_path,
+        {
+            "schema_version": "fixture",
+            "scenarios": [unrelated_row, retired_row, stale_row],
+        },
+    )
 
     rows = ct_generator.upsert_inventory_scenarios(manifest_path, inventory_path)
     manifest = _read_json(manifest_path)
@@ -351,3 +446,27 @@ def test_check_cli_rejects_tampered_corresponding_manifest_row(tmp_path: Path) -
     completed = _check_cli(tampered_manifest, tmp_path / "ct_scenarios_v1.json")
 
     assert completed.returncode != 0
+
+
+def test_check_cli_rejects_tampered_retired_evidence_row(tmp_path: Path) -> None:
+    """Check mode rejects a retired producer row that bypasses its frozen evidence validator."""
+    inventory = _read_json(LIVE_INVENTORY)
+    retired_lane = next(
+        lane
+        for lane in inventory["lanes"]
+        if lane.get("ct") is not None
+        and lane.get("status") != "accepted"
+        and lane.get("evidence_status") == "accepted"
+    )
+    manifest = copy.deepcopy(_read_json(LIVE_MANIFEST))
+    retired_row = next(
+        row for row in manifest["scenarios"] if row["test_id"] == retired_lane["ct"]["test_id"]
+    )
+    retired_row["command"] = ["python", "retired.py", "--json-out", "artifacts/retired.json"]
+    stale_manifest = tmp_path / "ct_scenarios_v1_retired.json"
+    _write_json(stale_manifest, manifest)
+
+    completed = _check_cli(stale_manifest, tmp_path / "ct_scenarios_v1.json")
+
+    assert completed.returncode != 0
+    assert "fields=command" in completed.stdout

@@ -128,6 +128,7 @@
   "normalize": {
     "config": {
       "packet_constants": {
+        "auto_bind_role_refs": true,
         "payload_templates": {
           "capture_ref": {
             "accepted_as_capture_ref": true,
@@ -628,14 +629,14 @@
               {
                 "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
                 "role": "support_claim_ref",
-                "sha256": "sha256:f5cc46e3e85ef8ebc07e404bb921692517b92c193209d8a6c4419b7fb3517c0b"
+                "sha256": "sha256:d0cf4d3ecad55e9e174565165122df86272968b12c7b2fabb13fd1a0a6776e35"
               },
               {
                 "bytes": 123094,
                 "exists": true,
                 "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
                 "role": "atomic_feature_ledger",
-                "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+                "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
               },
               {
                 "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/memory_compaction_plan.v1.json",
@@ -700,10 +701,10 @@
             "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
             "gate_errors": [],
             "hashes": {
-              "evidence_manifest": "sha256:3cd2957d1038a701174457ec8f054fb86cede397868d85471581a8ef785f2d92",
+              "evidence_manifest": "sha256:c6a74acf937961840cd259acba1aa416db0ccf4d275c88c21ea1b2e8d0988d66",
               "freeze_manifest": "sha256:6d7979a411879d2ef6ca291745bd3df35a97a72b51fdcc90088fb7b66a82a27e",
               "freeze_manifest_row": "sha256:fa7c275ef0b5f628b5914cc521f2c3cbd6d78baca074032345ccd15571ec9124",
-              "support_claim": "sha256:f5cc46e3e85ef8ebc07e404bb921692517b92c193209d8a6c4419b7fb3517c0b"
+              "support_claim": "sha256:d0cf4d3ecad55e9e174565165122df86272968b12c7b2fabb13fd1a0a6776e35"
             },
             "ok": true,
             "pin_stale_count": 0,
@@ -992,10 +993,10 @@
             "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw_capture_manifest.json#sha256:95491ca708a77b3131c72eef43406066c6716f8909eb91905fef027d63f30c55",
             "catalog_binding": {
               "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-              "catalog_revision": 13,
-              "segment_hash": "sha256:c6d9c145a39fcc60d3f8811aa36831dc7cfb44f2d5688db5c670c966ea185d24",
+              "catalog_revision": 15,
+              "segment_hash": "sha256:19ecc93926860f765530d3acdfe9a4299f84e5694249a7b97ac0ac6ca14ab475",
               "segment_id": "oh_my_pi_p6_0_l5_memory_compaction",
-              "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
+              "shared_segment_hash": "sha256:03b50e5fa7f2fcc39310deeea9fd1b1ad0248602ef180c1aa480d9491284f3d3"
             },
             "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
             "claim_semantics": {

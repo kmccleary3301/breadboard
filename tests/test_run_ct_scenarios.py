@@ -215,7 +215,7 @@ def test_regenerate_evidence_explain_expands_full_graph_without_workspace(
     assert regen_front._explain(SimpleNamespace(json=None, python="python")) == 0
     explained = capsys.readouterr().out
     assert "01. source_index" in explained
-    assert "52. validate_report_hash_freshness" in explained
+    assert f"{len(regen_front.regen.STAGES):02d}. validate_report_hash_freshness" in explained
 
     assert regen_front._explain(SimpleNamespace(json="-", python="python")) == 0
     plan = json.loads(capsys.readouterr().out)

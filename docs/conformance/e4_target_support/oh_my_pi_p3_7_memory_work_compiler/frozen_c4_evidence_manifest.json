@@ -1,46 +1,46 @@
 {
   "artifacts": [
     {
-      "path": "config/e4_target_freeze_manifest.yaml",
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml",
       "role": "freeze_manifest",
-      "sha256": "sha256:f931b518016ae1c13d2d1389ec59595b79b79e6360a979e310605421c407c9c6"
+      "sha256": "sha256:5eb46e9bb2601b71aef89b50e8a8f7816f8174585d7fd9a92767037374e361e7"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json",
       "role": "capture_ref",
-      "sha256": "sha256:7cb8a75c681e858d0c697ebed24551cc102409afdcbfde234276802b6d0d6828"
+      "sha256": "sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:7cb8a75c681e858d0c697ebed24551cc102409afdcbfde234276802b6d0d6828",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72",
         "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/compiled_records.json#sha256:184fc6e1846aa2a808d6d881830793cb77ea48d97a851aebf732f4d6256c8074"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json",
       "role": "replay_ref",
-      "sha256": "sha256:5e555daee1dd17ad7796b6c813fda5483e32339f1f559b4edc1491d7fe051e77"
+      "sha256": "sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:7cb8a75c681e858d0c697ebed24551cc102409afdcbfde234276802b6d0d6828",
-        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:5e555daee1dd17ad7796b6c813fda5483e32339f1f559b4edc1491d7fe051e77",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72",
+        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e",
         "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/compiled_records.json#sha256:184fc6e1846aa2a808d6d881830793cb77ea48d97a851aebf732f4d6256c8074"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json",
       "role": "comparator_ref",
-      "sha256": "sha256:5018880ebc35ba442553a66541371b21c0992436670da3dc18e07595e7d30e19"
+      "sha256": "sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01"
     },
     {
-      "path": "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:c4cdb7f0967631773c28871c9de1413189b20505cd6b24e5f009dbd793e72660"
+      "sha256": "sha256:9bc13276d9c8c8739649b6c660e15049e8fea979344ca0952ac388da1477021b"
     },
     {
       "derived_from": [
-        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:5018880ebc35ba442553a66541371b21c0992436670da3dc18e07595e7d30e19"
+        "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01"
       ],
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json",
       "role": "parity_results",
-      "sha256": "sha256:64e2734be1354ffdea697fec66ca8f0efeed86e57fa150d45bd5c4d75a30f6ac"
+      "sha256": "sha256:ce16682d0bd3a14e4f777aa796cb000181552ac13bf2f088346641fe03b0b037"
     },
     {
       "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/secret_scan_report.json",
@@ -68,7 +68,7 @@
       "sha256": "sha256:02bf63d0ad808f59e71a52729fcc98eba8d01b7615ed0fa6b38da8baf40dac15"
     },
     {
-      "path": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "path": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/source_freeze_provenance.json",
       "role": "source_freeze",
       "sha256": "sha256:4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
     }
@@ -84,6 +84,6 @@
   "generated_at_utc": "2026-07-03T07:30:00Z",
   "hash_algorithm": "sha256",
   "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
-  "manifest_scope_note": "Every governed artifact for this P3.7 helper/runtime C4 chain is canonical repo evidence or source-freeze evidence under docs_tmp/phase_15/source_freezes. Scratch/tmp/shared roots are not promotion evidence.",
+  "manifest_scope_note": "Every governed artifact for this P3.7 helper/runtime C4 chain is checkout-local canonical evidence. Scratch/tmp/shared roots are not promotion evidence.",
   "schema_version": "bb.e4.evidence_manifest.v1"
 }

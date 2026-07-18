@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from ..compilation.tool_registry import default_tool_defs_dir, guardrail_names_for
+from ..compilation.tool_registry import default_tool_defs_dir, guardrail_names_for, resolve_tool_defs_dir
 from ..compilation.tool_yaml_loader import load_yaml_tools
 from ..execution.enhanced_executor import EnhancedToolExecutor
 from ..run_logging.workspace_manifest import build_workspace_manifest
@@ -365,7 +365,7 @@ def initialize_yaml_tools(conductor: Any) -> None:
         include_list_raw = list(registry_cfg.get("include") or [])
         exclude_list_raw = list(registry_cfg.get("exclude") or [])
         registry_paths = list(registry_cfg.get("paths") or [])
-        defs_dir = tools_cfg.get("defs_dir") or "implementations/tools/defs"
+        defs_dir = resolve_tool_defs_dir(tools_cfg.get("defs_dir"))
         overlays = (tools_cfg.get("overlays") or [])
         aliases = (tools_cfg.get("aliases") or {})
         if registry_paths:
@@ -373,7 +373,7 @@ def initialize_yaml_tools(conductor: Any) -> None:
             ordered_names: List[str] = []
             merged_manipulations: Dict[str, List[str]] = {}
             for raw_path in registry_paths:
-                path_str = str(raw_path)
+                path_str = str(resolve_tool_defs_dir(raw_path))
                 loaded = load_yaml_tools(path_str, overlays=overlays, aliases=aliases)
                 for tool in loaded.tools:
                     name = getattr(tool, "name", None)
@@ -389,7 +389,7 @@ def initialize_yaml_tools(conductor: Any) -> None:
             conductor.yaml_tools = [tools_by_name[name] for name in ordered_names if name in tools_by_name]
             conductor.yaml_tool_manipulations = merged_manipulations
         else:
-            loaded = load_yaml_tools(defs_dir, overlays=overlays, aliases=aliases)
+            loaded = load_yaml_tools(str(defs_dir), overlays=overlays, aliases=aliases)
             conductor.yaml_tools = loaded.tools
             conductor.yaml_tool_manipulations = loaded.manipulations_by_id
 

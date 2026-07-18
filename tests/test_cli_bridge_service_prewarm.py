@@ -9,7 +9,7 @@ from agentic_coder_prototype.api.cli_bridge.runtime_emission import _tool_names
 from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides; from agentic_coder_prototype.compilation.v2_loader import load_agent_config
 from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
-RUNNER = "agentic_coder_prototype.api.cli_bridge.session_runner.SessionRunner.start"
+RUNNER = "agentic_coder_prototype.api.cli_bridge.session_runner.SessionRunner."
 SERVICE = "agentic_coder_prototype.api.cli_bridge.service."
 class _Failing:
     def append(self, _event) -> None: raise OSError("sink unavailable")  # type: ignore[no-untyped-def]
@@ -20,8 +20,7 @@ class _Upload:
 async def _stop(record) -> None:  # type: ignore[no-untyped-def]
     if record.dispatcher_task and not record.dispatcher_task.done(): await record.event_queue.put(None); await record.dispatcher_task
 async def _create(monkeypatch, tmp_path, *, service=None, task="Say hi", **fields):  # type: ignore[no-untyped-def]
-    async def start(_runner) -> None: return None  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(RUNNER, start); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events"))
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None); monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events"))
     service = service or SessionService(); response = await service.create_session(SessionCreateRequest(config_path=CONFIG, task=task, **fields)); return service, response, await service.ensure_session(response.session_id)
 @pytest.mark.asyncio
 @pytest.mark.parametrize(("content", "error"), [(None, FileNotFoundError), ("[", yaml.YAMLError)])
@@ -34,10 +33,38 @@ async def test_invalid_config_fails_before_session_publication(monkeypatch, tmp_
 @pytest.mark.parametrize(("metadata", "task"), [({"cli_session_kind": "oneshot", "non_interactive_cli_session": True}, "Say hi"), ({"cli_session_kind": "interactive"}, "Say hi"), ({"cli_session_kind": "interactive"}, "")])
 async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch, tmp_path, metadata, task) -> None:
     service, called = SessionService(), []; monkeypatch.setattr(service, "_prewarm_request_runtime_sync", lambda request, values, config: called.append((request.config_path, values["cli_session_kind"], config["providers"]["default_model"])))
+    if not task: monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records"))
     service, response, record = await _create(monkeypatch, tmp_path, service=service, metadata=metadata, stream=True, task=task)
     assert called == [(CONFIG, metadata["cli_session_kind"], record.runner.current_runtime_config()["providers"]["default_model"])]
-    if not task: assert record.product_session.read_model.status == "running" and record.runner.request.task == "" and record.runner._input_queue.empty()
+    if not task:
+        title = "interactive session awaiting input"; stream = Path(record.metadata["runtime_record_dir"]) / "records" / "config_plane.jsonl"; work = [json.loads(line) for line in stream.read_text().splitlines() if '"name":"work_item_' in line]
+        assert [item["name"] for item in work] == ["work_item_created", "work_item_lease_acquired", "work_item_attempt_started", "work_item_snapshot"] and [item["record"].get("kind") for item in work] == ["work_item.created", "lease.acquired", "attempt.started", None] and work[-1]["schema_version"] == "bb.work_item.v2"
+        assert work[-1]["record"]["title"] == title and record.product_session.events[0].payload["task_hash"] == "sha256:" + hashlib.sha256(title.encode()).hexdigest() and record.runner.request.task == "" and record.runner._input_queue.empty()
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.STOPPED and type(record.product_session).restore(record.product_session.events).read_model.status == "canceled"; await _stop(record)
+@pytest.mark.asyncio
+async def test_session_service_authorizes_runner_after_prewarm(monkeypatch, tmp_path) -> None:
+    service, order = SessionService(), []
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: order.append("schedule"))
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: order.append("authorize"))
+    monkeypatch.setattr(
+        service,
+        "_prewarm_request_runtime_sync",
+        lambda _request, _metadata, _config: order.append("prewarm"),
+    )
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events"))
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="Say hi",
+            metadata={"cli_session_kind": "oneshot", "non_interactive_cli_session": True},
+        )
+    )
+
+    assert order == ["schedule", "prewarm", "authorize"]
+    await service.stop_session(response.session_id)
+    await _stop(await service.ensure_session(response.session_id))
+
 @pytest.mark.asyncio
 async def test_effective_lock_is_exact_and_secret_free(monkeypatch, tmp_path) -> None:
     from agentic_coder_prototype.auth.store import DEFAULT_PROVIDER_AUTH_STORE; auth = SimpleNamespace(api_key="forbidden-key", base_url="https://secret.invalid", headers={"X-Secret": "forbidden-header"}); monkeypatch.setattr(DEFAULT_PROVIDER_AUTH_STORE, "get", lambda _: auth); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records"))
@@ -102,18 +129,26 @@ async def test_pause_append_failure_restores_running_gate(monkeypatch, tmp_path)
     assert record.product_session.read_model.status == "running" and runner._resume_event.is_set() and not runner._stop_event.is_set(); monkeypatch.setattr(sink, "append", original); await service.delete_session(response.session_id)
 @pytest.mark.asyncio
 async def test_setup_failure_terminalizes_registered_session(monkeypatch, tmp_path) -> None:
-    async def fail(_runner) -> None: raise RuntimeError("runner setup exploded")  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(RUNNER, fail); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "setup-failure"); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events")); service = SessionService()
+    def fail(_runner) -> None: raise RuntimeError("runner setup exploded")  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(RUNNER + "authorize_start", fail); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "setup-failure"); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events")); service = SessionService()
     with pytest.raises(RuntimeError, match="runner setup exploded"): await service.create_session(SessionCreateRequest(config_path=CONFIG, task="task"))
     record = await service.ensure_session("setup-failure"); assert (record.status.value, record.product_session.events[-1].kind) == ("failed", "session.failed"); assert record.product_session.read_model.terminal_outcome["error"] == "session_setup_failed"; assert record.runner._stop_event.is_set() and record.dispatcher_task.done()
+@pytest.mark.asyncio
+async def test_scheduling_failure_publishes_no_start_authority(monkeypatch, tmp_path) -> None:
+    records_root, events_root = tmp_path / "records", tmp_path / "events"
+    def fail(_runner) -> None: raise RuntimeError("runner scheduling exploded")  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(RUNNER + "schedule_start", fail); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "schedule-failure")
+    monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root)); service = SessionService()
+    with pytest.raises(RuntimeError, match="runner scheduling exploded"): await service.create_session(SessionCreateRequest(config_path=CONFIG, task="task"))
+    assert await service.registry.get("schedule-failure") is None and all(not root.exists() or not any(root.iterdir()) for root in (records_root, events_root))
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", [OSError, asyncio.CancelledError])
 async def test_initial_durable_start_failure_has_no_published_lifecycle(monkeypatch, tmp_path, failure) -> None:
     records_root, events_root, started = tmp_path / "records", tmp_path / "events", []; entered, released = threading.Event(), threading.Event()
-    async def start(runner) -> None: started.append(runner)  # type: ignore[no-untyped-def]
+    def start(runner) -> None: started.append(runner)  # type: ignore[no-untyped-def]
     def emit(*, session_id, request, output_root, **_): path = output_root / session_id / "start.json"; path.parent.mkdir(parents=True); path.write_text("emitted", encoding="utf-8"); entered.set(); assert released.wait(2); return {"start": str(path)}  # type: ignore[no-untyped-def]
     def fail_sync(_stream) -> None: raise failure("initial append failed")  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(RUNNER, start); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setattr(SERVICE + "emit_session_start_records", emit); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "durable-start-failure"); monkeypatch.setattr(runtime_ports, "_sync", fail_sync); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root)); service = SessionService(); request = SessionCreateRequest(config_path=CONFIG, task="task"); real_write, owners = Path.write_text, [0]
+    monkeypatch.setattr(RUNNER + "schedule_start", start); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setattr(SERVICE + "emit_session_start_records", emit); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "durable-start-failure"); monkeypatch.setattr(runtime_ports, "_sync", fail_sync); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root)); service = SessionService(); request = SessionCreateRequest(config_path=CONFIG, task="task"); real_write, owners = Path.write_text, [0]
     def owner_write(path, *args, **kwargs): return (_ for _ in ()).throw(OSError("owner write failed")) if path.name == ".start.owner" and (owners.__setitem__(0, owners[0] + 1) or owners[0] == 2) else real_write(path, *args, **kwargs)  # type: ignore[no-untyped-def]
     monkeypatch.setattr(Path, "write_text", owner_write)
     with pytest.raises(OSError, match="owner write failed"): await service.create_session(request)
@@ -127,12 +162,14 @@ async def test_initial_durable_start_failure_has_no_published_lifecycle(monkeypa
 @pytest.mark.parametrize("shared_root", [False, True])
 @pytest.mark.parametrize("primitives", [False, True])
 async def test_start_publication_boundaries_are_invisible_and_retryable(monkeypatch, tmp_path, boundary, shared_root, primitives) -> None:
-    records_root = tmp_path / "records"; events_root = records_root if shared_root else tmp_path / "events"; entered, released = threading.Event(), threading.Event()
-    async def start(_runner) -> None: return None  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(RUNNER, start); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "publication-failure"); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: primitives)
+    records_root = tmp_path / "records"; events_root = records_root if shared_root else tmp_path / "events"; entered, released = threading.Event(), threading.Event(); order = []
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: order.append("schedule")); monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: (order[-1] == "authority") or (_ for _ in ()).throw(AssertionError(order)))
+    monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "publication-failure"); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: primitives)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root)); service, armed = SessionService(), True
     def failpoint(name) -> None:  # type: ignore[no-untyped-def]
         nonlocal armed
+        if name == "records": assert order[-1] == "schedule"
+        order.append(name)
         if armed and name == boundary: entered.set(); assert released.wait(2); armed = False; raise OSError(f"{name} publication failed")
     monkeypatch.setattr(service, "_publication_boundary", failpoint); request = SessionCreateRequest(config_path=CONFIG, task="task")
     pending = asyncio.create_task(asyncio.to_thread(lambda: asyncio.run(service.create_session(request)))); assert await asyncio.to_thread(entered.wait, 2); session_id = "publication-failure"; authority = (records_root if primitives else events_root) / session_id; assert session_id not in service.registry._records

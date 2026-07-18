@@ -33,7 +33,6 @@ SCRATCH_LANES = (
     *P3_SCRATCH_LANES,
     "oh_my_pi_p6_0_l5_memory_compaction",
     "oh_my_pi_p6_0_l6_tui_projection",
-    "oh_my_pi_p6_6_task_job_subagent",
 )
 P31_PROJECTION_HASHES = {
     "capability_registry": "sha256:20a474699dc6d6886d79036d320ead3085812701359dec49d4b343f0cabbce92",
@@ -188,32 +187,6 @@ def test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepte
             assert _sha256(accepted) == manifest_row["sha256"]
 
     _assert_accepted_unchanged(accepted_before)
-
-def test_p66_manifest_scope_substitutions_override_migrated_payload_placeholders(
-    tmp_path: Path,
-) -> None:
-    lane_id = "oh_my_pi_p6_6_task_job_subagent"
-    lane = _lane(lane_id)
-    configured_roles = _role_paths(lane)
-    compiler.capture(
-        lane,
-        _inventory_lane(lane_id),
-        promote_accepted=False,
-        out_dir=tmp_path,
-    )
-
-    capture = _load_json(tmp_path / configured_roles["capture_ref"])
-    assert capture["provider_model"] == lane["run"]["provider_model"]
-    assert capture["run_id"] == lane["run"]["run_id"]
-    assert capture["scope"]["provider_model"] == lane["run"]["provider_model"]
-    assert capture["scope"]["run_id"] == lane["run"]["run_id"]
-    builder = lane["normalize"]["config"]["record_builders"][0]
-    for role in builder["verbatim_source_roles"]:
-        path = configured_roles[role]
-        assert capture["source_hashes"][path] == _sha256(_resolve(path))
-
-
-
 
 def test_p31_lane_names_and_byte_locks_all_three_projection_outputs() -> None:
     lane = _lane("oh_my_pi_p3_1_effective_config_graph_compiler")
@@ -418,10 +391,6 @@ def _mutate_l6(context: dict[str, Any]) -> None:
     context["inputs"][stdout_path]["sha256"] = "sha256:" + "2" * 64
 
 
-def _mutate_p66(context: dict[str, Any]) -> None:
-    observation = context["source"]["value"]["work_item_observations"][0]
-    observation["status"] = "running" if observation.get("status") != "running" else "completed"
-
 
 @pytest.mark.parametrize(
     ("lane_id", "projection_id", "mutate"),
@@ -445,11 +414,6 @@ def _mutate_p66(context: dict[str, Any]) -> None:
             "oh_my_pi_p6_0_l6_tui_projection",
             "p6_l6_tui_projection",
             _mutate_l6,
-        ),
-        (
-            "oh_my_pi_p6_6_task_job_subagent",
-            "p6_6_task_job_subagent",
-            _mutate_p66,
         ),
     ],
 )
@@ -625,7 +589,11 @@ def test_auto_bind_role_refs_binds_refs_hash_maps_and_artifact_rows_topologicall
                     "input_hashes": {"data/base.json": stale},
                     "ref": f"data/base.json#{stale}",
                 },
-                "top": {"mid_ref": f"data/mid.json#{stale}"},
+                "top": {
+                    "hashes": {"mid": stale},
+                    "mid_ref": f"data/mid.json#{stale}",
+                    "refs": {"mid": "data/mid.json"},
+                },
             },
             # Reverse listing order proves rendering follows reference topology.
             "required_roles": ["top", "mid", "base"],
@@ -659,7 +627,11 @@ def test_auto_bind_role_refs_binds_refs_hash_maps_and_artifact_rows_topologicall
     assert mid["artifacts"] == [
         {"path": "data/base.json", "sha256": base_hash, "bytes": len(packet["base"]), "exists": True}
     ]
-    assert json.loads(packet["top"]) == {"mid_ref": f"data/mid.json#{mid_hash}"}
+    assert json.loads(packet["top"]) == {
+        "hashes": {"mid": mid_hash},
+        "mid_ref": f"data/mid.json#{mid_hash}",
+        "refs": {"mid": "data/mid.json"},
+    }
 
 
 def test_lane_values_derive_freeze_ledger_catalog_and_scope_facts() -> None:

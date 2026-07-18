@@ -72,52 +72,67 @@
       "superseded_by": null
     },
     {
-      "default_for_generation": true,
+      "default_for_generation": false,
       "family": "coordination_delegated_verification_reference_slice",
-      "lifecycle": "active_production",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
       "schema_id": "bb.coordination_delegated_verification_reference_slice.v1",
       "superseded_by": null
     },
     {
-      "default_for_generation": true,
+      "default_for_generation": false,
       "family": "coordination_intervention_reference_slice",
-      "lifecycle": "active_production",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
       "schema_id": "bb.coordination_intervention_reference_slice.v1",
       "superseded_by": null
     },
     {
-      "default_for_generation": true,
+      "default_for_generation": false,
       "family": "coordination_longrun_reference_slice",
-      "lifecycle": "active_production",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
       "schema_id": "bb.coordination_longrun_reference_slice.v1",
       "superseded_by": null
     },
     {
-      "default_for_generation": true,
+      "default_for_generation": false,
       "family": "coordination_multi_worker_reference_slice",
-      "lifecycle": "active_production",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
       "schema_id": "bb.coordination_multi_worker_reference_slice.v1",
       "superseded_by": null
     },
     {
-      "default_for_generation": true,
+      "default_for_generation": false,
       "family": "coordination_pack",
-      "lifecycle": "active_production",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
       "schema_id": "bb.coordination_pack.v3",
       "superseded_by": null
     },
     {
-      "default_for_generation": true,
+      "default_for_generation": false,
       "family": "coordination_reference_slice",
-      "lifecycle": "active_production",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
       "schema_id": "bb.coordination_reference_slice.v1",
       "superseded_by": null
     },
     {
-      "default_for_generation": true,
+      "default_for_generation": false,
       "family": "coordination_slice",
-      "lifecycle": "active_production",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
       "schema_id": "bb.coordination_slice.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "coordination_view",
+      "lifecycle": "validate_only",
+      "notes": "NS05A candidate projection; no active producer or public surface.",
+      "schema_id": "bb.coordination_view.v1",
       "superseded_by": null
     },
     {
@@ -135,9 +150,10 @@
       "superseded_by": null
     },
     {
-      "default_for_generation": true,
+      "default_for_generation": false,
       "family": "distributed_task_descriptor",
-      "lifecycle": "active_production",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
       "schema_id": "bb.distributed_task_descriptor.v1",
       "superseded_by": null
     },
@@ -526,9 +542,10 @@
       "superseded_by": null
     },
     {
-      "default_for_generation": true,
+      "default_for_generation": false,
       "family": "task",
-      "lifecycle": "active_production",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
       "schema_id": "bb.task.v1",
       "superseded_by": null
     },
@@ -670,14 +687,30 @@
       "superseded_by": null
     },
     {
+      "default_for_generation": false,
+      "family": "work_item",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.work_item.v1",
+      "superseded_by": "bb.work_item.v2"
+    },
+    {
       "default_for_generation": true,
       "family": "work_item",
       "lifecycle": "active_production",
-      "schema_id": "bb.work_item.v1",
+      "schema_id": "bb.work_item.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "work_placement",
+      "lifecycle": "validate_only",
+      "notes": "NS05A candidate attachment; no active producer or public surface.",
+      "schema_id": "bb.work_placement.v1",
       "superseded_by": null
     }
   ],
-  "generated_at_utc": "2026-07-09T00:00:00Z",
+  "generated_at_utc": "2026-07-17T00:00:00Z",
   "registry_id": "schema_lifecycle",
   "schema_version": "bb.schema_lifecycle.v1"
 }

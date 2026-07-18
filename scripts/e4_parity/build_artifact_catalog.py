@@ -707,6 +707,7 @@ def _lane_entry(
     )
 
 
+
 def _lane_entries(
     inventory: Mapping[str, Any],
     external_path_role_ids: Mapping[str, str],
@@ -724,6 +725,8 @@ def _lane_entries(
         artifact_roles = lane.get("artifact_roles", {})
         if not isinstance(lane_id, str) or not lane_id:
             raise ValueError("inventory lane_id must be a non-empty string")
+        if lane.get("status") != "accepted":
+            continue
         if not isinstance(artifact_roles, Mapping):
             raise ValueError(f"lane {lane_id} artifact_roles must be an object")
         manifest_path = _evidence_manifest_path(lane)

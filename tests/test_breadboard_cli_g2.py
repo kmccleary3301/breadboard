@@ -163,7 +163,9 @@ def test_pyproject_installs_cli_and_runtime_import_packages() -> None:
         "breadboard_sdk",
         "conformance",
     }
-    assert "adaptive_iter" in metadata["tool"]["setuptools"]["py-modules"]
+    assert "breadboard.product.coordination" in metadata["tool"]["setuptools"]["packages"] and "adaptive_iter" in metadata["tool"]["setuptools"]["py-modules"]
+    assert metadata["tool"]["setuptools"]["data-files"]["contracts/kernel/schemas"] == ["contracts/kernel/schemas/*.schema.json"]
+    from breadboard.product.coordination import WorkItem as ExportedWorkItem; assert ExportedWorkItem.__name__ == "WorkItem"
 
 
 @pytest.mark.parametrize("namespace", ["harness", "lane"])
