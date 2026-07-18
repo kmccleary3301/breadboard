@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -17,6 +16,7 @@ from scripts.e4_parity.path_refs import (  # noqa: E402
     resolve_declared_reference,
     workspace_root_for_checkout,
 )
+from scripts.e4_parity.validators import hash_utils  # noqa: E402
 
 WORKSPACE = workspace_root_for_checkout(ROOT)
 
@@ -29,11 +29,7 @@ def _load_json(path: Path) -> dict[str, Any]:
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return f"sha256:{digest.hexdigest()}"
+    return hash_utils.sha256_path(path)
 
 
 def _resolve(reference: str, *, label: str) -> Path:
