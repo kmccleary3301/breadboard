@@ -1139,10 +1139,11 @@ class SessionRunner:
                     normalized[match] = {**normalized[match], "deferred_response": dict(info)}; ready = []
                 elif match is not None:
                     product_session = getattr(self.session, "product_session", None)
-                    if not consume_fifo and product_session:
-                        responses = info.get("responses") or info.get("items")
-                        self.transition_product_session("resolve_approval", request_id,
-                            _canonical_permission_resolution(info.get("response") or info.get("decision"), responses))
+                    if not consume_fifo:
+                        if product_session:
+                            responses = info.get("responses") or info.get("items")
+                            self.transition_product_session("resolve_approval", request_id,
+                                _canonical_permission_resolution(info.get("response") or info.get("decision"), responses))
                         ready = [dict(info)]
                     if consume_fifo:
                         consumed_key = self._pending_permission_key(normalized[match]); self._consumed_permission_responses[consumed_key] = self._consumed_permission_responses.get(consumed_key, 0) + 1
@@ -1150,11 +1151,12 @@ class SessionRunner:
                     while ready is not None and normalized and isinstance(normalized[0].get("deferred_response"), dict):
                         self.session.metadata["pending_permissions"] = normalized
                         deferred = dict(normalized[0]["deferred_response"]); deferred_id = str(normalized[0].get("request_id") or "")
-                        request = normalized[0].get("request") if isinstance(normalized[0].get("request"), dict) else {}
-                        operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
-                        self.transition_product_session("request_approval", deferred_id, operation)
-                        self.transition_product_session("resolve_approval", deferred_id, _canonical_permission_resolution(
-                            deferred.get("response") or deferred.get("decision"), deferred.get("responses") or deferred.get("items")))
+                        if product_session:
+                            request = normalized[0].get("request") if isinstance(normalized[0].get("request"), dict) else {}
+                            operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
+                            self.transition_product_session("request_approval", deferred_id, operation)
+                            self.transition_product_session("resolve_approval", deferred_id, _canonical_permission_resolution(
+                                deferred.get("response") or deferred.get("decision"), deferred.get("responses") or deferred.get("items")))
                         normalized.pop(0); ready.append(deferred)
                     activate = normalized[0] if match == 0 and normalized else None
             else: return None
