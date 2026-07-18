@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import json
 import os
 import shutil
@@ -7,9 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Sequence
-
 import pytest
-
 from agentic_coder_prototype.parity import (
     EquivalenceLevel,
     build_expected_run_ir,
@@ -17,14 +14,10 @@ from agentic_coder_prototype.parity import (
     compare_run_ir,
 )
 from agentic_coder_prototype.parity_manifest import ParityScenario, load_parity_scenarios
-
 ROOT = Path(__file__).resolve().parents[1]
 REPLAY_SCRIPT = ROOT / "scripts/replay_opencode_session.py"
 LOGGING_ROOT = ROOT / "logging"
 WEBFETCH_FIXTURE_SCRIPT = ROOT / "scripts" / "opencode_webfetch_fixture_server.py"
-
-
-
 def _start_webfetch_fixture_server() -> tuple[subprocess.Popen[str], int]:
     proc = subprocess.Popen(
         [
@@ -54,8 +47,6 @@ def _start_webfetch_fixture_server() -> tuple[subprocess.Popen[str], int]:
         proc.wait(timeout=2)
         raise RuntimeError(f"Failed to start webfetch fixture server: {port_line}\n{stderr}")
     return proc, port
-
-
 def _stop_process(proc: subprocess.Popen[str]) -> None:
     try:
         proc.terminate()
@@ -72,15 +63,11 @@ def _stop_process(proc: subprocess.Popen[str]) -> None:
             proc.wait(timeout=2)
         except Exception:
             return
-
-
 _SCENARIOS: Sequence[ParityScenario] = tuple(
     scenario
     for scenario in load_parity_scenarios()
     if scenario.enabled and scenario.mode == "replay"
 )
-
-
 @pytest.mark.slow
 @pytest.mark.parametrize("scenario", _SCENARIOS, ids=[item.name for item in _SCENARIOS])
 def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> None:
@@ -93,7 +80,6 @@ def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> No
         seeded_state = workspace / ".breadboard"
         if seeded_state.exists():
             shutil.rmtree(seeded_state, ignore_errors=True)
-
     fixture_proc: subprocess.Popen[str] | None = None
     session_path = scenario.session
     if scenario.name == "opencode_webfetch_sentinel_replay":
@@ -102,7 +88,6 @@ def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> No
         raw = scenario.session.read_text(encoding="utf-8")
         patched.write_text(raw.replace("{PORT}", str(port)), encoding="utf-8")
         session_path = patched
-
     args = [
         sys.executable,
         str(REPLAY_SCRIPT),

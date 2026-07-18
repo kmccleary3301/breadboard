@@ -6,7 +6,6 @@ from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest,
 from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.api.cli_bridge.service import SessionService
 from agentic_coder_prototype.api.cli_bridge.runtime_emission import _tool_names
 from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides; from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
 RUNNER = "agentic_coder_prototype.api.cli_bridge.session_runner.SessionRunner.start"
 SERVICE = "agentic_coder_prototype.api.cli_bridge.service."
@@ -125,6 +124,11 @@ async def test_initial_durable_start_failure_has_no_published_lifecycle(monkeypa
     monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "durable-start-failure"); monkeypatch.setattr(runtime_ports, "_sync", fail_sync)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root))
     service = SessionService(); request = SessionCreateRequest(config_path=CONFIG, task="task")
+    real_write, owners = Path.write_text, [0]
+    def owner_write(path, *args, **kwargs): return (_ for _ in ()).throw(OSError("owner write failed")) if path.name == ".start.owner" and (owners.__setitem__(0, owners[0] + 1) or owners[0] == 2) else real_write(path, *args, **kwargs)  # type: ignore[no-untyped-def]
+    monkeypatch.setattr(Path, "write_text", owner_write)
+    with pytest.raises(OSError, match="owner write failed"): await service.create_session(request)
+    assert all(not root.exists() or not any(root.iterdir()) for root in (records_root, events_root)); monkeypatch.setattr(Path, "write_text", real_write)
     pending = asyncio.create_task(asyncio.to_thread(lambda: asyncio.run(service.create_session(request))))
     assert await asyncio.to_thread(entered.wait, 2); assert await service.registry.get("durable-start-failure") is None
     assert not (records_root / "durable-start-failure").exists() and not (events_root / "durable-start-failure").exists()
@@ -180,15 +184,26 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
 @pytest.mark.asyncio
 async def test_attachment_storage_rejects_workspace_symlink_escape(monkeypatch, tmp_path) -> None:
     if os.name == "nt": pytest.skip("symlink privilege is not portable on Windows")
-    workspace, outside = tmp_path / "workspace", tmp_path / "outside"; workspace.mkdir(); outside.mkdir(); (workspace / ".breadboard").symlink_to(outside, target_is_directory=True); service, response, _ = await _create(monkeypatch, tmp_path, workspace=str(workspace))
+    workspace, outside = tmp_path / "workspace", tmp_path / "outside"; workspace.mkdir(); outside.mkdir(); (workspace / ".breadboard").symlink_to(outside, target_is_directory=True); service, response, record = await _create(monkeypatch, tmp_path, workspace=str(workspace))
     with pytest.raises(HTTPException) as error: await service.upload_attachments(response.session_id, [_Upload()])
     assert error.value.status_code == 400 and not list(outside.iterdir())
-
+    async def fail_stop() -> None: raise OSError("sink unavailable")
+    monkeypatch.setattr(record.runner, "stop", fail_stop)
+    with pytest.raises(OSError, match="sink unavailable"): await service.stop_session(response.session_id)
+    assert record.dispatcher_task.done(); await service.registry.delete(response.session_id)
+    (workspace / ".breadboard").unlink(); (workspace / ".breadboard").mkdir(); service, response, record = await _create(monkeypatch, tmp_path, service=service, workspace=str(workspace)); original, swapped = ArtifactStore.put, [False]
+    def swap(store, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if not swapped[0]: (workspace / ".breadboard").rename(workspace / ".breadboard-old"); (workspace / ".breadboard").symlink_to(outside, target_is_directory=True); swapped[0] = True
+        return original(store, *args, **kwargs)
+    monkeypatch.setattr(ArtifactStore, "put", swap)
+    with pytest.raises(HTTPException, match="metadata path changed"): await service.upload_attachments(response.session_id, [_Upload()])
+    assert not list(outside.iterdir()) and not list((workspace / ".breadboard-old" / "attachments").iterdir())
+    (workspace / ".breadboard").unlink(); (workspace / ".breadboard-old").rename(workspace / ".breadboard"); await service.delete_session(response.session_id)
 @pytest.mark.asyncio
 async def test_completed_dispatch_replay_is_ordered_and_finite(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path)
     for order in (1, 2): await record.runner.publish_event_async(EventType.WARNING, {"order": order})
-    assert record.dispatcher_task; record.runner.transition_product_session("complete"); await service.registry.update_status(response.session_id, SessionStatus.COMPLETED); await record.event_queue.put(None); await record.dispatcher_task
+    assert record.dispatcher_task; record.runner.transition_product_session("complete"); await service.stop_session(response.session_id); assert record.dispatcher_task.done()
     replay = service.event_stream(response.session_id, replay=True); assert [await anext(replay), await anext(replay)] == list(record.event_log)
     nonreplay = service.event_stream(response.session_id); snapshot = await asyncio.wait_for(anext(nonreplay), 0.1); assert snapshot.type is EventType.TOOL_RESULT and "todo" in snapshot.payload
     outcomes = await asyncio.wait_for(asyncio.gather(anext(replay), anext(nonreplay), return_exceptions=True), 0.1); assert len(outcomes) == 2 and all(isinstance(item, StopAsyncIteration) for item in outcomes)

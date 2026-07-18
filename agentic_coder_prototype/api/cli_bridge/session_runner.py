@@ -1,7 +1,5 @@
 """Session execution helpers for the CLI bridge."""
-
 from __future__ import annotations
-
 import asyncio
 import json
 import logging
@@ -13,7 +11,6 @@ import uuid, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence, List, Tuple
-
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
 from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides
 from agentic_coder_prototype.compilation.effective_operation_policy import policy_pack_for_config_authority
@@ -39,16 +36,12 @@ from agentic_coder_prototype.state.session_state import (
     CANONICAL_KERNEL_EVENT_TYPES,
     PROJECTION_ONLY_RUNTIME_EVENT_TYPES,
 )
-
 from .events import EventType, SessionEvent
 from .event_normalization import normalize_task_event_payload
 from .models import SessionCreateRequest, SessionStatus
 from .registry import SessionRecord, SessionRegistry
-
 logger = logging.getLogger(__name__)
-
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
-
 _PERMISSION_ALIASES = {alias: decision for decision, aliases in {
     "once": "once allow approve approved ok okay yes y allow-once allow_once", "always": "always allow-always allow_always",
     "reject": "reject deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop",
@@ -56,7 +49,6 @@ _PERMISSION_ALIASES = {alias: decision for decision, aliases in {
 def _permission_response_tokens(value: Any) -> list[str]:
     if isinstance(value, dict): return [token for nested in value.values() for token in _permission_response_tokens(nested)]
     return [value.strip().lower()] if isinstance(value, str) and value.strip() else []
-
 def _permission_item_ids(request: Any) -> list[str]: return [str(item["item_id"]) for item in request.get("items", []) if isinstance(item, dict) and item.get("item_id")] if isinstance(request, dict) else []
 def _permission_default_response(config: Any) -> str: return PermissionBroker((config.get("permissions") or {}) if isinstance(config, dict) else {})._default_response
 def _canonical_permission_resolution(response: Any, responses: Any, requested_ids: Sequence[str] = (), missing_response: str = "reject") -> str:
@@ -70,11 +62,9 @@ def _canonical_permission_resolution(response: Any, responses: Any, requested_id
     values = [PermissionBroker._coerce_response(_PERMISSION_ALIASES.get(token, token)) for token in tokens]
     if not values: raise ValueError("permission response contains no valid decisions")
     return "reject" if "reject" in values else "always" if all(value == "always" for value in values) else "once"
-
 def _canonical_permission_responses(responses: Dict[str, Any]) -> Dict[str, Any]:
     return {key: _canonical_permission_responses(value) if isinstance(value, dict)
             else _canonical_permission_resolution(value, None) for key, value in responses.items()}
-
 # These runtime event types are treated as kernel-owned event families and are
 # bridged through mostly as-is, subject to payload normalization.
 KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES = {
@@ -90,7 +80,6 @@ KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES = {
     "ctree_snapshot",
     "task_event",
 }
-
 # These runtime event types exist primarily for live client streaming and are
 # not yet part of the shared kernel truth surface.
 BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES = {
@@ -106,7 +95,6 @@ BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES = {
     "tool.exec.end",
     "assistant_delta",
 }
-
 # These are host-facing lifecycle/control artifacts emitted by the bridge or
 # session orchestration layer rather than the kernel contract itself.
 BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
@@ -124,10 +112,8 @@ BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
     "error",
     "run_finished",
 }
-
 RuntimeEventContract = Dict[str, Optional[str]]
 TranslatedRuntimeEvent = Tuple[EventType, Dict[str, Any], Optional[int], RuntimeEventContract]
-
 def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
     event_name = str(event_type or "")
     for registry, classification in (
@@ -156,10 +142,8 @@ def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
     if event_name in BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES or event_name in {"permission_request", "permission_response", "task_event", "ctree_snapshot"}:
         return {"classification": "bridge_host", "family": f"host.{event_name}", "actor": "service", "visibility": "host"}
     return {"classification": "legacy_unclassified", "family": "legacy.unclassified", "actor": "engine", "visibility": "audit"}
-
 class SessionRunner:
     """Coordinates agent execution, user inputs, and command handling for a session."""
-
     def __init__(
         self,
         *,
@@ -172,7 +156,6 @@ class SessionRunner:
         self.registry = registry
         self.request = request
         self.agent_factory = agent_factory or self._default_factory
-
         self._task: Optional[asyncio.Task[None]] = None
         self._agent: Optional[Any] = None
         self._stop_event = asyncio.Event()
@@ -197,7 +180,6 @@ class SessionRunner:
         self._todo_enabled: bool = False
         self._active_bridge_timing_context: Optional[Dict[str, float]] = None
         self._accepted_task_texts: List[str] = []
-
         initial_metadata = self.session.metadata
         initial_metadata.update(dict(request.metadata or {}))
         self.session.metadata = initial_metadata
@@ -207,7 +189,6 @@ class SessionRunner:
             os.environ.get("BREADBOARD_PROFILE_TIMING", "").strip().lower() in {"1", "true", "yes", "on"}
             or initial_metadata.get("profile_timing")
         )
-
     def _default_factory(
         self,
         config_path: str,
@@ -215,7 +196,6 @@ class SessionRunner:
         overrides: Optional[Dict[str, Any]],
     ) -> Any:
         from agentic_coder_prototype.agent import create_agent
-
         metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         force_local_mode = bool(metadata.get("cli_force_local_mode", True))
         return create_agent(
