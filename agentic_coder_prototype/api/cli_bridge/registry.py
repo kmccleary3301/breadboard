@@ -6,6 +6,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import hashlib
 import json
+import math
 import os
 import secrets
 import time
@@ -120,6 +121,7 @@ class _DrainState:
     requester_client_instance_id: str
     expected_admission_epoch: int
     phase: str
+    graceful_control_outcome: str | None = None
     recovery_forbidden: bool = False
     hard_signal_authorization_id: str | None = None
     hard_signal_authorization_expires_at_unix: float | None = None
@@ -492,6 +494,9 @@ class SessionRegistry:
                     credential_verifier=owner.credential_verifier,
                     expires_at_unix=now + 30,
                 )
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
                 drain = self._drain
                 if drain is not None and drain.phase != "rolled_back":
                     if drain.phase in {
@@ -543,6 +548,9 @@ class SessionRegistry:
             async with self._authority_lock:
                 owner = self._require_live_owner(request, owner_credential)
                 owner.expires_at_unix = self._clock() + 30
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
                 return self._owner_response("renewed")
         finally:
             self._wipe_credentials(owner_credential)
@@ -577,6 +585,9 @@ class SessionRegistry:
                     return self._owner_response("already_released")
                 if owner.expires_at_unix <= self._clock():
                     raise LifecycleAuthorityError("owner_expired", "owner lease has expired")
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
                 if self._drain is not None and self._drain.phase not in {"rolled_back"}:
                     raise LifecycleAuthorityError("drain_in_progress", "control drain is in progress")
                 owner.released = True
@@ -629,6 +640,64 @@ class SessionRegistry:
         )
         return secrets.compare_digest(candidate, registration.credential_verifier)
 
+    def _try_rollback_control_drain(
+        self,
+        *,
+        require_orphaned_requester: bool,
+    ) -> bool:
+        drain = self._drain
+        if (
+            drain is None
+            or drain.phase not in {"draining", "rollback_permitted"}
+            or drain.recovery_forbidden
+        ):
+            return False
+        if drain.phase == "draining" and (
+            drain.hard_signal_authorization_id is not None
+            or drain.hard_signal_authorization_expires_at_unix is not None
+            or drain.hard_signal_outcome is not None
+        ):
+            return False
+        if (
+            drain.phase == "rollback_permitted"
+            and drain.hard_signal_outcome not in {None, "abandoned"}
+        ):
+            return False
+        if require_orphaned_requester:
+            identity = self._process_identity
+            if (
+                identity is None
+                or drain.engine_instance_id != identity.engine_instance_id
+                or drain.engine_boot_id != identity.engine_boot_id
+                or drain.launch_id != identity.launch_id
+            ):
+                return False
+            requester = self._registrations.get(
+                drain.requester_registration_id,
+            )
+            if requester is not None:
+                if (
+                    requester.generation
+                    != drain.requester_registration_generation
+                    or requester.client_instance_id
+                    != drain.requester_client_instance_id
+                ):
+                    return False
+                if not requester.detached:
+                    now = self._clock()
+                    if (
+                        not math.isfinite(now)
+                        or not math.isfinite(requester.expires_at_unix)
+                        or requester.expires_at_unix > now
+                    ):
+                        return False
+        self._session_admission_open = True
+        self._turn_admission_open = True
+        self._registrations_open = True
+        self._admission_epoch += 1
+        drain.phase = "rolled_back"
+        return True
+
     async def register_client(
         self,
         request: ClientRegisterRequest,
@@ -645,6 +714,9 @@ class SessionRegistry:
                     )
                 if request.lifecycle_mode == "off":
                     raise LifecycleAuthorityError("lifecycle_mode_invalid", "off mode cannot register")
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
                 if not self._registrations_open:
                     raise LifecycleAuthorityError("drain_in_progress", "new registrations are closed")
                 now = self._clock()
@@ -735,6 +807,9 @@ class SessionRegistry:
     ) -> ClientRegistrationResponse:
         try:
             async with self._authority_lock:
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
                 registration = self._require_registration(
                     request,
                     registration_credential,
@@ -758,6 +833,9 @@ class SessionRegistry:
                         "engine_identity_mismatch",
                         "engine instance does not match",
                     )
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
                 registration = self._registrations.get(request.registration_id)
                 if registration is None:
                     raise LifecycleAuthorityError(
@@ -784,6 +862,9 @@ class SessionRegistry:
                     return self._registration_response(registration, "already_detached")
                 registration.detached = True
                 registration.expires_at_unix = 0
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
                 return self._registration_response(registration, "detached")
         finally:
             self._wipe_credentials(registration_credential)
@@ -851,6 +932,9 @@ class SessionRegistry:
         try:
             async with self._authority_lock:
                 owner = self._require_live_owner(request, owner_credential)
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
                 requester = self._require_registration(request, registration_credential)
                 drain = self._drain
                 if (
@@ -936,6 +1020,9 @@ class SessionRegistry:
         phases: set[str],
     ) -> _DrainState:
         self._require_live_owner(request, owner_credential)
+        self._try_rollback_control_drain(
+            require_orphaned_requester=True,
+        )
         drain = self._drain
         if (
             drain is None
@@ -960,14 +1047,29 @@ class SessionRegistry:
                 drain = self._require_drain_control(
                     request,
                     owner_credential,
-                    phases={"draining"},
+                    phases={"draining", "rolled_back"},
                 )
+                if drain.phase == "rolled_back":
+                    if (
+                        drain.graceful_control_outcome
+                        == request.outcome
+                        == "definitive_rejection"
+                    ):
+                        return self._drain_response("rolled_back")
+                    raise LifecycleAuthorityError(
+                        "drain_conflict",
+                        "control drain outcome is already final",
+                    )
+                drain.graceful_control_outcome = request.outcome
                 if request.outcome == "accepted":
                     drain.phase = "shutdown_started"
                     return self._drain_response("shutdown_started")
                 if request.outcome == "definitive_rejection":
                     drain.phase = "rollback_permitted"
-                    return self._drain_response("rollback_permitted")
+                    self._try_rollback_control_drain(
+                        require_orphaned_requester=True,
+                    )
+                    return self._drain_response(drain.phase)
                 drain.phase = "hard_signal_decision_pending"
                 return self._drain_response(
                     "hard_signal_decision_pending",
@@ -1028,6 +1130,7 @@ class SessionRegistry:
                         "rollback_permitted",
                         "signal_sent",
                         "process_exited",
+                        "rolled_back",
                     },
                 )
                 if request.authorization_id != drain.hard_signal_authorization_id:
@@ -1042,7 +1145,10 @@ class SessionRegistry:
                 drain.hard_signal_outcome = request.outcome
                 if request.outcome == "abandoned":
                     drain.phase = "rollback_permitted"
-                    return self._drain_response("rollback_permitted")
+                    self._try_rollback_control_drain(
+                        require_orphaned_requester=True,
+                    )
+                    return self._drain_response(drain.phase)
                 if request.outcome == "process_exited":
                     drain.phase = "process_exited"
                     return self._drain_response("process_exited")
@@ -1076,6 +1182,9 @@ class SessionRegistry:
                         "owner_identity_mismatch",
                         "owner proof was rejected",
                     )
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
                 drain = self._drain
                 if (
                     owner.released
@@ -1084,24 +1193,31 @@ class SessionRegistry:
                     or drain is None
                     or request.drain_generation != drain.generation
                     or request.owner_generation != drain.owner_generation
-                    or drain.phase != "rollback_permitted"
+                    or drain.phase not in {"rollback_permitted", "rolled_back"}
                     or drain.recovery_forbidden
                 ):
                     raise LifecycleAuthorityError(
                         "drain_recovery_failed",
                         "control drain cannot be safely recovered",
                     )
-                self._session_admission_open = True
-                self._turn_admission_open = True
-                self._registrations_open = True
-                self._admission_epoch += 1
-                drain.phase = "rolled_back"
+                if drain.phase == "rolled_back":
+                    return self._drain_response("rolled_back")
+                if not self._try_rollback_control_drain(
+                    require_orphaned_requester=False,
+                ):
+                    raise LifecycleAuthorityError(
+                        "drain_recovery_failed",
+                        "control drain cannot be safely recovered",
+                    )
                 return self._drain_response("rolled_back")
         finally:
             self._wipe_credentials(owner_credential)
 
     async def admit_session(self, record: SessionRecord, runner: Any) -> SessionRecord:
         async with self._authority_lock:
+            self._try_rollback_control_drain(
+                require_orphaned_requester=True,
+            )
             if not self._session_admission_open:
                 raise LifecycleAuthorityError("admission_closed", "new session admission is closed")
             await runner.prepare_start(admission_serialized=True)
@@ -1118,6 +1234,9 @@ class SessionRegistry:
         operation: Callable[[], Awaitable[_T]],
     ) -> _T:
         async with self._authority_lock:
+            self._try_rollback_control_drain(
+                require_orphaned_requester=True,
+            )
             if not self._turn_admission_open:
                 raise LifecycleAuthorityError("admission_closed", "new turn admission is closed")
             result = await operation()

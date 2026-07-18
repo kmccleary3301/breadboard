@@ -665,6 +665,7 @@ async def test_owner_renewal_during_drain_extends_control_authority() -> None:
     )
     clock.advance(20)
     renewed = await _renew_owner(registry, owner_lease(process_identity))
+    await _renew_client(registry, client_lease(registration))
     assert renewed.result == "renewed"
     clock.advance(20)
     accepted = await _record_graceful_control(
@@ -705,6 +706,843 @@ async def test_begin_control_drain_recovers_a_lost_response_exactly_once() -> No
     assert registry._drain_generation == generation
     assert registry._drain is not None
     assert registry._drain.generation == first.drain_generation
+
+
+@pytest.mark.asyncio
+async def test_expired_drain_requester_reopens_registration_once_and_keeps_tombstone() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    committed = await _begin_control_drain(registry, request)
+
+    replay = request.model_copy()
+    _remember_proofs(
+        replay,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    assert await _begin_control_drain(registry, replay) == committed
+
+    clock.advance(20)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(9)
+    with pytest.raises(LifecycleAuthorityError) as still_draining:
+        await _register_client(
+            registry,
+            client_register(
+                process_identity,
+                client_id=CLIENT_B,
+                workspace_id=WORKSPACE_B,
+                credential=CLIENT_B_SECRET,
+            ),
+        )
+    assert still_draining.value.code == "drain_in_progress"
+    assert registry.admission_epoch == committed.admission_epoch
+
+    clock.advance(1)
+    replacement = await _register_client(
+        registry,
+        client_register(
+            process_identity,
+            client_id=CLIENT_B,
+            workspace_id=WORKSPACE_B,
+            credential=CLIENT_B_SECRET,
+        ),
+    )
+    rolled_back_epoch = committed.admission_epoch + 1
+    assert registry.admission_epoch == rolled_back_epoch
+    assert registry.authority_snapshot()["drain_phase"] == "rolled_back"
+    assert registry.authority_snapshot()["session_admission_open"] is True
+    assert registry.authority_snapshot()["turn_admission_open"] is True
+    assert registry.authority_snapshot()["registrations_open"] is True
+    assert request.control_request_id in registry._control_request_ids
+    assert registry._drain is not None
+    assert registry._drain.hard_signal_authorization_id is None
+    assert registry._drain.hard_signal_outcome is None
+
+    await _renew_client(
+        registry,
+        client_lease(replacement, credential=CLIENT_B_SECRET),
+    )
+    assert registry.admission_epoch == rolled_back_epoch
+
+    reused = begin_drain(
+        registry,
+        process_identity,
+        replacement,
+        registration_secret=CLIENT_B_SECRET,
+        control_request_id=request.control_request_id,
+    )
+    with pytest.raises(LifecycleAuthorityError) as old_id:
+        await _begin_control_drain(registry, reused)
+    assert old_id.value.code == "control_request_conflict"
+    assert registry.admission_epoch == rolled_back_epoch
+
+    fresh = await _begin_control_drain(
+        registry,
+        begin_drain(
+            registry,
+            process_identity,
+            replacement,
+            registration_secret=CLIENT_B_SECRET,
+            control_request_id="r" * 43,
+        ),
+    )
+    assert fresh.result == "draining"
+    assert fresh.drain_generation == committed.drain_generation + 1
+    assert fresh.admission_epoch == rolled_back_epoch + 1
+
+
+async def _expired_requester_drain(
+    *,
+    keep_owner_live: bool = True,
+) -> tuple[SessionRegistry, EngineProcessIdentity, Clock, Any, BeginControlDrainRequest, Any]:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    committed = await _begin_control_drain(registry, request)
+    if keep_owner_live:
+        clock.advance(20)
+        await _renew_owner(registry, owner_lease(process_identity))
+        clock.advance(10)
+    else:
+        clock.advance(30)
+    return registry, process_identity, clock, registration, request, committed
+
+
+@pytest.mark.asyncio
+async def test_expired_requester_concurrent_registrations_serialize_one_rollback() -> None:
+    registry, process_identity, _, _, _, committed = await _expired_requester_drain()
+    ready_count = 0
+    ready_lock = asyncio.Lock()
+    both_ready = asyncio.Event()
+    release = asyncio.Event()
+
+    async def register(
+        client_id: str,
+        workspace_id: str,
+        credential: str,
+    ) -> Any:
+        nonlocal ready_count
+        async with ready_lock:
+            ready_count += 1
+            if ready_count == 2:
+                both_ready.set()
+        await release.wait()
+        return await _register_client(
+            registry,
+            client_register(
+                process_identity,
+                client_id=client_id,
+                workspace_id=workspace_id,
+                credential=credential,
+            ),
+        )
+
+    tasks = [
+        asyncio.create_task(
+            register(CLIENT_B, WORKSPACE_B, CLIENT_B_SECRET),
+        ),
+        asyncio.create_task(
+            register(
+                "client-instance-c-000000000000000",
+                "workspace:v1:sha256:" + "c" * 64,
+                "client-c-proof-material-000000000000000000",
+            ),
+        ),
+    ]
+    await both_ready.wait()
+    release.set()
+    registrations = await asyncio.gather(*tasks)
+
+    assert {item.client_instance_id for item in registrations} == {
+        CLIENT_B,
+        "client-instance-c-000000000000000",
+    }
+    assert registry.admission_epoch == committed.admission_epoch + 1
+    assert registry.authority_snapshot()["drain_phase"] == "rolled_back"
+    assert registry._control_request_ids == {"q" * 43}
+
+
+@pytest.mark.asyncio
+async def test_expired_owner_with_live_requester_does_not_rollback_drain() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    clock.advance(20)
+    await _renew_client(registry, client_lease(registration))
+    clock.advance(10)
+
+    with pytest.raises(LifecycleAuthorityError) as closed:
+        await _register_client(
+            registry,
+            client_register(
+                process_identity,
+                client_id=CLIENT_B,
+                workspace_id=WORKSPACE_B,
+                credential=CLIENT_B_SECRET,
+            ),
+        )
+
+    assert closed.value.code == "drain_in_progress"
+    assert registry.admission_epoch == committed.admission_epoch
+    assert registry.authority_snapshot()["drain_phase"] == "draining"
+    assert registry.authority_snapshot()["registrations_open"] is False
+
+
+@pytest.mark.asyncio
+async def test_live_drain_requester_detach_rolls_back_once() -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    committed = await _begin_control_drain(registry, request)
+
+    detached = await _detach_client(
+        registry,
+        client_lease(registration),
+    )
+    rolled_back_epoch = committed.admission_epoch + 1
+    assert detached.result == "detached"
+    assert detached.admission_epoch == rolled_back_epoch
+    assert registry.admission_epoch == rolled_back_epoch
+    assert registry.authority_snapshot()["drain_phase"] == "rolled_back"
+    assert registry.authority_snapshot()["session_admission_open"] is True
+    assert registry.authority_snapshot()["turn_admission_open"] is True
+    assert registry.authority_snapshot()["registrations_open"] is True
+    assert registry._control_request_ids == {"q" * 43}
+
+    repeated = await _detach_client(
+        registry,
+        client_lease(registration),
+    )
+    assert repeated.result == "already_detached"
+    await _renew_owner(registry, owner_lease(process_identity))
+    assert registry.admission_epoch == rolled_back_epoch
+
+
+@pytest.mark.asyncio
+async def test_owner_renewal_repairs_expired_requester_once() -> None:
+    registry, process_identity, _, _, _, committed = await _expired_requester_drain()
+
+    renewed = await _renew_owner(registry, owner_lease(process_identity))
+    rolled_back_epoch = committed.admission_epoch + 1
+    assert renewed.result == "renewed"
+    assert registry.admission_epoch == rolled_back_epoch
+    assert registry.authority_snapshot()["drain_phase"] == "rolled_back"
+    assert registry.authority_snapshot()["session_admission_open"] is True
+    assert registry.authority_snapshot()["turn_admission_open"] is True
+    assert registry.authority_snapshot()["registrations_open"] is True
+    assert registry._control_request_ids == {"q" * 43}
+
+    await _renew_owner(registry, owner_lease(process_identity))
+    assert registry.admission_epoch == rolled_back_epoch
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rollback_path", ["definitive_rejection", "abandoned"])
+async def test_expired_requester_rolls_back_explicitly_safe_phase_once(
+    rollback_path: str,
+) -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    committed = await _begin_control_drain(registry, request)
+    graceful = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome=(
+                "definitive_rejection"
+                if rollback_path == "definitive_rejection"
+                else "timeout"
+            ),
+        ),
+    )
+    if rollback_path == "abandoned":
+        rollback_ready = await _record_hard_signal_outcome(
+            registry,
+            HardSignalOutcomeRequest(
+                authorization_id="a" * 43,
+                **drain_control(
+                    process_identity,
+                    committed.drain_generation,
+                ).model_dump(),
+                outcome="abandoned",
+            ),
+        )
+    else:
+        rollback_ready = graceful
+    assert rollback_ready.result == "rollback_permitted"
+
+    clock.advance(20)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(10)
+    replacement = await _register_client(
+        registry,
+        client_register(
+            process_identity,
+            client_id=CLIENT_B,
+            workspace_id=WORKSPACE_B,
+            credential=CLIENT_B_SECRET,
+        ),
+    )
+
+    assert replacement.result == "registered"
+    assert registry.admission_epoch == committed.admission_epoch + 1
+    assert registry.authority_snapshot()["drain_phase"] == "rolled_back"
+    assert registry._control_request_ids == {"q" * 43}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("orphaning", ["expired", "detached"])
+async def test_abandoned_outcome_repairs_newly_safe_orphaned_drain_once(
+    orphaning: str,
+) -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    committed = await _begin_control_drain(registry, request)
+    pending = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    assert pending.result == "hard_signal_decision_pending"
+    assert pending.registrations_open is False
+
+    if orphaning == "expired":
+        clock.advance(20)
+        await _renew_owner(registry, owner_lease(process_identity))
+        clock.advance(10)
+    else:
+        detached = await _detach_client(
+            registry,
+            client_lease(registration),
+        )
+        assert detached.result == "detached"
+        assert registry.authority_snapshot()["drain_phase"] == (
+            "hard_signal_decision_pending"
+        )
+        assert registry.admission_epoch == committed.admission_epoch
+
+    abandoned = await _record_hard_signal_outcome(
+        registry,
+        HardSignalOutcomeRequest(
+            authorization_id="a" * 43,
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="abandoned",
+        ),
+    )
+    rolled_back_epoch = committed.admission_epoch + 1
+    assert abandoned.result == "rolled_back"
+    assert abandoned.admission_epoch == rolled_back_epoch
+    assert abandoned.session_admission_open is True
+    assert abandoned.turn_admission_open is True
+    assert abandoned.registrations_open is True
+    assert registry.authority_snapshot()["drain_phase"] == "rolled_back"
+    assert registry._control_request_ids == {"q" * 43}
+
+    await _renew_owner(registry, owner_lease(process_identity))
+    assert registry.admission_epoch == rolled_back_epoch
+
+
+@pytest.mark.asyncio
+async def test_definitive_rejection_automatic_rollback_replays_exact_response() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    clock.advance(20)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(9)
+    boundary_times = iter([clock.value, clock.value, clock.value + 1])
+
+    def boundary_clock() -> float:
+        return next(boundary_times, clock.value + 1)
+
+    registry._clock = boundary_clock
+    request = GracefulControlResultRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        outcome="definitive_rejection",
+    )
+
+    first = await _record_graceful_control(registry, request)
+    rolled_back_epoch = first.admission_epoch
+    assert first.result == "rolled_back"
+    replay = await _record_graceful_control(registry, request)
+    assert replay == first
+    assert registry.admission_epoch == rolled_back_epoch
+
+    with pytest.raises(LifecycleAuthorityError):
+        await _record_graceful_control(
+            registry,
+            request.model_copy(update={"outcome": "accepted"}),
+        )
+    with pytest.raises(LifecycleAuthorityError):
+        await _record_graceful_control(
+            registry,
+            request.model_copy(
+                update={"drain_generation": committed.drain_generation + 1},
+            ),
+        )
+    with pytest.raises(LifecycleAuthorityError):
+        await _record_graceful_control(
+            registry,
+            request.model_copy(update={"owner_generation": 2}),
+        )
+    with pytest.raises(LifecycleAuthorityError):
+        await registry.record_graceful_control(
+            request,
+            owner_credential=_secret_buffer("foreign-owner-credential-material"),
+        )
+    assert registry.admission_epoch == rolled_back_epoch
+
+
+@pytest.mark.asyncio
+async def test_abandoned_automatic_rollback_replays_only_exact_authorized_outcome() -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    authorization = await registry.prepare_hard_signal(
+        HardSignalPrepareRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            pid=process_identity.pid,
+            os_process_start_token=process_identity.os_process_start_token,
+        ),
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    await _detach_client(registry, client_lease(registration))
+    request = HardSignalOutcomeRequest(
+        authorization_id=authorization.authorization_id,
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        outcome="abandoned",
+    )
+
+    first = await registry.record_hard_signal_outcome(
+        request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    rolled_back_epoch = first.admission_epoch
+    assert first.result == "rolled_back"
+    replay = await registry.record_hard_signal_outcome(
+        request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    assert replay == first
+
+    for mismatched in [
+        request.model_copy(update={"outcome": "sent"}),
+        request.model_copy(update={"authorization_id": "f" * 43}),
+        request.model_copy(
+            update={"drain_generation": committed.drain_generation + 1},
+        ),
+        request.model_copy(update={"owner_generation": 2}),
+    ]:
+        with pytest.raises(LifecycleAuthorityError):
+            await registry.record_hard_signal_outcome(
+                mismatched,
+                owner_credential=_secret_buffer(OWNER_SECRET),
+            )
+    with pytest.raises(LifecycleAuthorityError):
+        await registry.record_hard_signal_outcome(
+            request,
+            owner_credential=_secret_buffer("foreign-owner-credential-material"),
+        )
+    assert registry.admission_epoch == rolled_back_epoch
+
+
+@pytest.mark.asyncio
+async def test_explicit_rollback_returns_prehelper_automatic_rollback() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="definitive_rejection",
+        ),
+    )
+    clock.advance(20)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(10)
+
+    rolled_back = await _rollback_control_drain(
+        registry,
+        drain_control(process_identity, committed.drain_generation),
+    )
+    assert rolled_back.result == "rolled_back"
+    assert registry.admission_epoch == committed.admission_epoch + 1
+    rolled_back_epoch = registry.admission_epoch
+    replay = await _rollback_control_drain(
+        registry,
+        drain_control(process_identity, committed.drain_generation),
+    )
+    assert replay == rolled_back
+    assert registry.admission_epoch == rolled_back_epoch
+    with pytest.raises(LifecycleAuthorityError):
+        await _rollback_control_drain(
+            registry,
+            drain_control(
+                process_identity,
+                committed.drain_generation + 1,
+            ),
+        )
+    with pytest.raises(LifecycleAuthorityError):
+        await registry.rollback_control_drain(
+            drain_control(process_identity, committed.drain_generation),
+            owner_credential=_secret_buffer("foreign-owner-credential-material"),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entry_point",
+    ["register_client", "renew_owner", "detach_client"],
+)
+@pytest.mark.parametrize(
+    ("phase", "authorization_id", "outcome", "recovery_forbidden"),
+    [
+        ("shutdown_started", None, None, False),
+        ("hard_signal_decision_pending", None, None, False),
+        ("hard_signal_decision_pending", "a" * 43, None, False),
+        ("signal_sent", "a" * 43, "sent", True),
+        ("process_exited", "a" * 43, "process_exited", False),
+    ],
+    ids=[
+        "graceful-accepted",
+        "graceful-uncertain",
+        "hard-signal-prepared",
+        "hard-signal-sent",
+        "process-exited",
+    ],
+)
+async def test_expired_requester_does_not_change_unsafe_or_terminal_phase(
+    entry_point: str,
+    phase: str,
+    authorization_id: str | None,
+    outcome: str | None,
+    recovery_forbidden: bool,
+) -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    assert registry._drain is not None
+    registry._drain.phase = phase
+    registry._drain.hard_signal_authorization_id = authorization_id
+    registry._drain.hard_signal_authorization_expires_at_unix = (
+        clock.value + 30 if authorization_id is not None else None
+    )
+    registry._drain.hard_signal_outcome = outcome
+    registry._drain.recovery_forbidden = recovery_forbidden
+    before = (
+        registry._drain.hard_signal_authorization_id,
+        registry._drain.hard_signal_authorization_expires_at_unix,
+        registry._drain.hard_signal_outcome,
+        registry._drain.recovery_forbidden,
+    )
+    clock.advance(20)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(10)
+
+    if entry_point == "register_client":
+        with pytest.raises(LifecycleAuthorityError) as closed:
+            await _register_client(
+                registry,
+                client_register(
+                    process_identity,
+                    client_id=CLIENT_B,
+                    workspace_id=WORKSPACE_B,
+                    credential=CLIENT_B_SECRET,
+                ),
+            )
+        assert closed.value.code == "drain_in_progress"
+    elif entry_point == "renew_owner":
+        renewed = await _renew_owner(
+            registry,
+            owner_lease(process_identity),
+        )
+        assert renewed.result == "renewed"
+    else:
+        detached = await _detach_client(
+            registry,
+            client_lease(registration),
+        )
+        assert detached.result == "detached"
+    assert registry.admission_epoch == committed.admission_epoch
+    assert registry.authority_snapshot()["drain_phase"] == phase
+    assert registry.authority_snapshot()["registrations_open"] is False
+    assert registry._drain is not None
+    assert (
+        registry._drain.hard_signal_authorization_id,
+        registry._drain.hard_signal_authorization_expires_at_unix,
+        registry._drain.hard_signal_outcome,
+        registry._drain.recovery_forbidden,
+    ) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ambiguity", ["clock", "registration-binding"])
+async def test_ambiguous_requester_expiry_does_not_rollback(
+    ambiguity: str,
+) -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    await _renew_owner(registry, owner_lease(process_identity))
+    if ambiguity == "clock":
+        clock.value = float("nan")
+    else:
+        clock.advance(30)
+        registry._registrations[registration.registration_id].generation += 1
+
+    with pytest.raises(LifecycleAuthorityError) as closed:
+        await _register_client(
+            registry,
+            client_register(
+                process_identity,
+                client_id=CLIENT_B,
+                workspace_id=WORKSPACE_B,
+                credential=CLIENT_B_SECRET,
+            ),
+        )
+
+    assert closed.value.code == "drain_in_progress"
+    assert registry.admission_epoch == committed.admission_epoch
+    assert registry.authority_snapshot()["drain_phase"] == "draining"
+
+
+@pytest.mark.asyncio
+async def test_absent_bound_requester_rolls_back_on_next_registration() -> None:
+    registry, process_identity, _, registration, _, committed = await _expired_requester_drain()
+    del registry._registrations[registration.registration_id]
+    del registry._registration_by_client[registration.client_instance_id]
+
+    replacement = await _register_client(
+        registry,
+        client_register(
+            process_identity,
+            client_id=CLIENT_B,
+            workspace_id=WORKSPACE_B,
+            credential=CLIENT_B_SECRET,
+        ),
+    )
+
+    assert replacement.result == "registered"
+    assert registry.admission_epoch == committed.admission_epoch + 1
+    assert registry.authority_snapshot()["drain_phase"] == "rolled_back"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entry_point",
+    [
+        "renew_client",
+        "detach_client",
+        "admit_session",
+        "admit_turn",
+        "release_owner",
+        "acquire_owner",
+        "begin_control_drain",
+        "record_graceful_control",
+        "prepare_hard_signal",
+        "record_hard_signal_outcome",
+        "rollback_control_drain",
+    ],
+)
+async def test_locked_lifecycle_entry_points_repair_orphaned_drain(
+    entry_point: str,
+) -> None:
+    registry, process_identity, _, registration, request, committed = (
+        await _expired_requester_drain(
+            keep_owner_live=entry_point != "acquire_owner",
+        )
+    )
+    admission_advance = 0
+
+    if entry_point == "renew_client":
+        with pytest.raises(LifecycleAuthorityError) as rejected:
+            await _renew_client(registry, client_lease(registration))
+        assert rejected.value.code == "registration_expired"
+    elif entry_point == "detach_client":
+        detached = await _detach_client(registry, client_lease(registration))
+        assert detached.result == "detached"
+    elif entry_point == "admit_session":
+        class Prepared:
+            async def prepare_start(
+                self,
+                *,
+                admission_serialized: bool = False,
+            ) -> None:
+                assert admission_serialized is True
+
+        await registry.admit_session(
+            SessionRecord(
+                session_id="session-after-expiry",
+                status=SessionStatus.STARTING,
+            ),
+            Prepared(),
+        )
+        admission_advance = 1
+    elif entry_point == "admit_turn":
+        class Accepted:
+            disposition = "started"
+
+        async def accept() -> Accepted:
+            return Accepted()
+
+        assert isinstance(await registry.admit_turn(accept), Accepted)
+        admission_advance = 1
+    elif entry_point == "release_owner":
+        released = await _release_owner(
+            registry,
+            owner_lease(process_identity),
+        )
+        assert released.result == "released"
+    elif entry_point == "acquire_owner":
+        acquired = await _acquire_owner(
+            registry,
+            owner_acquire(
+                process_identity,
+                bootstrap=None,
+                expected_generation=1,
+            ),
+        )
+        assert acquired.owner_generation == 2
+    elif entry_point == "begin_control_drain":
+        replay = request.model_copy()
+        _remember_proofs(
+            replay,
+            owner_credential=OWNER_SECRET,
+            registration_credential=CLIENT_A_SECRET,
+        )
+        with pytest.raises(LifecycleAuthorityError) as rejected:
+            await _begin_control_drain(registry, replay)
+        assert rejected.value.code == "registration_expired"
+    elif entry_point == "record_graceful_control":
+        with pytest.raises(LifecycleAuthorityError) as rejected:
+            await _record_graceful_control(
+                registry,
+                GracefulControlResultRequest(
+                    **drain_control(
+                        process_identity,
+                        committed.drain_generation,
+                    ).model_dump(),
+                    outcome="accepted",
+                ),
+            )
+        assert rejected.value.code == "drain_conflict"
+    elif entry_point == "prepare_hard_signal":
+        control = drain_control(
+            process_identity,
+            committed.drain_generation,
+        )
+        _take_proofs(control)
+        with pytest.raises(LifecycleAuthorityError) as rejected:
+            await registry.prepare_hard_signal(
+                HardSignalPrepareRequest(
+                    **control.model_dump(),
+                    pid=process_identity.pid,
+                    os_process_start_token=process_identity.os_process_start_token,
+                ),
+                owner_credential=_secret_buffer(OWNER_SECRET),
+            )
+        assert rejected.value.code == "drain_conflict"
+    elif entry_point == "record_hard_signal_outcome":
+        control = drain_control(
+            process_identity,
+            committed.drain_generation,
+        )
+        _take_proofs(control)
+        with pytest.raises(LifecycleAuthorityError) as rejected:
+            await registry.record_hard_signal_outcome(
+                HardSignalOutcomeRequest(
+                    **control.model_dump(),
+                    authorization_id="a" * 43,
+                    outcome="abandoned",
+                ),
+                owner_credential=_secret_buffer(OWNER_SECRET),
+            )
+        assert rejected.value.code == "hard_signal_authorization_conflict"
+    else:
+        rolled_back = await _rollback_control_drain(
+            registry,
+            drain_control(
+                process_identity,
+                committed.drain_generation,
+            ),
+        )
+        assert rolled_back.result == "rolled_back"
+
+    assert registry.admission_epoch == (
+        committed.admission_epoch + 1 + admission_advance
+    )
+    assert registry.authority_snapshot()["drain_phase"] == "rolled_back"
+    assert registry._control_request_ids == {"q" * 43}
 
 
 @pytest.mark.asyncio
@@ -1105,7 +1943,9 @@ async def test_expired_owner_reacquisition_transfers_only_recoverable_active_dra
         registry,
         begin_drain(registry, process_identity, registration),
     )
-    clock.advance(31)
+    clock.advance(20)
+    await _renew_client(registry, client_lease(registration))
+    clock.advance(11)
     with pytest.raises(LifecycleAuthorityError) as expired:
         await _record_graceful_control(
             registry,
@@ -1150,7 +1990,9 @@ async def test_reacquired_owner_transfers_drain_and_only_new_generation_can_roll
         registry,
         begin_drain(registry, process_identity, registration),
     )
-    clock.advance(31)
+    clock.advance(20)
+    await _renew_client(registry, client_lease(registration))
+    clock.advance(11)
     await _acquire_owner(
         registry,
         owner_acquire(
@@ -1227,7 +2069,9 @@ async def test_rollback_after_expiry_requires_exact_owner_reacquisition() -> Non
             outcome="definitive_rejection",
         ),
     )
-    clock.advance(31)
+    clock.advance(20)
+    await _renew_client(registry, client_lease(registration))
+    clock.advance(11)
     with pytest.raises(LifecycleAuthorityError) as expired:
         await _rollback_control_drain(
             registry,

@@ -687,6 +687,107 @@ test("drain calls use only canonical pre-signal authorization and post-attempt o
   assertNoSecrets(requests.slice(1).map(({ body }) => body), OWNER_CREDENTIAL, REGISTRATION_CREDENTIAL)
 })
 
+test("safe control outcomes accept automatic rollback and exact retries", async () => {
+  const responses = [
+    jsonResponse(drainResponse("rolled_back")),
+    jsonResponse(drainResponse("rolled_back")),
+    jsonResponse(drainResponse("rolled_back")),
+    jsonResponse(drainResponse("rolled_back")),
+  ]
+  const { bound, requests } = await bindClient({ responses })
+  const gracefulInput = { ...drainControlInput(), outcome: "definitive_rejection" }
+  const hardSignalInput = {
+    ...drainControlInput(),
+    authorizationId: "a".repeat(43),
+    outcome: "abandoned",
+  }
+
+  for (const response of [
+    await bound.recordGracefulControl(gracefulInput),
+    await bound.recordGracefulControl(gracefulInput),
+    await bound.recordHardSignalOutcome(hardSignalInput),
+    await bound.recordHardSignalOutcome(hardSignalInput),
+  ]) {
+    assert.equal(response.result, "rolled_back")
+    assert.equal(response.drainGeneration, 2)
+    assert.equal(response.admissionEpoch, 6)
+    assert.equal(response.sessionAdmissionOpen, true)
+    assert.equal(response.turnAdmissionOpen, true)
+    assert.equal(response.registrationsOpen, true)
+    assert.equal(response.signalPermitted, false)
+  }
+  assert.deepEqual(
+    requests.slice(1).map(({ body }) => JSON.parse(body).outcome),
+    ["definitive_rejection", "definitive_rejection", "abandoned", "abandoned"],
+  )
+})
+
+test("automatic rollback is rejected for unsafe control outcomes", async () => {
+  const cases = [
+    ["accepted", "recordGracefulControl", {
+      ...drainControlInput(),
+      outcome: "accepted",
+    }, "graceful_control_result_mismatch"],
+    ["timeout", "recordGracefulControl", {
+      ...drainControlInput(),
+      outcome: "timeout",
+    }, "graceful_control_result_mismatch"],
+    ["uncertain", "recordGracefulControl", {
+      ...drainControlInput(),
+      outcome: "uncertain",
+    }, "graceful_control_result_mismatch"],
+    ["sent", "recordHardSignalOutcome", {
+      ...drainControlInput(),
+      authorizationId: "a".repeat(43),
+      outcome: "sent",
+    }, "hard_signal_outcome_result_mismatch"],
+    ["process_exited", "recordHardSignalOutcome", {
+      ...drainControlInput(),
+      authorizationId: "a".repeat(43),
+      outcome: "process_exited",
+    }, "hard_signal_outcome_result_mismatch"],
+  ]
+
+  for (const [label, method, input, code] of cases) {
+    const { bound } = await bindClient({
+      responses: [jsonResponse(drainResponse("rolled_back"))],
+    })
+    const { failure } = await failureOf(() => bound[method](input))
+    assert.equal(failure.kind, "protocol", label)
+    assert.equal(failure.code, code, label)
+  }
+})
+
+test("safe automatic rollback still enforces state, generation, and exact result mapping", async () => {
+  const cases = [
+    ["graceful closed admission", "recordGracefulControl", {
+      ...drainControlInput(),
+      outcome: "definitive_rejection",
+    }, drainResponse("rolled_back", { registrations_open: false }), "control_admission_state_contradiction"],
+    ["hard-signal generation mismatch", "recordHardSignalOutcome", {
+      ...drainControlInput(),
+      authorizationId: "a".repeat(43),
+      outcome: "abandoned",
+    }, drainResponse("rolled_back", { drain_generation: 3 }), "drain_generation_echo_mismatch"],
+    ["graceful unsafe result", "recordGracefulControl", {
+      ...drainControlInput(),
+      outcome: "definitive_rejection",
+    }, drainResponse("hard_signal_decision_pending"), "graceful_control_result_mismatch"],
+    ["hard-signal unsafe result", "recordHardSignalOutcome", {
+      ...drainControlInput(),
+      authorizationId: "a".repeat(43),
+      outcome: "abandoned",
+    }, drainResponse("signal_sent"), "hard_signal_outcome_result_mismatch"],
+  ]
+
+  for (const [label, method, input, response, code] of cases) {
+    const { bound } = await bindClient({ responses: [jsonResponse(response)] })
+    const { failure } = await failureOf(() => bound[method](input))
+    assert.equal(failure.kind, "protocol", label)
+    assert.equal(failure.code, code, label)
+  }
+})
+
 test("identity handshake rejects closed-schema violations and incompatible readiness", async () => {
   const cases = [
     ["extra identity field", (value) => { value.extra = true }, "protocol"],

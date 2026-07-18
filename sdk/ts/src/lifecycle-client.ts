@@ -356,11 +356,11 @@ export interface BoundLifecycleE4Client {
   detachClient(input: ClientLeaseInput): Promise<ClientRegistrationResponse & { readonly result: "detached" | "already_detached" }>
   beginControlDrain(input: BeginControlDrainInput): Promise<DrainControlResponse & { readonly result: "draining" }>
   recordGracefulControl(input: GracefulControlInput): Promise<DrainControlResponse & {
-    readonly result: "shutdown_started" | "rollback_permitted" | "hard_signal_decision_pending"
+    readonly result: "shutdown_started" | "rollback_permitted" | "hard_signal_decision_pending" | "rolled_back"
   }>
   prepareHardSignal(input: PrepareHardSignalInput): Promise<HardSignalAuthorizationResponse>
   recordHardSignalOutcome(input: RecordHardSignalOutcomeInput): Promise<DrainControlResponse & {
-    readonly result: "rollback_permitted" | "signal_sent" | "process_exited"
+    readonly result: "rollback_permitted" | "signal_sent" | "process_exited" | "rolled_back"
   }>
   rollbackDrain(input: RollbackDrainInput): Promise<DrainControlResponse & { readonly result: "rolled_back" }>
 }
@@ -1909,12 +1909,12 @@ const createBoundClient = (
       input.signal,
     )
     const response = decodeResponse(raw, (value) => decodeDrainResponse(value, binding))
-    const expectedResult = outcome === "accepted"
-      ? "shutdown_started"
+    const expectedResults = outcome === "accepted"
+      ? ["shutdown_started"] as const
       : outcome === "definitive_rejection"
-        ? "rollback_permitted"
-        : "hard_signal_decision_pending"
-    const narrowed = expectMethodResult(response, [expectedResult] as const, "graceful_control_result_mismatch", raw)
+        ? ["rollback_permitted", "rolled_back"] as const
+        : ["hard_signal_decision_pending"] as const
+    const narrowed = expectMethodResult(response, expectedResults, "graceful_control_result_mismatch", raw)
     if (narrowed.drainGeneration !== drainGeneration) responseProtocolError(raw, "drain_generation_echo_mismatch")
     return narrowed
   },
@@ -1982,12 +1982,12 @@ const createBoundClient = (
       [authorizationId],
     )
     const response = decodeResponse(raw, (value) => decodeDrainResponse(value, binding))
-    const expectedResult = outcome === "sent"
-      ? "signal_sent"
+    const expectedResults = outcome === "sent"
+      ? ["signal_sent"] as const
       : outcome === "abandoned"
-        ? "rollback_permitted"
-        : "process_exited"
-    const narrowed = expectMethodResult(response, [expectedResult] as const, "hard_signal_outcome_result_mismatch", raw)
+        ? ["rollback_permitted", "rolled_back"] as const
+        : ["process_exited"] as const
+    const narrowed = expectMethodResult(response, expectedResults, "hard_signal_outcome_result_mismatch", raw)
     if (narrowed.drainGeneration !== drainGeneration) responseProtocolError(raw, "drain_generation_echo_mismatch")
     return narrowed
   },
