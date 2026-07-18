@@ -589,7 +589,11 @@ def test_auto_bind_role_refs_binds_refs_hash_maps_and_artifact_rows_topologicall
                     "input_hashes": {"data/base.json": stale},
                     "ref": f"data/base.json#{stale}",
                 },
-                "top": {"mid_ref": f"data/mid.json#{stale}"},
+                "top": {
+                    "hashes": {"mid": stale},
+                    "mid_ref": f"data/mid.json#{stale}",
+                    "refs": {"mid": "data/mid.json"},
+                },
             },
             # Reverse listing order proves rendering follows reference topology.
             "required_roles": ["top", "mid", "base"],
@@ -623,7 +627,11 @@ def test_auto_bind_role_refs_binds_refs_hash_maps_and_artifact_rows_topologicall
     assert mid["artifacts"] == [
         {"path": "data/base.json", "sha256": base_hash, "bytes": len(packet["base"]), "exists": True}
     ]
-    assert json.loads(packet["top"]) == {"mid_ref": f"data/mid.json#{mid_hash}"}
+    assert json.loads(packet["top"]) == {
+        "hashes": {"mid": mid_hash},
+        "mid_ref": f"data/mid.json#{mid_hash}",
+        "refs": {"mid": "data/mid.json"},
+    }
 
 
 def test_lane_values_derive_freeze_ledger_catalog_and_scope_facts() -> None:

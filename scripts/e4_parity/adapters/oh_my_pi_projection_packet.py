@@ -160,6 +160,15 @@ def _referenced_roles(value: Any, path_to_role: Mapping[str, str]) -> set[str]:
         return roles
     if isinstance(value, Mapping):
         artifact_path = value.get("path")
+        refs = value.get("refs")
+        hashes = value.get("hashes")
+        if isinstance(refs, Mapping) and isinstance(hashes, Mapping):
+            for key, ref_value in refs.items():
+                if key not in hashes or not isinstance(ref_value, str):
+                    continue
+                role = path_to_role.get(ref_value.partition("#")[0])
+                if role is not None:
+                    roles.add(role)
         if isinstance(artifact_path, str) and artifact_path in path_to_role and any(
             key in value for key in ("bytes", "exists", "sha256")
         ):
@@ -194,6 +203,15 @@ def _bind_role_refs(
             )
         return value
     if isinstance(value, dict):
+        refs = value.get("refs")
+        hashes = value.get("hashes")
+        if isinstance(refs, Mapping) and isinstance(hashes, dict):
+            for key, ref_value in refs.items():
+                if key not in hashes or not isinstance(ref_value, str):
+                    continue
+                role = path_to_role.get(ref_value.partition("#")[0])
+                if role is not None and role in role_hashes:
+                    hashes[key] = role_hashes[role]
         artifact_path = value.get("path")
         if isinstance(artifact_path, str):
             role = path_to_role.get(artifact_path)
