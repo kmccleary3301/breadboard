@@ -13,7 +13,7 @@ from typing import Any, AsyncIterator, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import ArtifactStore, _close_windows_handle, _descriptor_path, _open_directory, _sync_directory, _windows_handle
 from breadboard.product.runtime.ports import JsonlEventSink
-from breadboard.product.runtime.events import Session as ProductSession
+from breadboard.product.runtime.session import Session as ProductSession
 from fastapi import HTTPException, UploadFile, status
 from .events import EventType, SessionEvent
 from .models import (
