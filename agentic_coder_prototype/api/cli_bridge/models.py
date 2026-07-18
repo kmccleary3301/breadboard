@@ -302,6 +302,7 @@ class ClientRegistrationResponse(_StrictLifecycleModel):
 
 class BeginControlDrainRequest(EngineAuthorityBinding):
     owner_generation: int = Field(..., ge=1)
+    control_request_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
     registration_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
     requester_registration_generation: int = Field(..., ge=1)
     requester_client_instance_id: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
@@ -343,6 +344,7 @@ class HardSignalOutcomeRequest(DrainControlRequest):
 
 class DrainControlResponse(EngineAuthorityBinding):
     schema_version: Literal["bb.engine_drain_control.v1"] = "bb.engine_drain_control.v1"
+    control_request_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
     result: Literal[
         "draining",
         "shutdown_started",

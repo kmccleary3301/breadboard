@@ -164,7 +164,11 @@ def inherited_verifier(process_identity: EngineProcessIdentity) -> LaunchBootstr
     return LaunchBootstrapVerifier.from_inherited_fd(read_fd, process_identity)
 
 
-def registry_fixture(*, state_root: Path | None = None) -> tuple[SessionRegistry, EngineProcessIdentity, Clock, LaunchBootstrapVerifier]:
+def registry_fixture(
+    *,
+    state_root: Path | None = None,
+    control_request_capacity: int = 4096,
+) -> tuple[SessionRegistry, EngineProcessIdentity, Clock, LaunchBootstrapVerifier]:
     process_identity = identity()
     clock = Clock()
     verifier = inherited_verifier(process_identity)
@@ -173,6 +177,7 @@ def registry_fixture(*, state_root: Path | None = None) -> tuple[SessionRegistry
         process_identity=process_identity,
         bootstrap_verifier=verifier,
         clock=clock,
+        control_request_capacity=control_request_capacity,
     )
     return registry, process_identity, clock, verifier
 
@@ -260,12 +265,14 @@ def begin_drain(
     owner_secret: str = OWNER_SECRET,
     registration_secret: str = CLIENT_A_SECRET,
     epoch: int | None = None,
+    control_request_id: str | None = None,
 ) -> BeginControlDrainRequest:
     request = BeginControlDrainRequest(
         engine_instance_id=process_identity.engine_instance_id,
         engine_boot_id=process_identity.engine_boot_id,
         launch_id=process_identity.launch_id,
         owner_generation=owner_generation,
+        control_request_id=control_request_id or secrets.token_urlsafe(32),
         registration_id=registration.registration_id,
         requester_registration_generation=registration.registration_generation,
         requester_client_instance_id=registration.client_instance_id,
@@ -441,8 +448,13 @@ async def _rollback_control_drain(
     )
 
 
-async def owned_registered_registry() -> tuple[SessionRegistry, EngineProcessIdentity, Clock, Any]:
-    registry, process_identity, clock, _ = registry_fixture()
+async def owned_registered_registry(
+    *,
+    control_request_capacity: int = 4096,
+) -> tuple[SessionRegistry, EngineProcessIdentity, Clock, Any]:
+    registry, process_identity, clock, _ = registry_fixture(
+        control_request_capacity=control_request_capacity,
+    )
     await _acquire_owner(registry, owner_acquire(process_identity))
     registration = await _register_client(registry, client_register(process_identity))
     return registry, process_identity, clock, registration
@@ -664,6 +676,426 @@ async def test_owner_renewal_during_drain_extends_control_authority() -> None:
     )
     assert accepted.result == "shutdown_started"
     assert accepted.session_admission_open is False
+
+
+@pytest.mark.asyncio
+async def test_begin_control_drain_recovers_a_lost_response_exactly_once() -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    first = await _begin_control_drain(registry, request)
+    epoch = registry.admission_epoch
+    generation = registry._drain_generation
+
+    replay = request.model_copy()
+    _remember_proofs(
+        replay,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    recovered = await _begin_control_drain(registry, replay)
+
+    assert recovered == first
+    assert recovered.control_request_id == request.control_request_id
+    assert registry.admission_epoch == epoch
+    assert registry._drain_generation == generation
+    assert registry._drain is not None
+    assert registry._drain.generation == first.drain_generation
+
+
+@pytest.mark.asyncio
+async def test_drain_route_recovers_a_lost_response_and_rejects_missing_or_malformed_id() -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    app = create_app(SessionService(registry=registry))
+    client = TestClient(app)
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    _take_proofs(request)
+    payload = request.model_dump(mode="json")
+    headers = {
+        "X-Breadboard-Owner-Credential": OWNER_SECRET,
+        "X-Breadboard-Registration-Credential": CLIENT_A_SECRET,
+    }
+
+    missing = dict(payload)
+    del missing["control_request_id"]
+    malformed = {**payload, "control_request_id": "bad"}
+    for rejected_payload in (missing, malformed):
+        rejected = client.post(
+            "/v1/engine/control/drain",
+            json=rejected_payload,
+            headers=headers,
+        )
+        assert rejected.status_code == 422
+
+    first = client.post(
+        "/v1/engine/control/drain",
+        json=payload,
+        headers=headers,
+    )
+    epoch = registry.admission_epoch
+    generation = registry._drain_generation
+    replay = client.post(
+        "/v1/engine/control/drain",
+        json=payload,
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    assert replay.json()["control_request_id"] == request.control_request_id
+    assert registry.admission_epoch == epoch
+    assert registry._drain_generation == generation
+    assert registry._drain is not None
+    assert registry._drain.generation == replay.json()["drain_generation"]
+
+
+@pytest.mark.asyncio
+async def test_begin_control_drain_rejects_operation_id_reuse_and_changed_bindings() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    await _begin_control_drain(registry, request)
+
+    changed_epoch = request.model_copy(
+        update={"expected_admission_epoch": request.expected_admission_epoch + 1},
+    )
+    _remember_proofs(
+        changed_epoch,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    with pytest.raises(LifecycleAuthorityError) as mismatched:
+        await _begin_control_drain(registry, changed_epoch)
+    assert mismatched.value.code == "control_request_conflict"
+
+    different_id = request.model_copy(update={"control_request_id": "r" * 43})
+    _remember_proofs(
+        different_id,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    with pytest.raises(LifecycleAuthorityError) as competing:
+        await _begin_control_drain(registry, different_id)
+    assert competing.value.code == "drain_conflict"
+
+    wrong_engine = request.model_copy(update={"engine_boot_id": "b" * 43})
+    _remember_proofs(
+        wrong_engine,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    with pytest.raises(LifecycleAuthorityError) as engine:
+        await _begin_control_drain(registry, wrong_engine)
+    assert engine.value.code == "engine_identity_mismatch"
+
+    wrong_requester = request.model_copy(
+        update={"requester_client_instance_id": CLIENT_B},
+    )
+    _remember_proofs(
+        wrong_requester,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    with pytest.raises(LifecycleAuthorityError) as requester:
+        await _begin_control_drain(registry, wrong_requester)
+    assert requester.value.code == "registration_identity_mismatch"
+
+    clock.advance(31)
+    stale = request.model_copy()
+    _remember_proofs(
+        stale,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    with pytest.raises(LifecycleAuthorityError) as expired_owner:
+        await _begin_control_drain(registry, stale)
+    assert expired_owner.value.code == "owner_expired"
+
+
+@pytest.mark.asyncio
+async def test_begin_control_drain_replay_rejects_a_cross_requester_operation_id() -> None:
+    registry, process_identity, _, _ = registry_fixture()
+    await _acquire_owner(registry, owner_acquire(process_identity))
+    requester = await _register_client(registry, client_register(process_identity))
+    other = await _register_client(
+        registry,
+        client_register(
+            process_identity,
+            client_id=CLIENT_B,
+            workspace_id=WORKSPACE_B,
+            credential=CLIENT_B_SECRET,
+        ),
+    )
+    await _detach_client(
+        registry,
+        client_lease(other, credential=CLIENT_B_SECRET),
+    )
+    request = begin_drain(
+        registry,
+        process_identity,
+        requester,
+        control_request_id="q" * 43,
+    )
+    await _begin_control_drain(registry, request)
+
+    cross_requester = request.model_copy(
+        update={
+            "registration_id": other.registration_id,
+            "requester_registration_generation": other.registration_generation,
+            "requester_client_instance_id": other.client_instance_id,
+        },
+    )
+    _remember_proofs(
+        cross_requester,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_B_SECRET,
+    )
+    with pytest.raises(LifecycleAuthorityError) as rejected:
+        await _begin_control_drain(registry, cross_requester)
+    assert rejected.value.code == "registration_expired"
+
+
+@pytest.mark.asyncio
+async def test_begin_control_drain_replay_requires_live_registration_and_original_owner() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    await _begin_control_drain(registry, request)
+
+    clock.advance(20)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(11)
+    stale_registration = request.model_copy()
+    _remember_proofs(
+        stale_registration,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    with pytest.raises(LifecycleAuthorityError) as expired_registration:
+        await _begin_control_drain(registry, stale_registration)
+    assert expired_registration.value.code == "registration_expired"
+
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    await _begin_control_drain(registry, request)
+    clock.advance(20)
+    renewed_registration = await _renew_client(
+        registry,
+        client_lease(registration),
+    )
+    clock.advance(11)
+    reacquired = await _acquire_owner(
+        registry,
+        owner_acquire(
+            process_identity,
+            bootstrap=None,
+            expected_generation=1,
+        ),
+    )
+    changed_owner = begin_drain(
+        registry,
+        process_identity,
+        renewed_registration,
+        owner_generation=reacquired.owner_generation,
+        epoch=request.expected_admission_epoch,
+        control_request_id=request.control_request_id,
+    )
+    with pytest.raises(LifecycleAuthorityError) as owner:
+        await _begin_control_drain(registry, changed_owner)
+    assert owner.value.code == "control_request_conflict"
+
+
+@pytest.mark.asyncio
+async def test_rolled_back_control_request_id_cannot_be_reused_for_a_new_drain() -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    drained = await _begin_control_drain(registry, request)
+    rollback_ready = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(process_identity, drained.drain_generation).model_dump(),
+            outcome="definitive_rejection",
+        ),
+    )
+    rolled_back = await _rollback_control_drain(
+        registry,
+        drain_control(process_identity, rollback_ready.drain_generation),
+    )
+
+    reused = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        epoch=rolled_back.admission_epoch,
+        control_request_id=request.control_request_id,
+    )
+    with pytest.raises(LifecycleAuthorityError) as reuse:
+        await _begin_control_drain(registry, reused)
+    assert reuse.value.code == "control_request_conflict"
+
+    next_request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        epoch=rolled_back.admission_epoch,
+        control_request_id="r" * 43,
+    )
+    next_drain = await _begin_control_drain(registry, next_request)
+    assert next_drain.control_request_id == next_request.control_request_id
+    assert next_drain.drain_generation == drained.drain_generation + 1
+    assert next_drain.admission_epoch == rolled_back.admission_epoch + 1
+
+    next_rollback_ready = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                next_drain.drain_generation,
+            ).model_dump(),
+            outcome="definitive_rejection",
+        ),
+    )
+    next_rolled_back = await _rollback_control_drain(
+        registry,
+        drain_control(
+            process_identity,
+            next_rollback_ready.drain_generation,
+        ),
+    )
+    historical_reuse = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        epoch=next_rolled_back.admission_epoch,
+        control_request_id=request.control_request_id,
+    )
+    with pytest.raises(LifecycleAuthorityError) as historical:
+        await _begin_control_drain(registry, historical_reuse)
+    assert historical.value.code == "control_request_conflict"
+
+
+@pytest.mark.asyncio
+async def test_control_request_capacity_preserves_replay_and_known_id_rejection() -> None:
+    registry, process_identity, _, registration = await owned_registered_registry(
+        control_request_capacity=2,
+    )
+    first_request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        control_request_id="q" * 43,
+    )
+    first = await _begin_control_drain(registry, first_request)
+    first_ready = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(process_identity, first.drain_generation).model_dump(),
+            outcome="definitive_rejection",
+        ),
+    )
+    first_rolled_back = await _rollback_control_drain(
+        registry,
+        drain_control(process_identity, first_ready.drain_generation),
+    )
+    second_request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        epoch=first_rolled_back.admission_epoch,
+        control_request_id="r" * 43,
+    )
+    second = await _begin_control_drain(registry, second_request)
+
+    replay = second_request.model_copy()
+    _remember_proofs(
+        replay,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    assert await _begin_control_drain(registry, replay) == second
+
+    known = first_request.model_copy()
+    _remember_proofs(
+        known,
+        owner_credential=OWNER_SECRET,
+        registration_credential=CLIENT_A_SECRET,
+    )
+    with pytest.raises(LifecycleAuthorityError) as reused:
+        await _begin_control_drain(registry, known)
+    assert reused.value.code == "control_request_conflict"
+
+    second_ready = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(process_identity, second.drain_generation).model_dump(),
+            outcome="definitive_rejection",
+        ),
+    )
+    second_rolled_back = await _rollback_control_drain(
+        registry,
+        drain_control(process_identity, second_ready.drain_generation),
+    )
+    epoch = registry.admission_epoch
+    generation = registry._drain_generation
+    new_request = begin_drain(
+        registry,
+        process_identity,
+        registration,
+        epoch=second_rolled_back.admission_epoch,
+        control_request_id="s" * 43,
+    )
+    with pytest.raises(LifecycleAuthorityError) as capacity:
+        await _begin_control_drain(registry, new_request)
+    assert capacity.value.code == "control_request_capacity_exceeded"
+    assert registry.admission_epoch == epoch
+    assert registry._drain_generation == generation
+    assert registry._control_request_ids == {"q" * 43, "r" * 43}
+    assert all(
+        isinstance(control_request_id, str)
+        for control_request_id in registry._control_request_ids
+    )
+
+    restarted, restarted_identity, _, restarted_registration = (
+        await owned_registered_registry(control_request_capacity=2)
+    )
+    after_restart = await _begin_control_drain(
+        restarted,
+        begin_drain(
+            restarted,
+            restarted_identity,
+            restarted_registration,
+            control_request_id="q" * 43,
+        ),
+    )
+    assert after_restart.drain_generation == 1
 
 
 @pytest.mark.asyncio
@@ -1543,6 +1975,7 @@ def test_lifecycle_response_models_accept_each_consistent_result_variant() -> No
         is_open = result == "rolled_back"
         response = DrainControlResponse(
             **binding,
+            control_request_id="q" * 43,
             result=result,
             drain_generation=1,
             admission_epoch=1,
@@ -1645,6 +2078,7 @@ def test_lifecycle_response_models_reject_contradictory_states() -> None:
         with pytest.raises(ValidationError):
             DrainControlResponse(
                 **binding,
+                control_request_id="q" * 43,
                 drain_generation=1,
                 admission_epoch=1,
                 **contradiction,

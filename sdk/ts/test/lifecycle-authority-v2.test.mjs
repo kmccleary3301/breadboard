@@ -17,6 +17,7 @@ const LAUNCH_ID = "l".repeat(43)
 const CHALLENGE_ID = "c".repeat(43)
 const CHALLENGE = "h".repeat(43)
 const AUTHORIZATION_ID = "a".repeat(43)
+const CONTROL_REQUEST_ID = "q".repeat(43)
 const OWNER_CREDENTIAL = "owner-credential-private-value-01"
 const BOOTSTRAP_SECRET = new TextEncoder().encode("bootstrap-credential-private-value")
 const expectedSessionContract = Object.freeze({
@@ -381,6 +382,7 @@ test("hard-signal control is authorization-bound and records only a post-attempt
       schema_version: ENGINE_DRAIN_CONTROL_SCHEMA_VERSION,
       result: "signal_sent",
       ...bindingBody,
+      control_request_id: CONTROL_REQUEST_ID,
       drain_generation: 2,
       admission_epoch: 5,
       session_admission_open: false,

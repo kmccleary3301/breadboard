@@ -21,6 +21,7 @@ const BOOT_ID = "b".repeat(43)
 const LAUNCH_ID = "l".repeat(43)
 const OTHER_ID = "x".repeat(43)
 const REGISTRATION_ID = "r".repeat(43)
+const CONTROL_REQUEST_ID = "q".repeat(43)
 const CLIENT_INSTANCE_ID = "client.instance-0001"
 const WORKSPACE_ID = `workspace:v1:sha256:${"c".repeat(64)}`
 const OWNER_CREDENTIAL = "owner-credential-private-value-01"
@@ -113,6 +114,7 @@ const drainResponse = (result, overrides = {}) => {
     engine_instance_id: INSTANCE_ID,
     engine_boot_id: BOOT_ID,
     launch_id: LAUNCH_ID,
+    control_request_id: CONTROL_REQUEST_ID,
     drain_generation: 2,
     admission_epoch: admissionOpen ? 6 : 5,
     session_admission_open: admissionOpen,
@@ -232,6 +234,7 @@ const clientLeaseInput = (overrides = {}) => ({
 
 const beginDrainInput = (overrides = {}) => ({
   ownerGeneration: 1,
+  controlRequestId: CONTROL_REQUEST_ID,
   ownerCredential: OWNER_CREDENTIAL,
   registrationId: REGISTRATION_ID,
   requesterRegistrationGeneration: 1,
@@ -597,6 +600,7 @@ test("drain calls use only canonical pre-signal authorization and post-attempt o
     engineInstanceId: INSTANCE_ID,
     engineBootId: BOOT_ID,
     launchId: LAUNCH_ID,
+    controlRequestId: CONTROL_REQUEST_ID,
     result: "draining",
     drainGeneration: 2,
     admissionEpoch: 5,
@@ -643,6 +647,7 @@ test("drain calls use only canonical pre-signal authorization and post-attempt o
     engine_boot_id: BOOT_ID,
     launch_id: LAUNCH_ID,
     owner_generation: 1,
+    control_request_id: CONTROL_REQUEST_ID,
     registration_id: REGISTRATION_ID,
     requester_registration_generation: 1,
     requester_client_instance_id: CLIENT_INSTANCE_ID,
@@ -756,6 +761,17 @@ test("bound responses reject instance, boot, launch, and registration contract e
     assert.deepEqual(failure.correlation, {}, field)
     assert.equal(failure.body, REDACTED_VALUE, field)
   }
+
+  const mismatchedControlRequest = await beginDrainFailure(drainResponse("draining", {
+    control_request_id: OTHER_ID,
+  }))
+  assert.deepEqual(mismatchedControlRequest.failure, {
+    kind: "protocol",
+    code: "control_request_id_echo_mismatch",
+    status: 200,
+    correlation: {},
+    body: REDACTED_VALUE,
+  })
 })
 
 test("owner, registration, and control schema versions cannot substitute for one another", async () => {
@@ -853,6 +869,7 @@ test("authority conflict and expiry codes map to their typed lifecycle failures"
     ["registration_conflict", 409, "registration-conflict", "renewClient", clientLeaseInput()],
     ["registration_generation_conflict", 409, "registration-conflict", "renewClient", clientLeaseInput()],
     ["registration_expired", 410, "registration-expired", "renewClient", clientLeaseInput()],
+    ["control_request_conflict", 409, "drain-conflict", "beginControlDrain", beginDrainInput()],
     ["drain_conflict", 409, "drain-conflict", "beginControlDrain", beginDrainInput()],
     ["admission_epoch_conflict", 409, "drain-conflict", "beginControlDrain", beginDrainInput()],
     ["drain_recovery_failed", 409, "recovery-failed", "rollbackDrain", drainControlInput()],
@@ -890,6 +907,33 @@ test("authority conflict and expiry codes map to their typed lifecycle failures"
     assert.equal(failure.body, REDACTED_VALUE, code)
     assertNoSecrets([error, failure], secret, OWNER_CREDENTIAL, REGISTRATION_CREDENTIAL)
   }
+
+  const capacitySecret = "capacity-private-detail"
+  const capacityClient = await bindClient({
+    responses: [jsonResponse({
+      error: "control_request_capacity_exceeded",
+      detail: capacitySecret,
+      path: null,
+    }, 409)],
+  })
+  const capacity = await failureOf(() => capacityClient.bound.beginControlDrain(
+    beginDrainInput(),
+  ))
+  assert.deepEqual(capacity.failure, {
+    kind: "drain-conflict",
+    reason: "capacity-exceeded",
+    status: 409,
+    code: "control_request_capacity_exceeded",
+    correlation: {},
+    body: REDACTED_VALUE,
+  })
+  assertNoSecrets(
+    [capacity.error, capacity.failure],
+    capacitySecret,
+    OWNER_CREDENTIAL,
+    REGISTRATION_CREDENTIAL,
+    CONTROL_REQUEST_ID,
+  )
 })
 
 test("401 and 403 are auth failures while other remote HTTP failures retain only safe code and correlation", async () => {
@@ -1395,6 +1439,21 @@ test("success payloads cannot reflect bearer or authority credentials into typed
   })
   assertNoSecrets([embeddedLongFailure.error, embeddedLongFailure.failure], longBearer)
 })
+
+test("begin drain requires a canonical control request id before transport", async () => {
+  const { bound, requests } = await bindClient()
+  for (const controlRequestId of [undefined, "short", "!".repeat(43)]) {
+    const { failure } = await failureOf(() => bound.beginControlDrain(beginDrainInput({
+      controlRequestId,
+    })))
+    assert.deepEqual(failure, {
+      kind: "protocol",
+      code: "control_request_id_invalid",
+    })
+  }
+  assert.equal(requests.length, 1)
+})
+
 
 test("generation and epoch values enforce safe-integer boundaries on inputs and responses", async () => {
   const { bound, requests } = await bindClient()

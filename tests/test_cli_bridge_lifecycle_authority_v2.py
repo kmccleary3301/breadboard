@@ -154,6 +154,7 @@ async def test_hard_signal_requires_live_process_authorization_before_recorded_o
         BeginControlDrainRequest(
             **_binding(identity),
             owner_generation=acquired.owner_generation,
+            control_request_id="q" * 43,
             registration_id=registration.registration_id,
             requester_registration_generation=registration.registration_generation,
             requester_client_instance_id=registration.client_instance_id,

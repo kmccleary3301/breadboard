@@ -44,6 +44,7 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 _STATE_SCHEMA_VERSION = "bb.cli_bridge.session_state.v1"
+CONTROL_REQUEST_ID_CAPACITY = 4096
 _TERMINAL_EVENT_TYPES = {
     EventType.TURN_COMPLETED,
     EventType.TURN_FAILED,
@@ -107,9 +108,17 @@ class _ClientRegistration:
 @dataclass
 class _DrainState:
     generation: int
+    control_request_id: str
+    operation_kind: str
+    engine_instance_id: str
+    engine_boot_id: str
+    launch_id: str
+    begin_owner_generation: int
     owner_generation: int
     requester_registration_id: str
     requester_registration_generation: int
+    requester_client_instance_id: str
+    expected_admission_epoch: int
     phase: str
     recovery_forbidden: bool = False
     hard_signal_authorization_id: str | None = None
@@ -254,6 +263,7 @@ class SessionRegistry:
         process_identity: EngineProcessIdentity | None = None,
         bootstrap_verifier: LaunchBootstrapVerifier | None = None,
         clock: Callable[[], float] = time.time,
+        control_request_capacity: int = CONTROL_REQUEST_ID_CAPACITY,
     ) -> None:
         self._records: Dict[str, SessionRecord] = {}
         self._lock = asyncio.Lock()
@@ -261,6 +271,13 @@ class SessionRegistry:
         self._process_identity = process_identity
         self._bootstrap_verifier = bootstrap_verifier
         self._clock = clock
+        if (
+            isinstance(control_request_capacity, bool)
+            or not isinstance(control_request_capacity, int)
+            or not 1 <= control_request_capacity <= CONTROL_REQUEST_ID_CAPACITY
+        ):
+            raise ValueError("control request capacity is outside the supported range")
+        self._control_request_capacity = control_request_capacity
         self._owner: _OwnerLease | None = None
         self._registrations: Dict[str, _ClientRegistration] = {}
         self._registration_by_client: Dict[str, str] = {}
@@ -271,6 +288,7 @@ class SessionRegistry:
         self._registrations_open = True
         self._drain_generation = 0
         self._drain: _DrainState | None = None
+        self._control_request_ids: set[str] = set()
         self._state_root = Path(state_root).resolve() if state_root is not None else None
         if self._state_root is not None:
             self._state_root.mkdir(parents=True, exist_ok=True)
@@ -788,12 +806,40 @@ class SessionRegistry:
             engine_boot_id=identity.engine_boot_id,
             launch_id=identity.launch_id,
             drain_generation=drain.generation,
+            control_request_id=drain.control_request_id,
             admission_epoch=self._admission_epoch,
             session_admission_open=self._session_admission_open,
             turn_admission_open=self._turn_admission_open,
             registrations_open=self._registrations_open,
             signal_permitted=signal_permitted,
         )
+
+    @staticmethod
+    def _control_request_matches(
+        drain: _DrainState,
+        request: BeginControlDrainRequest,
+    ) -> bool:
+        return (
+            drain.operation_kind == "begin_control_drain"
+            and drain.engine_instance_id == request.engine_instance_id
+            and drain.engine_boot_id == request.engine_boot_id
+            and drain.launch_id == request.launch_id
+            and drain.begin_owner_generation == request.owner_generation
+            and drain.requester_registration_id == request.registration_id
+            and (
+                drain.requester_registration_generation
+                == request.requester_registration_generation
+            )
+            and (
+                drain.requester_client_instance_id
+                == request.requester_client_instance_id
+            )
+            and (
+                drain.expected_admission_epoch
+                == request.expected_admission_epoch
+            )
+        )
+
 
     async def begin_control_drain(
         self,
@@ -806,13 +852,33 @@ class SessionRegistry:
             async with self._authority_lock:
                 owner = self._require_live_owner(request, owner_credential)
                 requester = self._require_registration(request, registration_credential)
+                drain = self._drain
+                if (
+                    drain is not None
+                    and drain.phase != "rolled_back"
+                    and request.control_request_id == drain.control_request_id
+                ):
+                    if not self._control_request_matches(drain, request):
+                        raise LifecycleAuthorityError(
+                            "control_request_conflict",
+                            "control request binding does not match",
+                        )
+                    return self._drain_response("draining")
+                if request.control_request_id in self._control_request_ids:
+                    raise LifecycleAuthorityError(
+                        "control_request_conflict",
+                        "control request identifier is already complete",
+                    )
+                if drain is not None and drain.phase != "rolled_back":
+                    raise LifecycleAuthorityError(
+                        "drain_conflict",
+                        "control drain is already active",
+                    )
                 if request.expected_admission_epoch != self._admission_epoch:
                     raise LifecycleAuthorityError(
                         "admission_epoch_conflict",
                         "admission epoch does not match",
                     )
-                if self._drain is not None and self._drain.phase != "rolled_back":
-                    raise LifecycleAuthorityError("drain_conflict", "control drain is already active")
                 now = self._clock()
                 live = [
                     registration
@@ -829,6 +895,14 @@ class SessionRegistry:
                         "drain_turn_active",
                         "an unresolved admitted turn prevents control drain",
                     )
+                if (
+                    len(self._control_request_ids)
+                    >= self._control_request_capacity
+                ):
+                    raise LifecycleAuthorityError(
+                        "control_request_capacity_exceeded",
+                        "control request capacity is exhausted",
+                    )
                 self._drain_generation += 1
                 self._session_admission_open = False
                 self._turn_admission_open = False
@@ -836,11 +910,20 @@ class SessionRegistry:
                 self._admission_epoch += 1
                 self._drain = _DrainState(
                     generation=self._drain_generation,
+                    control_request_id=request.control_request_id,
+                    operation_kind="begin_control_drain",
+                    engine_instance_id=request.engine_instance_id,
+                    engine_boot_id=request.engine_boot_id,
+                    launch_id=request.launch_id,
+                    begin_owner_generation=owner.generation,
                     owner_generation=owner.generation,
                     requester_registration_id=requester.registration_id,
                     requester_registration_generation=requester.generation,
+                    requester_client_instance_id=requester.client_instance_id,
+                    expected_admission_epoch=request.expected_admission_epoch,
                     phase="draining",
                 )
+                self._control_request_ids.add(request.control_request_id)
                 return self._drain_response("draining")
         finally:
             self._wipe_credentials(owner_credential, registration_credential)

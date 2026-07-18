@@ -69,7 +69,7 @@ export type LifecycleE4Failure =
   | ({ readonly kind: "owner-expired" } & LifecycleHttpFailureEvidence)
   | ({ readonly kind: "registration-conflict" } & LifecycleHttpFailureEvidence)
   | ({ readonly kind: "registration-expired" } & LifecycleHttpFailureEvidence)
-  | ({ readonly kind: "drain-conflict" } & LifecycleHttpFailureEvidence)
+  | ({ readonly kind: "drain-conflict"; readonly reason?: "capacity-exceeded" } & LifecycleHttpFailureEvidence)
   | ({ readonly kind: "recovery-failed" } & LifecycleHttpFailureEvidence)
   | ({ readonly kind: "hard-signal-conflict" } & LifecycleHttpFailureEvidence)
   | ({ readonly kind: "hard-signal-authorization-expired" } & LifecycleHttpFailureEvidence)
@@ -212,6 +212,7 @@ export interface ClientLeaseInput extends LifecycleRequestOptions {
 
 export interface BeginControlDrainInput extends LifecycleRequestOptions {
   readonly ownerGeneration: number
+  readonly controlRequestId: string
   readonly ownerCredential: string
   readonly registrationId: string
   readonly requesterRegistrationGeneration: number
@@ -296,6 +297,7 @@ export interface DrainControlResponseBase {
   readonly engineInstanceId: string
   readonly engineBootId: string
   readonly launchId: string
+  readonly controlRequestId: string
   readonly drainGeneration: number
   readonly admissionEpoch: number
 }
@@ -427,6 +429,8 @@ const LIFECYCLE_CLASSIFICATION_CODES = {
   bootstrap_invalid: true,
   bootstrap_rotation_invalid: true,
   bootstrap_unavailable: true,
+  control_request_capacity_exceeded: true,
+  control_request_conflict: true,
   drain_clients_active: true,
   drain_conflict: true,
   drain_in_progress: true,
@@ -569,8 +573,12 @@ const classifyHttpFailure = (
   if (classificationCode === "hard_signal_authorization_expired") {
     return { kind: "hard-signal-authorization-expired", ...safe }
   }
+  if (classificationCode === "control_request_capacity_exceeded") {
+    return { kind: "drain-conflict", reason: "capacity-exceeded", ...safe }
+  }
   if (
     classificationCode === "drain_conflict"
+    || classificationCode === "control_request_conflict"
     || classificationCode === "drain_in_progress"
     || classificationCode === "drain_clients_active"
     || classificationCode === "drain_turn_active"
@@ -1330,6 +1338,7 @@ const decodeDrainResponse = (
 
     "engine_boot_id",
     "launch_id",
+    "control_request_id",
     "drain_generation",
     "admission_epoch",
     "session_admission_open",
@@ -1379,6 +1388,10 @@ const decodeDrainResponse = (
     engineInstanceId: binding.engineInstanceId,
     engineBootId: binding.engineBootId,
     launchId: binding.launchId,
+    controlRequestId: validateAuthorityId(
+      expectString(own(root, "control_request_id"), "control_request_id_invalid"),
+      "control_request_id_invalid",
+    ),
     drainGeneration: expectInteger(own(root, "drain_generation"), 1, "drain_generation_invalid"),
     admissionEpoch: expectInteger(own(root, "admission_epoch"), 0, "control_admission_epoch_invalid"),
   }
@@ -1825,6 +1838,10 @@ const createBoundClient = (
     return response
   },
   beginControlDrain: async (input: BeginControlDrainInput) => {
+    const controlRequestId = validateAuthorityId(
+      input.controlRequestId,
+      "control_request_id_invalid",
+    )
     const ownerGeneration = validatePositiveInteger(input.ownerGeneration, "owner_generation_invalid")
     const registrationId = validateAuthorityId(input.registrationId, "registration_id_invalid")
     const requesterRegistrationGeneration = validatePositiveInteger(
@@ -1849,6 +1866,7 @@ const createBoundClient = (
       {
         ...bindingBody(binding),
         owner_generation: ownerGeneration,
+        control_request_id: controlRequestId,
         registration_id: registrationId,
         requester_registration_generation: requesterRegistrationGeneration,
         requester_client_instance_id: requesterClientInstanceId,
@@ -1861,6 +1879,9 @@ const createBoundClient = (
       input.signal,
     )
     const response = expectMethodResult(decodeResponse(raw, (value) => decodeDrainResponse(value, binding)), ["draining"] as const, "control_drain_result_mismatch", raw)
+    if (response.controlRequestId !== controlRequestId) {
+      responseProtocolError(raw, "control_request_id_echo_mismatch")
+    }
     if (response.admissionEpoch !== expectedAdmissionEpoch + 1) {
       responseProtocolError(raw, "control_admission_epoch_echo_mismatch")
     }
