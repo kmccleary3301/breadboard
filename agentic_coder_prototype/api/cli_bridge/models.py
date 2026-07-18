@@ -207,9 +207,32 @@ class EngineAuthorityBinding(_StrictLifecycleModel):
     engine_boot_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
     launch_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
 
+class BootstrapChallengeRequest(EngineAuthorityBinding):
+    pass
+
+
+class BootstrapChallengeResponse(EngineAuthorityBinding):
+    schema_version: Literal["bb.engine_bootstrap_challenge.v1"] = "bb.engine_bootstrap_challenge.v1"
+    challenge_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    challenge: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    expires_at_unix: float = Field(..., ge=0)
+
+
+
 
 class OwnerAcquireRequest(EngineAuthorityBinding):
     expected_owner_generation: int = Field(..., ge=0)
+    bootstrap_challenge_id: str | None = Field(default=None, min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    bootstrap_proof_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _validate_bootstrap_proof(self) -> "OwnerAcquireRequest":
+        has_proof = self.bootstrap_challenge_id is not None and self.bootstrap_proof_sha256 is not None
+        if (self.bootstrap_challenge_id is None) != (self.bootstrap_proof_sha256 is None):
+            raise ValueError("bootstrap challenge and proof must be supplied together")
+        if (self.expected_owner_generation == 0) != has_proof:
+            raise ValueError("bootstrap proof is valid only for generation zero")
+        return self
 
 
 class OwnerLeaseRequest(EngineAuthorityBinding):
@@ -294,7 +317,27 @@ class GracefulControlResultRequest(DrainControlRequest):
     outcome: Literal["accepted", "definitive_rejection", "timeout", "uncertain"]
 
 
-class HardSignalDecisionRequest(DrainControlRequest):
+class HardSignalPrepareRequest(DrainControlRequest):
+    pid: int = Field(..., ge=1)
+    os_process_start_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]*$",
+    )
+
+
+class HardSignalAuthorizationResponse(EngineAuthorityBinding):
+    schema_version: Literal["bb.engine_hard_signal_authorization.v1"] = "bb.engine_hard_signal_authorization.v1"
+    result: Literal["authorized"] = "authorized"
+    owner_generation: int = Field(..., ge=1)
+    drain_generation: int = Field(..., ge=1)
+    authorization_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    expires_at_unix: float = Field(..., ge=0)
+
+
+class HardSignalOutcomeRequest(DrainControlRequest):
+    authorization_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
     outcome: Literal["sent", "abandoned", "process_exited"]
 
 

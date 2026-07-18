@@ -26,13 +26,17 @@ from .events import (
 )
 from .models import (
     BeginControlDrainRequest,
+    BootstrapChallengeRequest,
+    BootstrapChallengeResponse,
     ClientLeaseRequest,
     ClientRegisterRequest,
     ClientRegistrationResponse,
     DrainControlRequest,
     DrainControlResponse,
     GracefulControlResultRequest,
-    HardSignalDecisionRequest,
+    HardSignalAuthorizationResponse,
+    HardSignalOutcomeRequest,
+    HardSignalPrepareRequest,
     OwnerAcquireRequest,
     OwnerLeaseRequest,
     OwnerLeaseResponse,
@@ -178,17 +182,21 @@ class SessionService:
             )
         return SessionContractReadiness(ready=True, reason="ready")
 
+    async def issue_bootstrap_challenge(
+        self,
+        request: BootstrapChallengeRequest,
+    ) -> BootstrapChallengeResponse:
+        return await self.registry.issue_bootstrap_challenge(request)
+
     async def acquire_owner(
         self,
         request: OwnerAcquireRequest,
         *,
         owner_credential: bytearray,
-        bootstrap_credential: bytearray | None = None,
     ) -> OwnerLeaseResponse:
         return await self.registry.acquire_owner(
             request,
             owner_credential=owner_credential,
-            bootstrap_credential=bootstrap_credential,
         )
 
     async def renew_owner(
@@ -270,13 +278,24 @@ class SessionService:
             owner_credential=owner_credential,
         )
 
-    async def record_hard_signal_decision(
+    async def prepare_hard_signal(
         self,
-        request: HardSignalDecisionRequest,
+        request: HardSignalPrepareRequest,
+        *,
+        owner_credential: bytearray,
+    ) -> HardSignalAuthorizationResponse:
+        return await self.registry.prepare_hard_signal(
+            request,
+            owner_credential=owner_credential,
+        )
+
+    async def record_hard_signal_outcome(
+        self,
+        request: HardSignalOutcomeRequest,
         *,
         owner_credential: bytearray,
     ) -> DrainControlResponse:
-        return await self.registry.record_hard_signal_decision(
+        return await self.registry.record_hard_signal_outcome(
             request,
             owner_credential=owner_credential,
         )

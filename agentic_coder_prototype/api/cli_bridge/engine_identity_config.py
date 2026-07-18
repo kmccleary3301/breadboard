@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -118,6 +119,7 @@ class LaunchBootstrapVerifier:
         )
         self._digest: bytearray | None = bytearray(self._bound_digest(secret, self._binding))
         self._consumed = False
+        self._challenge: tuple[str, str, float] | None = None
 
     @staticmethod
     def _bound_digest(secret: bytearray, binding: tuple[str, str, str]) -> bytes:
@@ -206,28 +208,97 @@ class LaunchBootstrapVerifier:
     def verifier_wiped(self) -> bool:
         return self._digest is None
 
-    def consume(self, supplied: bytearray, identity: EngineProcessIdentity) -> bool:
+    def matches_bootstrap_secret(
+        self,
+        candidate: bytearray,
+        identity: EngineProcessIdentity,
+    ) -> bool:
+        binding = (
+            identity.launch_id,
+            identity.engine_boot_id,
+            identity.engine_instance_id,
+        )
+        candidate_digest = bytearray(self._bound_digest(candidate, binding))
+        try:
+            return (
+                binding == self._binding
+                and self._digest is not None
+                and secrets.compare_digest(candidate_digest, self._digest)
+            )
+        finally:
+            for index in range(len(candidate_digest)):
+                candidate_digest[index] = 0
+
+    def issue_challenge(
+        self,
+        identity: EngineProcessIdentity,
+        *,
+        now: float,
+    ) -> tuple[str, str, float] | None:
+        binding = (
+            identity.launch_id,
+            identity.engine_boot_id,
+            identity.engine_instance_id,
+        )
+        if self._consumed or self._digest is None or binding != self._binding:
+            return None
+        if self._challenge is not None and self._challenge[2] > now:
+            return self._challenge
+        challenge_id = secrets.token_urlsafe(32)
+        challenge = secrets.token_urlsafe(32)
+        expires_at = now + 10
+        self._challenge = (challenge_id, challenge, expires_at)
+        return self._challenge
+
+    def consume_proof(
+        self,
+        challenge_id: str,
+        supplied_proof: str,
+        owner_credential: bytearray,
+        identity: EngineProcessIdentity,
+        *,
+        now: float,
+    ) -> bool:
+        message = bytearray()
         candidate = bytearray()
         try:
-            if self._consumed or self._digest is None:
-                return False
             binding = (
                 identity.launch_id,
                 identity.engine_boot_id,
                 identity.engine_instance_id,
             )
-            if binding != self._binding:
+            owner_digest = bytearray(self._bound_digest(owner_credential, binding))
+            if self._digest is not None and secrets.compare_digest(owner_digest, self._digest):
                 return False
-            candidate.extend(self._bound_digest(supplied, binding))
-            if not secrets.compare_digest(candidate, self._digest):
+            challenge = self._challenge
+            if (
+                self._consumed
+                or self._digest is None
+                or binding != self._binding
+                or challenge is None
+                or challenge_id != challenge[0]
+                or now >= challenge[2]
+            ):
+                return False
+            message.extend(b"breadboard-p30-launch-bootstrap-proof-v1\0")
+            for value in (*binding, challenge[0], challenge[1]):
+                encoded = value.encode("ascii")
+                message.extend(len(encoded).to_bytes(2, "big"))
+                message.extend(encoded)
+            message.extend(len(owner_credential).to_bytes(2, "big"))
+            message.extend(owner_credential)
+            candidate.extend(hmac.new(self._digest, message, hashlib.sha256).digest())
+            expected = "sha256:" + candidate.hex()
+            if not secrets.compare_digest(supplied_proof, expected):
                 return False
             self._consumed = True
+            self._challenge = None
             for index in range(len(self._digest)):
                 self._digest[index] = 0
             self._digest = None
             return True
         finally:
-            for value in (supplied, candidate):
+            for value in (message, candidate, owner_digest if "owner_digest" in locals() else bytearray()):
                 for index in range(len(value)):
                     value[index] = 0
 

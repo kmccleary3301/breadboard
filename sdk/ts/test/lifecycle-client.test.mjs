@@ -24,7 +24,8 @@ const REGISTRATION_ID = "r".repeat(43)
 const CLIENT_INSTANCE_ID = "client.instance-0001"
 const WORKSPACE_ID = `workspace:v1:sha256:${"c".repeat(64)}`
 const OWNER_CREDENTIAL = "owner-credential-private-value-01"
-const BOOTSTRAP_CREDENTIAL = "bootstrap-credential-private-value"
+const BOOTSTRAP_TEXT = "bootstrap-credential-private-value"
+const BOOTSTRAP_CREDENTIAL = new TextEncoder().encode(BOOTSTRAP_TEXT)
 const REGISTRATION_CREDENTIAL = "registration-credential-private-value"
 const BEARER_TOKEN = "bearer-private-value"
 const REDACTED_VALUE = "[redacted]"
@@ -75,6 +76,16 @@ const ownerResponse = (result, overrides = {}) => ({
   ...overrides,
 })
 
+const bootstrapChallengeResponse = () => ({
+  schema_version: "bb.engine_bootstrap_challenge.v1",
+  engine_instance_id: INSTANCE_ID,
+  engine_boot_id: BOOT_ID,
+  launch_id: LAUNCH_ID,
+  challenge_id: "c".repeat(43),
+  challenge: "h".repeat(43),
+  expires_at_unix: 1_768_521_605,
+})
+
 const registrationResponse = (result, overrides = {}) => ({
   schema_version: ENGINE_CLIENT_REGISTRATION_SCHEMA_VERSION,
   result,
@@ -111,6 +122,18 @@ const drainResponse = (result, overrides = {}) => {
     ...overrides,
   }
 }
+
+const hardSignalAuthorizationResponse = () => ({
+  schema_version: "bb.engine_hard_signal_authorization.v1",
+  result: "authorized",
+  engine_instance_id: INSTANCE_ID,
+  engine_boot_id: BOOT_ID,
+  launch_id: LAUNCH_ID,
+  owner_generation: 1,
+  drain_generation: 2,
+  authorization_id: "a".repeat(43),
+  expires_at_unix: 1_768_521_605,
+})
 
 const jsonResponse = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), {
   status,
@@ -358,19 +381,20 @@ test("handshake uses the exact prefixed identity route and returns an immutable 
   assert.deepEqual(
     [
       "acquireOwner", "renewOwner", "releaseOwner", "registerClient", "renewClient",
-      "detachClient", "beginControlDrain", "recordGracefulControl", "recordHardSignalDecision",
-      "rollbackDrain",
+      "detachClient", "beginControlDrain", "recordGracefulControl", "prepareHardSignal",
+      "recordHardSignalOutcome", "rollbackDrain",
     ].filter((name) => typeof bound[name] === "function").sort(),
     [
-      "acquireOwner", "beginControlDrain", "detachClient", "recordGracefulControl",
-      "recordHardSignalDecision", "registerClient", "releaseOwner", "renewClient", "renewOwner",
-      "rollbackDrain",
+      "acquireOwner", "beginControlDrain", "detachClient", "prepareHardSignal",
+      "recordGracefulControl", "recordHardSignalOutcome", "registerClient", "releaseOwner",
+      "renewClient", "renewOwner", "rollbackDrain",
     ],
   )
 })
 
-test("owner calls use exact routes, binding bodies, and generation-zero bootstrap headers only", async () => {
+test("owner calls use exact routes, binding bodies, and challenge-bound generation-zero bootstrap proof", async () => {
   const responses = [
+    jsonResponse(bootstrapChallengeResponse()),
     jsonResponse(ownerResponse("acquired")),
     jsonResponse(ownerResponse("acquired", { owner_generation: 2 })),
     jsonResponse(ownerResponse("renewed", { owner_generation: 2 })),
@@ -381,7 +405,7 @@ test("owner calls use exact routes, binding bodies, and generation-zero bootstra
   const first = await bound.acquireOwner({
     expectedOwnerGeneration: 0,
     ownerCredential: OWNER_CREDENTIAL,
-    bootstrapCredential: BOOTSTRAP_CREDENTIAL,
+    bootstrapCredential: Uint8Array.from(BOOTSTRAP_CREDENTIAL),
     ignoredCredential: "must-not-leak",
   })
   const reacquired = await bound.acquireOwner({
@@ -407,25 +431,33 @@ test("owner calls use exact routes, binding bodies, and generation-zero bootstra
   assert.equal(renewed.result, "renewed")
   assert.equal(released.result, "released")
   assert.deepEqual(requests.slice(1).map(({ method, url }) => [method, url]), [
+    ["POST", "https://breadboard.test/control/v1/engine/owner/bootstrap-challenge"],
     ["POST", "https://breadboard.test/control/v1/engine/owner/acquire"],
     ["POST", "https://breadboard.test/control/v1/engine/owner/acquire"],
     ["POST", "https://breadboard.test/control/v1/engine/owner/renew"],
     ["POST", "https://breadboard.test/control/v1/engine/owner/release"],
   ])
-  assert.deepEqual(requests.slice(1).map(({ body }) => JSON.parse(body)), [
-    { engine_instance_id: INSTANCE_ID, engine_boot_id: BOOT_ID, launch_id: LAUNCH_ID, expected_owner_generation: 0 },
+  assert.deepEqual(JSON.parse(requests[1].body), {
+    engine_instance_id: INSTANCE_ID, engine_boot_id: BOOT_ID, launch_id: LAUNCH_ID,
+  })
+  const firstAcquireBody = JSON.parse(requests[2].body)
+  assert.deepEqual(Object.keys(firstAcquireBody).sort(), [
+    "bootstrap_challenge_id", "bootstrap_proof_sha256", "engine_boot_id",
+    "engine_instance_id", "expected_owner_generation", "launch_id",
+  ])
+  assert.equal(firstAcquireBody.bootstrap_challenge_id, "c".repeat(43))
+  assert.match(firstAcquireBody.bootstrap_proof_sha256, /^sha256:[0-9a-f]{64}$/)
+  assert.deepEqual(requests.slice(3).map(({ body }) => JSON.parse(body)), [
     { engine_instance_id: INSTANCE_ID, engine_boot_id: BOOT_ID, launch_id: LAUNCH_ID, expected_owner_generation: 1 },
     { engine_instance_id: INSTANCE_ID, engine_boot_id: BOOT_ID, launch_id: LAUNCH_ID, owner_generation: 2 },
     { engine_instance_id: INSTANCE_ID, engine_boot_id: BOOT_ID, launch_id: LAUNCH_ID, owner_generation: 2 },
   ])
-  assert.equal(requests[1].headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
-  assert.equal(requests[1].headers.get("x-breadboard-bootstrap-credential"), BOOTSTRAP_CREDENTIAL)
+  assert.equal(requests[2].headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
   assert.equal(requests[2].headers.get("x-breadboard-bootstrap-credential"), null)
-  assert.equal(requests[3].headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
-  assert.equal(requests[4].headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
+  assert.equal(requests.slice(3).every(({ headers }) => headers.get("x-breadboard-bootstrap-credential") === null), true)
   assert.equal(requests.slice(1).every(({ headers }) => headers.get("authorization") === `Bearer ${BEARER_TOKEN}`), true)
-  assertNoSecrets(requests.slice(1).map(({ body }) => body), OWNER_CREDENTIAL, BOOTSTRAP_CREDENTIAL, "must-not-leak")
-  assertNoSecrets([first, reacquired, renewed, released], OWNER_CREDENTIAL, BOOTSTRAP_CREDENTIAL)
+  assertNoSecrets(requests.slice(1).map(({ body }) => body), OWNER_CREDENTIAL, BOOTSTRAP_TEXT, "must-not-leak")
+  assertNoSecrets([first, reacquired, renewed, released], OWNER_CREDENTIAL, BOOTSTRAP_TEXT)
 })
 
 test("owner acquisition rejects missing generation-zero bootstrap and bootstrap reuse after generation zero without a request", async () => {
@@ -437,13 +469,13 @@ test("owner acquisition rejects missing generation-zero bootstrap and bootstrap 
   const stale = await failureOf(() => bound.acquireOwner({
     expectedOwnerGeneration: 1,
     ownerCredential: OWNER_CREDENTIAL,
-    bootstrapCredential: BOOTSTRAP_CREDENTIAL,
+    bootstrapCredential: Uint8Array.from(BOOTSTRAP_CREDENTIAL),
   }))
 
   assert.equal(missing.failure.kind, "protocol")
   assert.equal(stale.failure.kind, "protocol")
   assert.equal(requests.length, 1)
-  assertNoSecrets([missing.error, stale.error], OWNER_CREDENTIAL, BOOTSTRAP_CREDENTIAL)
+  assertNoSecrets([missing.error, stale.error], OWNER_CREDENTIAL, BOOTSTRAP_TEXT)
 })
 
 test("malformed local authority credentials are sanitized auth failures before fetch", async () => {
@@ -456,7 +488,7 @@ test("malformed local authority credentials are sanitized auth failures before f
     ["invalid_bootstrap_credential", "short-bootstrap", () => bound.acquireOwner({
       expectedOwnerGeneration: 0,
       ownerCredential: OWNER_CREDENTIAL,
-      bootstrapCredential: "short-bootstrap",
+      bootstrapCredential: new TextEncoder().encode("short-bootstrap"),
     })],
     ["invalid_registration_credential", "short-registration", () => bound.registerClient({
       clientInstanceId: CLIENT_INSTANCE_ID,
@@ -544,13 +576,14 @@ test("client registration calls use exact routes, snake-case bodies, and registr
   assertNoSecrets([registered, renewed, detached], REGISTRATION_CREDENTIAL)
 })
 
-test("drain calls use only the canonical control routes and enforce graceful outcome transitions", async () => {
+test("drain calls use only canonical pre-signal authorization and post-attempt outcome routes", async () => {
   const responses = [
     jsonResponse(drainResponse("draining")),
     jsonResponse(drainResponse("shutdown_started")),
     jsonResponse(drainResponse("rollback_permitted")),
     jsonResponse(drainResponse("hard_signal_decision_pending")),
     jsonResponse(drainResponse("hard_signal_decision_pending")),
+    jsonResponse(hardSignalAuthorizationResponse()),
     jsonResponse(drainResponse("signal_sent")),
     jsonResponse(drainResponse("rollback_permitted")),
     jsonResponse(drainResponse("process_exited")),
@@ -576,9 +609,21 @@ test("drain calls use only the canonical control routes and enforce graceful out
   assert.equal((await bound.recordGracefulControl({ ...drainControlInput(), outcome: "definitive_rejection" })).result, "rollback_permitted")
   assert.equal((await bound.recordGracefulControl({ ...drainControlInput(), outcome: "timeout" })).result, "hard_signal_decision_pending")
   assert.equal((await bound.recordGracefulControl({ ...drainControlInput(), outcome: "uncertain" })).result, "hard_signal_decision_pending")
-  assert.equal((await bound.recordHardSignalDecision({ ...drainControlInput(), outcome: "sent" })).result, "signal_sent")
-  assert.equal((await bound.recordHardSignalDecision({ ...drainControlInput(), outcome: "abandoned" })).result, "rollback_permitted")
-  assert.equal((await bound.recordHardSignalDecision({ ...drainControlInput(), outcome: "process_exited" })).result, "process_exited")
+  const authorization = await bound.prepareHardSignal({
+    ...drainControlInput(),
+    pid: 4321,
+    osProcessStartToken: "darwin:1768521600:123456",
+  })
+  assert.equal(authorization.authorizationId, "a".repeat(43))
+  assert.equal((await bound.recordHardSignalOutcome({
+    ...drainControlInput(), authorizationId: authorization.authorizationId, outcome: "sent",
+  })).result, "signal_sent")
+  assert.equal((await bound.recordHardSignalOutcome({
+    ...drainControlInput(), authorizationId: authorization.authorizationId, outcome: "abandoned",
+  })).result, "rollback_permitted")
+  assert.equal((await bound.recordHardSignalOutcome({
+    ...drainControlInput(), authorizationId: authorization.authorizationId, outcome: "process_exited",
+  })).result, "process_exited")
   assert.equal((await bound.rollbackDrain(drainControlInput())).result, "rolled_back")
 
   assert.deepEqual(requests.slice(1).map(({ method, url }) => [method, url]), [
@@ -587,9 +632,10 @@ test("drain calls use only the canonical control routes and enforce graceful out
     ["POST", "https://breadboard.test/control/v1/engine/control/graceful-result"],
     ["POST", "https://breadboard.test/control/v1/engine/control/graceful-result"],
     ["POST", "https://breadboard.test/control/v1/engine/control/graceful-result"],
-    ["POST", "https://breadboard.test/control/v1/engine/control/signal-decision"],
-    ["POST", "https://breadboard.test/control/v1/engine/control/signal-decision"],
-    ["POST", "https://breadboard.test/control/v1/engine/control/signal-decision"],
+    ["POST", "https://breadboard.test/control/v1/engine/control/hard-signal/prepare"],
+    ["POST", "https://breadboard.test/control/v1/engine/control/hard-signal/outcome"],
+    ["POST", "https://breadboard.test/control/v1/engine/control/hard-signal/outcome"],
+    ["POST", "https://breadboard.test/control/v1/engine/control/hard-signal/outcome"],
     ["POST", "https://breadboard.test/control/v1/engine/control/drain-rollback"],
   ])
   assert.deepEqual(JSON.parse(requests[1].body), {
@@ -615,19 +661,24 @@ test("drain calls use only the canonical control routes and enforce graceful out
     { ...gracefulBody, outcome: "timeout" },
     { ...gracefulBody, outcome: "uncertain" },
   ])
-  assert.deepEqual(requests.slice(6, 9).map(({ body }) => JSON.parse(body)), [
-    { ...gracefulBody, outcome: "sent" },
-    { ...gracefulBody, outcome: "abandoned" },
-    { ...gracefulBody, outcome: "process_exited" },
+  assert.deepEqual(JSON.parse(requests[6].body), {
+    ...gracefulBody,
+    pid: 4321,
+    os_process_start_token: "darwin:1768521600:123456",
+  })
+  assert.deepEqual(requests.slice(7, 10).map(({ body }) => JSON.parse(body)), [
+    { ...gracefulBody, authorization_id: "a".repeat(43), outcome: "sent" },
+    { ...gracefulBody, authorization_id: "a".repeat(43), outcome: "abandoned" },
+    { ...gracefulBody, authorization_id: "a".repeat(43), outcome: "process_exited" },
   ])
-  assert.deepEqual(JSON.parse(requests[9].body), gracefulBody)
+  assert.deepEqual(JSON.parse(requests[10].body), gracefulBody)
   assert.equal(requests[1].headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
   assert.equal(requests[1].headers.get("x-breadboard-registration-credential"), REGISTRATION_CREDENTIAL)
   for (const request of requests.slice(2)) {
     assert.equal(request.headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
     assert.equal(request.headers.get("x-breadboard-registration-credential"), null)
   }
-  assert.equal(requests.filter(({ url }) => url.endsWith("/signal-decision")).length, 3)
+  assert.equal(requests.filter(({ url }) => url.includes("/hard-signal/")).length, 4)
   assertNoSecrets(requests.slice(1).map(({ body }) => body), OWNER_CREDENTIAL, REGISTRATION_CREDENTIAL)
 })
 
@@ -805,6 +856,26 @@ test("authority conflict and expiry codes map to their typed lifecycle failures"
     ["drain_conflict", 409, "drain-conflict", "beginControlDrain", beginDrainInput()],
     ["admission_epoch_conflict", 409, "drain-conflict", "beginControlDrain", beginDrainInput()],
     ["drain_recovery_failed", 409, "recovery-failed", "rollbackDrain", drainControlInput()],
+    ["process_identity_mismatch", 409, "identity-changed", "prepareHardSignal", {
+      ...drainControlInput(),
+      pid: 4321,
+      osProcessStartToken: "darwin:1768521600:123456",
+    }],
+    ["hard_signal_authorization_conflict", 409, "hard-signal-conflict", "recordHardSignalOutcome", {
+      ...drainControlInput(),
+      authorizationId: "a".repeat(43),
+      outcome: "sent",
+    }],
+    ["hard_signal_outcome_conflict", 409, "hard-signal-conflict", "recordHardSignalOutcome", {
+      ...drainControlInput(),
+      authorizationId: "a".repeat(43),
+      outcome: "abandoned",
+    }],
+    ["hard_signal_authorization_expired", 410, "hard-signal-authorization-expired", "recordHardSignalOutcome", {
+      ...drainControlInput(),
+      authorizationId: "a".repeat(43),
+      outcome: "sent",
+    }],
   ]
 
   for (const [code, status, kind, method, input] of cases) {
@@ -1120,6 +1191,28 @@ test("malformed 2xx, schema mismatch, and identity echo failures retain only res
       payload: drainResponse("draining", { engine_instance_id: "s".repeat(43) }),
       invoke: (bound) => bound.beginControlDrain(beginDrainInput()),
       secret: "s".repeat(43),
+    },
+    {
+      kind: "protocol",
+      code: "bootstrap_challenge_shape_mismatch",
+      payload: { ...bootstrapChallengeResponse(), private_response_value: "bootstrap-challenge-secret" },
+      invoke: (bound) => bound.acquireOwner({
+        expectedOwnerGeneration: 0,
+        ownerCredential: OWNER_CREDENTIAL,
+        bootstrapCredential: Uint8Array.from(BOOTSTRAP_CREDENTIAL),
+      }),
+      secret: "bootstrap-challenge-secret",
+    },
+    {
+      kind: "protocol",
+      code: "hard_signal_authorization_shape_mismatch",
+      payload: { ...hardSignalAuthorizationResponse(), private_response_value: "authorization-secret" },
+      invoke: (bound) => bound.prepareHardSignal({
+        ...drainControlInput(),
+        pid: 4321,
+        osProcessStartToken: "darwin:1768521600:123456",
+      }),
+      secret: "authorization-secret",
     },
   ]
   for (const [index, item] of cases.entries()) {

@@ -20,13 +20,17 @@ from .engine_identity_config import EngineProcessIdentity, LaunchBootstrapVerifi
 from .events import EventType, SessionEvent, replay_retention_facts
 from .models import (
     BeginControlDrainRequest,
+    BootstrapChallengeRequest,
+    BootstrapChallengeResponse,
     ClientLeaseRequest,
     ClientRegisterRequest,
     ClientRegistrationResponse,
     DrainControlRequest,
     DrainControlResponse,
     GracefulControlResultRequest,
-    HardSignalDecisionRequest,
+    HardSignalAuthorizationResponse,
+    HardSignalOutcomeRequest,
+    HardSignalPrepareRequest,
     OwnerAcquireRequest,
     OwnerLeaseRequest,
     OwnerLeaseResponse,
@@ -108,6 +112,9 @@ class _DrainState:
     requester_registration_generation: int
     phase: str
     recovery_forbidden: bool = False
+    hard_signal_authorization_id: str | None = None
+    hard_signal_authorization_expires_at_unix: float | None = None
+    hard_signal_outcome: str | None = None
 
 
 _T = TypeVar("_T")
@@ -364,12 +371,39 @@ class SessionRegistry:
         )
         return secrets.compare_digest(candidate, owner.credential_verifier)
 
+    async def issue_bootstrap_challenge(
+        self,
+        request: BootstrapChallengeRequest,
+    ) -> BootstrapChallengeResponse:
+        async with self._authority_lock:
+            identity = self._require_owner_binding(
+                request.engine_instance_id,
+                request.engine_boot_id,
+                request.launch_id,
+            )
+            if self._owner is not None:
+                raise LifecycleAuthorityError("owner_conflict", "owner generation already exists")
+            verifier = self._bootstrap_verifier
+            if verifier is None:
+                raise LifecycleAuthorityError("bootstrap_unavailable", "launch bootstrap is unavailable")
+            challenge = verifier.issue_challenge(identity, now=self._clock())
+            if challenge is None:
+                code = "bootstrap_consumed" if verifier.consumed else "bootstrap_invalid"
+                raise LifecycleAuthorityError(code, "launch bootstrap challenge was rejected")
+            return BootstrapChallengeResponse(
+                engine_instance_id=identity.engine_instance_id,
+                engine_boot_id=identity.engine_boot_id,
+                launch_id=identity.launch_id,
+                challenge_id=challenge[0],
+                challenge=challenge[1],
+                expires_at_unix=challenge[2],
+            )
+
     async def acquire_owner(
         self,
         request: OwnerAcquireRequest,
         *,
         owner_credential: bytearray,
-        bootstrap_credential: bytearray | None = None,
     ) -> OwnerLeaseResponse:
         try:
             async with self._authority_lock:
@@ -388,17 +422,22 @@ class SessionRegistry:
                             "bootstrap_unavailable",
                             "launch bootstrap is unavailable",
                         )
-                    if bootstrap_credential is None:
-                        raise LifecycleAuthorityError(
-                            "bootstrap_invalid",
-                            "launch bootstrap proof was rejected",
-                        )
-                    if secrets.compare_digest(bootstrap_credential, owner_credential):
+                    if bootstrap.matches_bootstrap_secret(owner_credential, identity):
                         raise LifecycleAuthorityError(
                             "bootstrap_rotation_invalid",
-                            "owner credential must rotate away from launch bootstrap",
+                            "owner credential must differ from launch bootstrap",
                         )
-                    if not bootstrap.consume(bootstrap_credential, identity):
+                    if (
+                        request.bootstrap_challenge_id is None
+                        or request.bootstrap_proof_sha256 is None
+                        or not bootstrap.consume_proof(
+                            request.bootstrap_challenge_id,
+                            request.bootstrap_proof_sha256,
+                            owner_credential,
+                            identity,
+                            now=now,
+                        )
+                    ):
                         code = "bootstrap_consumed" if bootstrap.consumed else "bootstrap_invalid"
                         raise LifecycleAuthorityError(code, "launch bootstrap proof was rejected")
                     self._owner = _OwnerLease(
@@ -412,7 +451,7 @@ class SessionRegistry:
                     )
                     return self._owner_response("acquired")
 
-                if bootstrap_credential is not None:
+                if request.bootstrap_challenge_id is not None or request.bootstrap_proof_sha256 is not None:
                     raise LifecycleAuthorityError(
                         "bootstrap_invalid",
                         "launch bootstrap proof is not valid for owner reacquisition",
@@ -443,12 +482,14 @@ class SessionRegistry:
                         "rollback_permitted",
                     }:
                         drain.owner_generation = next_generation
+                        drain.hard_signal_authorization_id = None
+                        drain.hard_signal_authorization_expires_at_unix = None
                         drain.recovery_forbidden = False
                     else:
                         drain.recovery_forbidden = True
                 return self._owner_response("acquired")
         finally:
-            self._wipe_credentials(owner_credential, bootstrap_credential)
+            self._wipe_credentials(owner_credential)
 
     def _require_live_owner(
         self,
@@ -852,9 +893,45 @@ class SessionRegistry:
         finally:
             self._wipe_credentials(owner_credential)
 
-    async def record_hard_signal_decision(
+    async def prepare_hard_signal(
         self,
-        request: HardSignalDecisionRequest,
+        request: HardSignalPrepareRequest,
+        *,
+        owner_credential: bytearray,
+    ) -> HardSignalAuthorizationResponse:
+        try:
+            async with self._authority_lock:
+                drain = self._require_drain_control(
+                    request,
+                    owner_credential,
+                    phases={"hard_signal_decision_pending"},
+                )
+                identity = self._identity_or_error()
+                if request.pid != identity.pid or request.os_process_start_token != identity.os_process_start_token:
+                    raise LifecycleAuthorityError("process_identity_mismatch", "process proof does not match")
+                now = self._clock()
+                if (
+                    drain.hard_signal_authorization_id is None
+                    or drain.hard_signal_authorization_expires_at_unix is None
+                    or drain.hard_signal_authorization_expires_at_unix <= now
+                ):
+                    drain.hard_signal_authorization_id = secrets.token_urlsafe(32)
+                    drain.hard_signal_authorization_expires_at_unix = now + 30
+                return HardSignalAuthorizationResponse(
+                    engine_instance_id=identity.engine_instance_id,
+                    engine_boot_id=identity.engine_boot_id,
+                    launch_id=identity.launch_id,
+                    owner_generation=drain.owner_generation,
+                    drain_generation=drain.generation,
+                    authorization_id=drain.hard_signal_authorization_id,
+                    expires_at_unix=drain.hard_signal_authorization_expires_at_unix,
+                )
+        finally:
+            self._wipe_credentials(owner_credential)
+
+    async def record_hard_signal_outcome(
+        self,
+        request: HardSignalOutcomeRequest,
         *,
         owner_credential: bytearray,
     ) -> DrainControlResponse:
@@ -863,8 +940,23 @@ class SessionRegistry:
                 drain = self._require_drain_control(
                     request,
                     owner_credential,
-                    phases={"hard_signal_decision_pending"},
+                    phases={
+                        "hard_signal_decision_pending",
+                        "rollback_permitted",
+                        "signal_sent",
+                        "process_exited",
+                    },
                 )
+                if request.authorization_id != drain.hard_signal_authorization_id:
+                    raise LifecycleAuthorityError("hard_signal_authorization_conflict", "hard signal authorization does not match")
+                if drain.hard_signal_outcome is not None:
+                    if request.outcome != drain.hard_signal_outcome:
+                        raise LifecycleAuthorityError("hard_signal_outcome_conflict", "hard signal outcome is already final")
+                    return self._drain_response(drain.phase)
+                expires_at = drain.hard_signal_authorization_expires_at_unix
+                if expires_at is None or expires_at <= self._clock():
+                    raise LifecycleAuthorityError("hard_signal_authorization_expired", "hard signal authorization expired")
+                drain.hard_signal_outcome = request.outcome
                 if request.outcome == "abandoned":
                     drain.phase = "rollback_permitted"
                     return self._drain_response("rollback_permitted")
@@ -872,6 +964,7 @@ class SessionRegistry:
                     drain.phase = "process_exited"
                     return self._drain_response("process_exited")
                 drain.phase = "signal_sent"
+                drain.recovery_forbidden = True
                 return self._drain_response("signal_sent")
         finally:
             self._wipe_credentials(owner_credential)

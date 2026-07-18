@@ -44,6 +44,8 @@ from .engine_identity_config import (
 )
 from .models import (
     BeginControlDrainRequest,
+    BootstrapChallengeRequest,
+    BootstrapChallengeResponse,
     ClientLeaseRequest,
     ClientRegisterRequest,
     ClientRegistrationResponse,
@@ -61,7 +63,9 @@ from .models import (
     EngineSessionContractIdentity,
     EngineSessionReadiness,
     GracefulControlResultRequest,
-    HardSignalDecisionRequest,
+    HardSignalAuthorizationResponse,
+    HardSignalOutcomeRequest,
+    HardSignalPrepareRequest,
     ModelCatalogResponse,
     ProviderAuthAttachRequest,
     ProviderAuthAttachResponse,
@@ -1211,6 +1215,17 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         return FileResponse(path)
 
     @app.post(
+        "/v1/engine/owner/bootstrap-challenge",
+        response_model=BootstrapChallengeResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def issue_engine_owner_bootstrap_challenge(
+        payload: BootstrapChallengeRequest,
+        svc: SessionService = Depends(get_service),
+    ) -> BootstrapChallengeResponse:
+        return await svc.issue_bootstrap_challenge(payload)
+
+    @app.post(
         "/v1/engine/owner/acquire",
         response_model=OwnerLeaseResponse,
         responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
@@ -1218,21 +1233,15 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def acquire_engine_owner(
         payload: OwnerAcquireRequest,
         owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
-        bootstrap_proof: str | None = Header(
-            default=None,
-            alias="X-Breadboard-Bootstrap-Credential",
-        ),
         svc: SessionService = Depends(get_service),
     ) -> OwnerLeaseResponse:
-        owner_credential, bootstrap_credential = _authority_credential_buffers(
+        (owner_credential,) = _authority_credential_buffers(
             (owner_proof, "owner_identity_mismatch"),
-            (bootstrap_proof, "bootstrap_invalid"),
         )
         assert owner_credential is not None
         return await svc.acquire_owner(
             payload,
             owner_credential=owner_credential,
-            bootstrap_credential=bootstrap_credential,
         )
 
     @app.post(
@@ -1385,23 +1394,32 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         )
 
     @app.post(
-        "/v1/engine/control/signal-decision",
+        "/v1/engine/control/hard-signal/prepare",
+        response_model=HardSignalAuthorizationResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def prepare_engine_hard_signal(
+        payload: HardSignalPrepareRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> HardSignalAuthorizationResponse:
+        (owner_credential,) = _authority_credential_buffers((owner_proof, "owner_identity_mismatch"))
+        assert owner_credential is not None
+        return await svc.prepare_hard_signal(payload, owner_credential=owner_credential)
+
+    @app.post(
+        "/v1/engine/control/hard-signal/outcome",
         response_model=DrainControlResponse,
         responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
     )
-    async def record_engine_signal_decision(
-        payload: HardSignalDecisionRequest,
+    async def record_engine_hard_signal_outcome(
+        payload: HardSignalOutcomeRequest,
         owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
         svc: SessionService = Depends(get_service),
     ) -> DrainControlResponse:
-        (owner_credential,) = _authority_credential_buffers(
-            (owner_proof, "owner_identity_mismatch"),
-        )
+        (owner_credential,) = _authority_credential_buffers((owner_proof, "owner_identity_mismatch"))
         assert owner_credential is not None
-        return await svc.record_hard_signal_decision(
-            payload,
-            owner_credential=owner_credential,
-        )
+        return await svc.record_hard_signal_outcome(payload, owner_credential=owner_credential)
 
     @app.post(
         "/v1/engine/control/drain-rollback",

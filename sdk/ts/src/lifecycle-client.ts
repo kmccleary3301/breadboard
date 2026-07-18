@@ -18,7 +18,7 @@ const REDACTED_BODY = "[redacted]" as const
 
 export type LifecycleMode = "local-owned" | "local-external" | "remote"
 export type GracefulControlOutcome = "accepted" | "definitive_rejection" | "timeout" | "uncertain"
-export type HardSignalDecisionOutcome = "sent" | "abandoned" | "process_exited"
+export type HardSignalOutcome = "sent" | "abandoned" | "process_exited"
 
 export interface LifecycleSessionContractExpectation {
   readonly contractId: typeof P30_SESSION_CONTRACT_ID
@@ -71,6 +71,8 @@ export type LifecycleE4Failure =
   | ({ readonly kind: "registration-expired" } & LifecycleHttpFailureEvidence)
   | ({ readonly kind: "drain-conflict" } & LifecycleHttpFailureEvidence)
   | ({ readonly kind: "recovery-failed" } & LifecycleHttpFailureEvidence)
+  | ({ readonly kind: "hard-signal-conflict" } & LifecycleHttpFailureEvidence)
+  | ({ readonly kind: "hard-signal-authorization-expired" } & LifecycleHttpFailureEvidence)
   | ({ readonly kind: "auth" } & LifecycleHttpFailureEvidence)
   | { readonly kind: "tls"; readonly code: "tls_transport_error" }
   | ({ readonly kind: "redirect" } & LifecycleHttpFailureEvidence)
@@ -92,6 +94,8 @@ const failureMessage = (failure: LifecycleE4Failure): string => {
     case "registration-expired": return "Client registration expired"
     case "drain-conflict": return "Engine drain conflict"
     case "recovery-failed": return "Engine drain recovery failed"
+    case "hard-signal-conflict": return "Hard-signal control conflict"
+    case "hard-signal-authorization-expired": return "Hard-signal authorization expired"
     case "auth": return "Lifecycle authorization failed"
     case "tls": return "TLS transport failed"
     case "redirect": return "Lifecycle endpoint redirected"
@@ -181,7 +185,7 @@ export interface OwnerCredentialInput extends LifecycleRequestOptions {
 export type AcquireOwnerInput =
   | (OwnerCredentialInput & {
       readonly expectedOwnerGeneration: 0
-      readonly bootstrapCredential: string
+      readonly bootstrapCredential: Uint8Array
     })
   | (OwnerCredentialInput & {
       readonly expectedOwnerGeneration: number
@@ -222,10 +226,18 @@ export interface GracefulControlInput extends OwnerCredentialInput {
   readonly outcome: GracefulControlOutcome
 }
 
-export interface HardSignalDecisionInput extends OwnerCredentialInput {
+export interface PrepareHardSignalInput extends OwnerCredentialInput {
   readonly ownerGeneration: number
   readonly drainGeneration: number
-  readonly outcome: HardSignalDecisionOutcome
+  readonly pid: number
+  readonly osProcessStartToken: string
+}
+
+export interface RecordHardSignalOutcomeInput extends OwnerCredentialInput {
+  readonly ownerGeneration: number
+  readonly drainGeneration: number
+  readonly authorizationId: string
+  readonly outcome: HardSignalOutcome
 }
 
 export interface RollbackDrainInput extends OwnerCredentialInput {
@@ -320,6 +332,18 @@ export interface LifecycleE4Client {
   handshake(request?: LifecycleRequestOptions): Promise<BoundLifecycleE4Client>
 }
 
+export interface HardSignalAuthorizationResponse {
+  readonly schemaVersion: "bb.engine_hard_signal_authorization.v1"
+  readonly engineInstanceId: string
+  readonly engineBootId: string
+  readonly launchId: string
+  readonly ownerGeneration: number
+  readonly drainGeneration: number
+  readonly authorizationId: string
+  readonly expiresAtUnix: number
+  readonly result: "authorized"
+}
+
 export interface BoundLifecycleE4Client {
   readonly binding: LifecycleEngineBinding
   acquireOwner(input: AcquireOwnerInput): Promise<OwnerLeaseResponse & { readonly result: "acquired" }>
@@ -332,7 +356,8 @@ export interface BoundLifecycleE4Client {
   recordGracefulControl(input: GracefulControlInput): Promise<DrainControlResponse & {
     readonly result: "shutdown_started" | "rollback_permitted" | "hard_signal_decision_pending"
   }>
-  recordHardSignalDecision(input: HardSignalDecisionInput): Promise<DrainControlResponse & {
+  prepareHardSignal(input: PrepareHardSignalInput): Promise<HardSignalAuthorizationResponse>
+  recordHardSignalOutcome(input: RecordHardSignalOutcomeInput): Promise<DrainControlResponse & {
     readonly result: "rollback_permitted" | "signal_sent" | "process_exited"
   }>
   rollbackDrain(input: RollbackDrainInput): Promise<DrainControlResponse & { readonly result: "rolled_back" }>
@@ -371,8 +396,30 @@ const protocolError = (code: string): never => {
   throw new LifecycleE4ClientError({ kind: "protocol", code })
 }
 
-const reflectsSensitiveValue = (candidate: string, secret: string): boolean =>
-  secret.length > 0 && candidate.includes(secret)
+type SensitiveValue = string | Uint8Array
+
+const reflectsSensitiveValue = (candidate: string, secret: SensitiveValue): boolean => {
+  if (typeof secret === "string") return secret.length > 0 && candidate.includes(secret)
+  if (secret.byteLength === 0) return false
+  const candidateBytes = new TextEncoder().encode(candidate)
+  try {
+    if (secret.byteLength > candidateBytes.byteLength) return false
+    const lastOffset = candidateBytes.byteLength - secret.byteLength
+    for (let offset = 0; offset <= lastOffset; offset += 1) {
+      let matches = true
+      for (let index = 0; index < secret.byteLength; index += 1) {
+        if (candidateBytes[offset + index] !== secret[index]) {
+          matches = false
+          break
+        }
+      }
+      if (matches) return true
+    }
+    return false
+  } finally {
+    candidateBytes.fill(0)
+  }
+}
 
 const LIFECYCLE_CLASSIFICATION_CODES = {
   admission_epoch_conflict: true,
@@ -386,6 +433,10 @@ const LIFECYCLE_CLASSIFICATION_CODES = {
   drain_recovery_failed: true,
   drain_turn_active: true,
   engine_identity_mismatch: true,
+  hard_signal_authorization_conflict: true,
+  hard_signal_authorization_expired: true,
+  hard_signal_outcome_conflict: true,
+  process_identity_mismatch: true,
   owner_conflict: true,
   owner_expired: true,
   owner_generation_conflict: true,
@@ -400,7 +451,7 @@ type LifecycleClassificationCode = keyof typeof LIFECYCLE_CLASSIFICATION_CODES
 
 const safeCorrelation = (
   response: Response,
-  sensitiveValues: readonly string[],
+  sensitiveValues: readonly SensitiveValue[],
 ): LifecycleFailureCorrelation => {
   const safeValue = (name: string): string | undefined => {
     const value = response.headers.get(name)
@@ -419,9 +470,39 @@ const safeCorrelation = (
   })
 }
 
+const scrubCorrelation = (
+  correlation: LifecycleFailureCorrelation,
+  sensitiveValues: readonly SensitiveValue[],
+): LifecycleFailureCorrelation => Object.freeze({
+  ...(correlation.requestId !== undefined
+    && sensitiveValues.every((secret) => !reflectsSensitiveValue(correlation.requestId!, secret))
+    ? { requestId: correlation.requestId }
+    : {}),
+  ...(correlation.correlationId !== undefined
+    && sensitiveValues.every((secret) => !reflectsSensitiveValue(correlation.correlationId!, secret))
+    ? { correlationId: correlation.correlationId }
+    : {}),
+})
+
+const withResponseAuthoritySecrets = (
+  response: JsonResponse,
+  fields: readonly string[],
+): JsonResponse => {
+  if (!isRawObject(response.value)) return response
+  const sensitiveValues = fields.flatMap((field) => {
+    const value = own(response.value as RawObject, field)
+    return typeof value === "string" && value.length > 0 ? [value] : []
+  })
+  if (sensitiveValues.length === 0) return response
+  return {
+    ...response,
+    correlation: scrubCorrelation(response.correlation, sensitiveValues),
+  }
+}
+
 const parseSafeErrorEnvelope = async (
   response: Response,
-  sensitiveValues: readonly string[],
+  sensitiveValues: readonly SensitiveValue[],
   signal: AbortSignal,
 ): Promise<SafeErrorEnvelope> => {
   const correlation = safeCorrelation(response, sensitiveValues)
@@ -466,7 +547,10 @@ const classifyHttpFailure = (
 ): LifecycleE4Failure => {
   const safe = evidence(status, safeCode, correlation)
   if (status === 401 || status === 403) return { kind: "auth", ...safe }
-  if (classificationCode === "engine_identity_mismatch") return { kind: "identity-changed", ...safe }
+  if (
+    classificationCode === "engine_identity_mismatch"
+    || classificationCode === "process_identity_mismatch"
+  ) return { kind: "identity-changed", ...safe }
   if (classificationCode === "owner_expired") return { kind: "owner-expired", ...safe }
   if (classificationCode === "owner_conflict" || classificationCode === "owner_generation_conflict") {
     return { kind: "owner-conflict", ...safe }
@@ -476,6 +560,15 @@ const classifyHttpFailure = (
     return { kind: "registration-conflict", ...safe }
   }
   if (classificationCode === "drain_recovery_failed") return { kind: "recovery-failed", ...safe }
+  if (
+    classificationCode === "hard_signal_authorization_conflict"
+    || classificationCode === "hard_signal_outcome_conflict"
+  ) {
+    return { kind: "hard-signal-conflict", ...safe }
+  }
+  if (classificationCode === "hard_signal_authorization_expired") {
+    return { kind: "hard-signal-authorization-expired", ...safe }
+  }
   if (
     classificationCode === "drain_conflict"
     || classificationCode === "drain_in_progress"
@@ -602,7 +695,7 @@ const abortable = async <T>(promise: Promise<T>, signal: AbortSignal): Promise<T
 
 const containsSensitiveValue = (
   value: unknown,
-  sensitiveValues: readonly string[],
+  sensitiveValues: readonly SensitiveValue[],
 ): boolean => {
   if (typeof value === "string") {
     return sensitiveValues.some((secret) => reflectsSensitiveValue(value, secret))
@@ -623,6 +716,7 @@ const requestJson = async (
   body: RawObject | undefined,
   credentialHeaders: Readonly<Record<string, string>>,
   callerSignal?: AbortSignal,
+  bodySensitiveValues: readonly SensitiveValue[] = [],
 ): Promise<JsonResponse> => {
   if (callerSignal?.aborted) throw new LifecycleE4ClientError({ kind: "caller-abort" })
   const controller = new AbortController()
@@ -650,6 +744,7 @@ const requestJson = async (
     const sensitiveValues = [
       ...Object.values(credentialHeaders),
       ...(bearerToken === undefined ? [] : [bearerToken]),
+      ...bodySensitiveValues,
     ]
     const response = await abortable(context.fetch(buildUrl(context, route), {
       method,
@@ -1232,6 +1327,7 @@ const decodeDrainResponse = (
     "schema_version",
     "result",
     "engine_instance_id",
+
     "engine_boot_id",
     "launch_id",
     "drain_generation",
@@ -1316,6 +1412,88 @@ const decodeDrainResponse = (
   }
 }
 
+interface DecodedBootstrapChallenge {
+  readonly challengeId: string
+  readonly challenge: string
+  readonly expiresAtUnix: number
+}
+
+const decodeBootstrapChallengeResponse = (
+  value: unknown,
+  binding: LifecycleEngineBinding,
+): DecodedBootstrapChallenge => {
+  const root = expectObject(value, "bootstrap_challenge_not_object")
+  expectExactKeys(root, [
+    "schema_version",
+    "engine_instance_id",
+    "engine_boot_id",
+    "launch_id",
+    "challenge_id",
+    "challenge",
+    "expires_at_unix",
+  ], "bootstrap_challenge_shape_mismatch")
+  if (own(root, "schema_version") !== "bb.engine_bootstrap_challenge.v1") {
+    protocolError("bootstrap_challenge_schema_mismatch")
+  }
+  assertAuthorityBinding(root, binding)
+  return Object.freeze({
+    challengeId: validateAuthorityId(
+      expectString(own(root, "challenge_id"), "bootstrap_challenge_id_invalid"),
+      "bootstrap_challenge_id_invalid",
+    ),
+    challenge: validateAuthorityId(
+      expectString(own(root, "challenge"), "bootstrap_challenge_invalid"),
+      "bootstrap_challenge_invalid",
+    ),
+    expiresAtUnix: expectNumber(
+      own(root, "expires_at_unix"),
+      0,
+      "bootstrap_challenge_expiry_invalid",
+    ),
+  })
+}
+
+const decodeHardSignalAuthorizationResponse = (
+  value: unknown,
+  binding: LifecycleEngineBinding,
+): HardSignalAuthorizationResponse => {
+  const root = expectObject(value, "hard_signal_authorization_not_object")
+  expectExactKeys(root, [
+    "schema_version",
+    "result",
+    "engine_instance_id",
+    "engine_boot_id",
+    "launch_id",
+    "owner_generation",
+    "drain_generation",
+    "authorization_id",
+    "expires_at_unix",
+  ], "hard_signal_authorization_shape_mismatch")
+  if (own(root, "schema_version") !== "bb.engine_hard_signal_authorization.v1") {
+    schemaFailure("control-schema-mismatch", "hard_signal_authorization_schema_mismatch")
+  }
+  assertAuthorityBinding(root, binding)
+  if (own(root, "result") !== "authorized") protocolError("hard_signal_authorization_result_mismatch")
+  return Object.freeze({
+    schemaVersion: "bb.engine_hard_signal_authorization.v1",
+    result: "authorized",
+    engineInstanceId: binding.engineInstanceId,
+    engineBootId: binding.engineBootId,
+    launchId: binding.launchId,
+    ownerGeneration: expectInteger(own(root, "owner_generation"), 1, "owner_generation_invalid"),
+    drainGeneration: expectInteger(own(root, "drain_generation"), 1, "drain_generation_invalid"),
+    authorizationId: validateAuthorityId(
+      expectString(own(root, "authorization_id"), "hard_signal_authorization_id_invalid"),
+      "hard_signal_authorization_id_invalid",
+    ),
+    expiresAtUnix: expectNumber(
+      own(root, "expires_at_unix"),
+      0,
+      "hard_signal_authorization_expiry_invalid",
+    ),
+  })
+}
+
 const bindingBody = (binding: LifecycleEngineBinding): RawObject => ({
   engine_instance_id: binding.engineInstanceId,
   engine_boot_id: binding.engineBootId,
@@ -1353,46 +1531,177 @@ const expectMethodResult = <T extends { readonly result: string }, R extends T["
   return response as T & { readonly result: R }
 }
 
+const bootstrapProof = async (
+  binding: LifecycleEngineBinding,
+  challengeId: string,
+  challenge: string,
+  ownerCredential: string,
+  bootstrapCredential: Uint8Array,
+): Promise<string> => {
+  if (!(bootstrapCredential instanceof Uint8Array) || bootstrapCredential.byteLength < 16) {
+    return protocolError("invalid_bootstrap_credential")
+  }
+  const secret = Uint8Array.from(bootstrapCredential)
+  const encoder = new TextEncoder()
+  const ownerBytes = encoder.encode(ownerCredential)
+  let boundMessage = new Uint8Array()
+  let proofMessage = new Uint8Array()
+  let derived = new Uint8Array()
+  const encodeMessage = (
+    prefix: string,
+    fields: readonly Uint8Array[],
+  ): Uint8Array<ArrayBuffer> => {
+    const prefixBytes = encoder.encode(prefix)
+    const totalBytes = fields.reduce((total, field) => {
+      if (field.byteLength > 65_535) protocolError("bootstrap_proof_field_too_large")
+      return total + 2 + field.byteLength
+    }, prefixBytes.byteLength)
+    const message = new Uint8Array(totalBytes)
+    message.set(prefixBytes)
+    let offset = prefixBytes.byteLength
+    for (const field of fields) {
+      message[offset] = field.byteLength >>> 8
+      message[offset + 1] = field.byteLength & 0xff
+      offset += 2
+      message.set(field, offset)
+      offset += field.byteLength
+    }
+    prefixBytes.fill(0)
+    return message
+  }
+  try {
+    const authorityFields = [
+      encoder.encode(binding.launchId),
+      encoder.encode(binding.engineBootId),
+      encoder.encode(binding.engineInstanceId),
+    ]
+    boundMessage = encodeMessage(
+      "breadboard-p30-launch-bootstrap-v1\u0000",
+      [...authorityFields, secret],
+    )
+    derived = new Uint8Array(await crypto.subtle.digest("SHA-256", boundMessage))
+    proofMessage = encodeMessage(
+      "breadboard-p30-launch-bootstrap-proof-v1\u0000",
+      [
+        ...authorityFields,
+        encoder.encode(challengeId),
+        encoder.encode(challenge),
+        ownerBytes,
+      ],
+    )
+    const key = await crypto.subtle.importKey("raw", derived, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+    const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, proofMessage))
+    try {
+      let hex = ""
+      for (const byte of signature) hex += byte.toString(16).padStart(2, "0")
+      return `sha256:${hex}`
+    } finally {
+      signature.fill(0)
+    }
+  } finally {
+    secret.fill(0)
+    ownerBytes.fill(0)
+    boundMessage.fill(0)
+    proofMessage.fill(0)
+    derived.fill(0)
+  }
+}
+
 const createBoundClient = (
   context: RequestContext,
   binding: LifecycleEngineBinding,
 ): BoundLifecycleE4Client => Object.freeze({
   binding,
   acquireOwner: async (input: AcquireOwnerInput) => {
-    const expectedOwnerGeneration = validateNonnegativeInteger(
-      input.expectedOwnerGeneration,
-      "expected_owner_generation_invalid",
+    const bootstrapCredentialToWipe = (
+      "bootstrapCredential" in input
+      && input.bootstrapCredential instanceof Uint8Array
     )
-    if (expectedOwnerGeneration === Number.MAX_SAFE_INTEGER) {
-      protocolError("expected_owner_generation_invalid")
-    }
-    const headers: Record<string, string> = { ...ownerHeaders(input.ownerCredential) }
-    if (expectedOwnerGeneration === 0) {
-      const bootstrapCredential = "bootstrapCredential" in input
-        ? input.bootstrapCredential
-        : undefined
-      if (bootstrapCredential === undefined) protocolError("bootstrap_credential_required")
-      else {
-        headers["X-Breadboard-Bootstrap-Credential"] = validateCredential(
-          bootstrapCredential,
-          "invalid_bootstrap_credential",
-        )
+      ? input.bootstrapCredential
+      : undefined
+    try {
+      const expectedOwnerGeneration = validateNonnegativeInteger(
+        input.expectedOwnerGeneration,
+        "expected_owner_generation_invalid",
+      )
+      if (expectedOwnerGeneration === Number.MAX_SAFE_INTEGER) {
+        protocolError("expected_owner_generation_invalid")
       }
-    } else if ("bootstrapCredential" in input && input.bootstrapCredential !== undefined) {
-      protocolError("bootstrap_credential_forbidden")
+      let bootstrapFields: RawObject = {}
+      let proofSensitiveValues: readonly SensitiveValue[] = []
+      if (expectedOwnerGeneration === 0) {
+        const bootstrapCredential = "bootstrapCredential" in input
+          ? input.bootstrapCredential
+          : undefined
+        const requiredBootstrap = bootstrapCredential instanceof Uint8Array
+          ? bootstrapCredential
+          : protocolError("bootstrap_credential_required")
+        if (requiredBootstrap.byteLength < 16) {
+          throw new LifecycleE4ClientError({ kind: "auth", ...localEvidence("invalid_bootstrap_credential") })
+        }
+        const challengeRaw = await requestJson(
+          context,
+          "/v1/engine/owner/bootstrap-challenge",
+          "POST",
+          bindingBody(binding),
+          {},
+          input.signal,
+        )
+        const safeChallengeRaw = withResponseAuthoritySecrets(
+          challengeRaw,
+          ["challenge_id", "challenge"],
+        )
+        const decodedChallenge = decodeResponse(
+          safeChallengeRaw,
+          (value) => decodeBootstrapChallengeResponse(value, binding),
+        )
+        const proof = await bootstrapProof(
+          binding,
+          decodedChallenge.challengeId,
+          decodedChallenge.challenge,
+          input.ownerCredential,
+          requiredBootstrap,
+        )
+        bootstrapFields = {
+          bootstrap_challenge_id: decodedChallenge.challengeId,
+          bootstrap_proof_sha256: proof,
+        }
+        proofSensitiveValues = [
+          requiredBootstrap,
+          decodedChallenge.challengeId,
+          decodedChallenge.challenge,
+          proof,
+        ]
+      } else if ("bootstrapCredential" in input && input.bootstrapCredential !== undefined) {
+        protocolError("bootstrap_credential_forbidden")
+      }
+      const raw = await requestJson(
+        context,
+        "/v1/engine/owner/acquire",
+        "POST",
+        {
+          ...bindingBody(binding),
+          expected_owner_generation: expectedOwnerGeneration,
+          ...bootstrapFields,
+        },
+        ownerHeaders(input.ownerCredential),
+        input.signal,
+        proofSensitiveValues,
+      )
+      const response = expectMethodResult(
+        decodeResponse(raw, (value) => decodeOwnerResponse(value, binding)),
+        ["acquired"] as const,
+        "owner_acquire_result_mismatch",
+        raw,
+      )
+      const expectedGeneration = expectedOwnerGeneration + 1
+      if (response.ownerGeneration !== expectedGeneration) {
+        responseProtocolError(raw, "owner_generation_echo_mismatch")
+      }
+      return response
+    } finally {
+      bootstrapCredentialToWipe?.fill(0)
     }
-    const raw = await requestJson(
-      context,
-      "/v1/engine/owner/acquire",
-      "POST",
-      { ...bindingBody(binding), expected_owner_generation: expectedOwnerGeneration },
-      headers,
-      input.signal,
-    )
-    const response = expectMethodResult(decodeResponse(raw, (value) => decodeOwnerResponse(value, binding)), ["acquired"] as const, "owner_acquire_result_mismatch", raw)
-    const expectedGeneration = expectedOwnerGeneration + 1
-    if (response.ownerGeneration !== expectedGeneration) responseProtocolError(raw, "owner_generation_echo_mismatch")
-    return response
   },
   renewOwner: async (input: OwnerLeaseInput) => {
     const ownerGeneration = validatePositiveInteger(input.ownerGeneration, "owner_generation_invalid")
@@ -1588,9 +1897,49 @@ const createBoundClient = (
     if (narrowed.drainGeneration !== drainGeneration) responseProtocolError(raw, "drain_generation_echo_mismatch")
     return narrowed
   },
-  recordHardSignalDecision: async (input: HardSignalDecisionInput) => {
+  prepareHardSignal: async (input: PrepareHardSignalInput) => {
     const ownerGeneration = validatePositiveInteger(input.ownerGeneration, "owner_generation_invalid")
     const drainGeneration = validatePositiveInteger(input.drainGeneration, "drain_generation_invalid")
+    const pid = validatePositiveInteger(input.pid, "process_pid_invalid")
+    const osProcessStartToken = expectPattern(
+      input.osProcessStartToken,
+      /^[A-Za-z0-9][A-Za-z0-9:._-]{0,255}$/,
+      "os_process_start_token_invalid",
+    )
+    if (
+      pid !== binding.process.pid
+      || osProcessStartToken !== binding.process.osProcessStartToken
+    ) {
+      protocolError("process_identity_mismatch")
+    }
+    const raw = await requestJson(
+      context,
+      "/v1/engine/control/hard-signal/prepare",
+      "POST",
+      {
+        ...bindingBody(binding),
+        owner_generation: ownerGeneration,
+        drain_generation: drainGeneration,
+        pid,
+        os_process_start_token: osProcessStartToken,
+      },
+      ownerHeaders(input.ownerCredential),
+      input.signal,
+    )
+    const safeRaw = withResponseAuthoritySecrets(raw, ["authorization_id"])
+    const response = decodeResponse(
+      safeRaw,
+      (value) => decodeHardSignalAuthorizationResponse(value, binding),
+    )
+    if (response.ownerGeneration !== ownerGeneration || response.drainGeneration !== drainGeneration) {
+      responseProtocolError(safeRaw, "hard_signal_authorization_binding_mismatch")
+    }
+    return response
+  },
+  recordHardSignalOutcome: async (input: RecordHardSignalOutcomeInput) => {
+    const ownerGeneration = validatePositiveInteger(input.ownerGeneration, "owner_generation_invalid")
+    const drainGeneration = validatePositiveInteger(input.drainGeneration, "drain_generation_invalid")
+    const authorizationId = validateAuthorityId(input.authorizationId, "hard_signal_authorization_id_invalid")
     const outcome = expectEnum(
       input.outcome,
       ["sent", "abandoned", "process_exited"] as const,
@@ -1598,16 +1947,18 @@ const createBoundClient = (
     )
     const raw = await requestJson(
       context,
-      "/v1/engine/control/signal-decision",
+      "/v1/engine/control/hard-signal/outcome",
       "POST",
       {
         ...bindingBody(binding),
         owner_generation: ownerGeneration,
         drain_generation: drainGeneration,
+        authorization_id: authorizationId,
         outcome,
       },
       ownerHeaders(input.ownerCredential),
       input.signal,
+      [authorizationId],
     )
     const response = decodeResponse(raw, (value) => decodeDrainResponse(value, binding))
     const expectedResult = outcome === "sent"
@@ -1615,7 +1966,7 @@ const createBoundClient = (
       : outcome === "abandoned"
         ? "rollback_permitted"
         : "process_exited"
-    const narrowed = expectMethodResult(response, [expectedResult] as const, "hard_signal_decision_result_mismatch", raw)
+    const narrowed = expectMethodResult(response, [expectedResult] as const, "hard_signal_outcome_result_mismatch", raw)
     if (narrowed.drainGeneration !== drainGeneration) responseProtocolError(raw, "drain_generation_echo_mismatch")
     return narrowed
   },

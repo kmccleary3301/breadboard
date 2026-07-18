@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -26,11 +27,13 @@ from agentic_coder_prototype.api.cli_bridge.engine_identity_config import (
 )
 from agentic_coder_prototype.api.cli_bridge.models import (
     BeginControlDrainRequest,
+    BootstrapChallengeRequest,
     ClientLeaseRequest,
     ClientRegisterRequest,
     DrainControlRequest,
     GracefulControlResultRequest,
-    HardSignalDecisionRequest,
+    HardSignalOutcomeRequest,
+    HardSignalPrepareRequest,
     OwnerAcquireRequest,
     OwnerLeaseRequest,
     OwnerLeaseResponse,
@@ -74,6 +77,55 @@ def _take_proofs(request: Any) -> dict[str, str | None]:
 def _secret_buffer(value: str) -> bytearray:
     return bytearray(value, "ascii")
 
+def _bootstrap_proof(
+    process_identity: EngineProcessIdentity,
+    bootstrap: str,
+    owner: str,
+    challenge_id: str,
+    challenge: str,
+) -> str:
+    def field(value: bytes) -> bytes:
+        return len(value).to_bytes(2, "big") + value
+
+    binding = b"breadboard-p30-launch-bootstrap-v1\0" + b"".join(
+        field(value.encode("ascii"))
+        for value in (
+            process_identity.launch_id,
+            process_identity.engine_boot_id,
+            process_identity.engine_instance_id,
+        )
+    ) + field(bootstrap.encode("ascii"))
+    digest = hashlib.sha256(binding).digest()
+    message = b"breadboard-p30-launch-bootstrap-proof-v1\0" + b"".join(
+        field(value.encode("ascii"))
+        for value in (
+            process_identity.launch_id,
+            process_identity.engine_boot_id,
+            process_identity.engine_instance_id,
+            challenge_id,
+            challenge,
+            owner,
+        )
+    )
+    return "sha256:" + hmac.new(digest, message, hashlib.sha256).hexdigest()
+
+
+def _consume_verifier(
+    verifier: LaunchBootstrapVerifier,
+    process_identity: EngineProcessIdentity,
+) -> bool:
+    now = time.time()
+    issued = verifier.issue_challenge(process_identity, now=now)
+    if issued is None:
+        return False
+    challenge_id, challenge, _ = issued
+    return verifier.consume_proof(
+        challenge_id,
+        _bootstrap_proof(process_identity, BOOTSTRAP, OWNER_SECRET, challenge_id, challenge),
+        _secret_buffer(OWNER_SECRET),
+        process_identity,
+        now=now,
+    )
 
 @dataclass
 class Clock:
@@ -132,11 +184,16 @@ def owner_acquire(
     owner_secret: str = OWNER_SECRET,
     expected_generation: int = 0,
 ) -> OwnerAcquireRequest:
+    bootstrap_fields = {
+        "bootstrap_challenge_id": "c" * 43,
+        "bootstrap_proof_sha256": "sha256:" + "0" * 64,
+    } if expected_generation == 0 else {}
     request = OwnerAcquireRequest(
         engine_instance_id=process_identity.engine_instance_id,
         engine_boot_id=process_identity.engine_boot_id,
         launch_id=process_identity.launch_id,
         expected_owner_generation=expected_generation,
+        **bootstrap_fields,
     )
     return _remember_proofs(
         request,
@@ -244,10 +301,28 @@ async def _acquire_owner(
     proofs = _take_proofs(request)
     bootstrap = proofs.get("bootstrap_credential")
     owner = proofs.get("owner_credential") or OWNER_SECRET
+    if request.expected_owner_generation == 0 and bootstrap is not None:
+        process_identity = registry._identity_or_error()
+        challenge = await registry.issue_bootstrap_challenge(
+            BootstrapChallengeRequest(
+                engine_instance_id=request.engine_instance_id,
+                engine_boot_id=request.engine_boot_id,
+                launch_id=request.launch_id,
+            )
+        )
+        request = request.model_copy(update={
+            "bootstrap_challenge_id": challenge.challenge_id,
+            "bootstrap_proof_sha256": _bootstrap_proof(
+                process_identity,
+                bootstrap,
+                owner,
+                challenge.challenge_id,
+                challenge.challenge,
+            ),
+        })
     return await registry.acquire_owner(
         request,
         owner_credential=_secret_buffer(owner),
-        bootstrap_credential=_secret_buffer(bootstrap) if bootstrap is not None else None,
     )
 
 
@@ -331,13 +406,26 @@ async def _record_graceful_control(
     )
 
 
-async def _record_hard_signal_decision(
+async def _record_hard_signal_outcome(
     registry: SessionRegistry,
-    request: HardSignalDecisionRequest,
+    request: HardSignalOutcomeRequest,
 ) -> Any:
     owner = _take_proofs(request).get("owner_credential") or OWNER_SECRET
-    return await registry.record_hard_signal_decision(
-        request,
+    process_identity = registry._identity_or_error()
+    authorization = await registry.prepare_hard_signal(
+        HardSignalPrepareRequest(
+            engine_instance_id=request.engine_instance_id,
+            engine_boot_id=request.engine_boot_id,
+            launch_id=request.launch_id,
+            owner_generation=request.owner_generation,
+            drain_generation=request.drain_generation,
+            pid=process_identity.pid,
+            os_process_start_token=process_identity.os_process_start_token,
+        ),
+        owner_credential=_secret_buffer(owner),
+    )
+    return await registry.record_hard_signal_outcome(
+        request.model_copy(update={"authorization_id": authorization.authorization_id}),
         owner_credential=_secret_buffer(owner),
     )
 
@@ -372,8 +460,8 @@ def test_inherited_fd_environment_carries_only_descriptor_and_is_consumed() -> N
     assert verifier is not None
     assert ENGINE_BOOTSTRAP_FD_ENV not in environ
     assert BOOTSTRAP not in repr(environ)
-    assert verifier.consume(_secret_buffer(BOOTSTRAP), process_identity) is True
-    assert verifier.consume(_secret_buffer(BOOTSTRAP), process_identity) is False
+    assert _consume_verifier(verifier, process_identity) is True
+    assert _consume_verifier(verifier, process_identity) is False
 
 
 def test_inherited_fd_accepts_fragmented_frame_only_after_verified_eof() -> None:
@@ -396,7 +484,7 @@ def test_inherited_fd_accepts_fragmented_frame_only_after_verified_eof() -> None
         startup_deadline_seconds=0.25,
     )
     writer.join()
-    assert verifier.consume(_secret_buffer(BOOTSTRAP), process_identity) is True
+    assert _consume_verifier(verifier, process_identity) is True
 
 
 def test_inherited_fd_rejects_truncated_frame_at_eof() -> None:
@@ -480,7 +568,7 @@ async def test_one_use_fd_bootstrap_dual_claimant_untrusted_race_replay_and_wipe
     assert second.code == "owner_conflict"
     assert verifier.consumed is True
     assert verifier.verifier_wiped is True
-    assert verifier.consume(_secret_buffer(BOOTSTRAP), process_identity) is False
+    assert _consume_verifier(verifier, process_identity) is False
 
     with pytest.raises(LifecycleAuthorityError) as replay:
         await _acquire_owner(registry, owner_acquire(process_identity))
@@ -494,20 +582,29 @@ async def test_one_use_fd_bootstrap_dual_claimant_untrusted_race_replay_and_wipe
 async def test_owned_credential_buffers_are_wiped_on_success_and_failure() -> None:
     registry, process_identity, _, _ = registry_fixture()
     owner_buffer = _secret_buffer(OWNER_SECRET)
-    bootstrap_buffer = _secret_buffer(BOOTSTRAP)
+    challenge = await registry.issue_bootstrap_challenge(
+        BootstrapChallengeRequest(
+            engine_instance_id=process_identity.engine_instance_id,
+            engine_boot_id=process_identity.engine_boot_id,
+            launch_id=process_identity.launch_id,
+        )
+    )
     request = OwnerAcquireRequest(
         engine_instance_id=process_identity.engine_instance_id,
         engine_boot_id=process_identity.engine_boot_id,
         launch_id=process_identity.launch_id,
         expected_owner_generation=0,
+        bootstrap_challenge_id=challenge.challenge_id,
+        bootstrap_proof_sha256=_bootstrap_proof(
+            process_identity,
+            BOOTSTRAP,
+            OWNER_SECRET,
+            challenge.challenge_id,
+            challenge.challenge,
+        ),
     )
-    await registry.acquire_owner(
-        request,
-        owner_credential=owner_buffer,
-        bootstrap_credential=bootstrap_buffer,
-    )
+    await registry.acquire_owner(request, owner_credential=owner_buffer)
     assert owner_buffer == bytearray(len(owner_buffer))
-    assert bootstrap_buffer == bytearray(len(bootstrap_buffer))
 
     rejected_buffer = _secret_buffer(CLIENT_A_SECRET)
     with pytest.raises(LifecycleAuthorityError):
@@ -644,17 +741,13 @@ async def test_reacquired_owner_transfers_drain_and_only_new_generation_can_roll
     if graceful_outcome == "uncertain":
         assert graceful.result == "hard_signal_decision_pending"
         assert graceful.signal_permitted is True
-        rollback_ready = await _record_hard_signal_decision(
-            registry,
-            HardSignalDecisionRequest(
-                **drain_control(
-                    process_identity,
-                    drained.drain_generation,
-                    owner_generation=2,
-                ).model_dump(),
-                outcome="abandoned",
-            ),
-        )
+        rollback_ready = await _record_hard_signal_outcome(registry,
+        HardSignalOutcomeRequest(authorization_id="a" * 43, **drain_control(
+            process_identity,
+            drained.drain_generation,
+            owner_generation=2,
+        ).model_dump(),
+        outcome="abandoned",),)
     else:
         rollback_ready = graceful
     assert rollback_ready.result == "rollback_permitted"
@@ -1226,10 +1319,8 @@ async def test_definitive_rejection_rollback_forbids_signal_and_reopens_atomical
     assert rejected.turn_admission_open is False
 
     with pytest.raises(LifecycleAuthorityError) as no_signal:
-        await _record_hard_signal_decision(registry, HardSignalDecisionRequest(
-            **drain_control(process_identity, drained.drain_generation).model_dump(),
-            outcome="sent",
-        ))
+        await _record_hard_signal_outcome(registry, HardSignalOutcomeRequest(authorization_id="a" * 43, **drain_control(process_identity, drained.drain_generation).model_dump(),
+        outcome="sent",))
     assert no_signal.value.code == "drain_conflict"
 
     rolled_back = await _rollback_control_drain(registry, drain_control(process_identity, drained.drain_generation))
@@ -1256,19 +1347,15 @@ async def test_uncertain_control_remains_closed_until_abandoned_signal_rollback(
         await _rollback_control_drain(registry, drain_control(process_identity, drained.drain_generation))
     assert premature.value.code == "drain_recovery_failed"
     assert registry.authority_snapshot()["turn_admission_open"] is False
-    wrong_identity = HardSignalDecisionRequest(
-        **drain_control(process_identity, drained.drain_generation).model_dump(),
-        outcome="abandoned",
-    ).model_copy(update={"engine_instance_id": secrets.token_urlsafe(32)})
+    wrong_identity = HardSignalOutcomeRequest(authorization_id="a" * 43, **drain_control(process_identity, drained.drain_generation).model_dump(),
+    outcome="abandoned",).model_copy(update={"engine_instance_id": secrets.token_urlsafe(32)})
     with pytest.raises(LifecycleAuthorityError) as identity_recheck:
-        await _record_hard_signal_decision(registry, wrong_identity)
+        await _record_hard_signal_outcome(registry, wrong_identity)
     assert identity_recheck.value.code == "engine_identity_mismatch"
     assert registry.authority_snapshot()["turn_admission_open"] is False
 
-    abandoned = await _record_hard_signal_decision(registry, HardSignalDecisionRequest(
-        **drain_control(process_identity, drained.drain_generation).model_dump(),
-        outcome="abandoned",
-    ))
+    abandoned = await _record_hard_signal_outcome(registry, HardSignalOutcomeRequest(authorization_id="a" * 43, **drain_control(process_identity, drained.drain_generation).model_dump(),
+    outcome="abandoned",))
     assert abandoned.result == "rollback_permitted"
     rolled_back = await _rollback_control_drain(registry, drain_control(process_identity, drained.drain_generation))
     assert rolled_back.result == "rolled_back"
@@ -1299,10 +1386,8 @@ async def test_sent_signal_or_process_exit_can_never_rollback(outcome: str, expe
         **drain_control(process_identity, drained.drain_generation).model_dump(),
         outcome="timeout",
     ))
-    decision = await _record_hard_signal_decision(registry, HardSignalDecisionRequest(
-        **drain_control(process_identity, drained.drain_generation).model_dump(),
-        outcome=outcome,
-    ))
+    decision = await _record_hard_signal_outcome(registry, HardSignalOutcomeRequest(authorization_id="a" * 43, **drain_control(process_identity, drained.drain_generation).model_dump(),
+    outcome=outcome,))
     assert decision.result == expected
     with pytest.raises(LifecycleAuthorityError) as failure:
         await _rollback_control_drain(registry, drain_control(process_identity, drained.drain_generation))
@@ -1319,7 +1404,7 @@ async def test_sent_signal_or_process_exit_can_never_rollback(outcome: str, expe
         ("process_exited", "process_exited"),
     ],
 )
-async def test_signal_decision_route_is_typed_secret_safe_and_generation_bound(
+async def test_hard_signal_routes_are_typed_secret_safe_and_generation_bound(
     outcome: str,
     expected_result: str,
 ) -> None:
@@ -1331,58 +1416,63 @@ async def test_signal_decision_route_is_typed_secret_safe_and_generation_bound(
     await _record_graceful_control(
         registry,
         GracefulControlResultRequest(
-            **drain_control(
-                process_identity,
-                drained.drain_generation,
-            ).model_dump(),
+            **drain_control(process_identity, drained.drain_generation).model_dump(),
             outcome="timeout",
         ),
     )
     app = create_app(SessionService(registry=registry))
     client = TestClient(app)
-    operation = app.openapi()["paths"][
-        "/v1/engine/control/signal-decision"
+    prepare_operation = app.openapi()["paths"][
+        "/v1/engine/control/hard-signal/prepare"
     ]["post"]
-    request_schema = operation["requestBody"]["content"]["application/json"]["schema"]
-    response_schema = operation["responses"]["200"]["content"]["application/json"]["schema"]
-    assert request_schema["$ref"].endswith("/HardSignalDecisionRequest")
-    assert response_schema["$ref"].endswith("/DrainControlResponse")
+    outcome_operation = app.openapi()["paths"][
+        "/v1/engine/control/hard-signal/outcome"
+    ]["post"]
+    assert prepare_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/HardSignalPrepareRequest"
+    )
+    assert prepare_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/HardSignalAuthorizationResponse"
+    )
+    assert outcome_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/HardSignalOutcomeRequest"
+    )
 
-    request = HardSignalDecisionRequest(
+    preparation = HardSignalPrepareRequest(
         **drain_control(process_identity, drained.drain_generation).model_dump(),
-        outcome=outcome,
+        pid=process_identity.pid,
+        os_process_start_token=process_identity.os_process_start_token,
     )
     stale = client.post(
-        "/v1/engine/control/signal-decision",
-        json=request.model_copy(update={"owner_generation": 2}).model_dump(mode="json"),
+        "/v1/engine/control/hard-signal/prepare",
+        json=preparation.model_copy(update={"owner_generation": 2}).model_dump(mode="json"),
         headers={"X-Breadboard-Owner-Credential": OWNER_SECRET},
     )
     assert stale.status_code == 409
     assert stale.json()["error"] == "owner_generation_conflict"
-    assert registry.authority_snapshot()["drain_phase"] == (
-        "hard_signal_decision_pending"
-    )
 
+    authorization_response = client.post(
+        "/v1/engine/control/hard-signal/prepare",
+        json=preparation.model_dump(mode="json"),
+        headers={"X-Breadboard-Owner-Credential": OWNER_SECRET},
+    )
+    assert authorization_response.status_code == 200
+    authorization = authorization_response.json()
+    request = HardSignalOutcomeRequest(
+        **drain_control(process_identity, drained.drain_generation).model_dump(),
+        authorization_id=authorization["authorization_id"],
+        outcome=outcome,
+    )
     response = client.post(
-        "/v1/engine/control/signal-decision",
+        "/v1/engine/control/hard-signal/outcome",
         json=request.model_dump(mode="json"),
         headers={"X-Breadboard-Owner-Credential": OWNER_SECRET},
     )
     assert response.status_code == 200
-    assert response.json() == {
-        "schema_version": "bb.engine_drain_control.v1",
-        "engine_instance_id": process_identity.engine_instance_id,
-        "engine_boot_id": process_identity.engine_boot_id,
-        "launch_id": process_identity.launch_id,
-        "result": expected_result,
-        "drain_generation": drained.drain_generation,
-        "admission_epoch": drained.admission_epoch,
-        "session_admission_open": False,
-        "turn_admission_open": False,
-        "registrations_open": False,
-        "signal_permitted": False,
-    }
+    assert response.json()["result"] == expected_result
+    assert response.json()["signal_permitted"] is False
     assert OWNER_SECRET not in stale.text
+    assert OWNER_SECRET not in authorization_response.text
     assert OWNER_SECRET not in response.text
 
 
@@ -1622,16 +1712,31 @@ def test_http_contract_is_typed_secret_safe_and_accepts_no_pid_authority(caplog:
     registry, process_identity, _, _ = registry_fixture()
     app = create_app(SessionService(registry=registry))
     client = TestClient(app)
+    challenge_response = client.post(
+        "/v1/engine/owner/bootstrap-challenge",
+        json={
+            "engine_instance_id": process_identity.engine_instance_id,
+            "engine_boot_id": process_identity.engine_boot_id,
+            "launch_id": process_identity.launch_id,
+        },
+    )
+    assert challenge_response.status_code == 200
+    challenge = challenge_response.json()
     payload = owner_acquire(process_identity).model_dump(mode="json")
+    payload["bootstrap_challenge_id"] = challenge["challenge_id"]
+    payload["bootstrap_proof_sha256"] = _bootstrap_proof(
+        process_identity,
+        BOOTSTRAP,
+        OWNER_SECRET,
+        challenge["challenge_id"],
+        challenge["challenge"],
+    )
     assert "bootstrap_credential" not in payload
     assert "owner_credential" not in payload
     response = client.post(
         "/v1/engine/owner/acquire",
         json=payload,
-        headers={
-            "X-Breadboard-Bootstrap-Credential": BOOTSTRAP,
-            "X-Breadboard-Owner-Credential": OWNER_SECRET,
-        },
+        headers={"X-Breadboard-Owner-Credential": OWNER_SECRET},
     )
     assert response.status_code == 200
     body = response.json()
