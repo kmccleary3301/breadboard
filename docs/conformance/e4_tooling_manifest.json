@@ -33,10 +33,10 @@
       "sha256": "sha256:fa1a985aa61e31463cda3934e5fc3b066a5b123e0f734e04251acd208e9cc662"
     },
     {
-      "bytes": 55335,
+      "bytes": 55927,
       "path": "scripts/e4_parity/adapters/oh_my_pi_compiler_capture.py",
       "role_id": "e4_static:script/oh_my_pi_compiler_capture_adapter",
-      "sha256": "sha256:0ae2a664ab99d44f0103cec4d1f84443d71393e1a289486f835d4ff43bc0daa6"
+      "sha256": "sha256:61fa9a48b1e1a15ea510f60504e19463f2915265849b356e3724a690ea490086"
     },
     {
       "bytes": 52852,

@@ -4,10 +4,10 @@
   "capture_ref": "docs/conformance/e4_target_support/opencode_north_star_capture_v1/raw_capture_manifest.json#sha256:08eb9b4cef8fac675dfea16ca3bdb48a01851bd9ec830feb8dd278ca1ca71f43",
   "catalog_binding": {
     "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-    "catalog_revision": 15,
-    "segment_hash": "sha256:bfb92a701404218b185ed97ea238ad175ed043ce2ae5f76ebefe3c16a9d2b7a2",
+    "catalog_revision": 17,
+    "segment_hash": "sha256:e65be8dc2f173b68a357f09fb7021d68eb14942d410639dd33ea265ae8e52aa9",
     "segment_id": "opencode_north_star_capture_v1",
-    "shared_segment_hash": "sha256:03b50e5fa7f2fcc39310deeea9fd1b1ad0248602ef180c1aa480d9491284f3d3"
+    "shared_segment_hash": "sha256:68f713e106b021a5a01aa372a484c13bf2136638a9013a1fe77bf08d5c75f654"
   },
   "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
   "claim_semantics": {

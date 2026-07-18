@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_6_protocol_provider_policy_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:a4d34edb98ee8370b7f48b1ea110f63374ea1171da1e346711575cc01ae0cc17"
+      "sha256": "sha256:bcdcb8577e3af01721b236f9ee19edf10df11ab8d9f738b4c62abb4957bfc3b6"
     },
     {
       "derived_from": [

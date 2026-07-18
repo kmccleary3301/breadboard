@@ -32,7 +32,7 @@
     {
       "path": "docs/conformance/support_claims/oh_my_pi_p3_2_context_resource_pack_compiler_v1_c4_support_claim.json",
       "role": "support_claim_ref",
-      "sha256": "sha256:6dd71063573702df4813cba4b32bf2c118eb31dd750549227aa6e0bcfae90dde"
+      "sha256": "sha256:66cbf2680ae1d8031e0cdf5debf811a04a7bb0496afa7db2398f3936147a37ce"
     },
     {
       "derived_from": [
