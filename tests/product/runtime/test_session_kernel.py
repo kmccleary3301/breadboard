@@ -207,6 +207,9 @@ def test_json_artifacts_reject_nonfinite_numbers_before_write(tmp_path: Path, va
     store = ArtifactStore(tmp_path)
     with pytest.raises(ValueError): store.put_json({"value": value})
     assert not list(tmp_path.rglob("*"))
+@pytest.mark.parametrize("session_id", [True, 42, ""])
+def test_manifest_rejects_schema_invalid_session_ids(tmp_path: Path, session_id: object) -> None:
+    with pytest.raises(ValueError, match="session_id"): ArtifactStore(tmp_path).manifest(session_id, {})  # type: ignore[arg-type]
 @pytest.mark.parametrize("name", [".", "..", "CON", "con.txt", "a:b", "trail.", "trail ", " lead", "a/b", "a\\b", "nul\x00", "café", "summary.json\n", "a" * 256])
 def test_manifest_runtime_and_schema_share_portable_name_policy(tmp_path: Path, name: str) -> None:
     schema_path = Path(__file__).resolve().parents[3] / "contracts/public/schemas/bb.artifact_manifest.v1.schema.json"; validator = Draft202012Validator(json.loads(schema_path.read_text())); store = ArtifactStore(tmp_path); ref = store.put(b"proof"); valid = store.manifest("s-1", {"summary.json": ref}); validator.validate(valid)
@@ -216,3 +219,9 @@ def test_manifest_runtime_and_schema_share_portable_name_policy(tmp_path: Path, 
 def test_public_session_schema_matches_projection_invariants() -> None:
     validator = Draft202012Validator(json.loads((Path(__file__).resolve().parents[3] / "contracts/public/schemas/bb.session.v1.schema.json").read_text())); valid = _session("running").read_model.as_dict(); validator.validate(valid)
     for patch in ({"effective_lock_hash": HASH + "\n"}, {"task_hash": valid["task_hash"] + "\n"}, {"pending_approval": "r"}, {"status": "awaiting_approval"}, {"status": "completed", "event_count": 1, "terminal_outcome": {"outcome": "completed", "summary": ""}}, {"status": "completed", "event_count": 2}, {"status": "completed", "event_count": 2, "terminal_outcome": {"outcome": "failed", "error": "x", "detail": "y"}}): assert list(validator.iter_errors({**valid, **patch})), patch
+_EVENT_KINDS = {"input": "input.accepted", "request": "approval.requested", "resolve": "approval.resolved", "reconfigure": "session.reconfigured", "pause": "session.paused", "resume": "session.resumed", "cancel": "session.canceled", "complete": "session.completed", "fail": "session.failed"}
+_REPLAY_DENIED = [(status, action) for status in ("running", "awaiting_approval", "paused", "completed", "failed", "canceled") for action in _ACTIONS if status not in _FACADE_ALLOWED[action]]
+@pytest.mark.parametrize(("status", "action"), _REPLAY_DENIED)
+def test_replay_transition_table_rejects_every_disallowed_pair(status: str, action: str) -> None:
+    events = list(_session(status).events); events.append(_event(len(events) + 1, _EVENT_KINDS[action]))
+    with pytest.raises(ValueError): rebuild(events)

@@ -161,9 +161,8 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     upload = Upload(); upload.filename = "résumé.txt"; uploaded = await service.upload_attachments(response.session_id, [upload]); attachment_id = uploaded.attachments[0].id
     digest = record.metadata["artifact_manifest_ref"]["digest"].removeprefix("sha256:"); manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.{digest}.json"; manifest = json.loads(manifest_path.read_text()); assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == digest; empty = Upload(); empty.data = b""; attachment_root = workspace / ".breadboard" / "attachments"; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata), {path.name for path in attachment_root.iterdir()})
     attachment_path = next((attachment_root / attachment_id).iterdir()); attachment_path.write_bytes(b"tampered")
-    snapshot_root = workspace / ".breadboard" / ".snapshot-test"; snapshot_root.mkdir(); helper = record.runner._format_attachment_helper([attachment_id, attachment_id], snapshot_root)
-    helper_path = Path(helper.partition(" -> ")[2].rsplit(" (", 1)[0]); snapshot_path = workspace / helper_path; attachment_path.write_bytes(b"raced")
-    assert not helper_path.is_absolute() and snapshot_path.resolve().is_relative_to(workspace.resolve()) and record.product_artifacts[attachment_id].digest in helper and snapshot_path.read_bytes() == b"proof" and attachment_path.read_bytes() == b"raced" and helper.count("Attachment ") == 1
+    helper = record.runner._format_attachment_helper([attachment_id, attachment_id]); attachment_path.write_bytes(b"raced")
+    assert record.product_artifacts[attachment_id].digest in helper and "size_bytes=5; encoding=base64; content=cHJvb2Y=" in helper and " -> " not in helper and attachment_path.read_bytes() == b"raced" and helper.count("Attachment ") == 1
     empty_error, missing_error = await asyncio.gather(service.upload_attachments(response.session_id, [empty]), service.send_input(response.session_id, SessionInputRequest(content="use it", attachments=["missing"])), return_exceptions=True)
     assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata, {path.name for path in attachment_root.iterdir()}) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
     cas_root = workspace / ".breadboard" / "artifacts" / "sha256"; cas_before = {path.relative_to(cas_root): path.read_bytes() for path in cas_root.rglob("*") if path.is_file()}
@@ -173,8 +172,7 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     assert cas_before == {path.relative_to(cas_root): path.read_bytes() for path in cas_root.rglob("*") if path.is_file()}
     if os.name != "nt":
         outside, attachment_dir = tmp_path / "outside-helper", attachment_path.parent; outside.mkdir(); attachment_path.unlink(); attachment_dir.rmdir(); attachment_dir.symlink_to(outside, target_is_directory=True)
-        with pytest.raises(OSError): record.runner._format_attachment_helper([attachment_id])
-        assert not list(outside.iterdir())
+        assert "content=cHJvb2Y=" in record.runner._format_attachment_helper([attachment_id]) and not list(outside.iterdir())
     monkeypatch.setattr(ArtifactStore, "put", real_put); entered, release = asyncio.Event(), asyncio.Event()
     class BlockingUpload(Upload):
         async def read(self) -> bytes: entered.set(); await release.wait(); return self.data
