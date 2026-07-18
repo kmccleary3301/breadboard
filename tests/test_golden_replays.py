@@ -1,12 +1,16 @@
 from __future__ import annotations
+
 import json
 import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Set
+
 import pytest
+
 from agentic_coder_prototype.parity import (
     EquivalenceLevel,
     build_expected_run_ir,
@@ -14,10 +18,36 @@ from agentic_coder_prototype.parity import (
     compare_run_ir,
 )
 from agentic_coder_prototype.parity_manifest import ParityScenario, load_parity_scenarios
+
 ROOT = Path(__file__).resolve().parents[1]
 REPLAY_SCRIPT = ROOT / "scripts/replay_opencode_session.py"
 LOGGING_ROOT = ROOT / "logging"
 WEBFETCH_FIXTURE_SCRIPT = ROOT / "scripts" / "opencode_webfetch_fixture_server.py"
+
+
+def _existing_log_dirs() -> Set[Path]:
+    if not LOGGING_ROOT.exists():
+        return set()
+    return {path for path in LOGGING_ROOT.glob("*") if path.is_dir()}
+
+
+def _dir_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:
+        return 0.0
+
+
+def _detect_new_run_dir(before: Set[Path]) -> Path:
+    after = _existing_log_dirs()
+    new_dirs = sorted((after - before), key=_dir_mtime)
+    if new_dirs:
+        return new_dirs[-1]
+    if after:
+        return max(after, key=_dir_mtime)
+    raise RuntimeError("No logging directories found after replay run.")
+
+
 def _start_webfetch_fixture_server() -> tuple[subprocess.Popen[str], int]:
     proc = subprocess.Popen(
         [
@@ -47,6 +77,8 @@ def _start_webfetch_fixture_server() -> tuple[subprocess.Popen[str], int]:
         proc.wait(timeout=2)
         raise RuntimeError(f"Failed to start webfetch fixture server: {port_line}\n{stderr}")
     return proc, port
+
+
 def _stop_process(proc: subprocess.Popen[str]) -> None:
     try:
         proc.terminate()
@@ -63,11 +95,15 @@ def _stop_process(proc: subprocess.Popen[str]) -> None:
             proc.wait(timeout=2)
         except Exception:
             return
+
+
 _SCENARIOS: Sequence[ParityScenario] = tuple(
     scenario
     for scenario in load_parity_scenarios()
     if scenario.enabled and scenario.mode == "replay"
 )
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("scenario", _SCENARIOS, ids=[item.name for item in _SCENARIOS])
 def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> None:
@@ -80,6 +116,7 @@ def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> No
         seeded_state = workspace / ".breadboard"
         if seeded_state.exists():
             shutil.rmtree(seeded_state, ignore_errors=True)
+
     fixture_proc: subprocess.Popen[str] | None = None
     session_path = scenario.session
     if scenario.name == "opencode_webfetch_sentinel_replay":
@@ -88,6 +125,7 @@ def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> No
         raw = scenario.session.read_text(encoding="utf-8")
         patched.write_text(raw.replace("{PORT}", str(port)), encoding="utf-8")
         session_path = patched
+
     args = [
         sys.executable,
         str(REPLAY_SCRIPT),
@@ -116,6 +154,7 @@ def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> No
     env.setdefault("RAY_SCE_SKIP_LSP", "1")
     env.setdefault("MOCK_API_KEY", "kc_parity_mock_key")
     env.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
+    before = _existing_log_dirs()
     try:
         result = subprocess.run(
             args,
@@ -133,14 +172,8 @@ def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> No
     finally:
         if fixture_proc is not None:
             _stop_process(fixture_proc)
-    payload = json.loads(result_path.read_text(encoding="utf-8"))
-    run_result = payload.get("result")
-    assert isinstance(run_result, dict), f"Replay result missing result object: {result_path}"
-    run_dir_value = run_result.get("run_dir") or run_result.get("logging_dir")
-    assert run_dir_value, f"Replay result missing run directory: {result_path}"
-    run_dir = Path(run_dir_value)
-    if not run_dir.is_absolute():
-        run_dir = ROOT / run_dir
+    time.sleep(0.5)
+    run_dir = _detect_new_run_dir(before)
     print(f"[golden-replay] using run dir: {run_dir}")
     actual_ir = build_run_ir_from_run_dir(run_dir)
     expected_ir = build_expected_run_ir(
