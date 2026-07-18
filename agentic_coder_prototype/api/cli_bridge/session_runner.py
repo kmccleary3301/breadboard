@@ -31,6 +31,7 @@ from agentic_coder_prototype.permissions import (
     load_permission_rules,
     upsert_permission_rule,
 )
+from agentic_coder_prototype.permissions.broker import PermissionBroker
 from agentic_coder_prototype.todo import TodoStore
 from agentic_coder_prototype.todo.projection import project_store_snapshot_to_tui_envelope
 from agentic_coder_prototype.state.session_state import (
@@ -57,16 +58,17 @@ def _permission_response_tokens(value: Any) -> list[str]:
     return [value.strip().lower()] if isinstance(value, str) and value.strip() else []
 
 def _permission_item_ids(request: Any) -> list[str]: return [str(item["item_id"]) for item in request.get("items", []) if isinstance(item, dict) and item.get("item_id")] if isinstance(request, dict) else []
-def _canonical_permission_resolution(response: Any, responses: Any, requested_ids: Sequence[str] = ()) -> str:
+def _permission_default_response(config: Any) -> str: return PermissionBroker((config.get("permissions") or {}) if isinstance(config, dict) else {})._default_response
+def _canonical_permission_resolution(response: Any, responses: Any, requested_ids: Sequence[str] = (), missing_response: str = "reject") -> str:
     explicit = responses.get("items") if isinstance(responses, dict) else None; wrapped = isinstance(explicit, dict)
     if not wrapped and isinstance(responses, dict) and requested_ids and any(item_id in responses for item_id in requested_ids): explicit = responses
     if isinstance(responses, dict) and "default" in responses: tokens = _permission_response_tokens(responses["default"])
     elif isinstance(explicit, dict):
-        fallback = (responses.get("fallback") or responses.get("default_response") or "reject") if wrapped else "reject"
+        fallback = (responses.get("fallback") or responses.get("default_response") or missing_response) if wrapped else missing_response
         tokens = [_permission_response_tokens(explicit.get(item_id, fallback)) for item_id in requested_ids] if requested_ids else [_permission_response_tokens(value) for value in explicit.values()]; tokens = [token for group in tokens for token in group]
     else: tokens = _permission_response_tokens(responses if isinstance(responses, dict) else response)
-    values = [_PERMISSION_ALIASES.get(token, token) for token in tokens]
-    if not values or any(value not in {"once", "always", "reject"} for value in values): raise ValueError("permission response contains no valid decisions")
+    values = [PermissionBroker._coerce_response(_PERMISSION_ALIASES.get(token, token)) for token in tokens]
+    if not values: raise ValueError("permission response contains no valid decisions")
     return "reject" if "reject" in values else "always" if all(value == "always" for value in values) else "once"
 
 def _canonical_permission_responses(responses: Dict[str, Any]) -> Dict[str, Any]:
@@ -576,7 +578,7 @@ class SessionRunner:
                 )
                 normalized_request_id = request_id.strip()
                 pending = self.session.metadata.get("pending_permissions"); pending_request = next((entry.get("request") for entry in pending if isinstance(entry, dict) and entry.get("request_id") == normalized_request_id), {}) if isinstance(pending, list) else {}; requested_ids = _permission_item_ids(pending_request)
-                resolution = _canonical_permission_resolution(response, canonical_responses, requested_ids)
+                resolution = _canonical_permission_resolution(response, canonical_responses, requested_ids, _permission_default_response(self.current_runtime_config()))
                 queue = getattr(self, "_permission_queue", None)
                 if queue is None:
                     if self._debug_permissions_enabled():
@@ -1140,7 +1142,7 @@ class SessionRunner:
                     product_session = getattr(self.session, "product_session", None)
                     if not consume_fifo:
                         if product_session:
-                            request = normalized[match].get("request"); responses = info.get("responses") or info.get("items"); self.transition_product_session("resolve_approval", request_id, _canonical_permission_resolution(info.get("response") or info.get("decision"), responses, _permission_item_ids(request)))
+                            request = normalized[match].get("request"); responses = info.get("responses") or info.get("items"); self.transition_product_session("resolve_approval", request_id, _canonical_permission_resolution(info.get("response") or info.get("decision"), responses, _permission_item_ids(request), _permission_default_response(self.current_runtime_config())))
                         ready = [dict(info)]
                     if consume_fifo:
                         consumed_key = self._pending_permission_key(normalized[match]); self._consumed_permission_responses[consumed_key] = self._consumed_permission_responses.get(consumed_key, 0) + 1
@@ -1150,7 +1152,7 @@ class SessionRunner:
                         if product_session:
                             request = normalized[0].get("request") if isinstance(normalized[0].get("request"), dict) else {}; operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
                             self.transition_product_session("request_approval", deferred_id, operation)
-                            self.transition_product_session("resolve_approval", deferred_id, _canonical_permission_resolution(deferred.get("response") or deferred.get("decision"), deferred.get("responses") or deferred.get("items"), _permission_item_ids(request)))
+                            self.transition_product_session("resolve_approval", deferred_id, _canonical_permission_resolution(deferred.get("response") or deferred.get("decision"), deferred.get("responses") or deferred.get("items"), _permission_item_ids(request), _permission_default_response(self.current_runtime_config())))
                         normalized.pop(0); ready.append(deferred)
                     activate = normalized[0] if match == 0 and normalized else None
             else: return None
