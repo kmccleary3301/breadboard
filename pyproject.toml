@@ -13,25 +13,11 @@ dependencies = ["jsonschema>=4.18", "PyYAML>=6.0"]
 bbh = "scripts.breadboard_cli:main"
 
 [tool.setuptools]
-packages = [
-  "scripts",
-  "agentic_coder_prototype",
-  "breadboard_sdk",
-  "breadboard",
-  "breadboard.product",
-  "breadboard.product.harness",
-  "breadboard.product.runtime",
-  "breadboard.product.harness.modules",
-  "conformance",
-]
+packages = ["scripts", "agentic_coder_prototype", "breadboard_sdk", "breadboard", "breadboard.product", "breadboard.product.harness", "breadboard.product.harness.modules", "breadboard.product.runtime", "conformance"]
 py-modules = ["adaptive_iter"]
 
 [tool.setuptools.data-files]
 "agent_configs/templates" = ["agent_configs/templates/minimal_harness.v3.yaml"]
 "agent_configs/templates/" = ["agent_configs/templates/representative_harness.v1.yaml"]
 "contracts/kernel/schemas" = ["contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json"]
-"contracts/public/schemas" = [
-  "contracts/public/schemas/bb.harness_definition.v1.schema.json",
-  "contracts/public/schemas/bb.session.v1.schema.json",
-  "contracts/public/schemas/bb.artifact_manifest.v1.schema.json",
-]
+"contracts/public/schemas" = ["contracts/public/schemas/bb.harness_definition.v1.schema.json", "contracts/public/schemas/bb.session.v1.schema.json", "contracts/public/schemas/bb.artifact_manifest.v1.schema.json"]

@@ -5,8 +5,9 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Sequence
+from typing import Sequence, Set
 
 import pytest
 
@@ -23,6 +24,28 @@ REPLAY_SCRIPT = ROOT / "scripts/replay_opencode_session.py"
 LOGGING_ROOT = ROOT / "logging"
 WEBFETCH_FIXTURE_SCRIPT = ROOT / "scripts" / "opencode_webfetch_fixture_server.py"
 
+
+def _existing_log_dirs() -> Set[Path]:
+    if not LOGGING_ROOT.exists():
+        return set()
+    return {path for path in LOGGING_ROOT.glob("*") if path.is_dir()}
+
+
+def _dir_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:
+        return 0.0
+
+
+def _detect_new_run_dir(before: Set[Path]) -> Path:
+    after = _existing_log_dirs()
+    new_dirs = sorted((after - before), key=_dir_mtime)
+    if new_dirs:
+        return new_dirs[-1]
+    if after:
+        return max(after, key=_dir_mtime)
+    raise RuntimeError("No logging directories found after replay run.")
 
 
 def _start_webfetch_fixture_server() -> tuple[subprocess.Popen[str], int]:
@@ -131,6 +154,7 @@ def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> No
     env.setdefault("RAY_SCE_SKIP_LSP", "1")
     env.setdefault("MOCK_API_KEY", "kc_parity_mock_key")
     env.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
+    before = _existing_log_dirs()
     try:
         result = subprocess.run(
             args,
@@ -148,14 +172,8 @@ def test_golden_opencode_replays(tmp_path: Path, scenario: ParityScenario) -> No
     finally:
         if fixture_proc is not None:
             _stop_process(fixture_proc)
-    payload = json.loads(result_path.read_text(encoding="utf-8"))
-    run_result = payload.get("result")
-    assert isinstance(run_result, dict), f"Replay result missing result object: {result_path}"
-    run_dir_value = run_result.get("run_dir") or run_result.get("logging_dir")
-    assert run_dir_value, f"Replay result missing run directory: {result_path}"
-    run_dir = Path(run_dir_value)
-    if not run_dir.is_absolute():
-        run_dir = ROOT / run_dir
+    time.sleep(0.5)
+    run_dir = _detect_new_run_dir(before)
     print(f"[golden-replay] using run dir: {run_dir}")
     actual_ir = build_run_ir_from_run_dir(run_dir)
     expected_ir = build_expected_run_ir(

@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from threading import RLock
 from types import MappingProxyType
 from typing import Any
-from breadboard.product.runtime.ports import Clock, IdSource, SystemClock, UUIDSource
+from breadboard.product.runtime.events import Clock, IdSource, SystemClock, UUIDSource
 from .placement import WorkPlacement
 STATUSES = frozenset({"blocked", "ready", "leased", "running", "waiting", "paused", "completed", "failed", "canceled"}); TERMINAL_STATUSES = frozenset({"completed", "failed", "canceled"})
 _RULES = MappingProxyType({

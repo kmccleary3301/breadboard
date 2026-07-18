@@ -24,11 +24,7 @@ class LSPClusterManager:
         self.broken_servers: set = set()
         self.health_check_interval = 30  # seconds
         
-    def deploy_lsp_cluster(
-        self,
-        workspace_roots: List[str],
-        enabled_languages: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
+    def deploy_lsp_cluster(self, workspace_roots: List[str]) -> Dict[str, Any]:
         """Deploy LSP servers across the Ray cluster"""
         deployment_status = {
             "deployed_languages": [],
@@ -36,16 +32,8 @@ class LSPClusterManager:
             "total_servers": 0,
             "workspace_roots": workspace_roots
         }
-        language_ids = (
-            list(LSP_SERVER_CONFIGS)
-            if enabled_languages is None
-            else list(dict.fromkeys(enabled_languages))
-        )
         
-        for language_id in language_ids:
-            if language_id not in LSP_SERVER_CONFIGS:
-                deployment_status["failed_languages"].append(language_id)
-                continue
+        for language_id, config in LSP_SERVER_CONFIGS.items():
             try:
                 # Create multiple replicas for each language
                 replicas = []
@@ -319,11 +307,7 @@ def deploy_lsp_system(config: Dict[str, Any], workspace_roots: List[str]) -> LSP
     )
     
     # Deploy the cluster
-    enabled_languages = config.get("languages", {}).get("enabled")
-    deployment_status = cluster_manager.deploy_lsp_cluster(
-        workspace_roots,
-        enabled_languages=enabled_languages,
-    )
+    deployment_status = cluster_manager.deploy_lsp_cluster(workspace_roots)
     
     print(f"Deployment complete:")
     print(f"  - Successfully deployed: {', '.join(deployment_status['deployed_languages'])}")
