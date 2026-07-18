@@ -44,7 +44,10 @@ def test_p3_7_is_frozen_validation_only() -> None:
     lane_id = "oh_my_pi_p3_7_memory_work_compiler"
     lane_def = _read_json(ROOT / "config" / "e4_lanes" / f"{lane_id}.yaml")
     config = lane_def["normalize"]["config"]
-    claim = _read_json(ROOT / "docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json")
+    claim = _read_json(
+        ROOT
+        / "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json"
+    )
 
     assert lane_def["status"] == "superseded"
     assert lane_def["capture"]["strategy"] == "replay_dump"
