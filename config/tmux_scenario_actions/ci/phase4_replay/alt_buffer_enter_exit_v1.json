@@ -26,6 +26,11 @@
     "clear_mode": "ctrl_u"
   },
   {
+    "type": "key",
+    "key": "Escape",
+    "wait": 0.2
+  },
+  {
     "type": "wait_until",
     "contains": [
       "Alt buffer replay ready."

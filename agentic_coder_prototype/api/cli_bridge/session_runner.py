@@ -56,11 +56,14 @@ def _permission_response_tokens(value: Any) -> list[str]:
     if isinstance(value, dict): return [token for nested in value.values() for token in _permission_response_tokens(nested)]
     return [value.strip().lower()] if isinstance(value, str) and value.strip() else []
 
+def _permission_item_ids(request: Any) -> list[str]: return [str(item["item_id"]) for item in request.get("items", []) if isinstance(item, dict) and item.get("item_id")] if isinstance(request, dict) else []
 def _canonical_permission_resolution(response: Any, responses: Any, requested_ids: Sequence[str] = ()) -> str:
-    if isinstance(responses, dict) and isinstance(responses.get("items"), dict):
-        explicit, fallback = responses["items"], responses.get("fallback") or responses.get("default_response") or "reject"
-        tokens = [_permission_response_tokens(explicit.get(item_id, fallback)) for item_id in requested_ids] if requested_ids else [_permission_response_tokens(value) for value in explicit.values()]
-        tokens = [token for group in tokens for token in group]
+    explicit = responses.get("items") if isinstance(responses, dict) else None; wrapped = isinstance(explicit, dict)
+    if not wrapped and isinstance(responses, dict) and requested_ids and any(item_id in responses for item_id in requested_ids): explicit = responses
+    if isinstance(responses, dict) and "default" in responses: tokens = _permission_response_tokens(responses["default"])
+    elif isinstance(explicit, dict):
+        fallback = (responses.get("fallback") or responses.get("default_response") or "reject") if wrapped else "reject"
+        tokens = [_permission_response_tokens(explicit.get(item_id, fallback)) for item_id in requested_ids] if requested_ids else [_permission_response_tokens(value) for value in explicit.values()]; tokens = [token for group in tokens for token in group]
     else: tokens = _permission_response_tokens(responses if isinstance(responses, dict) else response)
     values = [_PERMISSION_ALIASES.get(token, token) for token in tokens]
     if not values or any(value not in {"once", "always", "reject"} for value in values): raise ValueError("permission response contains no valid decisions")
@@ -403,12 +406,12 @@ class SessionRunner:
                         rules.append({"request_id": request_id, "decision": normalized, "rule": rule, "scope": scope, "note": note})
                         metadata["permission_rules"] = rules
                         persist_rule = (response_value == "always" or normalized in {"deny-always", "deny_always"}) and category and workspace_dir
-                        if persist_rule and upsert_permission_rule(
-                            workspace_dir, category=category, pattern=str(rule).strip(),
-                            decision="deny" if normalized.startswith("deny") else "allow", scope=str(scope or "project"),
-                        ) is False:
-                            self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision")
-                            raise RuntimeError("failed to persist permission rule")
+                        try:
+                            persisted = not persist_rule or upsert_permission_rule(workspace_dir, category=category, pattern=str(rule).strip(), decision="deny" if normalized.startswith("deny") else "allow", scope=str(scope or "project"))
+                        except Exception as exc:
+                            self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision"); raise RuntimeError("failed to commit permission decision") from exc
+                        if not persisted:
+                            self.transition_product_session("fail", "permission_commit_failed", "failed to commit permission decision"); raise RuntimeError("failed to persist permission rule")
                         try: await self.registry.update_metadata(self.session.session_id, metadata=metadata)
                         except Exception:
                             if not persist_rule:
@@ -572,7 +575,7 @@ class SessionRunner:
                     _canonical_permission_responses(responses) if isinstance(responses, dict) else None
                 )
                 normalized_request_id = request_id.strip()
-                pending = self.session.metadata.get("pending_permissions"); pending_request = next((entry.get("request") for entry in pending if isinstance(entry, dict) and entry.get("request_id") == normalized_request_id), {}) if isinstance(pending, list) else {}; requested_ids = [str(item.get("item_id")) for item in pending_request.get("items", []) if isinstance(item, dict) and item.get("item_id")] if isinstance(pending_request, dict) else []
+                pending = self.session.metadata.get("pending_permissions"); pending_request = next((entry.get("request") for entry in pending if isinstance(entry, dict) and entry.get("request_id") == normalized_request_id), {}) if isinstance(pending, list) else {}; requested_ids = _permission_item_ids(pending_request)
                 resolution = _canonical_permission_resolution(response, canonical_responses, requested_ids)
                 queue = getattr(self, "_permission_queue", None)
                 if queue is None:
@@ -1137,7 +1140,7 @@ class SessionRunner:
                     product_session = getattr(self.session, "product_session", None)
                     if not consume_fifo:
                         if product_session:
-                            responses = info.get("responses") or info.get("items"); self.transition_product_session("resolve_approval", request_id, _canonical_permission_resolution(info.get("response") or info.get("decision"), responses))
+                            request = normalized[match].get("request"); responses = info.get("responses") or info.get("items"); self.transition_product_session("resolve_approval", request_id, _canonical_permission_resolution(info.get("response") or info.get("decision"), responses, _permission_item_ids(request)))
                         ready = [dict(info)]
                     if consume_fifo:
                         consumed_key = self._pending_permission_key(normalized[match]); self._consumed_permission_responses[consumed_key] = self._consumed_permission_responses.get(consumed_key, 0) + 1
@@ -1147,7 +1150,7 @@ class SessionRunner:
                         if product_session:
                             request = normalized[0].get("request") if isinstance(normalized[0].get("request"), dict) else {}; operation = str(request.get("operation") or request.get("tool") or request.get("category") or "runtime permission")
                             self.transition_product_session("request_approval", deferred_id, operation)
-                            self.transition_product_session("resolve_approval", deferred_id, _canonical_permission_resolution(deferred.get("response") or deferred.get("decision"), deferred.get("responses") or deferred.get("items")))
+                            self.transition_product_session("resolve_approval", deferred_id, _canonical_permission_resolution(deferred.get("response") or deferred.get("decision"), deferred.get("responses") or deferred.get("items"), _permission_item_ids(request)))
                         normalized.pop(0); ready.append(deferred)
                     activate = normalized[0] if match == 0 and normalized else None
             else: return None

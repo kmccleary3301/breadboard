@@ -586,7 +586,7 @@ class SessionService:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no attachment data found")
         record.product_artifacts = artifact_refs
         manifest = artifact_store.manifest(session_id, artifact_refs); manifest_ref = artifact_store.put_json(manifest)
-        artifact_store.materialize(manifest_ref, workspace_dir / ".breadboard" / "artifacts" / "manifests" / f"{session_id}.json")
+        artifact_store.materialize(manifest_ref, workspace_dir / ".breadboard" / "artifacts" / "manifests" / f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json")
         record.metadata["artifact_manifest"], record.metadata["artifact_manifest_ref"] = manifest, manifest_ref.as_dict()
         runner.register_attachments(attachment_entries)
         return AttachmentUploadResponse(attachments=handles)

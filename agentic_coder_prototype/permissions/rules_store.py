@@ -1,15 +1,23 @@
 from __future__ import annotations
 
-import json, os
-import threading, time, uuid
+import json, os, threading, time, uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+try: import fcntl
+except ImportError: fcntl = None  # type: ignore[assignment]
 
 
 RULES_VERSION = 1
 RULES_REL_PATH = Path(".breadboard") / "permission_rules.json"
 _RULES_LOCK = threading.RLock()
+@contextmanager
+def _locked_rules(path: Path) -> Any:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _RULES_LOCK, path.with_suffix(path.suffix + ".lock").open("a+b") as stream:
+        if fcntl is not None: fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        yield
 
 
 @dataclass(frozen=True)
@@ -26,23 +34,19 @@ def _now_ms() -> int:
 
 
 def _load_raw(path: Path) -> Dict[str, Any]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
+    try: data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception: return {}
     return data if isinstance(data, dict) else {}
-
 
 def _write_raw(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True); temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         with temporary.open("xb") as stream: stream.write(json.dumps(payload, indent=2, sort_keys=True).encode()); stream.flush(); os.fsync(stream.fileno())
         os.replace(temporary, path)
-        descriptor = None
-        try: descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)); os.fsync(descriptor)
-        except OSError: pass
-        finally:
-            if descriptor is not None: os.close(descriptor)
+        if os.name != "nt":
+            descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try: os.fsync(descriptor)
+            finally: os.close(descriptor)
     finally: temporary.unlink(missing_ok=True)
 
 
@@ -79,52 +83,19 @@ def upsert_permission_rule(
 ) -> bool:
     """Insert or update a single permission rule on disk."""
     path = Path(workspace_dir).resolve() / RULES_REL_PATH
-    cat = str(category or "").strip().lower()
-    pat = str(pattern or "").strip()
-    dec = str(decision or "").strip().lower()
-    scp = str(scope or "project").strip().lower()
-    if not cat or not pat or dec not in {"allow", "deny"}:
-        return False
-    with _RULES_LOCK:
-        raw = _load_raw(path)
-        rules = raw.get("rules")
-        if not isinstance(rules, list):
-            rules = []
-        updated_at_ms = _now_ms()
-        replaced = False
-        next_rules: List[Dict[str, Any]] = []
+    cat, pat = str(category or "").strip().lower(), str(pattern or "").strip()
+    dec, scp = str(decision or "").strip().lower(), str(scope or "project").strip().lower()
+    if not cat or not pat or dec not in {"allow", "deny"}: return False
+    with _locked_rules(path):
+        raw = _load_raw(path); rules = raw.get("rules")
+        rules = rules if isinstance(rules, list) else []; updated_at_ms = _now_ms(); replaced = False; next_rules: List[Dict[str, Any]] = []
+        replacement = {"category": cat, "pattern": pat, "decision": dec, "scope": scp, "updated_at_ms": updated_at_ms}
         for entry in rules:
-            if not isinstance(entry, dict):
-                continue
-            if str(entry.get("category") or "").strip().lower() == cat and str(entry.get("pattern") or "").strip() == pat:
-                next_rules.append(
-                    {
-                        "category": cat,
-                        "pattern": pat,
-                        "decision": dec,
-                        "scope": scp,
-                        "updated_at_ms": updated_at_ms,
-                    }
-                )
-                replaced = True
-            else:
-                next_rules.append(dict(entry))
-        if not replaced:
-            next_rules.append(
-                {
-                    "category": cat,
-                    "pattern": pat,
-                    "decision": dec,
-                    "scope": scp,
-                    "updated_at_ms": updated_at_ms,
-                }
-            )
-        raw = {
-            "version": RULES_VERSION,
-            "updated_at_ms": updated_at_ms,
-            "rules": next_rules,
-        }
-        _write_raw(path, raw)
+            if not isinstance(entry, dict): continue
+            if str(entry.get("category") or "").strip().lower() == cat and str(entry.get("pattern") or "").strip() == pat: next_rules.append(replacement); replaced = True
+            else: next_rules.append(dict(entry))
+        if not replaced: next_rules.append(replacement)
+        _write_raw(path, {"version": RULES_VERSION, "updated_at_ms": updated_at_ms, "rules": next_rules})
         return True
 
 

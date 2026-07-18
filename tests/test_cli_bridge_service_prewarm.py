@@ -1,5 +1,5 @@
 from __future__ import annotations
-from types import SimpleNamespace; from pathlib import Path; import asyncio, json, os, threading, pytest
+from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest
 from fastapi import HTTPException
 from breadboard.product.runtime import ports as runtime_ports
 from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
@@ -167,7 +167,7 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
         async def read(self) -> bytes: return self.data
     workspace = tmp_path / "workspace"; service, response, record = await _create(monkeypatch, tmp_path, workspace=str(workspace))
     uploaded = await service.upload_attachments(response.session_id, [Upload()]); attachment_id = uploaded.attachments[0].id
-    manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.json"; manifest = json.loads(manifest_path.read_text()); empty = Upload(); empty.data = b""; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata))
+    digest = record.metadata["artifact_manifest_ref"]["digest"].removeprefix("sha256:"); manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.{digest}.json"; manifest = json.loads(manifest_path.read_text()); assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == digest; empty = Upload(); empty.data = b""; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata))
     empty_error, missing_error = await asyncio.gather(service.upload_attachments(response.session_id, [empty]), service.send_input(response.session_id, SessionInputRequest(content="use it", attachments=["missing"])), return_exceptions=True)
     assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
     await service.delete_session(response.session_id); assert await service.registry.get(response.session_id) is None and manifest_path.is_file()
