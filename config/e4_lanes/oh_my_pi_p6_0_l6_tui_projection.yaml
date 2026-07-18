@@ -720,14 +720,14 @@
               {
                 "path": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
                 "role": "support_claim_ref",
-                "sha256": "sha256:0ebafe90322a126f75dcb809979434494e99b9a0f6ea83ed30c0565cd99ccbb0"
+                "sha256": "sha256:f1c7174bd825d55f05c37ec5a23a3eae14daf90c737630ec7f57b2a5e4f5d411"
               },
               {
                 "bytes": 123094,
                 "exists": true,
                 "path": "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
                 "role": "atomic_feature_ledger",
-                "sha256": "sha256:d94463ecd062c8cf6bdbed166d45677c5f8d2a3e4f8b1f104f611718111047bd"
+                "sha256": "sha256:f5576cb59842edab2374935c53ca25fc8dd00de249450d0b5baa3a3b0f43fe63"
               },
               {
                 "path": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/projection_events.json",
@@ -781,10 +781,10 @@
             "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
             "gate_errors": [],
             "hashes": {
-              "evidence_manifest": "sha256:bb87b79cef78c9ddd40e5e8cb45d167b8781bdf0a7305bbb7c20fd4f3625264d",
+              "evidence_manifest": "sha256:5581535dd8bd8005d5c421b6f5273dfa004c4763c6de1030a13bb8eadde2668f",
               "freeze_manifest": "sha256:6d7979a411879d2ef6ca291745bd3df35a97a72b51fdcc90088fb7b66a82a27e",
               "freeze_manifest_row": "sha256:dcd6492e1c12fa3f134306c4288f922c4d9f90eb6f8d2d4ee6a41ccfe8b508a0",
-              "support_claim": "sha256:0ebafe90322a126f75dcb809979434494e99b9a0f6ea83ed30c0565cd99ccbb0"
+              "support_claim": "sha256:f1c7174bd825d55f05c37ec5a23a3eae14daf90c737630ec7f57b2a5e4f5d411"
             },
             "ok": true,
             "pin_stale_count": 0,
@@ -1042,10 +1042,10 @@
             "capture_ref": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw_capture_manifest.json#sha256:e10acd797f55ccb52f298a791980220dfdb509f2982fa3daa8352e6521a2c4e9",
             "catalog_binding": {
               "catalog_path": "docs/conformance/e4_artifact_catalog.json",
-              "catalog_revision": 13,
-              "segment_hash": "sha256:fc87c556a43efe851e324752f8fd05d1ae26b3f3770436cde09142431803b509",
+              "catalog_revision": 15,
+              "segment_hash": "sha256:0fedfd8dc2878de0839203551d04c84f08f6d4bc9ae74a0baed5105880a9da37",
               "segment_id": "oh_my_pi_p6_0_l6_tui_projection",
-              "shared_segment_hash": "sha256:36a3c7b69fbf7abd2de47c8f362d9368af2fb60a294403d7b6bfbd58d5c5a1e1"
+              "shared_segment_hash": "sha256:03b50e5fa7f2fcc39310deeea9fd1b1ad0248602ef180c1aa480d9491284f3d3"
             },
             "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
             "claim_semantics": {

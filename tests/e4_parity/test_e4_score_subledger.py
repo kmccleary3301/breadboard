@@ -26,7 +26,10 @@ FALLBACK_ACCEPTED_CLAIM_REPORT_PATH = (
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 _INVENTORY = json.loads(INVENTORY_PATH.read_text(encoding="utf-8"))
 ACCEPTED_INVENTORY_LANES = tuple(
-    lane for lane in _INVENTORY["lanes"] if isinstance(lane, Mapping) and lane.get("status") == "accepted"
+    lane
+    for lane in _INVENTORY["lanes"]
+    if isinstance(lane, Mapping)
+    and (lane.get("status") == "accepted" or lane.get("evidence_status") == "accepted")
 )
 TARGET_SUPPORT_LANES = tuple(lane for lane in ACCEPTED_INVENTORY_LANES if lane.get("kind") == "target_support")
 NON_TARGET_ACCOUNTING_LANES = tuple(
