@@ -4,9 +4,10 @@ from fastapi import HTTPException
 from breadboard.product.runtime import ports as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
 from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
 from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.api.cli_bridge.service import SessionService
-from agentic_coder_prototype.api.cli_bridge.session_runner import MAX_INLINE_ATTACHMENT_BYTES
+from agentic_coder_prototype.api.cli_bridge.session_runner import MAX_ATTACHMENT_BYTES
 from agentic_coder_prototype.api.cli_bridge.runtime_emission import _tool_names
 from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides; from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
 CONFIG = "agent_configs/misc/codex_cli_gpt54mini_e4_live.yaml"
 RUNNER = "agentic_coder_prototype.api.cli_bridge.session_runner.SessionRunner.start"
 SERVICE = "agentic_coder_prototype.api.cli_bridge.service."
@@ -15,7 +16,7 @@ class _Failing:
     def put_nowait(self, _item) -> None: raise RuntimeError("broker unavailable")  # type: ignore[no-untyped-def]
 class _Upload:
     filename, content_type, data = "proof.txt", "text/plain", b"proof"
-    async def read(self) -> bytes: return self.data
+    async def read(self, size: int = -1) -> bytes: data = self.data if size < 0 else self.data[:size]; self.data = self.data[len(data):]; return data
 async def _stop(record) -> None:  # type: ignore[no-untyped-def]
     if record.dispatcher_task and not record.dispatcher_task.done(): await record.event_queue.put(None); await record.dispatcher_task
 async def _create(monkeypatch, tmp_path, *, service=None, task="Say hi", **fields):  # type: ignore[no-untyped-def]
@@ -162,8 +163,10 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     upload = Upload(); upload.filename = "résumé.txt"; uploaded = await service.upload_attachments(response.session_id, [upload]); attachment_id = uploaded.attachments[0].id
     digest = record.metadata["artifact_manifest_ref"]["digest"].removeprefix("sha256:"); manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.{digest}.json"; manifest = json.loads(manifest_path.read_text()); assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == digest; empty = Upload(); empty.data = b""; attachment_root = workspace / ".breadboard" / "attachments"; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata), {path.name for path in attachment_root.iterdir()})
     attachment_path = next((attachment_root / attachment_id).iterdir()); attachment_path.write_bytes(b"tampered")
-    helper = record.runner._format_attachment_helper([attachment_id, attachment_id]); attachment_path.write_bytes(b"raced")
-    assert record.product_artifacts[attachment_id].digest in helper and "size_bytes=5; encoding=base64; content=cHJvb2Y=" in helper and " -> " not in helper and attachment_path.read_bytes() == b"raced" and helper.count("Attachment ") == 1
+    helper = record.runner._format_attachment_helper([attachment_id, attachment_id]); attachment_path.write_bytes(b"raced"); uri = f"attachment://{record.product_artifacts[attachment_id].digest}"
+    conductor_class = OpenAIConductor.__ray_metadata__.modified_class; conductor = object.__new__(conductor_class); conductor.config, conductor.workspace = {}, str(workspace); conductor._active_session_state = SimpleNamespace(get_provider_metadata=lambda key, default=None: record.runner._active_attachment_capabilities if key == "attachment_capabilities" else default)
+    read_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": uri}}); denied_result = conductor._exec_raw({"function": "read_file", "arguments": {"path": "attachment://sha256:" + "0" * 64}})
+    assert uri in helper and "content=" not in helper and read_result["content"] == "proof" and "not authorized" in denied_result["error"] and attachment_path.read_bytes() == b"raced" and helper.count("Attachment ") == 1
     empty_error, missing_error = await asyncio.gather(service.upload_attachments(response.session_id, [empty]), service.send_input(response.session_id, SessionInputRequest(content="use it", attachments=["missing"])), return_exceptions=True)
     assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata, {path.name for path in attachment_root.iterdir()}) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
     cas_root = workspace / ".breadboard" / "artifacts" / "sha256"; cas_before = {path.relative_to(cas_root): path.read_bytes() for path in cas_root.rglob("*") if path.is_file()}
@@ -173,10 +176,10 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     assert cas_before == {path.relative_to(cas_root): path.read_bytes() for path in cas_root.rglob("*") if path.is_file()}
     if os.name != "nt":
         outside, attachment_dir = tmp_path / "outside-helper", attachment_path.parent; outside.mkdir(); attachment_path.unlink(); attachment_dir.rmdir(); attachment_dir.symlink_to(outside, target_is_directory=True)
-        assert "content=cHJvb2Y=" in record.runner._format_attachment_helper([attachment_id]) and not list(outside.iterdir())
+        assert uri in record.runner._format_attachment_helper([attachment_id]) and not list(outside.iterdir())
     monkeypatch.setattr(ArtifactStore, "put", real_put); entered, release = asyncio.Event(), asyncio.Event()
     class BlockingUpload(Upload):
-        async def read(self) -> bytes: entered.set(); await release.wait(); return self.data
+        async def read(self, size: int = -1) -> bytes: entered.set(); await release.wait(); return await super().read(size)
     upload_task = asyncio.create_task(service.upload_attachments(response.session_id, [BlockingUpload()])); await entered.wait()
     delete_task = asyncio.create_task(service.delete_session(response.session_id)); await asyncio.sleep(0); assert not delete_task.done()
     release.set(); raced_upload = await upload_task; await delete_task
@@ -185,13 +188,16 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     assert missing.value.status_code == 404
 @pytest.mark.asyncio
 async def test_attachment_size_limit_is_rejected_before_durable_input(monkeypatch, tmp_path) -> None:
-    service, response, record = await _create(monkeypatch, tmp_path, workspace=str(tmp_path / "workspace")); oversized = _Upload(); oversized.data = b"x" * (MAX_INLINE_ATTACHMENT_BYTES + 1); before = (record.product_session.events, dict(record.product_artifacts), record.runner._input_queue.qsize())
-    with pytest.raises(HTTPException) as upload_error: await service.upload_attachments(response.session_id, [oversized])
+    service, response, record = await _create(monkeypatch, tmp_path, workspace=str(tmp_path / "workspace"))
+    class Oversized(_Upload):
+        async def read(self, size: int = -1) -> bytes: assert 0 < size <= MAX_ATTACHMENT_BYTES + 1; return b"x" * size
+    before = (record.product_session.events, dict(record.product_artifacts), record.runner._input_queue.qsize())
+    with pytest.raises(HTTPException) as upload_error: await service.upload_attachments(response.session_id, [Oversized()])
     assert upload_error.value.status_code == 413 and before == (record.product_session.events, record.product_artifacts, record.runner._input_queue.qsize())
-    first = _Upload(); first.data = b"a" * (MAX_INLINE_ATTACHMENT_BYTES // 2 + 1); second = _Upload(); second.data = b"b" * (MAX_INLINE_ATTACHMENT_BYTES // 2 + 1)
-    first_id = (await service.upload_attachments(response.session_id, [first])).attachments[0].id; second_id = (await service.upload_attachments(response.session_id, [second])).attachments[0].id; events = record.product_session.events
-    with pytest.raises(HTTPException) as selection_error: await service.send_input(response.session_id, SessionInputRequest(content="inspect", attachments=[first_id, second_id]))
-    assert selection_error.value.status_code == 400 and record.product_session.events == events and record.runner._input_queue.empty()
+    first = _Upload(); first.data = b"a" * (MAX_ATTACHMENT_BYTES // 2 + 1); second = _Upload(); second.data = b"b" * (MAX_ATTACHMENT_BYTES // 2 + 1)
+    first_id = (await service.upload_attachments(response.session_id, [first])).attachments[0].id; second_id = (await service.upload_attachments(response.session_id, [second])).attachments[0].id; events = record.product_session.events; metadata = json.loads(json.dumps(record.metadata))
+    with pytest.raises(HTTPException) as selection_error: await service.send_input(response.session_id, SessionInputRequest(content="Say hi inspect", attachments=[first_id, second_id]))
+    assert selection_error.value.status_code == 400 and record.product_session.events == events and record.runner._input_queue.empty() and record.metadata == metadata
     await _stop(record)
 @pytest.mark.asyncio
 async def test_attachment_storage_rejects_workspace_symlink_escape(monkeypatch, tmp_path) -> None:

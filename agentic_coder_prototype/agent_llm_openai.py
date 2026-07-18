@@ -27,6 +27,7 @@ import ray
 from adaptive_iter import decode_adaptive_iterable
 
 from breadboard.sandbox import DevSandboxV2
+from breadboard.product.runtime.artifacts import ArtifactRef, read_workspace_artifact
 from breadboard.opencode_patch import PatchParseError, parse_opencode_patch, to_unified_diff
 from breadboard.sandbox_factory import SandboxFactory, DeploymentMode
 from .core.core import ToolDefinition, ToolParameter
@@ -4563,7 +4564,16 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             content = str(args.get("content", ""))
             return self._ray_get(self.sandbox.write_text.remote(target, content))
         if normalized == "read_file":
-            target = self._normalize_workspace_path(str(args.get("path", "")))
+            requested = str(args.get("path", ""))
+            if requested.startswith("attachment://"):
+                if not re.fullmatch(r"attachment://sha256:[0-9a-f]{64}", requested): return {"error": "invalid attachment URI"}
+                state = getattr(self, "_active_session_state", None); capabilities = state.get_provider_metadata("attachment_capabilities", {}) if state is not None else {}; trusted = capabilities.get(requested) if isinstance(capabilities, dict) else None
+                if not isinstance(trusted, dict): return {"error": "attachment URI is not authorized for this turn"}
+                try:
+                    ref = ArtifactRef(digest=str(trusted["digest"]), size_bytes=int(trusted["size_bytes"]), media_type=str(trusted["media_type"])); content = read_workspace_artifact(self.workspace, ref)
+                except Exception as exc: return {"error": f"attachment read failed: {exc}"}
+                return {"path": requested, "content": content.decode("utf-8", errors="replace"), "truncated": False, "offset": 0, "limit": None}
+            target = self._normalize_workspace_path(requested)
             return self.read_file(target)
         if normalized == "glob":
             pattern = str(args.get("pattern") or "")
@@ -4863,6 +4873,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             for key, value in context.items():
                 if isinstance(key, str) and (key.startswith("phase15_") or key.startswith("phase16_")):
                     session_state.set_provider_metadata(key, value)
+            capabilities = context.get("attachment_capabilities")
+            if isinstance(capabilities, dict): session_state.set_provider_metadata("attachment_capabilities", capabilities)
         session_state.set_provider_metadata("initial_user_prompt", user_prompt or "")
         session_state.set_provider_metadata(
             "requires_build_guard",

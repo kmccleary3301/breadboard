@@ -1,7 +1,6 @@
 """Session execution helpers for the CLI bridge."""
 from __future__ import annotations
 import asyncio
-import base64
 import json
 import logging
 import threading
@@ -13,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence, List, Tuple
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from breadboard.product.runtime.artifacts import ArtifactStore, _close_windows_handle, _open_directory, _validate_artifact_name, _windows_handle
+from breadboard.product.runtime.artifacts import _validate_artifact_name
 from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides
 from agentic_coder_prototype.compilation.effective_operation_policy import policy_pack_for_config_authority
 from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointManager
@@ -44,7 +43,7 @@ from .models import SessionCreateRequest, SessionStatus
 from .registry import SessionRecord, SessionRegistry
 logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
-MAX_INLINE_ATTACHMENT_BYTES = 16 * 1024
+MAX_ATTACHMENT_BYTES = 16 * 1024
 _PERMISSION_ALIASES = {alias: decision for decision, aliases in {
     "once": "once allow approve approved ok okay yes y allow-once allow_once", "always": "always allow-always allow_always",
     "reject": "reject deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop",
@@ -171,6 +170,7 @@ class SessionRunner:
         self._closed = False
         self._workspace_path: Optional[Path] = None
         self._attachment_store: Dict[str, Dict[str, Any]] = {}
+        self._active_attachment_capabilities: Dict[str, Dict[str, Any]] = {}
         self._permission_queue: Any = None
         self._consumed_permission_responses: Dict[tuple[str, str, str], int] = {}
         self._control_queue: Any = None
@@ -245,15 +245,15 @@ class SessionRunner:
             raise RuntimeError("session is closed")
         if not content or not content.strip():
             raise ValueError("input content must not be empty")
-        content = self._sanitize_interactive_input_content(content)
         attachment_ids = list(dict.fromkeys(item.strip() for item in (attachments or []) if isinstance(item, str) and item.strip()))
-        payload = {"content": content, "attachments": attachment_ids}
         with self._product_session_lock:
             artifacts = getattr(self.session, "product_artifacts", {})
             unknown = [item for item in attachment_ids if not isinstance(artifacts, dict) or item not in artifacts]
             if unknown: raise ValueError(f"unknown attachment IDs: {', '.join(unknown)}")
-            total_bytes = sum(int(getattr(artifacts[item], "size_bytes", MAX_INLINE_ATTACHMENT_BYTES + 1)) for item in attachment_ids)
-            if total_bytes > MAX_INLINE_ATTACHMENT_BYTES: raise ValueError(f"selected attachments exceed {MAX_INLINE_ATTACHMENT_BYTES}-byte inline handoff limit")
+            total_bytes = sum(int(getattr(artifacts[item], "size_bytes", MAX_ATTACHMENT_BYTES + 1)) for item in attachment_ids)
+            if total_bytes > MAX_ATTACHMENT_BYTES: raise ValueError(f"selected attachments exceed {MAX_ATTACHMENT_BYTES}-byte handoff limit")
+            content = self._sanitize_interactive_input_content(content)
+            payload = {"content": content, "attachments": attachment_ids}
             product_session = getattr(self.session, "product_session", None)
             if product_session is not None:
                 product_session.input(content, [artifacts[item] for item in attachment_ids])
@@ -616,6 +616,7 @@ class SessionRunner:
             overrides.setdefault("permissions.edit.default", "ask")
             overrides.setdefault("permissions.shell.default", "ask")
             overrides.setdefault("permissions.webfetch.default", "ask")
+            overrides.setdefault("permissions.read.default", "ask")
             self.request.permission_mode = permission_mode
             self.session.metadata["permission_mode"] = permission_mode
         base_cfg = self._load_base_config()
@@ -1253,6 +1254,7 @@ class SessionRunner:
                         task_context["task_type"] = self.session.metadata.get("task_type")
             except Exception:
                 task_context = {}
+            task_context["attachment_capabilities"] = dict(self._active_attachment_capabilities)
             kernel_emitter_run_dir = None
             kernel_emitter_mode = None
             try:
@@ -1520,35 +1522,16 @@ class SessionRunner:
             if not attachment_id:
                 continue
             self._attachment_store[str(attachment_id)] = dict(entry)
-    def _restore_attachment(self, attachment_id: str, filename: str, artifact_ref: Any) -> bytes:
-        _validate_artifact_name(attachment_id)
-        if not filename or filename in {".", ".."} or os.path.basename(filename) != filename or "\0" in filename: raise ValueError("attachment filename must be a basename")
-        workspace = self.get_workspace_dir()
-        if workspace is None: raise RuntimeError("workspace not ready")
-        metadata, artifacts = workspace / ".breadboard", workspace / ".breadboard" / "artifacts"
-        if os.name == "nt":
-            handles: list[int] = []
-            try:
-                for path in (workspace, metadata, artifacts): handles.append(_windows_handle(path, directory=True, create=False))
-                return ArtifactStore(artifacts).read(artifact_ref)
-            finally:
-                for handle in reversed(handles): _close_windows_handle(handle)
-        descriptors: list[int] = [os.open(workspace, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))]
-        try:
-            metadata_fd = _open_directory(descriptors[-1], ".breadboard", create=False); descriptors.append(metadata_fd)
-            artifact_fd = _open_directory(metadata_fd, "artifacts", create=False); descriptors.append(artifact_fd)
-            return ArtifactStore(artifacts, descriptor=artifact_fd).read(artifact_ref)
-        finally:
-            for descriptor in reversed(descriptors): os.close(descriptor)
     def _format_attachment_helper(self, attachment_ids: Sequence[str]) -> str:
-        helper_lines: list[str] = []
+        helper_lines: list[str] = []; self._active_attachment_capabilities = {}
         for index, key in enumerate(dict.fromkeys(str(value) for value in attachment_ids), start=1):
             info = self._attachment_store.get(key)
             if not info: continue
             artifact_ref = getattr(self.session, "product_artifacts", {}).get(key)
             if artifact_ref is None: raise RuntimeError(f"attachment artifact missing: {key}")
-            filename = str(info.get("filename") or key); trusted = self._restore_attachment(key, filename, artifact_ref); encoded = base64.b64encode(trusted).decode("ascii")
-            helper_lines.append(f"[Attachment {index}: name={json.dumps(filename, ensure_ascii=True)}; digest={artifact_ref.digest}; size_bytes={len(trusted)}; encoding=base64; content={encoded}]")
+            filename = str(info.get("filename") or key); _validate_artifact_name(key); uri = f"attachment://{artifact_ref.digest}"
+            self._active_attachment_capabilities[uri] = artifact_ref.as_dict()
+            helper_lines.append(f"[Attachment {index}: name={json.dumps(filename, ensure_ascii=True)}; uri={uri}; size_bytes={artifact_ref.size_bytes}; read with read_file after normal authorization]")
         return "\n".join(helper_lines)
     def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
         if not logging_dir:

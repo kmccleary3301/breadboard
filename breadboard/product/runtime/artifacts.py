@@ -201,3 +201,18 @@ class ArtifactStore:
         rows = [{"name": name, **ref.as_dict()} for name, ref in sorted(artifacts.items())]; body = {"schema_version": "bb.artifact_manifest.v1", "session_id": session_id, "artifacts": rows}
         canonical = json.dumps(body, sort_keys=True, separators=(",", ":")).encode(); body["manifest_id"] = "artifact_manifest:" + hashlib.sha256(canonical).hexdigest()
         return body
+def read_workspace_artifact(workspace: str | Path, ref: ArtifactRef) -> bytes:
+    workspace = Path(workspace); metadata, artifacts = workspace / ".breadboard", workspace / ".breadboard" / "artifacts"
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            for path in (workspace, metadata, artifacts): handles.append(_windows_handle(path, directory=True, create=False))
+            return ArtifactStore(artifacts).read(ref)
+        finally:
+            for handle in reversed(handles): _close_windows_handle(handle)
+    descriptors = [os.open(workspace, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))]
+    try:
+        descriptors.append(_open_directory(descriptors[-1], ".breadboard", create=False)); descriptors.append(_open_directory(descriptors[-1], "artifacts", create=False))
+        return ArtifactStore(artifacts, descriptor=descriptors[-1]).read(ref)
+    finally:
+        for descriptor in reversed(descriptors): os.close(descriptor)
