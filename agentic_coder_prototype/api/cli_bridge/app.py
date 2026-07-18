@@ -888,7 +888,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         responses={404: {"model": ErrorResponse}},
     )
     async def delete_session(session_id: str, svc: SessionService = Depends(get_service)):
-        await svc.stop_session(session_id)
+        await svc.delete_session(session_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get(
