@@ -32,8 +32,11 @@ from agentic_coder_prototype.api.cli_bridge.models import (
     ClientRegisterRequest,
     DrainControlRequest,
     GracefulControlResultRequest,
+    HardSignalCommitRequest,
     HardSignalOutcomeRequest,
+    HardSignalPermitResponse,
     HardSignalPrepareRequest,
+    HardSignalPreparationResponse,
     OwnerAcquireRequest,
     OwnerLeaseRequest,
     OwnerLeaseResponse,
@@ -431,6 +434,20 @@ async def _record_hard_signal_outcome(
         ),
         owner_credential=_secret_buffer(owner),
     )
+    if request.outcome in {"sent", "process_exited"}:
+        await registry.commit_hard_signal(
+            HardSignalCommitRequest(
+                engine_instance_id=request.engine_instance_id,
+                engine_boot_id=request.engine_boot_id,
+                launch_id=request.launch_id,
+                owner_generation=request.owner_generation,
+                drain_generation=request.drain_generation,
+                authorization_id=authorization.authorization_id,
+                pid=process_identity.pid,
+                os_process_start_token=process_identity.os_process_start_token,
+            ),
+            owner_credential=_secret_buffer(owner),
+        )
     return await registry.record_hard_signal_outcome(
         request.model_copy(update={"authorization_id": authorization.authorization_id}),
         owner_credential=_secret_buffer(owner),
@@ -953,10 +970,7 @@ async def test_owner_renewal_repairs_expired_requester_once() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("rollback_path", ["definitive_rejection", "abandoned"])
-async def test_expired_requester_rolls_back_explicitly_safe_phase_once(
-    rollback_path: str,
-) -> None:
+async def test_expired_requester_rolls_back_definitive_rejection_once() -> None:
     registry, process_identity, clock, registration = await owned_registered_registry()
     request = begin_drain(
         registry,
@@ -965,34 +979,16 @@ async def test_expired_requester_rolls_back_explicitly_safe_phase_once(
         control_request_id="q" * 43,
     )
     committed = await _begin_control_drain(registry, request)
-    graceful = await _record_graceful_control(
+    rollback_ready = await _record_graceful_control(
         registry,
         GracefulControlResultRequest(
             **drain_control(
                 process_identity,
                 committed.drain_generation,
             ).model_dump(),
-            outcome=(
-                "definitive_rejection"
-                if rollback_path == "definitive_rejection"
-                else "timeout"
-            ),
+            outcome="definitive_rejection",
         ),
     )
-    if rollback_path == "abandoned":
-        rollback_ready = await _record_hard_signal_outcome(
-            registry,
-            HardSignalOutcomeRequest(
-                authorization_id="a" * 43,
-                **drain_control(
-                    process_identity,
-                    committed.drain_generation,
-                ).model_dump(),
-                outcome="abandoned",
-            ),
-        )
-    else:
-        rollback_ready = graceful
     assert rollback_ready.result == "rollback_permitted"
 
     clock.advance(20)
@@ -1039,6 +1035,17 @@ async def test_abandoned_outcome_repairs_newly_safe_orphaned_drain_once(
     )
     assert pending.result == "hard_signal_decision_pending"
     assert pending.registrations_open is False
+    preparation = await registry.prepare_hard_signal(
+        HardSignalPrepareRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            pid=process_identity.pid,
+            os_process_start_token=process_identity.os_process_start_token,
+        ),
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
 
     if orphaning == "expired":
         clock.advance(20)
@@ -1054,17 +1061,20 @@ async def test_abandoned_outcome_repairs_newly_safe_orphaned_drain_once(
             "hard_signal_decision_pending"
         )
         assert registry.admission_epoch == committed.admission_epoch
+        clock.advance(29)
+        await _renew_owner(registry, owner_lease(process_identity))
+        clock.advance(1)
 
-    abandoned = await _record_hard_signal_outcome(
-        registry,
+    abandoned = await registry.record_hard_signal_outcome(
         HardSignalOutcomeRequest(
-            authorization_id="a" * 43,
+            authorization_id=preparation.authorization_id,
             **drain_control(
                 process_identity,
                 committed.drain_generation,
             ).model_dump(),
             outcome="abandoned",
         ),
+        owner_credential=_secret_buffer(OWNER_SECRET),
     )
     rolled_back_epoch = committed.admission_epoch + 1
     assert abandoned.result == "rolled_back"
@@ -1137,7 +1147,7 @@ async def test_definitive_rejection_automatic_rollback_replays_exact_response() 
 
 @pytest.mark.asyncio
 async def test_abandoned_automatic_rollback_replays_only_exact_authorized_outcome() -> None:
-    registry, process_identity, _, registration = await owned_registered_registry()
+    registry, process_identity, clock, registration = await owned_registered_registry()
     committed = await _begin_control_drain(
         registry,
         begin_drain(registry, process_identity, registration),
@@ -1164,6 +1174,9 @@ async def test_abandoned_automatic_rollback_replays_only_exact_authorized_outcom
         owner_credential=_secret_buffer(OWNER_SECRET),
     )
     await _detach_client(registry, client_lease(registration))
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(1)
     request = HardSignalOutcomeRequest(
         authorization_id=authorization.authorization_id,
         **drain_control(
@@ -1981,10 +1994,7 @@ async def test_expired_owner_reacquisition_transfers_only_recoverable_active_dra
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("graceful_outcome", ["definitive_rejection", "uncertain"])
-async def test_reacquired_owner_transfers_drain_and_only_new_generation_can_rollback(
-    graceful_outcome: str,
-) -> None:
+async def test_reacquired_owner_transfers_safe_drain_for_rollback() -> None:
     registry, process_identity, clock, registration = await owned_registered_registry()
     drained = await _begin_control_drain(
         registry,
@@ -2001,7 +2011,7 @@ async def test_reacquired_owner_transfers_drain_and_only_new_generation_can_roll
             expected_generation=1,
         ),
     )
-    graceful = await _record_graceful_control(
+    rollback_ready = await _record_graceful_control(
         registry,
         GracefulControlResultRequest(
             **drain_control(
@@ -2009,25 +2019,11 @@ async def test_reacquired_owner_transfers_drain_and_only_new_generation_can_roll
                 drained.drain_generation,
                 owner_generation=2,
             ).model_dump(),
-            outcome=graceful_outcome,
+            outcome="definitive_rejection",
         ),
     )
-    if graceful_outcome == "uncertain":
-        assert graceful.result == "hard_signal_decision_pending"
-        assert graceful.signal_permitted is True
-        rollback_ready = await _record_hard_signal_outcome(registry,
-        HardSignalOutcomeRequest(authorization_id="a" * 43, **drain_control(
-            process_identity,
-            drained.drain_generation,
-            owner_generation=2,
-        ).model_dump(),
-        outcome="abandoned",),)
-    else:
-        rollback_ready = graceful
     assert rollback_ready.result == "rollback_permitted"
     assert rollback_ready.session_admission_open is False
-    assert rollback_ready.turn_admission_open is False
-    assert rollback_ready.registrations_open is False
 
     with pytest.raises(LifecycleAuthorityError) as stale:
         await _rollback_control_drain(
@@ -2039,7 +2035,6 @@ async def test_reacquired_owner_transfers_drain_and_only_new_generation_can_roll
             ),
         )
     assert stale.value.code == "drain_recovery_failed"
-    assert registry.authority_snapshot()["session_admission_open"] is False
 
     rolled_back = await _rollback_control_drain(
         registry,
@@ -2051,8 +2046,6 @@ async def test_reacquired_owner_transfers_drain_and_only_new_generation_can_roll
     )
     assert rolled_back.result == "rolled_back"
     assert rolled_back.session_admission_open is True
-    assert rolled_back.turn_admission_open is True
-    assert rolled_back.registrations_open is True
 
 
 @pytest.mark.asyncio
@@ -2608,33 +2601,63 @@ async def test_definitive_rejection_rollback_forbids_signal_and_reopens_atomical
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("outcome", ["timeout", "uncertain"])
-async def test_uncertain_control_remains_closed_until_abandoned_signal_rollback(outcome: str) -> None:
-    registry, process_identity, _, registration = await owned_registered_registry()
-    drained = await _begin_control_drain(registry, begin_drain(registry, process_identity, registration))
-    pending = await _record_graceful_control(registry, GracefulControlResultRequest(
-        **drain_control(process_identity, drained.drain_generation).model_dump(),
-        outcome=outcome,
-    ))
+async def test_uncertain_control_remains_closed_until_expired_preparation_rollback(
+    outcome: str,
+) -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    drained = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    pending = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                drained.drain_generation,
+            ).model_dump(),
+            outcome=outcome,
+        ),
+    )
     assert pending.result == "hard_signal_decision_pending"
-    assert pending.signal_permitted is True
+    assert pending.signal_permitted is False
     assert pending.turn_admission_open is False
-
+    preparation = await registry.prepare_hard_signal(
+        HardSignalPrepareRequest(
+            **drain_control(
+                process_identity,
+                drained.drain_generation,
+            ).model_dump(),
+            pid=process_identity.pid,
+            os_process_start_token=process_identity.os_process_start_token,
+        ),
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    abandoned_request = HardSignalOutcomeRequest(
+        authorization_id=preparation.authorization_id,
+        **drain_control(
+            process_identity,
+            drained.drain_generation,
+        ).model_dump(),
+        outcome="abandoned",
+    )
     with pytest.raises(LifecycleAuthorityError) as premature:
-        await _rollback_control_drain(registry, drain_control(process_identity, drained.drain_generation))
-    assert premature.value.code == "drain_recovery_failed"
-    assert registry.authority_snapshot()["turn_admission_open"] is False
-    wrong_identity = HardSignalOutcomeRequest(authorization_id="a" * 43, **drain_control(process_identity, drained.drain_generation).model_dump(),
-    outcome="abandoned",).model_copy(update={"engine_instance_id": secrets.token_urlsafe(32)})
-    with pytest.raises(LifecycleAuthorityError) as identity_recheck:
-        await _record_hard_signal_outcome(registry, wrong_identity)
-    assert identity_recheck.value.code == "engine_identity_mismatch"
+        await registry.record_hard_signal_outcome(
+            abandoned_request,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert premature.value.code == "hard_signal_authorization_conflict"
     assert registry.authority_snapshot()["turn_admission_open"] is False
 
-    abandoned = await _record_hard_signal_outcome(registry, HardSignalOutcomeRequest(authorization_id="a" * 43, **drain_control(process_identity, drained.drain_generation).model_dump(),
-    outcome="abandoned",))
-    assert abandoned.result == "rollback_permitted"
-    rolled_back = await _rollback_control_drain(registry, drain_control(process_identity, drained.drain_generation))
-    assert rolled_back.result == "rolled_back"
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(1)
+    abandoned = await registry.record_hard_signal_outcome(
+        abandoned_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    assert abandoned.result == "rolled_back"
+    assert abandoned.session_admission_open is True
 
 
 @pytest.mark.asyncio
@@ -2676,7 +2699,6 @@ async def test_sent_signal_or_process_exit_can_never_rollback(outcome: str, expe
     ("outcome", "expected_result"),
     [
         ("sent", "signal_sent"),
-        ("abandoned", "rollback_permitted"),
         ("process_exited", "process_exited"),
     ],
 )
@@ -2704,14 +2726,23 @@ async def test_hard_signal_routes_are_typed_secret_safe_and_generation_bound(
     outcome_operation = app.openapi()["paths"][
         "/v1/engine/control/hard-signal/outcome"
     ]["post"]
+    commit_operation = app.openapi()["paths"][
+        "/v1/engine/control/hard-signal/commit"
+    ]["post"]
     assert prepare_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/HardSignalPrepareRequest"
     )
     assert prepare_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
-        "/HardSignalAuthorizationResponse"
+        "/HardSignalPreparationResponse"
     )
     assert outcome_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith(
         "/HardSignalOutcomeRequest"
+    )
+    assert commit_operation["requestBody"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/HardSignalCommitRequest"
+    )
+    assert commit_operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith(
+        "/HardSignalPermitResponse"
     )
 
     preparation = HardSignalPrepareRequest(
@@ -2734,6 +2765,20 @@ async def test_hard_signal_routes_are_typed_secret_safe_and_generation_bound(
     )
     assert authorization_response.status_code == 200
     authorization = authorization_response.json()
+    assert authorization["result"] == "prepared"
+    assert authorization["signal_permitted"] is False
+    commit = HardSignalCommitRequest(
+        **preparation.model_dump(),
+        authorization_id=authorization["authorization_id"],
+    )
+    permit_response = client.post(
+        "/v1/engine/control/hard-signal/commit",
+        json=commit.model_dump(mode="json"),
+        headers={"X-Breadboard-Owner-Credential": OWNER_SECRET},
+    )
+    assert permit_response.status_code == 200
+    assert permit_response.json()["result"] == "signal_permitted"
+    assert permit_response.json()["signal_permitted"] is True
     request = HardSignalOutcomeRequest(
         **drain_control(process_identity, drained.drain_generation).model_dump(),
         authorization_id=authorization["authorization_id"],
@@ -2749,6 +2794,7 @@ async def test_hard_signal_routes_are_typed_secret_safe_and_generation_bound(
     assert response.json()["signal_permitted"] is False
     assert OWNER_SECRET not in stale.text
     assert OWNER_SECRET not in authorization_response.text
+    assert OWNER_SECRET not in permit_response.text
     assert OWNER_SECRET not in response.text
 
 
@@ -2826,7 +2872,7 @@ def test_lifecycle_response_models_accept_each_consistent_result_variant() -> No
             session_admission_open=is_open,
             turn_admission_open=is_open,
             registrations_open=is_open,
-            signal_permitted=result == "hard_signal_decision_pending",
+            signal_permitted=False,
         )
         assert response.result == result
 
@@ -2909,13 +2955,6 @@ def test_lifecycle_response_models_reject_contradictory_states() -> None:
             "turn_admission_open": False,
             "registrations_open": False,
             "signal_permitted": True,
-        },
-        {
-            "result": "hard_signal_decision_pending",
-            "session_admission_open": False,
-            "turn_admission_open": False,
-            "registrations_open": False,
-            "signal_permitted": False,
         },
     )
     for contradiction in contradictory_drains:
@@ -3067,3 +3106,1321 @@ def test_http_contract_is_typed_secret_safe_and_accepts_no_pid_authority(caplog:
         "validation-secret-material-000000000000000",
     ):
         assert secret not in all_outputs
+
+
+@pytest.mark.asyncio
+async def test_graceful_control_committed_accepted_response_replays_exactly() -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    request = GracefulControlResultRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        outcome="accepted",
+    )
+
+    first = await _record_graceful_control(registry, request)
+    replay = await _record_graceful_control(registry, request)
+
+    assert first.result == "shutdown_started"
+    assert replay == first
+    assert registry.admission_epoch == committed.admission_epoch
+
+    for mismatched in [
+        request.model_copy(update={"outcome": "timeout"}),
+        request.model_copy(
+            update={"drain_generation": committed.drain_generation + 1},
+        ),
+        request.model_copy(update={"owner_generation": 2}),
+    ]:
+        with pytest.raises(LifecycleAuthorityError):
+            await _record_graceful_control(registry, mismatched)
+    with pytest.raises(LifecycleAuthorityError):
+        await registry.record_graceful_control(
+            request,
+            owner_credential=_secret_buffer("foreign-owner-credential-material"),
+        )
+    assert registry.admission_epoch == committed.admission_epoch
+
+
+@pytest.mark.asyncio
+async def test_graceful_control_committed_timeout_response_replays_exactly() -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    request = GracefulControlResultRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        outcome="timeout",
+    )
+
+    first = await _record_graceful_control(registry, request)
+    replay = await _record_graceful_control(registry, request)
+
+    assert first.result == "hard_signal_decision_pending"
+    assert first.signal_permitted is False
+    assert replay == first
+    assert registry.admission_epoch == committed.admission_epoch
+
+    with pytest.raises(LifecycleAuthorityError):
+        await _record_graceful_control(
+            registry,
+            request.model_copy(update={"outcome": "uncertain"}),
+        )
+    assert registry.admission_epoch == committed.admission_epoch
+
+
+@pytest.mark.asyncio
+async def test_expired_hard_signal_authorization_can_abandon_and_roll_back_once() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    pending = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    prepare = HardSignalPrepareRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        pid=process_identity.pid,
+        os_process_start_token=process_identity.os_process_start_token,
+    )
+    authorization = await registry.prepare_hard_signal(
+        prepare,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(1)
+    with pytest.raises(LifecycleAuthorityError) as expired:
+        await registry.prepare_hard_signal(
+            prepare,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert expired.value.code == "hard_signal_authorization_expired"
+    request = HardSignalOutcomeRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        authorization_id=authorization.authorization_id,
+        outcome="abandoned",
+    )
+
+    first, concurrent_replay = await asyncio.gather(
+        registry.record_hard_signal_outcome(
+            request,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        ),
+        registry.record_hard_signal_outcome(
+            request,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        ),
+    )
+    replay = await registry.record_hard_signal_outcome(
+        request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+
+    assert first.result == "rolled_back"
+    assert first.admission_epoch == pending.admission_epoch + 1
+    assert first.session_admission_open is True
+    assert first.turn_admission_open is True
+    assert first.registrations_open is True
+    assert first.signal_permitted is False
+    assert replay == first
+    assert concurrent_replay == first
+    assert registry.admission_epoch == first.admission_epoch
+
+
+@pytest.mark.asyncio
+async def test_expired_hard_signal_authorization_has_no_signal_authority() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    pending = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    authorization = await registry.prepare_hard_signal(
+        HardSignalPrepareRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            pid=process_identity.pid,
+            os_process_start_token=process_identity.os_process_start_token,
+        ),
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(1)
+
+    for outcome in ("sent", "process_exited"):
+        with pytest.raises(LifecycleAuthorityError) as expired:
+            await registry.record_hard_signal_outcome(
+                HardSignalOutcomeRequest(
+                    **drain_control(
+                        process_identity,
+                        committed.drain_generation,
+                    ).model_dump(),
+                    authorization_id=authorization.authorization_id,
+                    outcome=outcome,
+                ),
+                owner_credential=_secret_buffer(OWNER_SECRET),
+            )
+        assert expired.value.code == "hard_signal_authorization_conflict"
+
+    abandoned = HardSignalOutcomeRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        authorization_id=authorization.authorization_id,
+        outcome="abandoned",
+    )
+    with pytest.raises(LifecycleAuthorityError) as foreign_authorization:
+        await registry.record_hard_signal_outcome(
+            abandoned.model_copy(update={"authorization_id": "f" * 43}),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert foreign_authorization.value.code == "hard_signal_authorization_conflict"
+    with pytest.raises(LifecycleAuthorityError) as foreign_owner:
+        await registry.record_hard_signal_outcome(
+            abandoned,
+            owner_credential=_secret_buffer("foreign-owner-credential-material"),
+        )
+    assert foreign_owner.value.code == "owner_identity_mismatch"
+    for unsafe_id in ("../authorization", "a" * 42, "a" * 44):
+        with pytest.raises(ValidationError):
+            HardSignalOutcomeRequest(
+                **drain_control(
+                    process_identity,
+                    committed.drain_generation,
+                ).model_dump(),
+                authorization_id=unsafe_id,
+                outcome="abandoned",
+            )
+
+    assert registry.authority_snapshot()["drain_phase"] == (
+        "hard_signal_decision_pending"
+    )
+    assert registry.admission_epoch == pending.admission_epoch
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcome", "expected_result", "expected_signal_permitted"),
+    [
+        ("accepted", "shutdown_started", False),
+        ("timeout", "hard_signal_decision_pending", False),
+    ],
+)
+async def test_graceful_control_replay_survives_controller_restart(
+    outcome: str,
+    expected_result: str,
+    expected_signal_permitted: bool,
+) -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    request = GracefulControlResultRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        outcome=outcome,
+    )
+    _take_proofs(request)
+    payload = request.model_dump(mode="json")
+    headers = {"X-Breadboard-Owner-Credential": OWNER_SECRET}
+
+    first_controller = TestClient(create_app(SessionService(registry=registry)))
+    first = first_controller.post(
+        "/v1/engine/control/graceful-result",
+        json=payload,
+        headers=headers,
+    )
+    first_controller.close()
+    restarted_controller = TestClient(create_app(SessionService(registry=registry)))
+    replay = restarted_controller.post(
+        "/v1/engine/control/graceful-result",
+        json=payload,
+        headers=headers,
+    )
+    restarted_controller.close()
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert replay.json() == first.json()
+    assert replay.json()["result"] == expected_result
+    assert replay.json()["admission_epoch"] == committed.admission_epoch
+    assert replay.json()["signal_permitted"] is expected_signal_permitted
+    assert registry.admission_epoch == committed.admission_epoch
+
+
+@pytest.mark.asyncio
+async def test_owner_rotation_preserves_expired_authorization_for_safe_abandonment() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    pending = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    first_prepare = HardSignalPrepareRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        pid=process_identity.pid,
+        os_process_start_token=process_identity.os_process_start_token,
+    )
+    authorization = await registry.prepare_hard_signal(
+        first_prepare,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(30)
+    reacquired = await _acquire_owner(
+        registry,
+        owner_acquire(process_identity, expected_generation=1),
+    )
+    assert reacquired.owner_generation == 2
+    current_prepare = first_prepare.model_copy(update={"owner_generation": 2})
+
+    with pytest.raises(LifecycleAuthorityError) as prepare_expired:
+        await registry.prepare_hard_signal(
+            current_prepare,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert prepare_expired.value.code == "hard_signal_authorization_expired"
+
+    abandoned = HardSignalOutcomeRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+            owner_generation=2,
+        ).model_dump(),
+        authorization_id=authorization.authorization_id,
+        outcome="abandoned",
+    )
+    with pytest.raises(LifecycleAuthorityError) as signal_expired:
+        await registry.record_hard_signal_outcome(
+            abandoned.model_copy(update={"outcome": "sent"}),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert signal_expired.value.code == "hard_signal_authorization_conflict"
+
+    rollback = DrainControlRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+            owner_generation=2,
+        ).model_dump(),
+    )
+    first, concurrent_replay = await asyncio.gather(
+        registry.rollback_control_drain(
+            rollback,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        ),
+        registry.rollback_control_drain(
+            rollback,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        ),
+    )
+    replay = await registry.rollback_control_drain(
+        rollback,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    known_id_replay = await registry.record_hard_signal_outcome(
+        abandoned,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    assert first.result == "rolled_back"
+    assert first.admission_epoch == pending.admission_epoch + 1
+    assert concurrent_replay == first
+    assert replay == first
+    assert known_id_replay == first
+    assert registry.admission_epoch == first.admission_epoch
+
+    with pytest.raises(LifecycleAuthorityError) as foreign_authorization:
+        await registry.record_hard_signal_outcome(
+            abandoned.model_copy(update={"authorization_id": "f" * 43}),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert foreign_authorization.value.code == "hard_signal_authorization_conflict"
+    with pytest.raises(LifecycleAuthorityError) as foreign_owner:
+        await registry.record_hard_signal_outcome(
+            abandoned,
+            owner_credential=_secret_buffer("foreign-owner-credential-material"),
+        )
+    assert foreign_owner.value.code == "owner_identity_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_lost_prepare_response_recovers_only_at_expiry_via_exact_rollback() -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    pending = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    prepare = HardSignalPrepareRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        pid=process_identity.pid,
+        os_process_start_token=process_identity.os_process_start_token,
+    )
+    await registry.prepare_hard_signal(
+        prepare,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    rollback = DrainControlRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+    )
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(process_identity))
+
+    with pytest.raises(LifecycleAuthorityError) as still_live:
+        await registry.rollback_control_drain(
+            rollback,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert still_live.value.code == "drain_recovery_failed"
+    assert registry.admission_epoch == pending.admission_epoch
+    assert registry.authority_snapshot()["drain_phase"] == (
+        "hard_signal_decision_pending"
+    )
+
+    clock.advance(1)
+    with pytest.raises(LifecycleAuthorityError) as expired:
+        await registry.prepare_hard_signal(
+            prepare,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert expired.value.code == "hard_signal_authorization_expired"
+    payload = rollback.model_dump(mode="json")
+    headers = {"X-Breadboard-Owner-Credential": OWNER_SECRET}
+    first_controller = TestClient(create_app(SessionService(registry=registry)))
+    first = first_controller.post(
+        "/v1/engine/control/drain-rollback",
+        json=payload,
+        headers=headers,
+    )
+    first_controller.close()
+    restarted_controller = TestClient(create_app(SessionService(registry=registry)))
+    replay = restarted_controller.post(
+        "/v1/engine/control/drain-rollback",
+        json=payload,
+        headers=headers,
+    )
+    restarted_controller.close()
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert first.json()["result"] == "rolled_back"
+    assert first.json()["admission_epoch"] == pending.admission_epoch + 1
+    assert replay.json() == first.json()
+    assert registry.admission_epoch == first.json()["admission_epoch"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "ambiguous_now",
+    [float("nan"), float("inf"), float("-inf"), -1.0],
+    ids=["nan", "positive-infinity", "negative-infinity", "negative"],
+)
+async def test_ambiguous_time_cannot_prepare_abandon_or_rollback(
+    ambiguous_now: float,
+) -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    pending = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    prepare = HardSignalPrepareRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        pid=process_identity.pid,
+        os_process_start_token=process_identity.os_process_start_token,
+    )
+    authorization = await registry.prepare_hard_signal(
+        prepare,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    abandoned = HardSignalOutcomeRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        authorization_id=authorization.authorization_id,
+        outcome="abandoned",
+    )
+    rollback = DrainControlRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+    )
+    clock.value = ambiguous_now
+
+    with pytest.raises(LifecycleAuthorityError) as prepare_rejected:
+        await registry.prepare_hard_signal(
+            prepare,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert prepare_rejected.value.code == "hard_signal_authorization_conflict"
+    with pytest.raises(LifecycleAuthorityError) as abandon_rejected:
+        await registry.record_hard_signal_outcome(
+            abandoned,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert abandon_rejected.value.code == "hard_signal_authorization_conflict"
+    with pytest.raises(LifecycleAuthorityError) as rollback_rejected:
+        await registry.rollback_control_drain(
+            rollback,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert rollback_rejected.value.code == "drain_recovery_failed"
+    assert registry.admission_epoch == pending.admission_epoch
+    assert registry.authority_snapshot()["drain_phase"] == (
+        "hard_signal_decision_pending"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("operation", "linearized_now"),
+    [
+        ("prepare", 1_029.0),
+        ("known-id-abandon", 1_030.0),
+        ("rollback", 1_030.0),
+    ],
+)
+async def test_hard_signal_authority_uses_one_boundary_clock_sample(
+    operation: str,
+    linearized_now: float,
+) -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    pending = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    prepare = HardSignalPrepareRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        pid=process_identity.pid,
+        os_process_start_token=process_identity.os_process_start_token,
+    )
+    authorization = await registry.prepare_hard_signal(
+        prepare,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(process_identity))
+    sampled: list[float] = []
+    boundary_values = iter([linearized_now, 1_060.0])
+
+    def boundary_clock() -> float:
+        value = next(boundary_values)
+        sampled.append(value)
+        return value
+
+    registry._clock = boundary_clock
+    if operation == "prepare":
+        result = await registry.prepare_hard_signal(
+            prepare,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+        assert result == authorization
+        assert registry.admission_epoch == pending.admission_epoch
+    elif operation == "known-id-abandon":
+        result = await registry.record_hard_signal_outcome(
+            HardSignalOutcomeRequest(
+                **drain_control(
+                    process_identity,
+                    committed.drain_generation,
+                ).model_dump(),
+                authorization_id=authorization.authorization_id,
+                outcome="abandoned",
+            ),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+        assert result.result == "rolled_back"
+        assert result.admission_epoch == pending.admission_epoch + 1
+    else:
+        result = await registry.rollback_control_drain(
+            DrainControlRequest(
+                **drain_control(
+                    process_identity,
+                    committed.drain_generation,
+                ).model_dump(),
+            ),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+        assert result.result == "rolled_back"
+        assert result.admission_epoch == pending.admission_epoch + 1
+
+    assert sampled == [linearized_now]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("outcome", "later_phase"),
+    [
+        ("accepted", "shutdown_started"),
+        ("definitive_rejection", "rollback_permitted"),
+        ("definitive_rejection", "rolled_back"),
+        ("timeout", "hard_signal_decision_pending"),
+        ("timeout", "signal_sent"),
+        ("timeout", "process_exited"),
+        ("timeout", "rolled_back"),
+        ("uncertain", "hard_signal_decision_pending"),
+        ("uncertain", "signal_sent"),
+        ("uncertain", "process_exited"),
+        ("uncertain", "rolled_back"),
+    ],
+)
+async def test_graceful_control_receipt_replays_after_every_later_phase(
+    outcome: str,
+    later_phase: str,
+) -> None:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    request = GracefulControlResultRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        outcome=outcome,
+    )
+    first = await _record_graceful_control(registry, request)
+
+    if outcome in {"timeout", "uncertain"} and later_phase != (
+        "hard_signal_decision_pending"
+    ):
+        prepare = HardSignalPrepareRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            pid=process_identity.pid,
+            os_process_start_token=process_identity.os_process_start_token,
+        )
+        authorization = await registry.prepare_hard_signal(
+            prepare,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+        if later_phase == "rolled_back":
+            clock.advance(29)
+            await _renew_owner(registry, owner_lease(process_identity))
+            clock.advance(1)
+            hard_outcome = "abandoned"
+        else:
+            await registry.commit_hard_signal(
+                HardSignalCommitRequest(
+                    **prepare.model_dump(),
+                    authorization_id=authorization.authorization_id,
+                ),
+                owner_credential=_secret_buffer(OWNER_SECRET),
+            )
+            hard_outcome = (
+                "process_exited"
+                if later_phase == "process_exited"
+                else "sent"
+            )
+        await registry.record_hard_signal_outcome(
+            HardSignalOutcomeRequest(
+                **drain_control(
+                    process_identity,
+                    committed.drain_generation,
+                ).model_dump(),
+                authorization_id=authorization.authorization_id,
+                outcome=hard_outcome,
+            ),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    elif outcome == "definitive_rejection" and later_phase == "rolled_back":
+        clock.advance(29)
+        await _renew_owner(registry, owner_lease(process_identity))
+        clock.advance(1)
+        await registry.rollback_control_drain(
+            DrainControlRequest(
+                **drain_control(
+                    process_identity,
+                    committed.drain_generation,
+                ).model_dump(),
+            ),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+
+    assert registry.authority_snapshot()["drain_phase"] == later_phase
+    epoch_before_replay = registry.admission_epoch
+    conflicting_outcome = "timeout" if outcome == "accepted" else "accepted"
+    with pytest.raises(LifecycleAuthorityError) as conflicting:
+        await registry.record_graceful_control(
+            request.model_copy(update={"outcome": conflicting_outcome}),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert conflicting.value.code == "drain_conflict"
+    assert registry.admission_epoch == epoch_before_replay
+    assert registry.authority_snapshot()["drain_phase"] == later_phase
+    recreated_controller = SessionService(registry=registry)
+    registry_replay, controller_replay = await asyncio.gather(
+        registry.record_graceful_control(
+            request,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        ),
+        recreated_controller.record_graceful_control(
+            request,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        ),
+    )
+
+    assert registry_replay == first
+    assert controller_replay == first
+    assert registry.admission_epoch == epoch_before_replay
+    assert registry.authority_snapshot()["drain_phase"] == later_phase
+
+
+@pytest.mark.asyncio
+async def test_hard_signal_attempt_requires_committed_permit_before_outcome() -> None:
+    registry, process_identity, _, registration = await owned_registered_registry()
+    committed = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                committed.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    prepare_request = HardSignalPrepareRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        pid=process_identity.pid,
+        os_process_start_token=process_identity.os_process_start_token,
+    )
+    preparation = await registry.prepare_hard_signal(
+        prepare_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    assert preparation.result == "prepared"
+    assert preparation.signal_permitted is False
+    outcome = HardSignalOutcomeRequest(
+        **drain_control(
+            process_identity,
+            committed.drain_generation,
+        ).model_dump(),
+        authorization_id=preparation.authorization_id,
+        outcome="sent",
+    )
+    with pytest.raises(LifecycleAuthorityError) as uncommitted:
+        await registry.record_hard_signal_outcome(
+            outcome,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert uncommitted.value.code == "hard_signal_authorization_conflict"
+
+    permit = await registry.commit_hard_signal(
+        HardSignalCommitRequest(
+            **prepare_request.model_dump(),
+            authorization_id=preparation.authorization_id,
+        ),
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    assert permit.result == "signal_permitted"
+    assert permit.signal_permitted is True
+    recorded = await registry.record_hard_signal_outcome(
+        outcome,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    assert recorded.result == "signal_sent"
+
+
+async def _prepared_hard_signal_fixture() -> tuple[
+    SessionRegistry,
+    EngineProcessIdentity,
+    Clock,
+    Any,
+    DrainControlResponse,
+    HardSignalPrepareRequest,
+    HardSignalPreparationResponse,
+    HardSignalCommitRequest,
+]:
+    registry, process_identity, clock, registration = await owned_registered_registry()
+    draining = await _begin_control_drain(
+        registry,
+        begin_drain(registry, process_identity, registration),
+    )
+    pending = await _record_graceful_control(
+        registry,
+        GracefulControlResultRequest(
+            **drain_control(
+                process_identity,
+                draining.drain_generation,
+            ).model_dump(),
+            outcome="timeout",
+        ),
+    )
+    prepare_request = HardSignalPrepareRequest(
+        **drain_control(
+            process_identity,
+            draining.drain_generation,
+        ).model_dump(),
+        pid=process_identity.pid,
+        os_process_start_token=process_identity.os_process_start_token,
+    )
+    preparation = await registry.prepare_hard_signal(
+        prepare_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    commit_request = HardSignalCommitRequest(
+        **prepare_request.model_dump(),
+        authorization_id=preparation.authorization_id,
+    )
+    return (
+        registry,
+        process_identity,
+        clock,
+        registration,
+        pending,
+        prepare_request,
+        preparation,
+        commit_request,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("later_outcome", "expected_phase"),
+    [
+        (None, "signal_attempt_committed"),
+        ("sent", "signal_sent"),
+        ("process_exited", "process_exited"),
+    ],
+)
+async def test_hard_signal_commit_response_replays_exactly_after_loss_concurrency_and_later_phase(
+    later_outcome: str | None,
+    expected_phase: str,
+) -> None:
+    (
+        registry,
+        process_identity,
+        _,
+        _,
+        pending,
+        _,
+        preparation,
+        commit_request,
+    ) = await _prepared_hard_signal_fixture()
+    epoch_before_commit = registry.admission_epoch
+    first, concurrent_replay = await asyncio.gather(
+        registry.commit_hard_signal(
+            commit_request,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        ),
+        SessionService(registry=registry).commit_hard_signal(
+            commit_request,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        ),
+    )
+    assert first.result == "signal_permitted"
+    assert concurrent_replay == first
+    assert first.authorization_id == preparation.authorization_id
+    assert first.expires_at_unix == preparation.expires_at_unix
+    assert registry.admission_epoch == epoch_before_commit == pending.admission_epoch
+    assert registry._drain is not None
+    assert registry._drain.hard_signal_attempt_committed is True
+    assert registry._drain.hard_signal_authorization_id == preparation.authorization_id
+
+    if later_outcome is not None:
+        recorded = await registry.record_hard_signal_outcome(
+            HardSignalOutcomeRequest(
+                **drain_control(
+                    process_identity,
+                    pending.drain_generation,
+                ).model_dump(),
+                authorization_id=preparation.authorization_id,
+                outcome=later_outcome,
+            ),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+        assert recorded.result == (
+            "signal_sent" if later_outcome == "sent" else "process_exited"
+        )
+
+    phase_before_replay = registry.authority_snapshot()["drain_phase"]
+    lost_response_retry = await registry.commit_hard_signal(
+        commit_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    assert lost_response_retry == first
+    assert registry.authority_snapshot()["drain_phase"] == phase_before_replay
+    assert phase_before_replay == expected_phase
+    assert registry.admission_epoch == epoch_before_commit
+    assert registry._drain is not None
+    assert registry._drain.hard_signal_authorization_id == preparation.authorization_id
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("seconds_after_prepare", "commit_permitted"),
+    [(29.999, True), (30.0, False), (30.001, False)],
+)
+async def test_hard_signal_commit_expiry_boundary_is_fail_closed_and_zero_mutation(
+    seconds_after_prepare: float,
+    commit_permitted: bool,
+) -> None:
+    (
+        registry,
+        _,
+        clock,
+        _,
+        pending,
+        _,
+        preparation,
+        commit_request,
+    ) = await _prepared_hard_signal_fixture()
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(registry._identity_or_error()))
+    clock.advance(seconds_after_prepare - 29)
+    epoch_before = registry.admission_epoch
+    phase_before = registry.authority_snapshot()["drain_phase"]
+    assert registry._drain is not None
+    authorization_before = (
+        registry._drain.hard_signal_authorization_id,
+        registry._drain.hard_signal_authorization_expires_at_unix,
+        registry._drain.hard_signal_attempt_committed,
+        registry._drain.recovery_forbidden,
+    )
+
+    if commit_permitted:
+        permit = await registry.commit_hard_signal(
+            commit_request,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+        assert permit.authorization_id == preparation.authorization_id
+        assert permit.expires_at_unix == preparation.expires_at_unix
+        assert registry.authority_snapshot()["drain_phase"] == (
+            "signal_attempt_committed"
+        )
+    else:
+        with pytest.raises(LifecycleAuthorityError) as expired:
+            await registry.commit_hard_signal(
+                commit_request,
+                owner_credential=_secret_buffer(OWNER_SECRET),
+            )
+        assert expired.value.code == "hard_signal_authorization_expired"
+        assert registry.authority_snapshot()["drain_phase"] == phase_before
+        assert registry._drain is not None
+        assert (
+            registry._drain.hard_signal_authorization_id,
+            registry._drain.hard_signal_authorization_expires_at_unix,
+            registry._drain.hard_signal_attempt_committed,
+            registry._drain.recovery_forbidden,
+        ) == authorization_before
+    assert registry.admission_epoch == epoch_before == pending.admission_epoch
+    assert registry._control_request_ids == {pending.control_request_id}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("commit_first", [True, False])
+@pytest.mark.parametrize(
+    ("seconds_after_prepare", "expected_winner"),
+    [(29.999, "commit"), (30.0, "rollback")],
+)
+async def test_hard_signal_commit_and_expiry_rollback_linearize_under_one_lock(
+    commit_first: bool,
+    seconds_after_prepare: float,
+    expected_winner: str,
+) -> None:
+    (
+        registry,
+        process_identity,
+        clock,
+        _,
+        pending,
+        _,
+        preparation,
+        commit_request,
+    ) = await _prepared_hard_signal_fixture()
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(seconds_after_prepare - 29)
+    rollback_request = DrainControlRequest(
+        **drain_control(
+            process_identity,
+            pending.drain_generation,
+        ).model_dump(),
+    )
+    commit_call = lambda: registry.commit_hard_signal(
+        commit_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    rollback_call = lambda: registry.rollback_control_drain(
+        rollback_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    calls = (
+        [commit_call(), rollback_call()]
+        if commit_first
+        else [rollback_call(), commit_call()]
+    )
+    results = await asyncio.gather(*calls, return_exceptions=True)
+    permits = [
+        result
+        for result in results
+        if isinstance(result, HardSignalPermitResponse)
+    ]
+    rollbacks = [
+        result
+        for result in results
+        if isinstance(result, DrainControlResponse)
+        and result.result == "rolled_back"
+    ]
+    failures = [
+        result
+        for result in results
+        if isinstance(result, LifecycleAuthorityError)
+    ]
+    assert len(failures) == 1
+    assert registry._drain is not None
+    assert registry._drain.hard_signal_authorization_id == preparation.authorization_id
+    if expected_winner == "commit":
+        assert len(permits) == 1
+        assert rollbacks == []
+        assert registry.authority_snapshot()["drain_phase"] == (
+            "signal_attempt_committed"
+        )
+        assert registry.admission_epoch == pending.admission_epoch
+        assert registry.authority_snapshot()["session_admission_open"] is False
+    else:
+        assert permits == []
+        assert len(rollbacks) == 1
+        assert registry.authority_snapshot()["drain_phase"] == "rolled_back"
+        assert registry.admission_epoch == pending.admission_epoch + 1
+        assert registry.authority_snapshot()["session_admission_open"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["sent", "process_exited"])
+async def test_committed_hard_signal_outcome_remains_reportable_after_authorization_expiry(
+    outcome: str,
+) -> None:
+    (
+        registry,
+        process_identity,
+        clock,
+        _,
+        pending,
+        _,
+        preparation,
+        commit_request,
+    ) = await _prepared_hard_signal_fixture()
+    permit = await registry.commit_hard_signal(
+        commit_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    clock.advance(29)
+    await _renew_owner(registry, owner_lease(process_identity))
+    clock.advance(2)
+    request = HardSignalOutcomeRequest(
+        **drain_control(
+            process_identity,
+            pending.drain_generation,
+        ).model_dump(),
+        authorization_id=preparation.authorization_id,
+        outcome=outcome,
+    )
+    first = await registry.record_hard_signal_outcome(
+        request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    replay = await registry.record_hard_signal_outcome(
+        request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    commit_replay = await registry.commit_hard_signal(
+        commit_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    assert replay == first
+    assert commit_replay == permit
+    assert first.result == ("signal_sent" if outcome == "sent" else "process_exited")
+    assert registry.admission_epoch == pending.admission_epoch
+    assert registry.authority_snapshot()["session_admission_open"] is False
+    with pytest.raises(LifecycleAuthorityError) as no_reopen:
+        await registry.rollback_control_drain(
+            DrainControlRequest(
+                **drain_control(
+                    process_identity,
+                    pending.drain_generation,
+                ).model_dump(),
+            ),
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert no_reopen.value.code == "drain_recovery_failed"
+    assert registry.admission_epoch == pending.admission_epoch
+
+
+@pytest.mark.asyncio
+async def test_committed_hard_signal_owner_rotation_transfers_no_authority_and_stays_closed() -> None:
+    (
+        registry,
+        process_identity,
+        clock,
+        _,
+        pending,
+        _,
+        _,
+        commit_request,
+    ) = await _prepared_hard_signal_fixture()
+    await registry.commit_hard_signal(
+        commit_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    clock.advance(30)
+    reacquired = await _acquire_owner(
+        registry,
+        owner_acquire(process_identity, expected_generation=1),
+    )
+    assert reacquired.owner_generation == 2
+    epoch_before = registry.admission_epoch
+    for request in (
+        commit_request,
+        commit_request.model_copy(update={"owner_generation": 2}),
+    ):
+        with pytest.raises(LifecycleAuthorityError):
+            await registry.commit_hard_signal(
+                request,
+                owner_credential=_secret_buffer(OWNER_SECRET),
+            )
+    assert registry.authority_snapshot()["drain_phase"] == (
+        "signal_attempt_committed"
+    )
+    assert registry.authority_snapshot()["session_admission_open"] is False
+    assert registry.admission_epoch == epoch_before == pending.admission_epoch
+
+
+@pytest.mark.asyncio
+async def test_prepare_response_loss_recovers_id_then_commit_replays_across_controllers() -> None:
+    (
+        registry,
+        _,
+        _,
+        _,
+        pending,
+        prepare_request,
+        preparation,
+        commit_request,
+    ) = await _prepared_hard_signal_fixture()
+    payload = prepare_request.model_dump(mode="json")
+    headers = {"X-Breadboard-Owner-Credential": OWNER_SECRET}
+    first_controller = TestClient(create_app(SessionService(registry=registry)))
+    recovered = first_controller.post(
+        "/v1/engine/control/hard-signal/prepare",
+        json=payload,
+        headers=headers,
+    )
+    first_controller.close()
+    assert recovered.status_code == 200
+    assert recovered.json()["authorization_id"] == preparation.authorization_id
+    assert recovered.json()["signal_permitted"] is False
+
+    commit_payload = commit_request.model_dump(mode="json")
+    second_controller = TestClient(create_app(SessionService(registry=registry)))
+    first_permit = second_controller.post(
+        "/v1/engine/control/hard-signal/commit",
+        json=commit_payload,
+        headers=headers,
+    )
+    second_controller.close()
+    third_controller = TestClient(create_app(SessionService(registry=registry)))
+    replay = third_controller.post(
+        "/v1/engine/control/hard-signal/commit",
+        json=commit_payload,
+        headers=headers,
+    )
+    third_controller.close()
+    assert first_permit.status_code == 200
+    assert replay.status_code == 200
+    assert replay.json() == first_permit.json()
+    assert first_permit.json()["authorization_id"] == preparation.authorization_id
+    assert first_permit.json()["signal_permitted"] is True
+    assert registry.admission_epoch == pending.admission_epoch
+    assert registry.authority_snapshot()["drain_phase"] == (
+        "signal_attempt_committed"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid_now",
+    [float("nan"), float("inf"), float("-inf"), -1.0],
+    ids=["nan", "positive-infinity", "negative-infinity", "negative"],
+)
+async def test_hard_signal_commit_rejects_invalid_clock_without_mutation(
+    invalid_now: float,
+) -> None:
+    (
+        registry,
+        _,
+        clock,
+        _,
+        pending,
+        _,
+        preparation,
+        commit_request,
+    ) = await _prepared_hard_signal_fixture()
+    phase_before = registry.authority_snapshot()["drain_phase"]
+    epoch_before = registry.admission_epoch
+    assert registry._drain is not None
+    state_before = (
+        registry._drain.hard_signal_authorization_id,
+        registry._drain.hard_signal_authorization_expires_at_unix,
+        registry._drain.hard_signal_attempt_committed,
+        registry._drain.recovery_forbidden,
+    )
+    clock.value = invalid_now
+    with pytest.raises(LifecycleAuthorityError) as invalid:
+        await registry.commit_hard_signal(
+            commit_request,
+            owner_credential=_secret_buffer(OWNER_SECRET),
+        )
+    assert invalid.value.code == "hard_signal_authorization_conflict"
+    assert registry.authority_snapshot()["drain_phase"] == phase_before
+    assert registry.admission_epoch == epoch_before == pending.admission_epoch
+    assert registry._drain is not None
+    assert (
+        registry._drain.hard_signal_authorization_id,
+        registry._drain.hard_signal_authorization_expires_at_unix,
+        registry._drain.hard_signal_attempt_committed,
+        registry._drain.recovery_forbidden,
+    ) == state_before
+    assert registry._drain.hard_signal_authorization_id == preparation.authorization_id
+
+
+@pytest.mark.asyncio
+async def test_hard_signal_commit_samples_clock_once_at_linearization() -> None:
+    (
+        registry,
+        _,
+        _,
+        _,
+        pending,
+        _,
+        preparation,
+        commit_request,
+    ) = await _prepared_hard_signal_fixture()
+    samples = iter(
+        [
+            preparation.expires_at_unix - 0.001,
+            preparation.expires_at_unix + 1,
+        ]
+    )
+    calls = 0
+
+    def boundary_clock() -> float:
+        nonlocal calls
+        calls += 1
+        return next(samples)
+
+    registry._clock = boundary_clock
+    permit = await registry.commit_hard_signal(
+        commit_request,
+        owner_credential=_secret_buffer(OWNER_SECRET),
+    )
+    assert permit.authorization_id == preparation.authorization_id
+    assert calls == 1
+    assert registry.admission_epoch == pending.admission_epoch
+    assert registry.authority_snapshot()["drain_phase"] == (
+        "signal_attempt_committed"
+    )

@@ -63,7 +63,9 @@ from .models import (
     EngineSessionContractIdentity,
     EngineSessionReadiness,
     GracefulControlResultRequest,
-    HardSignalAuthorizationResponse,
+    HardSignalCommitRequest,
+    HardSignalPreparationResponse,
+    HardSignalPermitResponse,
     HardSignalOutcomeRequest,
     HardSignalPrepareRequest,
     ModelCatalogResponse,
@@ -1395,17 +1397,43 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
 
     @app.post(
         "/v1/engine/control/hard-signal/prepare",
-        response_model=HardSignalAuthorizationResponse,
+        response_model=HardSignalPreparationResponse,
         responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
     )
     async def prepare_engine_hard_signal(
         payload: HardSignalPrepareRequest,
         owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
         svc: SessionService = Depends(get_service),
-    ) -> HardSignalAuthorizationResponse:
+    ) -> HardSignalPreparationResponse:
         (owner_credential,) = _authority_credential_buffers((owner_proof, "owner_identity_mismatch"))
         assert owner_credential is not None
         return await svc.prepare_hard_signal(payload, owner_credential=owner_credential)
+
+    @app.post(
+        "/v1/engine/control/hard-signal/commit",
+        response_model=HardSignalPermitResponse,
+        responses={
+            403: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+            410: {"model": ErrorResponse},
+        },
+    )
+    async def commit_engine_hard_signal(
+        payload: HardSignalCommitRequest,
+        owner_proof: str = Header(
+            ...,
+            alias="X-Breadboard-Owner-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> HardSignalPermitResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.commit_hard_signal(
+            payload,
+            owner_credential=owner_credential,
+        )
 
     @app.post(
         "/v1/engine/control/hard-signal/outcome",

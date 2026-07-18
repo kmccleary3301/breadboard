@@ -14,6 +14,7 @@ from agentic_coder_prototype.api.cli_bridge.engine_identity_config import (
 from agentic_coder_prototype.api.cli_bridge.models import (
     BeginControlDrainRequest,
     BootstrapChallengeRequest,
+    DrainControlRequest,
     ClientRegisterRequest,
     GracefulControlResultRequest,
     HardSignalOutcomeRequest,
@@ -208,18 +209,57 @@ async def test_hard_signal_requires_live_process_authorization_before_recorded_o
         )
     assert stale.value.code == "hard_signal_authorization_conflict"
 
-    renewed_authorization = await registry.prepare_hard_signal(
-        wrong.model_copy(update={
-            "owner_generation": reacquired.owner_generation,
-            "os_process_start_token": identity.os_process_start_token,
-        }),
-        owner_credential=bytearray(OWNER),
+    current_prepare = wrong.model_copy(update={
+        "owner_generation": reacquired.owner_generation,
+        "os_process_start_token": identity.os_process_start_token,
+    })
+    with pytest.raises(LifecycleAuthorityError) as replacement:
+        await registry.prepare_hard_signal(
+            current_prepare,
+            owner_credential=bytearray(OWNER),
+        )
+    assert replacement.value.code == "hard_signal_authorization_conflict"
+
+    with pytest.raises(LifecycleAuthorityError) as exited:
+        await registry.record_hard_signal_outcome(
+            stale_outcome.model_copy(update={"outcome": "process_exited"}),
+            owner_credential=bytearray(OWNER),
+        )
+    assert exited.value.code == "hard_signal_authorization_conflict"
+    with pytest.raises(LifecycleAuthorityError) as prior_generation:
+        await registry.record_hard_signal_outcome(
+            stale_outcome.model_copy(update={
+                "owner_generation": acquired.owner_generation,
+                "outcome": "abandoned",
+            }),
+            owner_credential=bytearray(OWNER),
+        )
+    assert prior_generation.value.code == "owner_generation_conflict"
+
+    abandoned = stale_outcome.model_copy(update={"outcome": "abandoned"})
+    with pytest.raises(LifecycleAuthorityError) as preexpiry_abandon:
+        await registry.record_hard_signal_outcome(
+            abandoned,
+            owner_credential=bytearray(OWNER),
+        )
+    assert preexpiry_abandon.value.code == "hard_signal_authorization_conflict"
+    with pytest.raises(LifecycleAuthorityError) as preexpiry_rollback:
+        await registry.rollback_control_drain(
+            DrainControlRequest(
+                **_binding(identity),
+                owner_generation=reacquired.owner_generation,
+                drain_generation=drained.drain_generation,
+            ),
+            owner_credential=bytearray(OWNER),
+        )
+    assert preexpiry_rollback.value.code == "drain_recovery_failed"
+    with pytest.raises(LifecycleAuthorityError) as foreign:
+        await registry.record_hard_signal_outcome(
+            abandoned,
+            owner_credential=bytearray(b"foreign-owner-credential-material"),
+        )
+    assert foreign.value.code == "owner_identity_mismatch"
+    assert registry.authority_snapshot()["drain_phase"] == (
+        "hard_signal_decision_pending"
     )
-    recorded = await registry.record_hard_signal_outcome(
-        stale_outcome.model_copy(update={
-            "authorization_id": renewed_authorization.authorization_id,
-        }),
-        owner_credential=bytearray(OWNER),
-    )
-    assert recorded.result == "signal_sent"
-    assert recorded.signal_permitted is False
+    assert registry.admission_epoch == pending.admission_epoch

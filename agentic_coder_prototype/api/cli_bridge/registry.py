@@ -29,7 +29,9 @@ from .models import (
     DrainControlRequest,
     DrainControlResponse,
     GracefulControlResultRequest,
-    HardSignalAuthorizationResponse,
+    HardSignalCommitRequest,
+    HardSignalPreparationResponse,
+    HardSignalPermitResponse,
     HardSignalOutcomeRequest,
     HardSignalPrepareRequest,
     OwnerAcquireRequest,
@@ -106,6 +108,16 @@ class _ClientRegistration:
     detached: bool = False
 
 
+@dataclass(frozen=True)
+class _GracefulControlReceipt:
+    result: str
+    admission_epoch: int
+    session_admission_open: bool
+    turn_admission_open: bool
+    registrations_open: bool
+    signal_permitted: bool
+
+
 @dataclass
 class _DrainState:
     generation: int
@@ -122,9 +134,12 @@ class _DrainState:
     expected_admission_epoch: int
     phase: str
     graceful_control_outcome: str | None = None
+    graceful_control_receipt: _GracefulControlReceipt | None = None
     recovery_forbidden: bool = False
     hard_signal_authorization_id: str | None = None
     hard_signal_authorization_expires_at_unix: float | None = None
+    hard_signal_attempt_committed: bool = False
+    hard_signal_authorization_owner_generation: int | None = None
     hard_signal_outcome: str | None = None
 
 
@@ -325,6 +340,20 @@ class SessionRegistry:
             for index in range(len(credential)):
                 credential[index] = 0
 
+    def _authority_now(self, *, code: str) -> float:
+        now = self._clock()
+        if (
+            isinstance(now, bool)
+            or not isinstance(now, (int, float))
+            or not math.isfinite(now)
+            or now < 0
+        ):
+            raise LifecycleAuthorityError(
+                code,
+                "lifecycle authority clock is invalid",
+            )
+        return float(now)
+
     @asynccontextmanager
     async def event_persistence_authority(self) -> Any:
         """Serialize durable terminal resolution with lifecycle drain decisions."""
@@ -505,8 +534,6 @@ class SessionRegistry:
                         "rollback_permitted",
                     }:
                         drain.owner_generation = next_generation
-                        drain.hard_signal_authorization_id = None
-                        drain.hard_signal_authorization_expires_at_unix = None
                         drain.recovery_forbidden = False
                     else:
                         drain.recovery_forbidden = True
@@ -518,6 +545,8 @@ class SessionRegistry:
         self,
         request: OwnerLeaseRequest | BeginControlDrainRequest | DrainControlRequest,
         owner_credential: bytearray,
+        *,
+        now: float | None = None,
     ) -> _OwnerLease:
         identity = self._require_owner_binding(
             request.engine_instance_id,
@@ -534,7 +563,9 @@ class SessionRegistry:
             )
         if not self._owner_credential_matches(owner_credential, identity):
             raise LifecycleAuthorityError("owner_identity_mismatch", "owner proof was rejected")
-        if owner.released or owner.expires_at_unix <= self._clock():
+        if owner.released or owner.expires_at_unix <= (
+            self._clock() if now is None else now
+        ):
             raise LifecycleAuthorityError("owner_expired", "owner lease has expired")
         return owner
 
@@ -644,6 +675,7 @@ class SessionRegistry:
         self,
         *,
         require_orphaned_requester: bool,
+        now: float | None = None,
     ) -> bool:
         drain = self._drain
         if (
@@ -655,6 +687,7 @@ class SessionRegistry:
         if drain.phase == "draining" and (
             drain.hard_signal_authorization_id is not None
             or drain.hard_signal_authorization_expires_at_unix is not None
+            or drain.hard_signal_authorization_owner_generation is not None
             or drain.hard_signal_outcome is not None
         ):
             return False
@@ -684,11 +717,11 @@ class SessionRegistry:
                 ):
                     return False
                 if not requester.detached:
-                    now = self._clock()
+                    requester_now = self._clock() if now is None else now
                     if (
-                        not math.isfinite(now)
+                        not math.isfinite(requester_now)
                         or not math.isfinite(requester.expires_at_unix)
-                        or requester.expires_at_unix > now
+                        or requester.expires_at_unix > requester_now
                     ):
                         return False
         self._session_admission_open = True
@@ -895,6 +928,52 @@ class SessionRegistry:
             signal_permitted=signal_permitted,
         )
 
+    def _commit_graceful_control_response(
+        self,
+        drain: _DrainState,
+        result: str,
+        *,
+        signal_permitted: bool = False,
+    ) -> DrainControlResponse:
+        response = self._drain_response(
+            result,
+            signal_permitted=signal_permitted,
+        )
+        drain.graceful_control_receipt = _GracefulControlReceipt(
+            result=response.result,
+            admission_epoch=response.admission_epoch,
+            session_admission_open=response.session_admission_open,
+            turn_admission_open=response.turn_admission_open,
+            registrations_open=response.registrations_open,
+            signal_permitted=response.signal_permitted,
+        )
+        return response
+
+    def _replay_graceful_control_response(
+        self,
+        drain: _DrainState,
+    ) -> DrainControlResponse:
+        receipt = drain.graceful_control_receipt
+        identity = self._identity_or_error()
+        if receipt is None:
+            raise LifecycleAuthorityError(
+                "drain_conflict",
+                "control drain outcome is already final",
+            )
+        return DrainControlResponse(
+            result=receipt.result,
+            engine_instance_id=identity.engine_instance_id,
+            engine_boot_id=identity.engine_boot_id,
+            launch_id=identity.launch_id,
+            drain_generation=drain.generation,
+            control_request_id=drain.control_request_id,
+            admission_epoch=receipt.admission_epoch,
+            session_admission_open=receipt.session_admission_open,
+            turn_admission_open=receipt.turn_admission_open,
+            registrations_open=receipt.registrations_open,
+            signal_permitted=receipt.signal_permitted,
+        )
+
     @staticmethod
     def _control_request_matches(
         drain: _DrainState,
@@ -1018,10 +1097,16 @@ class SessionRegistry:
         owner_credential: bytearray,
         *,
         phases: set[str],
+        now: float | None = None,
     ) -> _DrainState:
-        self._require_live_owner(request, owner_credential)
+        self._require_live_owner(
+            request,
+            owner_credential,
+            now=now,
+        )
         self._try_rollback_control_drain(
             require_orphaned_requester=True,
+            now=now,
         )
         drain = self._drain
         if (
@@ -1044,36 +1129,52 @@ class SessionRegistry:
     ) -> DrainControlResponse:
         try:
             async with self._authority_lock:
-                drain = self._require_drain_control(
-                    request,
-                    owner_credential,
-                    phases={"draining", "rolled_back"},
-                )
-                if drain.phase == "rolled_back":
-                    if (
-                        drain.graceful_control_outcome
-                        == request.outcome
-                        == "definitive_rejection"
-                    ):
-                        return self._drain_response("rolled_back")
+                self._require_live_owner(request, owner_credential)
+                drain = self._drain
+                if (
+                    drain is None
+                    or request.drain_generation != drain.generation
+                    or request.owner_generation != drain.owner_generation
+                ):
+                    raise LifecycleAuthorityError(
+                        "drain_conflict",
+                        "control drain generation or phase does not match",
+                    )
+                if drain.graceful_control_outcome is not None:
+                    if drain.graceful_control_outcome == request.outcome:
+                        return self._replay_graceful_control_response(drain)
                     raise LifecycleAuthorityError(
                         "drain_conflict",
                         "control drain outcome is already final",
                     )
+                self._try_rollback_control_drain(
+                    require_orphaned_requester=True,
+                )
+                if drain.phase != "draining":
+                    raise LifecycleAuthorityError(
+                        "drain_conflict",
+                        "control drain generation or phase does not match",
+                    )
                 drain.graceful_control_outcome = request.outcome
                 if request.outcome == "accepted":
                     drain.phase = "shutdown_started"
-                    return self._drain_response("shutdown_started")
+                    return self._commit_graceful_control_response(
+                        drain,
+                        "shutdown_started",
+                    )
                 if request.outcome == "definitive_rejection":
                     drain.phase = "rollback_permitted"
                     self._try_rollback_control_drain(
                         require_orphaned_requester=True,
                     )
-                    return self._drain_response(drain.phase)
+                    return self._commit_graceful_control_response(
+                        drain,
+                        drain.phase,
+                    )
                 drain.phase = "hard_signal_decision_pending"
-                return self._drain_response(
+                return self._commit_graceful_control_response(
+                    drain,
                     "hard_signal_decision_pending",
-                    signal_permitted=True,
                 )
         finally:
             self._wipe_credentials(owner_credential)
@@ -1083,33 +1184,159 @@ class SessionRegistry:
         request: HardSignalPrepareRequest,
         *,
         owner_credential: bytearray,
-    ) -> HardSignalAuthorizationResponse:
+    ) -> HardSignalPreparationResponse:
         try:
             async with self._authority_lock:
+                now = self._authority_now(
+                    code="hard_signal_authorization_conflict",
+                )
                 drain = self._require_drain_control(
                     request,
                     owner_credential,
-                    phases={"hard_signal_decision_pending"},
+                    phases={
+                        "hard_signal_decision_pending",
+                        "signal_attempt_committed",
+                        "signal_sent",
+                        "process_exited",
+                    },
+                    now=now,
                 )
                 identity = self._identity_or_error()
                 if request.pid != identity.pid or request.os_process_start_token != identity.os_process_start_token:
                     raise LifecycleAuthorityError("process_identity_mismatch", "process proof does not match")
-                now = self._clock()
+                authorization_id = drain.hard_signal_authorization_id
+                expires_at = drain.hard_signal_authorization_expires_at_unix
+                authorization_owner_generation = (
+                    drain.hard_signal_authorization_owner_generation
+                )
                 if (
-                    drain.hard_signal_authorization_id is None
-                    or drain.hard_signal_authorization_expires_at_unix is None
-                    or drain.hard_signal_authorization_expires_at_unix <= now
+                    authorization_id is None
+                    and expires_at is None
+                    and authorization_owner_generation is None
                 ):
-                    drain.hard_signal_authorization_id = secrets.token_urlsafe(32)
-                    drain.hard_signal_authorization_expires_at_unix = now + 30
-                return HardSignalAuthorizationResponse(
+                    authorization_id = secrets.token_urlsafe(32)
+                    expires_at = now + 30
+                    authorization_owner_generation = drain.owner_generation
+                    drain.hard_signal_authorization_id = authorization_id
+                    drain.hard_signal_authorization_expires_at_unix = expires_at
+                    drain.hard_signal_authorization_owner_generation = (
+                        authorization_owner_generation
+                    )
+                elif (
+                    authorization_id is None
+                    or expires_at is None
+                    or authorization_owner_generation is None
+                ):
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_conflict",
+                        "hard signal authorization state is inconsistent",
+                    )
+                elif (
+                    expires_at <= now
+                    and not drain.hard_signal_attempt_committed
+                ):
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_expired",
+                        "hard signal authorization expired",
+                    )
+                elif authorization_owner_generation != drain.owner_generation:
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_conflict",
+                        "hard signal authorization belongs to a prior owner generation",
+                    )
+                return HardSignalPreparationResponse(
                     engine_instance_id=identity.engine_instance_id,
                     engine_boot_id=identity.engine_boot_id,
                     launch_id=identity.launch_id,
-                    owner_generation=drain.owner_generation,
+                    owner_generation=authorization_owner_generation,
                     drain_generation=drain.generation,
-                    authorization_id=drain.hard_signal_authorization_id,
-                    expires_at_unix=drain.hard_signal_authorization_expires_at_unix,
+                    authorization_id=authorization_id,
+                    expires_at_unix=expires_at,
+                )
+        finally:
+            self._wipe_credentials(owner_credential)
+
+    async def commit_hard_signal(
+        self,
+        request: HardSignalCommitRequest,
+        *,
+        owner_credential: bytearray,
+    ) -> HardSignalPermitResponse:
+        try:
+            async with self._authority_lock:
+                now = self._authority_now(
+                    code="hard_signal_authorization_conflict",
+                )
+                drain = self._require_drain_control(
+                    request,
+                    owner_credential,
+                    phases={
+                        "hard_signal_decision_pending",
+                        "signal_attempt_committed",
+                        "signal_sent",
+                        "process_exited",
+                    },
+                    now=now,
+                )
+                identity = self._identity_or_error()
+                if (
+                    request.pid != identity.pid
+                    or request.os_process_start_token
+                    != identity.os_process_start_token
+                ):
+                    raise LifecycleAuthorityError(
+                        "process_identity_mismatch",
+                        "process proof does not match",
+                    )
+                authorization_id = drain.hard_signal_authorization_id
+                expires_at = drain.hard_signal_authorization_expires_at_unix
+                authorization_owner_generation = (
+                    drain.hard_signal_authorization_owner_generation
+                )
+                if (
+                    authorization_id is None
+                    or expires_at is None
+                    or authorization_owner_generation is None
+                ):
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_conflict",
+                        "hard signal authorization state is inconsistent",
+                    )
+                if request.authorization_id != authorization_id:
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_conflict",
+                        "hard signal authorization does not match",
+                    )
+                if (
+                    authorization_owner_generation != request.owner_generation
+                    or authorization_owner_generation != drain.owner_generation
+                ):
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_conflict",
+                        "hard signal authorization belongs to a prior owner generation",
+                    )
+                if not drain.hard_signal_attempt_committed:
+                    if expires_at <= now:
+                        raise LifecycleAuthorityError(
+                            "hard_signal_authorization_expired",
+                            "hard signal authorization expired",
+                        )
+                    if drain.hard_signal_outcome is not None:
+                        raise LifecycleAuthorityError(
+                            "hard_signal_authorization_conflict",
+                            "hard signal outcome is already final",
+                        )
+                    drain.hard_signal_attempt_committed = True
+                    drain.phase = "signal_attempt_committed"
+                    drain.recovery_forbidden = True
+                return HardSignalPermitResponse(
+                    engine_instance_id=identity.engine_instance_id,
+                    engine_boot_id=identity.engine_boot_id,
+                    launch_id=identity.launch_id,
+                    owner_generation=authorization_owner_generation,
+                    drain_generation=drain.generation,
+                    authorization_id=authorization_id,
+                    expires_at_unix=expires_at,
                 )
         finally:
             self._wipe_credentials(owner_credential)
@@ -1122,38 +1349,85 @@ class SessionRegistry:
     ) -> DrainControlResponse:
         try:
             async with self._authority_lock:
+                now = self._authority_now(
+                    code="hard_signal_authorization_conflict",
+                )
                 drain = self._require_drain_control(
                     request,
                     owner_credential,
                     phases={
                         "hard_signal_decision_pending",
-                        "rollback_permitted",
+                        "signal_attempt_committed",
                         "signal_sent",
                         "process_exited",
                         "rolled_back",
                     },
+                    now=now,
                 )
                 if request.authorization_id != drain.hard_signal_authorization_id:
-                    raise LifecycleAuthorityError("hard_signal_authorization_conflict", "hard signal authorization does not match")
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_conflict",
+                        "hard signal authorization does not match",
+                    )
                 if drain.hard_signal_outcome is not None:
                     if request.outcome != drain.hard_signal_outcome:
-                        raise LifecycleAuthorityError("hard_signal_outcome_conflict", "hard signal outcome is already final")
+                        raise LifecycleAuthorityError(
+                            "hard_signal_outcome_conflict",
+                            "hard signal outcome is already final",
+                        )
                     return self._drain_response(drain.phase)
                 expires_at = drain.hard_signal_authorization_expires_at_unix
-                if expires_at is None or expires_at <= self._clock():
-                    raise LifecycleAuthorityError("hard_signal_authorization_expired", "hard signal authorization expired")
-                drain.hard_signal_outcome = request.outcome
-                if request.outcome == "abandoned":
-                    drain.phase = "rollback_permitted"
-                    self._try_rollback_control_drain(
-                        require_orphaned_requester=True,
+                authorization_owner_generation = (
+                    drain.hard_signal_authorization_owner_generation
+                )
+                if (
+                    expires_at is None
+                    or authorization_owner_generation is None
+                ):
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_conflict",
+                        "hard signal authorization state is inconsistent",
                     )
-                    return self._drain_response(drain.phase)
+                if authorization_owner_generation != request.owner_generation:
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_conflict",
+                        "hard signal authorization belongs to a prior owner generation",
+                    )
+                authorization_expired = expires_at <= now
+                if request.outcome == "abandoned":
+                    if drain.hard_signal_attempt_committed:
+                        raise LifecycleAuthorityError(
+                            "hard_signal_authorization_conflict",
+                            "committed signal attempt cannot be abandoned",
+                        )
+                    if not authorization_expired:
+                        raise LifecycleAuthorityError(
+                            "hard_signal_authorization_conflict",
+                            "live signal preparation cannot be abandoned",
+                        )
+                    drain.hard_signal_outcome = "abandoned"
+                    drain.phase = "rollback_permitted"
+                    if not self._try_rollback_control_drain(
+                        require_orphaned_requester=False,
+                        now=now,
+                    ):
+                        drain.hard_signal_outcome = None
+                        drain.phase = "hard_signal_decision_pending"
+                        raise LifecycleAuthorityError(
+                            "drain_recovery_failed",
+                            "control drain cannot be safely recovered",
+                        )
+                    return self._drain_response("rolled_back")
+                if not drain.hard_signal_attempt_committed:
+                    raise LifecycleAuthorityError(
+                        "hard_signal_authorization_conflict",
+                        "hard signal attempt has not been committed",
+                    )
+                drain.hard_signal_outcome = request.outcome
                 if request.outcome == "process_exited":
                     drain.phase = "process_exited"
                     return self._drain_response("process_exited")
                 drain.phase = "signal_sent"
-                drain.recovery_forbidden = True
                 return self._drain_response("signal_sent")
         finally:
             self._wipe_credentials(owner_credential)
@@ -1166,6 +1440,7 @@ class SessionRegistry:
     ) -> DrainControlResponse:
         try:
             async with self._authority_lock:
+                now = self._authority_now(code="drain_recovery_failed")
                 identity = self._require_owner_binding(
                     request.engine_instance_id,
                     request.engine_boot_id,
@@ -1184,16 +1459,16 @@ class SessionRegistry:
                     )
                 self._try_rollback_control_drain(
                     require_orphaned_requester=True,
+                    now=now,
                 )
                 drain = self._drain
                 if (
                     owner.released
-                    or owner.expires_at_unix <= self._clock()
+                    or owner.expires_at_unix <= now
                     or request.owner_generation != owner.generation
                     or drain is None
                     or request.drain_generation != drain.generation
                     or request.owner_generation != drain.owner_generation
-                    or drain.phase not in {"rollback_permitted", "rolled_back"}
                     or drain.recovery_forbidden
                 ):
                     raise LifecycleAuthorityError(
@@ -1202,8 +1477,44 @@ class SessionRegistry:
                     )
                 if drain.phase == "rolled_back":
                     return self._drain_response("rolled_back")
+                if drain.phase == "hard_signal_decision_pending":
+                    authorization_id = drain.hard_signal_authorization_id
+                    expires_at = drain.hard_signal_authorization_expires_at_unix
+                    authorization_owner_generation = (
+                        drain.hard_signal_authorization_owner_generation
+                    )
+                    if (
+                        authorization_id is None
+                        or expires_at is None
+                        or authorization_owner_generation is None
+                        or expires_at > now
+                        or drain.hard_signal_outcome is not None
+                    ):
+                        raise LifecycleAuthorityError(
+                            "drain_recovery_failed",
+                            "control drain cannot be safely recovered",
+                        )
+                    drain.hard_signal_outcome = "abandoned"
+                    drain.phase = "rollback_permitted"
+                    if not self._try_rollback_control_drain(
+                        require_orphaned_requester=False,
+                        now=now,
+                    ):
+                        drain.hard_signal_outcome = None
+                        drain.phase = "hard_signal_decision_pending"
+                        raise LifecycleAuthorityError(
+                            "drain_recovery_failed",
+                            "control drain cannot be safely recovered",
+                        )
+                    return self._drain_response("rolled_back")
+                if drain.phase != "rollback_permitted":
+                    raise LifecycleAuthorityError(
+                        "drain_recovery_failed",
+                        "control drain cannot be safely recovered",
+                    )
                 if not self._try_rollback_control_drain(
                     require_orphaned_requester=False,
+                    now=now,
                 ):
                     raise LifecycleAuthorityError(
                         "drain_recovery_failed",

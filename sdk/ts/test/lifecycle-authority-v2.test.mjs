@@ -319,13 +319,14 @@ test("response-generated challenge and authorization tokens cannot survive malfo
       const authorizationBound = await clientWith([
         identity,
         (_input, _init) => response({
-          schema_version: "bb.engine_hard_signal_authorization.v1",
-          result: "authorized",
+          schema_version: "bb.engine_hard_signal_preparation.v1",
+          result: "prepared",
           ...bindingBody,
           owner_generation: 1,
           drain_generation: 2,
           authorization_id: secret,
           expires_at_unix: 1_768_521_605,
+          signal_permitted: false,
         }, 200, { [header]: secret }),
       ], [])
       const failure = await rejectionOf(() => authorizationBound.prepareHardSignal({
@@ -344,13 +345,14 @@ test("response-generated challenge and authorization tokens cannot survive malfo
   const mismatchedAuthorizationBound = await clientWith([
     identity,
     (_input, _init) => response({
-      schema_version: "bb.engine_hard_signal_authorization.v1",
-      result: "authorized",
+      schema_version: "bb.engine_hard_signal_preparation.v1",
+      result: "prepared",
       ...bindingBody,
       owner_generation: 2,
       drain_generation: 2,
       authorization_id: AUTHORIZATION_ID,
       expires_at_unix: 1_768_521_605,
+      signal_permitted: false,
     }, 200, { "x-correlation-id": `prefix-${AUTHORIZATION_ID}` }),
   ], [])
   const mismatchedAuthorization = await rejectionOf(() => mismatchedAuthorizationBound.prepareHardSignal({
@@ -365,18 +367,29 @@ test("response-generated challenge and authorization tokens cannot survive malfo
   assert.equal(JSON.stringify(mismatchedAuthorization).includes(AUTHORIZATION_ID), false)
 })
 
-test("hard-signal control is authorization-bound and records only a post-attempt outcome", async () => {
+test("hard-signal control separates preparation, attempt commit, and post-attempt outcome", async () => {
   const requests = []
   const bound = await clientWith([
     identity,
     {
-      schema_version: "bb.engine_hard_signal_authorization.v1",
-      result: "authorized",
+      schema_version: "bb.engine_hard_signal_preparation.v1",
+      result: "prepared",
       ...bindingBody,
       owner_generation: 1,
       drain_generation: 2,
       authorization_id: AUTHORIZATION_ID,
       expires_at_unix: 1_768_521_605,
+      signal_permitted: false,
+    },
+    {
+      schema_version: "bb.engine_hard_signal_permit.v1",
+      result: "signal_permitted",
+      ...bindingBody,
+      owner_generation: 1,
+      drain_generation: 2,
+      authorization_id: AUTHORIZATION_ID,
+      expires_at_unix: 1_768_521_605,
+      signal_permitted: true,
     },
     {
       schema_version: ENGINE_DRAIN_CONTROL_SCHEMA_VERSION,
@@ -411,6 +424,15 @@ test("hard-signal control is authorization-bound and records only a post-attempt
     osProcessStartToken: "darwin:1768521600:123456",
   })
   assert.equal(authorization.authorizationId, AUTHORIZATION_ID)
+  const permit = await bound.commitHardSignal({
+    ownerCredential: OWNER_CREDENTIAL,
+    ownerGeneration: 1,
+    drainGeneration: 2,
+    pid: 4321,
+    osProcessStartToken: "darwin:1768521600:123456",
+    authorizationId: authorization.authorizationId,
+  })
+  assert.equal(permit.signalPermitted, true)
   const outcome = await bound.recordHardSignalOutcome({
     ownerCredential: OWNER_CREDENTIAL,
     ownerGeneration: 1,
@@ -421,6 +443,7 @@ test("hard-signal control is authorization-bound and records only a post-attempt
   assert.equal(outcome.result, "signal_sent")
   assert.deepEqual(requests.slice(1).map(({ url }) => url), [
     "https://breadboard.test/control/v1/engine/control/hard-signal/prepare",
+    "https://breadboard.test/control/v1/engine/control/hard-signal/commit",
     "https://breadboard.test/control/v1/engine/control/hard-signal/outcome",
   ])
   assert.deepEqual(JSON.parse(requests[1].body), {
@@ -431,6 +454,14 @@ test("hard-signal control is authorization-bound and records only a post-attempt
     os_process_start_token: "darwin:1768521600:123456",
   })
   assert.deepEqual(JSON.parse(requests[2].body), {
+    ...bindingBody,
+    owner_generation: 1,
+    drain_generation: 2,
+    pid: 4321,
+    os_process_start_token: "darwin:1768521600:123456",
+    authorization_id: AUTHORIZATION_ID,
+  })
+  assert.deepEqual(JSON.parse(requests[3].body), {
     ...bindingBody,
     owner_generation: 1,
     drain_generation: 2,

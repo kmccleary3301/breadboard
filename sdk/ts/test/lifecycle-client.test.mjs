@@ -120,14 +120,14 @@ const drainResponse = (result, overrides = {}) => {
     session_admission_open: admissionOpen,
     turn_admission_open: admissionOpen,
     registrations_open: admissionOpen,
-    signal_permitted: result === "hard_signal_decision_pending",
+    signal_permitted: false,
     ...overrides,
   }
 }
 
-const hardSignalAuthorizationResponse = () => ({
-  schema_version: "bb.engine_hard_signal_authorization.v1",
-  result: "authorized",
+const hardSignalPreparationResponse = () => ({
+  schema_version: "bb.engine_hard_signal_preparation.v1",
+  result: "prepared",
   engine_instance_id: INSTANCE_ID,
   engine_boot_id: BOOT_ID,
   launch_id: LAUNCH_ID,
@@ -135,6 +135,20 @@ const hardSignalAuthorizationResponse = () => ({
   drain_generation: 2,
   authorization_id: "a".repeat(43),
   expires_at_unix: 1_768_521_605,
+  signal_permitted: false,
+})
+
+const hardSignalPermitResponse = () => ({
+  schema_version: "bb.engine_hard_signal_permit.v1",
+  result: "signal_permitted",
+  engine_instance_id: INSTANCE_ID,
+  engine_boot_id: BOOT_ID,
+  launch_id: LAUNCH_ID,
+  owner_generation: 1,
+  drain_generation: 2,
+  authorization_id: "a".repeat(43),
+  expires_at_unix: 1_768_521_605,
+  signal_permitted: true,
 })
 
 const jsonResponse = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), {
@@ -385,12 +399,12 @@ test("handshake uses the exact prefixed identity route and returns an immutable 
     [
       "acquireOwner", "renewOwner", "releaseOwner", "registerClient", "renewClient",
       "detachClient", "beginControlDrain", "recordGracefulControl", "prepareHardSignal",
-      "recordHardSignalOutcome", "rollbackDrain",
+      "commitHardSignal", "recordHardSignalOutcome", "rollbackDrain",
     ].filter((name) => typeof bound[name] === "function").sort(),
     [
-      "acquireOwner", "beginControlDrain", "detachClient", "prepareHardSignal",
-      "recordGracefulControl", "recordHardSignalOutcome", "registerClient", "releaseOwner",
-      "renewClient", "renewOwner", "rollbackDrain",
+      "acquireOwner", "beginControlDrain", "commitHardSignal", "detachClient",
+      "prepareHardSignal", "recordGracefulControl", "recordHardSignalOutcome",
+      "registerClient", "releaseOwner", "renewClient", "renewOwner", "rollbackDrain",
     ],
   )
 })
@@ -579,14 +593,15 @@ test("client registration calls use exact routes, snake-case bodies, and registr
   assertNoSecrets([registered, renewed, detached], REGISTRATION_CREDENTIAL)
 })
 
-test("drain calls use only canonical pre-signal authorization and post-attempt outcome routes", async () => {
+test("drain calls separate preparation, signal permit commit, and post-attempt outcome", async () => {
   const responses = [
     jsonResponse(drainResponse("draining")),
     jsonResponse(drainResponse("shutdown_started")),
     jsonResponse(drainResponse("rollback_permitted")),
     jsonResponse(drainResponse("hard_signal_decision_pending")),
     jsonResponse(drainResponse("hard_signal_decision_pending")),
-    jsonResponse(hardSignalAuthorizationResponse()),
+    jsonResponse(hardSignalPreparationResponse()),
+    jsonResponse(hardSignalPermitResponse()),
     jsonResponse(drainResponse("signal_sent")),
     jsonResponse(drainResponse("rollback_permitted")),
     jsonResponse(drainResponse("process_exited")),
@@ -619,6 +634,14 @@ test("drain calls use only canonical pre-signal authorization and post-attempt o
     osProcessStartToken: "darwin:1768521600:123456",
   })
   assert.equal(authorization.authorizationId, "a".repeat(43))
+  const permit = await bound.commitHardSignal({
+    ...drainControlInput(),
+    pid: 4321,
+    osProcessStartToken: "darwin:1768521600:123456",
+    authorizationId: authorization.authorizationId,
+  })
+  assert.equal(authorization.signalPermitted, false)
+  assert.equal(permit.signalPermitted, true)
   assert.equal((await bound.recordHardSignalOutcome({
     ...drainControlInput(), authorizationId: authorization.authorizationId, outcome: "sent",
   })).result, "signal_sent")
@@ -637,6 +660,7 @@ test("drain calls use only canonical pre-signal authorization and post-attempt o
     ["POST", "https://breadboard.test/control/v1/engine/control/graceful-result"],
     ["POST", "https://breadboard.test/control/v1/engine/control/graceful-result"],
     ["POST", "https://breadboard.test/control/v1/engine/control/hard-signal/prepare"],
+    ["POST", "https://breadboard.test/control/v1/engine/control/hard-signal/commit"],
     ["POST", "https://breadboard.test/control/v1/engine/control/hard-signal/outcome"],
     ["POST", "https://breadboard.test/control/v1/engine/control/hard-signal/outcome"],
     ["POST", "https://breadboard.test/control/v1/engine/control/hard-signal/outcome"],
@@ -671,19 +695,25 @@ test("drain calls use only canonical pre-signal authorization and post-attempt o
     pid: 4321,
     os_process_start_token: "darwin:1768521600:123456",
   })
-  assert.deepEqual(requests.slice(7, 10).map(({ body }) => JSON.parse(body)), [
+  assert.deepEqual(JSON.parse(requests[7].body), {
+    ...gracefulBody,
+    pid: 4321,
+    os_process_start_token: "darwin:1768521600:123456",
+    authorization_id: "a".repeat(43),
+  })
+  assert.deepEqual(requests.slice(8, 11).map(({ body }) => JSON.parse(body)), [
     { ...gracefulBody, authorization_id: "a".repeat(43), outcome: "sent" },
     { ...gracefulBody, authorization_id: "a".repeat(43), outcome: "abandoned" },
     { ...gracefulBody, authorization_id: "a".repeat(43), outcome: "process_exited" },
   ])
-  assert.deepEqual(JSON.parse(requests[10].body), gracefulBody)
+  assert.deepEqual(JSON.parse(requests[11].body), gracefulBody)
   assert.equal(requests[1].headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
   assert.equal(requests[1].headers.get("x-breadboard-registration-credential"), REGISTRATION_CREDENTIAL)
   for (const request of requests.slice(2)) {
     assert.equal(request.headers.get("x-breadboard-owner-credential"), OWNER_CREDENTIAL)
     assert.equal(request.headers.get("x-breadboard-registration-credential"), null)
   }
-  assert.equal(requests.filter(({ url }) => url.includes("/hard-signal/")).length, 4)
+  assert.equal(requests.filter(({ url }) => url.includes("/hard-signal/")).length, 5)
   assertNoSecrets(requests.slice(1).map(({ body }) => body), OWNER_CREDENTIAL, REGISTRATION_CREDENTIAL)
 })
 
@@ -1350,8 +1380,8 @@ test("malformed 2xx, schema mismatch, and identity echo failures retain only res
     },
     {
       kind: "protocol",
-      code: "hard_signal_authorization_shape_mismatch",
-      payload: { ...hardSignalAuthorizationResponse(), private_response_value: "authorization-secret" },
+      code: "hard_signal_preparation_shape_mismatch",
+      payload: { ...hardSignalPreparationResponse(), private_response_value: "authorization-secret" },
       invoke: (bound) => bound.prepareHardSignal({
         ...drainControlInput(),
         pid: 4321,

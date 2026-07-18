@@ -328,13 +328,47 @@ class HardSignalPrepareRequest(DrainControlRequest):
     )
 
 
-class HardSignalAuthorizationResponse(EngineAuthorityBinding):
-    schema_version: Literal["bb.engine_hard_signal_authorization.v1"] = "bb.engine_hard_signal_authorization.v1"
-    result: Literal["authorized"] = "authorized"
+class HardSignalCommitRequest(HardSignalPrepareRequest):
+    authorization_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+
+
+class HardSignalPreparationResponse(EngineAuthorityBinding):
+    schema_version: Literal[
+        "bb.engine_hard_signal_preparation.v1"
+    ] = "bb.engine_hard_signal_preparation.v1"
+    result: Literal["prepared"] = "prepared"
     owner_generation: int = Field(..., ge=1)
     drain_generation: int = Field(..., ge=1)
-    authorization_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    authorization_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
     expires_at_unix: float = Field(..., ge=0)
+    signal_permitted: Literal[False] = False
+
+
+class HardSignalPermitResponse(EngineAuthorityBinding):
+    schema_version: Literal[
+        "bb.engine_hard_signal_permit.v1"
+    ] = "bb.engine_hard_signal_permit.v1"
+    result: Literal["signal_permitted"] = "signal_permitted"
+    owner_generation: int = Field(..., ge=1)
+    drain_generation: int = Field(..., ge=1)
+    authorization_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    expires_at_unix: float = Field(..., ge=0)
+    signal_permitted: Literal[True] = True
 
 
 class HardSignalOutcomeRequest(DrainControlRequest):
@@ -371,9 +405,8 @@ class DrainControlResponse(EngineAuthorityBinding):
         expected_open = self.result == "rolled_back"
         if any(value != expected_open for value in admission_open):
             raise ValueError("drain result and admission state are contradictory")
-        expected_signal = self.result == "hard_signal_decision_pending"
-        if self.signal_permitted != expected_signal:
-            raise ValueError("drain result and signal permission are contradictory")
+        if self.signal_permitted:
+            raise ValueError("drain response cannot grant signal permission")
         return self
 
 

@@ -234,6 +234,10 @@ export interface PrepareHardSignalInput extends OwnerCredentialInput {
   readonly osProcessStartToken: string
 }
 
+export interface CommitHardSignalInput extends PrepareHardSignalInput {
+  readonly authorizationId: string
+}
+
 export interface RecordHardSignalOutcomeInput extends OwnerCredentialInput {
   readonly ownerGeneration: number
   readonly drainGeneration: number
@@ -315,7 +319,7 @@ export type DrainControlResponse =
       readonly sessionAdmissionOpen: false
       readonly turnAdmissionOpen: false
       readonly registrationsOpen: false
-      readonly signalPermitted: true
+      readonly signalPermitted: false
     })
   | (DrainControlResponseBase & {
       readonly result:
@@ -334,8 +338,8 @@ export interface LifecycleE4Client {
   handshake(request?: LifecycleRequestOptions): Promise<BoundLifecycleE4Client>
 }
 
-export interface HardSignalAuthorizationResponse {
-  readonly schemaVersion: "bb.engine_hard_signal_authorization.v1"
+export interface HardSignalPreparationResponse {
+  readonly schemaVersion: "bb.engine_hard_signal_preparation.v1"
   readonly engineInstanceId: string
   readonly engineBootId: string
   readonly launchId: string
@@ -343,7 +347,21 @@ export interface HardSignalAuthorizationResponse {
   readonly drainGeneration: number
   readonly authorizationId: string
   readonly expiresAtUnix: number
-  readonly result: "authorized"
+  readonly result: "prepared"
+  readonly signalPermitted: false
+}
+
+export interface HardSignalPermitResponse {
+  readonly schemaVersion: "bb.engine_hard_signal_permit.v1"
+  readonly engineInstanceId: string
+  readonly engineBootId: string
+  readonly launchId: string
+  readonly ownerGeneration: number
+  readonly drainGeneration: number
+  readonly authorizationId: string
+  readonly expiresAtUnix: number
+  readonly result: "signal_permitted"
+  readonly signalPermitted: true
 }
 
 export interface BoundLifecycleE4Client {
@@ -358,7 +376,8 @@ export interface BoundLifecycleE4Client {
   recordGracefulControl(input: GracefulControlInput): Promise<DrainControlResponse & {
     readonly result: "shutdown_started" | "rollback_permitted" | "hard_signal_decision_pending" | "rolled_back"
   }>
-  prepareHardSignal(input: PrepareHardSignalInput): Promise<HardSignalAuthorizationResponse>
+  prepareHardSignal(input: PrepareHardSignalInput): Promise<HardSignalPreparationResponse>
+  commitHardSignal(input: CommitHardSignalInput): Promise<HardSignalPermitResponse>
   recordHardSignalOutcome(input: RecordHardSignalOutcomeInput): Promise<DrainControlResponse & {
     readonly result: "rollback_permitted" | "signal_sent" | "process_exited" | "rolled_back"
   }>
@@ -717,6 +736,20 @@ const containsSensitiveValue = (
   return false
 }
 
+const containsUnexpectedSensitiveValue = (
+  value: unknown,
+  sensitiveValues: readonly SensitiveValue[],
+  expectedRootEchoes: Readonly<Record<string, string>>,
+): boolean => {
+  if (!isRawObject(value)) return containsSensitiveValue(value, sensitiveValues)
+  return Object.entries(value).some(([key, item]) => (
+    typeof item === "string"
+    && expectedRootEchoes[key] === item
+      ? false
+      : containsSensitiveValue(item, sensitiveValues)
+  ))
+}
+
 const requestJson = async (
   context: RequestContext,
   route: string,
@@ -725,6 +758,7 @@ const requestJson = async (
   credentialHeaders: Readonly<Record<string, string>>,
   callerSignal?: AbortSignal,
   bodySensitiveValues: readonly SensitiveValue[] = [],
+  expectedResponseEchoes: Readonly<Record<string, string>> = {},
 ): Promise<JsonResponse> => {
   if (callerSignal?.aborted) throw new LifecycleE4ClientError({ kind: "caller-abort" })
   const controller = new AbortController()
@@ -796,7 +830,7 @@ const requestJson = async (
         body: REDACTED_BODY,
       })
     }
-    if (containsSensitiveValue(value, sensitiveValues)) {
+    if (containsUnexpectedSensitiveValue(value, sensitiveValues, expectedResponseEchoes)) {
       throw new LifecycleE4ClientError({
         kind: "protocol",
         code: "sensitive_response_reflection",
@@ -1380,7 +1414,7 @@ const decodeDrainResponse = (
   ) {
     protocolError("control_admission_state_contradiction")
   }
-  if (signalPermitted !== (result === "hard_signal_decision_pending")) {
+  if (signalPermitted) {
     protocolError("control_signal_state_contradiction")
   }
   const common: DrainControlResponseBase = {
@@ -1403,16 +1437,6 @@ const decodeDrainResponse = (
       turnAdmissionOpen: true,
       registrationsOpen: true,
       signalPermitted: false,
-    }
-  }
-  if (result === "hard_signal_decision_pending") {
-    return {
-      ...common,
-      result,
-      sessionAdmissionOpen: false,
-      turnAdmissionOpen: false,
-      registrationsOpen: false,
-      signalPermitted: true,
     }
   }
   return {
@@ -1466,11 +1490,11 @@ const decodeBootstrapChallengeResponse = (
   })
 }
 
-const decodeHardSignalAuthorizationResponse = (
+const decodeHardSignalPreparationResponse = (
   value: unknown,
   binding: LifecycleEngineBinding,
-): HardSignalAuthorizationResponse => {
-  const root = expectObject(value, "hard_signal_authorization_not_object")
+): HardSignalPreparationResponse => {
+  const root = expectObject(value, "hard_signal_preparation_not_object")
   expectExactKeys(root, [
     "schema_version",
     "result",
@@ -1481,15 +1505,19 @@ const decodeHardSignalAuthorizationResponse = (
     "drain_generation",
     "authorization_id",
     "expires_at_unix",
-  ], "hard_signal_authorization_shape_mismatch")
-  if (own(root, "schema_version") !== "bb.engine_hard_signal_authorization.v1") {
-    schemaFailure("control-schema-mismatch", "hard_signal_authorization_schema_mismatch")
+    "signal_permitted",
+  ], "hard_signal_preparation_shape_mismatch")
+  if (own(root, "schema_version") !== "bb.engine_hard_signal_preparation.v1") {
+    schemaFailure("control-schema-mismatch", "hard_signal_preparation_schema_mismatch")
   }
   assertAuthorityBinding(root, binding)
-  if (own(root, "result") !== "authorized") protocolError("hard_signal_authorization_result_mismatch")
+  if (own(root, "result") !== "prepared") protocolError("hard_signal_preparation_result_mismatch")
+  if (own(root, "signal_permitted") !== false) {
+    protocolError("hard_signal_preparation_permission_mismatch")
+  }
   return Object.freeze({
-    schemaVersion: "bb.engine_hard_signal_authorization.v1",
-    result: "authorized",
+    schemaVersion: "bb.engine_hard_signal_preparation.v1",
+    result: "prepared",
     engineInstanceId: binding.engineInstanceId,
     engineBootId: binding.engineBootId,
     launchId: binding.launchId,
@@ -1504,6 +1532,55 @@ const decodeHardSignalAuthorizationResponse = (
       0,
       "hard_signal_authorization_expiry_invalid",
     ),
+    signalPermitted: false,
+  })
+}
+
+const decodeHardSignalPermitResponse = (
+  value: unknown,
+  binding: LifecycleEngineBinding,
+): HardSignalPermitResponse => {
+  const root = expectObject(value, "hard_signal_permit_not_object")
+  expectExactKeys(root, [
+    "schema_version",
+    "result",
+    "engine_instance_id",
+    "engine_boot_id",
+    "launch_id",
+    "owner_generation",
+    "drain_generation",
+    "authorization_id",
+    "expires_at_unix",
+    "signal_permitted",
+  ], "hard_signal_permit_shape_mismatch")
+  if (own(root, "schema_version") !== "bb.engine_hard_signal_permit.v1") {
+    schemaFailure("control-schema-mismatch", "hard_signal_permit_schema_mismatch")
+  }
+  assertAuthorityBinding(root, binding)
+  if (own(root, "result") !== "signal_permitted") {
+    protocolError("hard_signal_permit_result_mismatch")
+  }
+  if (own(root, "signal_permitted") !== true) {
+    protocolError("hard_signal_permit_permission_mismatch")
+  }
+  return Object.freeze({
+    schemaVersion: "bb.engine_hard_signal_permit.v1",
+    result: "signal_permitted",
+    engineInstanceId: binding.engineInstanceId,
+    engineBootId: binding.engineBootId,
+    launchId: binding.launchId,
+    ownerGeneration: expectInteger(own(root, "owner_generation"), 1, "owner_generation_invalid"),
+    drainGeneration: expectInteger(own(root, "drain_generation"), 1, "drain_generation_invalid"),
+    authorizationId: validateAuthorityId(
+      expectString(own(root, "authorization_id"), "hard_signal_authorization_id_invalid"),
+      "hard_signal_authorization_id_invalid",
+    ),
+    expiresAtUnix: expectNumber(
+      own(root, "expires_at_unix"),
+      0,
+      "hard_signal_authorization_expiry_invalid",
+    ),
+    signalPermitted: true,
   })
 }
 
@@ -1950,10 +2027,60 @@ const createBoundClient = (
     const safeRaw = withResponseAuthoritySecrets(raw, ["authorization_id"])
     const response = decodeResponse(
       safeRaw,
-      (value) => decodeHardSignalAuthorizationResponse(value, binding),
+      (value) => decodeHardSignalPreparationResponse(value, binding),
     )
     if (response.ownerGeneration !== ownerGeneration || response.drainGeneration !== drainGeneration) {
       responseProtocolError(safeRaw, "hard_signal_authorization_binding_mismatch")
+    }
+    return response
+  },
+  commitHardSignal: async (input: CommitHardSignalInput) => {
+    const ownerGeneration = validatePositiveInteger(input.ownerGeneration, "owner_generation_invalid")
+    const drainGeneration = validatePositiveInteger(input.drainGeneration, "drain_generation_invalid")
+    const pid = validatePositiveInteger(input.pid, "process_pid_invalid")
+    const osProcessStartToken = expectPattern(
+      input.osProcessStartToken,
+      /^[A-Za-z0-9][A-Za-z0-9:._-]{0,255}$/,
+      "os_process_start_token_invalid",
+    )
+    const authorizationId = validateAuthorityId(
+      input.authorizationId,
+      "hard_signal_authorization_id_invalid",
+    )
+    if (
+      pid !== binding.process.pid
+      || osProcessStartToken !== binding.process.osProcessStartToken
+    ) {
+      protocolError("process_identity_mismatch")
+    }
+    const raw = await requestJson(
+      context,
+      "/v1/engine/control/hard-signal/commit",
+      "POST",
+      {
+        ...bindingBody(binding),
+        owner_generation: ownerGeneration,
+        drain_generation: drainGeneration,
+        pid,
+        os_process_start_token: osProcessStartToken,
+        authorization_id: authorizationId,
+      },
+      ownerHeaders(input.ownerCredential),
+      input.signal,
+      [authorizationId],
+      { authorization_id: authorizationId },
+    )
+    const safeRaw = withResponseAuthoritySecrets(raw, ["authorization_id"])
+    const response = decodeResponse(
+      safeRaw,
+      (value) => decodeHardSignalPermitResponse(value, binding),
+    )
+    if (
+      response.ownerGeneration !== ownerGeneration
+      || response.drainGeneration !== drainGeneration
+      || response.authorizationId !== authorizationId
+    ) {
+      responseProtocolError(safeRaw, "hard_signal_permit_binding_mismatch")
     }
     return response
   },

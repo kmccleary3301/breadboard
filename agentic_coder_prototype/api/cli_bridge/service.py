@@ -34,7 +34,9 @@ from .models import (
     DrainControlRequest,
     DrainControlResponse,
     GracefulControlResultRequest,
-    HardSignalAuthorizationResponse,
+    HardSignalCommitRequest,
+    HardSignalPreparationResponse,
+    HardSignalPermitResponse,
     HardSignalOutcomeRequest,
     HardSignalPrepareRequest,
     OwnerAcquireRequest,
@@ -283,8 +285,19 @@ class SessionService:
         request: HardSignalPrepareRequest,
         *,
         owner_credential: bytearray,
-    ) -> HardSignalAuthorizationResponse:
+    ) -> HardSignalPreparationResponse:
         return await self.registry.prepare_hard_signal(
+            request,
+            owner_credential=owner_credential,
+        )
+
+    async def commit_hard_signal(
+        self,
+        request: HardSignalCommitRequest,
+        *,
+        owner_credential: bytearray,
+    ) -> HardSignalPermitResponse:
+        return await self.registry.commit_hard_signal(
             request,
             owner_credential=owner_credential,
         )
