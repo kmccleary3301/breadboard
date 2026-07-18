@@ -50,13 +50,7 @@ def _resolve(reference: str, *, label: str) -> Path:
 
 def _row_hash(row_id: str, row: Mapping[str, Any]) -> str:
     payload = {"row_id": row_id, "row": row}
-    encoded = json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+    return hash_utils.sha256_json(payload)
 
 
 def _validate_row_reference(reference: str, *, label: str, errors: list[str]) -> None:

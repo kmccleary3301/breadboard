@@ -67,8 +67,8 @@ COMPARATOR_PATH = LANE_DIR / "comparator_report.json"
 PARITY_PATH = LANE_DIR / "parity_results.json"
 SECRET_SCAN_PATH = LANE_DIR / "secret_scan_report.json"
 PREVALIDATION_PATH = LANE_DIR / "prevalidation_report.json"
-SUPPORT_CLAIM_PATH = ROOT / "docs/conformance/support_claims" / f"{CLAIM_ID}.json"
-EVIDENCE_MANIFEST_PATH = ROOT / "docs/conformance/support_claims" / f"{CLAIM_ID.replace('_support_claim', '_evidence_manifest')}.json"
+SUPPORT_CLAIM_PATH = LANE_DIR / "frozen_c4_support_claim.json"
+EVIDENCE_MANIFEST_PATH = LANE_DIR / "frozen_c4_evidence_manifest.json"
 NODE_GATE_PATH = ROOT / CT_OUTPUT
 
 CAPTURE_COMMAND_NAMES = ("node_version", "npm_version", "npm_ci", "module_probe")
