@@ -43,6 +43,17 @@ from .models import SessionCreateRequest, SessionStatus
 from .registry import SessionRecord, SessionRegistry
 logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
+def _clear_directory(descriptor: int) -> None:
+    for name in os.listdir(descriptor):
+        try: child = _open_directory(descriptor, name, create=False)
+        except OSError:
+            try: os.unlink(name, dir_fd=descriptor)
+            except FileNotFoundError: pass
+            continue
+        try: _clear_directory(child)
+        finally: os.close(child)
+        try: os.rmdir(name, dir_fd=descriptor)
+        except FileNotFoundError: pass
 _PERMISSION_ALIASES = {alias: decision for decision, aliases in {
     "once": "once allow approve approved ok okay yes y allow-once allow_once", "always": "always allow-always allow_always",
     "reject": "reject deny denied no n deny-once deny_once deny-always deny_always deny-stop deny_stop",
@@ -860,17 +871,43 @@ class SessionRunner:
                     await self._ensure_agent_initialized()
                     if self._stop_event.is_set(): self._input_queue.task_done(); break
                     after_agent_init_at = time.monotonic()
-                    attachment_text = self._format_attachment_helper(attachment_ids)
-                    if attachment_text: task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
-                    if task_text.strip():
-                        self._accepted_task_texts.append(task_text)
-                        self._accepted_task_texts = self._accepted_task_texts[-20:]
-                    if self._profile_timing_enabled:
-                        self._active_bridge_timing_context = {
-                            "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
-                            "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
-                        }
-                    result = await asyncio.to_thread(self._execute_task, task_text)
+                    workspace_dir = self.get_workspace_dir()
+                    if attachment_ids and workspace_dir is None: raise RuntimeError("workspace not ready")
+                    snapshot = guard = snapshot_root = snapshot_display_root = snapshot_descriptor = snapshot_name = snapshot_windows_handle = None
+                    try:
+                        if attachment_ids:
+                            metadata_dir = workspace_dir / ".breadboard"
+                            if os.name == "nt":
+                                guard = _windows_handle(metadata_dir, directory=True, create=False); snapshot = tempfile.TemporaryDirectory(prefix="attachment-snapshot-", dir=metadata_dir); snapshot_root = Path(snapshot.name); snapshot_windows_handle = _windows_handle(snapshot_root, directory=True, create=False)
+                            else:
+                                guard = os.open(metadata_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)); snapshot_name = f"attachment-snapshot-{uuid.uuid4().hex}"; os.mkdir(snapshot_name, 0o700, dir_fd=guard); snapshot_descriptor = _open_directory(guard, snapshot_name, create=False); snapshot_root = metadata_dir / snapshot_name
+                            snapshot_display_root = Path(".breadboard") / snapshot_root.name
+                        attachment_text = self._format_attachment_helper(attachment_ids, snapshot_root, snapshot_display_root, snapshot_descriptor)
+                        if attachment_text: task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
+                        if task_text.strip():
+                            self._accepted_task_texts.append(task_text)
+                            self._accepted_task_texts = self._accepted_task_texts[-20:]
+                        if self._profile_timing_enabled:
+                            self._active_bridge_timing_context = {
+                                "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
+                                "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
+                            }
+                        result = await asyncio.to_thread(self._execute_task, task_text)
+                    finally:
+                        try:
+                            if snapshot_windows_handle is not None: _close_windows_handle(snapshot_windows_handle); snapshot_windows_handle = None
+                            if snapshot:
+                                try: snapshot.cleanup()
+                                except OSError: pass
+                            if snapshot_descriptor is not None:
+                                try: _clear_directory(snapshot_descriptor); os.rmdir(snapshot_name, dir_fd=guard)
+                                except OSError: pass
+                            elif snapshot_name is not None:
+                                try: os.rmdir(snapshot_name, dir_fd=guard)
+                                except OSError: pass
+                        finally:
+                            if snapshot_descriptor is not None: os.close(snapshot_descriptor)
+                            if guard is not None: _close_windows_handle(guard) if os.name == "nt" else os.close(guard)
                     after_execute_task_at = time.monotonic()
                     if self._profile_timing_enabled and isinstance(result, dict):
                         timing = result.setdefault("bridge_timing", {})
@@ -1515,7 +1552,7 @@ class SessionRunner:
             if not attachment_id:
                 continue
             self._attachment_store[str(attachment_id)] = dict(entry)
-    def _restore_attachment(self, attachment_id: str, filename: str, artifact_ref: Any) -> None:
+    def _restore_attachment(self, attachment_id: str, filename: str, artifact_ref: Any) -> bytes:
         _validate_artifact_name(attachment_id)
         if not filename or filename in {".", ".."} or os.path.basename(filename) != filename or "\0" in filename: raise ValueError("attachment filename must be a basename")
         workspace = self.get_workspace_dir()
@@ -1542,24 +1579,31 @@ class SessionRunner:
             finally:
                 for descriptor in reversed(descriptors): os.close(descriptor)
         if actual != trusted: raise RuntimeError(f"attachment verification failed: {attachment_id}")
-    def _format_attachment_helper(self, attachment_ids: Sequence[str]) -> str:
-        if not attachment_ids:
-            return ""
-        workspace_dir = self.get_workspace_dir()
-        helper_lines: list[str] = []
-        for index, attachment_id in enumerate(attachment_ids, start=1):
-            key = str(attachment_id)
+        return trusted
+    def _format_attachment_helper(self, attachment_ids: Sequence[str], snapshot_root: Path | None = None, snapshot_display_root: Path | None = None, snapshot_descriptor: int | None = None) -> str:
+        if not attachment_ids: return ""
+        workspace_dir, helper_lines = self.get_workspace_dir(), []
+        if workspace_dir is None: raise RuntimeError("workspace not ready")
+        for index, key in enumerate(dict.fromkeys(str(value) for value in attachment_ids), start=1):
             info = self._attachment_store.get(key)
-            if not info:
-                continue
-            rel_path = info.get("relative_path"); artifact_ref = getattr(self.session, "product_artifacts", {}).get(key)
-            abs_path_value = info.get("absolute_path"); abs_path = Path(abs_path_value).resolve() if abs_path_value else None
-            if workspace_dir and rel_path:
-                destination = workspace_dir / rel_path
-                if artifact_ref is not None: self._restore_attachment(key, str(info.get("filename") or destination.name), artifact_ref)
-                elif abs_path and abs_path.exists() and not destination.exists(): destination.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(abs_path, destination)
-            digest = getattr(artifact_ref, "digest", "unverified")
-            helper_lines.append(f"[Attachment {index}: {info.get('filename')} -> {rel_path or 'unknown'} ({digest})]")
+            if not info: continue
+            rel_path, artifact_ref = info.get("relative_path"), getattr(self.session, "product_artifacts", {}).get(key)
+            if not rel_path or artifact_ref is None: raise RuntimeError(f"attachment artifact missing: {key}")
+            destination = workspace_dir / rel_path; trusted = self._restore_attachment(key, str(info.get("filename") or destination.name), artifact_ref); display_path = rel_path
+            if snapshot_root is not None:
+                snapshot_dir = snapshot_root / key; snapshot_fd = _open_directory(snapshot_descriptor, key) if snapshot_descriptor is not None else None; snapshot_handle = None
+                if snapshot_fd is None:
+                    snapshot_dir.mkdir(mode=0o700)
+                    if os.name == "nt": snapshot_handle = _windows_handle(snapshot_dir, directory=True, create=False)
+                snapshot_path = snapshot_dir / str(info.get("filename") or destination.name)
+                try:
+                    descriptor = os.open(snapshot_path.name if snapshot_fd is not None else snapshot_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o400, dir_fd=snapshot_fd)
+                    with os.fdopen(descriptor, "wb") as stream: stream.write(trusted); stream.flush()
+                finally:
+                    if snapshot_fd is not None: os.close(snapshot_fd)
+                    _close_windows_handle(snapshot_handle)
+                display_path = str((snapshot_display_root / key / snapshot_path.name) if snapshot_display_root is not None else snapshot_path.relative_to(workspace_dir))
+            helper_lines.append(f"[Attachment {index}: {info.get('filename')} -> {display_path} ({artifact_ref.digest})]")
         return "\n".join(helper_lines)
     def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:
         if not logging_dir:

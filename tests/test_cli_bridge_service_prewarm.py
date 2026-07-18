@@ -50,36 +50,27 @@ async def test_effective_lock_is_exact_and_secret_free(monkeypatch, tmp_path) ->
 @pytest.mark.asyncio
 async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_path) -> None:
     service, response, record = await _create(monkeypatch, tmp_path); sink, record.product_session._sink = record.product_session._sink, _Failing()
-    with pytest.raises(OSError, match="sink unavailable"):
-        await service.send_input(response.session_id, SessionInputRequest(content="next"))
+    with pytest.raises(OSError, match="sink unavailable"): await service.send_input(response.session_id, SessionInputRequest(content="next"))
     assert record.runner._input_queue.empty(); assert [event.kind for event in record.product_session.events] == ["session.started"]
     record.product_session._sink = sink; record.runner._rehydrate_pending_permissions("permission_request", {"request_id": "perm-1", "category": "shell"}); record.runner._permission_queue = _Failing(); persisted = []
     monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.session_runner.upsert_permission_rule", lambda *_args, **_kwargs: persisted.append(True) or True)
     request = SessionCommandRequest(command="permission_decision", payload={"request_id": "perm-1", "decision": "always", "rule": "*.sh"})
-    with pytest.raises(HTTPException) as error:
-        await service.execute_command(response.session_id, request)
+    with pytest.raises(HTTPException) as error: await service.execute_command(response.session_id, request)
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["approval.resolved", "session.failed"]; assert record.status.value == "failed"
     assert persisted == [True] and record.metadata["permission_rules"][0]["rule"] == "*.sh"
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.FAILED and type(record.product_session).restore(record.product_session.events).read_model.status == "failed"; await _stop(record)
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("command", "payload"), [
-    ("set_model", {"model": "openrouter/openai/gpt-5-nano"}),
-    ("set_skills", {"allowlist": ["test-skill"]}),
-    ("set_mode", {"mode": "plan"}),
-])
+@pytest.mark.parametrize(("command", "payload"), [("set_model", {"model": "openrouter/openai/gpt-5-nano"}), ("set_skills", {"allowlist": ["test-skill"]}), ("set_mode", {"mode": "plan"})])
 async def test_failed_durable_reconfigure_rolls_back_runtime_mutation(monkeypatch, tmp_path, command, payload) -> None:
     service, response, record = await _create(monkeypatch, tmp_path); runner = record.runner
     calls = []; model_config = runner.current_runtime_config(); model_config["providers"].pop("default_model", None); model_config.pop("mode", None); runtime_config = model_config; runner._agent = SimpleNamespace(config=runtime_config) if command == "set_model" else SimpleNamespace(config=runtime_config, apply_runtime_overrides=lambda overrides: calls.append(overrides) or runtime_config.update(apply_dotted_overrides(runtime_config, overrides)) or True)
     before_config, before_metadata, before_model, before_mode = runner.current_runtime_config(), dict(record.metadata), runner._model_override, runner._mode
     sink, record.product_session._sink = record.product_session._sink, _Failing()
-    with pytest.raises(OSError, match="sink unavailable"):
-        await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
+    with pytest.raises(OSError, match="sink unavailable"): await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
     assert runner.current_runtime_config() == before_config; assert record.metadata == before_metadata; assert (runner._model_override, runner._mode) == (before_model, before_mode)
     assert [event.kind for event in record.product_session.events] == ["session.started"]; assert "default_model" not in runner._agent.config["providers"] if command == "set_model" else len(calls) == 2
     if command == "set_mode":
-        record.product_session._sink = sink
-        await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
-        assert (record.product_session.events[-1].kind, runner.current_runtime_config()["mode"], record.metadata["mode"]) == ("session.reconfigured", "plan", "plan")
+        record.product_session._sink = sink; await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload)); assert (record.product_session.events[-1].kind, runner.current_runtime_config()["mode"], record.metadata["mode"]) == ("session.reconfigured", "plan", "plan")
     await _stop(record)
 @pytest.mark.asyncio
 async def test_runtime_failure_does_not_advance_registry_past_failed_sink(monkeypatch, tmp_path) -> None:
@@ -87,20 +78,17 @@ async def test_runtime_failure_does_not_advance_registry_past_failed_sink(monkey
     async def update_status(session_id, status): updates.append(status); await original_update(session_id, status)  # type: ignore[no-untyped-def]
     monkeypatch.setattr(service.registry, "update_status", update_status); monkeypatch.setattr(record.runner, "prepare_runtime_config", lambda: (_ for _ in ()).throw(RuntimeError("runtime failed")))
     record.product_session._sink = _Failing()
-    with pytest.raises(OSError, match="sink unavailable"):
-        await record.runner._run()
+    with pytest.raises(OSError, match="sink unavailable"): await record.runner._run()
     assert SessionStatus.FAILED not in updates; assert record.status is not SessionStatus.FAILED; assert record.product_session.read_model.status == "running"
     await _stop(record)
 @pytest.mark.asyncio
 @pytest.mark.parametrize("command", ["set_model", "set_skills"])
 async def test_runtime_reconfigure_failure_never_claims_effective_config(monkeypatch, tmp_path, command) -> None:
-    class RejectingModelConfig(dict):
-        def setdefault(self, *_args, **_kwargs): raise RuntimeError("model propagation failed")  # type: ignore[no-untyped-def]
+    RejectingModelConfig = type("RejectingModelConfig", (dict,), {"setdefault": lambda self, *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("model propagation failed"))})
     if command == "set_model": agent = SimpleNamespace(config=RejectingModelConfig()); payload = {"model": "openrouter/openai/gpt-5-nano"}
     else: agent = SimpleNamespace(config={}, apply_runtime_overrides=lambda _overrides: False); payload = {"allowlist": ["test-skill"]}
     service, response, record = await _create(monkeypatch, tmp_path); record.runner._agent = agent
-    with pytest.raises(HTTPException) as error:
-        await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
+    with pytest.raises(HTTPException) as error: await service.execute_command(response.session_id, SessionCommandRequest(command=command, payload=payload))
     assert error.value.status_code == 409; assert [event.kind for event in record.product_session.events][-2:] == ["session.started", "session.failed"]; assert record.status is SessionStatus.FAILED
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.FAILED and record.product_session.events[-1].kind == "session.failed"; await _stop(record)
 @pytest.mark.asyncio
@@ -108,8 +96,7 @@ async def test_setup_failure_terminalizes_registered_session(monkeypatch, tmp_pa
     async def fail(_runner) -> None: raise RuntimeError("runner setup exploded")  # type: ignore[no-untyped-def]
     monkeypatch.setattr(RUNNER, fail); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "setup-failure")
     monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events")); service = SessionService()
-    with pytest.raises(RuntimeError, match="runner setup exploded"):
-        await service.create_session(SessionCreateRequest(config_path=CONFIG, task="task"))
+    with pytest.raises(RuntimeError, match="runner setup exploded"): await service.create_session(SessionCreateRequest(config_path=CONFIG, task="task"))
     record = await service.ensure_session("setup-failure")
     assert (record.status.value, record.product_session.events[-1].kind) == ("failed", "session.failed"); assert record.product_session.read_model.terminal_outcome["error"] == "session_setup_failed"
     assert record.runner._stop_event.is_set() and record.dispatcher_task.done()
@@ -174,7 +161,9 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
     upload = Upload(); upload.filename = "résumé.txt"; uploaded = await service.upload_attachments(response.session_id, [upload]); attachment_id = uploaded.attachments[0].id
     digest = record.metadata["artifact_manifest_ref"]["digest"].removeprefix("sha256:"); manifest_path = workspace / ".breadboard" / "artifacts" / "manifests" / f"{response.session_id}.{digest}.json"; manifest = json.loads(manifest_path.read_text()); assert hashlib.sha256(manifest_path.read_bytes()).hexdigest() == digest; empty = Upload(); empty.data = b""; attachment_root = workspace / ".breadboard" / "attachments"; before = (manifest_path.read_bytes(), dict(record.product_artifacts), dict(record.metadata), {path.name for path in attachment_root.iterdir()})
     attachment_path = next((attachment_root / attachment_id).iterdir()); attachment_path.write_bytes(b"tampered")
-    assert record.product_artifacts[attachment_id].digest in record.runner._format_attachment_helper([attachment_id]) and attachment_path.read_bytes() == b"proof"
+    snapshot_root = workspace / ".breadboard" / ".snapshot-test"; snapshot_root.mkdir(); helper = record.runner._format_attachment_helper([attachment_id, attachment_id], snapshot_root)
+    helper_path = Path(helper.partition(" -> ")[2].rsplit(" (", 1)[0]); snapshot_path = workspace / helper_path; attachment_path.write_bytes(b"raced")
+    assert not helper_path.is_absolute() and snapshot_path.resolve().is_relative_to(workspace.resolve()) and record.product_artifacts[attachment_id].digest in helper and snapshot_path.read_bytes() == b"proof" and attachment_path.read_bytes() == b"raced" and helper.count("Attachment ") == 1
     empty_error, missing_error = await asyncio.gather(service.upload_attachments(response.session_id, [empty]), service.send_input(response.session_id, SessionInputRequest(content="use it", attachments=["missing"])), return_exceptions=True)
     assert isinstance(empty_error, HTTPException) and empty_error.status_code == 400 and isinstance(missing_error, HTTPException) and missing_error.status_code == 400 and record.runner._input_queue.empty(); assert before == (manifest_path.read_bytes(), record.product_artifacts, record.metadata, {path.name for path in attachment_root.iterdir()}) and manifest["schema_version"] == "bb.artifact_manifest.v1" and manifest["artifacts"][0]["name"] == attachment_id
     cas_root = workspace / ".breadboard" / "artifacts" / "sha256"; cas_before = {path.relative_to(cas_root): path.read_bytes() for path in cas_root.rglob("*") if path.is_file()}
@@ -186,7 +175,13 @@ async def test_attachment_manifest_survives_delete_and_unknown_ids_are_rejected(
         outside, attachment_dir = tmp_path / "outside-helper", attachment_path.parent; outside.mkdir(); attachment_path.unlink(); attachment_dir.rmdir(); attachment_dir.symlink_to(outside, target_is_directory=True)
         with pytest.raises(OSError): record.runner._format_attachment_helper([attachment_id])
         assert not list(outside.iterdir())
-    await service.delete_session(response.session_id); assert await service.registry.get(response.session_id) is None and manifest_path.is_file() and record.dispatcher_task.done()
+    monkeypatch.setattr(ArtifactStore, "put", real_put); entered, release = asyncio.Event(), asyncio.Event()
+    class BlockingUpload(Upload):
+        async def read(self) -> bytes: entered.set(); await release.wait(); return self.data
+    upload_task = asyncio.create_task(service.upload_attachments(response.session_id, [BlockingUpload()])); await entered.wait()
+    delete_task = asyncio.create_task(service.delete_session(response.session_id)); await asyncio.sleep(0); assert not delete_task.done()
+    release.set(); raced_upload = await upload_task; await delete_task
+    assert raced_upload.attachments and await service.registry.get(response.session_id) is None and manifest_path.is_file() and record.dispatcher_task.done()
     with pytest.raises(HTTPException) as missing: await service.ensure_session(response.session_id)
     assert missing.value.status_code == 404
 @pytest.mark.asyncio

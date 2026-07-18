@@ -6,7 +6,7 @@ import logging
 import os
 import shutil
 import time
-import uuid
+import uuid, weakref
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, Optional, Sequence
@@ -114,8 +114,9 @@ class SessionService:
         self._atp_repl_service: Any | None = None
         self._atp_service_initialized = False
         self._atp_runtime_capabilities: dict[str, Any] = {}
-        self._attachment_lock = asyncio.Lock()
+        self._session_locks: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
         _cleanup_incomplete_starts()
+    def _session_lock(self, session_id: str) -> asyncio.Lock: return self._session_locks.setdefault(session_id, asyncio.Lock())
     @staticmethod
     def _runtime_lock(session_id: str, runtime_config: dict[str, Any], source_ref: str) -> EffectiveHarnessLock:
         return EffectiveHarnessLock._from_record(compile_runtime_effective_config_graph(session_id, runtime_config, source_ref))
@@ -473,6 +474,8 @@ class SessionService:
                 return idx + 1
         return None
     async def stop_session(self, session_id: str) -> None:
+        async with self._session_lock(session_id): await self._stop_session_locked(session_id)
+    async def _stop_session_locked(self, session_id: str) -> None:
         record = await self.ensure_session(session_id); runner: Optional[SessionRunner] = getattr(record, "runner", None)
         try:
             if runner: await runner.stop()
@@ -485,8 +488,9 @@ class SessionService:
                 dispatcher = getattr(record, "dispatcher_task", None)
                 if dispatcher and not dispatcher.done(): await record.event_queue.put(None); await dispatcher
     async def delete_session(self, session_id: str) -> None:
-        await self.stop_session(session_id)
-        await self.registry.delete(session_id)
+        async with self._session_lock(session_id):
+            await self._stop_session_locked(session_id)
+            await self.registry.delete(session_id)
     async def send_input(self, session_id: str, payload: SessionInputRequest) -> SessionInputResponse:
         record = await self.ensure_session(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
@@ -525,7 +529,7 @@ class SessionService:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
         return SessionCommandResponse(detail=detail)
     async def upload_attachments(self, session_id: str, files: Sequence[UploadFile], metadata: Optional[dict[str, Any]] = None) -> AttachmentUploadResponse:
-        async with self._attachment_lock:
+        async with self._session_lock(session_id):
             return await self._upload_attachments_locked(session_id, files, metadata)
     async def _upload_attachments_locked(
         self, session_id: str, files: Sequence[UploadFile], metadata: Optional[dict[str, Any]] = None,

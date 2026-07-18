@@ -165,21 +165,22 @@ class ArtifactStore:
         finally:
             for handle in reversed(locks): _close_windows_handle(handle)
     def read(self, ref: ArtifactRef) -> bytes:
-        digest = _hexdigest(ref.digest, "unsupported artifact digest")
-        if self._descriptor is not None:
-            sha, prefix = self._digest_directories(digest, create=False)
-            try: content = _read_at(prefix, digest)
-            finally: os.close(prefix); os.close(sha)
-        else:
-            target, locks = self._root / "sha256" / digest[:2] / digest, []
-            try:
-                if os.name == "nt":
-                    for path in (self._root, target.parent.parent, target.parent): locks.append(_windows_handle(path, directory=True, create=False))
-                with (os.fdopen(_windows_file_descriptor(target, create=False), "rb") if os.name == "nt" else target.open("rb")) as stream: content = stream.read()
-            finally:
-                for handle in reversed(locks): _close_windows_handle(handle)
-        if len(content) != ref.size_bytes or hashlib.sha256(content).hexdigest() != digest: raise RuntimeError("artifact verification failed")
-        return content
+        with self.transaction():
+            digest = _hexdigest(ref.digest, "unsupported artifact digest")
+            if self._descriptor is not None:
+                sha, prefix = self._digest_directories(digest, create=False)
+                try: content = _read_at(prefix, digest)
+                finally: os.close(prefix); os.close(sha)
+            else:
+                target, locks = self._root / "sha256" / digest[:2] / digest, []
+                try:
+                    if os.name == "nt":
+                        for path in (self._root, target.parent.parent, target.parent): locks.append(_windows_handle(path, directory=True, create=False))
+                    with (os.fdopen(_windows_file_descriptor(target, create=False), "rb") if os.name == "nt" else target.open("rb")) as stream: content = stream.read()
+                finally:
+                    for handle in reversed(locks): _close_windows_handle(handle)
+            if len(content) != ref.size_bytes or hashlib.sha256(content).hexdigest() != digest: raise RuntimeError("artifact verification failed")
+            return content
     def materialize(self, ref: ArtifactRef, destination: str | Path) -> Path:
         if self._descriptor is not None: raise RuntimeError("descriptor-backed stores require materialize_at")
         content, target, temporary, locks = self.read(ref), Path(destination), None, []
