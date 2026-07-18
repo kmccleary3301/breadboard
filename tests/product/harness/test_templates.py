@@ -69,9 +69,9 @@ def test_wheel_import_loads_template_from_distribution_data_root(tmp_path: Path)
     script = (
         f"import sys; sys.path.insert(0, {str(install_root)!r}); import json; "
         "from breadboard.product.harness.templates import "
-        "load_minimal_harness, minimal_template_path, minimal_template_text; "
-        "print(json.dumps({'path': str(minimal_template_path()), "
-        "'text': minimal_template_text(), 'document': load_minimal_harness().as_dict()}))"
+        "load_minimal_harness, minimal_template_path, minimal_template_text; from breadboard.product.coordination.work_items import WorkItem; "
+        "from agentic_coder_prototype.compilation.primitive_records import get_spec, _validator; candidate = _validator(get_spec('bb.work_item.v2').schema_path); "
+        "print(json.dumps({'path': str(minimal_template_path()), 'text': minimal_template_text(), 'document': load_minimal_harness().as_dict(), 'work_status': WorkItem.create('wheel').read_model.status, 'schema_id': candidate.schema['$id']}))"
     )
     payload = json.loads(run(sys.executable, "-I", "-c", script))
     expected_text = TEMPLATE.read_text(encoding="utf-8")
@@ -79,4 +79,4 @@ def test_wheel_import_loads_template_from_distribution_data_root(tmp_path: Path)
         install_root / "agent_configs/templates/minimal_harness.v3.yaml")
     assert Path(payload["path"]) == expected_installed_path
     assert payload["text"] == expected_text
-    assert payload["document"] == yaml.safe_load(expected_text)
+    assert payload["document"] == yaml.safe_load(expected_text) and payload["work_status"] == "ready" and payload["schema_id"] == "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json"

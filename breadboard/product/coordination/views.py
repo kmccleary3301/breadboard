@@ -1,9 +1,6 @@
 """Disposable coordination projections rebuilt from authoritative Work Item events."""
-from collections.abc import Iterable
-from dataclasses import dataclass
-from threading import Lock
-from .placement import WorkPlacement
-from .work_items import WorkItem, rebuild_work_item
+from collections.abc import Iterable; from dataclasses import dataclass
+from threading import Lock; from .placement import WorkPlacement; from .work_items import WorkItem, rebuild_work_item
 @dataclass(frozen=True, slots=True)
 class CoordinationItem:
     work_item_id: str; title: str; status: str; parent_work_item_id: str | None; child_work_item_ids: tuple[str, ...]; active_worker_id: str | None; current_attempt_id: str | None; current_session_ref: str | None; event_count: int

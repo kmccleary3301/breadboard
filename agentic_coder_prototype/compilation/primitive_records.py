@@ -1,21 +1,15 @@
 from __future__ import annotations
 
-from contextlib import suppress
-from dataclasses import dataclass
-from datetime import datetime
-from functools import lru_cache
-from pathlib import Path
-from typing import Any, Callable, Mapping
-import copy
-import hashlib
-import json
+from contextlib import suppress; from dataclasses import dataclass
+from datetime import datetime; from functools import lru_cache; from pathlib import Path; from typing import Any, Callable, Mapping
+import copy, hashlib, json, sys
 
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SCHEMAS_DIR = _REPO_ROOT / "contracts" / "kernel" / "schemas"
+_SCHEMAS_DIR = next((path for path in (_REPO_ROOT / "contracts" / "kernel" / "schemas", Path(sys.prefix) / "contracts" / "kernel" / "schemas") if path.is_dir()), _REPO_ROOT / "contracts" / "kernel" / "schemas")
 _COMMON_SCHEMA_NAME = "bb.kernel.common.v1.schema.json"
 _COMMON_SCHEMA_URI = f"https://breadboard.dev/contracts/kernel/schemas/{_COMMON_SCHEMA_NAME}"
 _E4_COMMON_SCHEMA_NAME = "bb.e4.common.v1.schema.json"
@@ -243,8 +237,8 @@ def _validator(schema_path: Path) -> Draft202012Validator:
 def _validate_record(spec: PrimitiveSpec, record: Mapping[str, Any], *, semantic: bool = False) -> None:
     validator = _validator(spec.schema_path)
     errors = [(_json_pointer(error.absolute_path), error.message) for error in validator.iter_errors(record)]
-    if semantic and spec.schema_version == "bb.work_item.v2":
-        errors.extend(_work_item_v2_semantic_errors(record))
+    if semantic:
+        errors.extend(_work_item_v2_semantic_errors(record) if spec.schema_version == "bb.work_item.v2" else _coordination_view_semantic_errors(record) if spec.schema_version == "bb.coordination_view.v1" else ())
     if errors:
         raise PrimitiveCompileError(
             schema_version=spec.schema_version,
@@ -253,6 +247,16 @@ def _validate_record(spec: PrimitiveSpec, record: Mapping[str, Any], *, semantic
         )
 
 
+def _coordination_view_semantic_errors(record: Mapping[str, Any]) -> list[tuple[str, str]]:
+    errors: list[tuple[str, str]] = []; items, edges, placements = (record.get(field) for field in ("items", "delegation_edges", "placements"))
+    item_rows, edge_rows, placement_rows = (value if isinstance(value, list) else () for value in (items, edges, placements))
+    item_ids = [item.get("work_item_id") for item in item_rows if isinstance(item, Mapping) and isinstance(item.get("work_item_id"), str)]; item_by_id = {item["work_item_id"]: item for item in item_rows if isinstance(item, Mapping) and isinstance(item.get("work_item_id"), str)}
+    edge_pairs = [(edge.get("parent_work_item_id"), edge.get("child_work_item_id")) for edge in edge_rows if isinstance(edge, Mapping)]; expected_pairs = {(item_id, child_id) for item_id, item in item_by_id.items() for child_id in item.get("child_work_item_ids", ()) if isinstance(child_id, str)}
+    check = lambda condition, pointer, message: errors.append((pointer, message)) if condition else None
+    check(len(item_ids) != len(item_rows) or len(item_ids) != len(set(item_ids)), "/items", "work_item_id must be unique across coordination items"); check(item_ids != sorted(item_ids), "/items", "coordination items must be ordered by work_item_id"); check(isinstance(record.get("source_event_count"), int) and all(isinstance(item, Mapping) and isinstance(item.get("event_count"), int) for item in item_rows) and record["source_event_count"] != sum(item["event_count"] for item in item_rows), "/source_event_count", "must equal the sum of item event_count values")
+    check(set(edge_pairs) != expected_pairs or len(edge_pairs) != len(set(edge_pairs)), "/delegation_edges", "must exactly match item parent/child relationships"); errors.extend((f"/items/{index}/parent_work_item_id", "must identify an item with a reciprocal child reference") for index, item in enumerate(item_rows) if isinstance(item, Mapping) and isinstance(parent_id := item.get("parent_work_item_id"), str) and (parent_id not in item_by_id or item.get("work_item_id") not in item_by_id[parent_id].get("child_work_item_ids", ()))); errors.extend((f"/delegation_edges/{index}", "must reference listed reciprocal parent and child items") for index, (parent_id, child_id) in enumerate(edge_pairs) if parent_id not in item_by_id or child_id not in item_by_id or item_by_id[child_id].get("parent_work_item_id") != parent_id)
+    placement_ids = [placement.get("placement_id") for placement in placement_rows if isinstance(placement, Mapping) and isinstance(placement.get("placement_id"), str)]; check(len(placement_ids) != len(placement_rows) or len(placement_ids) != len(set(placement_ids)), "/placements", "placement_id must be unique across the coordination view"); check(placement_ids != sorted(placement_ids), "/placements", "placements must be ordered by placement_id")
+    errors.extend((f"/placements/{index}/work_item_id", "must reference a listed coordination item") for index, placement in enumerate(placement_rows) if isinstance(placement, Mapping) and placement.get("work_item_id") not in item_by_id); return errors
 def _work_item_v2_semantic_errors(record: Mapping[str, Any]) -> list[tuple[str, str]]:
     errors: list[tuple[str, str]] = []
     attempts = record.get("attempts")
@@ -263,13 +267,13 @@ def _work_item_v2_semantic_errors(record: Mapping[str, Any]) -> list[tuple[str, 
     for index, attempt in ((index, attempt) for index, attempt in enumerate(attempts) if isinstance(attempt, Mapping)):
         check(attempt.get("number") != index + 1, f"/attempts/{index}/number", f"attempt number must be {index + 1} at this position")
         errors.extend((f"/attempts/{index}/{field}", f"{field} must be unique across attempts") for field, identities in seen.items() if isinstance(identity := attempt.get(field), str) and (identity in identities or identities.add(identity)))
-    status, current = record.get("status"), attempts[-1] if attempts and isinstance(attempts[-1], Mapping) else None
+    status, current = record.get("status"), attempts[-1] if attempts and isinstance(attempts[-1], Mapping) else None; status_is_text = isinstance(status, str)
     dependencies, satisfied, budget, work_item_id, children, active_lease, used_lease_ids, resume_policy = (record.get(field) for field in ("dependency_refs", "satisfied_dependency_refs", "budget", "work_item_id", "child_work_item_ids", "active_lease", "used_lease_ids", "resume_policy"))
-    check(status in (current_messages := {"completed": "completed Work Item requires a matching closed current attempt", "failed": "failed Work Item requires a matching closed current attempt", "waiting": "waiting Work Item requires a matching closed current attempt", "paused": "paused Work Item requires a matching closed current attempt", "running": "running Work Item requires the running attempt to be current"}) and (current is None or current.get("status") != status), "/attempts", current_messages.get(status, ""))
-    check(status in {"completed", "failed", "canceled"} and current is not None and current.get("status") == status and record.get("terminal_reason") != current.get("reason"), "/terminal_reason", f"must match the current {status} attempt reason")
+    check((current_messages := {"completed": "completed Work Item requires a matching closed current attempt", "failed": "failed Work Item requires a matching closed current attempt", "waiting": "waiting Work Item requires a matching closed current attempt", "paused": "paused Work Item requires a matching closed current attempt", "running": "running Work Item requires the running attempt to be current"}) and status_is_text and status in current_messages and (current is None or current.get("status") != status), "/attempts", current_messages.get(status, "") if status_is_text else "")
+    check(status_is_text and status in {"completed", "failed", "canceled"} and current is not None and current.get("status") == status and record.get("terminal_reason") != current.get("reason"), "/terminal_reason", f"must match the current {status} attempt reason")
     check(status == "running" and current is not None and current.get("status") == "running" and isinstance(active_lease, Mapping) and active_lease.get("worker_id") != current.get("worker_id"), "/active_lease/worker_id", "must match the current running attempt worker_id")
     resume_mode = resume_policy.get("mode") if isinstance(resume_policy, Mapping) else None
-    check(status in {"waiting", "paused"} and resume_mode == "never", "/resume_policy/mode", f"{status} Work Item cannot use never resume policy"); check(status in {"waiting", "paused"} and resume_mode == "checkpoint" and current is not None and not isinstance(current.get("checkpoint_ref"), str), f"/attempts/{len(attempts) - 1}/checkpoint_ref", "checkpoint resume policy requires the current attempt checkpoint_ref")
+    check(status_is_text and status in {"waiting", "paused"} and resume_mode == "never", "/resume_policy/mode", f"{status} Work Item cannot use never resume policy"); check(status_is_text and status in {"waiting", "paused"} and resume_mode == "checkpoint" and current is not None and not isinstance(current.get("checkpoint_ref"), str), f"/attempts/{len(attempts) - 1}/checkpoint_ref", "checkpoint resume policy requires the current attempt checkpoint_ref")
     if isinstance(active_lease, Mapping):
         lease_id, acquired_at, expires_at = (active_lease.get(field) for field in ("lease_id", "acquired_at", "expires_at"))
         check(isinstance(used_lease_ids, list) and isinstance(lease_id, str) and (not used_lease_ids or used_lease_ids[-1] != lease_id), "/active_lease/lease_id", "must be the last used_lease_ids entry")
@@ -282,7 +286,7 @@ def _work_item_v2_semantic_errors(record: Mapping[str, Any]) -> list[tuple[str, 
         dependency_set, satisfied_set = ({value for value in refs if isinstance(value, str)} for refs in (dependencies, satisfied))
         errors.extend((f"/satisfied_dependency_refs/{index}", "must also appear in dependency_refs") for index, dependency_ref in enumerate(satisfied) if isinstance(dependency_ref, str) and dependency_ref not in dependency_set)
         check(status == "blocked" and dependency_set == satisfied_set, "/status", "blocked Work Item requires at least one unsatisfied dependency")
-        check(status not in {"blocked", "canceled"} and dependency_set != satisfied_set, "/satisfied_dependency_refs", f"all dependencies must be satisfied while status is {status}")
+        check(status_is_text and status not in {"blocked", "canceled"} and dependency_set != satisfied_set, "/satisfied_dependency_refs", f"all dependencies must be satisfied while status is {status}")
     limits, usage = (budget.get("limits"), budget.get("usage")) if isinstance(budget, Mapping) else (None, None)
     for limit_name, usage_name in ((("token_limit", "tokens"), ("cost_limit_microusd", "cost_microusd"), ("wall_time_limit_ms", "wall_time_ms")) if isinstance(limits, Mapping) and isinstance(usage, Mapping) else ()):
         limit, amount = limits.get(limit_name), usage.get(usage_name)

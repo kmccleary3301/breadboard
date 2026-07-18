@@ -1,27 +1,10 @@
-import hashlib, json
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
-from operator import setitem
-from pathlib import Path
-from threading import Barrier, Event, current_thread
-from types import SimpleNamespace
-from typing import Any
-import pytest
-from agentic_coder_prototype.compilation.primitive_records import PrimitiveCompileError, finalize_record, get_spec, validate_record
-from breadboard.product.coordination.placement import WorkPlacement
-from breadboard.product.coordination.views import CoordinationProjector
-from breadboard.product.coordination.work_items import Budget, CancellationPolicy, ResumePolicy, RetryPolicy, WorkItem, WorkItemEvent, WorkItemRepository, WorkItemSnapshot, rebuild_work_item
+import hashlib, json, pytest; from concurrent.futures import ThreadPoolExecutor; from dataclasses import asdict; from operator import setitem; from pathlib import Path; from threading import Barrier, Event, current_thread; from types import SimpleNamespace; from typing import Any
+from agentic_coder_prototype.compilation.primitive_records import PrimitiveCompileError, finalize_record, get_spec, validate_record; from breadboard.product.coordination.placement import WorkPlacement; from breadboard.product.coordination.views import CoordinationProjector; from breadboard.product.coordination.work_items import Budget, CancellationPolicy, ResumePolicy, RetryPolicy, WorkItem, WorkItemEvent, WorkItemRepository, WorkItemSnapshot, rebuild_work_item
 CLOCK = SimpleNamespace(now=lambda: "2026-07-17T00:00:04Z")
-def _new(**policies: Any) -> WorkItem:
-    return WorkItem.create("ship packet", work_item_id="work-1", clock=CLOCK, **policies)
-def _run(item: WorkItem, number: int = 1) -> None:
-    item.acquire_lease(f"worker-{number}", lease_id=f"lease-{number}")
-    item.start_attempt(f"session-{number}", attempt_id=f"attempt-{number}")
+def _new(**policies: Any) -> WorkItem: return WorkItem.create("ship packet", work_item_id="work-1", clock=CLOCK, **policies)
+def _run(item: WorkItem, number: int = 1) -> None: item.acquire_lease(f"worker-{number}", lease_id=f"lease-{number}"); item.start_attempt(f"session-{number}", attempt_id=f"attempt-{number}")
 def _record(snapshot: WorkItemSnapshot) -> dict[str, Any]:
-    record = json.loads(json.dumps(asdict(snapshot)))
-    placements = record.pop("placements")
-    record["budget"] = {"limits": record.pop("budget"), "usage": record.pop("budget_usage")}
-    record["placement_refs"] = [row["placement_id"] for row in placements]
+    record = json.loads(json.dumps(asdict(snapshot))); placements = record.pop("placements"); record["budget"] = {"limits": record.pop("budget"), "usage": record.pop("budget_usage")}; record["placement_refs"] = [row["placement_id"] for row in placements]
     return {"schema_version": "bb.work_item.v2", **record}
 def _work_item(status: str = "running", retry: bool = False) -> dict[str, Any]:
     item = _new(dependency_refs=("dependency-1",) if status == "blocked" else (), retry_policy=RetryPolicy(2, True, ("transient",)), resume_policy=ResumePolicy("restart"))
@@ -53,11 +36,9 @@ class DelayedProjector(CoordinationProjector):
             assert object.__getattribute__(self, "release").wait(5)
         return object.__getattribute__(self, name)
 def test_candidate_contracts_accept_reducer_states_but_cannot_finalize() -> None:
-    for status in ("blocked", "ready", "leased", "running", "waiting", "paused", "completed", "failed", "canceled"):
-        assert validate_record(get_spec("bb.work_item.v2"), _work_item(status)) == _work_item(status)
+    for status in ("blocked", "ready", "leased", "running", "waiting", "paused", "completed", "failed", "canceled"): assert validate_record(get_spec("bb.work_item.v2"), _work_item(status)) == _work_item(status)
     assert validate_record(get_spec("bb.work_item.v2"), _work_item(retry=True)) == _work_item(retry=True)
-    validate_record(get_spec("bb.work_placement.v1"), {"schema_version": "bb.work_placement.v1", **WorkPlacement("placement-1", "work-1", "attempt-1", "worker-1", "session-1", "target-a", "2026-07-17T00:00:04Z").as_dict()})
-    validate_record(get_spec("bb.coordination_view.v1"), {"schema_version": "bb.coordination_view.v1", "view_id": "view-1", "projected_at": "2026-07-17T00:00:04Z", "source_event_count": 1, "items": [], "delegation_edges": [], "placements": []})
+    validate_record(get_spec("bb.work_placement.v1"), {"schema_version": "bb.work_placement.v1", **WorkPlacement("placement-1", "work-1", "attempt-1", "worker-1", "session-1", "target-a", "2026-07-17T00:00:04Z").as_dict()}); validate_record(get_spec("bb.coordination_view.v1"), {"schema_version": "bb.coordination_view.v1", "view_id": "view-1", "projected_at": "2026-07-17T00:00:04Z", "source_event_count": 1, "items": [{"work_item_id": "work-1", "title": "ship packet", "status": "ready", "parent_work_item_id": None, "child_work_item_ids": [], "active_worker_id": None, "current_attempt_id": None, "current_session_ref": None, "event_count": 1}], "delegation_edges": [], "placements": []})
     _fails(PrimitiveCompileError, lambda: finalize_record(get_spec("bb.work_item.v2"), _work_item()), "validation-only")
 @pytest.mark.parametrize("status", ["completed", "failed", "waiting", "paused"])
 def test_v2_rejects_empty_or_mismatched_closed_attempts(status: str) -> None:
@@ -77,7 +58,7 @@ def test_v2_rejects_empty_or_mismatched_closed_attempts(status: str) -> None:
     ("blocked", False, lambda r: r.__setitem__("satisfied_dependency_refs", r["dependency_refs"]), "/status", "blocked Work Item requires at least one unsatisfied dependency"),
     ("running", False, lambda r: r.__setitem__("dependency_refs", ["dependency-1"]), "/satisfied_dependency_refs", "all dependencies must be satisfied while status is running"),
     ("running", False, lambda r: (r["budget"]["limits"].__setitem__("token_limit", 10), r["budget"]["usage"].__setitem__("tokens", 11)), "/budget/usage/tokens", "must not exceed budget.limits.token_limit"),
-    ("canceled", False, lambda r: r.__setitem__("terminal_reason", "other"), "/terminal_reason", "must match the current canceled attempt reason"),
+    ("ready", False, lambda r: r.__setitem__("status", []), "/status", "[] is not one of ['blocked', 'ready', 'leased', 'running', 'waiting', 'paused', 'completed', 'failed', 'canceled']"), ("canceled", False, lambda r: r.__setitem__("terminal_reason", "other"), "/terminal_reason", "must match the current canceled attempt reason"),
     ("running", False, lambda r: r.__setitem__("parent_work_item_id", "work-1"), "/parent_work_item_id", "must not equal work_item_id"),
     ("running", False, lambda r: r.__setitem__("child_work_item_ids", ["work-1"]), "/child_work_item_ids/0", "must not equal work_item_id"),
     ("waiting", False, lambda r: r["resume_policy"].__setitem__("mode", "never"), "/resume_policy/mode", "waiting Work Item cannot use never resume policy"),
@@ -97,8 +78,7 @@ def test_v1_schema_and_examples_remain_frozen() -> None:
 def test_projection_lifecycle_correlation_reciprocity_and_ordering() -> None:
     parent = _new(); _run(parent)
     assert parent.attach_placement(WorkPlacement("p-z", "work-1", "attempt-1", "worker-1", "session-1", "target-a", "2026-07-17T00:00:04Z")).status == "running"
-    left = parent.delegate("left", child_work_item_id="left", resume_policy=ResumePolicy("restart")); _run(left)
-    left.attach_placement(WorkPlacement("p-a", "left", "attempt-1", "worker-1", "session-1", "target-b", "2026-07-17T00:00:04Z"))
+    left = parent.delegate("left", child_work_item_id="left", resume_policy=ResumePolicy("restart")); _run(left); left.attach_placement(WorkPlacement("p-a", "left", "attempt-1", "worker-1", "session-1", "target-b", "2026-07-17T00:00:04Z"))
     assert left.wait(("wake",), "waiting").status == "waiting" and left.wake("wake").status == "ready"
     _run(left, 2)
     assert [(row.attempt_id, row.status) for row in left.read_model.attempts] == [("attempt-1", "waiting"), ("attempt-2", "running")]
@@ -107,7 +87,7 @@ def test_projection_lifecycle_correlation_reciprocity_and_ordering() -> None:
     authority = parent.events, left.events, right.events
     _fails(ValueError, lambda: CoordinationProjector().rebuild((parent,)), "reciprocal")
     assert (parent.events, left.events, right.events) == authority
-    _fails(ValueError, lambda: parent.attach_placement(WorkPlacement("wrong", "other", "attempt-1", "worker-1", "session-1", "target", "now")), "does not match")
+    _fails(ValueError, lambda: parent.attach_placement(WorkPlacement("wrong", "other", "attempt-1", "worker-1", "session-1", "target", "2026-07-17T00:00:04Z")), "does not match")
     assert parent.read_model.status == "running" and parent.events == authority[0]
     projector = CoordinationProjector(); view = projector.rebuild((right, parent, left))
     assert [row.work_item_id for row in view.items] == ["left", "right", "work-1"]
@@ -161,7 +141,7 @@ def test_policy_event_repository_immutability_and_replay_tampering() -> None:
     before = repository.read("immutable"); event = before[0]; serialized = event.as_dict(); serialized["payload"]["retry_policy"]["max_attempts"] = 99
     _fails(TypeError, lambda: setitem(event.payload["retry_policy"], "max_attempts", 2))
     assert policy.cancellable_by == ("operator",) and repository.read("immutable") == before and event.payload["retry_policy"]["max_attempts"] == 1
-    tampered = WorkItemEvent("immutable", 3, "dependency.added", "later", {"dependency_ref": "dep"})
+    _fails(ValueError, lambda: WorkItemEvent("immutable", 2, "dependency.added", "later", {"dependency_ref": "dep"}), "ISO-8601"); tampered = WorkItemEvent("immutable", 3, "dependency.added", "2026-07-17T00:00:05Z", {"dependency_ref": "dep"})
     _fails(ValueError, lambda: rebuild_work_item((event, tampered)), "contiguous")
 def test_policies_use_current_checkpoints_and_make_terminals_immutable() -> None:
     resume = _new(resume_policy=ResumePolicy("checkpoint", requires_approval=True)); _run(resume)
@@ -172,12 +152,12 @@ def test_policies_use_current_checkpoints_and_make_terminals_immutable() -> None
     before = cancel.events, existing.events
     _fails(RuntimeError, lambda: cancel.delegate("collision", child_work_item_id="child"), "stale Work Item revision")
     assert (cancel.events, existing.events) == before
-    child = cancel.delegate("child", child_work_item_id="new-child")
+    child = cancel.delegate("child", child_work_item_id="new-child"); _run(child); child.delegate("grandchild", child_work_item_id="grandchild")
     assert stale.read_model.child_work_item_ids == ("new-child",) and WorkItem.restore(repository, "new-child").read_model.parent_work_item_id == "cancel"
     cancel.checkpoint("old"); cancel.fail_attempt("retry", retryable=True); _run(cancel, 2)
     _fails(ValueError, lambda: cancel.cancel("operator"), "current checkpoint")
     cancel.checkpoint("current"); canceled = cancel.cancel("operator")
-    assert canceled.status == "canceled" and cancel.events[-1].payload["child_work_item_ids"] == ("new-child",) and child.read_model.status == "ready"
+    assert canceled.status == "canceled" and cancel.events[-1].payload["child_work_item_ids"] == ("new-child",) and WorkItem.restore(repository, "new-child").read_model.status == "canceled" and WorkItem.restore(repository, "grandchild").read_model.status == "canceled"
     limited = _new(retry_policy=RetryPolicy(2, True), budget=Budget(token_limit=1)); _run(limited); limited.consume_budget(tokens=1)
     final = limited.fail_attempt("retry", retryable=True)
     assert final.status == "failed" and final.budget_usage.tokens == 1

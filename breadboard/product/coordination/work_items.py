@@ -1,14 +1,8 @@
 """Event-sourced Work Item lifecycle and policy owner."""
 from __future__ import annotations
-import json
-from datetime import datetime
-from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, replace
-from threading import RLock
-from types import MappingProxyType
-from typing import Any
-from breadboard.product.runtime.events import Clock, IdSource, SystemClock, UUIDSource
-from .placement import WorkPlacement
+import json; from datetime import datetime; from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, replace; from threading import RLock; from types import MappingProxyType; from typing import Any
+from breadboard.product.runtime.events import Clock, IdSource, SystemClock, UUIDSource; from .placement import WorkPlacement
 STATUSES = frozenset({"blocked", "ready", "leased", "running", "waiting", "paused", "completed", "failed", "canceled"}); TERMINAL_STATUSES = frozenset({"completed", "failed", "canceled"})
 _RULES = MappingProxyType({
     "dependency.added": (("blocked", "ready"), {"dependency_ref"}, None), "dependency.satisfied": (("blocked",), {"dependency_ref"}, None),
@@ -136,7 +130,7 @@ class Attempt:
 class WorkItemEvent:
     work_item_id: str; sequence: int; kind: str; occurred_at: str; payload: Mapping[str, Any]
     def __post_init__(self) -> None:
-        _required(self.work_item_id, "work_item_id"); _positive(self.sequence, "sequence"); _required(self.occurred_at, "occurred_at")
+        _required(self.work_item_id, "work_item_id"); _positive(self.sequence, "sequence"); _timestamp(self.occurred_at, "occurred_at")
         if self.kind != "work_item.created" and self.kind not in _RULES: raise ValueError("unsupported Work Item event kind")
         if not isinstance(self.payload, Mapping): raise TypeError("event payload must be a mapping")
         object.__setattr__(self, "payload", _freeze(self.payload))
@@ -335,7 +329,19 @@ class WorkItem:
         return self._append("attempt.failed", payload, fence="attempt")
     def complete(self, summary: str = "completed") -> WorkItemSnapshot: return self._append("work.completed", lambda: self._fence_payload({"summary": summary}), fence="attempt")
     def cancel(self, actor_id: str, reason: str = "operator request") -> WorkItemSnapshot:
-        return self._append("work.canceled", lambda: {"actor_id": actor_id, "reason": reason, "cleanup": self._snapshot.cancellation_policy.cleanup, "child_work_item_ids": list(self._snapshot.child_work_item_ids if self._snapshot.cancellation_policy.propagate_to_children else ())})
+        with self._lock:
+            if self._appending: raise RuntimeError("cannot mutate Work Item while an append is in progress")
+            self._appending = True
+            try:
+                self._refresh(); _reject(self._snapshot.status in TERMINAL_STATUSES, f"cannot cancel terminal Work Item {self._snapshot.status}", RuntimeError)
+                occurred_at = self._clock.now(); child_ids = self._snapshot.child_work_item_ids if self._snapshot.cancellation_policy.propagate_to_children else (); parent_event = WorkItemEvent(self._work_item_id, len(self._events) + 1, "work.canceled", occurred_at, {"actor_id": actor_id, "reason": reason, "cleanup": self._snapshot.cancellation_policy.cleanup, "child_work_item_ids": list(child_ids)}); events, expected, pending, seen = [parent_event], {self._work_item_id: len(self._events)}, list(reversed(child_ids)), {self._work_item_id}
+                while pending:
+                    child_id = pending.pop(); _reject(child_id in seen, "cancellation propagation contains a delegation cycle"); seen.add(child_id); child_events = self._repository.read(child_id); _reject(not child_events, f"delegated child Work Item {child_id} is missing"); child = rebuild_work_item(child_events)
+                    descendants = child.child_work_item_ids if child.cancellation_policy.propagate_to_children else ()
+                    if child.status in TERMINAL_STATUSES: pending.extend(reversed(descendants)); continue
+                    child_event = WorkItemEvent(child_id, len(child_events) + 1, "work.canceled", occurred_at, {"actor_id": actor_id, "reason": reason, "cleanup": child.cancellation_policy.cleanup, "child_work_item_ids": list(descendants)}); rebuild_work_item((*child_events, child_event)); expected[child_id] = len(child_events); events.append(child_event); pending.extend(reversed(descendants))
+                next_snapshot = rebuild_work_item((*self._events, parent_event)); self._repository.append(expected, events); self._events.append(parent_event); self._snapshot = next_snapshot; self._set_fences(next_snapshot); return next_snapshot
+            finally: self._appending = False
     def delegate(self, title: str, *, child_work_item_id: str | None = None, dependency_refs: Iterable[str] = (), retry_policy: RetryPolicy | None = None, resume_policy: ResumePolicy | None = None, cancellation_policy: CancellationPolicy | None = None, budget: Budget | None = None) -> "WorkItem":
         with self._lock:
             if self._appending: raise RuntimeError("cannot mutate Work Item while an append is in progress")
@@ -367,7 +373,7 @@ class WorkItem:
             self._appending = True
             try:
                 occurred_at = self._clock.now()
-                expiry = self._expiry_event(occurred_at) if kind == "attempt.started" or fence == "attempt" else None
+                expiry = self._expiry_event(occurred_at) if fence is not None else None
                 event = expiry or WorkItemEvent(self._work_item_id, len(self._events) + 1, kind, occurred_at, payload())
                 next_snapshot = self._record(event)
                 _reject(expiry is not None, f"cannot apply {kind} after lease expiry", RuntimeError)
