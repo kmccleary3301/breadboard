@@ -42,6 +42,30 @@ async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch
         assert work[-1]["record"]["title"] == title and record.product_session.events[0].payload["task_hash"] == "sha256:" + hashlib.sha256(title.encode()).hexdigest() and record.runner.request.task == "" and record.runner._input_queue.empty()
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.STOPPED and type(record.product_session).restore(record.product_session.events).read_model.status == "canceled"; await _stop(record)
 @pytest.mark.asyncio
+async def test_session_service_authorizes_runner_after_prewarm(monkeypatch, tmp_path) -> None:
+    service, order = SessionService(), []
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: order.append("schedule"))
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: order.append("authorize"))
+    monkeypatch.setattr(
+        service,
+        "_prewarm_request_runtime_sync",
+        lambda _request, _metadata, _config: order.append("prewarm"),
+    )
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events"))
+
+    response = await service.create_session(
+        SessionCreateRequest(
+            config_path=CONFIG,
+            task="Say hi",
+            metadata={"cli_session_kind": "oneshot", "non_interactive_cli_session": True},
+        )
+    )
+
+    assert order == ["schedule", "prewarm", "authorize"]
+    await service.stop_session(response.session_id)
+    await _stop(await service.ensure_session(response.session_id))
+
+@pytest.mark.asyncio
 async def test_effective_lock_is_exact_and_secret_free(monkeypatch, tmp_path) -> None:
     from agentic_coder_prototype.auth.store import DEFAULT_PROVIDER_AUTH_STORE; auth = SimpleNamespace(api_key="forbidden-key", base_url="https://secret.invalid", headers={"X-Secret": "forbidden-header"}); monkeypatch.setattr(DEFAULT_PROVIDER_AUTH_STORE, "get", lambda _: auth); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "records"))
     workspace = str((tmp_path / "workspace").resolve()); service, response, record = await _create(monkeypatch, tmp_path, workspace=workspace, metadata={"model": "test-runtime-model"}, overrides={"provider_auth_runtime.openai.api_key": auth.api_key})

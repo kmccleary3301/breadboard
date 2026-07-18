@@ -179,9 +179,9 @@ class SessionService:
                 runner.schedule_start()
                 self._publish_start_bundle(session_id, staged_record_dir, staging_record_root, runtime_record_dir, staged_event_dir, event_dir, emit_primitives)
                 event_sink.path = event_dir / "session_events.jsonl"; self.registry._records[session_id] = record
-                runner.authorize_start()
             published = True; await self._ensure_dispatcher(record)
             await self._maybe_prewarm_request_runtime(request, metadata, runtime_config)
+            runner.authorize_start()
         except BaseException:
             published = published or ((runtime_record_dir if emit_primitives else event_dir) / _START_COMMITTED).is_file()
             if published and "event_sink" in locals(): event_sink.path = (event_dir if (event_dir / "session_events.jsonl").is_file() else staged_event_dir) / "session_events.jsonl"
