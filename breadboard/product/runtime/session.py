@@ -1,34 +1,22 @@
 """Product-owned, event-sourced Session lifecycle facade."""
 from __future__ import annotations
 import hashlib
-from threading import RLock
-from collections.abc import Callable, Iterable
-from types import MappingProxyType
-from typing import Any
+from threading import RLock; from collections.abc import Callable, Iterable; from types import MappingProxyType; from typing import Any
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from .artifacts import ArtifactRef
-from .events import KernelEvent, SessionView, rebuild
-from .ports import Clock, EventSink, IdSource, NullEventSink, SystemClock, UUIDSource
-_ALLOWED = MappingProxyType({
-    "accept input": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",),
-    "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",),
-    "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",),
-    "fail": ("running", "awaiting_approval", "paused"),
-})
+from .artifacts import ArtifactRef; from .events import KernelEvent, SessionView, rebuild; from .ports import Clock, EventSink, IdSource, NullEventSink, SystemClock, UUIDSource
+_ALLOWED = MappingProxyType({"accept input": ("running",), "request approval": ("running",), "resolve approval": ("awaiting_approval",), "reconfigure": ("running", "awaiting_approval", "paused"), "pause": ("running",), "resume": ("paused",), "cancel": ("running", "awaiting_approval", "paused"), "complete": ("running",), "fail": ("running", "awaiting_approval", "paused")})
 _DECISIONS = frozenset({"allow", "deny", "once", "always", "reject"})
 def _graph_hash(lock: EffectiveHarnessLock) -> str:
     graph_hash = lock.as_dict().get("graph_hash")
     if not isinstance(graph_hash, str) or not graph_hash.startswith("sha256:"): raise ValueError("EffectiveHarnessLock has no canonical graph_hash")
     return graph_hash
-def _hash(value: str) -> str:
-    return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
+def _hash(value: str) -> str: return "sha256:" + hashlib.sha256(value.encode()).hexdigest()
 def _check(condition: bool, error: type[Exception], message: str) -> None:
     if not condition: raise error(message)
 class Session:
     """Single lifecycle owner; conductor/provider/tool details stay behind adapters."""
     def __init__(self, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> None:
-        self._transition_lock = RLock()
-        self._appending = False; self._events = list(events)
+        self._transition_lock = RLock(); self._appending = False; self._events = list(events)
         self._clock = clock if clock is not None else SystemClock(); self._sink = sink if sink is not None else NullEventSink()
         self._view = rebuild(self._events)
     @classmethod
@@ -39,8 +27,7 @@ class Session:
         event = KernelEvent.create(active_session_id, 1, "session.started", active_clock.now(), {"effective_lock_hash": graph_hash, "task_hash": _hash(task)}); active_sink = sink if sink is not None else NullEventSink(); active_sink.append(event)
         return cls((event,), clock=active_clock, sink=active_sink)
     @classmethod
-    def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> "Session":
-        return cls(events, clock=clock, sink=sink)
+    def restore(cls, events: Iterable[KernelEvent], *, clock: Clock | None = None, sink: EventSink | None = None) -> "Session": return cls(events, clock=clock, sink=sink)
     @property
     def events(self) -> tuple[KernelEvent, ...]:
         with self._transition_lock: return tuple(self._events)

@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from breadboard.product.runtime.artifacts import _read_at, _write_at
+from breadboard.product.runtime.artifacts import _close_windows_handle, _read_at, _windows_file_descriptor, _windows_handle, _write_at
 try: import fcntl
 except ImportError:
     fcntl = None  # type: ignore[assignment]
@@ -17,7 +17,8 @@ _RULES_LOCK = threading.RLock()
 @contextmanager
 def _locked_rules(path: Path, descriptor: int | None = None) -> Any:
     if descriptor is None: path.parent.mkdir(parents=True, exist_ok=True)
-    lock_stream = os.fdopen(os.open("permission_rules.json.lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=descriptor), "a+b") if descriptor is not None else path.with_suffix(path.suffix + ".lock").open("a+b")
+    lock_path = path.with_suffix(path.suffix + ".lock")
+    lock_stream = os.fdopen(os.open("permission_rules.json.lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=descriptor), "a+b") if descriptor is not None else os.fdopen(_windows_file_descriptor(lock_path), "a+b") if os.name == "nt" else lock_path.open("a+b")
     with _RULES_LOCK, lock_stream as stream:
         if fcntl is not None: fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
         elif msvcrt is not None:
@@ -28,18 +29,22 @@ def _locked_rules(path: Path, descriptor: int | None = None) -> Any:
         finally:
             if fcntl is not None: fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
             elif msvcrt is not None: stream.seek(0); msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-def _anchored_rule_path(workspace_dir: Path) -> tuple[Path, int | None]:
-    root, metadata = Path(workspace_dir).resolve(), Path(workspace_dir).resolve() / ".breadboard"
+def _anchored_rule_path(workspace_dir: Path) -> tuple[Path, int | None, list[int]]:
+    root = Path(workspace_dir).resolve(); metadata = root / ".breadboard"
     if os.name == "nt":
-        metadata.mkdir(parents=True, exist_ok=True)
-        if metadata.is_symlink() or metadata.resolve().parent != root: raise OSError("unsafe permission rules directory")
-        return metadata / "permission_rules.json", None
+        handles: list[int] = []
+        try:
+            handles.append(_windows_handle(root, directory=True, create=False)); handles.append(_windows_handle(metadata, directory=True))
+            return metadata / "permission_rules.json", None, handles
+        except BaseException:
+            for handle in reversed(handles): _close_windows_handle(handle)
+            raise
     root_fd, metadata_fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)), None
     try:
         try: os.mkdir(".breadboard", dir_fd=root_fd)
         except FileExistsError: pass
         metadata_fd = os.open(".breadboard", os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0), dir_fd=root_fd); os.fsync(root_fd)
-        return metadata / "permission_rules.json", metadata_fd
+        return metadata / "permission_rules.json", metadata_fd, []
     except BaseException:
         if metadata_fd is not None: os.close(metadata_fd)
         raise
@@ -54,7 +59,12 @@ class PermissionRule:
 def _now_ms() -> int:
     return int(time.time() * 1000)
 def _load_raw(path: Path, descriptor: int | None = None) -> Dict[str, Any]:
-    try: data = json.loads((_read_at(descriptor, "permission_rules.json") if descriptor is not None else path.read_bytes()).decode())
+    try:
+        if descriptor is not None: body = _read_at(descriptor, "permission_rules.json")
+        elif os.name == "nt" and path.exists():
+            with os.fdopen(_windows_file_descriptor(path, create=False), "rb") as stream: body = stream.read()
+        else: body = path.read_bytes()
+        data = json.loads(body.decode())
     except Exception: return {}
     return data if isinstance(data, dict) else {}
 def _write_raw(path: Path, payload: Dict[str, Any], descriptor: int | None = None) -> None:
@@ -71,11 +81,12 @@ def _write_raw(path: Path, payload: Dict[str, Any], descriptor: int | None = Non
     finally: temporary.unlink(missing_ok=True)
 def load_permission_rules(workspace_dir: Path) -> List[PermissionRule]:
     """Load persisted permission rules for the workspace (best-effort)."""
-    try: path, descriptor = _anchored_rule_path(workspace_dir)
+    try: path, descriptor, windows_handles = _anchored_rule_path(workspace_dir)
     except OSError: return []
     try: raw = _load_raw(path, descriptor)
     finally:
         if descriptor is not None: os.close(descriptor)
+        for handle in reversed(windows_handles): _close_windows_handle(handle)
     rules_raw = raw.get("rules")
     if not isinstance(rules_raw, list):
         return []
@@ -98,7 +109,7 @@ def upsert_permission_rule(workspace_dir: Path, *, category: str, pattern: str, 
     cat, pat = str(category or "").strip().lower(), str(pattern or "").strip()
     dec, scp = str(decision or "").strip().lower(), str(scope or "project").strip().lower()
     if not cat or not pat or dec not in {"allow", "deny"}: return False
-    path, descriptor = _anchored_rule_path(workspace_dir)
+    path, descriptor, windows_handles = _anchored_rule_path(workspace_dir)
     try:
         with _locked_rules(path, descriptor):
             raw = _load_raw(path, descriptor); rules = raw.get("rules")
@@ -113,6 +124,7 @@ def upsert_permission_rule(workspace_dir: Path, *, category: str, pattern: str, 
             return True
     finally:
         if descriptor is not None: os.close(descriptor)
+        for handle in reversed(windows_handles): _close_windows_handle(handle)
 def build_permission_overrides(config: Dict[str, Any], rules: List[PermissionRule]) -> Dict[str, Any]:
     """Build dotted-key overrides to merge persisted rules into `permissions.*` config."""
     allow_by_cat: Dict[str, List[str]] = {}

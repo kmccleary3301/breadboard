@@ -1,15 +1,8 @@
 """Small host-owned ports used by the product Session kernel."""
 from __future__ import annotations
-import json
-import os
-from datetime import datetime, timezone
-from pathlib import Path
-from threading import RLock
-from typing import Any, Protocol
-from uuid import uuid4
-def _sync(stream: Any) -> None:
-    stream.flush()
-    os.fsync(stream.fileno())
+import json, os
+from datetime import datetime, timezone; from pathlib import Path; from threading import RLock; from typing import Any, Protocol; from uuid import uuid4
+def _sync(stream: Any) -> None: stream.flush(); os.fsync(stream.fileno())
 class Clock(Protocol):
     def now(self) -> str: ...
 class IdSource(Protocol):

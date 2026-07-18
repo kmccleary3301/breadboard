@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.artifacts import ArtifactStore, _descriptor_path, _open_directory, _sync_directory
+from breadboard.product.runtime.artifacts import ArtifactStore, _close_windows_handle, _descriptor_path, _open_directory, _sync_directory, _windows_handle
 from breadboard.product.runtime.ports import JsonlEventSink
 from breadboard.product.runtime.session import Session as ProductSession
 from fastapi import HTTPException, UploadFile, status
@@ -51,18 +51,22 @@ def _sync_tree(root: Path) -> None:
         if path.is_file():
             with path.open("rb") as stream: os.fsync(stream.fileno())
     for path in sorted((root, *(item for item in root.rglob("*") if item.is_dir())), key=lambda item: len(item.parts), reverse=True): _sync_directory(path)
-def _open_workspace_breadboard(workspace_dir: Path) -> tuple[Path, Path, int | None]:
+def _open_workspace_breadboard(workspace_dir: Path) -> tuple[Path, Path, int | None, list[int]]:
     workspace_root = workspace_dir.resolve(); logical = workspace_root / ".breadboard"
     if os.name == "nt":
-        logical.mkdir(parents=True, exist_ok=True)
-        if logical.is_symlink() or logical.resolve().parent != workspace_root: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid workspace metadata path")
-        return logical, workspace_root, None
+        handles: list[int] = []
+        try:
+            handles.append(_windows_handle(workspace_root, directory=True, create=False)); handles.append(_windows_handle(logical, directory=True))
+            return logical, workspace_root, None, handles
+        except OSError as exc:
+            for handle in reversed(handles): _close_windows_handle(handle)
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid workspace metadata path") from exc
     root_fd, metadata_fd = os.open(workspace_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)), None
     try:
         try: os.mkdir(".breadboard", dir_fd=root_fd)
         except FileExistsError: pass
         metadata_fd = os.open(".breadboard", os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0), dir_fd=root_fd); os.fsync(root_fd)
-        return logical, workspace_root, metadata_fd
+        return logical, workspace_root, metadata_fd, []
     except OSError as exc:
         if metadata_fd is not None: os.close(metadata_fd)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid workspace metadata path") from exc
@@ -73,8 +77,18 @@ def _start_active(path: Path) -> bool:
         os.kill(pid, 0); return True
     except PermissionError: return True
     except (OSError, ValueError): return False
+def _create_owned_stage(path: Path) -> None:
+    temporary = path.with_name(f".{path.name}.{os.urandom(16).hex()}.start-owner"); path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        temporary.mkdir(); (temporary / _START_OWNER).write_text(str(os.getpid()), encoding="utf-8"); _sync_tree(temporary)
+        temporary.replace(path); _sync_directory(path.parent)
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
 def _cleanup_incomplete_starts() -> None:
     record_root, event_root = default_runtime_record_root(), _event_root()
+    for root in (record_root, event_root):
+        for staged in root.glob(".*.start-owner") if root.is_dir() else ():
+            if not _start_active(staged): shutil.rmtree(staged, ignore_errors=True)
     for staged in record_root.glob(".*.records.starting") if record_root.is_dir() else ():
         session_id = staged.name[1:-len(".records.starting")]
         if _start_active(staged): continue
@@ -139,7 +153,7 @@ class SessionService:
         active_stages, created_stages = {staged_event_dir, *({staging_record_root} if emit_primitives else set())}, []
         try:
             for path in active_stages:
-                path.mkdir(parents=True, exist_ok=True); created_stages.append(path); (path / _START_OWNER).write_text(str(os.getpid()), encoding="utf-8")
+                _create_owned_stage(path); created_stages.append(path)
         except BaseException:
             for path in created_stages: shutil.rmtree(path, ignore_errors=True); _sync_directory(path.parent) if path.parent.is_dir() else None
             raise
@@ -527,7 +541,7 @@ class SessionService:
             if data: staged_uploads.append((index, upload, data))
         if not staged_uploads: raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="no attachment data found")
         attachment_entries: list[dict[str, Any]] = []; handles: list[AttachmentHandle] = []; created_dirs: list[str] = []
-        anchor, workspace_root, descriptor = _open_workspace_breadboard(workspace_dir); artifact_fd = attachment_fd = None
+        anchor, workspace_root, descriptor, windows_handles = _open_workspace_breadboard(workspace_dir); artifact_fd = attachment_fd = None
         artifact_root, attachment_root = anchor / "artifacts", anchor / "attachments"; artifact_refs = dict(getattr(record, "product_artifacts", {}))
         manifest_path: Path | None = None; manifest_fd = None; manifest_name = None; registered_before = dict(getattr(runner, "_attachment_store", {}))
         try:
@@ -538,6 +552,8 @@ class SessionService:
                 os.fsync(descriptor)
             artifact_store = ArtifactStore(artifact_root, descriptor=artifact_fd)
             if attachment_fd is None: attachment_root.mkdir(parents=True, exist_ok=True)
+            if os.name == "nt":
+                windows_handles.append(_windows_handle(artifact_root, directory=True)); windows_handles.append(_windows_handle(attachment_root, directory=True))
             try:
                 for index, upload, data in staged_uploads:
                     attachment_id = f"att-{uuid.uuid4().hex[:10]}"; filename = self._sanitize_filename(upload.filename or f"attachment-{index}.bin"); created_dirs.append(attachment_id)
@@ -571,16 +587,28 @@ class SessionService:
                     if manifest_fd is not None and manifest_name is not None:
                         try: os.unlink(manifest_name, dir_fd=manifest_fd)
                         except FileNotFoundError: pass
+                        os.fsync(manifest_fd); os.fsync(artifact_fd)
                     os.fsync(attachment_fd)
                 else:
-                    for name in created_dirs: shutil.rmtree(attachment_root / name, ignore_errors=True)
-                    if manifest_path is not None: manifest_path.unlink(missing_ok=True)
+                    for name in created_dirs:
+                        target = attachment_root / name; target_lock = _windows_handle(target, directory=True, create=False) if os.name == "nt" else None
+                        try:
+                            if target_lock is None: shutil.rmtree(target, ignore_errors=True)
+                            else:
+                                for child in target.iterdir(): child.unlink()
+                        finally: _close_windows_handle(target_lock)
+                        if target_lock is not None: target.rmdir()
+                    if manifest_path is not None:
+                        manifest_lock = _windows_handle(manifest_path.parent, directory=True, create=False) if os.name == "nt" else None
+                        try: manifest_path.unlink(missing_ok=True)
+                        finally: _close_windows_handle(manifest_lock)
                     for parent in {attachment_root, manifest_path.parent if manifest_path is not None else artifact_root}: _sync_directory(parent) if parent.is_dir() else None
                 if hasattr(runner, "_attachment_store"): runner._attachment_store = registered_before
                 raise
         finally:
             for open_descriptor in (manifest_fd, artifact_fd, attachment_fd, descriptor):
                 if open_descriptor is not None: os.close(open_descriptor)
+            for handle in reversed(windows_handles): _close_windows_handle(handle)
         record.product_artifacts = artifact_refs; record.metadata["artifact_manifest"], record.metadata["artifact_manifest_ref"] = manifest, manifest_ref.as_dict()
         return AttachmentUploadResponse(attachments=handles)
     @staticmethod

@@ -1,8 +1,6 @@
 from __future__ import annotations
-import json, os, threading, multiprocessing
-from pathlib import Path
-from typing import Any
-import pytest
+import json, os, threading, multiprocessing, pytest
+from pathlib import Path; from typing import Any
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
@@ -56,22 +54,18 @@ def test_facade_transition_table_is_exhaustive(status: str, action: str) -> None
     if expected in {"completed", "failed", "canceled"}: assert view.pending_approval is None
 @pytest.mark.parametrize("status", ["awaiting_approval", "paused"])
 def test_reconfigure_preserves_state_while_replay_updates_hash(status: str) -> None:
-    session = _session(status); before = session.read_model; session.reconfigure(_lock(OTHER_HASH), "")
-    assert (session.read_model.status, session.read_model.pending_approval, session.read_model.task_hash, session.read_model.effective_lock_hash) == (status, before.pending_approval, before.task_hash, OTHER_HASH) and rebuild(session.events) == session.read_model
+    session = _session(status); before = session.read_model; session.reconfigure(_lock(OTHER_HASH), ""); assert (session.read_model.status, session.read_model.pending_approval, session.read_model.task_hash, session.read_model.effective_lock_hash) == (status, before.pending_approval, before.task_hash, OTHER_HASH) and rebuild(session.events) == session.read_model
 @pytest.mark.parametrize("events", [(_event(), _event(3, "input.accepted")), (_event(), _event(2, "input.accepted"), _event(2, "input.accepted")), (_event(), _event(2, "input.accepted", session_id="s-2")), (_event(), _event(2)), (_event(), _event(2, "session.completed"), _event(3, "input.accepted")), (_event(), _event(2, "approval.requested"), _event(3, "approval.resolved", {"request_id": "other", "decision": "allow"}))])
 def test_replay_rejects_noncanonical_streams(events: tuple[KernelEvent, ...]) -> None:
     with pytest.raises(ValueError): rebuild(events)
 class _FalsySink(list[KernelEvent]):
     def __bool__(self) -> bool: return False
-class _FalsyClock:
-    def __bool__(self) -> bool: return False
-    def now(self) -> str: return "2026-07-16T00:00:00Z"
+_FalsyClock = type("_FalsyClock", (), {"__bool__": lambda self: False, "now": lambda self: "2026-07-16T00:00:00Z"})
 class _FalsyIds:
     def __bool__(self) -> bool: return False
     def new_id(self) -> str: return "falsy-id"
 def test_falsy_ports_are_preserved_and_empty_explicit_id_is_rejected() -> None:
-    sink = _FalsySink(); session = Session.start(_lock(), "task", clock=_FalsyClock(), ids=_FalsyIds(), sink=sink); session.input("content")
-    assert [(event.session_id, event.occurred_at) for event in sink] == [("falsy-id", "2026-07-16T00:00:00Z")] * 2
+    sink = _FalsySink(); session = Session.start(_lock(), "task", clock=_FalsyClock(), ids=_FalsyIds(), sink=sink); session.input("content"); assert [(event.session_id, event.occurred_at) for event in sink] == [("falsy-id", "2026-07-16T00:00:00Z")] * 2
     with pytest.raises(ValueError, match="identity fields"): Session.start(_lock(), "task", session_id="")
 def test_failed_session_append_is_unchanged_and_retry_is_exactly_once() -> None:
     sink, attempts = _FalsySink(), []
@@ -79,8 +73,7 @@ def test_failed_session_append_is_unchanged_and_retry_is_exactly_once() -> None:
     sink.append = append  # type: ignore[method-assign]
     session = Session.start(_lock(), "task", clock=_FalsyClock(), sink=sink); before = session.events, session.read_model
     with pytest.raises(OSError, match="append failed"): session.input("content")
-    assert (session.events, session.read_model) == before
-    session.input("content"); assert attempts[-2] == attempts[-1] and list(session.events) == sink and [event.sequence for event in sink] == [1, 2]
+    assert (session.events, session.read_model) == before; session.input("content"); assert attempts[-2] == attempts[-1] and list(session.events) == sink and [event.sequence for event in sink] == [1, 2]
 class _ReentrantSink(_FalsySink):
     def __init__(self) -> None: super().__init__(); self.session: Session | None = None; self.observed: list[tuple[list[int], int]] = []
     def append(self, event: KernelEvent) -> None:
@@ -89,8 +82,7 @@ class _ReentrantSink(_FalsySink):
             with pytest.raises(RuntimeError, match="append is in progress"): self.session.input("nested")
         list.append(self, event)
 def test_reentrant_sink_can_observe_but_cannot_mutate_session() -> None:
-    sink = _ReentrantSink(); session = Session.start(_lock(), "task", sink=sink); sink.session = session; session.input("outer")
-    assert sink.observed == [([1], 1)] and [event.sequence for event in sink] == [1, 2] and rebuild(sink) == rebuild(session.events) == session.read_model
+    sink = _ReentrantSink(); session = Session.start(_lock(), "task", sink=sink); sink.session = session; session.input("outer"); assert sink.observed == [([1], 1)] and [event.sequence for event in sink] == [1, 2] and rebuild(sink) == rebuild(session.events) == session.read_model
 @pytest.mark.parametrize("nested", [lambda session: session.input("nested"), lambda session: session.cancel("nested"), lambda session: session.complete("nested"), lambda session: session.fail("nested", "nested")], ids=["input", "cancel", "complete", "fail"])
 def test_attachment_materialization_can_observe_but_not_mutate(nested: Any) -> None:
     session = Session.start(_lock(), "task"); before = session.events, session.read_model; observed = []
@@ -130,8 +122,7 @@ def test_sink_recovers_process_crash_partial_tail(tmp_path: Path) -> None:
     recovered = JsonlEventSink(path); assert [json.loads(row)["sequence"] for row in path.read_text().splitlines()] == [1]; recovered.append(_event(2, "input.accepted")); assert [json.loads(row)["sequence"] for row in path.read_text().splitlines()] == [1, 2]
 @pytest.mark.parametrize("fault", ["write", "fsync", "close"])
 def test_sink_write_sync_and_close_contract(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fault: str) -> None:
-    path, fired, real_open, real_fsync = tmp_path / "events.jsonl", [False], Path.open, os.fsync
-    monkeypatch.setattr(Path, "open", lambda path, *a, **kw: _FaultyFile(real_open(path, *a, **kw), fault, fired))
+    path, fired, real_open, real_fsync = tmp_path / "events.jsonl", [False], Path.open, os.fsync; monkeypatch.setattr(Path, "open", lambda path, *a, **kw: _FaultyFile(real_open(path, *a, **kw), fault, fired))
     def fsync(fd: int) -> None: (_ for _ in ()).throw(OSError("fsync failed")) if fault == "fsync" and not fired[0] and not fired.__setitem__(0, True) else real_fsync(fd)
     monkeypatch.setattr(PORTS + "fsync", fsync); sink = JsonlEventSink(path)
     if fault == "close": sink.append(_event())
@@ -140,8 +131,7 @@ def test_sink_write_sync_and_close_contract(monkeypatch: pytest.MonkeyPatch, tmp
         sink.append(_event())
     monkeypatch.setattr(Path, "open", real_open); assert [json.loads(row)["sequence"] for row in path.read_text().splitlines()] == [1]
 def test_failed_append_preserves_nonempty_jsonl_prefix_and_retries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    path, fired, real_open = tmp_path / "events.jsonl", [False], Path.open; sink = JsonlEventSink(path); sink.append(_event()); prefix = path.read_bytes()
-    monkeypatch.setattr(Path, "open", lambda path, *a, **kw: _FaultyFile(real_open(path, *a, **kw), "write", fired))
+    path, fired, real_open = tmp_path / "events.jsonl", [False], Path.open; sink = JsonlEventSink(path); sink.append(_event()); prefix = path.read_bytes(); monkeypatch.setattr(Path, "open", lambda path, *a, **kw: _FaultyFile(real_open(path, *a, **kw), "write", fired))
     with pytest.raises(OSError, match="short event sink write"): sink.append(_event(2, "input.accepted"))
     monkeypatch.setattr(Path, "open", real_open); assert path.read_bytes() == prefix; sink.append(_event(2, "input.accepted")); assert [json.loads(row)["sequence"] for row in path.read_text().splitlines()] == [1, 2]
 def test_nested_parent_sync_failure_is_not_acknowledged_and_retries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -149,18 +139,15 @@ def test_nested_parent_sync_failure_is_not_acknowledged_and_retries(monkeypatch:
     def fsync(fd: int) -> None: (_ for _ in ()).throw(OSError("parent fsync failed")) if fd == 999 and not failed[0] and not failed.__setitem__(0, True) else real_fsync(fd) if fd != 999 else None
     monkeypatch.setattr(PORTS + "name", "posix"); monkeypatch.setattr(PORTS + "open", lambda path, flags, *args: opened.append(Path(path)) or (999 if flags == os.O_RDONLY and Path(path) == tmp_path / "nested" else real_open(path, flags, *args))); monkeypatch.setattr(PORTS + "close", lambda _: None); monkeypatch.setattr(PORTS + "fsync", fsync)
     with pytest.raises(OSError, match="parent fsync failed"): JsonlEventSink(path)
-    sink = JsonlEventSink(path); sink.append(_event()); assert tmp_path / "nested" in opened and json.loads(path.read_text())["sequence"] == 1
-    race, entered, release, done, original_sync = tmp_path / "race" / "events.jsonl", threading.Event(), threading.Event(), threading.Event(), JsonlEventSink._sync_parent
+    sink = JsonlEventSink(path); sink.append(_event()); assert tmp_path / "nested" in opened and json.loads(path.read_text())["sequence"] == 1; race, entered, release, done, original_sync = tmp_path / "race" / "events.jsonl", threading.Event(), threading.Event(), threading.Event(), JsonlEventSink._sync_parent
     def gated(self, parent): entered.set(); assert release.wait(1); original_sync(self, parent)  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(JsonlEventSink, "_sync_parent", gated); first = threading.Thread(target=JsonlEventSink, args=(race,)); first.start(); assert entered.wait(1)
-    second = threading.Thread(target=lambda: (JsonlEventSink(race), done.set())); second.start(); assert not done.wait(.05); release.set(); first.join(); second.join(); assert done.is_set()
+    monkeypatch.setattr(JsonlEventSink, "_sync_parent", gated); first = threading.Thread(target=JsonlEventSink, args=(race,)); first.start(); assert entered.wait(1); second = threading.Thread(target=lambda: (JsonlEventSink(race), done.set())); second.start(); assert not done.wait(.05); release.set(); first.join(); second.join(); assert done.is_set()
 def test_sink_poisoned_when_rollback_sync_fails(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(PORTS + "fsync", lambda _: (_ for _ in ()).throw(OSError("fsync failed"))); sink = JsonlEventSink(tmp_path / "events.jsonl")
     with pytest.raises(OSError, match="fsync failed"): sink.append(_event())
     with pytest.raises(RuntimeError, match="poisoned"): sink.append(_event())
 def test_same_path_sink_failure_cannot_rollback_overlapping_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    path, real_open = (tmp_path / "events.jsonl").resolve(), Path.open
-    staging = next(candidate for index in range(4096) if hash(candidate := (tmp_path / f"staging-{index}.jsonl").resolve()) % 256 != hash(path) % 256); relocated = JsonlEventSink(staging); relocated.append(_event()); staging.replace(path); relocated.path = path; entered, competing, succeeded, errors = threading.Event(), threading.Event(), threading.Event(), {}
+    path, real_open = (tmp_path / "events.jsonl").resolve(), Path.open; staging = next(candidate for index in range(4096) if hash(candidate := (tmp_path / f"staging-{index}.jsonl").resolve()) % 256 != hash(path) % 256); relocated = JsonlEventSink(staging); relocated.append(_event()); staging.replace(path); relocated.path = path; entered, competing, succeeded, errors = threading.Event(), threading.Event(), threading.Event(), {}
     class OverlapFile:
         def __init__(self, stream: Any) -> None: self.stream = stream
         def __getattr__(self, name: str) -> Any: return getattr(self.stream, name)
@@ -173,16 +160,14 @@ def test_same_path_sink_failure_cannot_rollback_overlapping_success(monkeypatch:
         try: sink.append(event)
         except BaseException as error: errors[name] = error
         finally: succeeded.set() if name == "success" else None
-    success = threading.Thread(name="success", target=append, args=("success", JsonlEventSink(path), _event(2, "input.accepted"))); success.start(); assert entered.wait(1)
-    fault = threading.Thread(name="fault", target=append, args=("fault", relocated, _event(3, "input.accepted"))); fault.start()
+    success = threading.Thread(name="success", target=append, args=("success", JsonlEventSink(path), _event(2, "input.accepted"))); success.start(); assert entered.wait(1); fault = threading.Thread(name="fault", target=append, args=("fault", relocated, _event(3, "input.accepted"))); fault.start()
     for thread in (success, fault): thread.join(2); assert not thread.is_alive()
     assert "success" not in errors and isinstance(errors.get("fault"), OSError) and [json.loads(row)["sequence"] for row in path.read_text().splitlines()] == [1, 2]
 @pytest.mark.parametrize("values", [("bad", 0, "text/plain"), (HASH + "\n", 0, "text/plain"), (HASH, -1, "text/plain"), (HASH, 1.5, "text/plain"), (HASH, 0, "")])
 def test_invalid_artifact_refs(values: tuple[object, ...]) -> None:
     with pytest.raises(ValueError): ArtifactRef(*values)  # type: ignore[arg-type]
 def test_concurrent_identical_artifact_puts_share_verified_ref_and_clean_temps(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    store, barrier, real_replace, refs, errors = ArtifactStore(tmp_path), threading.Barrier(2), os.replace, [], []
-    monkeypatch.setattr("breadboard.product.runtime.artifacts.os.replace", lambda source, target: (barrier.wait(), real_replace(source, target))[-1])
+    store, barrier, real_replace, refs, errors = ArtifactStore(tmp_path), threading.Barrier(2), os.replace, [], []; monkeypatch.setattr("breadboard.product.runtime.artifacts.os.replace", lambda source, target: (barrier.wait(), real_replace(source, target))[-1])
     def put() -> None:
         try: refs.append(store.put(b"proof"))
         except BaseException as error: errors.append(error)
@@ -198,7 +183,7 @@ def test_artifact_put_sync_fault_is_unacknowledged_and_retry_is_readable(monkeyp
     with pytest.raises(OSError, match="sync failed"): store.put(b"proof")
     files = [path for path in tmp_path.rglob("*") if path.is_file()]; assert [path.read_bytes() for path in files] in ([], [b"proof"]); ref = store.put(b"proof"); assert store.read(ref) == b"proof" and calls[0] >= 6 and not list(tmp_path.rglob("*.tmp"))
 def test_artifact_read_validates_content_and_manifest_parent_is_synced(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    root, synced = tmp_path / "artifacts", []; store = ArtifactStore(root); ref = store.put(b"proof"); monkeypatch.setattr("breadboard.product.runtime.artifacts._sync_directory", lambda path: synced.append(path)); store.materialize(ref, root / "manifests" / "manifest.json"); assert synced == [root / "manifests", root]; next(root.rglob(ref.digest[7:])).write_bytes(b"tampered")
+    workspace, synced = tmp_path / "workspace", []; root = workspace / ".breadboard" / "artifacts"; store = ArtifactStore(root); monkeypatch.setattr("breadboard.product.runtime.artifacts._sync_directory", lambda path: synced.append(path)); ref = store.put(b"proof"); assert synced[-1] == workspace; synced.clear(); store.materialize(ref, root / "manifests" / "manifest.json"); assert synced == [root / "manifests", root]; next(root.rglob(ref.digest[7:])).write_bytes(b"tampered")
     with pytest.raises(RuntimeError, match="verification failed"): store.read(ref)
 @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
 def test_json_artifacts_reject_nonfinite_numbers_before_write(tmp_path: Path, value: float) -> None:
@@ -210,8 +195,7 @@ def test_manifest_rejects_schema_invalid_session_ids(tmp_path: Path, session_id:
     with pytest.raises(ValueError, match="session_id"): ArtifactStore(tmp_path).manifest(session_id, {})  # type: ignore[arg-type]
 @pytest.mark.parametrize("name", [".", "..", "CON", "con.txt", "a:b", "trail.", "trail ", " lead", "a/b", "a\\b", "nul\x00", "café", "summary.json\n", "a" * 256])
 def test_manifest_runtime_and_schema_share_portable_name_policy(tmp_path: Path, name: str) -> None:
-    schema_path = Path(__file__).resolve().parents[3] / "contracts/public/schemas/bb.artifact_manifest.v1.schema.json"; validator = Draft202012Validator(json.loads(schema_path.read_text()))
-    store = ArtifactStore(tmp_path); ref = store.put(b"proof"); valid = store.manifest("s-1", {"summary.json": ref}); validator.validate(valid)
+    schema_path = Path(__file__).resolve().parents[3] / "contracts/public/schemas/bb.artifact_manifest.v1.schema.json"; validator = Draft202012Validator(json.loads(schema_path.read_text())); store = ArtifactStore(tmp_path); ref = store.put(b"proof"); valid = store.manifest("s-1", {"summary.json": ref}); validator.validate(valid)
     for invalid in ({**valid, "manifest_id": valid["manifest_id"] + "\n"}, {**valid, "artifacts": [{**valid["artifacts"][0], "digest": HASH + "\n"}]}): assert list(validator.iter_errors(invalid))
     with pytest.raises(ValueError, match="portable basename"): store.manifest("s-1", {name: ref})
     invalid = json.loads(json.dumps(valid)); invalid["artifacts"][0]["name"] = name; assert list(validator.iter_errors(invalid))

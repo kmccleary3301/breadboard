@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence, List, Tuple
 from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from breadboard.product.runtime.artifacts import ArtifactStore
 from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides
 from agentic_coder_prototype.compilation.effective_operation_policy import policy_pack_for_config_authority
 from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointManager
@@ -1615,15 +1616,16 @@ class SessionRunner:
             info = self._attachment_store.get(key)
             if not info:
                 continue
-            rel_path = info.get("relative_path")
-            abs_path_value = info.get("absolute_path")
-            abs_path = Path(abs_path_value).resolve() if abs_path_value else None
+            rel_path = info.get("relative_path"); artifact_ref = getattr(self.session, "product_artifacts", {}).get(key)
+            abs_path_value = info.get("absolute_path"); abs_path = Path(abs_path_value).resolve() if abs_path_value else None
             if workspace_dir and rel_path:
                 destination = workspace_dir / rel_path
-                if abs_path and abs_path.exists() and not destination.exists():
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(abs_path, destination)
-            helper_lines.append(f"[Attachment {index}: {info.get('filename')} -> {rel_path or 'unknown'}]")
+                if abs_path and abs_path.exists() and not destination.exists(): destination.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(abs_path, destination)
+                if artifact_ref is not None:
+                    trusted = ArtifactStore(workspace_dir / ".breadboard" / "artifacts").read(artifact_ref)
+                    if destination.is_symlink() or not destination.is_file() or destination.read_bytes() != trusted: raise RuntimeError(f"attachment verification failed: {key}")
+            digest = getattr(artifact_ref, "digest", "unverified")
+            helper_lines.append(f"[Attachment {index}: {info.get('filename')} -> {rel_path or 'unknown'} ({digest})]")
         return "\n".join(helper_lines)
 
     def _load_run_summary(self, logging_dir: Optional[str]) -> Optional[Dict[str, Any]]:

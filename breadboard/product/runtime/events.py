@@ -1,21 +1,9 @@
 """Immutable events and the deterministic Session read model."""
 from __future__ import annotations
 import json
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
-from types import MappingProxyType
-from typing import Any
-_EVENT_KINDS = frozenset({
-    "session.started", "input.accepted", "approval.requested", "approval.resolved",
-    "session.reconfigured", "session.paused", "session.resumed",
-    "session.completed", "session.failed", "session.canceled",
-})
-_ALLOWED = MappingProxyType({
-    "input.accepted": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",),
-    "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"),
-    "session.resumed": ("paused",), "session.completed": ("running",),
-    "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused"),
-})
+from collections.abc import Iterable, Mapping; from dataclasses import dataclass; from types import MappingProxyType; from typing import Any
+_EVENT_KINDS = frozenset({"session.started", "input.accepted", "approval.requested", "approval.resolved", "session.reconfigured", "session.paused", "session.resumed", "session.completed", "session.failed", "session.canceled"})
+_ALLOWED = MappingProxyType({"input.accepted": ("running",), "approval.requested": ("running",), "approval.resolved": ("awaiting_approval",), "session.paused": ("running",), "session.reconfigured": ("running", "awaiting_approval", "paused"), "session.resumed": ("paused",), "session.completed": ("running",), "session.failed": ("running", "awaiting_approval", "paused"), "session.canceled": ("running", "awaiting_approval", "paused")})
 _STATUSES, _DECISIONS = frozenset({"running", "awaiting_approval", "paused", "completed", "failed", "canceled"}), frozenset({"allow", "deny", "once", "always", "reject"})
 _TERMINAL = {"session.completed": ("completed", ("summary",)), "session.failed": ("failed", ("error", "detail")), "session.canceled": ("canceled", ("reason",))}
 def _string(value: Any, name: str, populated: bool = True) -> str:
@@ -49,8 +37,7 @@ def _frozen(value: Any) -> Any:
         if any(type(key) is not str for key in value): raise TypeError("mapping keys must be strings")
         return MappingProxyType({key: _frozen(item) for key, item in value.items()})
     if isinstance(value, (list, tuple)): return tuple(_frozen(item) for item in value)
-    json.dumps(value, allow_nan=False)
-    return value
+    json.dumps(value, allow_nan=False); return value
 def _plain(value: Any) -> Any:
     if isinstance(value, Mapping): return {key: _plain(item) for key, item in value.items()}
     if isinstance(value, tuple): return [_plain(item) for item in value]
@@ -64,11 +51,9 @@ class KernelEvent:
         if self.kind not in _EVENT_KINDS: raise ValueError("unsupported session event kind")
         if type(self.sequence) is not int or self.sequence < 1: raise ValueError("session event sequence must be a positive integer")
         if not isinstance(self.payload, Mapping): raise TypeError("session event payload must be a mapping")
-        payload = _frozen(self.payload); _validate_payload(self.kind, payload)
-        object.__setattr__(self, "payload", payload)
+        payload = _frozen(self.payload); _validate_payload(self.kind, payload); object.__setattr__(self, "payload", payload)
     @classmethod
-    def create(cls, session_id: str, sequence: int, kind: str, occurred_at: str, payload: Mapping[str, Any]) -> "KernelEvent":
-        return cls(session_id, sequence, kind, occurred_at, payload)
+    def create(cls, session_id: str, sequence: int, kind: str, occurred_at: str, payload: Mapping[str, Any]) -> "KernelEvent": return cls(session_id, sequence, kind, occurred_at, payload)
     def as_dict(self) -> dict[str, Any]: return {"schema_version": self.schema_version, "session_id": self.session_id, "sequence": self.sequence, "kind": self.kind, "occurred_at": self.occurred_at, "payload": _plain(self.payload)}
 @dataclass(frozen=True, slots=True)
 class SessionView:
@@ -89,8 +74,7 @@ class SessionView:
 def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     rows = tuple(events)
     if not rows or rows[0].kind != "session.started": raise ValueError("event stream must begin with session.started")
-    start, status, pending, outcome = rows[0], "running", None, None
-    lock_hash = start.payload["effective_lock_hash"]
+    start, status, pending, outcome = rows[0], "running", None, None; lock_hash = start.payload["effective_lock_hash"]
     for expected, event in enumerate(rows, 1):
         if event.session_id != start.session_id or event.sequence != expected: raise ValueError("event stream is not contiguous for one session")
         if expected == 1: continue

@@ -1,31 +1,12 @@
 """Content-addressed artifact ownership without machine-path references."""
 from __future__ import annotations
-import hashlib
-import json
-import os
-import tempfile
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
-_RESERVED_NAME_CHARACTERS = frozenset('<>:"/\\|?*')
-_UNSAFE_EDGE_CHARACTERS = frozenset(". ")
-_WINDOWS_DEVICE_BASENAMES = frozenset(
-    {"aux", "clock$", "con", "conin$", "conout$", "nul", "prn", *(f"com{index}" for index in range(1, 10)), *(f"lpt{index}" for index in range(1, 10))}
-)
+import hashlib, json, os, tempfile
+from dataclasses import dataclass; from pathlib import Path; from typing import Any
+_RESERVED_NAME_CHARACTERS, _UNSAFE_EDGE_CHARACTERS = frozenset('<>:"/\\|?*'), frozenset(". ")
+_WINDOWS_DEVICE_BASENAMES = frozenset({"aux", "clock$", "con", "conin$", "conout$", "nul", "prn", *(f"com{index}" for index in range(1, 10)), *(f"lpt{index}" for index in range(1, 10))})
 def _validate_artifact_name(name: object) -> None:
-    if (
-        not isinstance(name, str)
-        or not name
-        or len(name) > 255
-        or name[0] in _UNSAFE_EDGE_CHARACTERS
-        or name[-1] in _UNSAFE_EDGE_CHARACTERS
-        or any(
-            character in _RESERVED_NAME_CHARACTERS or not 32 <= ord(character) <= 126
-            for character in name
-        )
-        or name.partition(".")[0].lower() in _WINDOWS_DEVICE_BASENAMES
-    ):
-        raise ValueError("artifact name must be a portable basename")
+    invalid_edge = not isinstance(name, str) or not name or len(name) > 255 or name[0] in _UNSAFE_EDGE_CHARACTERS or name[-1] in _UNSAFE_EDGE_CHARACTERS
+    if invalid_edge or any(character in _RESERVED_NAME_CHARACTERS or not 32 <= ord(character) <= 126 for character in name) or name.partition(".")[0].lower() in _WINDOWS_DEVICE_BASENAMES: raise ValueError("artifact name must be a portable basename")
 def _hexdigest(value: object, message: str) -> str:
     prefix, separator, digest = value.partition(":") if isinstance(value, str) else ("", "", "")
     if prefix != "sha256" or not separator or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest): raise ValueError(message)
@@ -44,6 +25,24 @@ def _descriptor_path(descriptor: int) -> Path:
     if proc.is_dir(): return proc / str(descriptor)
     import fcntl  # POSIX fallback for Darwin, where /dev/fd exposes only standard descriptors.
     return Path(fcntl.fcntl(descriptor, 50, b"\0" * 1024).split(b"\0", 1)[0].decode())
+def _windows_handle(path: Path, *, directory: bool, create: bool = True) -> int:
+    if os.name != "nt": raise OSError("Windows handle requested on non-Windows host")
+    import ctypes; from ctypes import wintypes
+    expected = os.path.normcase(os.path.abspath(path))
+    if directory and create: path.mkdir(parents=True, exist_ok=True)
+    kernel = ctypes.windll.kernel32; kernel.CreateFileW.argtypes, kernel.CreateFileW.restype = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE], wintypes.HANDLE
+    kernel.GetFileInformationByHandleEx.argtypes, kernel.GetFileInformationByHandleEx.restype = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD], wintypes.BOOL; kernel.GetFinalPathNameByHandleW.argtypes, kernel.GetFinalPathNameByHandleW.restype = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD], wintypes.DWORD; kernel.CloseHandle.argtypes, kernel.CloseHandle.restype = [wintypes.HANDLE], wintypes.BOOL
+    handle = kernel.CreateFileW(str(path), 0 if directory else 0xC0000000, 3, None, 3 if directory or not create else 4, (0x02000000 if directory else 0) | 0x00200000, None)
+    if handle == ctypes.c_void_p(-1).value: raise ctypes.WinError()
+    class Info(ctypes.Structure): _fields_ = [("attributes", ctypes.c_ulong), ("tag", ctypes.c_ulong)]
+    info, resolved = Info(), ctypes.create_unicode_buffer(32768)
+    if not kernel.GetFileInformationByHandleEx(handle, 9, ctypes.byref(info), ctypes.sizeof(info)) or info.attributes & 0x400 or not kernel.GetFinalPathNameByHandleW(handle, resolved, len(resolved), 0) or os.path.normcase(os.path.abspath(resolved.value.removeprefix("\\\\?\\").replace("UNC\\", "\\\\", 1))) != expected:
+        kernel.CloseHandle(handle); raise OSError("unsafe Windows workspace metadata path")
+    return int(handle)
+def _close_windows_handle(handle: int | None) -> None:
+    if handle is not None: import ctypes; ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(handle))
+def _windows_file_descriptor(path: Path, *, create: bool = True) -> int:
+    import msvcrt; return msvcrt.open_osfhandle(_windows_handle(path, directory=False, create=create), os.O_RDWR | os.O_APPEND)
 def _open_directory(parent: int, name: str, *, create: bool = True) -> int:
     if create:
         try: os.mkdir(name, dir_fd=parent)
@@ -80,8 +79,7 @@ class ArtifactStore:
         except BaseException: os.close(sha); raise
     def put(self, content: bytes, *, media_type: str = "application/octet-stream") -> ArtifactRef:
         if not isinstance(content, bytes) or not media_type: raise TypeError("artifact content must be bytes and media_type must be populated")
-        digest = hashlib.sha256(content).hexdigest()
-        ref = ArtifactRef(f"sha256:{digest}", len(content), media_type)
+        digest = hashlib.sha256(content).hexdigest(); ref = ArtifactRef(f"sha256:{digest}", len(content), media_type)
         if self._descriptor is not None:
             sha, prefix = self._digest_directories(digest, create=True)
             try:
@@ -92,26 +90,28 @@ class ArtifactStore:
                 os.fsync(prefix); os.fsync(sha); os.fsync(self._descriptor)
             finally: os.close(prefix); os.close(sha)
             return ref
-        root = self._root; target = root / "sha256" / digest[:2] / digest
-        target.parent.mkdir(parents=True, exist_ok=True); directories = target.parent, target.parent.parent, root, root.parent, root.parent.parent
-        if target.exists():
-            with target.open("rb") as stream:
-                if stream.read() != content: raise RuntimeError("content-address collision")
-                os.fsync(stream.fileno())
-            for directory in directories: _sync_directory(directory)
-            return ref
-        temporary: Path | None = None
+        root = self._root; target = root / "sha256" / digest[:2] / digest; directories = target.parent, target.parent.parent, root, root.parent, root.parent.parent
+        locks: list[int] = []; temporary: Path | None = None
         try:
+            if os.name == "nt":
+                for path in (root, target.parent.parent, target.parent): locks.append(_windows_handle(path, directory=True))
+            else: target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                with (os.fdopen(_windows_file_descriptor(target, create=False), "rb") if os.name == "nt" else target.open("rb")) as stream:
+                    if stream.read() != content: raise RuntimeError("content-address collision")
+                    os.fsync(stream.fileno())
+                for directory in directories: _sync_directory(directory)
+                return ref
             with tempfile.NamedTemporaryFile(dir=target.parent, prefix=f".{digest}.", suffix=".tmp", delete=False) as stream:
                 temporary = Path(stream.name); stream.write(content); stream.flush(); os.fsync(stream.fileno())
             os.replace(temporary, target)
             for directory in directories: _sync_directory(directory)
+            return ref
         finally:
             if temporary is not None: temporary.unlink(missing_ok=True)
-        return ref
+            for handle in reversed(locks): _close_windows_handle(handle)
     def put_json(self, value: Any) -> ArtifactRef:
-        content = (json.dumps(value, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode()
-        return self.put(content, media_type="application/json")
+        return self.put((json.dumps(value, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode(), media_type="application/json")
     def read(self, ref: ArtifactRef) -> bytes:
         digest = _hexdigest(ref.digest, "unsupported artifact digest")
         if self._descriptor is not None:
@@ -119,26 +119,32 @@ class ArtifactStore:
             try: content = _read_at(prefix, digest)
             finally: os.close(prefix); os.close(sha)
         else:
-            content = (self._root / "sha256" / digest[:2] / digest).read_bytes()
+            target, locks = self._root / "sha256" / digest[:2] / digest, []
+            try:
+                if os.name == "nt":
+                    for path in (self._root, target.parent.parent, target.parent): locks.append(_windows_handle(path, directory=True, create=False))
+                with (os.fdopen(_windows_file_descriptor(target, create=False), "rb") if os.name == "nt" else target.open("rb")) as stream: content = stream.read()
+            finally:
+                for handle in reversed(locks): _close_windows_handle(handle)
         if len(content) != ref.size_bytes or hashlib.sha256(content).hexdigest() != digest: raise RuntimeError("artifact verification failed")
         return content
     def materialize(self, ref: ArtifactRef, destination: str | Path) -> Path:
         if self._descriptor is not None: raise RuntimeError("descriptor-backed stores require materialize_at")
-        content, target, temporary = self.read(ref), Path(destination), None
-        target.parent.mkdir(parents=True, exist_ok=True)
+        content, target, temporary, locks = self.read(ref), Path(destination), None, []
         try:
-            with tempfile.NamedTemporaryFile(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp", delete=False) as stream:
-                temporary = Path(stream.name); stream.write(content); stream.flush(); os.fsync(stream.fileno())
+            if os.name == "nt":
+                for path in (target.parent.parent, target.parent): locks.append(_windows_handle(path, directory=True))
+            else: target.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp", delete=False) as stream: temporary = Path(stream.name); stream.write(content); stream.flush(); os.fsync(stream.fileno())
             os.replace(temporary, target); _sync_directory(target.parent); _sync_directory(target.parent.parent)
+            return target
         finally:
             if temporary is not None: temporary.unlink(missing_ok=True)
-        return target
+            for handle in reversed(locks): _close_windows_handle(handle)
     def materialize_at(self, ref: ArtifactRef, directory: int, filename: str) -> None: _write_at(directory, filename, self.read(ref))
     def manifest(self, session_id: str, artifacts: dict[str, ArtifactRef]) -> dict[str, Any]:
         if not isinstance(session_id, str) or not session_id: raise ValueError("manifest session_id must be a nonempty string")
         for name in artifacts: _validate_artifact_name(name)
-        rows = [{"name": name, **ref.as_dict()} for name, ref in sorted(artifacts.items())]
-        body = {"schema_version": "bb.artifact_manifest.v1", "session_id": session_id, "artifacts": rows}
-        canonical = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
-        body["manifest_id"] = "artifact_manifest:" + hashlib.sha256(canonical).hexdigest()
+        rows = [{"name": name, **ref.as_dict()} for name, ref in sorted(artifacts.items())]; body = {"schema_version": "bb.artifact_manifest.v1", "session_id": session_id, "artifacts": rows}
+        canonical = json.dumps(body, sort_keys=True, separators=(",", ":")).encode(); body["manifest_id"] = "artifact_manifest:" + hashlib.sha256(canonical).hexdigest()
         return body
