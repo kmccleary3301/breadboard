@@ -3,10 +3,9 @@ import hashlib, json, os, threading, multiprocessing, pytest
 from pathlib import Path; from typing import Any
 from jsonschema import Draft202012Validator
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
-from breadboard.product.runtime.events import KernelEvent, SessionView, rebuild
+from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
+from breadboard.product.runtime.events import KernelEvent, Session, SessionView, rebuild
 from breadboard.product.runtime.ports import JsonlEventSink
-from breadboard.product.runtime.session import Session
 HASH, OTHER_HASH, PORTS, ARTIFACTS = "sha256:" + "a" * 64, "sha256:" + "b" * 64, "breadboard.product.runtime.ports.os.", "breadboard.product.runtime.artifacts.os."
 def _lock(digest: str = HASH) -> EffectiveHarnessLock: return EffectiveHarnessLock._from_record({"graph_hash": digest})
 _PAYLOADS = {
@@ -156,6 +155,13 @@ def test_same_path_sink_failure_cannot_rollback_overlapping_success(monkeypatch:
 @pytest.mark.parametrize("values", [("bad", 0, "text/plain"), (HASH + "\n", 0, "text/plain"), (HASH, -1, "text/plain"), (HASH, 1.5, "text/plain"), (HASH, 0, "")])
 def test_invalid_artifact_refs(values: tuple[object, ...]) -> None:
     with pytest.raises(ValueError): ArtifactRef(*values)  # type: ignore[arg-type]
+@pytest.mark.parametrize("name", ["..", "../escape", "/tmp/escape", "a/b", "a\\b", "C:escape", "bad\nname"])
+def test_anchored_storage_rejects_path_components(tmp_path: Path, name: str) -> None:
+    pytest.skip("dir_fd operations are POSIX-only") if os.name == "nt" else None; descriptor, store = os.open(tmp_path, os.O_RDONLY), ArtifactStore(tmp_path / "objects"); ref = store.put(b"proof")
+    try:
+        for operation in (lambda: AnchoredStorage.open_directory(descriptor, name, create=False), lambda: AnchoredStorage.read_at(descriptor, name), lambda: AnchoredStorage.write_at(descriptor, name, b"escape"), lambda: store.materialize_at(ref, descriptor, name)):
+            with pytest.raises(ValueError, match="relative path component"): operation()
+    finally: os.close(descriptor)
 def _rollback_artifact(root: str, entered: Any, release: Any) -> None:
     store, created = ArtifactStore(root), set()
     with store.transaction():

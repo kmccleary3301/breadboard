@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from breadboard.product.runtime.artifacts import _close_windows_handle, _read_at, _windows_file_descriptor, _windows_handle, _write_at
+from breadboard.product.runtime import AnchoredStorage
 try: import fcntl
 except ImportError:
     fcntl = None  # type: ignore[assignment]
@@ -18,7 +18,7 @@ _RULES_LOCK = threading.RLock()
 def _locked_rules(path: Path, descriptor: int | None = None) -> Any:
     if descriptor is None: path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = path.with_suffix(path.suffix + ".lock")
-    lock_stream = os.fdopen(os.open("permission_rules.json.lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=descriptor), "a+b") if descriptor is not None else os.fdopen(_windows_file_descriptor(lock_path), "a+b") if os.name == "nt" else lock_path.open("a+b")
+    lock_stream = os.fdopen(os.open("permission_rules.json.lock", os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600, dir_fd=descriptor), "a+b") if descriptor is not None else os.fdopen(AnchoredStorage.windows_file_descriptor(lock_path), "a+b") if os.name == "nt" else lock_path.open("a+b")
     with _RULES_LOCK, lock_stream as stream:
         if fcntl is not None: fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
         elif msvcrt is not None:
@@ -34,10 +34,10 @@ def _anchored_rule_path(workspace_dir: Path) -> tuple[Path, int | None, list[int
     if os.name == "nt":
         handles: list[int] = []
         try:
-            handles.append(_windows_handle(root, directory=True, create=False)); handles.append(_windows_handle(metadata, directory=True))
+            handles.append(AnchoredStorage.windows_handle(root, directory=True, create=False)); handles.append(AnchoredStorage.windows_handle(metadata, directory=True))
             return metadata / "permission_rules.json", None, handles
         except BaseException:
-            for handle in reversed(handles): _close_windows_handle(handle)
+            for handle in reversed(handles): AnchoredStorage.close_windows_handle(handle)
             raise
     root_fd, metadata_fd = os.open(root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)), None
     try:
@@ -60,16 +60,16 @@ def _now_ms() -> int:
     return int(time.time() * 1000)
 def _load_raw(path: Path, descriptor: int | None = None) -> Dict[str, Any]:
     try:
-        if descriptor is not None: body = _read_at(descriptor, "permission_rules.json")
+        if descriptor is not None: body = AnchoredStorage.read_at(descriptor, "permission_rules.json")
         elif os.name == "nt" and path.exists():
-            with os.fdopen(_windows_file_descriptor(path, create=False), "rb") as stream: body = stream.read()
+            with os.fdopen(AnchoredStorage.windows_file_descriptor(path, create=False), "rb") as stream: body = stream.read()
         else: body = path.read_bytes()
         data = json.loads(body.decode())
     except Exception: return {}
     return data if isinstance(data, dict) else {}
 def _write_raw(path: Path, payload: Dict[str, Any], descriptor: int | None = None) -> None:
     content = json.dumps(payload, indent=2, sort_keys=True).encode()
-    if descriptor is not None: _write_at(descriptor, "permission_rules.json", content); return
+    if descriptor is not None: AnchoredStorage.write_at(descriptor, "permission_rules.json", content); return
     path.parent.mkdir(parents=True, exist_ok=True); temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
     try:
         with temporary.open("xb") as stream: stream.write(content); stream.flush(); os.fsync(stream.fileno())
@@ -86,7 +86,7 @@ def load_permission_rules(workspace_dir: Path) -> List[PermissionRule]:
     try: raw = _load_raw(path, descriptor)
     finally:
         if descriptor is not None: os.close(descriptor)
-        for handle in reversed(windows_handles): _close_windows_handle(handle)
+        for handle in reversed(windows_handles): AnchoredStorage.close_windows_handle(handle)
     rules_raw = raw.get("rules")
     if not isinstance(rules_raw, list):
         return []
@@ -124,7 +124,7 @@ def upsert_permission_rule(workspace_dir: Path, *, category: str, pattern: str, 
             return True
     finally:
         if descriptor is not None: os.close(descriptor)
-        for handle in reversed(windows_handles): _close_windows_handle(handle)
+        for handle in reversed(windows_handles): AnchoredStorage.close_windows_handle(handle)
 def build_permission_overrides(config: Dict[str, Any], rules: List[PermissionRule]) -> Dict[str, Any]:
     """Build dotted-key overrides to merge persisted rules into `permissions.*` config."""
     allow_by_cat: Dict[str, List[str]] = {}

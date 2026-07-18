@@ -7,6 +7,9 @@ _WINDOWS_DEVICE_BASENAMES = frozenset({"aux", "clock$", "con", "conin$", "conout
 def _validate_artifact_name(name: object) -> None:
     invalid_edge = not isinstance(name, str) or not name or len(name) > 255 or name[0] in _UNSAFE_EDGE_CHARACTERS or name[-1] in _UNSAFE_EDGE_CHARACTERS
     if invalid_edge or any(character in _RESERVED_NAME_CHARACTERS or not 32 <= ord(character) <= 126 for character in name) or name.partition(".")[0].lower() in _WINDOWS_DEVICE_BASENAMES: raise ValueError("artifact name must be a portable basename")
+def _validate_component(name: object) -> str:
+    if not isinstance(name, str) or not name or len(name) > 255 or name in {".", ".."} or any(character in _RESERVED_NAME_CHARACTERS or ord(character) < 32 or ord(character) == 127 for character in name): raise ValueError("anchored storage name must be one portable relative path component")
+    return name
 def _hexdigest(value: object, message: str) -> str:
     prefix, separator, digest = value.partition(":") if isinstance(value, str) else ("", "", "")
     if prefix != "sha256" or not separator or len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest): raise ValueError(message)
@@ -44,15 +47,16 @@ def _close_windows_handle(handle: int | None) -> None:
 def _windows_file_descriptor(path: Path, *, create: bool = True) -> int:
     import msvcrt; return msvcrt.open_osfhandle(_windows_handle(path, directory=False, create=create), os.O_RDWR | os.O_APPEND)
 def _open_directory(parent: int, name: str, *, create: bool = True) -> int:
+    name = _validate_component(name)
     if create:
         try: os.mkdir(name, dir_fd=parent)
         except FileExistsError: pass
     return os.open(name, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent)
 def _read_at(parent: int, name: str) -> bytes:
-    descriptor = os.open(name, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent)
+    descriptor = os.open(_validate_component(name), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0), dir_fd=parent)
     with os.fdopen(descriptor, "rb") as stream: return stream.read()
 def _write_at(parent: int, name: str, content: bytes) -> None:
-    temporary, descriptor = f".{name}.{os.urandom(8).hex()}.tmp", None
+    name = _validate_component(name); temporary, descriptor = f".{name}.{os.urandom(8).hex()}.tmp", None
     try:
         descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=parent)
         with os.fdopen(descriptor, "wb") as stream: descriptor = None; stream.write(content); stream.flush(); os.fsync(stream.fileno())
@@ -216,3 +220,6 @@ def read_workspace_artifact(workspace: str | Path, ref: ArtifactRef) -> bytes:
         return ArtifactStore(artifacts, descriptor=descriptors[-1]).read(ref)
     finally:
         for descriptor in reversed(descriptors): os.close(descriptor)
+class AnchoredStorage:
+    """Stable platform seam for descriptor/handle-anchored workspace operations."""
+    close_windows_handle = staticmethod(_close_windows_handle); descriptor_path = staticmethod(_descriptor_path); open_directory = staticmethod(_open_directory); read_at = staticmethod(_read_at); sync_directory = staticmethod(_sync_directory); windows_file_descriptor = staticmethod(_windows_file_descriptor); windows_handle = staticmethod(_windows_handle); write_at = staticmethod(_write_at)

@@ -64,11 +64,17 @@ def _canonical_permission_resolution(response: Any, responses: Any, requested_id
     values = [PermissionBroker._coerce_response(_PERMISSION_ALIASES.get(token, token)) for token in tokens]
     if not values: raise ValueError("permission response contains no valid decisions")
     return "reject" if "reject" in values else "always" if all(value == "always" for value in values) else "once"
+def _control_kind(item: Any) -> str: return "stop" if item is None else item.strip().lower() if isinstance(item, str) else str(item.get("kind") or item.get("type") or ("stop" if item.get("stop") else "")).strip().lower() if isinstance(item, dict) else ""
+class _PauseAwareControlQueue:
+    def __init__(self, queue: Any) -> None: self._queue = queue
+    def __getattr__(self, name: str) -> Any: return getattr(self._queue, name)
+    def get_nowait(self) -> Any:
+        item = self._queue.get_nowait()
+        while _control_kind(item) == "pause": item = self._queue.get()
+        return item
 def _canonical_permission_responses(responses: Dict[str, Any]) -> Dict[str, Any]:
     return {key: _canonical_permission_responses(value) if isinstance(value, dict)
             else _canonical_permission_resolution(value, None) for key, value in responses.items()}
-# These runtime event types are treated as kernel-owned event families and are
-# bridged through mostly as-is, subject to payload normalization.
 KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES = {
     "assistant_message",
     "user_message",
@@ -82,8 +88,6 @@ KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES = {
     "ctree_snapshot",
     "task_event",
 }
-# These runtime event types exist primarily for live client streaming and are
-# not yet part of the shared kernel truth surface.
 BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES = {
     "stream.gap",
     "assistant.message.start",
@@ -97,8 +101,6 @@ BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES = {
     "tool.exec.end",
     "assistant_delta",
 }
-# These are host-facing lifecycle/control artifacts emitted by the bridge or
-# session orchestration layer rather than the kernel contract itself.
 BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
     "conversation.compaction.start",
     "conversation.compaction.end",
@@ -218,6 +220,12 @@ class SessionRunner:
         put = (getattr(queue, "put_nowait", None) or getattr(queue, "put", None)) if queue is not None else None
         if not callable(put): return False
         put({"kind": kind}); return True
+    def _install_control_queue(self, queue: Any) -> None:
+        with self._product_session_lock:
+            self._control_queue = queue
+            if queue is None: return
+            if self._stop_event.is_set(): queue.put({"kind": "stop"})
+            elif not self._resume_event.is_set(): queue.put({"kind": "pause"})
     def _request_stop(self, reason: str) -> bool:
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
@@ -337,7 +345,6 @@ class SessionRunner:
                     self._checkpoint_manager = manager
                 prune = True
                 if mode == "conversation":
-                    # Best-effort only for now; code restore is the P0 deterministic requirement.
                     prune = True
                 if mode in {"code", "both"}:
                     manager.restore_checkpoint(checkpoint_id.strip(), prune=prune)
@@ -426,12 +433,13 @@ class SessionRunner:
                 await self.publish_event_async(EventType.SKILLS_CATALOG, catalog_payload)
                 return {"status": "ok", "selection": selection, "catalog": catalog_payload.get("catalog")}
             case "pause":
-                self._resume_event.clear()
-                try: self.transition_product_session("pause", str(payload.get("reason") or "operator request")); self._signal_control("pause")
-                except Exception: self._resume_event.set(); raise
+                with self._product_session_lock:
+                    self._resume_event.clear()
+                    try: self.transition_product_session("pause", str(payload.get("reason") or "operator request")); self._signal_control("pause")
+                    except Exception: self._resume_event.set(); raise
                 return {"status": "ok", "paused": True}
             case "resume":
-                self.transition_product_session("resume"); self._signal_control("resume"); self._resume_event.set()
+                with self._product_session_lock: self.transition_product_session("resume"); pending = self.session.metadata.get("pending_permissions"); head = pending[0] if isinstance(pending, list) and pending and isinstance(pending[0], dict) else None; request = head.get("request") if head and isinstance(head.get("request"), dict) else {}; self._update_pending_permissions("permission_request", request, source=str(head.get("source") or "session"), task_session_id=head.get("task_session_id"), subagent_type=head.get("subagent_type")) if head else None; self._signal_control("resume"); self._resume_event.set()
                 return {"status": "ok", "paused": False}
             case "stop":
                 stopping = self._request_stop("stop command")
@@ -559,7 +567,6 @@ class SessionRunner:
                             response_payload["response"] = resolution
                             response_payload["decision"] = resolution
                         with self._product_session_lock:
-                            self.transition_product_session("resolve_approval", normalized_request_id, resolution)
                             self._update_pending_permissions("permission_response", response_payload, source="session")
                         await self.publish_event_async(EventType.PERMISSION_RESPONSE, response_payload)
                         return {"status": "ok", "request_id": normalized_request_id, "decision": resolution, "delivered": response_payload, "debug": True}
@@ -590,14 +597,9 @@ class SessionRunner:
             case _:
                 raise ValueError(f"Unsupported command: {command}")
     def _load_base_config(self) -> Dict[str, Any]:
-        if isinstance(self._base_config_cache, dict):
-            return dict(self._base_config_cache)
-        try:
-            cfg = load_agent_config(self.request.config_path)
-        except Exception:
-            cfg = {}
-        if not isinstance(cfg, dict):
-            cfg = {}
+        if isinstance(self._base_config_cache, dict): return dict(self._base_config_cache)
+        cfg = load_agent_config(self.request.config_path)
+        if not isinstance(cfg, dict): raise TypeError("agent config loader must return a mapping")
         self._base_config_cache = dict(cfg)
         return dict(self._base_config_cache)
     def prepare_runtime_config(self) -> Dict[str, Any]:
@@ -639,7 +641,7 @@ class SessionRunner:
         self._prepared_runtime_config = apply_dotted_overrides(base_cfg, overrides)
         return dict(self._prepared_runtime_config)
     def current_runtime_config(self) -> Dict[str, Any]:
-        return dict(getattr(self._agent, "config", None) or self.prepare_runtime_config())
+        return dict(config) if isinstance((config := getattr(self._agent, "config", None)), dict) else self.prepare_runtime_config()
     def _resolve_workspace_guess(self, base_cfg: Dict[str, Any]) -> Optional[Path]:
         candidate: Any = self.request.workspace
         if not candidate and isinstance(base_cfg, dict):
@@ -831,7 +833,6 @@ class SessionRunner:
                     self._checkpoint_manager = CheckpointManager(self._workspace_path)
                     self._checkpoint_manager.create_checkpoint("Session start")
             except Exception:
-                # Best-effort: checkpointing should not block starting a session.
                 self._checkpoint_manager = None
             try:
                 catalog_payload = self.get_skill_catalog()
@@ -1234,15 +1235,15 @@ class SessionRunner:
             self._permission_queue = None
         if is_local_agent:
             import queue as pyqueue
-            control_queue = pyqueue.Queue()
+            control_queue = _PauseAwareControlQueue(pyqueue.Queue())
         else:
             try:
                 from ray.util.queue import Queue as RayQueue
             except ImportError:  # pragma: no cover
                 control_queue = None
             else:
-                control_queue = RayQueue()
-        self._control_queue = control_queue
+                control_queue = _PauseAwareControlQueue(RayQueue())
+        self._install_control_queue(control_queue)
         start_time = time.time()
         run_task_started_at = time.monotonic()
         try:
@@ -1288,7 +1289,7 @@ class SessionRunner:
             run_task_completed_at = time.monotonic()
         finally:
             self._permission_queue = None
-            self._control_queue = None
+            self._install_control_queue(None)
             if queue_stop:
                 queue_stop.set()
                 if event_queue is not None:

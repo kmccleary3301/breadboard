@@ -11,9 +11,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
-from breadboard.product.runtime.artifacts import ArtifactStore, _close_windows_handle, _descriptor_path, _open_directory, _sync_directory, _windows_handle
+from breadboard.product.runtime import AnchoredStorage, ArtifactStore, Session as ProductSession
 from breadboard.product.runtime.ports import JsonlEventSink
-from breadboard.product.runtime.session import Session as ProductSession
 from fastapi import HTTPException, UploadFile, status
 from .events import EventType, SessionEvent
 from .models import (
@@ -50,16 +49,16 @@ def _sync_tree(root: Path) -> None:
     for path in (root, *root.rglob("*")):
         if path.is_file():
             with path.open("rb") as stream: os.fsync(stream.fileno())
-    for path in sorted((root, *(item for item in root.rglob("*") if item.is_dir())), key=lambda item: len(item.parts), reverse=True): _sync_directory(path)
+    for path in sorted((root, *(item for item in root.rglob("*") if item.is_dir())), key=lambda item: len(item.parts), reverse=True): AnchoredStorage.sync_directory(path)
 def _open_workspace_breadboard(workspace_dir: Path) -> tuple[Path, Path, int | None, list[int]]:
     workspace_root = workspace_dir.resolve(); logical = workspace_root / ".breadboard"
     if os.name == "nt":
         handles: list[int] = []
         try:
-            handles.append(_windows_handle(workspace_root, directory=True, create=False)); handles.append(_windows_handle(logical, directory=True))
+            handles.append(AnchoredStorage.windows_handle(workspace_root, directory=True, create=False)); handles.append(AnchoredStorage.windows_handle(logical, directory=True))
             return logical, workspace_root, None, handles
         except OSError as exc:
-            for handle in reversed(handles): _close_windows_handle(handle)
+            for handle in reversed(handles): AnchoredStorage.close_windows_handle(handle)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="invalid workspace metadata path") from exc
     root_fd, metadata_fd = os.open(workspace_root, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)), None
     try:
@@ -81,7 +80,7 @@ def _create_owned_stage(path: Path) -> None:
     temporary = path.with_name(f".{path.name}.{os.urandom(16).hex()}.start-owner"); path.parent.mkdir(parents=True, exist_ok=True)
     try:
         temporary.mkdir(); (temporary / _START_OWNER).write_text(str(os.getpid()), encoding="utf-8"); _sync_tree(temporary)
-        temporary.replace(path); _sync_directory(path.parent)
+        temporary.replace(path); AnchoredStorage.sync_directory(path.parent)
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
 def _cleanup_incomplete_starts() -> None:
@@ -104,7 +103,7 @@ def _cleanup_incomplete_starts() -> None:
             for path in staged.iterdir(): (target / path.name).exists() or path.replace(target / path.name)
             (target / _START_OWNER).unlink(missing_ok=True); shutil.rmtree(staged, ignore_errors=True); _sync_tree(target)
         else: shutil.rmtree(staged, ignore_errors=True)
-    for root in (record_root, event_root): _sync_directory(root) if root.is_dir() else None
+    for root in (record_root, event_root): AnchoredStorage.sync_directory(root) if root.is_dir() else None
 class SessionService:
     """Facade that coordinates the registry, runners, and FastAPI endpoints."""
     def __init__(self, registry: SessionRegistry | None = None) -> None:
@@ -137,12 +136,12 @@ class SessionService:
         temporary, marker = bundle / f"{_START_COMMITTED}.tmp", bundle / _START_COMMITTED
         with temporary.open("xb") as stream:
             stream.write((session_id + "\n").encode()); stream.flush(); os.fsync(stream.fileno())
-        os.replace(temporary, marker); _sync_directory(bundle); self._publication_boundary("commit")
-        target = runtime_record_dir if publish_records else event_dir; bundle.replace(target); _sync_directory(target.parent); self._publication_boundary("authority")
+        os.replace(temporary, marker); AnchoredStorage.sync_directory(bundle); self._publication_boundary("commit")
+        target = runtime_record_dir if publish_records else event_dir; bundle.replace(target); AnchoredStorage.sync_directory(target.parent); self._publication_boundary("authority")
         if publish_records: shutil.rmtree(staging_record_root, ignore_errors=True)
-        if publish_records and runtime_record_dir != event_dir: staged_event_dir.replace(event_dir); _sync_directory(event_dir.parent)
+        if publish_records and runtime_record_dir != event_dir: staged_event_dir.replace(event_dir); AnchoredStorage.sync_directory(event_dir.parent)
         for owner in {target / _START_OWNER, event_dir / _START_OWNER}: owner.unlink(missing_ok=True)
-        for root in {target, event_dir}: _sync_directory(root) if root.is_dir() else None
+        for root in {target, event_dir}: AnchoredStorage.sync_directory(root) if root.is_dir() else None
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
         session_id, metadata = str(uuid.uuid4()), dict(request.metadata or {}); metadata.setdefault("config_path", request.config_path)
         if self._bridge_chaos: metadata.setdefault("bridgeChaos", self._bridge_chaos)
@@ -157,7 +156,7 @@ class SessionService:
             for path in active_stages:
                 _create_owned_stage(path); created_stages.append(path)
         except BaseException:
-            for path in created_stages: shutil.rmtree(path, ignore_errors=True); _sync_directory(path.parent) if path.parent.is_dir() else None
+            for path in created_stages: shutil.rmtree(path, ignore_errors=True); AnchoredStorage.sync_directory(path.parent) if path.parent.is_dir() else None
             raise
         if emit_primitives: metadata.setdefault("runtime_record_dir", str(runtime_record_dir))
         record.runner, record.product_artifacts, published = runner, {}, False
@@ -180,6 +179,7 @@ class SessionService:
             await runner.start()
         except BaseException:
             published = published or ((runtime_record_dir if emit_primitives else event_dir) / _START_COMMITTED).is_file()
+            if published and "event_sink" in locals(): event_sink.path = (event_dir if (event_dir / "session_events.jsonl").is_file() else staged_event_dir) / "session_events.jsonl"
             if published: (staged_event_dir / _START_OWNER).unlink(missing_ok=True)
             try: runner.transition_product_session("fail", "session_setup_failed", "session setup failed")
             except Exception: logger.exception("Failed to terminalize session %s after setup failure", session_id)
@@ -191,7 +191,7 @@ class SessionService:
                 self.registry._records.pop(session_id, None)
                 for path in (runtime_record_dir, staging_record_root, event_dir, staged_event_dir): shutil.rmtree(path, ignore_errors=True)
                 for root in (runtime_record_dir.parent, event_dir.parent):
-                    if root.exists(): _sync_directory(root)
+                    if root.exists(): AnchoredStorage.sync_directory(root)
             else: await self.registry.update_status(session_id, SessionStatus.FAILED)
             raise
         logger.info("Session %s created", session_id)
@@ -408,7 +408,6 @@ class SessionService:
     async def get_limits_status(self, session_id: str) -> dict[str, Any] | None:
         from .events import EventType
         record = await self.ensure_session(session_id)
-        # Best-effort: scan the in-memory event log for the most recent limits_update.
         try:
             for event in reversed(list(record.event_log)):
                 event_type = getattr(event, "type", None)
@@ -558,19 +557,19 @@ class SessionService:
         manifest_path: Path | None = None; manifest_fd = None; manifest_name = None; transaction = None; registered_before = dict(getattr(runner, "_attachment_store", {}))
         try:
             if descriptor is not None:
-                artifact_fd = _open_directory(descriptor, "artifacts")
-                try: attachment_fd = _open_directory(descriptor, "attachments")
+                artifact_fd = AnchoredStorage.open_directory(descriptor, "artifacts")
+                try: attachment_fd = AnchoredStorage.open_directory(descriptor, "attachments")
                 except BaseException: os.close(artifact_fd); artifact_fd = None; raise
                 os.fsync(descriptor)
             artifact_store = ArtifactStore(artifact_root, descriptor=artifact_fd)
             candidate_transaction = artifact_store.transaction(); candidate_transaction.__enter__(); transaction = candidate_transaction
             if attachment_fd is None: attachment_root.mkdir(parents=True, exist_ok=True)
             if os.name == "nt":
-                windows_handles.append(_windows_handle(artifact_root, directory=True)); windows_handles.append(_windows_handle(attachment_root, directory=True))
+                windows_handles.append(AnchoredStorage.windows_handle(artifact_root, directory=True)); windows_handles.append(AnchoredStorage.windows_handle(attachment_root, directory=True))
             try:
                 for index, upload, data in staged_uploads:
                     attachment_id = f"att-{uuid.uuid4().hex[:10]}"; filename = self._sanitize_filename(upload.filename or f"attachment-{index}.bin"); created_dirs.append(attachment_id)
-                    if attachment_fd is not None: target_fd = _open_directory(attachment_fd, attachment_id)
+                    if attachment_fd is not None: target_fd = AnchoredStorage.open_directory(attachment_fd, attachment_id)
                     else: target_fd = None; (attachment_root / attachment_id).mkdir(parents=True, exist_ok=True)
                     try:
                         artifact_ref = artifact_store.put(data, media_type=upload.content_type or "application/octet-stream", created=created_refs)
@@ -584,14 +583,14 @@ class SessionService:
                     attachment_entries.append({"id": attachment_id, "filename": filename, "absolute_path": str(logical_target), "relative_path": str(logical_target.relative_to(workspace_root)), "metadata": metadata or {}})
                 manifest = artifact_store.manifest(session_id, artifact_refs); manifest_ref = artifact_store.put_json(manifest, created=created_refs)
                 manifest_name = f"{session_id}.{manifest_ref.digest.removeprefix('sha256:')}.json"
-                if artifact_fd is not None: manifest_fd = _open_directory(artifact_fd, "manifests"); artifact_store.materialize_at(manifest_ref, manifest_fd, manifest_name); os.fsync(artifact_fd)
+                if artifact_fd is not None: manifest_fd = AnchoredStorage.open_directory(artifact_fd, "manifests"); artifact_store.materialize_at(manifest_ref, manifest_fd, manifest_name); os.fsync(artifact_fd)
                 else: manifest_path = artifact_root / "manifests" / manifest_name; artifact_store.materialize(manifest_ref, manifest_path)
-                if descriptor is not None and (workspace_root / ".breadboard").resolve() != _descriptor_path(descriptor).resolve(): raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace metadata path changed")
+                if descriptor is not None and (workspace_root / ".breadboard").resolve() != AnchoredStorage.descriptor_path(descriptor).resolve(): raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="workspace metadata path changed")
                 runner.register_attachments(attachment_entries)
             except BaseException:
                 if attachment_fd is not None:
                     for name in created_dirs:
-                        try: target_fd = _open_directory(attachment_fd, name, create=False)
+                        try: target_fd = AnchoredStorage.open_directory(attachment_fd, name, create=False)
                         except FileNotFoundError: continue
                         try:
                             for child in os.listdir(target_fd): os.unlink(child, dir_fd=target_fd)
@@ -604,18 +603,18 @@ class SessionService:
                     os.fsync(attachment_fd)
                 else:
                     for name in created_dirs:
-                        target = attachment_root / name; target_lock = _windows_handle(target, directory=True, create=False) if os.name == "nt" else None
+                        target = attachment_root / name; target_lock = AnchoredStorage.windows_handle(target, directory=True, create=False) if os.name == "nt" else None
                         try:
                             if target_lock is None: shutil.rmtree(target, ignore_errors=True)
                             else:
                                 for child in target.iterdir(): child.unlink()
-                        finally: _close_windows_handle(target_lock)
+                        finally: AnchoredStorage.close_windows_handle(target_lock)
                         if target_lock is not None: target.rmdir()
                     if manifest_path is not None:
-                        manifest_lock = _windows_handle(manifest_path.parent, directory=True, create=False) if os.name == "nt" else None
+                        manifest_lock = AnchoredStorage.windows_handle(manifest_path.parent, directory=True, create=False) if os.name == "nt" else None
                         try: manifest_path.unlink(missing_ok=True)
-                        finally: _close_windows_handle(manifest_lock)
-                    for parent in {attachment_root, manifest_path.parent if manifest_path is not None else artifact_root}: _sync_directory(parent) if parent.is_dir() else None
+                        finally: AnchoredStorage.close_windows_handle(manifest_lock)
+                    for parent in {attachment_root, manifest_path.parent if manifest_path is not None else artifact_root}: AnchoredStorage.sync_directory(parent) if parent.is_dir() else None
                 for artifact_ref in created_refs: artifact_store.discard(artifact_ref)
                 if hasattr(runner, "_attachment_store"): runner._attachment_store = registered_before
                 raise
@@ -623,7 +622,7 @@ class SessionService:
             if transaction is not None: transaction.__exit__(None, None, None)
             for open_descriptor in (manifest_fd, artifact_fd, attachment_fd, descriptor):
                 if open_descriptor is not None: os.close(open_descriptor)
-            for handle in reversed(windows_handles): _close_windows_handle(handle)
+            for handle in reversed(windows_handles): AnchoredStorage.close_windows_handle(handle)
         record.product_artifacts = artifact_refs; record.metadata["artifact_manifest"], record.metadata["artifact_manifest_ref"] = manifest, manifest_ref.as_dict()
         return AttachmentUploadResponse(attachments=handles)
     @staticmethod

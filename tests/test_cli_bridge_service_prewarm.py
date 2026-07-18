@@ -1,5 +1,5 @@
 from __future__ import annotations
-from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest
+from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest, yaml
 from fastapi import HTTPException
 from breadboard.product.runtime import ports as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
 from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
@@ -24,6 +24,13 @@ async def _create(monkeypatch, tmp_path, *, service=None, task="Say hi", **field
     monkeypatch.setattr(RUNNER, start); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "events"))
     service = service or SessionService(); response = await service.create_session(SessionCreateRequest(config_path=CONFIG, task=task, **fields)); return service, response, await service.ensure_session(response.session_id)
 @pytest.mark.asyncio
+@pytest.mark.parametrize(("content", "error"), [(None, FileNotFoundError), ("[", yaml.YAMLError)])
+async def test_invalid_config_fails_before_session_publication(monkeypatch, tmp_path, content, error) -> None:
+    config, records, events = tmp_path / "invalid.yaml", tmp_path / "records", tmp_path / "events"; config.write_text(content, encoding="utf-8") if content is not None else None
+    monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events)); service = SessionService()
+    with pytest.raises(error): await service.create_session(SessionCreateRequest(config_path=str(config), task="task"))
+    assert service.registry._records == {} and not records.exists() and not events.exists()
+@pytest.mark.asyncio
 @pytest.mark.parametrize(("metadata", "task"), [({"cli_session_kind": "oneshot", "non_interactive_cli_session": True}, "Say hi"), ({"cli_session_kind": "interactive"}, "Say hi"), ({"cli_session_kind": "interactive"}, "")])
 async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch, tmp_path, metadata, task) -> None:
     service, called = SessionService(), []; monkeypatch.setattr(service, "_prewarm_request_runtime_sync", lambda request, values, config: called.append((request.config_path, values["cli_session_kind"], config["providers"]["default_model"])))
@@ -37,7 +44,7 @@ async def test_effective_lock_is_exact_and_secret_free(monkeypatch, tmp_path) ->
     workspace = str((tmp_path / "workspace").resolve()); service, response, record = await _create(monkeypatch, tmp_path, workspace=workspace, metadata={"model": "test-runtime-model"}, overrides={"provider_auth_runtime.openai.api_key": auth.api_key})
     config = record.runner.current_runtime_config(); original_lock = service._runtime_lock(response.session_id, config, CONFIG); graph = json.loads(Path(record.metadata["runtime_records"]["effective_config_graph"]).read_text(encoding="utf-8")); assert graph == original_lock.as_dict() and graph["graph_hash"] == record.product_session.read_model.effective_lock_hash
     config["nested"] = {"provider_auth_runtime": {"token": "nested-secret"}, "provider_auth_runtime.token": "dotted-secret", "safe": True}; lock = service._runtime_lock(response.session_id, config, CONFIG); values = {row["path"]: row["value"] for row in lock["effective_values"]}
-    serialized = lock.canonical_json() + "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "records" / response.session_id).rglob("*") if path.is_file()); assert (values["workspace.root"], values["providers.default_model"]) == (workspace, "test-runtime-model"); assert all(secret not in serialized for secret in ("provider_auth_runtime", auth.api_key, auth.base_url, auth.headers["X-Secret"], "nested-secret", "dotted-secret")); assert _tool_names(load_agent_config(CONFIG)) == ["apply_patch", "shell_command", "update_plan"]
+    serialized = lock.canonical_json() + "".join(path.read_text(encoding="utf-8") for path in (tmp_path / "records" / response.session_id).rglob("*") if path.is_file()); assert (values["workspace.root"], values["providers.default_model"]) == (workspace, "test-runtime-model"); assert all(secret not in serialized for secret in ("provider_auth_runtime", auth.api_key, auth.base_url, auth.headers["X-Secret"], "nested-secret", "dotted-secret")); assert _tool_names(load_agent_config(CONFIG)) == ["apply_patch", "shell_command", "update_plan"]; assert _tool_names({"tools": {"defs_dir": "implementations/tools/defs_oc", "enabled": {"list": True}}}) == ["list"]
     record.runner.transition_product_session("complete"); await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.COMPLETED and type(record.product_session).restore(record.product_session.events).read_model.status == "completed"; await _stop(record)
 @pytest.mark.asyncio
 async def test_input_and_approval_are_durable_before_delivery(monkeypatch, tmp_path) -> None:
@@ -93,15 +100,13 @@ async def test_initial_durable_start_failure_has_no_published_lifecycle(monkeypa
     async def start(runner) -> None: started.append(runner)  # type: ignore[no-untyped-def]
     def emit(*, session_id, request, output_root, **_): path = output_root / session_id / "start.json"; path.parent.mkdir(parents=True); path.write_text("emitted", encoding="utf-8"); entered.set(); assert released.wait(2); return {"start": str(path)}  # type: ignore[no-untyped-def]
     def fail_sync(_stream) -> None: raise failure("initial append failed")  # type: ignore[no-untyped-def]
-    monkeypatch.setattr(RUNNER, start); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setattr(SERVICE + "emit_session_start_records", emit)
-    monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "durable-start-failure"); monkeypatch.setattr(runtime_ports, "_sync", fail_sync); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root)); service = SessionService(); request = SessionCreateRequest(config_path=CONFIG, task="task"); real_write, owners = Path.write_text, [0]
+    monkeypatch.setattr(RUNNER, start); monkeypatch.setattr(SERVICE + "primitive_emission_enabled", lambda: True); monkeypatch.setattr(SERVICE + "emit_session_start_records", emit); monkeypatch.setattr(SERVICE + "uuid.uuid4", lambda: "durable-start-failure"); monkeypatch.setattr(runtime_ports, "_sync", fail_sync); monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(records_root)); monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(events_root)); service = SessionService(); request = SessionCreateRequest(config_path=CONFIG, task="task"); real_write, owners = Path.write_text, [0]
     def owner_write(path, *args, **kwargs): return (_ for _ in ()).throw(OSError("owner write failed")) if path.name == ".start.owner" and (owners.__setitem__(0, owners[0] + 1) or owners[0] == 2) else real_write(path, *args, **kwargs)  # type: ignore[no-untyped-def]
     monkeypatch.setattr(Path, "write_text", owner_write)
     with pytest.raises(OSError, match="owner write failed"): await service.create_session(request)
     assert all(not root.exists() or not any(root.iterdir()) for root in (records_root, events_root)); monkeypatch.setattr(Path, "write_text", real_write)
     pending = asyncio.create_task(asyncio.to_thread(lambda: asyncio.run(service.create_session(request))))
-    assert await asyncio.to_thread(entered.wait, 2); assert await service.registry.get("durable-start-failure") is None
-    assert not (records_root / "durable-start-failure").exists() and not (events_root / "durable-start-failure").exists(); released.set()
+    assert await asyncio.to_thread(entered.wait, 2); assert await service.registry.get("durable-start-failure") is None; assert not (records_root / "durable-start-failure").exists() and not (events_root / "durable-start-failure").exists(); released.set()
     with pytest.raises(failure, match="initial append failed"): await pending
     assert await service.registry.get("durable-start-failure") is None and started == []; assert not any(records_root.iterdir()) and not any(events_root.iterdir())
 @pytest.mark.asyncio
@@ -125,7 +130,7 @@ async def test_start_publication_boundaries_are_invisible_and_retryable(monkeypa
     released.set()
     with pytest.raises(OSError, match=f"{boundary} publication failed"): await pending
     if boundary == "authority":
-        SessionService(); assert (authority / ".start.committed").is_file() and (events_root / session_id / "session_events.jsonl").is_file(); return
+        SessionService(); event_log = (events_root / session_id / "session_events.jsonl"); assert (authority / ".start.committed").is_file() and event_log.is_file() and "session.failed" in event_log.read_text(); return
     assert all(not root.exists() or not any(root.iterdir()) for root in {records_root, events_root}); response = await service.create_session(request); record = await service.ensure_session(response.session_id); authority = (records_root if primitives else events_root) / response.session_id; assert (authority / ".start.committed").is_file() and (events_root / response.session_id / "session_events.jsonl").is_file() and (primitives or shared_root or not records_root.exists()); await _stop(record)
 @pytest.mark.parametrize("shared_root", [False, True])
 def test_startup_removes_incomplete_and_recovers_committed_projection(monkeypatch, tmp_path, shared_root) -> None:

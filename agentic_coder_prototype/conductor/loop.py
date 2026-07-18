@@ -196,11 +196,16 @@ def run_main_loop(
                 item = getter(timeout=0)
             except Exception:
                 return False
-        kind = "stop" if item is None else item.strip().lower() if isinstance(item, str) else str(item.get("kind") or item.get("type") or ("stop" if item.get("stop") else "")).strip().lower() if isinstance(item, dict) else ""
-        while kind == "pause":
-            item = queue.get()
-            kind = "stop" if item is None else item.strip().lower() if isinstance(item, str) else str(item.get("kind") or item.get("type") or ("stop" if item.get("stop") else "")).strip().lower() if isinstance(item, dict) else ""
-        return kind in {"stop", "cancel", "interrupt"}
+        if item is None:
+            return True
+        if isinstance(item, str):
+            return item.strip().lower() in {"stop", "cancel", "interrupt"}
+        if isinstance(item, dict):
+            if bool(item.get("stop")):
+                return True
+            kind = str(item.get("kind") or item.get("type") or "").strip().lower()
+            return kind in {"stop", "cancel", "interrupt"}
+        return False
 
     def finalize_run(
         exit_kind_value: str,
