@@ -31,7 +31,7 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
         text=True,
     )
     venv_python = venv / "bin" / "python"
-    bbh = venv / "bin" / "bbh"
+    breadboard = venv / "bin" / "breadboard"
     environment = _clean_environment()
     subprocess.run(
         [
@@ -52,7 +52,7 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
     )
 
     help_result = subprocess.run(
-        [str(bbh), "--help"],
+        [str(breadboard), "--help"],
         cwd=outside_repo,
         env=environment,
         check=False,
@@ -61,8 +61,23 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
     )
 
     assert help_result.returncode == 0, help_result.stderr
+    assert help_result.stdout.startswith("usage: breadboard")
     assert "harness" in help_result.stdout
     assert "lane" in help_result.stdout
+
+    describe_result = subprocess.run(
+        [str(breadboard), "--json", "system", "describe"],
+        cwd=outside_repo,
+        env=environment,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert describe_result.returncode == 0, describe_result.stderr
+    describe = json.loads(describe_result.stdout)
+    assert describe["schema_version"] == "bb.cli.result.v1"
+    assert describe["command"] == ["system", "describe"]
+    assert describe["data"]["system"] == "breadboard"
 
     import_result = subprocess.run(
         [
@@ -71,7 +86,7 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
             "-c",
             (
                 "import adaptive_iter, json, agentic_coder_prototype, breadboard, "
-                "breadboard_sdk, conformance; "
+                "breadboard_sdk, conformance, scripts.authoring, scripts.e4_parity; "
                 "print(json.dumps([adaptive_iter.__file__, "
                 "agentic_coder_prototype.__file__, breadboard.__file__, "
                 "breadboard_sdk.__file__, conformance.__file__]))"
