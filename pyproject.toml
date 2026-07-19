@@ -10,14 +10,16 @@ requires-python = ">=3.10"
 dependencies = ["jsonschema>=4.18", "PyYAML>=6.0"]
 
 [project.scripts]
+breadboard = "breadboard.product.cli:main"
 bbh = "scripts.breadboard_cli:main"
 
 [tool.setuptools]
-packages = ["scripts", "agentic_coder_prototype", "agentic_coder_prototype.compilation", "agentic_coder_prototype.logging", "agentic_coder_prototype.provider", "breadboard_sdk", "breadboard", "breadboard.product", "breadboard.product.harness", "breadboard.product.harness.modules", "breadboard.product.runtime", "breadboard.product.coordination", "breadboard.product.integrations", "conformance"]
+packages = ["scripts", "agentic_coder_prototype", "agentic_coder_prototype.compilation", "agentic_coder_prototype.logging", "agentic_coder_prototype.provider", "breadboard_sdk", "breadboard", "breadboard.product", "breadboard.product.cli", "breadboard.product.harness", "breadboard.product.harness.modules", "breadboard.product.runtime", "breadboard.product.coordination", "breadboard.product.integrations", "conformance"]
 py-modules = ["adaptive_iter"]
 
 [tool.setuptools.data-files]
-"agent_configs/templates" = ["agent_configs/templates/minimal_harness.v3.yaml"]
-"agent_configs/templates/" = ["agent_configs/templates/representative_harness.v1.yaml"]
+"agent_configs/templates" = ["agent_configs/templates/minimal_harness.v2.yaml", "agent_configs/templates/minimal_harness.v3.yaml"]
+"agent_configs/templates/" = ["agent_configs/templates/representative_harness.v1.yaml", "agent_configs/templates/prompts/minimal_system.md"]
 "contracts/kernel/schemas" = ["contracts/kernel/schemas/*.schema.json"]
-"contracts/public/schemas" = ["contracts/public/schemas/bb.harness_definition.v1.schema.json", "contracts/public/schemas/bb.session.v1.schema.json", "contracts/public/schemas/bb.artifact_manifest.v1.schema.json", "contracts/public/schemas/bb.integration_descriptor.v1.schema.json", "contracts/public/schemas/bb.capability_probe_report.v1.schema.json"]
+"contracts/public" = ["contracts/public/operations.v1.json"]
+"contracts/public/schemas" = ["contracts/public/schemas/*.schema.json"]
