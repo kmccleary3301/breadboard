@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any, Dict, Iterable, List
 
 from .interfaces import Extension, ExtensionManifest
 
+
+class ExtensionError(ValueError):
+    """Raised when an extension does not implement the trusted extension port."""
+
+
+_EXT_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 
 def _is_enabled(manifest: ExtensionManifest, config: Dict[str, Any]) -> bool:
     ext_cfg = (config.get("extensions") or {}) if isinstance(config, dict) else {}
@@ -25,10 +32,17 @@ class ExtensionRegistry:
     _extensions: Dict[str, Extension] = field(default_factory=dict)
 
     def register(self, extension: Extension) -> None:
-        ext_id = extension.manifest.ext_id
+        manifest = getattr(extension, "manifest", None)
+        providers = getattr(extension, "providers", None)
+        if not isinstance(manifest, ExtensionManifest) or not _EXT_ID.fullmatch(manifest.ext_id):
+            raise ExtensionError("extension manifest is unknown or malformed")
+        if not callable(providers):
+            raise ExtensionError("extension does not expose providers()")
+        ext_id = manifest.ext_id
         if ext_id in self._extensions:
             raise ValueError(f"Extension '{ext_id}' already registered")
         self._extensions[ext_id] = extension
+        return None
 
     def list_all(self) -> List[Extension]:
         return list(self._extensions.values())

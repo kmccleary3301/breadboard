@@ -8,10 +8,11 @@ from .interfaces import (
     SandboxProvider,
     ToolProvider,
 )
-from .registry import ExtensionRegistry
+from .registry import ExtensionError, ExtensionRegistry
 
 __all__ = [
     "ExtensionContext",
+    "ExtensionError",
     "ExtensionManifest",
     "EndpointProvider",
     "HookProvider",
