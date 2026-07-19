@@ -1,0 +1,22 @@
+version: 2
+profile:
+  name: generated-unclassified-agent
+workspace:
+  root: workspace
+providers:
+  default_model: test-model
+  models:
+    - id: test-model
+      adapter: openai
+      params:
+        temperature: 0.25
+prompts:
+  injection:
+    system_order: []
+    per_turn_order: []
+modes:
+  - id: build
+    prompt: ''
+loop:
+  sequence: [build]
+surprise_runtime_authority: true

@@ -1,0 +1,15 @@
+id: demo.plugin
+version: '1.0'
+name: Demo plugin
+description: Explicit plugin
+permissions: {workspace_read: true}
+runtime:
+  kind: mcp
+  server_id: demo-server
+  operator_binding_id: binding:mcp-demo
+  requested_tool_ids: [plugin_search]
+  requested_route_handle_ids: [route:mcp-demo]
+skills:
+  - id: demo-skill
+    kind: prompt
+    members: [{source: skills/demo.txt}]

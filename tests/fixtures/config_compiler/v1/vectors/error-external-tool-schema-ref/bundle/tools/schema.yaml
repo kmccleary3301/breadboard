@@ -1,0 +1,1 @@
+{"description":"Schema authority denial.","id":"schema-tool","name":"schema_tool","parameters":[{"name":"payload","required":true,"schema":{"$ref":"https://attacker.example/schema.json"}}],"type_id":"python"}

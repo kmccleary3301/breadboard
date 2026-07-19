@@ -1,0 +1,17 @@
+model: test-model
+workspace:
+  root: workspace
+providers:
+  models:
+    - id: test-model
+      adapter: openai
+      params: {temperature: 0.25}
+prompts:
+  injection:
+    system_order: []
+    per_turn_order: []
+modes:
+  - id: build
+    prompt: Different behavior
+loop:
+  sequence: [build]

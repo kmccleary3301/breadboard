@@ -1,0 +1,1 @@
+{"code":"TOOL_INVALID","details":{"reason":"unsupported_schema_reference"},"instance_path":"/parameters/0/schema/allOf/0/$dynamicRef","logical_path":"tools/dynamic.yaml","outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"reference_resolution","vector_id":"error-dynamic-tool-schema-ref"}

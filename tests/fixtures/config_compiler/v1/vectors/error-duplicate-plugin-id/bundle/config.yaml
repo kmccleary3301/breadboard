@@ -1,0 +1,25 @@
+version: 2
+profile:
+  name: generated-unclassified-agent
+workspace:
+  root: workspace
+providers:
+  default_model: test-model
+  models:
+    - id: test-model
+      adapter: openai
+      params:
+        temperature: 0.25
+prompts:
+  injection:
+    system_order: []
+    per_turn_order: []
+plugins:
+  enabled: true
+  manifest_refs: [{source: plugins/a.json}, {source: plugins/b.json}]
+  trust_requests: {same.plugin: trusted}
+modes:
+  - id: build
+    prompt: ''
+loop:
+  sequence: [build]

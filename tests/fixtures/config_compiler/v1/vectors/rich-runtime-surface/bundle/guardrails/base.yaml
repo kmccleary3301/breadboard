@@ -1,0 +1,9 @@
+schema_version: 1
+description: Base guardrails
+guards:
+  - id: no-secrets
+    type: regex
+    enabled: true
+    templates:
+      violation: {source: templates/guardrail.txt}
+    parameters: {pattern: secret}

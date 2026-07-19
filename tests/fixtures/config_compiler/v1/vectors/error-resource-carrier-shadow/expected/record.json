@@ -1,0 +1,1 @@
+{"code":"SCHEMA_UNKNOWN_FIELD","details":{},"instance_path":"/runtime/sandbox/resource_request/surprise","logical_path":null,"outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"schema","vector_id":"error-resource-carrier-shadow"}

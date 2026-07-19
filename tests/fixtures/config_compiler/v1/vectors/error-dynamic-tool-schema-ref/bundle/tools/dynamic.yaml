@@ -1,0 +1,1 @@
+{"description":"Dynamic schema authority denial.","id":"dynamic-schema-tool","name":"dynamic_schema_tool","parameters":[{"name":"payload","required":true,"schema":{"allOf":[{"$dynamicRef":"https://attacker.example/schema"}]}}],"type_id":"python"}

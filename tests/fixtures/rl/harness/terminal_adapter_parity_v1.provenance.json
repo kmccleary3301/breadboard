@@ -1,0 +1,53 @@
+{
+  "schema_version": "bb.rl.terminal-adapter-parity-provenance.v1",
+  "reference_repository": ".",
+  "reference_revision": "550a387706d4ca4bc49760070f55a58100af168e",
+  "capture_method": {
+    "method_id": "git-object-frozen-legacy-characterization-v1",
+    "tool": "git show <revision>:<path>",
+    "derivation": "The executable provenance gate binds the revision to breadboard.rl.phase5.bootstrap.BREADBOARD_BASELINE, hashes the exact bytes returned for every source, verifies every named symbol in each source AST, and checks independently literal request, turn, event, action, response, and termination records. Missing baseline objects fail the gate."
+  },
+  "sources": [
+    {
+      "path": "breadboard/rl/harness/service.py",
+      "sha256": "fdbe9d00a1617734e1276bb4636a4cfe016278d7b757d18feaf6f16a98585ea8",
+      "symbols": [
+        "BreadBoardEpisodeService._run_loop",
+        "BreadBoardEpisodeService._execute_action",
+        "_required_text",
+        "_json_observation"
+      ]
+    },
+    {
+      "path": "breadboard/rl/harness/profiles.py",
+      "sha256": "1d302760d78faec686cb547394c031a362b12b28a9875241bf6c0ddf0b0b7ac3",
+      "symbols": [
+        "_TERMINAL_TOOLS",
+        "HarnessProfile.tool_definitions"
+      ]
+    },
+    {
+      "path": "tests/rl/harness/test_service.py",
+      "sha256": "0ea07cdec5f6d4c54e1037e36609bc2a48198405ff8478bb2cfd2380ef5572b6",
+      "symbols": [
+        "test_episode_loop_replaces_wrapper_tools_returns_observations_carriers_reward_and_artifacts",
+        "test_malformed_and_unsupported_tool_calls_are_policy_observations_not_episode_failures",
+        "test_max_turns_stops_repeated_tool_use_at_the_profile_boundary",
+        "test_cancellation_closes_the_workspace_prevents_verification_and_is_idempotent"
+      ]
+    }
+  ],
+  "fixture": {
+    "path": "tests/fixtures/rl/harness/terminal_adapter_parity_v1.json",
+    "sha256": "f55f214cde5a25f5a2cc7399a5c86d73d9116edbe4e1a08cf333fb807babbfdb",
+    "characterization_id": "terminal-adapter-multiturn-submit-v1",
+    "expected_records": [
+      "policy_requests",
+      "workspace_actions",
+      "final_response",
+      "turns",
+      "events",
+      "termination"
+    ]
+  }
+}

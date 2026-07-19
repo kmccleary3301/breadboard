@@ -1,0 +1,1 @@
+{"code":"REFERENCE_UNDECLARED","details":{},"instance_path":null,"logical_path":"config.yaml","outcome":"error","raw_reference":"prompts/missing.txt","reference_kind":"mode_prompt","related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"dependency_resolution","vector_id":"error-missing-prompt-edge"}

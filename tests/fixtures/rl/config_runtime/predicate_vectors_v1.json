@@ -1,0 +1,2314 @@
+{
+  "canonical_order_vectors": [
+    {
+      "canonical_hex": "7b226368696c6472656e223a5b7b226669656c64223a22706f6c6963795f736c6f745f636f756e74222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a317d2c7b226669656c64223a22746f6f6c5f63616c6c696e67222c226b696e64223a22706f6c6963795f626f6f6c5f6571222c2276616c7565223a747275657d2c7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a22676f6c64227d5d2c226b696e64223a22616c6c227d",
+      "case_id": "all_children_commutative",
+      "digest": "sha256:ef938867e968274ec255ac22a738085e48ee8ecf909aa4fcb3613b628e5de359",
+      "expected_canonical": {
+        "children": [
+          {
+            "field": "policy_slot_count",
+            "kind": "policy_int_gte",
+            "value": 1
+          },
+          {
+            "field": "tool_calling",
+            "kind": "policy_bool_eq",
+            "value": true
+          },
+          {
+            "key": "tier",
+            "kind": "task_label_eq",
+            "value": "gold"
+          }
+        ],
+        "kind": "all"
+      },
+      "left": {
+        "children": [
+          {
+            "field": "tool_calling",
+            "kind": "policy_bool_eq",
+            "value": true
+          },
+          {
+            "key": "tier",
+            "kind": "task_label_eq",
+            "value": "gold"
+          },
+          {
+            "field": "policy_slot_count",
+            "kind": "policy_int_gte",
+            "value": 1
+          }
+        ],
+        "kind": "all"
+      },
+      "right": {
+        "children": [
+          {
+            "field": "policy_slot_count",
+            "kind": "policy_int_gte",
+            "value": 1
+          },
+          {
+            "key": "tier",
+            "kind": "task_label_eq",
+            "value": "gold"
+          },
+          {
+            "field": "tool_calling",
+            "kind": "policy_bool_eq",
+            "value": true
+          }
+        ],
+        "kind": "all"
+      },
+      "scope": "children"
+    },
+    {
+      "canonical_hex": "5b7b226669656c64223a22706f6c6963795f736c6f745f636f756e74222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a317d2c7b226669656c64223a22746f6f6c5f63616c6c696e67222c226b696e64223a22706f6c6963795f626f6f6c5f6571222c2276616c7565223a747275657d2c7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a22676f6c64227d5d",
+      "case_id": "top_level_predicates_commutative",
+      "digest": "sha256:789c1930303309ab436af73ee547b20d9e5fa2a25620bc39c0c5dc07c3ac547e",
+      "expected_canonical": [
+        {
+          "field": "policy_slot_count",
+          "kind": "policy_int_gte",
+          "value": 1
+        },
+        {
+          "field": "tool_calling",
+          "kind": "policy_bool_eq",
+          "value": true
+        },
+        {
+          "key": "tier",
+          "kind": "task_label_eq",
+          "value": "gold"
+        }
+      ],
+      "left": [
+        {
+          "key": "tier",
+          "kind": "task_label_eq",
+          "value": "gold"
+        },
+        {
+          "field": "tool_calling",
+          "kind": "policy_bool_eq",
+          "value": true
+        },
+        {
+          "field": "policy_slot_count",
+          "kind": "policy_int_gte",
+          "value": 1
+        }
+      ],
+      "right": [
+        {
+          "field": "policy_slot_count",
+          "kind": "policy_int_gte",
+          "value": 1
+        },
+        {
+          "key": "tier",
+          "kind": "task_label_eq",
+          "value": "gold"
+        },
+        {
+          "field": "tool_calling",
+          "kind": "policy_bool_eq",
+          "value": true
+        }
+      ],
+      "scope": "top_level"
+    }
+  ],
+  "facts": {
+    "policy": {
+      "cancellation": true,
+      "max_context_tokens": 32768,
+      "max_output_tokens": 4096,
+      "modalities": [
+        "text",
+        "vision"
+      ],
+      "parallel_tool_calls": false,
+      "policy_slot_count": 2,
+      "request_features": [
+        "json_mode",
+        "seed"
+      ],
+      "routing_metadata": true,
+      "token_ids": true,
+      "token_logprobs": false,
+      "tool_calling": true
+    },
+    "task": {
+      "artifacts": [
+        {
+          "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "media_type": "application/json",
+          "role": "dataset",
+          "size_bytes": 100
+        },
+        {
+          "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "media_type": "text/csv",
+          "role": "dataset",
+          "size_bytes": 200
+        },
+        {
+          "digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "media_type": "text/plain",
+          "role": "prompt",
+          "size_bytes": 50
+        }
+      ],
+      "labels": {
+        "region": "us-east",
+        "tier": "gold"
+      },
+      "parameters_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "task_type": "training"
+    }
+  },
+  "invalid_vectors": [
+    {
+      "case_id": "unknown_kind",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "kind": "regex",
+          "pattern": ".*"
+        }
+      ]
+    },
+    {
+      "case_id": "all_empty",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "children": [],
+          "kind": "all"
+        }
+      ]
+    },
+    {
+      "case_id": "any_empty",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "children": [],
+          "kind": "any"
+        }
+      ]
+    },
+    {
+      "case_id": "depth_9",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "children": [
+                            {
+                              "children": [
+                                {
+                                  "children": [
+                                    {
+                                      "children": [
+                                        {
+                                          "key": "tier",
+                                          "kind": "task_label_eq",
+                                          "value": "gold"
+                                        }
+                                      ],
+                                      "kind": "all"
+                                    }
+                                  ],
+                                  "kind": "all"
+                                }
+                              ],
+                              "kind": "all"
+                            }
+                          ],
+                          "kind": "all"
+                        }
+                      ],
+                      "kind": "all"
+                    }
+                  ],
+                  "kind": "all"
+                }
+              ],
+              "kind": "all"
+            }
+          ],
+          "kind": "all"
+        }
+      ]
+    },
+    {
+      "case_id": "nodes_65",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "children": [
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            }
+          ],
+          "kind": "all"
+        }
+      ]
+    },
+    {
+      "case_id": "label_eq_nonstring",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "key": "tier",
+          "kind": "task_label_eq",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "case_id": "label_in_empty",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "key": "tier",
+          "kind": "task_label_in",
+          "values": []
+        }
+      ]
+    },
+    {
+      "case_id": "label_in_unsorted",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "key": "tier",
+          "kind": "task_label_in",
+          "values": [
+            "silver",
+            "gold"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "label_in_duplicate",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "key": "tier",
+          "kind": "task_label_in",
+          "values": [
+            "gold",
+            "gold"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "label_in_nonstring",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "key": "tier",
+          "kind": "task_label_in",
+          "values": [
+            "gold",
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "artifact_min_bool",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "kind": "artifact_role_present",
+          "max_count": null,
+          "media_types": [],
+          "min_count": true,
+          "role": "dataset"
+        }
+      ]
+    },
+    {
+      "case_id": "artifact_min_negative",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "kind": "artifact_role_present",
+          "max_count": null,
+          "media_types": [],
+          "min_count": -1,
+          "role": "dataset"
+        }
+      ]
+    },
+    {
+      "case_id": "artifact_max_less_than_min",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "kind": "artifact_role_present",
+          "max_count": 1,
+          "media_types": [],
+          "min_count": 2,
+          "role": "dataset"
+        }
+      ]
+    },
+    {
+      "case_id": "artifact_media_unsorted",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "kind": "artifact_role_present",
+          "max_count": null,
+          "media_types": [
+            "text/csv",
+            "application/json"
+          ],
+          "min_count": 1,
+          "role": "dataset"
+        }
+      ]
+    },
+    {
+      "case_id": "bool_wrong_field",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "max_context_tokens",
+          "kind": "policy_bool_eq",
+          "value": true
+        }
+      ]
+    },
+    {
+      "case_id": "bool_nonbool",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "tool_calling",
+          "kind": "policy_bool_eq",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "case_id": "int_wrong_field",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "tool_calling",
+          "kind": "policy_int_gte",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "case_id": "int_bool_value",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "max_context_tokens",
+          "kind": "policy_int_gte",
+          "value": true
+        }
+      ]
+    },
+    {
+      "case_id": "int_float_value",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "max_context_tokens",
+          "kind": "policy_int_gte",
+          "value": 1.0
+        }
+      ]
+    },
+    {
+      "case_id": "int_overflow",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "max_context_tokens",
+          "kind": "policy_int_gte",
+          "value": 9007199254740992
+        }
+      ]
+    },
+    {
+      "case_id": "set_wrong_field",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "tool_calling",
+          "kind": "policy_set_contains_all",
+          "values": [
+            "x"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "set_empty",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "modalities",
+          "kind": "policy_set_contains_all",
+          "values": []
+        }
+      ]
+    },
+    {
+      "case_id": "set_unsorted",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "modalities",
+          "kind": "policy_set_contains_all",
+          "values": [
+            "vision",
+            "text"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "set_duplicate",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "modalities",
+          "kind": "policy_set_contains_all",
+          "values": [
+            "text",
+            "text"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "set_nonstring",
+      "expected": {
+        "code": "invalid_predicate",
+        "stage": "selector_validation"
+      },
+      "predicates": [
+        {
+          "field": "modalities",
+          "kind": "policy_set_contains_all",
+          "values": [
+            "text",
+            1
+          ]
+        }
+      ]
+    }
+  ],
+  "limits": {
+    "maximum_depth": 8,
+    "maximum_nodes_per_candidate": 64
+  },
+  "missing_policy_fact_vectors": [
+    {
+      "case_id": "missing_policy_fact_tool_calling",
+      "expected": {
+        "code": "observation_unavailable",
+        "stage": "policy_observation"
+      },
+      "predicates": [
+        {
+          "field": "tool_calling",
+          "kind": "policy_bool_eq",
+          "value": true
+        }
+      ],
+      "remove_policy_field": "tool_calling"
+    },
+    {
+      "case_id": "missing_policy_fact_max_context_tokens",
+      "expected": {
+        "code": "observation_unavailable",
+        "stage": "policy_observation"
+      },
+      "predicates": [
+        {
+          "field": "max_context_tokens",
+          "kind": "policy_int_gte",
+          "value": 1
+        }
+      ],
+      "remove_policy_field": "max_context_tokens"
+    },
+    {
+      "case_id": "missing_policy_fact_modalities",
+      "expected": {
+        "code": "observation_unavailable",
+        "stage": "policy_observation"
+      },
+      "predicates": [
+        {
+          "field": "modalities",
+          "kind": "policy_set_contains_all",
+          "values": [
+            "text"
+          ]
+        }
+      ],
+      "remove_policy_field": "modalities"
+    }
+  ],
+  "schema_version": "bb.rl.predicate-vectors.v1",
+  "valid_vectors": [
+    {
+      "case_id": "all_true",
+      "expected": {
+        "canonical_hex": "5b7b226368696c6472656e223a5b7b226669656c64223a22746f6f6c5f63616c6c696e67222c226b696e64223a22706f6c6963795f626f6f6c5f6571222c2276616c7565223a747275657d2c7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a22676f6c64227d5d2c226b696e64223a22616c6c227d5d",
+        "canonical_predicates": [
+          {
+            "children": [
+              {
+                "field": "tool_calling",
+                "kind": "policy_bool_eq",
+                "value": true
+              },
+              {
+                "key": "tier",
+                "kind": "task_label_eq",
+                "value": "gold"
+              }
+            ],
+            "kind": "all"
+          }
+        ],
+        "digest": "sha256:f982f714987c3b73055b9421a58a3b860260f205225721f295765950487ff5c3",
+        "result": true
+      },
+      "predicates": [
+        {
+          "children": [
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "field": "tool_calling",
+              "kind": "policy_bool_eq",
+              "value": true
+            }
+          ],
+          "kind": "all"
+        }
+      ]
+    },
+    {
+      "case_id": "all_false",
+      "expected": {
+        "canonical_hex": "5b7b226368696c6472656e223a5b7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a22676f6c64227d2c7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a2273696c766572227d5d2c226b696e64223a22616c6c227d5d",
+        "canonical_predicates": [
+          {
+            "children": [
+              {
+                "key": "tier",
+                "kind": "task_label_eq",
+                "value": "gold"
+              },
+              {
+                "key": "tier",
+                "kind": "task_label_eq",
+                "value": "silver"
+              }
+            ],
+            "kind": "all"
+          }
+        ],
+        "digest": "sha256:8eebdd73b867eeb54691166ad33e0bf5caa400c6d0bf7b1d796ccbb7c586c633",
+        "result": false
+      },
+      "predicates": [
+        {
+          "children": [
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "silver"
+            }
+          ],
+          "kind": "all"
+        }
+      ]
+    },
+    {
+      "case_id": "any_true",
+      "expected": {
+        "canonical_hex": "5b7b226368696c6472656e223a5b7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a22676f6c64227d2c7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a2273696c766572227d5d2c226b696e64223a22616e79227d5d",
+        "canonical_predicates": [
+          {
+            "children": [
+              {
+                "key": "tier",
+                "kind": "task_label_eq",
+                "value": "gold"
+              },
+              {
+                "key": "tier",
+                "kind": "task_label_eq",
+                "value": "silver"
+              }
+            ],
+            "kind": "any"
+          }
+        ],
+        "digest": "sha256:97f4e3cc60721026463dac933defed8f4e933fac995c247f2a9ae70332401a99",
+        "result": true
+      },
+      "predicates": [
+        {
+          "children": [
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "silver"
+            },
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "gold"
+            }
+          ],
+          "kind": "any"
+        }
+      ]
+    },
+    {
+      "case_id": "any_false",
+      "expected": {
+        "canonical_hex": "5b7b226368696c6472656e223a5b7b226b6579223a22726567696f6e222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a226575227d2c7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a2273696c766572227d5d2c226b696e64223a22616e79227d5d",
+        "canonical_predicates": [
+          {
+            "children": [
+              {
+                "key": "region",
+                "kind": "task_label_eq",
+                "value": "eu"
+              },
+              {
+                "key": "tier",
+                "kind": "task_label_eq",
+                "value": "silver"
+              }
+            ],
+            "kind": "any"
+          }
+        ],
+        "digest": "sha256:16acbee4e93585f0a2f136e15a7ab0c3d17ebdf5a6a8851e6631fc2d64ee0b5e",
+        "result": false
+      },
+      "predicates": [
+        {
+          "children": [
+            {
+              "key": "tier",
+              "kind": "task_label_eq",
+              "value": "silver"
+            },
+            {
+              "key": "region",
+              "kind": "task_label_eq",
+              "value": "eu"
+            }
+          ],
+          "kind": "any"
+        }
+      ]
+    },
+    {
+      "case_id": "task_label_eq_true",
+      "expected": {
+        "canonical_hex": "5b7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a22676f6c64227d5d",
+        "canonical_predicates": [
+          {
+            "key": "tier",
+            "kind": "task_label_eq",
+            "value": "gold"
+          }
+        ],
+        "digest": "sha256:f0b78f9d61014d6be89d95917afabc9b076e9d1b0a544b4731b45621210a7cf2",
+        "result": true
+      },
+      "predicates": [
+        {
+          "key": "tier",
+          "kind": "task_label_eq",
+          "value": "gold"
+        }
+      ]
+    },
+    {
+      "case_id": "task_label_eq_false",
+      "expected": {
+        "canonical_hex": "5b7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a2273696c766572227d5d",
+        "canonical_predicates": [
+          {
+            "key": "tier",
+            "kind": "task_label_eq",
+            "value": "silver"
+          }
+        ],
+        "digest": "sha256:ac6dbe6c98338eb75a05bf8581f8197b9e133e384dc4a38bd7705744940e4a02",
+        "result": false
+      },
+      "predicates": [
+        {
+          "key": "tier",
+          "kind": "task_label_eq",
+          "value": "silver"
+        }
+      ]
+    },
+    {
+      "case_id": "task_label_eq_missing",
+      "expected": {
+        "canonical_hex": "5b7b226b6579223a226d697373696e67222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a2278227d5d",
+        "canonical_predicates": [
+          {
+            "key": "missing",
+            "kind": "task_label_eq",
+            "value": "x"
+          }
+        ],
+        "digest": "sha256:034f28d2278c71d9cfe4c3aacb8f5b92a81abb7e027bfa57df3930b1ed31eb92",
+        "result": false
+      },
+      "predicates": [
+        {
+          "key": "missing",
+          "kind": "task_label_eq",
+          "value": "x"
+        }
+      ]
+    },
+    {
+      "case_id": "task_label_in_true",
+      "expected": {
+        "canonical_hex": "5b7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f696e222c2276616c756573223a5b22676f6c64222c2273696c766572225d7d5d",
+        "canonical_predicates": [
+          {
+            "key": "tier",
+            "kind": "task_label_in",
+            "values": [
+              "gold",
+              "silver"
+            ]
+          }
+        ],
+        "digest": "sha256:93c9ebac916dfc631340d4972aea71a83b9ad342763d8b4f559e30602444afa1",
+        "result": true
+      },
+      "predicates": [
+        {
+          "key": "tier",
+          "kind": "task_label_in",
+          "values": [
+            "gold",
+            "silver"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "task_label_in_false",
+      "expected": {
+        "canonical_hex": "5b7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f696e222c2276616c756573223a5b2262726f6e7a65222c2273696c766572225d7d5d",
+        "canonical_predicates": [
+          {
+            "key": "tier",
+            "kind": "task_label_in",
+            "values": [
+              "bronze",
+              "silver"
+            ]
+          }
+        ],
+        "digest": "sha256:6baa1c7002dbfeb4ca3373b8f70c2014c50545d840c0de66d05dbd44c147e6d8",
+        "result": false
+      },
+      "predicates": [
+        {
+          "key": "tier",
+          "kind": "task_label_in",
+          "values": [
+            "bronze",
+            "silver"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "task_label_in_missing",
+      "expected": {
+        "canonical_hex": "5b7b226b6579223a226d697373696e67222c226b696e64223a227461736b5f6c6162656c5f696e222c2276616c756573223a5b2278225d7d5d",
+        "canonical_predicates": [
+          {
+            "key": "missing",
+            "kind": "task_label_in",
+            "values": [
+              "x"
+            ]
+          }
+        ],
+        "digest": "sha256:94277febd7b1d3058bc8229e377e60cddd655f001ce94b2be1eec09cf0c5c518",
+        "result": false
+      },
+      "predicates": [
+        {
+          "key": "missing",
+          "kind": "task_label_in",
+          "values": [
+            "x"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "artifact_role_min_true",
+      "expected": {
+        "canonical_hex": "5b7b226b696e64223a2261727469666163745f726f6c655f70726573656e74222c226d61785f636f756e74223a6e756c6c2c226d656469615f7479706573223a5b5d2c226d696e5f636f756e74223a322c22726f6c65223a2264617461736574227d5d",
+        "canonical_predicates": [
+          {
+            "kind": "artifact_role_present",
+            "max_count": null,
+            "media_types": [],
+            "min_count": 2,
+            "role": "dataset"
+          }
+        ],
+        "digest": "sha256:f43882b24f3b5213718b356bb6f670b31f724df3e4cb0f729d1ae4f6ce6a2df4",
+        "result": true
+      },
+      "predicates": [
+        {
+          "kind": "artifact_role_present",
+          "max_count": null,
+          "media_types": [],
+          "min_count": 2,
+          "role": "dataset"
+        }
+      ]
+    },
+    {
+      "case_id": "artifact_role_missing_false",
+      "expected": {
+        "canonical_hex": "5b7b226b696e64223a2261727469666163745f726f6c655f70726573656e74222c226d61785f636f756e74223a6e756c6c2c226d656469615f7479706573223a5b5d2c226d696e5f636f756e74223a312c22726f6c65223a226d697373696e67227d5d",
+        "canonical_predicates": [
+          {
+            "kind": "artifact_role_present",
+            "max_count": null,
+            "media_types": [],
+            "min_count": 1,
+            "role": "missing"
+          }
+        ],
+        "digest": "sha256:c79c103f898e8dd5794cb6cf464a6fe6b8b23e33bfec1d2cc47d1eb9dc053b8c",
+        "result": false
+      },
+      "predicates": [
+        {
+          "kind": "artifact_role_present",
+          "max_count": null,
+          "media_types": [],
+          "min_count": 1,
+          "role": "missing"
+        }
+      ]
+    },
+    {
+      "case_id": "artifact_role_max_false",
+      "expected": {
+        "canonical_hex": "5b7b226b696e64223a2261727469666163745f726f6c655f70726573656e74222c226d61785f636f756e74223a312c226d656469615f7479706573223a5b5d2c226d696e5f636f756e74223a312c22726f6c65223a2264617461736574227d5d",
+        "canonical_predicates": [
+          {
+            "kind": "artifact_role_present",
+            "max_count": 1,
+            "media_types": [],
+            "min_count": 1,
+            "role": "dataset"
+          }
+        ],
+        "digest": "sha256:064c778336c6f00d124a9b41a76a57fc29eaa07364758e59ef1f0f6fdca4a001",
+        "result": false
+      },
+      "predicates": [
+        {
+          "kind": "artifact_role_present",
+          "max_count": 1,
+          "media_types": [],
+          "min_count": 1,
+          "role": "dataset"
+        }
+      ]
+    },
+    {
+      "case_id": "artifact_role_media_true",
+      "expected": {
+        "canonical_hex": "5b7b226b696e64223a2261727469666163745f726f6c655f70726573656e74222c226d61785f636f756e74223a312c226d656469615f7479706573223a5b226170706c69636174696f6e2f6a736f6e225d2c226d696e5f636f756e74223a312c22726f6c65223a2264617461736574227d5d",
+        "canonical_predicates": [
+          {
+            "kind": "artifact_role_present",
+            "max_count": 1,
+            "media_types": [
+              "application/json"
+            ],
+            "min_count": 1,
+            "role": "dataset"
+          }
+        ],
+        "digest": "sha256:136a62f0bffa73b7fbadcf7467f1cfa2c2325470ce81cf306c90d77947da08a9",
+        "result": true
+      },
+      "predicates": [
+        {
+          "kind": "artifact_role_present",
+          "max_count": 1,
+          "media_types": [
+            "application/json"
+          ],
+          "min_count": 1,
+          "role": "dataset"
+        }
+      ]
+    },
+    {
+      "case_id": "artifact_role_media_false",
+      "expected": {
+        "canonical_hex": "5b7b226b696e64223a2261727469666163745f726f6c655f70726573656e74222c226d61785f636f756e74223a6e756c6c2c226d656469615f7479706573223a5b226170706c69636174696f6e2f6a736f6e225d2c226d696e5f636f756e74223a322c22726f6c65223a2264617461736574227d5d",
+        "canonical_predicates": [
+          {
+            "kind": "artifact_role_present",
+            "max_count": null,
+            "media_types": [
+              "application/json"
+            ],
+            "min_count": 2,
+            "role": "dataset"
+          }
+        ],
+        "digest": "sha256:aa1c4be6d38509bfc2377cb6995cf0222086af0615e5d6e4d3f81c2b41ca1a97",
+        "result": false
+      },
+      "predicates": [
+        {
+          "kind": "artifact_role_present",
+          "max_count": null,
+          "media_types": [
+            "application/json"
+          ],
+          "min_count": 2,
+          "role": "dataset"
+        }
+      ]
+    },
+    {
+      "case_id": "policy_bool_eq_true",
+      "expected": {
+        "canonical_hex": "5b7b226669656c64223a22746f6f6c5f63616c6c696e67222c226b696e64223a22706f6c6963795f626f6f6c5f6571222c2276616c7565223a747275657d5d",
+        "canonical_predicates": [
+          {
+            "field": "tool_calling",
+            "kind": "policy_bool_eq",
+            "value": true
+          }
+        ],
+        "digest": "sha256:40f5af1c3d864cfe03d7b885e154b8c327d16e199bb5d3cb5d247f6970d9e19e",
+        "result": true
+      },
+      "predicates": [
+        {
+          "field": "tool_calling",
+          "kind": "policy_bool_eq",
+          "value": true
+        }
+      ]
+    },
+    {
+      "case_id": "policy_bool_eq_false",
+      "expected": {
+        "canonical_hex": "5b7b226669656c64223a22706172616c6c656c5f746f6f6c5f63616c6c73222c226b696e64223a22706f6c6963795f626f6f6c5f6571222c2276616c7565223a747275657d5d",
+        "canonical_predicates": [
+          {
+            "field": "parallel_tool_calls",
+            "kind": "policy_bool_eq",
+            "value": true
+          }
+        ],
+        "digest": "sha256:838bb0cb5278704057f1d06752cd4ec1ef6f537fe4472709529752b253941d7a",
+        "result": false
+      },
+      "predicates": [
+        {
+          "field": "parallel_tool_calls",
+          "kind": "policy_bool_eq",
+          "value": true
+        }
+      ]
+    },
+    {
+      "case_id": "policy_int_gte_true",
+      "expected": {
+        "canonical_hex": "5b7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33323736387d5d",
+        "canonical_predicates": [
+          {
+            "field": "max_context_tokens",
+            "kind": "policy_int_gte",
+            "value": 32768
+          }
+        ],
+        "digest": "sha256:9c8e7c7e55ce2237cdbd41dbdc413efc1b405c01b7be5e1f67d4599c8a81fb8e",
+        "result": true
+      },
+      "predicates": [
+        {
+          "field": "max_context_tokens",
+          "kind": "policy_int_gte",
+          "value": 32768
+        }
+      ]
+    },
+    {
+      "case_id": "policy_int_gte_false",
+      "expected": {
+        "canonical_hex": "5b7b226669656c64223a226d61785f6f75747075745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a343039377d5d",
+        "canonical_predicates": [
+          {
+            "field": "max_output_tokens",
+            "kind": "policy_int_gte",
+            "value": 4097
+          }
+        ],
+        "digest": "sha256:040b9d5dbdbe1afa8d020ecbd274a9537277e66f78ea65e2eaaf22dc9b240788",
+        "result": false
+      },
+      "predicates": [
+        {
+          "field": "max_output_tokens",
+          "kind": "policy_int_gte",
+          "value": 4097
+        }
+      ]
+    },
+    {
+      "case_id": "policy_set_contains_all_true",
+      "expected": {
+        "canonical_hex": "5b7b226669656c64223a226d6f64616c6974696573222c226b696e64223a22706f6c6963795f7365745f636f6e7461696e735f616c6c222c2276616c756573223a5b2274657874222c22766973696f6e225d7d5d",
+        "canonical_predicates": [
+          {
+            "field": "modalities",
+            "kind": "policy_set_contains_all",
+            "values": [
+              "text",
+              "vision"
+            ]
+          }
+        ],
+        "digest": "sha256:dc105196118b56d109c4a3a7d34589137a599ed7bcfd8b3cc35d593a52b11e59",
+        "result": true
+      },
+      "predicates": [
+        {
+          "field": "modalities",
+          "kind": "policy_set_contains_all",
+          "values": [
+            "text",
+            "vision"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "policy_set_contains_all_false",
+      "expected": {
+        "canonical_hex": "5b7b226669656c64223a22726571756573745f6665617475726573222c226b696e64223a22706f6c6963795f7365745f636f6e7461696e735f616c6c222c2276616c756573223a5b226a736f6e5f6d6f6465222c22746f6f6c73225d7d5d",
+        "canonical_predicates": [
+          {
+            "field": "request_features",
+            "kind": "policy_set_contains_all",
+            "values": [
+              "json_mode",
+              "tools"
+            ]
+          }
+        ],
+        "digest": "sha256:3d8309523ab331632142b62485af304507a07058656e19cffbbe643a8fa07a99",
+        "result": false
+      },
+      "predicates": [
+        {
+          "field": "request_features",
+          "kind": "policy_set_contains_all",
+          "values": [
+            "json_mode",
+            "tools"
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "maximum_depth_8",
+      "expected": {
+        "canonical_hex": "5b7b226368696c6472656e223a5b7b226368696c6472656e223a5b7b226368696c6472656e223a5b7b226368696c6472656e223a5b7b226368696c6472656e223a5b7b226368696c6472656e223a5b7b226368696c6472656e223a5b7b226b6579223a2274696572222c226b696e64223a227461736b5f6c6162656c5f6571222c2276616c7565223a22676f6c64227d5d2c226b696e64223a22616c6c227d5d2c226b696e64223a22616c6c227d5d2c226b696e64223a22616c6c227d5d2c226b696e64223a22616c6c227d5d2c226b696e64223a22616c6c227d5d2c226b696e64223a22616c6c227d5d2c226b696e64223a22616c6c227d5d",
+        "canonical_predicates": [
+          {
+            "children": [
+              {
+                "children": [
+                  {
+                    "children": [
+                      {
+                        "children": [
+                          {
+                            "children": [
+                              {
+                                "children": [
+                                  {
+                                    "children": [
+                                      {
+                                        "key": "tier",
+                                        "kind": "task_label_eq",
+                                        "value": "gold"
+                                      }
+                                    ],
+                                    "kind": "all"
+                                  }
+                                ],
+                                "kind": "all"
+                              }
+                            ],
+                            "kind": "all"
+                          }
+                        ],
+                        "kind": "all"
+                      }
+                    ],
+                    "kind": "all"
+                  }
+                ],
+                "kind": "all"
+              }
+            ],
+            "kind": "all"
+          }
+        ],
+        "digest": "sha256:150d16ce56599b2404a3f83a3a42657abcde7e8e9fb7ed3228c7314c7d0fce93",
+        "result": true
+      },
+      "predicates": [
+        {
+          "children": [
+            {
+              "children": [
+                {
+                  "children": [
+                    {
+                      "children": [
+                        {
+                          "children": [
+                            {
+                              "children": [
+                                {
+                                  "children": [
+                                    {
+                                      "key": "tier",
+                                      "kind": "task_label_eq",
+                                      "value": "gold"
+                                    }
+                                  ],
+                                  "kind": "all"
+                                }
+                              ],
+                              "kind": "all"
+                            }
+                          ],
+                          "kind": "all"
+                        }
+                      ],
+                      "kind": "all"
+                    }
+                  ],
+                  "kind": "all"
+                }
+              ],
+              "kind": "all"
+            }
+          ],
+          "kind": "all"
+        }
+      ]
+    },
+    {
+      "case_id": "maximum_nodes_64",
+      "expected": {
+        "canonical_hex": "5b7b226368696c6472656e223a5b7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a307d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31307d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31317d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31327d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31337d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31347d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31357d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31367d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31377d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31387d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a31397d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a317d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32307d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32317d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32327d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32337d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32347d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32357d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32367d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32377d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32387d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a32397d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a327d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33307d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33317d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33327d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33337d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33347d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33357d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33367d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33377d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33387d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a33397d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a337d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34307d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34317d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34327d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34337d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34347d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34357d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34367d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34377d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34387d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a34397d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a347d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35307d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35317d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35327d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35337d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35347d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35357d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35367d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35377d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35387d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a35397d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a357d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a36307d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a36317d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a36327d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a367d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a377d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a387d2c7b226669656c64223a226d61785f636f6e746578745f746f6b656e73222c226b696e64223a22706f6c6963795f696e745f677465222c2276616c7565223a397d5d2c226b696e64223a22616c6c227d5d",
+        "canonical_predicates": [
+          {
+            "children": [
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 0
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 10
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 11
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 12
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 13
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 14
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 15
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 16
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 17
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 18
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 19
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 1
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 20
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 21
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 22
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 23
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 24
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 25
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 26
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 27
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 28
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 29
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 2
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 30
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 31
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 32
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 33
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 34
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 35
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 36
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 37
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 38
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 39
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 3
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 40
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 41
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 42
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 43
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 44
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 45
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 46
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 47
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 48
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 49
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 4
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 50
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 51
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 52
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 53
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 54
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 55
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 56
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 57
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 58
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 59
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 5
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 60
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 61
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 62
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 6
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 7
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 8
+              },
+              {
+                "field": "max_context_tokens",
+                "kind": "policy_int_gte",
+                "value": 9
+              }
+            ],
+            "kind": "all"
+          }
+        ],
+        "digest": "sha256:ca06239f0b112ac2bc5bc610ec873b3d9e2d649b064e67424cde6ba7f5b241af",
+        "result": true
+      },
+      "predicates": [
+        {
+          "children": [
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 0
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 1
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 2
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 3
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 4
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 5
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 6
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 7
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 8
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 9
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 10
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 11
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 12
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 13
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 14
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 15
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 16
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 17
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 18
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 19
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 20
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 21
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 22
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 23
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 24
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 25
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 26
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 27
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 28
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 29
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 30
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 31
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 32
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 33
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 34
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 35
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 36
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 37
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 38
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 39
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 40
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 41
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 42
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 43
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 44
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 45
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 46
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 47
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 48
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 49
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 50
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 51
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 52
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 53
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 54
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 55
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 56
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 57
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 58
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 59
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 60
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 61
+            },
+            {
+              "field": "max_context_tokens",
+              "kind": "policy_int_gte",
+              "value": 62
+            }
+          ],
+          "kind": "all"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+# formatting changes source identity, not semantics
+version: 2
+profile: {name: generated-unclassified-agent}
+workspace: {root: workspace}
+providers: {models: [{adapter: openai, params: {temperature: 0.25}, id: test-model}], default_model: test-model}
+prompts: {injection: {system_order: [], per_turn_order: []}}
+modes: [{prompt: '', id: build}]
+loop: {sequence: [build]}

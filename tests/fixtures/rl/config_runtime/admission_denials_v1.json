@@ -1,0 +1,2164 @@
+{
+  "canonicalizer_id": "rfc8785-jcs-v1",
+  "cases": [
+    {
+      "case_id": "subject_scope_mismatch",
+      "expected": {
+        "code": "subject_scope_mismatch",
+        "pointer": "/subject/authority_scope_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "subject_authentication"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/subject/authority_scope_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unsupported_manifest_schema",
+      "expected": {
+        "code": "unsupported_manifest_schema",
+        "pointer": "/compiler_view/compiler_identity/manifest_schema_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/compiler_identity/manifest_schema_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unsupported_canonicalizer",
+      "expected": {
+        "code": "unsupported_canonicalizer",
+        "pointer": "/compiler_view/compiler_identity/canonicalizer_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/compiler_identity/canonicalizer_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "compiler_code_digest_mismatch",
+      "expected": {
+        "code": "compiled_digest_mismatch",
+        "pointer": "/compiler_view/compiler_identity/code_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/compiler_identity/code_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "compiler_input_digest_mismatch",
+      "expected": {
+        "code": "compiled_digest_mismatch",
+        "pointer": "/compiler_view/compile_input_identity/compiler_input_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/compile_input_identity/compiler_input_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "semantic_digest_mismatch",
+      "expected": {
+        "code": "compiled_digest_mismatch",
+        "pointer": "/compiler_view/semantic_identity/semantic_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/semantic_identity/semantic_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "copied_manifest_digest",
+      "expected": {
+        "code": "compiled_digest_mismatch",
+        "pointer": "/compiled/manifest_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiled/manifest_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "missing_capability_role",
+      "expected": {
+        "code": "incomplete_capability_vector",
+        "pointer": "/compiler_view/requested_capabilities",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/requested_capabilities",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "incomplete_task_contract",
+      "expected": {
+        "code": "incomplete_task_contract",
+        "pointer": "/compiler_view/task_contract",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/task_contract",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "invalid_mutable_pointer",
+      "expected": {
+        "code": "invalid_mutable_pointer_declaration",
+        "pointer": "/compiler_view/mutable_pointer_declarations/0/pointer",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/mutable_pointer_declarations/0/pointer",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "missing_provenance",
+      "expected": {
+        "code": "compiled_digest_mismatch",
+        "pointer": "/compiler_view/provenance",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/provenance",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "missing_default_disposition",
+      "expected": {
+        "code": "compiled_digest_mismatch",
+        "pointer": "/compiler_view/diagnostics/defaults",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/diagnostics/defaults",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "runner_visible_loss",
+      "expected": {
+        "code": "runner_visible_loss",
+        "pointer": "/compiler_view/loss_disposition/runner_visible_losses/0",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/loss_disposition/0",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "forbidden_raw_authority",
+      "expected": {
+        "code": "forbidden_raw_authority",
+        "pointer": "/compiler_view/authority_disposition/forbidden_raw_authority/0",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/authority_disposition",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "runtime_abi_downgrade",
+      "expected": {
+        "code": "compiled_digest_mismatch",
+        "pointer": "/compiled/compiler/runtime_abi",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+        "stage": "compiled_artifact_verification"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiled/compiler/runtime_abi",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_runner_registry_binding",
+      "expected": {
+        "code": "unknown_runner",
+        "pointer": "/requested_capabilities/runner/adapter_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/runner/adapter_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_tool_registry_binding",
+      "expected": {
+        "code": "unknown_tool",
+        "pointer": "/requested_capabilities/tools/0/tool_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/tools/0/tool_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_setup_registry_binding",
+      "expected": {
+        "code": "unknown_setup",
+        "pointer": "/requested_capabilities/setup_plans/0/setup_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/setup_plans/0/setup_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_route_registry_binding",
+      "expected": {
+        "code": "unknown_route",
+        "pointer": "/requested_capabilities/routes/0/route_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/routes/0/route_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_secret_registry_binding",
+      "expected": {
+        "code": "unknown_secret_handle",
+        "pointer": "/requested_capabilities/secret_handles/0/handle_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/secret_handles/0/handle_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_runtime_registry_binding",
+      "expected": {
+        "code": "unknown_runtime",
+        "pointer": "/requested_capabilities/sandbox/runtime_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/sandbox/runtime_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_image_registry_binding",
+      "expected": {
+        "code": "unknown_image",
+        "pointer": "/requested_capabilities/sandbox/image_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/sandbox/image_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_repository_registry_binding",
+      "expected": {
+        "code": "unknown_repository_binding",
+        "pointer": "/requested_capabilities/task/repository_snapshot_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/task/repository_snapshot_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_task_registry_binding",
+      "expected": {
+        "code": "unknown_task",
+        "pointer": "/requested_capabilities/task/task_binding_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/task/task_binding_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_dataset_registry_binding",
+      "expected": {
+        "code": "unknown_dataset",
+        "pointer": "/requested_capabilities/task/dataset_digests/0",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/task/dataset_digests/0",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_model_registry_binding",
+      "expected": {
+        "code": "unknown_model",
+        "pointer": "/requested_capabilities/policy_slots/0/model_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/policy_slots/0/model_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_verifier_registry_binding",
+      "expected": {
+        "code": "unknown_verifier",
+        "pointer": "/requested_capabilities/verifier/verifier_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/verifier/verifier_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_evidence_registry_binding",
+      "expected": {
+        "code": "unknown_evidence_policy",
+        "pointer": "/requested_capabilities/evidence/policy_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/evidence/policy_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "unknown_retention_registry_binding",
+      "expected": {
+        "code": "unknown_retention_policy",
+        "pointer": "/requested_capabilities/retention/policy_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/retention/policy_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "registry_snapshot_mismatch",
+      "expected": {
+        "code": "registry_snapshot_mismatch",
+        "pointer": "/registry_snapshot_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/registry_snapshot_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "duplicate_tool_binding",
+      "expected": {
+        "code": "duplicate_binding",
+        "pointer": "/requested_capabilities/tools/1/tool_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/tools/1/tool_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "reserved_tool_shadow",
+      "expected": {
+        "code": "reserved_tool_shadow",
+        "pointer": "/requested_capabilities/tools/0/tool_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/tools/0/tool_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "tool_fallback_cycle",
+      "expected": {
+        "code": "fallback_cycle",
+        "pointer": "/compiler_view/requested_capabilities/tools",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "registry_resolution"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/requested_capabilities/tools",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "runner_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/runner/implementation_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/runner",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "tools_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/tools/0/implementation_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/tools",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "setup_plans_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/setup_plans/0/implementation_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/setup_plans",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "routes_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/routes/0/route_revision_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/routes",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "secret_handles_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/secret_handles/0/handle_version_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/secret_handles",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "sandbox_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/sandbox/image_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/sandbox",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "resources_above_ceiling",
+      "expected": {
+        "code": "operator_ceiling_exceeded",
+        "pointer": "/requested_capabilities/resources/cpu_millis",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/resources/cpu_millis",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "limits_above_ceiling",
+      "expected": {
+        "code": "operator_ceiling_exceeded",
+        "pointer": "/requested_capabilities/limits/max_turns",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/limits/max_turns",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "task_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/task/task_contract_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/task",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "policy_slots_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/policy_slots/0/model_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/policy_slots",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "verifier_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/verifier/implementation_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/verifier",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "mutable_pointers_above_ceiling",
+      "expected": {
+        "code": "unsupported_capability",
+        "pointer": "/requested_capabilities/mutable_pointers/0/value_schema_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/mutable_pointers",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "artifacts_above_ceiling",
+      "expected": {
+        "code": "operator_ceiling_exceeded",
+        "pointer": "/requested_capabilities/artifacts/max_total_bytes",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/artifacts/max_total_bytes",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "evidence_above_ceiling",
+      "expected": {
+        "code": "required_security_missing",
+        "pointer": "/requested_capabilities/evidence/revision_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/evidence",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "retention_above_ceiling",
+      "expected": {
+        "code": "retention_out_of_bounds",
+        "pointer": "/requested_capabilities/retention/revision_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "capability_intersection"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/retention",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "repository_image_cross_binding",
+      "expected": {
+        "code": "repository_image_mismatch",
+        "pointer": "/requested_capabilities/sandbox/image_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/sandbox/image_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "route_secret_cross_binding",
+      "expected": {
+        "code": "registry_binding_mismatch",
+        "pointer": "/requested_capabilities/routes/0/credential_handle_id",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/routes/0/credential_handle_id",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "model_tokenizer_checkpoint_cross_binding",
+      "expected": {
+        "code": "model_identity_mismatch",
+        "pointer": "/requested_capabilities/policy_slots/0/checkpoint_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/policy_slots/0/checkpoint_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "verifier_schema_cross_binding",
+      "expected": {
+        "code": "verifier_identity_mismatch",
+        "pointer": "/requested_capabilities/verifier/result_schema_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/verifier/result_schema_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "task_dataset_cross_binding",
+      "expected": {
+        "code": "registry_binding_mismatch",
+        "pointer": "/requested_capabilities/task/dataset_digests/0",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/task/dataset_digests/0",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "mutable_image_tag",
+      "expected": {
+        "code": "mutable_identity",
+        "pointer": "/requested_capabilities/sandbox/image_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/requested_capabilities/sandbox/image_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "raw_route_url",
+      "expected": {
+        "code": "raw_url_forbidden",
+        "pointer": "/compiler_view/authority_disposition/raw_url",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/authority_disposition/raw_url",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "raw_secret_marker",
+      "expected": {
+        "code": "raw_secret_forbidden",
+        "pointer": "/compiler_view/authority_disposition/raw_secret",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/authority_disposition/raw_secret",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "ambient_environment_authority",
+      "expected": {
+        "code": "environment_authority_forbidden",
+        "pointer": "/compiler_view/authority_disposition/environment",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/authority_disposition/environment",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "arbitrary_setup_shell",
+      "expected": {
+        "code": "arbitrary_shell_forbidden",
+        "pointer": "/compiler_view/authority_disposition/shell",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "identity_pinning"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiler_view/authority_disposition/shell",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "forged_receipt",
+      "expected": {
+        "code": "receipt_forged",
+        "pointer": null,
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": null,
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "cross_subject_receipt",
+      "expected": {
+        "code": "receipt_cross_subject",
+        "pointer": "/subject",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/subject",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "receipt_not_yet_valid",
+      "expected": {
+        "code": "receipt_not_yet_valid",
+        "pointer": "/validity/not_before",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/validity/not_before",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "receipt_exact_expiry",
+      "expected": {
+        "code": "receipt_expired",
+        "pointer": "/validity/expires_at",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/validity/expires_at",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "receipt_expired",
+      "expected": {
+        "code": "receipt_expired",
+        "pointer": "/validity/expires_at",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/validity/expires_at",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "receipt_revoked",
+      "expected": {
+        "code": "receipt_revoked",
+        "pointer": "/revocation/epoch",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/revocation/epoch",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "receipt_epoch_rollback",
+      "expected": {
+        "code": "receipt_epoch_rollback",
+        "pointer": "/revocation/epoch",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/revocation/epoch",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "receipt_stale_policy",
+      "expected": {
+        "code": "receipt_stale_policy",
+        "pointer": "/admission_policy_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/admission_policy_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "receipt_stale_registry",
+      "expected": {
+        "code": "receipt_stale_policy",
+        "pointer": "/registry_snapshot_digest",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/registry_snapshot_digest",
+        "value": "invalid"
+      }
+    },
+    {
+      "case_id": "receipt_abi_downgrade",
+      "expected": {
+        "code": "receipt_abi_mismatch",
+        "pointer": "/compiled/compiler/runtime_abi",
+        "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+        "schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+        "stage": "receipt_recheck"
+      },
+      "forbidden_effects": {
+        "credential_issue": 0,
+        "dns": 0,
+        "lease_open": 0,
+        "network": 0,
+        "policy_invoke": 0,
+        "policy_observe_live": 0,
+        "provider_construct": 0,
+        "secret_resolve": 0,
+        "setup": 0,
+        "verifier_lease_open": 0,
+        "verifier_start": 0
+      },
+      "mutation": {
+        "operation": "replace",
+        "pointer": "/compiled/compiler/runtime_abi",
+        "value": "invalid"
+      }
+    }
+  ],
+  "compiled_schema": {
+    "canonicalizer_id": "rfc8785-jcs-v1",
+    "required_roles": [
+      "compiler_identity",
+      "compile_input_identity",
+      "semantic_identity",
+      "requested_capabilities",
+      "task_contract",
+      "mutable_pointer_declarations",
+      "provenance",
+      "diagnostics",
+      "loss_disposition",
+      "authority_disposition"
+    ],
+    "schema_version": "bb.rl.compiler-semantic-roles.v1"
+  },
+  "compiled_schema_digest": "sha256:33f7d93fa7045e4b32454f8981f2f23da1d61b4fff2eb31297a57653526e2963",
+  "policy_digest": "sha256:446d42f26d52f00095cf1a69f12d3a15c58430ccb18236f8b7b47def62713eba",
+  "policy_identity_payload": {
+    "ceiling": {
+      "allowed_egress_route_ids": [
+        "policy-route"
+      ],
+      "artifact_policy_maximum": {
+        "allowed_roles": [
+          "patch",
+          "transcript"
+        ],
+        "max_each_bytes": 1048576,
+        "max_total_bytes": 4194304
+      },
+      "dataset_digests": [
+        "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      ],
+      "evidence_policies": [
+        {
+          "policy_id": "evidence-full",
+          "revision_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        }
+      ],
+      "execution_maxima": {
+        "action_timeout_ms": 30000,
+        "artifact_bytes_each": 1048576,
+        "artifact_bytes_total": 4194304,
+        "max_turns": 8,
+        "observation_bytes": 65536,
+        "response_bytes": 32768,
+        "setup_timeout_ms": 60000,
+        "transcript_bytes": 8388608,
+        "verifier_timeout_ms": 120000
+      },
+      "model_bindings": [
+        {
+          "checkpoint_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "model_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "model_id": "model-a",
+          "tokenizer_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      ],
+      "mount_grants": [
+        {
+          "access": "ro",
+          "max_bytes": 4096,
+          "source_artifact_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "target_logical_path": "workspace/input"
+        },
+        {
+          "access": "rw",
+          "max_bytes": 1048576,
+          "source_artifact_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "target_logical_path": "workspace/output"
+        }
+      ],
+      "mutable_pointer_rules": [
+        {
+          "allowed_operations": [
+            "replace"
+          ],
+          "authority_effect": "none",
+          "pointer": "/sampling/temperature",
+          "removable": false,
+          "value_schema_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      ],
+      "policy_slot_grants": [
+        {
+          "checkpoint_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "model_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "protocol_abi": "responses-v1",
+          "required_policy_capabilities_digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "route_id": "policy-route",
+          "secret_handle_id": "policy-credential",
+          "slot_id": "primary",
+          "tokenizer_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      ],
+      "repository_snapshot_digests": [
+        "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      ],
+      "resource_maxima": {
+        "cpu_millis": 2000,
+        "memory_bytes": 1073741824,
+        "open_files": 256,
+        "pids": 128,
+        "storage_bytes": 2147483648,
+        "wall_time_ms": 600000
+      },
+      "retention_policies": [
+        {
+          "maximum_seconds": 2592000,
+          "minimum_seconds": 86400,
+          "policy": {
+            "policy_id": "retention-30d",
+            "revision_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          }
+        }
+      ],
+      "route_grants": [
+        {
+          "credential_handle_id": "policy-credential",
+          "protocol_abi": "responses-v1",
+          "route_id": "policy-route",
+          "route_revision_digest": "sha256:a9265025cf2e28897de20c6b017279596b86aa5084565b68e0ba5c4fd9be9685"
+        }
+      ],
+      "runner_bindings": [
+        {
+          "adapter_id": "breadboard.conductor.v1",
+          "implementation_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          "runtime_abi": "breadboard.conductor.v1"
+        }
+      ],
+      "sandbox_bindings": [
+        {
+          "driver_implementation_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "network_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "runtime_binary_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "runtime_class": "hardened_docker",
+          "runtime_id": "sandbox-runtime",
+          "security_policy_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+        }
+      ],
+      "secret_handle_grants": [
+        {
+          "handle_id": "policy-credential",
+          "handle_version_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "scope_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      ],
+      "setup_grants": [
+        {
+          "implementation_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "plan_digest": "sha256:9ec61a40ebe2891e392f1ba56e88655fa6fcd313aeb84e552bbe37d400bf7140",
+          "setup_id": "workspace-prepare"
+        }
+      ],
+      "task_binding_digests": [
+        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      ],
+      "task_contract_digests": [
+        "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      ],
+      "tool_grants": [
+        {
+          "capability_ids": [
+            "read",
+            "write"
+          ],
+          "implementation_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "tool_id": "terminal"
+        }
+      ],
+      "verifier_grants": [
+        {
+          "code_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "executable_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "image_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "implementation_digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "input_schema_digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "network_policy_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "result_schema_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "secret_handle_ids": [],
+          "verifier_id": "unit-verifier"
+        }
+      ]
+    },
+    "compiler_constraints": {
+      "allowed_compilers": [
+        {
+          "canonicalizer_id": "rfc8785-jcs-v1",
+          "code_digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+          "compiler_id": "breadboard.server-config-compiler",
+          "manifest_schema_digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+          "runtime_abi": "breadboard.conductor.v1",
+          "semantic_version": "1.0.0",
+          "source_schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "source_schema_id": "breadboard.agent-config.v2"
+        }
+      ]
+    },
+    "policy_id": "operator-default",
+    "receipt_ttl_seconds": 3600,
+    "registry_digests": {
+      "evidence_policy_registry_digest": "sha256:279fcdb9f23fe9ac663c0102becb3f9fb243e3e1a2711f31264684f8dd9658c5",
+      "image_registry_digest": "sha256:571a7ae0cfa39cb61143ec18577f23fb5a6544f134e53d1cd320f5ac8c88d846",
+      "model_registry_digest": "sha256:7c82445711cba892783f2fe76bc66a9db257a69d4e111359be7f95a51eb4e7fa",
+      "policy_capability_registry_digest": "sha256:dad2620159399cb51b1371358f5e497c0f2f400bee205df608ba11a2e42dae08",
+      "repository_binding_registry_digest": "sha256:a5757ad5c37cdf954f422329962da936f4a5fee08b2c2ca3cbbb3f1fdfa9e63a",
+      "retention_policy_registry_digest": "sha256:c45c2aa7212fd9884d1473c2bb5fb93a105318e97b6a7c00ef0b78c4aab7db37",
+      "route_registry_digest": "sha256:714feca74aa6b56c5494fcd767ec772611e1a42016256498c6312b8949f3295c",
+      "runner_registry_digest": "sha256:20bc02e47cf845f7b4c32d6659c7ff57e7f458404bf7e5fde26efe712be40a69",
+      "sandbox_runtime_registry_digest": "sha256:6d61ffdf1088c7b483428c05fc9915c2d2cbd40f8d309183fcd08f94ae2cebf4",
+      "secret_handle_registry_digest": "sha256:c791452f42044078a49f44d9248eff716f95511797d635bc6d43bb1321d8b3f8",
+      "setup_registry_digest": "sha256:8eecf278148328cab61c105b6f919975e4dd40710518838659f1fd922696c18f",
+      "task_dataset_registry_digest": "sha256:99d73680b4d043255327974ad9d2fdb11aa037b6134b3790af11713ab41203ec",
+      "tool_registry_digest": "sha256:da517667023b303b0464b4021e818a93fea72e4c953b4d90f6109db1b6dd97a5",
+      "verifier_registry_digest": "sha256:21b61a102d02dab7381e26986c0df7cc2105e2986cdfba2658e9e09fac578b3a",
+      "snapshot_digest": "sha256:dd2eb2ec391e97bbbb732e4791bf32d6e0496e34fcb44de589561084837b2fde"
+    },
+    "required_security": {
+      "minimum_isolation_class": "hardened_docker",
+      "minimum_retention_seconds": 86400,
+      "prohibited_runtime_classes": [
+        "trusted_process"
+      ],
+      "required_evidence_roles": [
+        "patch",
+        "transcript"
+      ],
+      "required_verifier_isolation_class": "hardened_docker"
+    },
+    "revision": "2026-07-10.1",
+    "revocation": {
+      "epoch": 7,
+      "scope_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "state_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "schema_version": "bb.rl.admission-policy.v1",
+    "subject_scope_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "validity": {
+      "expires_at": "2026-07-10T14:00:00Z",
+      "issued_at": "2026-07-10T11:00:00Z",
+      "not_before": "2026-07-10T11:00:00Z"
+    }
+  },
+  "policy_schema": {
+    "canonicalizer_id": "rfc8785-jcs-v1",
+    "integer_domain": "uint53-or-explicit-uint64",
+    "policy_payload_schema": "bb.rl.admission-policy.v1",
+    "schema_version": "bb.rl.admission-policy-schema.v1"
+  },
+  "policy_schema_digest": "sha256:702ee6f81a47deb892f023626d4da9ef0c380a863e4c70ac42cf3bce27884c9d",
+  "request_schema_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+  "schema_version": "bb.rl.admission-denial-vectors.v1"
+}

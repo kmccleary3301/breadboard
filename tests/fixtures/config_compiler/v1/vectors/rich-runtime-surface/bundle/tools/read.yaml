@@ -1,0 +1,26 @@
+id: read-file
+name: read_file_original
+description: Read a file.
+type_id: python
+parameters:
+  - name: path
+    schema:
+      type: string
+      minLength: 1
+      pattern: '^[^\x00]+$'
+    description: Logical path
+    required: true
+    examples: [src/main.py]
+  - name: line
+    type: integer
+    required: false
+    default: 1
+    validation: {minimum: 1}
+manipulations: [read]
+syntax_formats_supported: [python]
+preferred_formats: [python]
+use_cases: [inspection]
+performance_data: {latency_class: low}
+dependencies: []
+execution: {blocking: false, max_per_turn: 8}
+provider_routing: {openai: {strict: false, additionalProperties: false}}

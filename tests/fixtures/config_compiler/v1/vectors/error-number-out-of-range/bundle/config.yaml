@@ -1,0 +1,18 @@
+version: 2
+workspace:
+  root: workspace
+providers:
+  default_model: test-model
+  models:
+    - id: test-model
+      adapter: openai
+      params: {max_tokens: 9007199254740992}
+prompts:
+  injection:
+    system_order: []
+    per_turn_order: []
+modes:
+  - id: build
+    prompt: ''
+loop:
+  sequence: [build]

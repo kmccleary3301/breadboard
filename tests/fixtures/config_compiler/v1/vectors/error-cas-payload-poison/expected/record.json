@@ -1,0 +1,1 @@
+{"code":"SOURCE_INTEGRITY","details":{},"instance_path":null,"logical_path":"config.yaml","outcome":"error","raw_reference":null,"reference_kind":null,"related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"reader_integrity","vector_id":"error-cas-payload-poison"}

@@ -1,0 +1,1 @@
+{"code":"REFERENCE_UNDECLARED","details":{},"instance_path":null,"logical_path":"config.yaml","outcome":"error","raw_reference":"base.yaml","reference_kind":"extends","related_logical_paths":[],"schema":"bb.config-compiler-error-result.v1","stage":"dependency_resolution","vector_id":"error-missing-extends-edge"}

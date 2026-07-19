@@ -1,0 +1,1140 @@
+{
+  "schema_version": "bb.rl.terminal-adapter-parity.v1",
+  "episode_id": "terminal-parity",
+  "responses_create_params": {
+    "model": "wrapper-model",
+    "input": "repair the project",
+    "tools": [
+      {
+        "type": "function",
+        "name": "wrapper_owned_tool"
+      }
+    ],
+    "temperature": 0.2
+  },
+  "terminal_tools": [
+    {
+      "tool_id": "shell",
+      "responses_schema": {
+        "type": "function",
+        "name": "shell",
+        "description": "Run a shell command in the admitted BreadBoard sandbox workspace.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    },
+    {
+      "tool_id": "read_file",
+      "responses_schema": {
+        "type": "function",
+        "name": "read_file",
+        "description": "Read UTF-8 text from a workspace-relative file.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "offset": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    },
+    {
+      "tool_id": "write_file",
+      "responses_schema": {
+        "type": "function",
+        "name": "write_file",
+        "description": "Write UTF-8 text to a workspace-relative file.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    },
+    {
+      "tool_id": "list_files",
+      "responses_schema": {
+        "type": "function",
+        "name": "list_files",
+        "description": "List files below a workspace-relative directory.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "depth": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    },
+    {
+      "tool_id": "submit",
+      "responses_schema": {
+        "type": "function",
+        "name": "submit",
+        "description": "Finish the episode after the task is complete.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "result": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "result"
+          ],
+          "additionalProperties": false
+        },
+        "strict": true
+      }
+    }
+  ],
+  "limits": {
+    "max_turns": 4,
+    "action_timeout_seconds": 9,
+    "max_observation_chars": 20000
+  },
+  "policy_responses": [
+    {
+      "id": "response-turn-1",
+      "output": [
+        {
+          "type": "function_call",
+          "call_id": "shell-1",
+          "name": "shell",
+          "arguments": "{\"command\":\"pwd\"}"
+        }
+      ]
+    },
+    {
+      "id": "response-final",
+      "output": [
+        {
+          "type": "function_call",
+          "call_id": "write-1",
+          "name": "write_file",
+          "arguments": "{\"path\":\"report.json\",\"content\":\"{\\\"status\\\":\\\"ok\\\"}\"}"
+        },
+        {
+          "type": "function_call",
+          "call_id": "submit-1",
+          "name": "submit",
+          "arguments": "{\"result\":\"done\"}"
+        },
+        {
+          "type": "function_call",
+          "call_id": "list-after-submit",
+          "name": "list_files",
+          "arguments": "{\"path\":\".\",\"depth\":2}"
+        }
+      ],
+      "usage": {
+        "input_tokens": 31,
+        "output_tokens": 7
+      },
+      "token_ids": [
+        101,
+        202,
+        303
+      ],
+      "token_logprobs": [
+        -0.1,
+        -0.2,
+        -0.3
+      ],
+      "model_version": "policy-build-42",
+      "routing": {
+        "provider": "local",
+        "replica": "r2"
+      },
+      "vendor_extension": {
+        "arbitrary": [
+          1,
+          {
+            "nested": true
+          }
+        ]
+      }
+    }
+  ],
+  "expected_policy_requests": [
+    {
+      "model": "wrapper-model",
+      "input": [
+        {
+          "role": "user",
+          "content": "repair the project"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "shell",
+          "description": "Run a shell command in the admitted BreadBoard sandbox workspace.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        {
+          "type": "function",
+          "name": "read_file",
+          "description": "Read UTF-8 text from a workspace-relative file.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        {
+          "type": "function",
+          "name": "write_file",
+          "description": "Write UTF-8 text to a workspace-relative file.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        {
+          "type": "function",
+          "name": "list_files",
+          "description": "List files below a workspace-relative directory.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "depth": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        {
+          "type": "function",
+          "name": "submit",
+          "description": "Finish the episode after the task is complete.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        }
+      ],
+      "temperature": 0.2,
+      "parallel_tool_calls": false
+    },
+    {
+      "model": "wrapper-model",
+      "input": [
+        {
+          "role": "user",
+          "content": "repair the project"
+        },
+        {
+          "type": "function_call",
+          "call_id": "shell-1",
+          "name": "shell",
+          "arguments": "{\"command\":\"pwd\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "shell-1",
+          "output": "{\"exit\":0,\"stderr\":\"\",\"stdout\":\"ran:pwd\"}"
+        }
+      ],
+      "tools": [
+        {
+          "type": "function",
+          "name": "shell",
+          "description": "Run a shell command in the admitted BreadBoard sandbox workspace.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "command": {
+                "type": "string"
+              },
+              "timeout_seconds": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "command"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        {
+          "type": "function",
+          "name": "read_file",
+          "description": "Read UTF-8 text from a workspace-relative file.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        {
+          "type": "function",
+          "name": "write_file",
+          "description": "Write UTF-8 text to a workspace-relative file.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "content"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        {
+          "type": "function",
+          "name": "list_files",
+          "description": "List files below a workspace-relative directory.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "depth": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 8
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        },
+        {
+          "type": "function",
+          "name": "submit",
+          "description": "Finish the episode after the task is complete.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "result"
+            ],
+            "additionalProperties": false
+          },
+          "strict": true
+        }
+      ],
+      "temperature": 0.2,
+      "parallel_tool_calls": false
+    }
+  ],
+  "expected_workspace_actions": [
+    [
+      "shell",
+      "pwd",
+      9
+    ],
+    [
+      "write_file",
+      "report.json",
+      "{\"status\":\"ok\"}"
+    ],
+    [
+      "list_files",
+      ".",
+      2
+    ]
+  ],
+  "expected_event_types": [
+    "PolicyRequestEvent",
+    "PolicyResponseEvent",
+    "ToolCallEvent",
+    "ToolObservationEvent",
+    "PolicyRequestEvent",
+    "PolicyResponseEvent",
+    "ToolCallEvent",
+    "ToolObservationEvent",
+    "ToolCallEvent",
+    "ToolObservationEvent",
+    "ToolCallEvent",
+    "ToolObservationEvent",
+    "RunnerTerminationEvent"
+  ],
+  "expected_termination": "submitted",
+  "expected_turn_count": 2,
+  "expected_final_response": {
+    "id": "response-final",
+    "output": [
+      {
+        "type": "function_call",
+        "call_id": "shell-1",
+        "name": "shell",
+        "arguments": "{\"command\":\"pwd\"}"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "shell-1",
+        "output": "{\"exit\":0,\"stderr\":\"\",\"stdout\":\"ran:pwd\"}"
+      },
+      {
+        "type": "function_call",
+        "call_id": "write-1",
+        "name": "write_file",
+        "arguments": "{\"path\":\"report.json\",\"content\":\"{\\\"status\\\":\\\"ok\\\"}\"}"
+      },
+      {
+        "type": "function_call",
+        "call_id": "submit-1",
+        "name": "submit",
+        "arguments": "{\"result\":\"done\"}"
+      },
+      {
+        "type": "function_call",
+        "call_id": "list-after-submit",
+        "name": "list_files",
+        "arguments": "{\"path\":\".\",\"depth\":2}"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "write-1",
+        "output": "{\"bytes\":15,\"ok\":true,\"path\":\"report.json\"}"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "submit-1",
+        "output": "{\"accepted\":true,\"result\":\"done\"}"
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "list-after-submit",
+        "output": "{\"entries\":[\"report.json\"],\"path\":\".\"}"
+      }
+    ],
+    "usage": {
+      "input_tokens": 31,
+      "output_tokens": 7
+    },
+    "token_ids": [
+      101,
+      202,
+      303
+    ],
+    "token_logprobs": [
+      -0.1,
+      -0.2,
+      -0.3
+    ],
+    "model_version": "policy-build-42",
+    "routing": {
+      "provider": "local",
+      "replica": "r2"
+    },
+    "vendor_extension": {
+      "arbitrary": [
+        1,
+        {
+          "nested": true
+        }
+      ]
+    }
+  },
+  "expected_turns": [
+    {
+      "turn": 1,
+      "policy_output": [
+        {
+          "type": "function_call",
+          "call_id": "shell-1",
+          "name": "shell",
+          "arguments": "{\"command\":\"pwd\"}"
+        }
+      ],
+      "observations": [
+        {
+          "type": "function_call_output",
+          "call_id": "shell-1",
+          "output": "{\"exit\":0,\"stderr\":\"\",\"stdout\":\"ran:pwd\"}"
+        }
+      ]
+    },
+    {
+      "turn": 2,
+      "policy_output": [
+        {
+          "type": "function_call",
+          "call_id": "write-1",
+          "name": "write_file",
+          "arguments": "{\"path\":\"report.json\",\"content\":\"{\\\"status\\\":\\\"ok\\\"}\"}"
+        },
+        {
+          "type": "function_call",
+          "call_id": "submit-1",
+          "name": "submit",
+          "arguments": "{\"result\":\"done\"}"
+        },
+        {
+          "type": "function_call",
+          "call_id": "list-after-submit",
+          "name": "list_files",
+          "arguments": "{\"path\":\".\",\"depth\":2}"
+        }
+      ],
+      "observations": [
+        {
+          "type": "function_call_output",
+          "call_id": "write-1",
+          "output": "{\"bytes\":15,\"ok\":true,\"path\":\"report.json\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "submit-1",
+          "output": "{\"accepted\":true,\"result\":\"done\"}"
+        },
+        {
+          "type": "function_call_output",
+          "call_id": "list-after-submit",
+          "output": "{\"entries\":[\"report.json\"],\"path\":\".\"}"
+        }
+      ]
+    }
+  ],
+  "expected_events": [
+    {
+      "type": "PolicyRequestEvent",
+      "sequence": 0,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 1,
+      "request_payload": {
+        "model": "wrapper-model",
+        "input": [
+          {
+            "role": "user",
+            "content": "repair the project"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "name": "shell",
+            "description": "Run a shell command in the admitted BreadBoard sandbox workspace.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "command"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "read_file",
+            "description": "Read UTF-8 text from a workspace-relative file.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "write_file",
+            "description": "Write UTF-8 text to a workspace-relative file.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "list_files",
+            "description": "List files below a workspace-relative directory.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "depth": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 8
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "submit",
+            "description": "Finish the episode after the task is complete.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "result"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        ],
+        "temperature": 0.2,
+        "parallel_tool_calls": false
+      }
+    },
+    {
+      "type": "PolicyResponseEvent",
+      "sequence": 1,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 1,
+      "response_payload": {
+        "id": "response-turn-1",
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "shell-1",
+            "name": "shell",
+            "arguments": "{\"command\":\"pwd\"}"
+          }
+        ]
+      },
+      "normalized_output": [
+        {
+          "type": "function_call",
+          "call_id": "shell-1",
+          "name": "shell",
+          "arguments": "{\"command\":\"pwd\"}"
+        }
+      ]
+    },
+    {
+      "type": "ToolCallEvent",
+      "sequence": 2,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 1,
+      "ordinal": 0,
+      "call_id": "shell-1",
+      "tool_name": "shell",
+      "arguments_json": "{\"command\":\"pwd\"}"
+    },
+    {
+      "type": "ToolObservationEvent",
+      "sequence": 3,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 1,
+      "ordinal": 0,
+      "call_id": "shell-1",
+      "tool_name": "shell",
+      "observation": {
+        "type": "function_call_output",
+        "call_id": "shell-1",
+        "output": "{\"exit\":0,\"stderr\":\"\",\"stdout\":\"ran:pwd\"}"
+      },
+      "submitted": false,
+      "error_type": null
+    },
+    {
+      "type": "PolicyRequestEvent",
+      "sequence": 4,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 2,
+      "request_payload": {
+        "model": "wrapper-model",
+        "input": [
+          {
+            "role": "user",
+            "content": "repair the project"
+          },
+          {
+            "type": "function_call",
+            "call_id": "shell-1",
+            "name": "shell",
+            "arguments": "{\"command\":\"pwd\"}"
+          },
+          {
+            "type": "function_call_output",
+            "call_id": "shell-1",
+            "output": "{\"exit\":0,\"stderr\":\"\",\"stdout\":\"ran:pwd\"}"
+          }
+        ],
+        "tools": [
+          {
+            "type": "function",
+            "name": "shell",
+            "description": "Run a shell command in the admitted BreadBoard sandbox workspace.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "command": {
+                  "type": "string"
+                },
+                "timeout_seconds": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "command"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "read_file",
+            "description": "Read UTF-8 text from a workspace-relative file.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "offset": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "limit": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "write_file",
+            "description": "Write UTF-8 text to a workspace-relative file.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "list_files",
+            "description": "List files below a workspace-relative directory.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "depth": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 8
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          },
+          {
+            "type": "function",
+            "name": "submit",
+            "description": "Finish the episode after the task is complete.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "result"
+              ],
+              "additionalProperties": false
+            },
+            "strict": true
+          }
+        ],
+        "temperature": 0.2,
+        "parallel_tool_calls": false
+      }
+    },
+    {
+      "type": "PolicyResponseEvent",
+      "sequence": 5,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 2,
+      "response_payload": {
+        "id": "response-final",
+        "output": [
+          {
+            "type": "function_call",
+            "call_id": "write-1",
+            "name": "write_file",
+            "arguments": "{\"path\":\"report.json\",\"content\":\"{\\\"status\\\":\\\"ok\\\"}\"}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "submit-1",
+            "name": "submit",
+            "arguments": "{\"result\":\"done\"}"
+          },
+          {
+            "type": "function_call",
+            "call_id": "list-after-submit",
+            "name": "list_files",
+            "arguments": "{\"path\":\".\",\"depth\":2}"
+          }
+        ],
+        "usage": {
+          "input_tokens": 31,
+          "output_tokens": 7
+        },
+        "token_ids": [
+          101,
+          202,
+          303
+        ],
+        "token_logprobs": [
+          -0.1,
+          -0.2,
+          -0.3
+        ],
+        "model_version": "policy-build-42",
+        "routing": {
+          "provider": "local",
+          "replica": "r2"
+        },
+        "vendor_extension": {
+          "arbitrary": [
+            1,
+            {
+              "nested": true
+            }
+          ]
+        }
+      },
+      "normalized_output": [
+        {
+          "type": "function_call",
+          "call_id": "write-1",
+          "name": "write_file",
+          "arguments": "{\"path\":\"report.json\",\"content\":\"{\\\"status\\\":\\\"ok\\\"}\"}"
+        },
+        {
+          "type": "function_call",
+          "call_id": "submit-1",
+          "name": "submit",
+          "arguments": "{\"result\":\"done\"}"
+        },
+        {
+          "type": "function_call",
+          "call_id": "list-after-submit",
+          "name": "list_files",
+          "arguments": "{\"path\":\".\",\"depth\":2}"
+        }
+      ]
+    },
+    {
+      "type": "ToolCallEvent",
+      "sequence": 6,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 2,
+      "ordinal": 0,
+      "call_id": "write-1",
+      "tool_name": "write_file",
+      "arguments_json": "{\"path\":\"report.json\",\"content\":\"{\\\"status\\\":\\\"ok\\\"}\"}"
+    },
+    {
+      "type": "ToolObservationEvent",
+      "sequence": 7,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 2,
+      "ordinal": 0,
+      "call_id": "write-1",
+      "tool_name": "write_file",
+      "observation": {
+        "type": "function_call_output",
+        "call_id": "write-1",
+        "output": "{\"bytes\":15,\"ok\":true,\"path\":\"report.json\"}"
+      },
+      "submitted": false,
+      "error_type": null
+    },
+    {
+      "type": "ToolCallEvent",
+      "sequence": 8,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 2,
+      "ordinal": 1,
+      "call_id": "submit-1",
+      "tool_name": "submit",
+      "arguments_json": "{\"result\":\"done\"}"
+    },
+    {
+      "type": "ToolObservationEvent",
+      "sequence": 9,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 2,
+      "ordinal": 1,
+      "call_id": "submit-1",
+      "tool_name": "submit",
+      "observation": {
+        "type": "function_call_output",
+        "call_id": "submit-1",
+        "output": "{\"accepted\":true,\"result\":\"done\"}"
+      },
+      "submitted": true,
+      "error_type": null
+    },
+    {
+      "type": "ToolCallEvent",
+      "sequence": 10,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 2,
+      "ordinal": 2,
+      "call_id": "list-after-submit",
+      "tool_name": "list_files",
+      "arguments_json": "{\"path\":\".\",\"depth\":2}"
+    },
+    {
+      "type": "ToolObservationEvent",
+      "sequence": 11,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turn": 2,
+      "ordinal": 2,
+      "call_id": "list-after-submit",
+      "tool_name": "list_files",
+      "observation": {
+        "type": "function_call_output",
+        "call_id": "list-after-submit",
+        "output": "{\"entries\":[\"report.json\"],\"path\":\".\"}"
+      },
+      "submitted": false,
+      "error_type": null
+    },
+    {
+      "type": "RunnerTerminationEvent",
+      "sequence": 12,
+      "episode_id": "terminal-parity",
+      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "turns": 2,
+      "reason": "submitted"
+    }
+  ]
+}
