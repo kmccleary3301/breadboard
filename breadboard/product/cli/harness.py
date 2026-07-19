@@ -1,5 +1,6 @@
 from __future__ import annotations
-import json,shutil
+import contextlib,json,os,shlex,shutil,socket,sys,threading,time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any,Mapping
 import yaml
@@ -23,7 +24,7 @@ def _doc(p):
     if not isinstance(x,dict):raise ValueError("harness definition must be a mapping")
     return x
 def _loadref(parent,decl,w):
-    p=Path(parent); p=(w/p).resolve() if not p.is_absolute() else (p.parent/decl).resolve(); return _ref(p,w),_doc(p)
+    p=Path(parent); base=p if p.is_absolute() else w/p; target=(base.parent/decl).resolve(); return _ref(target,w),_doc(target)
 def _compile(p,w):return compile_harness_definition(load_harness_definition(p),source_ref=_ref(p,w),load_ref=lambda parent,decl:_loadref(parent,decl,w))
 def _lockpath(p,out=None):
     if out:
@@ -37,11 +38,11 @@ def init(a):
     try:
         d.mkdir(parents=True,exist_ok=True); t=_template("minimal_harness.v2.yaml"); shutil.copyfile(t,h) if t else h.write_text(FALLBACK); q.parent.mkdir(parents=True,exist_ok=True); t=_template("prompts/minimal_system.md"); shutil.copyfile(t,q) if t else q.write_text("You are a BreadBoard reference harness.\n"); return CliResult.success(["harness","init"],{"path":_ref(h,w),"prompt_path":_ref(q,w)},[_ref(h,w),_ref(q,w)],stage="harness.init")
     except Exception as e:return from_exception(["harness","init"],e,"harness.init")
-def validate(a):
-    p,w=_p(a),_w(a)
-    try:d=load_harness_definition(p); return CliResult.success(["harness","validate"],{"path":_ref(p,w),"schema_version":d["schema_version"]},[_ref(p,w)],stage="harness.validate")
-    except HarnessDefinitionValidationError as e:return CliResult.failure(["harness","validate"],2,"invalid_harness",str(e),"harness.validate",refs=[_ref(p,w)])
-    except Exception as e:return from_exception(["harness","validate"],e,"harness.validate")
+def validate(a,command_name="validate"):
+    p,w=_p(a),_w(a); command=["harness",command_name]; stage=f"harness.{command_name}"
+    try:d=load_harness_definition(p); return CliResult.success(command,{"path":_ref(p,w),"schema_version":d["schema_version"]},[_ref(p,w)],stage=stage)
+    except HarnessDefinitionValidationError as e:return CliResult.failure(command,2,"invalid_harness",str(e),stage,refs=[_ref(p,w)])
+    except Exception as e:return from_exception(command,e,stage)
 def explain(a):
     p,w=_p(a),_w(a)
     try:
@@ -62,37 +63,93 @@ def load_lock(p,w):
     if not t.exists():raise FileNotFoundError(f"lock is missing: {_ref(t,w)}")
     if not _meta(t).exists():raise ValueError("lock metadata is missing; lock must be regenerated")
     return EffectiveHarnessLock._from_record(json.loads(t.read_text())),_meta(t)
+def _record_count(response):
+    if not isinstance(response,dict):return 0
+    total=response.get("total")
+    if isinstance(total,int):return total
+    records=response.get("records")
+    return len(records) if isinstance(records,list) else 0
+def _poll_records(client,session_id):
+    deadline=time.monotonic()+0.5
+    while True:
+        response=client.read_session_records(session_id)
+        if _record_count(response)>0 or time.monotonic()>=deadline:return response
+        time.sleep(0.1)
+@contextlib.contextmanager
+def _local_server()->Iterator[str]:
+    import uvicorn
+    from agentic_coder_prototype.api.cli_bridge.app import create_app
+    previous=os.environ.pop("BREADBOARD_LEGACY_ROUTES",None);listener=None
+    def restore_environment():
+        if previous is None:os.environ.pop("BREADBOARD_LEGACY_ROUTES",None)
+        else:os.environ["BREADBOARD_LEGACY_ROUTES"]=previous
+    try:
+        listener=socket.socket(socket.AF_INET,socket.SOCK_STREAM);listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);listener.bind(("127.0.0.1",0));listener.listen(128)
+        server=uvicorn.Server(uvicorn.Config(create_app(),host="127.0.0.1",port=int(listener.getsockname()[1]),log_config=None,access_log=False))
+    except BaseException:
+        if listener is not None:listener.close()
+        restore_environment()
+        raise
+    real_out,real_err=sys.stdout,sys.stderr
+    def serve():
+        with open(os.devnull,"w") as sink,contextlib.redirect_stdout(sink),contextlib.redirect_stderr(sink):server.run(sockets=[listener])
+    thread=threading.Thread(target=serve,daemon=True);thread.start();deadline=time.monotonic()+10
+    while not server.started and thread.is_alive() and time.monotonic()<deadline:time.sleep(0.01)
+    if not server.started:
+        server.should_exit=True;thread.join(timeout=5);listener.close();restore_environment()
+        if thread.is_alive():sys.stdout,sys.stderr=real_out,real_err
+        raise RuntimeError("local create_app server did not start")
+    try:yield f"http://127.0.0.1:{listener.getsockname()[1]}"
+    finally:
+        server.should_exit=True;thread.join(timeout=10);listener.close();restore_environment()
+        if thread.is_alive():
+            sys.stdout,sys.stderr=real_out,real_err
+            raise RuntimeError("local create_app server did not stop")
 def run(a):
     p,w=_p(a),_w(a)
-    if getattr(a,"server",None):return _server(a)
     try:
         lock,mp=load_lock(p,w); c=_compile(p,w); m=json.loads(mp.read_text())
         if m.get("source_sha256")!=sha256_json(c.resolved_author_dict()) or m.get("graph_hash")!=lock["graph_hash"] or c.lock.as_dict()!=lock.as_dict():return CliResult.failure(["harness","run"],5,"lock_drift","mutable harness definition cannot run without a fresh lock","harness.run",next_actions=[f"breadboard harness lock {_ref(p,w)}"])
-        from .session import start_local
-        return start_local(["harness","run"],lock,str(getattr(a,"task",None) or "List files"),w)
+        a._effective_lock=lock;a._workspace=w
+        if getattr(a,"local",False):
+            try:
+                with _local_server() as server:
+                    a.server=server
+                    return _server(a)
+            except ModuleNotFoundError as e:return CliResult.failure(["harness","run"],6,"local_backend_unavailable",str(e),"harness.run",next_actions=["install BreadBoard with local runtime support or use --server"],status="blocked")
+        return _server(a)
     except Exception as e:return from_exception(["harness","run"],e,"harness.run")
 def _server(a):
     try:
         import breadboard_sdk
-        c=breadboard_sdk.BreadboardClient(a.server); s=c.create_session(config_path=str(a.PATH),task=""); sid=str(s["session_id"]); c.post_input(sid,content=str(getattr(a,"task",None) or "List files")); records=c.read_session_records(sid); terminal=False
+        task=str(getattr(a,"task",None) or "List files");c=breadboard_sdk.BreadboardClient(a.server);s=c.create_session(config_path=str(a.PATH),task="");sid=str(s["session_id"]);c.post_input(sid,content=task);terminal=False
         for e in c.stream_events(sid,query={"replay":"true"}):
-            if isinstance(e,dict) and str(e.get("type")) in {"completion","run_finished"}:terminal=True; break
+            kind=str(e.get("type") or "") if isinstance(e,dict) else ""
+            if kind=="error":return CliResult.failure(["harness","run"],4,"session_stream_error",f"session event stream failed: {e.get('payload')}","harness.run")
+            if kind in {"completion","run_finished"}:terminal=True;break
         if not terminal:return CliResult.failure(["harness","run"],4,"session_stream_eof","session event stream ended before a terminal event","harness.run")
-        return CliResult.success(["harness","run"],{"session_id":sid,"record_count":len(records.get("records",[])) if isinstance(records,dict) and isinstance(records.get("records"),list) else 0},stage="harness.run")
+        records=_poll_records(c,sid);record_count=_record_count(records);refs=sorted({_ref(Path(str(row["path"])),_w(a)) for row in records.get("records",[]) if isinstance(row,dict) and row.get("path")}) if isinstance(records,dict) else [];hashes={};next_actions=[]
+        if getattr(a,"local",False):
+            from .session import persist_completed_run
+            workspace_arg=shlex.quote(str(getattr(a,"workspace",None) or "."));local_ref,view=persist_completed_run(a._effective_lock,task,sid,a._workspace);record_count=max(record_count,view.event_count);refs=sorted({*refs,local_ref});hashes={"lock":view.effective_lock_hash,"task":view.task_hash};next_actions=[f"breadboard session --workspace {workspace_arg} show {sid}"]
+        result=CliResult.success(["harness","run"],{"session_id":sid,"record_count":record_count},refs=refs,hashes=hashes,next_actions=next_actions,stage="harness.run")
+        if not record_count:result.warnings.append("session completed before bridge runtime records became visible")
+        return result
+    except ModuleNotFoundError as e:return CliResult.failure(["harness","run"],6,"client_backend_unavailable",str(e),"harness.run",next_actions=["install BreadBoard SDK support"],status="blocked")
     except Exception as e:return from_exception(["harness","run"],e,"harness.run")
 def list_harnesses(a):
     w=_w(a); root=Path(getattr(a,"directory",None) or w)
     try:
         r=[_ref(p,w) for p in sorted(root.rglob("*.yaml")) if p.is_file() and "harness" in p.name]; return CliResult.success(["harness","list"],{"harnesses":r,"count":len(r)},r,stage="harness.list")
     except Exception as e:return from_exception(["harness","list"],e,"harness.list")
-def show(a):
-    p,w=_p(a),_w(a)
-    try:return CliResult.success(["harness","show"],{"path":_ref(p,w),"definition":_doc(p)},[_ref(p,w)],stage="harness.show")
-    except Exception as e:return from_exception(["harness","show"],e,"harness.show")
+def show(a,command_name="show"):
+    p,w=_p(a),_w(a); command=["harness",command_name]; stage=f"harness.{command_name}"
+    try:return CliResult.success(command,{"path":_ref(p,w),"definition":_doc(p)},[_ref(p,w)],stage=stage)
+    except Exception as e:return from_exception(command,e,stage)
 def get(a):
-    r=show(a); r.command=["harness","get"]; r.stage_outcomes[0]["stage"]="harness.get"; return r
+    return show(a,"get")
 def update(a):
-    r=validate(a); r.command=["harness","update"]; return r
+    return validate(a,"update")
 def get_lock(a):
     p,w=_p(a),_w(a); t=p if p.name.endswith(".lock.json") else _lockpath(p)
     try:x=json.loads(t.read_text()); return CliResult.success(["harness-lock","get"],{"path":_ref(t,w),"lock":x},[_ref(t,w)],{"graph":str(x.get("graph_hash",""))},stage="harness-lock.get")

@@ -1,10 +1,10 @@
 from __future__ import annotations
-import json,uuid
+import json
 from pathlib import Path
 from typing import Any
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.events import JsonlEventSink,KernelEvent,Session,SessionView
-from .result import CliResult,EXIT_BLOCKED,from_exception,portable_ref
+from .result import CliResult,from_exception,portable_ref
 def _workspace(a=None,w=None):return w.expanduser().resolve() if w else Path(getattr(a,"workspace",None) or Path.cwd()).expanduser().resolve()
 def _dir(w):return w/".breadboard"/"sessions"
 def _ep(w,s):return _dir(w)/f"{s}.events.jsonl"
@@ -19,20 +19,9 @@ def _load(w,s):
     p=_ep(w,s)
     if not p.exists():raise FileNotFoundError(f"session not found: {s}")
     return Session.restore(_events(p),sink=JsonlEventSink(p)),p
-def _provider_ready(lock):
-    rows=lock.as_dict().get("effective_values",[]); paths={str(x.get("path")):x.get("value") for x in rows if isinstance(x,dict)}; models=paths.get("providers.models")
-    if not isinstance(models,list) or not models:return False,"harness has no provider declaration"
-    if not [x.get("adapter") for x in models if isinstance(x,dict) and isinstance(x.get("adapter"),str) and x.get("adapter")]:return False,"harness provider has no adapter"
-    return True,None
-def start_local(command,lock,task,workspace,adapter_required=True):
-    if adapter_required:
-        ok,reason=_provider_ready(lock)
-        if not ok:return CliResult.failure(command,EXIT_BLOCKED,"missing_provider_adapter",reason,"session.start",hint="Declare a provider model and adapter, then relock the harness.",next_actions=["breadboard integration list","breadboard harness lock <harness>"])
-    if not isinstance(task,str) or not task.strip():return CliResult.failure(command,2,"invalid_task","task must be non-empty","session.start")
-    w=workspace.expanduser().resolve(); sid="s-"+uuid.uuid4().hex; p=_ep(w,sid)
-    try:
-        s=Session.start(lock,task,session_id=sid,sink=JsonlEventSink(p)); s.input(task); s.complete("completed"); _persist(w,s); v=s.read_model; return CliResult.success(command,{"session_id":v.session_id,"status":v.status,"event_count":v.event_count},[portable_ref(p,w)],{"lock":v.effective_lock_hash,"task":v.task_hash},[f"breadboard session show {sid}"],"session.start")
-    except Exception as e:return from_exception(command,e,"session.start")
+def persist_completed_run(lock:EffectiveHarnessLock,task:str,session_id:str,workspace:Path)->tuple[str,SessionView]:
+    path=_ep(workspace,session_id);session=Session.start(lock,task,session_id=session_id,sink=JsonlEventSink(path));session.input(task);session.complete("bridge terminal event observed");_persist(workspace,session)
+    return portable_ref(path,workspace),session.read_model
 def list_sessions(a):
     w=_workspace(a)
     try:

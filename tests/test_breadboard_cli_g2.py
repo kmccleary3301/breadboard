@@ -10,6 +10,7 @@ import yaml
 
 from scripts import breadboard_cli
 from scripts.authoring.validate_lane import load_lane_manifest
+from breadboard.product.runtime.artifacts import ArtifactStore
 
 
 def _invoke(argv: list[str], capsys) -> tuple[int, str, str]:
@@ -156,15 +157,16 @@ def test_pyproject_installs_cli_and_runtime_import_packages() -> None:
     )
 
     assert metadata["project"]["scripts"]["bbh"] == "scripts.breadboard_cli:main"
-    assert set(metadata["tool"]["setuptools"]["packages"]) >= {
-        "scripts",
-        "breadboard",
-        "agentic_coder_prototype",
-        "breadboard_sdk",
-        "conformance",
+    package_find = metadata["tool"]["setuptools"]["packages"]["find"]
+    assert set(package_find["include"]) >= {
+        "scripts*",
+        "breadboard*",
+        "agentic_coder_prototype*",
+        "conformance*",
     }
-    assert "breadboard.product.coordination" in metadata["tool"]["setuptools"]["packages"] and "adaptive_iter" in metadata["tool"]["setuptools"]["py-modules"]
-    assert metadata["tool"]["setuptools"]["data-files"]["contracts/kernel/schemas"] == ["contracts/kernel/schemas/*.schema.json"]
+    assert package_find["namespaces"] is True
+    assert "adaptive_iter" in metadata["tool"]["setuptools"]["py-modules"]
+    assert metadata["tool"]["setuptools"]["package-data"]["contracts.kernel.schemas"] == ["*.schema.json"]
     from breadboard.product.coordination import WorkItem as ExportedWorkItem; assert ExportedWorkItem.__name__ == "WorkItem"
 
 
@@ -225,9 +227,10 @@ def test_init_json_is_the_only_output_and_identifies_every_created_file(
     assert exit_code == 0, stderr
     payload = json.loads(stdout)
     assert payload["ok"] is True
-    assert payload["path"] == str(out_dir / created_paths[0])
+    assert payload["schema_version"] == "bb.cli.result.v1"
+    assert payload["data"]["path"] == str(out_dir / created_paths[0])
     if namespace == "harness":
-        assert payload["prompt_path"] == str(out_dir / created_paths[1])
+        assert payload["data"]["prompt_path"] == str(out_dir / created_paths[1])
     assert stderr == ""
 
 
@@ -245,3 +248,31 @@ def test_init_quiet_emits_no_success_output(
     assert exit_code == 0
     assert stdout == ""
     assert stderr == ""
+
+
+def test_artifact_verify_infers_stored_size_when_size_is_omitted(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    artifact_ref = ArtifactStore(tmp_path / ".breadboard" / "artifacts").put(
+        b"verified artifact",
+        media_type="text/plain",
+    )
+
+    exit_code, stdout, stderr = _invoke(
+        [
+            "--json",
+            "artifact",
+            "--workspace",
+            str(tmp_path),
+            "verify",
+            artifact_ref.digest,
+        ],
+        capsys,
+    )
+
+    assert exit_code == 0
+    assert stderr == ""
+    payload = json.loads(stdout)
+    assert payload["data"]["verified"] is True
+    assert payload["data"]["artifact"]["size_bytes"] == len(b"verified artifact")

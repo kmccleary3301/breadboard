@@ -12,6 +12,19 @@ from scripts import breadboard_cli
 
 HARNESS_PATH = Path("agent_configs/templates/minimal_harness.v2.yaml")
 
+@pytest.fixture
+def locked_harness(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> Path:
+    harness_path = tmp_path / "minimal_harness.v2.yaml"
+    prompt_path = tmp_path / "prompts" / "minimal_system.md"
+    prompt_path.parent.mkdir()
+    harness_path.write_bytes(HARNESS_PATH.read_bytes())
+    prompt_path.write_bytes(
+        (HARNESS_PATH.parent / "prompts" / "minimal_system.md").read_bytes()
+    )
+    assert breadboard_cli.main(["harness", "lock", str(harness_path)]) == 0
+    capsys.readouterr()
+    return harness_path
+
 
 class _RunClient:
     calls: list[tuple[Any, ...]] = []
@@ -55,6 +68,7 @@ class _EofClient(_RunClient):
 
 
 def test_harness_run_submits_task_once_and_reports_completed_session(
+    locked_harness: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -65,7 +79,7 @@ def test_harness_run_submits_task_once_and_reports_completed_session(
         [
             "harness",
             "run",
-            str(HARNESS_PATH),
+            str(locked_harness),
             "--server",
             "https://breadboard.test/api",
             "--task",
@@ -80,15 +94,16 @@ def test_harness_run_submits_task_once_and_reports_completed_session(
     assert "2" in captured.out
     assert _RunClient.calls == [
         ("connect", "https://breadboard.test/api"),
-        ("create", str(HARNESS_PATH), ""),
+        ("create", str(locked_harness), ""),
         ("input", "session-g3", "repair the harness"),
-        ("records", "session-g3"),
         ("events", "session-g3"),
+        ("records", "session-g3"),
     ]
 
 
 
 def test_harness_run_rejects_event_stream_eof_before_terminal_event(
+    locked_harness: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -99,7 +114,7 @@ def test_harness_run_rejects_event_stream_eof_before_terminal_event(
         [
             "harness",
             "run",
-            str(HARNESS_PATH),
+            str(locked_harness),
             "--server",
             "https://breadboard.test/api",
             "--task",
@@ -113,6 +128,7 @@ def test_harness_run_rejects_event_stream_eof_before_terminal_event(
 
 
 def test_harness_run_maps_sdk_failures_to_runtime_exit(
+    locked_harness: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -129,7 +145,7 @@ def test_harness_run_maps_sdk_failures_to_runtime_exit(
         [
             "harness",
             "run",
-            str(HARNESS_PATH),
+            str(locked_harness),
             "--server",
             "https://breadboard.test/api",
             "--task",
@@ -141,6 +157,38 @@ def test_harness_run_maps_sdk_failures_to_runtime_exit(
     assert exit_code == 4
     assert captured.out == ""
     assert "bridge unavailable" in captured.err
+
+
+def test_harness_run_rejects_definition_changed_after_lock(
+    locked_harness: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _RunClient.calls = []
+    monkeypatch.setattr(breadboard_sdk, "BreadboardClient", _RunClient)
+    locked_harness.write_text(
+        locked_harness.read_text(encoding="utf-8").replace(
+            "idle_turn_limit: 1",
+            "idle_turn_limit: 2",
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = breadboard_cli.main(
+        [
+            "harness",
+            "run",
+            str(locked_harness),
+            "--server",
+            "https://breadboard.test/api",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 5
+    assert captured.out == ""
+    assert "lock_drift" in captured.err.lower()
+    assert _RunClient.calls == []
 
 
 @pytest.mark.parametrize(

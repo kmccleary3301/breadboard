@@ -77,6 +77,7 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
     describe = json.loads(describe_result.stdout)
     assert describe["schema_version"] == "bb.cli.result.v1"
     assert describe["command"] == ["system", "describe"]
+    assert describe["data"]["system"] == "breadboard"
 
     import_result = subprocess.run(
         [
@@ -85,7 +86,7 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
             "-c",
             (
                 "import adaptive_iter, json, agentic_coder_prototype, breadboard, "
-                "breadboard_sdk, conformance; "
+                "breadboard_sdk, conformance, scripts.authoring, scripts.e4_parity; "
                 "print(json.dumps([adaptive_iter.__file__, "
                 "agentic_coder_prototype.__file__, breadboard.__file__, "
                 "breadboard_sdk.__file__, conformance.__file__]))"
