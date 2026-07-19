@@ -18,6 +18,10 @@ try:
         load_lane_defs,
         record_builder_source_paths,
     )
+    from breadboard.product.evidence.lane_lock import (
+        LaneLockError,
+        validate_before_capture,
+    )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
@@ -34,6 +38,10 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
         lane_lock_sha256,
         load_lane_defs,
         record_builder_source_paths,
+    )
+    from breadboard.product.evidence.lane_lock import (
+        LaneLockError,
+        validate_before_capture,
     )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
@@ -63,6 +71,18 @@ _DERIVED_OUTPUT_PREFIXES = (
 )
 _REGEN_SCRATCH_ROOT = ROOT / "tmp" / "e4_regen_capture"
 
+
+def preflight_candidate_capture(
+    lane_def: Mapping[str, Any],
+    lock: Mapping[str, Any],
+    *,
+    root: Path = ROOT,
+) -> None:
+    """Validate product candidate identity before invoking capture code."""
+    try:
+        validate_before_capture(lane_def, lock, root=root)
+    except LaneLockError as exc:
+        raise LaneRunError(str(exc)) from exc
 
 class LaneRunError(ValueError):
     pass
@@ -864,6 +884,16 @@ def run_lane(
         raise LaneRunError(f"unknown lane {lane_id!r} in {lane_def_dir}") from exc
     lane_def = dict(lane_def)
     lane_def["_lock_sha256"] = lane_lock_sha256(lane_id, lane_def_dir)
+    if lane_def.get("schema_version") == "bb.e4.lane_def.v3":
+        lock_path = lane_def_dir / f"{lane_id}.lock.json"
+        if not lock_path.is_file():
+            raise LaneRunError("candidate lane capture requires a bb.e4.lane_lock.v2 lock")
+        try:
+            preflight_candidate_capture(lane_def, _load_json(lock_path), root=ROOT)
+        except (OSError, ValueError, LaneRunError) as exc:
+            if isinstance(exc, LaneRunError):
+                raise
+            raise LaneRunError(str(exc)) from exc
     inventory_lane = _inventory_lane(lane_id, inventory_path)
     if inventory_lane is not None and inventory_lane.get("config_id") != lane_def.get("config_id"):
         raise LaneRunError(f"lane {lane_id!r} config_id differs between lane_def and inventory")

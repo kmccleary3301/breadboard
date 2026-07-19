@@ -283,7 +283,8 @@
       "metadata": {
         "schema_versions": [
           "bb.e4.lane_def.v1",
-          "bb.e4.lane_def.v2"
+          "bb.e4.lane_def.v2",
+          "bb.e4.lane_def.v3"
         ]
       },
       "status": "active"
@@ -304,7 +305,8 @@
       "id": "e4_lane_lock",
       "metadata": {
         "schema_versions": [
-          "bb.e4.lane_lock.v1"
+          "bb.e4.lane_lock.v1",
+          "bb.e4.lane_lock.v2"
         ]
       },
       "status": "active"
@@ -314,7 +316,8 @@
       "id": "e4_lane_manifest",
       "metadata": {
         "schema_versions": [
-          "bb.e4.lane_manifest.v1"
+          "bb.e4.lane_manifest.v1",
+          "bb.e4.lane_manifest.v2"
         ]
       },
       "status": "active"

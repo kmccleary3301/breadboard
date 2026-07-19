@@ -94,8 +94,11 @@ Status: `active`
 | `bb.e4.comparator_registry.v1` | BreadBoard E4 comparator registry V1 | `evidence` |
 | `bb.e4.fixed_point_report.v1` | BreadBoard E4 fixed-point report V1 | `evidence` |
 | `bb.e4.lane_def.v2` | BreadBoard E4 lane definition V2 | `evidence` |
+| `bb.e4.lane_def.v3` | BreadBoard E4 candidate lane definition V3 | `config_algebra` |
 | `bb.e4.lane_inventory.v2` | BreadBoard E4 lane inventory V2 | `evidence` |
 | `bb.e4.lane_lock.v1` | BreadBoard E4 lane lock (machine-owned deterministic resolution; never hand-edited) | `config_algebra` |
+| `bb.e4.lane_lock.v2` | BreadBoard E4 candidate lane lock V2 | `config_algebra` |
+| `bb.e4.lane_manifest.v2` | BreadBoard E4 candidate lane manifest V2 | `config_algebra` |
 | `bb.e4.lane_manifest.v1` | BreadBoard E4 lane manifest (author-owned conformance intent; digests live in bb.e4.lane_lock.v1) | `config_algebra` |
 | `bb.e4.regen_failure_classification.v1` | BreadBoard E4 regeneration failure classification V1 | `evidence` |
 | `bb.e4.regen_plan.v1` | BreadBoard E4 regeneration plan V1 | `evidence` |

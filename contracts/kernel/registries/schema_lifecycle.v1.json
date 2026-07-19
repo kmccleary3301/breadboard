@@ -218,6 +218,14 @@
     },
     {
       "default_for_generation": false,
+      "family": "e4_lane_definition",
+      "lifecycle": "validate_only",
+      "notes": "NS08 inactive candidate authoring schema; no runtime producer.",
+      "schema_id": "bb.e4.lane_def.v3",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
       "family": "e4_lane_inventory",
       "lifecycle": "frozen_accepted_evidence",
       "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
@@ -236,6 +244,22 @@
       "family": "e4_lane_lock",
       "lifecycle": "active_production",
       "schema_id": "bb.e4.lane_lock.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "e4_lane_lock",
+      "lifecycle": "validate_only",
+      "notes": "NS08 inactive candidate machine lock; no runtime producer.",
+      "schema_id": "bb.e4.lane_lock.v2",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "e4_lane_manifest",
+      "lifecycle": "validate_only",
+      "notes": "NS08 inactive candidate authoring manifest; no runtime producer.",
+      "schema_id": "bb.e4.lane_manifest.v2",
       "superseded_by": null
     },
     {

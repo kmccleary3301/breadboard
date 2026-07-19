@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v2.schema.json",
+  "title": "BreadBoard E4 candidate lane lock V2",
+  "description": "Machine-owned deterministic resolution for an inactive candidate lane.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "lock_format", "lane_id", "manifest", "references", "lock_sha256"],
+  "properties": {
+    "schema_version": {"const": "bb.e4.lane_lock.v2"},
+    "lock_format": {"const": "canonical-json-v2"},
+    "lane_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_.-]*$"},
+    "manifest": {"$ref": "#/$defs/digest_row"},
+    "references": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "path", "sha256", "bytes"],
+        "properties": {
+          "name": {"enum": ["harness", "target", "adapter", "source", "comparator", "policy"]},
+          "path": {"$ref": "#/$defs/relative_path"},
+          "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+          "bytes": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "lock_sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+    },
+    "digest_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes"],
+      "properties": {
+        "path": {"$ref": "#/$defs/relative_path"},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}
