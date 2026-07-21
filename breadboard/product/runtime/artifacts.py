@@ -78,7 +78,7 @@ class ArtifactStore:
         self._root_path, self._descriptor, self._transaction_depth, self._transaction_stream, self._transaction_owner = Path(root), descriptor, 0, None, None
         if descriptor is None: self._root.mkdir(parents=True, exist_ok=True)
     @contextmanager
-    def transaction(self) -> Iterator[None]:
+    def transaction(self, *, rollback_created: set[ArtifactRef] | None = None) -> Iterator[None]:
         with _CAS_LOCK:
             outer, stream = self._transaction_owner != threading.get_ident(), self._transaction_stream
             if outer:
@@ -95,7 +95,13 @@ class ArtifactStore:
                 except BaseException: stream.close(); self._transaction_stream = None; raise
                 self._transaction_owner = threading.get_ident()
             self._transaction_depth += 1
-            try: yield
+            try:
+                yield
+            except BaseException:
+                if rollback_created is not None:
+                    for ref in tuple(rollback_created): self._discard(ref)
+                    rollback_created.clear()
+                raise
             finally:
                 self._transaction_depth -= 1
                 if outer:

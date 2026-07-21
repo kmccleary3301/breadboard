@@ -22,10 +22,10 @@ class _DummySessionState:
         self._metadata[key] = value
 
 
-def _anthropic_tool_schema():
+def _anthropic_tool_schema(name="fetch_data"):
     return [
         {
-            "name": "fetch_data",
+            "name": name,
             "description": "Fetch data",
             "input_schema": {
                 "type": "object",
@@ -34,6 +34,23 @@ def _anthropic_tool_schema():
             },
         }
     ]
+
+def _openai_tool_schema(name="fetch_data"):
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": "Fetch data",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                },
+            },
+        }
+    ]
+
 
 
 def test_anthropic_runtime_stream_success(monkeypatch):
@@ -46,7 +63,7 @@ def test_anthropic_runtime_stream_success(monkeypatch):
             {
                 "type": "tool_use",
                 "id": "call-1",
-                "name": "fetch_data",
+                "name": "host_execute",
                 "input": {"foo": "bar"},
             },
             {"type": "thinking", "text": "analysis"},
@@ -76,6 +93,8 @@ def test_anthropic_runtime_stream_success(monkeypatch):
     class FakeMessages:
         def stream(self, **kwargs):
             assert kwargs["model"] == model
+            assert kwargs["tools"] == _anthropic_tool_schema("host_execute")
+            assert kwargs["tool_choice"] == {"type": "tool", "name": "host_execute"}
             return FakeStream()
 
         def create(self, **kwargs):
@@ -93,7 +112,7 @@ def test_anthropic_runtime_stream_success(monkeypatch):
     client = runtime.create_client("fake-key")
     context = ProviderRuntimeContext(
         session_state=_DummySessionState(),
-        agent_config={},
+        agent_config={"provider_tools": {"anthropic": {"tool_choice": {"type": "tool", "name": "host.execute"}}}},
         stream=True,
     )
 
@@ -101,16 +120,56 @@ def test_anthropic_runtime_stream_success(monkeypatch):
         client=client,
         model=model,
         messages=[{"role": "user", "content": "Hi"}],
-        tools=_anthropic_tool_schema(),
+        tools=_openai_tool_schema("host.execute"),
         stream=True,
         context=context,
     )
 
     assert result.messages[0].content == "Hello"
-    assert result.messages[0].tool_calls[0].name == "fetch_data"
+    assert result.messages[0].tool_calls[0].name == "host.execute"
     assert result.reasoning_summaries == ["analysis"]
     assert result.usage == {"input_tokens": 12, "output_tokens": 34}
     assert result.metadata["usage"]["output_tokens"] == 34
+
+
+def test_anthropic_runtime_reuses_host_tool_alias_in_transcript() -> None:
+    descriptor, _ = provider_router.get_runtime_descriptor("anthropic/claude-3-opus")
+    runtime = provider_registry.create_runtime(descriptor)
+    _, converted = runtime._convert_messages(
+        [{"role": "assistant", "content": "", "tool_calls": [{"id": "call-1", "function": {"name": "host.execute", "arguments": "{}"}}]}],
+        {"host.execute": "host_execute"},
+    )
+    assert converted[0]["content"][0]["name"] == "host_execute"
+
+
+def test_anthropic_host_tool_alias_avoids_declared_name_collisions() -> None:
+    descriptor, _ = provider_router.get_runtime_descriptor("anthropic/claude-3-opus")
+    runtime = provider_registry.create_runtime(descriptor)
+    context = ProviderRuntimeContext(session_state=_DummySessionState(), agent_config={}, stream=False)
+    _, first_aliases = runtime._filter_anthropic_tools(
+        [*_openai_tool_schema("host.execute"), *_openai_tool_schema("host_execute")],
+        context,
+    )
+    generated = first_aliases["host.execute"]
+    filtered, aliases = runtime._filter_anthropic_tools(
+        [*_openai_tool_schema("host.execute"), *_openai_tool_schema("host_execute"), *_openai_tool_schema(generated)],
+        context,
+    )
+    names = [tool["name"] for tool in filtered]
+    assert len(names) == len(set(names))
+    assert aliases["host.execute"] not in {"host_execute", generated}
+
+def test_anthropic_filter_drops_malformed_function_tool_without_crashing() -> None:
+    descriptor, _ = provider_router.get_runtime_descriptor("anthropic/claude-3-opus")
+    runtime = provider_registry.create_runtime(descriptor)
+    context = ProviderRuntimeContext(session_state=_DummySessionState(), agent_config={}, stream=False)
+    filtered, aliases = runtime._filter_anthropic_tools(
+        [{"type": "function", "function": "not-a-mapping"}],
+        context,
+    )
+    assert filtered is None
+    assert aliases == {}
+
 
 
 def test_anthropic_runtime_stream_error(monkeypatch):

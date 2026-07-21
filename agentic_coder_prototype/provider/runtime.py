@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import datetime
 import json
+import math
 import os
 import random
 import re
 from dataclasses import dataclass, field
 import time
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Type
 import textwrap
 
 try:  # pragma: no cover - import guard exercised in runtime
@@ -78,6 +80,113 @@ class ProviderResult:
     model: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+
+def _provider_evidence_value(value: Any, *, seen: frozenset[int] = frozenset()) -> Any:
+    if value is None or type(value) in (bool, str, int, float):
+        json.dumps(value, allow_nan=False)
+        return value
+    if isinstance(value, dict):
+        if id(value) in seen or any(type(key) is not str for key in value):
+            raise ProviderRuntimeError("provider evidence contains a cyclic object or non-string key")
+        return {key: _provider_evidence_value(item, seen=seen | {id(value)}) for key, item in sorted(value.items())}
+    if isinstance(value, (list, tuple)):
+        if id(value) in seen:
+            raise ProviderRuntimeError("provider evidence contains a cyclic array")
+        return [_provider_evidence_value(item, seen=seen | {id(value)}) for item in value]
+    raise ProviderRuntimeError(f"provider evidence contains unsupported value type: {type(value).__name__}")
+
+
+def provider_result_evidence(result: ProviderResult) -> Dict[str, Any]:
+    """Project a provider result into stable evidence without raw SDK objects."""
+    if not isinstance(result, ProviderResult):
+        raise ProviderRuntimeError("provider returned an invalid ProviderResult")
+    messages: List[Dict[str, Any]] = []
+    for message in result.messages:
+        if not isinstance(message, ProviderMessage):
+            raise ProviderRuntimeError("provider result contains an invalid message")
+        tool_calls: List[Dict[str, Any]] = []
+        for call in message.tool_calls:
+            if not isinstance(call, ProviderToolCall):
+                raise ProviderRuntimeError("provider result contains an invalid tool call")
+            tool_calls.append({"id": call.id, "name": call.name, "arguments": call.arguments, "type": call.type})
+        messages.append({
+            "role": message.role,
+            "content": message.content,
+            "tool_calls": tool_calls,
+            "finish_reason": message.finish_reason,
+            "index": message.index,
+            "annotations": _provider_evidence_value(message.annotations),
+        })
+    return {
+        "messages": messages,
+        "usage": _provider_evidence_value(result.usage),
+        "model": result.model,
+        "metadata": _provider_evidence_value(result.metadata),
+    }
+
+
+def normalized_provider_usage(result: ProviderResult) -> Dict[str, Any]:
+    if not isinstance(result, ProviderResult):
+        raise ProviderRuntimeError("provider returned an invalid ProviderResult")
+    if result.usage is not None and not isinstance(result.usage, dict):
+        raise ProviderRuntimeError("provider usage must be an object when populated")
+    usage = result.usage or {}
+
+    def count(*names: str) -> int:
+        values: List[int] = []
+        for name in names:
+            if name not in usage:
+                continue
+            value = usage[name]
+            if type(value) is not int or value < 0:
+                raise ProviderRuntimeError(f"provider usage {name} must be a nonnegative integer")
+            values.append(value)
+        if len(set(values)) > 1:
+            raise ProviderRuntimeError(f"provider usage aliases disagree: {', '.join(names)}")
+        return values[0] if values else 0
+
+    input_tokens = count("input_tokens", "prompt_tokens")
+    output_tokens = count("output_tokens", "completion_tokens")
+    component_total = input_tokens + output_tokens
+    reported_total = count("total_tokens")
+    total_tokens = max(component_total, reported_total)
+    if not isinstance(result.metadata, dict):
+        raise ProviderRuntimeError("provider metadata must be an object")
+    metadata = result.metadata
+    costs: List[Union[int, float]] = []
+    currencies: List[str] = []
+    for source in (usage, metadata):
+        for name in ("cost_amount", "cost", "cost_usd"):
+            if name not in source:
+                continue
+            value = source[name]
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                raise ProviderRuntimeError(f"provider {name} must be a finite nonnegative number")
+            try:
+                finite_cost = math.isfinite(float(value))
+            except OverflowError as exc:
+                raise ProviderRuntimeError(f"provider {name} must be representable as a finite number") from exc
+            if not finite_cost:
+                raise ProviderRuntimeError(f"provider {name} must be a finite nonnegative number")
+            costs.append(value)
+            if name == "cost_usd":
+                currencies.append("USD")
+        if "cost_currency" in source:
+            currency_value = source["cost_currency"]
+            if not isinstance(currency_value, str) or len(currency_value) != 3 or any(character < "A" or character > "Z" for character in currency_value):
+                raise ProviderRuntimeError("provider cost_currency must be a three-letter uppercase code")
+            currencies.append(currency_value)
+    if len(set(currencies)) > 1:
+        raise ProviderRuntimeError("provider cost currencies disagree")
+    cost = max(costs, default=0.0)
+    currency = currencies[0] if currencies else "USD"
+    return {
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "cost_amount": cost,
+        "cost_currency": currency,
+    }
 
 @dataclass
 class ProviderRuntimeContext:
@@ -847,7 +956,11 @@ class OpenAIBaseRuntime(ProviderRuntime):
                 # Some OpenAI-compatible routes reject null `content` values.
                 # Normalize to empty string to preserve turn shape while staying valid.
                 content = ""
-            converted.append({"role": role, "content": content})
+            converted_message = {"role": role, "content": content}
+            for field in ("name", "tool_call_id", "tool_calls", "function_call"):
+                if field in message:
+                    converted_message[field] = message[field]
+            converted.append(converted_message)
         return converted
 
     def _convert_tools_to_openai(self, tools: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
@@ -1700,7 +1813,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             return None
         return "".join(parts) if parts else None
 
-    def _convert_messages(self, messages: List[Dict[str, Any]]) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    def _convert_messages(self, messages: List[Dict[str, Any]], tool_name_aliases: Optional[Dict[str, str]] = None) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         system_prompt: Optional[str] = None
         converted: List[Dict[str, Any]] = []
 
@@ -1748,7 +1861,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                         {
                             "type": "tool_use",
                             "id": str(call_id),
-                            "name": str(name),
+                            "name": (tool_name_aliases or {}).get(str(name), str(name)),
                             "input": input_payload if isinstance(input_payload, dict) else {},
                         }
                     )
@@ -2106,14 +2219,14 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         self,
         tools: Optional[List[Dict[str, Any]]],
         context: ProviderRuntimeContext,
-    ) -> Optional[List[Dict[str, Any]]]:
+    ) -> Tuple[Optional[List[Dict[str, Any]]], Dict[str, str]]:
         """
         Anthropic rejects tool names with dots or other invalid characters.
         Drop dotted todo* tools when todos are disabled, and strip any tool whose
         name fails the provider regex ^[a-zA-Z0-9_-]{1,128}$.
         """
         if not tools:
-            return tools
+            return tools, {}
 
         agent_cfg = context.agent_config or {}
         features_cfg = agent_cfg.get("features") or {}
@@ -2129,12 +2242,26 @@ class AnthropicMessagesRuntime(ProviderRuntime):
 
         filtered: List[Dict[str, Any]] = []
         dropped: List[str] = []
+        aliases: Dict[str, str] = {}
+        used_names: set[str] = set()
         for tool in tools:
-            name = None
-            try:
-                name = tool.get("name")
-            except Exception:
-                name = None
+            if not isinstance(tool, Mapping):
+                continue
+            function = tool.get("function") if tool.get("type") == "function" else None
+            name = function.get("name") if isinstance(function, Mapping) else tool.get("name") if tool.get("type") != "function" else None
+            if isinstance(name, str):
+                used_names.add(name)
+        for tool in tools:
+            candidate = dict(tool) if isinstance(tool, Mapping) else tool
+            if isinstance(tool, Mapping) and tool.get("type") == "function" and isinstance(tool.get("function"), Mapping):
+                function = tool["function"]
+                candidate = {
+                    "name": function.get("name"),
+                    "input_schema": function.get("parameters", {"type": "object", "properties": {}}),
+                }
+                if isinstance(function.get("description"), str):
+                    candidate["description"] = function["description"]
+            name = candidate.get("name") if isinstance(candidate, dict) else None
             if not name or not isinstance(name, str):
                 continue
 
@@ -2144,10 +2271,22 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 continue
 
             if not re.match(r"^[A-Za-z0-9_-]{1,128}$", name):
-                dropped.append(name)
-                continue
+                if name != "host.execute":
+                    dropped.append(name)
+                    continue
+                alias = "host_execute"
+                counter = 0
+                while alias in used_names:
+                    suffix = hashlib.sha256(f"{name}:{counter}".encode("utf-8")).hexdigest()[:8]
+                    alias = f"host_execute_{suffix}"
+                    counter += 1
+                candidate = dict(candidate)
+                candidate["name"] = alias
+                aliases[name] = alias
+                used_names.add(alias)
+                name = alias
 
-            filtered.append(tool)
+            filtered.append(candidate)
 
         session_state = getattr(context, "session_state", None)
         if session_state is not None and dropped:
@@ -2156,7 +2295,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             except Exception:
                 pass
 
-        return filtered or None
+        return filtered or None, aliases
 
     def _build_system_prompt(self, system_prompt: str, prompt_cache_cfg: Dict[str, Any]) -> Any:
         apply_cache = bool(prompt_cache_cfg.get("apply_to_system", True))
@@ -2212,8 +2351,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> ProviderResult:
-        tools = self._filter_anthropic_tools(tools, context)
-        system_prompt, converted_messages = self._convert_messages(messages)
+        tools, tool_name_aliases = self._filter_anthropic_tools(tools, context)
+        system_prompt, converted_messages = self._convert_messages(messages, tool_name_aliases)
 
         anthropic_cfg = (context.agent_config.get("provider_tools") or {}).get("anthropic", {})
         max_tokens = anthropic_cfg.get("max_output_tokens", 1024)
@@ -2249,6 +2388,9 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             request["tools"] = tools
 
         resolved_tool_choice = self._resolve_tool_choice(anthropic_cfg.get("tool_choice"), tools)
+        if isinstance(resolved_tool_choice, dict) and isinstance(resolved_tool_choice.get("name"), str):
+            resolved_tool_choice = dict(resolved_tool_choice)
+            resolved_tool_choice["name"] = tool_name_aliases.get(resolved_tool_choice["name"], resolved_tool_choice["name"])
         if resolved_tool_choice is not None:
             request["tool_choice"] = resolved_tool_choice
 
@@ -2321,7 +2463,13 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     context=context,
                     metadata=metadata,
                 )
-                return self._normalize_response(response, usage_override=usage_override)
+                result = self._normalize_response(response, usage_override=usage_override)
+                reverse_aliases = {alias: name for name, alias in tool_name_aliases.items()}
+                for message in result.messages:
+                    for call in message.tool_calls:
+                        if call.name in reverse_aliases:
+                            call.name = reverse_aliases[call.name]
+                return result
             except Exception as exc:
                 is_rate_limit = AnthropicRateLimitError is not None and isinstance(exc, AnthropicRateLimitError)
                 is_overloaded = False if is_rate_limit else self._is_overloaded_error(exc)

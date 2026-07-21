@@ -838,6 +838,9 @@ class SessionState:
 
     def get_provider_metadata(self, key: str, default: Any = None) -> Any:
         return self.provider_metadata.get(key, default)
+    def provider_metadata_snapshot(self) -> Dict[str, Any]:
+        return dict(self.provider_metadata)
+
 
     def clear_provider_metadata(self) -> None:
         self.provider_metadata.clear()

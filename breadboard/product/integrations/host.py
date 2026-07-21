@@ -10,6 +10,7 @@ from .catalog import IntegrationDescriptor, ProbeReport, probe_for
 class HostPort(Protocol):
     def get_workspace(self) -> str: ...
     def execute(self, command: str, **kwargs: Any) -> Any: ...
+    def replay_process_containment(self) -> Mapping[str, str]: ...
 
 
 class SandboxHostAdapter:
@@ -51,6 +52,15 @@ class SandboxHostAdapter:
         if not callable(method):
             raise RuntimeError("sandbox does not expose the frozen execute port")
         return method(command, **kwargs)
+
+    def replay_process_containment(self) -> Mapping[str, str]:
+        method = getattr(self.sandbox, "replay_process_containment", None)
+        if not callable(method):
+            raise RuntimeError("sandbox does not attest detached-descendant containment")
+        identity = method()
+        if not isinstance(identity, Mapping) or identity.get("detached_descendants") != "contained":
+            raise RuntimeError("sandbox process containment attestation is invalid")
+        return dict(identity)
 
     def probe(self) -> ProbeReport:
         try:
