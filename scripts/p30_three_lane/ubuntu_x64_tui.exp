@@ -26,7 +26,7 @@ expect {
 }
 send -- "THREE_LANE_SMOKE_UBUNTU_X64"
 sleep 1
-send -- "\n"
+send -- "\r"
 expect {
   -re {Hi! All systems nominal\.} {}
   eof { puts stderr "TUI exited before deterministic response"; exit 11 }
