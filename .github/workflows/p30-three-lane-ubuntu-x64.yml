@@ -72,13 +72,12 @@ jobs:
           BREADBOARD_CLI_HOST: 127.0.0.1
           BREADBOARD_CLI_PORT: "9099"
           BREADBOARD_CLI_LOG_LEVEL: warning
-          BREADBOARD_ENGINE_LAUNCH_ID: gha-${{ github.run_id }}-${{ github.run_attempt }}
           MOCK_API_KEY: gha-local-smoke
         run: |
           nohup python -m agentic_coder_prototype.api.cli_bridge.server > artifacts/engine.log 2>&1 &
           echo $! > artifacts/engine.pid
           for attempt in $(seq 1 300); do
-            if curl -fsS http://127.0.0.1:9099/health > artifacts/health.json; then
+            if curl -fsS http://127.0.0.1:9099/health > artifacts/health.json 2>/dev/null; then
               exit 0
             fi
             sleep 0.2
