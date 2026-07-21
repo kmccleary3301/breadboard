@@ -30,6 +30,18 @@ def _make_binding_fixture_sync_eligible(paths: dict[str, Path]) -> list[Path]:
             ],
         },
     )
+    inventory = json.loads(paths["inventory"].read_text(encoding="utf-8"))
+    inventory["lanes"][0]["artifact_roles"]["atomic_feature_ledger"] = "lane_alpha:atomic_feature_ledger"
+    _write_json(paths["inventory"], inventory)
+    report_roles = json.loads(paths["report_roles"].read_text(encoding="utf-8"))
+    report_roles["lane_artifact_roles"].append(
+        {
+            "lane_id": "lane_alpha",
+            "role_key": "atomic_feature_ledger",
+            "role_id": "lane_alpha:atomic_feature_ledger",
+        }
+    )
+    _write_json(paths["report_roles"], report_roles)
 
     support_claim = json.loads(paths["support_claim"].read_text(encoding="utf-8"))
     support_claim["ledger_row_refs"] = [f"{LEDGER_PATH}#feature_alpha#sha256:{'0' * 64}"]

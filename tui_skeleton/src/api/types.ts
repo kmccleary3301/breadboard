@@ -41,7 +41,7 @@ import type {
   SessionSummary as GeneratedSessionSummary,
   SkillCatalogResponse as GeneratedSkillCatalogResponse,
 } from "./generated/openapi-types.js"
-import type { KernelEventV2 } from "@breadboard/kernel-contracts/generated"
+import type { KernelEventV2 } from "@breadboard/kernel-contracts/generated/types/bb.kernel_event.v2"
 
 export type EventType =
   | "stream.hello"

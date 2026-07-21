@@ -72,7 +72,7 @@ describe("generated API client verifier", () => {
   it.each(negativeCases)("$name", ({ before, after, diagnostic }) => {
     const verifierCopy = prepareVerifierCopy()
     try {
-      const source = readFileSync(verifierCopy.clientPath, "utf8")
+      const source = readFileSync(verifierCopy.clientPath, "utf8").replace(/\r\n?/g, "\n")
       if (!source.includes(before)) {
         throw new Error(`Generated-client negative fixture anchor is missing: ${before}`)
       }

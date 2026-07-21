@@ -1,7 +1,10 @@
 from __future__ import annotations
+
+import hashlib
 import json
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import FastAPI, Request
@@ -16,6 +19,11 @@ from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord
 from agentic_coder_prototype.api.cli_bridge.service import SessionService
 from agentic_coder_prototype.api.e4 import create_e4_router
 from agentic_coder_prototype.api.e4.models import E4ApiError
+from agentic_coder_prototype.conformance.catalog_binding import (
+    catalog_segments,
+    catalog_segments_hash,
+    stable_entries_hash,
+)
 
 
 ACCEPTED_CLAIM_ID = "oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim"
@@ -25,9 +33,227 @@ COMPARATOR_SCHEMA = "bb.e4.comparator_report.v1"
 
 
 
+def _write_json(path: Path, payload: object) -> str:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _stable_hash(payload: object) -> str:
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
 @pytest.fixture()
-def client() -> TestClient:
-    return TestClient(create_app())
+def e4_fixture(tmp_path: Path) -> dict[str, object]:
+    repo = tmp_path / "repo"
+    inventory_path = repo / "docs/conformance/e4_lane_inventory.json"
+    catalog_path = repo / "docs/conformance/e4_artifact_catalog.json"
+    claims_dir = repo / "docs/conformance/support_claims"
+    schemas_dir = repo / "contracts/kernel/schemas"
+    ledger_path = tmp_path / "workspace/phase_15/atomic_feature_ledger.json"
+    coverage_dir = tmp_path / "workspace/phase_16/coverage"
+    runtime_records_dir = tmp_path / "runtime_records"
+
+    lane_ids = [ACCEPTED_LANE_ID, *(f"fixture_lane_{index}" for index in range(1, 6))]
+    lanes = [
+        {
+            "lane_id": lane_id,
+            "phase": "fixture",
+            "kind": "target_support",
+            "status": "accepted",
+            "target_family": "oh_my_pi" if index < 3 else "fixture",
+            "artifact_roles": {"comparator": f"{lane_id}:comparator"},
+        }
+        for index, lane_id in enumerate(lane_ids)
+    ]
+    _write_json(inventory_path, {"revision": 1, "lanes": lanes})
+
+    entries: list[dict[str, object]] = []
+    for index, lane_id in enumerate(lane_ids):
+        record_path = repo / f"evidence/{lane_id}/comparator_{index}.json"
+        digest = _write_json(
+            record_path,
+            {"schema_version": COMPARATOR_SCHEMA, "lane_id": lane_id, "passed": 1},
+        )
+        entries.append(
+            {
+                "role_id": f"{lane_id}:comparator",
+                "lane_id": lane_id,
+                "path": record_path.relative_to(repo).as_posix(),
+                "sha256": digest,
+                "bytes": record_path.stat().st_size,
+                "exists": True,
+                "artifact_kind": "comparator",
+            }
+        )
+    entries.append(
+        {
+            "role_id": "e4_static:config/e4_lane_inventory",
+            "path": inventory_path.relative_to(repo).as_posix(),
+            "sha256": "sha256:" + hashlib.sha256(inventory_path.read_bytes()).hexdigest(),
+            "bytes": inventory_path.stat().st_size,
+            "exists": True,
+            "artifact_kind": "inventory",
+        }
+    )
+    catalog = {
+        "schema_version": "bb.e4.artifact_catalog.v2",
+        "revision": 1,
+        "generated_at_utc": "2026-07-13T00:00:00Z",
+        "entries": entries,
+        "segments": catalog_segments(entries),
+        "integrity": {
+            "entry_count": len(entries),
+            "entries_hash": _stable_hash(entries),
+            "segments_hash": catalog_segments_hash(entries),
+            "stable_entries_hash": stable_entries_hash(entries),
+        },
+    }
+    _write_json(catalog_path, catalog)
+
+    ledger_rows = [
+        {
+            "feature_id": "feat_478375f6517dcc00" if index == 0 else f"feat_fixture_{index}",
+            "lane_id": lane_id,
+            "status": "accepted",
+        }
+        for index, lane_id in enumerate(lane_ids)
+    ]
+    _write_json(ledger_path, {"schema_version": "bb.atomic_feature_ledger.v1", "rows": ledger_rows})
+    ledger_row = ledger_rows[0]
+    ledger_row_hash = _stable_hash({"row_id": ledger_row["feature_id"], "row": ledger_row})
+
+    node_gate_path = repo / "artifacts/conformance/node_gate/fixture_c4_chain.json"
+    node_gate_hash = _write_json(
+        node_gate_path,
+        {"schema_version": "bb.e4.validation_report.v1", "ok": True, "errors": []},
+    )
+    evidence_manifest_path = claims_dir / f"{ACCEPTED_CLAIM_ID}_evidence_manifest.json"
+    evidence_manifest = {
+        "schema_version": "bb.e4.evidence_manifest.v1",
+        "claim_id": ACCEPTED_CLAIM_ID,
+        "lane_id": ACCEPTED_LANE_ID,
+        "artifacts": [
+            {
+                "role": "node_gate",
+                "path": node_gate_path.relative_to(repo).as_posix(),
+                "sha256": node_gate_hash,
+            },
+            {
+                "role": "atomic_feature_ledger",
+                "path": ledger_path.as_posix(),
+                "sha256": "sha256:" + hashlib.sha256(ledger_path.read_bytes()).hexdigest(),
+            },
+        ],
+    }
+    _write_json(evidence_manifest_path, evidence_manifest)
+
+    shared_segment_hash = next(
+        segment["stable_entries_hash"] for segment in catalog["segments"] if segment["segment_id"] == "shared"
+    )
+    segment_hashes = {
+        segment["segment_id"]: segment["stable_entries_hash"] for segment in catalog["segments"]
+    }
+    for index, lane_id in enumerate(lane_ids):
+        claim_id = ACCEPTED_CLAIM_ID if index == 0 else f"fixture_claim_{index}"
+        claim = {
+            "schema_version": "bb.e4.support_claim.v4",
+            "claim_id": claim_id,
+            "lane_id": lane_id,
+            "kind": "target_support",
+            "accepted": True,
+            "scope": {"config_id": f"fixture_config_{index}", "lane_id": lane_id, "target_family": "oh_my_pi"},
+            "evidence_manifest_ref": evidence_manifest_path.relative_to(repo).as_posix(),
+            "validation_refs": [f"{node_gate_path.relative_to(repo).as_posix()}#{node_gate_hash}"],
+            "ledger_row_refs": [
+                f"{ledger_path.as_posix()}#{ledger_row['feature_id']}#{ledger_row_hash}"
+            ],
+            "catalog_binding": {
+                "segment_id": lane_id,
+                "segment_hash": segment_hashes[lane_id],
+                "shared_segment_hash": shared_segment_hash,
+            },
+        }
+        _write_json(claims_dir / f"{claim_id}_support_claim.json", claim)
+
+    _write_json(
+        coverage_dir / "oh_my_pi.json",
+        {"schema_version": "bb.e4.coverage_matrix.v1", "target_family": "oh_my_pi", "covered": 1},
+    )
+    schema_packs: dict[str, list[str]] = {"legacy_frozen": [], "e4": [], "kernel": []}
+    for schema_id, pack in (
+        ("bb.e4.lane_inventory.v1", "legacy_frozen"),
+        ("bb.e4.support_claim.v1", "legacy_frozen"),
+        ("bb.e4.support_claim.v4", "e4"),
+        ("bb.kernel_event.v2", "kernel"),
+    ):
+        filename = f"{schema_id}.schema.json"
+        _write_json(
+            schemas_dir / filename,
+            {
+                "$id": f"https://example.invalid/{schema_id}.schema.json",
+                "properties": {"schema_version": {"const": schema_id}},
+            },
+        )
+        schema_packs[pack].append(filename)
+    _write_json(
+        repo / "contracts/kernel/packs.v1.json",
+        {
+            "entries": [
+                {"id": pack, "metadata": {"schemas": filenames}}
+                for pack, filenames in schema_packs.items()
+            ]
+        },
+    )
+    for registry_id in ("target_families", "kernel_event_kinds", "kernel_families"):
+        entries = [{"id": "oh_my_pi"}] if registry_id == "target_families" else [{"id": "fixture"}]
+        _write_json(
+            repo / "contracts/kernel/registries" / f"{registry_id}.json",
+            {"registry_id": registry_id, "schema_version": "bb.registry.v1", "entries": entries},
+        )
+
+    return {
+        "repo": repo,
+        "inventory_path": inventory_path,
+        "catalog_path": catalog_path,
+        "claims_dir": claims_dir,
+        "schemas_dir": schemas_dir,
+        "ledger_path": ledger_path,
+        "coverage_dir": coverage_dir,
+        "runtime_records_dir": runtime_records_dir,
+        "node_gate_path": node_gate_path,
+        "catalog": catalog,
+        "lane_ids": lane_ids,
+    }
+
+
+@pytest.fixture()
+def client(e4_fixture: dict[str, object]) -> TestClient:
+    repo = Path(e4_fixture["repo"])
+    app = FastAPI()
+
+    @app.exception_handler(E4ApiError)
+    async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"error": exc.error, "detail": exc.detail_text, "path": exc.path},
+        )
+
+    app.include_router(
+        create_e4_router(
+            repo_root=repo,
+            inventory_path=Path(e4_fixture["inventory_path"]),
+            catalog_path=Path(e4_fixture["catalog_path"]),
+            claims_dir=Path(e4_fixture["claims_dir"]),
+            schemas_dir=Path(e4_fixture["schemas_dir"]),
+            ledger_path=Path(e4_fixture["ledger_path"]),
+            coverage_dir=Path(e4_fixture["coverage_dir"]),
+            runtime_records_dir=Path(e4_fixture["runtime_records_dir"]),
+        ),
+        prefix="/v1/e4",
+    )
+    return TestClient(app)
 
 
 def _e4_client_for_catalog(repo_root: Path, catalog_path: Path, runtime_records_dir: Path) -> TestClient:
@@ -44,8 +270,8 @@ def _e4_client_for_catalog(repo_root: Path, catalog_path: Path, runtime_records_
             catalog_path=catalog_path,
             claims_dir=repo_root / "docs" / "conformance" / "support_claims",
             schemas_dir=repo_root / "contracts" / "kernel" / "schemas",
-            ledger_path=repo_root.parent / "docs_tmp" / "phase_15" / "BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
-            coverage_dir=repo_root.parent / "docs_tmp" / "phase_16" / "coverage",
+            ledger_path=repo_root / ".test_state" / "atomic_feature_ledger.json",
+            coverage_dir=repo_root / ".test_state" / "coverage",
             runtime_records_dir=runtime_records_dir,
         ),
         prefix="/v1/e4",
@@ -66,13 +292,48 @@ def _e4_client_for_claims_dir(repo_root: Path, claims_dir: Path, runtime_records
             catalog_path=repo_root / "docs" / "conformance" / "e4_artifact_catalog.json",
             claims_dir=claims_dir,
             schemas_dir=repo_root / "contracts" / "kernel" / "schemas",
-            ledger_path=repo_root.parent / "docs_tmp" / "phase_15" / "BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
-            coverage_dir=repo_root.parent / "docs_tmp" / "phase_16" / "coverage",
+            ledger_path=repo_root / ".test_state" / "atomic_feature_ledger.json",
+            coverage_dir=repo_root / ".test_state" / "coverage",
             runtime_records_dir=runtime_records_dir,
         ),
         prefix="/v1/e4",
     )
     return TestClient(app)
+
+
+@pytest.fixture()
+def reverify_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, object]:
+    from tests.test_e4_c4_chain_validation import _build_chain
+
+    from agentic_coder_prototype.api.e4 import router as e4_router
+
+    chain = _build_chain(tmp_path, checkout_local_sources=True)
+    claim_path = Path(chain["support_claim"])
+    claim_id = json.loads(claim_path.read_text(encoding="utf-8"))["claim_id"]
+    real_validate_c4_chain = e4_router.validate_c4_chain
+    validation_reports: list[dict[str, Any]] = []
+
+    def _capture_validate_c4_chain(**kwargs: Any) -> dict[str, Any]:
+        report = real_validate_c4_chain(**kwargs)
+        validation_reports.append(report)
+        return report
+
+    monkeypatch.setattr(e4_router, "validate_c4_chain", _capture_validate_c4_chain)
+    local_client = _e4_client_for_claims_dir(
+        Path(chain["repo"]),
+        claim_path.parent,
+        tmp_path / "runtime_records",
+    )
+    return {
+        "chain": chain,
+        "claim_id": claim_id,
+        "claim_path": claim_path,
+        "client": local_client,
+        "validation_reports": validation_reports,
+    }
 
 
 
@@ -201,12 +462,16 @@ def test_e4_health_schemas_and_lane_filters_read_accepted_inventory(client: Test
     lanes = client.get("/v1/e4/lanes", params={"status": "accepted"})
     assert lanes.status_code == 200
     payload = lanes.json()
-    assert len(payload["lanes"]) >= 21
+    assert len(payload["lanes"]) == 6
     assert {lane["status"] for lane in payload["lanes"]} == {"accepted"}
 
     oh_my_pi_lanes = client.get("/v1/e4/lanes", params={"status": "accepted", "target_family": "oh_my_pi"})
     assert oh_my_pi_lanes.status_code == 200
     assert {lane["target_family"] for lane in oh_my_pi_lanes.json()["lanes"]} == {"oh_my_pi"}
+
+    coverage = client.get("/v1/e4/coverage/oh_my_pi")
+    assert coverage.status_code == 200
+    assert coverage.json()["target_family"] == "oh_my_pi"
 
 
 def test_e4_lane_claim_catalog_ledger_and_records_resolve_real_artifacts(client: TestClient) -> None:
@@ -247,9 +512,11 @@ def test_e4_lane_claim_catalog_ledger_and_records_resolve_real_artifacts(client:
     assert {record["schema_version"] for record in record_payload["records"]} == {COMPARATOR_SCHEMA}
 
 
-def test_e4_catalog_binding_serves_stored_v2_binding_truth(client: TestClient) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    catalog = json.loads((repo_root / "docs" / "conformance" / "e4_artifact_catalog.json").read_text(encoding="utf-8"))
+def test_e4_catalog_binding_serves_stored_v2_binding_truth(
+    client: TestClient,
+    e4_fixture: dict[str, object],
+) -> None:
+    catalog = e4_fixture["catalog"]
     expected_segments = [
         {"segment_id": segment["segment_id"], "stable_entries_hash": segment["stable_entries_hash"]}
         for segment in catalog["segments"]
@@ -306,22 +573,22 @@ def test_e4_accepted_claim_catalog_bindings_match_response_segments(client: Test
             failures.append(f"{claim_id}: malformed catalog_binding keys {sorted(catalog_binding)}")
 
     assert failures == []
-    assert checked_segment_claims >= {
-        "breadboard_self_runtime_records_v1_c4_support_claim",
-        "claude_code_haiku45_north_star_capture_v1_c4_support_claim",
-        "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
+    assert checked_segment_claims == {
+        ACCEPTED_CLAIM_ID,
+        *(f"fixture_claim_{index}" for index in range(1, 6)),
     }
 
 
-def test_e4_catalog_binding_rejects_tampered_catalog_drift(tmp_path: Path) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
-    source_catalog_path = repo_root / "docs" / "conformance" / "e4_artifact_catalog.json"
-    catalog = json.loads(source_catalog_path.read_text(encoding="utf-8"))
+def test_e4_catalog_binding_rejects_tampered_catalog_drift(
+    tmp_path: Path,
+    e4_fixture: dict[str, object],
+) -> None:
+    catalog = json.loads(json.dumps(e4_fixture["catalog"]))
     catalog["entries"][0]["sha256"] = "sha256:" + "0" * 64
 
     tmp_repo = tmp_path / "repo"
     tmp_catalog_path = tmp_repo / "docs" / "conformance" / "e4_artifact_catalog.json"
-    tmp_catalog_path.parent.mkdir(parents=True)
+    tmp_catalog_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_catalog_path.write_text(json.dumps(catalog, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     local_client = _e4_client_for_catalog(tmp_repo, tmp_catalog_path, tmp_path / "runtime_records")
@@ -340,17 +607,16 @@ def test_e4_catalog_binding_rejects_tampered_catalog_drift(tmp_path: Path) -> No
 )
 def test_e4_catalog_binding_returns_structured_conflict_for_malformed_v2_shapes(
     tmp_path: Path,
+    e4_fixture: dict[str, object],
     malformed_field: str,
     malformed_value: object,
 ) -> None:
-    source_root = Path(__file__).resolve().parents[1]
-    source_catalog_path = source_root / "docs" / "conformance" / "e4_artifact_catalog.json"
-    catalog = json.loads(source_catalog_path.read_text(encoding="utf-8"))
+    catalog = json.loads(json.dumps(e4_fixture["catalog"]))
     catalog[malformed_field] = malformed_value
 
     repo_root = tmp_path / "repo"
     catalog_path = repo_root / "docs" / "conformance" / "e4_artifact_catalog.json"
-    catalog_path.parent.mkdir(parents=True)
+    catalog_path.parent.mkdir(parents=True, exist_ok=True)
     catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
 
     response = _e4_client_for_catalog(repo_root, catalog_path, tmp_path / "runtime_records").get(
@@ -396,21 +662,21 @@ def test_e4_claim_listing_rejects_duplicate_ids_with_sorted_source_paths(tmp_pat
 
 
 def test_registries_endpoints_expose_contract_registry_files(client: TestClient) -> None:
-    list_response = client.get("/v1/registries")
+    list_response = client.get("/v1/e4/registries")
 
     assert list_response.status_code == 200
     registries = list_response.json()["registries"]
     registry_ids = {registry["registry_id"] for registry in registries}
     assert {"target_families", "kernel_event_kinds", "kernel_families"}.issubset(registry_ids)
 
-    registry_response = client.get("/v1/registries/target_families")
+    registry_response = client.get("/v1/e4/registries/target_families")
     assert registry_response.status_code == 200
     payload = registry_response.json()
     assert payload["registry_id"] == "target_families"
     assert payload["schema_version"] == "bb.registry.v1"
     assert any(entry["id"] == "oh_my_pi" for entry in payload["entries"])
 
-    missing = client.get("/v1/registries/not_a_registry")
+    missing = client.get("/v1/e4/registries/not_a_registry")
     assert missing.status_code == 404
     assert missing.json()["error"] == "registry_not_found"
 
@@ -521,27 +787,53 @@ def test_e4_paginated_resources_report_pre_slice_total_and_return_requested_wind
         assert len(page_payload[item_key]) == min(limit, full_payload["total"] - offset)
 
 
-def test_e4_claim_reverify_runs_check_only_without_writing_probe_artifacts(client: TestClient) -> None:
-    json_out = Path("artifacts/conformance/node_gate/ct_p6_oh_my_pi_l4_c4_chain.json")
+def test_e4_claim_reverify_runs_check_only_without_writing_probe_artifacts(
+    reverify_fixture: dict[str, object],
+) -> None:
+    chain = reverify_fixture["chain"]
+    claim_id = str(reverify_fixture["claim_id"])
+    json_out = Path(chain["validation_report"])
     before_bytes = json_out.read_bytes()
     before_mtime_ns = json_out.stat().st_mtime_ns
 
-    response = client.post(f"/v1/e4/claims/{ACCEPTED_CLAIM_ID}/reverify", json={"rerun_comparators": True})
-    assert response.status_code == 200
+    response = reverify_fixture["client"].post(
+        f"/v1/e4/claims/{claim_id}/reverify",
+        json={"rerun_comparators": True},
+    )
+
+    assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["claim_id"] == ACCEPTED_CLAIM_ID
+    assert payload["claim_id"] == claim_id
     assert payload["mode"] == "check_only"
     assert payload["comparator_rerun"] is True
-    assert payload["ok"] is True
+    assert payload["ok"] is True, payload
     assert payload["errors"] == []
+    validation_reports = reverify_fixture["validation_reports"]
+    assert isinstance(validation_reports, list)
+    assert len(validation_reports) == 1
+    assert validation_reports[0]["comparator_rerun"] == {
+        "assertion_count": 1,
+        "comparator_class": "deterministic_replay",
+        "missing_assertion_ids": [],
+        "unexpected_assertion_ids": [],
+        "status_mismatch_ids": [],
+        "value_mismatch_ids": [],
+        "ok": True,
+        "comparator_id": "codex_stored_report_replay",
+        "registry": "conformance/comparators/registry.json",
+    }
     assert json_out.read_bytes() == before_bytes
     assert json_out.stat().st_mtime_ns == before_mtime_ns
 
 
-def test_e4_claim_reverify_defaults_to_check_only_without_comparator_rerun(client: TestClient) -> None:
-
-    response = client.post(f"/v1/e4/claims/{ACCEPTED_CLAIM_ID}/reverify", json={})
-    assert response.status_code == 200
+def test_e4_claim_reverify_defaults_to_check_only_without_comparator_rerun(
+    reverify_fixture: dict[str, object],
+) -> None:
+    response = reverify_fixture["client"].post(
+        f"/v1/e4/claims/{reverify_fixture['claim_id']}/reverify",
+        json={},
+    )
+    assert response.status_code == 200, response.text
 
     payload = response.json()
     assert payload["ok"] is True
@@ -550,15 +842,36 @@ def test_e4_claim_reverify_defaults_to_check_only_without_comparator_rerun(clien
     assert payload["errors"] == []
 
 
+def test_e4_claim_reverify_rejects_tampered_node_gate_reference(
+    reverify_fixture: dict[str, object],
+) -> None:
+    claim_path = Path(reverify_fixture["claim_path"])
+    claim = json.loads(claim_path.read_text(encoding="utf-8"))
+    original_ref = claim["validation_refs"][0]
+    expected_hash = original_ref.rsplit("#", 1)[1]
+    claim["validation_refs"] = [f"../../outside_node_gate.json#{expected_hash}"]
+    _write_json(claim_path, claim)
+
+    response = reverify_fixture["client"].post(
+        f"/v1/e4/claims/{reverify_fixture['claim_id']}/reverify",
+        json={},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == "reverify_failed"
+    assert "outside" in response.json()["detail"]
+
+
 
 def test_e4_claim_reverify_uses_support_claim_source_path_when_filename_differs_from_claim_id(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    e4_fixture: dict[str, object],
 ) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(e4_fixture["repo"])
     claims_dir = tmp_path / "support_claims"
     claims_dir.mkdir()
-    source_claim_path = repo_root / "docs" / "conformance" / "support_claims" / f"{ACCEPTED_CLAIM_ID}.json"
+    source_claim_path = Path(e4_fixture["claims_dir"]) / f"{ACCEPTED_CLAIM_ID}_support_claim.json"
     mismatched_claim_path = claims_dir / "stored_under_unrelated_name_support_claim.json"
     mismatched_claim_path.write_text(source_claim_path.read_text(encoding="utf-8"), encoding="utf-8")
     captured: dict[str, object] = {}
@@ -577,7 +890,7 @@ def test_e4_claim_reverify_uses_support_claim_source_path_when_filename_differs_
     assert response.status_code == 200
     assert response.json()["claim_id"] == ACCEPTED_CLAIM_ID
     assert Path(captured["support_claim_path"]).resolve() == mismatched_claim_path.resolve()
-    assert captured["config_id"] == "oh_my_pi_p6_0_l4_mcp_browser_resource_v1"
+    assert captured["config_id"] == "fixture_config_0"
 
 def test_e4_missing_resources_return_flat_error_envelope(client: TestClient) -> None:
     missing_lane = client.get("/v1/e4/lanes/not_a_lane")
@@ -588,37 +901,28 @@ def test_e4_missing_resources_return_flat_error_envelope(client: TestClient) -> 
     assert client.get("/v1/e4/schemas/not_a_schema").status_code == 404
     assert client.get("/v1/e4/coverage/not_a_target_family").status_code == 404
 
-def test_e4_claim_detail_missing_evidence_manifest_returns_flat_error_envelope(tmp_path: Path) -> None:
-    repo_root = Path(__file__).resolve().parents[1]
+def test_e4_claim_detail_missing_evidence_manifest_returns_flat_error_envelope(
+    tmp_path: Path,
+    e4_fixture: dict[str, object],
+) -> None:
+    repo_root = Path(e4_fixture["repo"])
     claims_dir = tmp_path / "support_claims"
     claims_dir.mkdir()
     broken_claim_id = "broken_missing_manifest_claim"
-    claim = json.loads((repo_root / "docs" / "conformance" / "support_claims" / f"{ACCEPTED_CLAIM_ID}.json").read_text(encoding="utf-8"))
+    claim = json.loads(
+        (Path(e4_fixture["claims_dir"]) / f"{ACCEPTED_CLAIM_ID}_support_claim.json").read_text(
+            encoding="utf-8"
+        )
+    )
     claim["claim_id"] = broken_claim_id
     claim["evidence_manifest_ref"] = "docs/conformance/support_claims/missing_evidence_manifest.json"
-    (claims_dir / f"{broken_claim_id}_support_claim.json").write_text(json.dumps(claim, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_json(claims_dir / f"{broken_claim_id}_support_claim.json", claim)
 
-    app = FastAPI()
-
-    @app.exception_handler(E4ApiError)
-    async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:
-        return JSONResponse(status_code=exc.status_code, content={"error": exc.error, "detail": exc.detail_text, "path": exc.path})
-
-    app.include_router(
-        create_e4_router(
-            repo_root=repo_root,
-            inventory_path=repo_root / "docs" / "conformance" / "e4_lane_inventory.json",
-            catalog_path=repo_root / "docs" / "conformance" / "e4_artifact_catalog.json",
-            claims_dir=claims_dir,
-            schemas_dir=repo_root / "contracts" / "kernel" / "schemas",
-            ledger_path=repo_root.parent / "docs_tmp" / "phase_15" / "BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json",
-            coverage_dir=repo_root.parent / "docs_tmp" / "phase_16" / "coverage",
-            runtime_records_dir=tmp_path / "runtime_records",
-        ),
-        prefix="/v1/e4",
-    )
-
-    response = TestClient(app).get(f"/v1/e4/claims/{broken_claim_id}")
+    response = _e4_client_for_claims_dir(
+        repo_root,
+        claims_dir,
+        tmp_path / "runtime_records",
+    ).get(f"/v1/e4/claims/{broken_claim_id}")
 
     assert response.status_code == 409
     assert response.json()["error"] == "evidence_manifest_unavailable"

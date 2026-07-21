@@ -2,7 +2,7 @@
 
 This directory contains machine-readable schemas for the shared BreadBoard kernel contract program.
 
-Schemas are grouped by `contracts/kernel/packs.v1.json`; the three Phase 20 governance schemas remain registry-only so pack membership does not change.
+Schemas are grouped by `contracts/kernel/packs.v1.json`; registry-only governance schemas are listed separately.
 
 A schema appearing here means:
 
@@ -145,15 +145,3 @@ Status: `active`
 | `bb.tool_execution_outcome.v1` | BreadBoard Tool Execution Outcome V1 | `frozen_legacy` |
 | `bb.tool_model_render.v1` | BreadBoard Tool Model Render V1 | `frozen_legacy` |
 | `bb.tool_spec.v1` | BreadBoard Tool Spec V1 | `frozen_legacy` |
-
-### phase20_registry
-
-Phase 20 governance schemas are classified without changing pack membership.
-
-Status: `active`
-
-| Schema | Title | Tier |
-| --- | --- | --- |
-| `bb.contract_tiers.v1` | Consumer-backed tier registry for the published contract estate | `evidence` |
-| `bb.e4.lane_lock.v1` | BreadBoard E4 lane lock (machine-owned deterministic resolution; never hand-edited) | `config_algebra` |
-| `bb.e4.lane_manifest.v1` | BreadBoard E4 lane manifest (author-owned conformance intent; digests live in bb.e4.lane_lock.v1) | `config_algebra` |

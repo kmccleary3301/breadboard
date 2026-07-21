@@ -18,16 +18,16 @@ from typing import Sequence
 try:
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS
-    from scripts.e4_parity import build_e4_final_readiness_packet as final_readiness
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, load_lane_defs
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS
-    from scripts.e4_parity import build_e4_final_readiness_packet as final_readiness
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
 PYTHON = "{python}"
+EXPECTED_POINTS = "{expected_points}"
+EXPECTED_CLAIMS = "{expected_claims}"
 
 PINNED_GENERATED_AT_UTC = "2026-07-03T00:00:00Z"
 
@@ -47,13 +47,40 @@ class Stage:
     blocker: str | None = None
     allowed_exit_codes: tuple[int, ...] = ()
 
-    def expanded_argv(self, python: str) -> list[str]:
+    def expanded_argv(
+        self,
+        python: str,
+        *,
+        resolve_execution_values: bool = False,
+        workspace_root: Path | None = None,
+    ) -> list[str]:
         # ".venv/bin/python" in lane-derived argv is the same interpreter the
         # canonical stages run ({python} = the live venv); substitute the
         # absolute form so candidate roots (which exclude the gitignored venv)
         # resolve it identically.
+        substitutions = {PYTHON: python}
+        if resolve_execution_values and (
+            EXPECTED_POINTS in self.argv or EXPECTED_CLAIMS in self.argv
+        ):
+            # The readiness module resolves the external evidence workspace at
+            # import time. Keep that fail-closed boundary at execution, rather
+            # than making DAG plans and explanations require BB_WORKSPACE_ROOT.
+            previous_workspace = os.environ.get("BB_WORKSPACE_ROOT")
+            if workspace_root is not None:
+                os.environ["BB_WORKSPACE_ROOT"] = str(workspace_root)
+            try:
+                from scripts.e4_parity import build_e4_final_readiness_packet as final_readiness
+            finally:
+                if workspace_root is not None:
+                    if previous_workspace is None:
+                        os.environ.pop("BB_WORKSPACE_ROOT", None)
+                    else:
+                        os.environ["BB_WORKSPACE_ROOT"] = previous_workspace
+
+            substitutions[EXPECTED_POINTS] = str(final_readiness.expected_points())
+            substitutions[EXPECTED_CLAIMS] = str(final_readiness._expected_target_support_claims())
         return [
-            python if part in (PYTHON, ".venv/bin/python", "python") else part
+            substitutions.get(part, python if part in (".venv/bin/python", "python") else part)
             for part in self.argv
         ]
 
@@ -527,9 +554,9 @@ STAGES: tuple[Stage, ...] = (
             "--terminal-manifest",
             "../docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json",
             "--expected-points",
-            str(final_readiness.expected_points()),
+            EXPECTED_POINTS,
             "--expected-claims",
-            str(final_readiness._expected_target_support_claims()),
+            EXPECTED_CLAIMS,
         ),
         depends_on=("validate_e4_closure",),
     ),
@@ -924,7 +951,11 @@ def _run_stage_sequence(
         if blocked_exit_code is not None and stage.phase == "validators":
             print("STOPPING before validators because an earlier report stage is fail-closed", file=sys.stderr)
             return blocked_exit_code, results
-        argv = stage.expanded_argv(python)
+        argv = stage.expanded_argv(
+            python,
+            resolve_execution_values=True,
+            workspace_root=workspace_root,
+        )
         print(f"==> {stage.stage_id}: {' '.join(argv)}", flush=True)
         start = time.perf_counter()
         env = dict(os.environ)

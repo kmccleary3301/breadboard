@@ -612,6 +612,7 @@ jobs:
             scripts/run_ct_scenarios.py \
             scripts/sync_conformance_matrix_status.py \
             tests/test_run_ct_scenarios.py \
+            docs/conformance/ct_scenarios_v1.json \
             tests/test_sync_conformance_matrix_status.py \
             docs/conformance/CONFORMANCE_TEST_MATRIX_V1.csv; do
             if [ ! -f "$p" ]; then
@@ -650,10 +651,52 @@ jobs:
         if: steps.conformance_matrix_sync_prereqs.outputs.ready == 'true'
         run: |
           mkdir -p artifacts/conformance
+          # This clean-checkout guard exercises scenarios whose commands consume
+          # tracked checkout inputs. C4 chain validation is the existing
+          # workspace-evidence capability: it remains directly addressable via
+          # --test-id and fails closed without an immutable BB_WORKSPACE_ROOT.
+          tracked_input_selection="$(
+          python - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          manifest = json.loads(Path("docs/conformance/ct_scenarios_v1.json").read_text(encoding="utf-8"))
+          scenarios = manifest["scenarios"]
+          workspace_evidence = {
+              scenario["test_id"]
+              for scenario in scenarios
+              if scenario.get("command", [None, None])[1:2] == ["scripts/validate_e4_c4_chain.py"]
+          }
+          if "CT-P7-CODEX-GPT55-C4-CHAIN" not in workspace_evidence:
+              raise SystemExit("workspace-evidence CT routing is stale: P7 C4 chain not classified")
+          for scenario in scenarios:
+              if scenario["test_id"] not in workspace_evidence:
+                  print(scenario["test_id"])
+          print(
+              "clean-checkout CT scope records workspace-evidence scenarios as not_implemented: "
+              + ", ".join(sorted(workspace_evidence)),
+              file=sys.stderr,
+          )
+          PY
+          )"
+          if [[ -z "$tracked_input_selection" ]]; then
+            echo "tracked-input CT classifier returned no scenarios; refusing fallback to the full manifest" >&2
+            exit 1
+          fi
+          tracked_input_test_ids=()
+          while IFS= read -r test_id; do
+            tracked_input_test_ids+=("$test_id")
+          done <<< "$tracked_input_selection"
+          ct_filter_args=()
+          for test_id in "${tracked_input_test_ids[@]}"; do
+            ct_filter_args+=(--test-id "$test_id")
+          done
           set +e
           python scripts/run_ct_scenarios.py \
             --json-out artifacts/conformance/ct_scenarios_result_v1.json \
-            --rows-out artifacts/conformance/ct_scenarios_rows_v1.json
+            --rows-out artifacts/conformance/ct_scenarios_rows_v1.json \
+            "${ct_filter_args[@]}"
           ct_exit=$?
           set -e
           python scripts/sync_conformance_matrix_status.py \
@@ -663,18 +706,49 @@ jobs:
             --summary-json artifacts/conformance/conformance_matrix_sync_summary_v1.json \
             --summary-md artifacts/conformance/conformance_matrix_sync_summary_v1.md
           python - "$ct_exit" <<'PY'
+          import csv
           import json
           import sys
           from pathlib import Path
           ct_exit = int(sys.argv[1])
           result = json.loads(Path("artifacts/conformance/ct_scenarios_result_v1.json").read_text(encoding="utf-8"))
           summary = json.loads(Path("artifacts/conformance/conformance_matrix_sync_summary_v1.json").read_text(encoding="utf-8"))
+          manifest = json.loads(Path("docs/conformance/ct_scenarios_v1.json").read_text(encoding="utf-8"))
+          workspace_evidence = {
+              scenario["test_id"]
+              for scenario in manifest["scenarios"]
+              if scenario.get("command", [None, None])[1:2] == ["scripts/validate_e4_c4_chain.py"]
+          }
+          with Path("docs/conformance/CONFORMANCE_TEST_MATRIX_V1.csv").open(
+              newline="", encoding="utf-8"
+          ) as handle:
+              matrix_rows = list(csv.DictReader(handle))
+          matrix_ids = {row["test_id"] for row in matrix_rows}
+          matrix_c4_ids = {
+              row["test_id"]
+              for row in matrix_rows
+              if row.get("owner") == "capture-systems" and "-C4" in row["test_id"]
+          }
+          expected_missing = workspace_evidence & matrix_ids
+          if matrix_c4_ids != expected_missing:
+              raise SystemExit(
+                  "matrix workspace-evidence membership mismatch: "
+                  f"matrix_c4={sorted(matrix_c4_ids)} classified={sorted(expected_missing)}"
+              )
+          missing = set(summary.get("missing_test_ids", []))
+          if missing != expected_missing:
+              raise SystemExit(
+                  "clean-checkout CT routing mismatch: "
+                  f"expected matrix workspace-evidence rows={sorted(expected_missing)} "
+                  f"missing={sorted(missing)}"
+              )
           failing = int(summary.get("failing_rows", 0))
           blocking_not_implemented = int(summary.get("blocking_not_implemented_rows", 0))
           print(
               "conformance matrix sync guard: "
               f"ct_exit={ct_exit} ct_ok={result.get('ok')} sync_ok={summary.get('ok')} "
-              f"failing_rows={failing} blocking_not_implemented_rows={blocking_not_implemented}"
+              f"failing_rows={failing} blocking_not_implemented_rows={blocking_not_implemented} "
+              f"workspace_evidence_not_implemented={len(expected_missing)}"
           )
           if ct_exit != 0 or not result.get("ok", False) or not summary.get("ok", False):
               raise SystemExit(1)

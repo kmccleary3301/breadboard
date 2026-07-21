@@ -34,7 +34,7 @@ def pytest_ignore_collect(collection_path, config):
     p = str(collection_path)
     if not include_industry and "/industry_coder_refs/" in p:
         return True
-    return False
+    return None
 
 # Skip LSP-heavy tests when flagged (avoids long waits and external tool deps)
 _SKIP_LSP = os.environ.get("RAY_SCE_SKIP_LSP", "0") == "1"
