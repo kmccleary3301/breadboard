@@ -299,19 +299,29 @@ def build_inventory(lane_defs: Mapping[str, Mapping[str, Any]]) -> dict[str, Any
     }
 
 
+def lane_row_mismatches(
+    generated: Mapping[str, Any],
+    canonical: Mapping[str, Any],
+) -> list[str]:
+    missing = object()
+    return [
+        field
+        for field in sorted(set(generated) | set(canonical))
+        if generated.get(field, missing) != canonical.get(field, missing)
+    ]
+
+
 def compare_with_canonical(generated: Mapping[str, Any], canonical: Mapping[str, Any]) -> dict[str, Any]:
     generated_rows = {row["lane_id"]: row for row in generated.get("lanes", []) if isinstance(row, Mapping)}
     canonical_rows = {row["lane_id"]: row for row in canonical.get("lanes", []) if isinstance(row, Mapping)}
-    required_fields = ("config_id", "claim_id", "kind", "status", "points", "target_family", "target_version", "run_id", "provider_model", "sandbox_mode", "builder", "ct", "reverify_command", "artifact_roles", "ledger_feature_ids", "score_row_id")
     errors: list[str] = []
     for lane_id, generated_row in sorted(generated_rows.items()):
         canonical_row = canonical_rows.get(lane_id)
         if canonical_row is None:
             errors.append(f"canonical inventory missing lane {lane_id}")
             continue
-        for field in required_fields:
-            if generated_row.get(field) != canonical_row.get(field):
-                errors.append(f"{lane_id}.{field} mismatch")
+        for field in lane_row_mismatches(generated_row, canonical_row):
+            errors.append(f"{lane_id}.{field} mismatch")
     for lane_id in sorted(set(canonical_rows) - set(generated_rows)):
         errors.append(f"lane_def missing canonical lane {lane_id}")
     return {

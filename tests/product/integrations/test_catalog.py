@@ -52,6 +52,38 @@ def test_configuration_schema_id_is_colon_free() -> None:
     with pytest.raises(IntegrationError): IntegrationDescriptor("bb.integration_descriptor.v1", "tool:x", "tool_executor", "v1", "impl", (), "schema:v1")
 
 
+def test_public_metadata_arrays_are_non_empty_and_unique() -> None:
+    with pytest.raises(IntegrationError): IntegrationDescriptor("bb.integration_descriptor.v1", "tool:x", "tool_executor", "v1", "impl", capabilities=("same", "same"))
+    with pytest.raises(IntegrationError): IntegrationDescriptor("bb.integration_descriptor.v1", "tool:x", "tool_executor", "v1", "impl", secret_reference_names=("TOKEN", "TOKEN"))
+    for values in (("",), ("same", "same")):
+        with pytest.raises(IntegrationError): ProbeReport("bb.capability_probe_report.v1", "probe:x", "tool:x", "tool_executor", "impl", "available", capabilities=values, checked_at_utc="2026-07-21T00:00:00Z")
+        with pytest.raises(IntegrationError): ProbeReport("bb.capability_probe_report.v1", "probe:x", "tool:x", "tool_executor", "impl", "available", effects=values, checked_at_utc="2026-07-21T00:00:00Z")
+        with pytest.raises(IntegrationError): ProbeReport("bb.capability_probe_report.v1", "probe:x", "tool:x", "tool_executor", "impl", "available", permissions=values, checked_at_utc="2026-07-21T00:00:00Z")
+
+
+def test_capture_adapter_batches_register_atomically(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    existing = internal_capture_adapters()[0]
+    added = CaptureIntegrationAdapter("added", lambda value: value, source_sha256="sha256:" + "a" * 64)
+    catalog = IntegrationCatalog([existing])
+    monkeypatch.setattr("breadboard.product.integrations.capture.load_capture_entry_points", lambda group: [added, existing])
+    with pytest.raises(IntegrationError): catalog.load_capture_adapters()
+    assert [item.integration_id for item in catalog.list()] == [existing.descriptor.integration_id]
+
+    first_source = tmp_path / "first.py"; first_source.write_text("first\n")
+    second_source = tmp_path / "second.py"; second_source.write_text("second\n")
+    first_digest = "sha256:" + sha256(first_source.read_bytes()).hexdigest()
+    second_digest = "sha256:" + sha256(second_source.read_bytes()).hexdigest()
+    first = CaptureIntegrationAdapter("first", lambda value: value, source_sha256=first_digest)
+    second = CaptureIntegrationAdapter("second", lambda value: value, source_sha256=second_digest)
+    declarations = [
+        {"adapter_id": "first", "source_path": "first.py", "source_sha256": first_digest, "grants": ["capture"]},
+        {"adapter_id": "second", "source_path": "second.py", "source_sha256": "sha256:" + "f" * 64, "grants": ["capture"]},
+    ]
+    catalog = IntegrationCatalog()
+    with pytest.raises(ProjectDeclarationError): catalog.preflight(declarations, project_root=str(tmp_path), adapters={"first": first, "second": second})
+    assert catalog.list() == []
+
+
 def test_records_match_public_schemas_and_traversal_is_rejected(tmp_path: Path) -> None:
     catalog = IntegrationCatalog(internal_capture_adapters())
     for name, record in (("bb.integration_descriptor.v1", catalog.list()[0].to_record()), ("bb.capability_probe_report.v1", catalog.probe("capture:json").to_record())):

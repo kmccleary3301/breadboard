@@ -101,6 +101,52 @@ def test_harness_run_submits_task_once_and_reports_completed_session(
     ]
 
 
+def test_harness_run_consumes_custom_lock(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    harness_path = tmp_path / "minimal_harness.v2.yaml"
+    prompt_path = tmp_path / "prompts" / "minimal_system.md"
+    prompt_path.parent.mkdir()
+    harness_path.write_bytes(HARNESS_PATH.read_bytes())
+    prompt_path.write_bytes((HARNESS_PATH.parent / "prompts" / "minimal_system.md").read_bytes())
+    custom_lock = tmp_path / "locks" / "effective.json"
+    assert breadboard_cli.main(["--json", "harness", "lock", str(harness_path), "--out", str(custom_lock)]) == 0
+    lock_result = capsys.readouterr()
+    assert f"--lock {custom_lock}" in lock_result.out
+    assert not harness_path.with_name(harness_path.stem + ".lock.json").exists()
+    extensionless_lock = custom_lock.with_suffix(".lock")
+    custom_lock.rename(extensionless_lock)
+    custom_lock.with_name(f".{custom_lock.name}.meta.json").rename(
+        extensionless_lock.with_name(f".{extensionless_lock.name}.meta.json")
+    )
+    custom_lock = extensionless_lock
+    _RunClient.calls = []
+    monkeypatch.setattr(breadboard_sdk, "BreadboardClient", _RunClient)
+
+    exit_code = breadboard_cli.main(
+        ["harness", "run", str(harness_path), "--lock", str(custom_lock), "--server", "https://breadboard.test/api"]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0, captured.err
+    assert "session-g3" in captured.out
+    harness_path.write_text(harness_path.read_text().replace("mock/reference", "mock/changed"))
+    exit_code = breadboard_cli.main(
+        ["harness", "run", str(harness_path), "--lock", str(custom_lock), "--server", "https://breadboard.test/api"]
+    )
+    captured = capsys.readouterr()
+    assert exit_code == 5
+    assert f"breadboard harness lock {harness_path} --out {custom_lock}" in captured.err
+    capsys.readouterr()
+    assert breadboard_cli.main(
+        ["harness", "lock", str(harness_path), "--out", str(custom_lock)]
+    ) == 0
+    capsys.readouterr()
+    assert custom_lock.is_file()
+
+
 
 def test_harness_run_rejects_event_stream_eof_before_terminal_event(
     locked_harness: Path,

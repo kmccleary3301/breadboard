@@ -70,6 +70,14 @@ class ProjectDeclarationError(IntegrationError):
     """Raised when a project integration declaration cannot be trusted."""
 
 
+def _validate_metadata_arrays(*groups: object) -> None:
+    for group in groups:
+        if not isinstance(group, (list, tuple)) or any(not isinstance(value, str) or not value.strip() for value in group):
+            raise IntegrationError("integration metadata must contain non-empty strings")
+        if len(set(group)) != len(group):
+            raise IntegrationError("integration metadata must contain unique strings")
+
+
 @runtime_checkable
 class IntegrationAdapter(Protocol):
     descriptor: "IntegrationDescriptor"
@@ -103,9 +111,7 @@ class IntegrationDescriptor:
             raise IntegrationError("invalid integration descriptor")
         if self.configuration_schema_id is not None and not _SCHEMA_ID_RE.fullmatch(self.configuration_schema_id):
             raise IntegrationError("invalid configuration schema id")
-        for value in (*self.capabilities, *self.effects, *self.permissions, *self.secret_reference_names):
-            if not isinstance(value, str) or not value.strip():
-                raise IntegrationError("integration metadata must contain non-empty strings")
+        _validate_metadata_arrays(self.capabilities, self.effects, self.permissions, self.secret_reference_names)
         if self.probe_evidence_sha256 is not None and not _HASH_RE.fullmatch(self.probe_evidence_sha256):
             raise IntegrationError("probe evidence must be a sha256 digest")
 
@@ -145,6 +151,7 @@ class ProbeReport:
             raise IntegrationError("invalid capability probe subject")
         if not _is_rfc3339_timestamp(self.checked_at_utc):
             raise IntegrationError("capability probe must include an RFC3339 checked_at_utc")
+        _validate_metadata_arrays(self.capabilities, self.effects, self.permissions)
         if self.status not in {"available", "unavailable"}:
             raise IntegrationError("invalid capability probe status")
         if self.status == "available" and self.error is not None:
@@ -184,18 +191,30 @@ class IntegrationCatalog:
 
     def __init__(self, adapters: Iterable[IntegrationAdapter] = ()) -> None:
         self._adapters: dict[str, IntegrationAdapter] = {}
-        for adapter in adapters:
-            self.register(adapter)
+        self._register_many(adapters)
 
-    def register(self, adapter: IntegrationAdapter) -> IntegrationDescriptor:
+    @staticmethod
+    def _validate_adapter(adapter: IntegrationAdapter) -> IntegrationDescriptor:
         descriptor = getattr(adapter, "descriptor", None)
         probe = getattr(adapter, "probe", None)
         if not isinstance(descriptor, IntegrationDescriptor) or not callable(probe):
             raise IncompatibleAdapterError("adapter must expose a descriptor and probe()")
-        if descriptor.integration_id in self._adapters:
-            raise IntegrationError(f"integration already registered: {descriptor.integration_id}")
-        self._adapters[descriptor.integration_id] = adapter
         return descriptor
+
+    def _register_many(self, adapters: Iterable[IntegrationAdapter]) -> list[IntegrationDescriptor]:
+        pending: dict[str, IntegrationAdapter] = {}
+        descriptors: list[IntegrationDescriptor] = []
+        for adapter in adapters:
+            descriptor = self._validate_adapter(adapter)
+            if descriptor.integration_id in self._adapters or descriptor.integration_id in pending:
+                raise IntegrationError(f"integration already registered: {descriptor.integration_id}")
+            pending[descriptor.integration_id] = adapter
+            descriptors.append(descriptor)
+        self._adapters.update(pending)
+        return descriptors
+
+    def register(self, adapter: IntegrationAdapter) -> IntegrationDescriptor:
+        return self._register_many((adapter,))[0]
 
     def list(self, *, kind: str | None = None) -> list[IntegrationDescriptor]:
         values = (adapter.descriptor for adapter in self._adapters.values())
@@ -240,10 +259,7 @@ class IntegrationCatalog:
     def load_capture_adapters(self, *, group: str = "breadboard.capture_adapters") -> list[IntegrationDescriptor]:
         from .capture import load_capture_entry_points
 
-        adapters = load_capture_entry_points(group=group)
-        for adapter in adapters:
-            self.register(adapter)
-        return [adapter.descriptor for adapter in adapters]
+        return self._register_many(load_capture_entry_points(group=group))
 
     def preflight(
         self,
@@ -254,16 +270,15 @@ class IntegrationCatalog:
     ) -> list[IntegrationDescriptor]:
         from .capture import resolve_local_capture_declaration
 
-        resolved: list[IntegrationDescriptor] = []
-        for declaration in declarations:
-            adapter = resolve_local_capture_declaration(
+        resolved = [
+            resolve_local_capture_declaration(
                 declaration,
                 project_root=project_root,
                 adapters=adapters,  # type: ignore[arg-type]
             )
-            self.register(adapter)
-            resolved.append(adapter.descriptor)
-        return resolved
+            for declaration in declarations
+        ]
+        return self._register_many(resolved)
 
 
 def _now() -> str:

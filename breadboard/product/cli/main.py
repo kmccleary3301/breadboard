@@ -111,7 +111,7 @@ def _harness(ns):
         x=s.add_parser(n);x.add_argument("PATH");
         if n=="explain":x.add_argument("--strict",action="store_true")
         if n=="lock":x.add_argument("--out");x.add_argument("--check",action="store_true")
-        if n=="run":t=x.add_mutually_exclusive_group(required=True);t.add_argument("--server");t.add_argument("--local",action="store_true");x.add_argument("--task")
+        if n=="run":t=x.add_mutually_exclusive_group(required=True);t.add_argument("--server");t.add_argument("--local",action="store_true");x.add_argument("--task");x.add_argument("--lock")
         x.set_defaults(handler=fn)
 def _harness_lock(ns):
     p=ns.add_parser("harness-lock",help="inspect effective harness locks");_common(p);s=p.add_subparsers(dest="command",required=True);x=s.add_parser("get");x.add_argument("PATH");x.set_defaults(handler=harness.get_lock)

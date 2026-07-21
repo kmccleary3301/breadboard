@@ -146,6 +146,11 @@ def test_build_inventory_sorts_lane_defs() -> None:
         pytest.param("run_id", "different-run", id="run-id"),
         pytest.param("provider_model", "different/model", id="provider-model"),
         pytest.param("sandbox_mode", "different sandbox", id="sandbox-mode"),
+        pytest.param("evidence_status", "accepted", id="evidence-status"),
+        pytest.param("phase", "P8", id="phase"),
+        pytest.param("primitives", ["different"], id="primitives"),
+        pytest.param("comparator_id", "different-comparator", id="comparator-id"),
+        pytest.param("artifacts_root", "different/root", id="artifacts-root"),
     ],
 )
 def test_compare_with_canonical_reports_field_mismatch(field: str, canonical_value: object) -> None:
@@ -156,6 +161,16 @@ def test_compare_with_canonical_reports_field_mismatch(field: str, canonical_val
 
     assert report["ok"] is False
     assert report["errors"] == [f"oh_my_pi_p9_demo.{field} mismatch"]
+
+
+def test_compare_with_canonical_reports_unexpected_canonical_field() -> None:
+    generated = build_inventory({"demo": _lane_def()})
+    canonical_row = {**generated["lanes"][0], "future_contract_field": "unexpected"}
+
+    report = compare_with_canonical(generated, {"lanes": [canonical_row]})
+
+    assert report["ok"] is False
+    assert report["errors"] == ["oh_my_pi_p9_demo.future_contract_field mismatch"]
 
 
 def test_compare_with_canonical_accepts_matching_subset() -> None:
