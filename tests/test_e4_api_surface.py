@@ -933,6 +933,8 @@ def test_e4_claim_detail_missing_evidence_manifest_returns_flat_error_envelope(
 def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.delenv("BREADBOARD_EMIT_PRIMITIVES", raising=False)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "runtime_records"))
+    monkeypatch.setenv("BREADBOARD_SESSION_STATE_ROOT", str(tmp_path / "session_state"))
+
     async def _noop_start(self: object) -> None:
         return None
 

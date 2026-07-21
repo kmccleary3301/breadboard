@@ -25,7 +25,7 @@ test("session, file, catalog, and health calls use their exact public URLs", asy
   await client.createSession({ config_path: "configs/agent.yaml", task: "repair" })
   await client.listSessions()
   await client.getSession("session-123")
-  await client.postInput("session-123", { content: "continue" })
+  await client.postInput("session-123", { content: "continue", client_message_id: "message-123" })
   await client.postCommand("session-123", { command: "stop" })
   await client.deleteSession("session-123")
   await client.readSessionRecords("session-123")

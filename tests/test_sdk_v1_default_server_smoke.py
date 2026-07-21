@@ -43,7 +43,13 @@ class _SmokeSessionService:
     async def send_input(self, session_id: str, request: Any) -> SessionInputResponse:
         assert session_id == _SESSION_ID
         self.input_content = request.content
-        return SessionInputResponse()
+        return SessionInputResponse(
+            client_message_id=request.client_message_id,
+            input_id="sdk-smoke-input-1",
+            turn_id="sdk-smoke-turn-1",
+            disposition="started",
+            original_disposition="started",
+        )
 
     async def list_session_records(
         self,
@@ -67,20 +73,29 @@ class _SmokeSessionService:
             "total": 1,
         }
 
-    async def event_stream(
+    async def prepare_event_stream(
         self,
         session_id: str,
         *,
         replay: bool = False,
         limit: int | None = None,
         from_id: str | None = None,
-        validated: bool = False,
+        include_open_ack: bool = False,
+    ) -> str:
+        assert session_id == _SESSION_ID
+        return session_id
+
+    async def prepared_event_stream(
+        self,
+        session_id: str,
     ) -> AsyncIterator[SessionEvent]:
         assert session_id == _SESSION_ID
         yield SessionEvent(
             type=EventType.COMPLETION,
             session_id=session_id,
             payload={"status": "completed"},
+            input_id="sdk-smoke-input-1",
+            turn_id="sdk-smoke-turn-1",
             seq=1,
         )
 

@@ -174,6 +174,21 @@ export interface SessionCreateResponse {
   readonly logging_dir?: string | null
 }
 
+export interface SessionInputRequest {
+  readonly content: string
+  readonly attachments?: ReadonlyArray<string>
+  readonly client_message_id: string
+}
+
+export interface SessionInputResponse {
+  readonly status: "accepted"
+  readonly client_message_id: string
+  readonly input_id: string
+  readonly turn_id: string
+  readonly disposition: "started" | "queued" | "deduplicated"
+  readonly original_disposition: "started" | "queued"
+}
+
 export interface SessionSummary {
   readonly session_id: string
   readonly status: string

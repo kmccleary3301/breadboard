@@ -39,8 +39,14 @@ from agentic_coder_prototype.state.session_state import (
 
 from .events import EventType, SessionEvent
 from .event_normalization import normalize_task_event_payload
-from .models import SessionCreateRequest, SessionStatus
-from .registry import SessionRecord, SessionRegistry
+from .models import (
+    SessionCreateRequest,
+    SessionInputResponse,
+    SessionStatus,
+    SessionTurnCancelResponse,
+    TurnAdmission,
+)
+from .registry import CancellationRecord, SessionRecord, SessionRegistry, TurnRecord
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +142,15 @@ def _default_runtime_event_contract(event_type: str) -> RuntimeEventContract:
 
 
 
+class TurnContractConflict(RuntimeError):
+    """A submit or cancellation idempotency/terminal conflict."""
+
+    def __init__(self, code: str, message: str, *, turn_id: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.turn_id = turn_id
+
+
 class SessionRunner:
     """Coordinates agent execution, user inputs, and command handling for a session."""
 
@@ -153,6 +168,7 @@ class SessionRunner:
         self.agent_factory = agent_factory or self._default_factory
 
         self._task: Optional[asyncio.Task[None]] = None
+        self._prepared = False
         self._agent: Optional[Any] = None
         self._stop_event = asyncio.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -171,6 +187,7 @@ class SessionRunner:
         self._todo_enabled: bool = False
         self._active_bridge_timing_context: Optional[Dict[str, float]] = None
         self._accepted_task_texts: List[str] = []
+        self._event_turn: Optional[TurnRecord] = None
 
         # Live overrides updated via commands
         initial_metadata = dict(self.session.metadata or {})
@@ -200,67 +217,348 @@ class SessionRunner:
             force_local_mode=force_local_mode,
         )
 
-    async def start(self) -> None:
+    async def start(self, *, admission_serialized: bool = False) -> None:
+        await self.prepare_start(admission_serialized=admission_serialized)
+        self.start_execution()
+
+    async def prepare_start(self, *, admission_serialized: bool = False) -> None:
+        """Stage the initial turn without making session execution runnable."""
+
+        if self._prepared or self._task:
+            raise RuntimeError("runner already started")
+        self._loop = asyncio.get_running_loop()
+        initial_task = (self.request.task or "").strip()
+        if initial_task:
+            submit = (
+                self._submit_input_without_authority
+                if admission_serialized
+                else self.submit_input
+            )
+            await submit(
+                initial_task,
+                attachments=[],
+                client_message_id=f"session-create:{self.session.session_id}",
+            )
+        self._prepared = True
+
+    def start_execution(self) -> None:
+        if not self._prepared or self._loop is None:
+            raise RuntimeError("runner was not prepared")
         if self._task:
             raise RuntimeError("runner already started")
-        loop = asyncio.get_running_loop()
-        self._loop = loop
-        self._task = loop.create_task(self._run(), name=f"kyle-session-{self.session.session_id}")
+        self._task = self._loop.create_task(
+            self._run(),
+            name=f"kyle-session-{self.session.session_id}",
+        )
 
     async def stop(self) -> None:
         if self._closed:
             return
         self._stop_event.set()
+        self._request_active_interruption()
         await self._input_queue.put(None)
         if self._task and not self._task.done():
             await self._task
 
-    async def enqueue_input(self, content: str, attachments: Optional[list[str]] = None) -> None:
+    async def submit_input(
+        self,
+        content: str,
+        *,
+        attachments: Optional[list[str]],
+        client_message_id: str,
+    ) -> SessionInputResponse:
+        return await self.registry.admit_turn(
+            lambda: self._submit_input_without_authority(
+                content,
+                attachments=attachments,
+                client_message_id=client_message_id,
+            )
+        )
+
+    async def _submit_input_without_authority(
+        self,
+        content: str,
+        *,
+        attachments: Optional[list[str]],
+        client_message_id: str,
+    ) -> SessionInputResponse:
         if self._closed:
             raise RuntimeError("session is closed")
         if not content or not content.strip():
             raise ValueError("input content must not be empty")
-        content = self._sanitize_interactive_input_content(content)
-        payload = {
-            "content": content,
-            "attachments": [
-                item for item in (attachments or []) if isinstance(item, str) and item.strip()
-            ],
-        }
-        await self._input_queue.put(payload)
+        key = str(client_message_id or "").strip()
+        if not key:
+            raise ValueError("client_message_id must not be empty")
+        normalized_attachments = tuple(
+            item.strip() for item in (attachments or []) if isinstance(item, str) and item.strip()
+        )
+        async with self.session.admission_lock:
+            existing = self.session.submissions_by_key.get(key)
+            if existing is not None:
+                if existing.content != content or existing.attachments != normalized_attachments:
+                    raise TurnContractConflict(
+                        "input_idempotency_conflict",
+                        "client_message_id was already used with a different input body",
+                        turn_id=existing.turn_id,
+                    )
+                return SessionInputResponse(
+                    client_message_id=key,
+                    input_id=existing.input_id,
+                    turn_id=existing.turn_id,
+                    disposition="deduplicated",
+                    original_disposition=existing.original_disposition,
+                )
 
-    def _sanitize_interactive_input_content(self, content: str) -> str:
-        """Drop exact stale editor prefixes while preserving legitimate new turns.
-
-        The TUI submits each prompt as an independent POST. A live E4 run exposed
-        a path where the editor payload arrived as previous_prompt + current_prompt
-        with no separator. That turns one user turn into a contradictory compound
-        prompt. If the new payload has an exact prior accepted prompt as a prefix,
-        the suffix is the only semantically new user input.
-        """
-        raw = str(content or "")
-        if not raw:
-            return raw
-        for prior in sorted(self._accepted_task_texts, key=len, reverse=True):
-            if not prior or not raw.startswith(prior) or len(raw) <= len(prior):
-                continue
-            suffix = raw[len(prior) :]
-            if not suffix.strip():
-                continue
-            logger.warning(
-                "session(%s) stripped stale prompt prefix from interactive input old_len=%s new_len=%s",
-                self.session.session_id,
-                len(prior),
-                len(suffix),
+            original_disposition = "started" if self.session.active_turn_id is None else "queued"
+            turn = TurnRecord(
+                input_id=f"input-{uuid.uuid4()}",
+                turn_id=f"turn-{uuid.uuid4()}",
+                client_message_id=key,
+                content=content,
+                attachments=normalized_attachments,
+                original_disposition=original_disposition,
+                state="active" if original_disposition == "started" else "queued",
             )
-            meta = self.session.metadata if isinstance(self.session.metadata, dict) else {}
-            repairs = list(meta.get("input_boundary_repairs") or []) if isinstance(meta.get("input_boundary_repairs"), list) else []
-            repairs.append({"prior_len": len(prior), "raw_len": len(raw), "suffix_len": len(suffix)})
-            meta["input_boundary_repairs"] = repairs[-10:]
-            self.session.metadata = meta
-            self._persist_metadata_snapshot_threadsafe()
-            return suffix.lstrip()
-        return raw
+            self.session.turns_by_id[turn.turn_id] = turn
+            self.session.submissions_by_key[key] = turn
+            if original_disposition == "started":
+                self.session.active_turn_id = turn.turn_id
+            else:
+                self.session.queued_turn_ids.append(turn.turn_id)
+            self._refresh_admission_snapshot()
+            self._input_queue.put_nowait({"turn_id": turn.turn_id})
+
+        return SessionInputResponse(
+            client_message_id=key,
+            input_id=turn.input_id,
+            turn_id=turn.turn_id,
+            disposition=original_disposition,
+            original_disposition=original_disposition,
+        )
+
+    async def cancel_turn(
+        self,
+        turn_id: str,
+        *,
+        cancellation_request_key: str,
+        reason: str,
+    ) -> SessionTurnCancelResponse:
+        if self._closed:
+            raise RuntimeError("session is closed")
+        key = str(cancellation_request_key or "").strip()
+        if not key:
+            raise ValueError("cancellation_request_key must not be empty")
+        target = str(turn_id or "").strip()
+        if not target:
+            raise ValueError("turn_id must not be empty")
+
+        queued_turn: Optional[TurnRecord] = None
+        pre_execution_turn: Optional[TurnRecord] = None
+        interrupt_active = False
+        async with self.session.admission_lock:
+            existing = self.session.cancellations_by_key.get(key)
+            if existing is not None:
+                if existing.turn_id != target or existing.reason != reason:
+                    raise TurnContractConflict(
+                        "cancellation_idempotency_conflict",
+                        "cancellation_request_key was already used with a different target or body",
+                        turn_id=existing.turn_id,
+                    )
+                return SessionTurnCancelResponse(
+                    cancellation_request_id=existing.cancellation_request_id,
+                    cancellation_request_key=key,
+                    input_id=existing.input_id,
+                    turn_id=existing.turn_id,
+                    disposition="deduplicated",
+                    original_disposition=existing.original_disposition,
+                )
+
+            turn = self.session.turns_by_id.get(target)
+            if turn is None:
+                raise TurnContractConflict("turn_not_found", "target turn was not found", turn_id=target)
+            if turn.terminal_outcome is not None:
+                raise TurnContractConflict(
+                    "turn_already_terminal",
+                    "target turn already has a terminal outcome",
+                    turn_id=target,
+                )
+
+            if turn.state == "queued":
+                original_disposition = "queued_cancelled"
+                turn.state = "cancelling"
+                self.session.queued_turn_ids = type(self.session.queued_turn_ids)(
+                    queued_id for queued_id in self.session.queued_turn_ids if queued_id != target
+                )
+                queued_turn = turn
+            elif turn.state == "active":
+                if turn.cancellation_requested:
+                    raise TurnContractConflict(
+                        "cancellation_already_requested",
+                        "target turn already has an active cancellation request",
+                        turn_id=target,
+                    )
+                original_disposition = "cancellation_requested"
+                turn.cancellation_requested = True
+                turn.cancellation_reason = reason
+                if turn.execution_committed:
+                    interrupt_active = True
+                else:
+                    turn.state = "cancelling"
+                    pre_execution_turn = turn
+            else:
+                raise TurnContractConflict(
+                    "turn_already_terminal",
+                    "target turn cannot be cancelled in its current state",
+                    turn_id=target,
+                )
+
+            acknowledgement = CancellationRecord(
+                cancellation_request_id=f"cancel-{uuid.uuid4()}",
+                cancellation_request_key=key,
+                turn_id=target,
+                input_id=turn.input_id,
+                reason=reason,
+                original_disposition=original_disposition,
+            )
+            self.session.cancellations_by_key[key] = acknowledgement
+            self._refresh_admission_snapshot()
+
+        cancelled_before_execution = queued_turn or pre_execution_turn
+        if cancelled_before_execution is not None:
+            cancelled_before_execution.cancellation_reason = reason
+            await self._finish_turn(
+                cancelled_before_execution,
+                "cancelled",
+                reason=reason,
+            )
+        elif interrupt_active:
+            self._request_active_interruption()
+
+        return SessionTurnCancelResponse(
+            cancellation_request_id=acknowledgement.cancellation_request_id,
+            cancellation_request_key=key,
+            input_id=acknowledgement.input_id,
+            turn_id=acknowledgement.turn_id,
+            disposition=acknowledgement.original_disposition,
+            original_disposition=acknowledgement.original_disposition,
+        )
+
+    def _refresh_admission_snapshot(self) -> None:
+        self.session.turn_admission = (
+            TurnAdmission.ACTIVE
+            if self.session.active_turn_id is not None or self.session.queued_turn_ids
+            else TurnAdmission.IDLE
+        )
+
+    def _request_active_interruption(self) -> None:
+        queue = self._control_queue
+        if queue is not None:
+            try:
+                put_nowait = getattr(queue, "put_nowait", None)
+                if callable(put_nowait):
+                    put_nowait({"kind": "stop"})
+                else:
+                    queue.put({"kind": "stop"})
+                return
+            except Exception:
+                pass
+        agent = getattr(self._agent, "agent", None)
+        if agent is None:
+            return
+        try:
+            request_stop = getattr(agent, "request_stop", None)
+            remote = getattr(request_stop, "remote", None) if request_stop is not None else None
+            if callable(remote):
+                remote()
+            elif callable(request_stop):
+                request_stop()
+        except Exception:
+            pass
+
+    async def _commit_turn_execution(self, turn: TurnRecord) -> bool:
+        """Atomically commit execution only after its interruption channel exists."""
+
+        async with self.session.admission_lock:
+            if (
+                turn.terminal_outcome is not None
+                or turn.cancellation_requested
+                or turn.state != "active"
+            ):
+                return False
+            turn.execution_committed = True
+            return True
+
+    async def _finish_turn(
+        self,
+        turn: TurnRecord,
+        outcome: str,
+        *,
+        reason: Optional[str] = None,
+        error_code: Optional[str] = None,
+    ) -> bool:
+        async with self.session.admission_lock:
+            if turn.terminal_outcome is not None:
+                return False
+            if turn.cancellation_requested:
+                outcome = "cancelled"
+                reason = turn.cancellation_reason or reason or "user_requested"
+            turn.terminal_outcome = outcome
+            turn.state = outcome
+            if self.session.active_turn_id == turn.turn_id:
+                self.session.active_turn_id = None
+                while self.session.queued_turn_ids:
+                    candidate_id = self.session.queued_turn_ids.popleft()
+                    candidate = self.session.turns_by_id.get(candidate_id)
+                    if candidate is not None and candidate.state == "queued":
+                        candidate.state = "active"
+                        self.session.active_turn_id = candidate.turn_id
+                        break
+            self._refresh_admission_snapshot()
+
+        if outcome == "completed":
+            event_type = EventType.TURN_COMPLETED
+            payload: Dict[str, Any] = {}
+        elif outcome == "cancelled":
+            event_type = EventType.TURN_CANCELLED
+            payload = {"reason": reason or "user_requested"}
+        else:
+            event_type = EventType.TURN_FAILED
+            payload = {"error": {"code": error_code or "turn_execution_failed"}}
+        await self.publish_event_async(
+            event_type,
+            payload,
+            input_id=turn.input_id,
+            turn_id=turn.turn_id,
+        )
+        return True
+
+    async def _finish_unresolved_turns(
+        self,
+        outcome: str,
+        *,
+        reason: Optional[str] = None,
+        error_code: Optional[str] = None,
+    ) -> None:
+        async with self.session.admission_lock:
+            unresolved = [
+                turn
+                for turn in self.session.turns_by_id.values()
+                if turn.terminal_outcome is None
+            ]
+        for turn in unresolved:
+            if outcome == "failed":
+                await self.publish_event_async(
+                    EventType.ERROR,
+                    {"code": error_code or "session_execution_failed"},
+                    input_id=turn.input_id,
+                    turn_id=turn.turn_id,
+                )
+            await self._finish_turn(
+                turn,
+                outcome,
+                reason=reason,
+                error_code=error_code,
+            )
 
     async def handle_command(self, command: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         if self._closed:
@@ -620,7 +918,13 @@ class SessionRunner:
             path = path.resolve()
         return path
 
-    async def _maybe_publish_todo_snapshot(self, workspace_dir: Optional[Path], *, call_id: str) -> None:
+    async def _maybe_publish_todo_snapshot(
+        self,
+        workspace_dir: Optional[Path],
+        *,
+        call_id: str,
+        publish: bool = True,
+    ) -> None:
         if not self._todo_enabled or not workspace_dir:
             return
         envelope = self._load_todo_envelope_from_disk(workspace_dir)
@@ -628,10 +932,11 @@ class SessionRunner:
             return
         self.session.metadata["todo_last_update"] = envelope
         self._persist_metadata_snapshot_threadsafe()
-        await self.publish_event_async(
-            EventType.TOOL_RESULT,
-            {"call_id": call_id, "todo": envelope},
-        )
+        if publish:
+            await self.publish_event_async(
+                EventType.TOOL_RESULT,
+                {"call_id": call_id, "todo": envelope},
+            )
 
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
@@ -693,6 +998,7 @@ class SessionRunner:
         published_completion = False
         published_run_finished = False
         published_events = 0
+        assistant_outcome_emitted = False
 
         with replay_path.open("r", encoding="utf-8") as f:
             for raw_line in f:
@@ -743,6 +1049,13 @@ class SessionRunner:
 
                 await self.publish_event_async(evt_type, payload, turn=turn)
                 published_events += 1
+                if evt_type in {
+                    EventType.ASSISTANT_MESSAGE,
+                    EventType.ASSISTANT_DELTA,
+                    EventType.ASSISTANT_MESSAGE_DELTA,
+                    EventType.ASSISTANT_MESSAGE_END,
+                } and self._assistant_text_from_payload(payload).strip():
+                    assistant_outcome_emitted = True
 
                 if evt_type is EventType.COMPLETION:
                     published_completion = True
@@ -763,6 +1076,7 @@ class SessionRunner:
             "completion_summary": completion_summary,
             "reward_metrics": None,
             "logging_dir": None,
+            "assistant_outcome_emitted": assistant_outcome_emitted,
         }
 
     async def _run(self) -> None:
@@ -822,7 +1136,11 @@ class SessionRunner:
             except Exception:
                 todo_cfg = {"enabled": False}
             self._todo_enabled = bool(todo_cfg.get("enabled"))
-            await self._maybe_publish_todo_snapshot(self._workspace_path, call_id="todo:snapshot:init")
+            await self._maybe_publish_todo_snapshot(
+                self._workspace_path,
+                call_id="todo:snapshot:init",
+                publish=False,
+            )
             try:
                 if self._workspace_path and self._checkpoint_manager is None:
                     self._checkpoint_manager = CheckpointManager(self._workspace_path)
@@ -839,11 +1157,6 @@ class SessionRunner:
             except Exception:
                 pass
 
-            initial_task = (self.request.task or "").strip()
-            if initial_task:
-                self._accepted_task_texts.append(initial_task)
-                self._input_queue.put_nowait({"content": initial_task, "attachments": []})
-
             completed_one_shot = False
             while not self._stop_event.is_set():
                 try:
@@ -853,11 +1166,84 @@ class SessionRunner:
                 if next_input is None:
                     break
 
-                task_payload = dict(next_input)
-                task_text = str(task_payload.get("content", ""))
+                turn_id = str(next_input.get("turn_id") or "")
+                turn = self.session.turns_by_id.get(turn_id)
+                if turn is None or turn.state != "active":
+                    self._input_queue.task_done()
+                    continue
+
+                self._event_turn = turn
+                task_text = turn.content
                 task_received_at = time.monotonic()
-                if self._parse_replay_path(task_text) is not None:
-                    result = await self._execute_replay_task(task_text)
+                try:
+                    is_replay = self._parse_replay_path(task_text) is not None
+                    execution_text = task_text
+                    after_agent_init_at = task_received_at
+                    control_queue = None
+                    if not is_replay:
+                        attachment_text = self._format_attachment_helper(list(turn.attachments))
+                        if attachment_text:
+                            execution_text = f"{execution_text.rstrip()}\n\n{attachment_text}"
+                        await self._ensure_agent_initialized()
+                        after_agent_init_at = time.monotonic()
+                        control_queue = self._create_control_queue()
+                        self._control_queue = control_queue
+
+                    if not await self._commit_turn_execution(turn):
+                        self._control_queue = None
+                        await self._finish_turn(
+                            turn,
+                            "cancelled",
+                            reason=turn.cancellation_reason or "user_requested",
+                        )
+                        continue
+
+                    await self.publish_event_async(
+                        EventType.USER_MESSAGE,
+                        {"text": task_text, "message": {"role": "user", "content": task_text}},
+                    )
+                    await self.publish_event_async(EventType.TURN_START, {})
+                    if execution_text.strip():
+                        self._accepted_task_texts.append(execution_text)
+                        self._accepted_task_texts = self._accepted_task_texts[-20:]
+
+                    if is_replay:
+                        result = await self._execute_replay_task(task_text)
+                    else:
+                        if self._profile_timing_enabled:
+                            self._active_bridge_timing_context = {
+                                "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
+                                "task_received_to_agent_initialized_seconds": round(
+                                    after_agent_init_at - task_received_at,
+                                    6,
+                                ),
+                            }
+                        result = await asyncio.to_thread(
+                            self._execute_task,
+                            execution_text,
+                            control_queue=control_queue,
+                        )
+                        after_execute_task_at = time.monotonic()
+                        if self._profile_timing_enabled and isinstance(result, dict):
+                            timing = result.setdefault("bridge_timing", {})
+                            if isinstance(timing, dict):
+                                timing.update(
+                                    {
+                                        "session_to_task_received_seconds": round(
+                                            task_received_at - session_started_at,
+                                            6,
+                                        ),
+                                        "task_received_to_agent_initialized_seconds": round(
+                                            after_agent_init_at - task_received_at,
+                                            6,
+                                        ),
+                                        "execute_task_wall_seconds": round(
+                                            after_execute_task_at - after_agent_init_at,
+                                            6,
+                                        ),
+                                    }
+                                )
+                    self._active_bridge_timing_context = None
                     await self.registry.update_metadata(
                         self.session.session_id,
                         completion_summary=result.get("completion_summary"),
@@ -865,61 +1251,67 @@ class SessionRunner:
                         logging_dir=result.get("logging_dir"),
                         metadata=self.session.metadata,
                     )
-                    self._input_queue.task_done()
-                    continue
-                attachment_ids = task_payload.get("attachments") or []
-                attachment_text = self._format_attachment_helper(attachment_ids)
-                if attachment_text:
-                    task_text = f"{task_text.rstrip()}\n\n{attachment_text}"
-                if task_text.strip():
-                    self._accepted_task_texts.append(task_text)
-                    self._accepted_task_texts = self._accepted_task_texts[-20:]
-
-                await self._ensure_agent_initialized()
-                after_agent_init_at = time.monotonic()
-                if self._profile_timing_enabled:
-                    self._active_bridge_timing_context = {
-                        "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
-                        "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
-                    }
-                result = await asyncio.to_thread(self._execute_task, task_text)
-                after_execute_task_at = time.monotonic()
-                if self._profile_timing_enabled and isinstance(result, dict):
-                    timing = result.setdefault("bridge_timing", {})
-                    if isinstance(timing, dict):
-                        timing.update(
-                            {
-                                "session_to_task_received_seconds": round(task_received_at - session_started_at, 6),
-                                "task_received_to_agent_initialized_seconds": round(after_agent_init_at - task_received_at, 6),
-                                "execute_task_wall_seconds": round(after_execute_task_at - after_agent_init_at, 6),
-                            }
+                    if turn.cancellation_requested:
+                        await self._finish_turn(
+                            turn,
+                            "cancelled",
+                            reason=turn.cancellation_reason or "user_requested",
                         )
-                self._active_bridge_timing_context = None
-                await self.registry.update_metadata(
-                    self.session.session_id,
-                    completion_summary=result.get("completion_summary"),
-                    reward_summary=result.get("reward_metrics"),
-                    logging_dir=result.get("logging_dir"),
-                    metadata=self.session.metadata,
-                )
-                after_registry_update_at = time.monotonic()
-                if self._profile_timing_enabled and isinstance(result, dict):
-                    timing = result.setdefault("bridge_timing", {})
-                    if isinstance(timing, dict):
-                        timing["post_execute_registry_update_seconds"] = round(after_registry_update_at - after_execute_task_at, 6)
-                self._input_queue.task_done()
+                    elif bool(result.get("assistant_outcome_emitted")):
+                        await self._finish_turn(turn, "completed")
+                    else:
+                        await self.publish_event_async(
+                            EventType.ERROR,
+                            {"code": "missing_assistant_outcome"},
+                        )
+                        await self._finish_turn(
+                            turn,
+                            "failed",
+                            error_code="missing_assistant_outcome",
+                        )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "Session %s turn %s failed",
+                        self.session.session_id,
+                        turn.turn_id,
+                    )
+                    await self.publish_event_async(
+                        EventType.ERROR,
+                        {"code": "turn_execution_failed"},
+                    )
+                    await self._finish_turn(
+                        turn,
+                        "failed",
+                        error_code="turn_execution_failed",
+                    )
+                finally:
+                    self._active_bridge_timing_context = None
+                    self._event_turn = None
+                    self._input_queue.task_done()
+
                 metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
-                if metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot":
+                if (
+                    metadata.get("non_interactive_cli_session")
+                    or metadata.get("cli_session_kind") == "oneshot"
+                ) and self.session.turn_admission is TurnAdmission.IDLE:
                     completed_one_shot = True
                     break
 
             final_status = SessionStatus.STOPPED if self._stop_event.is_set() and not completed_one_shot else SessionStatus.COMPLETED
             await self.registry.update_status(self.session.session_id, final_status)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("Session %s failed", self.session.session_id)
             await self.registry.update_status(self.session.session_id, SessionStatus.FAILED)
-            await self.publish_event_async(EventType.ERROR, {"message": str(exc)})
+            await self._finish_unresolved_turns(
+                "failed",
+                error_code="session_execution_failed",
+            )
         finally:
+            if self._stop_event.is_set():
+                await self._finish_unresolved_turns(
+                    "cancelled",
+                    reason="session_stopped",
+                )
             self._closed = True
             await self._enqueue_termination()
 
@@ -1085,17 +1477,75 @@ class SessionRunner:
             subagent_type=str((payload or {}).get("subagent_type") or ""),
         )
 
-    def _execute_task(self, task_text: str) -> Dict[str, Any]:
+    @staticmethod
+    def _assistant_text_from_payload(payload: Dict[str, Any]) -> str:
+        for key in ("text", "delta", "content"):
+            value = payload.get(key)
+            if isinstance(value, str):
+                return value
+        message = payload.get("message")
+        if isinstance(message, dict):
+            content = message.get("content")
+            if isinstance(content, str):
+                return content
+        return ""
+
+    @staticmethod
+    def _turn_local_messages(
+        messages: Any,
+        task_text: str,
+        *,
+        provenance: Any,
+        invocation_id: str,
+    ) -> List[Dict[str, Any]]:
+        """Return the assistant slice proven to belong to this invocation."""
+
+        if not isinstance(messages, list) or not isinstance(provenance, dict):
+            return []
+        if provenance.get("invocation_id") != invocation_id:
+            return []
+        watermark = provenance.get("message_start_index")
+        user_index = provenance.get("user_message_index")
+        if (
+            not isinstance(watermark, int)
+            or isinstance(watermark, bool)
+            or not isinstance(user_index, int)
+            or isinstance(user_index, bool)
+        ):
+            return []
+        if not 0 <= watermark <= user_index < len(messages):
+            return []
+        if provenance.get("submitted_user_content") != task_text:
+            return []
+        user_entry = messages[user_index]
+        if not isinstance(user_entry, dict) or user_entry.get("role") != "user":
+            return []
+        return [entry for entry in messages[user_index + 1 :] if isinstance(entry, dict)]
+
+    def _create_control_queue(self) -> Any:
+        if bool(getattr(self._agent, "_local_mode", False)):
+            import queue as pyqueue
+
+            return pyqueue.Queue()
+        try:
+            from ray.util.queue import Queue as RayQueue
+        except ImportError:  # pragma: no cover
+            return None
+        return RayQueue()
+
+    def _execute_task(self, task_text: str, *, control_queue: Any = None) -> Dict[str, Any]:
         if not self._agent:
             raise RuntimeError("agent missing")
+        if control_queue is None:
+            control_queue = self._create_control_queue()
+            self._control_queue = control_queue
 
         execute_started_at = time.monotonic()
-        emitted_flags = {"assistant": False}
+        emitted_flags = {"assistant_text": False}
         self._published_events = 0
         is_local_agent = bool(getattr(self._agent, "_local_mode", False))
         event_queue = None
         permission_queue = None
-        control_queue = None
         queue_stop = None
         queue_thread = None
 
@@ -1124,14 +1574,16 @@ class SessionRunner:
             if not translated:
                 return
             evt_type, evt_payload, evt_turn, evt_contract = translated
+            if evt_type in {EventType.USER_MESSAGE, EventType.TURN_START}:
+                return
             if evt_type in {
                 EventType.ASSISTANT_MESSAGE,
                 EventType.ASSISTANT_MESSAGE_START,
                 EventType.ASSISTANT_MESSAGE_DELTA,
                 EventType.ASSISTANT_MESSAGE_END,
                 EventType.ASSISTANT_DELTA,
-            }:
-                emitted_flags["assistant"] = True
+            } and self._assistant_text_from_payload(evt_payload).strip():
+                emitted_flags["assistant_text"] = True
             self.publish_event(
                 evt_type,
                 evt_payload,
@@ -1201,22 +1653,11 @@ class SessionRunner:
         else:
             self._permission_queue = None
 
-        if is_local_agent:
-            import queue as pyqueue
-
-            control_queue = pyqueue.Queue()
-        else:
-            try:
-                from ray.util.queue import Queue as RayQueue
-            except ImportError:  # pragma: no cover
-                control_queue = None
-            else:
-                control_queue = RayQueue()
-        self._control_queue = control_queue
 
         start_time = time.time()
         run_task_started_at = time.monotonic()
         try:
+            invocation_id = f"turn-invocation-{uuid.uuid4()}"
             task_context = {}
             try:
                 if isinstance(self.session.metadata, dict):
@@ -1225,6 +1666,8 @@ class SessionRunner:
                         task_context["task_type"] = self.session.metadata.get("task_type")
             except Exception:
                 task_context = {}
+            task_context["_breadboard_turn_invocation_id"] = invocation_id
+            task_context["_breadboard_submitted_task_text"] = task_text
             kernel_emitter_run_dir = None
             kernel_emitter_mode = None
             try:
@@ -1276,30 +1719,46 @@ class SessionRunner:
         after_queue_drain_at = time.monotonic()
         completion = result.get("completion_summary") or {}
         reward = result.get("reward_metrics_payload") or {}
-        messages = result.get("messages")
-        fallback_assistant_emitted = False
-        if not emitted_flags["assistant"] and isinstance(messages, list):
+        messages = self._turn_local_messages(
+            result.get("messages"),
+            task_text,
+            provenance=result.get("_breadboard_turn_message_provenance"),
+            invocation_id=invocation_id,
+        )
+        if not emitted_flags["assistant_text"]:
             for entry in reversed(messages):
-                if isinstance(entry, dict) and entry.get("role") == "assistant":
-                    text = entry.get("content", "")
-                    self.publish_event(
-                        EventType.ASSISTANT_MESSAGE,
-                        {"text": text, "message": entry, "source": "fallback"},
-                    )
-                    fallback_assistant_emitted = True
-                    break
-        if not emitted_flags["assistant"] and not fallback_assistant_emitted:
-            final_message = completion.get("final_message") if isinstance(completion, dict) else None
+                if entry.get("role") != "assistant":
+                    continue
+                text = entry.get("content", "")
+                if not isinstance(text, str) or not text.strip():
+                    continue
+                self.publish_event(
+                    EventType.ASSISTANT_MESSAGE,
+                    {"text": text, "message": entry, "source": "turn_local_fallback"},
+                    classification="bridge_stream",
+                    family="message.assistant",
+                    actor="engine",
+                    visibility="transcript",
+                )
+                emitted_flags["assistant_text"] = True
+                break
+        if not emitted_flags["assistant_text"]:
+            final_message = completion.get("final_message")
             if isinstance(final_message, str) and final_message.strip():
+                message = {"role": "assistant", "content": final_message}
                 self.publish_event(
                     EventType.ASSISTANT_MESSAGE,
                     {
                         "text": final_message,
-                        "message": {"role": "assistant", "content": final_message, "source": "completion_summary"},
-                        "source": "completion_summary",
+                        "message": message,
+                        "source": "completion_summary_fallback",
                     },
+                    classification="bridge_stream",
+                    family="message.assistant",
+                    actor="engine",
                     visibility="transcript",
                 )
+                emitted_flags["assistant_text"] = True
         after_fallback_emit_at = time.monotonic()
         logging_dir = result.get("logging_dir") or result.get("run_dir")
         usage_payload = self._extract_usage_metrics(result, logging_dir, elapsed_ms=elapsed_ms)
@@ -1355,6 +1814,7 @@ class SessionRunner:
             "completion_summary": completion,
             "reward_metrics": reward or None,
             "logging_dir": logging_dir,
+            "assistant_outcome_emitted": emitted_flags["assistant_text"],
         }
         if self._profile_timing_enabled:
             result_payload["bridge_timing"] = dict(completion_payload.get("bridge_timing") or {})
@@ -1370,8 +1830,11 @@ class SessionRunner:
         family: Optional[str] = None,
         actor: Optional[str] = None,
         visibility: Optional[str] = None,
+        input_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
     ) -> None:
         self._touch_last_activity()
+        correlated_turn = self._event_turn
         event = SessionEvent(
             type=event_type,
             session_id=self.session.session_id,
@@ -1381,6 +1844,8 @@ class SessionRunner:
             family=family,
             actor=actor,
             visibility=visibility,
+            input_id=input_id if input_id is not None else (correlated_turn.input_id if correlated_turn else None),
+            turn_id=turn_id if turn_id is not None else (correlated_turn.turn_id if correlated_turn else None),
         )
         await self._enqueue_event_async(event)
 
@@ -1394,8 +1859,11 @@ class SessionRunner:
         family: Optional[str] = None,
         actor: Optional[str] = None,
         visibility: Optional[str] = None,
+        input_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
     ) -> None:
         self._touch_last_activity()
+        correlated_turn = self._event_turn
         event = SessionEvent(
             type=event_type,
             session_id=self.session.session_id,
@@ -1405,6 +1873,8 @@ class SessionRunner:
             family=family,
             actor=actor,
             visibility=visibility,
+            input_id=input_id if input_id is not None else (correlated_turn.input_id if correlated_turn else None),
+            turn_id=turn_id if turn_id is not None else (correlated_turn.turn_id if correlated_turn else None),
         )
         loop = self._loop
         try:

@@ -4789,6 +4789,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         session_state = SessionState(self.workspace, self.image, self.config, event_emitter=emitter, kernel_emitter=kernel_emitter)
         self._active_session_state = session_state
         kernel_emitter_closed = False
+        turn_message_provenance: Optional[Dict[str, Any]] = None
 
         def _close_kernel_emitter(reason: str = "session_end") -> None:
             nonlocal kernel_emitter_closed
@@ -5376,9 +5377,32 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         # new turn has already satisfied its required workspace-tool contract.
         session_state.set_provider_metadata("recent_tool_activity", False)
         session_state.set_provider_metadata("post_required_tool_extra_call_blocks", 0)
+        turn_message_start_index = len(session_state.messages)
         if not resume_has_system:
             session_state.add_message(enhanced_system_msg)
+        turn_user_message_index = len(session_state.messages)
         session_state.add_message(enhanced_user_msg)
+        invocation_id = (
+            context.get("_breadboard_turn_invocation_id")
+            if isinstance(context, dict)
+            else None
+        )
+        submitted_user_content = (
+            context.get("_breadboard_submitted_task_text")
+            if isinstance(context, dict)
+            else None
+        )
+        if (
+            isinstance(invocation_id, str)
+            and invocation_id
+            and isinstance(submitted_user_content, str)
+        ):
+            turn_message_provenance = {
+                "invocation_id": invocation_id,
+                "message_start_index": turn_message_start_index,
+                "user_message_index": turn_user_message_index,
+                "submitted_user_content": submitted_user_content,
+            }
         
         # Configure native tools and tool prompt mode
         native_pref_hint = getattr(self, "_native_preference_hint", None)
@@ -5654,6 +5678,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             _close_kernel_emitter("session_end")
         except Exception:
             pass
+        if turn_message_provenance is not None:
+            run_result["_breadboard_turn_message_provenance"] = turn_message_provenance
         return run_result
     
     def _persist_final_workspace(self) -> None:

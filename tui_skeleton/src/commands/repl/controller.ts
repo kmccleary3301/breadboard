@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events"
 import { promises as fs } from "node:fs"
+import { randomUUID } from "node:crypto"
 import path from "node:path"
 import YAML from "yaml"
 import type { Block } from "@stream-mdx/core/types"
@@ -219,6 +220,7 @@ type SlashHandler = (args: string[]) => Promise<void>
 
 interface SubmissionPayload {
   readonly content: string
+  readonly client_message_id: string
   readonly attachments?: ReadonlyArray<string>
 }
 
@@ -898,7 +900,10 @@ export class ReplSessionController extends EventEmitter {
         attachmentIds = ids
       }
     }
-    return attachmentIds && attachmentIds.length > 0 ? { content, attachments: attachmentIds } : { content }
+    const clientMessageId = randomUUID()
+    return attachmentIds && attachmentIds.length > 0
+      ? { content, attachments: attachmentIds, client_message_id: clientMessageId }
+      : { content, client_message_id: clientMessageId }
   }
 
   private async dispatchSubmission(payload: SubmissionPayload, statusLabel: string): Promise<void> {

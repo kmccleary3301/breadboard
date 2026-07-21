@@ -70,7 +70,7 @@ test(
       task: "List files",
       stream: true,
     })
-    await client.postInput(session.session_id, { content: "Continue" })
+    await client.postInput(session.session_id, { content: "Continue", client_message_id: "sdk-smoke-message-1" })
     const records = await client.readSessionRecords(session.session_id)
     const events = []
     for await (const event of streamSessionEvents(session.session_id, {

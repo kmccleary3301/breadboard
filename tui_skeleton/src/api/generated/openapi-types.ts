@@ -13,9 +13,54 @@ export type AttachmentUploadResponse = {
   readonly "attachments": ReadonlyArray<AttachmentHandle>
 }
 
+export type BeginControlDrainRequest = {
+  readonly "engine_boot_id": string
+  readonly "engine_instance_id": string
+  readonly "expected_admission_epoch": number
+  readonly "launch_id": string
+  readonly "owner_generation": number
+  readonly "registration_id": string
+  readonly "requester_client_instance_id": string
+  readonly "requester_registration_generation": number
+}
+
 export type Body_upload_attachments_v1_sessions__session_id__attachments_post = {
   readonly "files": ReadonlyArray<string>
   readonly "metadata"?: string | null
+}
+
+export type ClientLeaseRequest = {
+  readonly "client_instance_id": string
+  readonly "engine_instance_id": string
+  readonly "registration_generation": number
+  readonly "registration_id": string
+}
+
+export type ClientRegisterRequest = {
+  readonly "client_instance_id": string
+  readonly "engine_instance_id": string
+  readonly "first_slice_contract_id"?: string
+  readonly "first_slice_schema_sha256"?: string
+  readonly "lifecycle_mode": "local-owned" | "local-external" | "remote" | "off"
+  readonly "workspace_id": string
+}
+
+export type ClientRegistrationResponse = {
+  readonly "admission_epoch": number
+  readonly "client_instance_id": string
+  readonly "engine_instance_id": string
+  readonly "expires_at_unix"?: number | null
+  readonly "first_slice_contract_id"?: string
+  readonly "first_slice_schema_sha256"?: string
+  readonly "lease_ttl_seconds"?: number
+  readonly "lifecycle_mode": "local-owned" | "local-external" | "remote"
+  readonly "registered_at_unix": number
+  readonly "registration_generation": number
+  readonly "registration_id": string
+  readonly "renewal_interval_seconds"?: number
+  readonly "result": "registered" | "renewed" | "detached" | "already_detached"
+  readonly "schema_version"?: string
+  readonly "workspace_id": string
 }
 
 export type CTreeSnapshotResponse = {
@@ -34,6 +79,28 @@ export type CTreeSnapshotResponse = {
   readonly "snapshot"?: {
   readonly [key: string]: unknown
 } | null
+}
+
+export type DrainControlRequest = {
+  readonly "drain_generation": number
+  readonly "engine_boot_id": string
+  readonly "engine_instance_id": string
+  readonly "launch_id": string
+  readonly "owner_generation": number
+}
+
+export type DrainControlResponse = {
+  readonly "admission_epoch": number
+  readonly "drain_generation": number
+  readonly "engine_boot_id": string
+  readonly "engine_instance_id": string
+  readonly "launch_id": string
+  readonly "registrations_open": boolean
+  readonly "result": "draining" | "shutdown_started" | "rollback_permitted" | "hard_signal_decision_pending" | "signal_sent" | "process_exited" | "rolled_back"
+  readonly "schema_version"?: string
+  readonly "session_admission_open": boolean
+  readonly "signal_permitted": boolean
+  readonly "turn_admission_open": boolean
 }
 
 export type E4CatalogBinding = {
@@ -205,12 +272,81 @@ export type EmulationProfileRequirement = {
   readonly "profile_id": string
 }
 
+export type EngineArtifactRevision = {
+  readonly "engine_artifact_sha256": string
+  readonly "served_backend_commit"?: string | null
+  readonly "served_backend_dirty"?: boolean | null
+}
+
+export type EngineIdentityReadinessResponse = {
+  readonly "artifact_revision": EngineArtifactRevision
+  readonly "launch": EngineLaunchIdentity
+  readonly "liveness": EngineLiveness
+  readonly "process": EngineProcessStart
+  readonly "protocol": EngineProtocolIdentity
+  readonly "schema_version"?: string
+  readonly "session_contract": EngineSessionContractIdentity
+  readonly "session_readiness": EngineSessionReadiness
+}
+
+export type EngineLaunchIdentity = {
+  readonly "launch_id": string
+  readonly "source": "supervisor" | "external_unmanaged"
+}
+
+export type EngineLiveness = {
+  readonly "status"?: string
+}
+
+export type EngineProcessStart = {
+  readonly "engine_boot_id": string
+  readonly "engine_instance_id": string
+  readonly "os_process_start_token": string
+  readonly "pid": number
+  readonly "started_at": string
+  readonly "started_at_unix": number
+}
+
+export type EngineProtocolIdentity = {
+  readonly "protocol_version"?: string
+}
+
+export type EngineSessionContractIdentity = {
+  readonly "compatibility": "compatible" | "incompatible"
+  readonly "contract_id"?: string
+  readonly "schema_sha256"?: string
+  readonly "sessionReplayContractDigest": string
+}
+
+export type EngineSessionReadiness = {
+  readonly "ready": boolean
+  readonly "reason": "ready" | "session_contract_missing" | "session_contract_mismatch"
+}
+
 export type ErrorResponse = {
   readonly "detail"?: string | {
   readonly [key: string]: unknown
 } | null
   readonly "error": string
   readonly "path"?: string | null
+}
+
+export type GracefulControlResultRequest = {
+  readonly "drain_generation": number
+  readonly "engine_boot_id": string
+  readonly "engine_instance_id": string
+  readonly "launch_id": string
+  readonly "outcome": "accepted" | "definitive_rejection" | "timeout" | "uncertain"
+  readonly "owner_generation": number
+}
+
+export type HardSignalDecisionRequest = {
+  readonly "drain_generation": number
+  readonly "engine_boot_id": string
+  readonly "engine_instance_id": string
+  readonly "launch_id": string
+  readonly "outcome": "sent" | "abandoned" | "process_exited"
+  readonly "owner_generation": number
 }
 
 export type HTTPValidationError = {
@@ -238,6 +374,32 @@ export type ModelCatalogResponse = {
   readonly "config_path"?: string | null
   readonly "default_model"?: string | null
   readonly "models": ReadonlyArray<ModelCatalogEntry>
+}
+
+export type OwnerAcquireRequest = {
+  readonly "engine_boot_id": string
+  readonly "engine_instance_id": string
+  readonly "expected_owner_generation": number
+  readonly "launch_id": string
+}
+
+export type OwnerLeaseRequest = {
+  readonly "engine_boot_id": string
+  readonly "engine_instance_id": string
+  readonly "launch_id": string
+  readonly "owner_generation": number
+}
+
+export type OwnerLeaseResponse = {
+  readonly "engine_boot_id": string
+  readonly "engine_instance_id": string
+  readonly "expires_at_unix"?: number | null
+  readonly "launch_id": string
+  readonly "lease_ttl_seconds"?: number
+  readonly "owner_generation": number
+  readonly "renewal_interval_seconds"?: number
+  readonly "result": "acquired" | "renewed" | "released" | "already_released"
+  readonly "schema_version"?: string
 }
 
 export type ProviderAuthAttachRequest = {
@@ -405,7 +567,7 @@ export type SessionCreateRequest = {
 } | null
   readonly "permission_mode"?: string | null
   readonly "stream"?: boolean
-  readonly "task": string
+  readonly "task"?: string
   readonly "workspace"?: string | null
 }
 
@@ -432,20 +594,31 @@ export type SessionFileInfo = {
 
 export type SessionInputRequest = {
   readonly "attachments"?: ReadonlyArray<string> | null
+  readonly "client_message_id": string
   readonly "content": string
 }
 
 export type SessionInputResponse = {
+  readonly "client_message_id": string
+  readonly "disposition": "started" | "queued" | "deduplicated"
+  readonly "input_id": string
+  readonly "original_disposition": "started" | "queued"
   readonly "status"?: string
+  readonly "turn_id": string
 }
 
 export type SessionStatus = "starting" | "running" | "completed" | "failed" | "stopped"
 
 export type SessionSummary = {
+  readonly "active_turn_id"?: string | null
   readonly "completion_summary"?: {
   readonly [key: string]: unknown
 } | null
   readonly "created_at": string
+  readonly "earliestRetainedEventId"?: string | null
+  readonly "earliestRetainedSequence"?: number | null
+  readonly "headEventId"?: string | null
+  readonly "headSequence"?: number
   readonly "last_activity_at": string
   readonly "logging_dir"?: string | null
   readonly "metadata"?: {
@@ -453,11 +626,39 @@ export type SessionSummary = {
 } | null
   readonly "mode"?: string | null
   readonly "model"?: string | null
+  readonly "queued_turn_count"?: number
+  readonly "replayRetention"?: {
+  readonly [key: string]: unknown
+}
+  readonly "retainedHistory"?: "complete" | "partial"
   readonly "reward_summary"?: {
   readonly [key: string]: unknown
 } | null
+  readonly "sessionReplayContractDigest"?: string
   readonly "session_id": string
   readonly "status": SessionStatus
+  readonly "terminalEventEnvelopes"?: ReadonlyArray<{
+  readonly [key: string]: unknown
+}>
+  readonly "terminalTurns"?: ReadonlyArray<{
+  readonly [key: string]: unknown
+}>
+  readonly "turn_admission"?: TurnAdmission
+}
+
+export type SessionTurnCancelRequest = {
+  readonly "cancellation_request_key": string
+  readonly "reason"?: "user_requested" | "timeout" | "superseded"
+}
+
+export type SessionTurnCancelResponse = {
+  readonly "cancellation_request_id": string
+  readonly "cancellation_request_key": string
+  readonly "disposition": "cancellation_requested" | "queued_cancelled" | "deduplicated"
+  readonly "input_id": string
+  readonly "original_disposition": "cancellation_requested" | "queued_cancelled"
+  readonly "status"?: string
+  readonly "turn_id": string
 }
 
 export type SkillCatalogResponse = {
@@ -471,6 +672,8 @@ export type SkillCatalogResponse = {
   readonly [key: string]: unknown
 } | null
 }
+
+export type TurnAdmission = "idle" | "active"
 
 export type ValidationError = {
   readonly "loc": ReadonlyArray<string | number>

@@ -184,6 +184,53 @@ def _apply_compat_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
+def _resolve_compat_tool_paths(config: Dict[str, Any], config_path: str) -> None:
+    tools = config.get("tools")
+    if not isinstance(tools, dict):
+        return
+
+    base_dirs = _config_resolution_base_dirs(config_path)
+    cwd = Path.cwd().resolve()
+
+    def portable_path(path: Path) -> str:
+        resolved = path.resolve()
+        try:
+            return str(resolved.relative_to(cwd))
+        except ValueError:
+            return str(resolved)
+
+    def resolve_path(raw_path: Any) -> Any:
+        if not isinstance(raw_path, str) or not raw_path:
+            return raw_path
+        if Path(raw_path).is_absolute():
+            return portable_path(Path(raw_path))
+        for base_dir in base_dirs:
+            candidate = (base_dir / raw_path).resolve()
+            if candidate.exists():
+                return portable_path(candidate)
+        return raw_path
+
+    if "defs_dir" in tools:
+        tools["defs_dir"] = resolve_path(tools["defs_dir"])
+    registry = tools.get("registry")
+    if isinstance(registry, dict) and isinstance(registry.get("paths"), list):
+        registry["paths"] = [resolve_path(path) for path in registry["paths"]]
+
+
+def _canonicalize_workspace_alias(value: Any, workspace_root: Path) -> Any:
+    declared = str(workspace_root)
+    resolved = str(workspace_root.resolve())
+    if declared == resolved:
+        return value
+    if isinstance(value, str):
+        return value.replace(resolved, declared)
+    if isinstance(value, list):
+        return [_canonicalize_workspace_alias(item, workspace_root) for item in value]
+    if isinstance(value, dict):
+        return {key: _canonicalize_workspace_alias(item, workspace_root) for key, item in value.items()}
+    return value
+
+
 def capture_request_body(
     *,
     config_path: str,
@@ -192,8 +239,8 @@ def capture_request_body(
     system_prompt: str = "",
     max_steps: int = 1,
 ) -> CapturedRequest:
-    config = load_agent_config(config_path)
-    config = _apply_compat_overrides(config)
+    config = _apply_compat_overrides(load_agent_config(config_path))
+    _resolve_compat_tool_paths(config, config_path)
     workspace_root.mkdir(parents=True, exist_ok=True)
     cfg_workspace = config.setdefault("workspace", {})
     cfg_workspace["root"] = str(workspace_root)
@@ -223,7 +270,12 @@ def capture_request_body(
             stream_responses=False,
             tool_prompt_mode=tool_prompt_mode,
         )
-    return store.last()
+    captured = store.last()
+    return CapturedRequest(
+        provider_id=captured.provider_id,
+        runtime_id=captured.runtime_id,
+        payload=_canonicalize_workspace_alias(captured.payload, workspace_root),
+    )
 
 
 def default_request_body_cases() -> Iterable[Dict[str, Any]]:

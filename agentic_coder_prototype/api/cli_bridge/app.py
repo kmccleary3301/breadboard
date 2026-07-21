@@ -13,32 +13,63 @@ import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from fastapi.openapi.utils import get_openapi
+
+from fastapi.routing import APIRoute
 
 try:
     from dotenv import load_dotenv
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
 if load_dotenv is not None:
-    _REPO_ROOT = Path(__file__).resolve().parents[3]
     for _candidate in (_REPO_ROOT / ".env", _REPO_ROOT / ".env.local"):
         if _candidate.exists():
             load_dotenv(_candidate, override=False)
 
-from .events import SessionEvent, PROTOCOL_VERSION
+from .events import SessionEvent, PROTOCOL_VERSION, replay_configuration_digest
+from .engine_identity_config import (
+    ENGINE_IDENTITY_SCHEMA_VERSION,
+    P30_SESSION_CONTRACT_ID,
+    P30_SESSION_SCHEMA_SHA256,
+    P30_SESSION_ROUTE_BINDINGS,
+    p30_session_contract_schema,
+    get_engine_process_identity,
+)
 from .models import (
+    BeginControlDrainRequest,
+    ClientLeaseRequest,
+    ClientRegisterRequest,
+    ClientRegistrationResponse,
+    DrainControlRequest,
+    DrainControlResponse,
     AttachmentUploadResponse,
     ErrorEnvelope,
     ErrorResponse,
+    EngineArtifactRevision,
+    EngineIdentityReadinessResponse,
+    EngineLaunchIdentity,
+    EngineLiveness,
+    EngineProcessStart,
+    EngineProtocolIdentity,
+    EngineSessionContractIdentity,
+    EngineSessionReadiness,
+    GracefulControlResultRequest,
+    HardSignalDecisionRequest,
     ModelCatalogResponse,
     ProviderAuthAttachRequest,
     ProviderAuthAttachResponse,
     ProviderAuthDetachRequest,
     ProviderAuthDetachResponse,
     ProviderAuthStatusResponse,
+    OwnerAcquireRequest,
+    OwnerLeaseRequest,
+    OwnerLeaseResponse,
     SessionCommandRequest,
     SessionCommandResponse,
     SessionCreateRequest,
@@ -49,11 +80,14 @@ from .models import (
     SessionFileInfo,
     SessionInputRequest,
     SessionInputResponse,
+    SessionTurnCancelRequest,
+    SessionTurnCancelResponse,
     SessionSummary,
 )
 from agentic_coder_prototype.api.e4 import create_e4_router
 from agentic_coder_prototype.api.e4.models import E4ApiError
 from .service import SessionService
+from .registry import LifecycleAuthorityError, SessionRecord
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 
@@ -147,7 +181,7 @@ def _drop_legacy_routes(app: FastAPI) -> None:
     ]
 
 
-def _run_git_command(args: list[str], cwd: Path) -> str | None:
+def _run_git_command(args: list[str], cwd: Path, *, allow_empty: bool = False) -> str | None:
     try:
         completed = subprocess.run(
             ["git", *args],
@@ -162,7 +196,7 @@ def _run_git_command(args: list[str], cwd: Path) -> str | None:
     if completed.returncode != 0:
         return None
     value = (completed.stdout or "").strip()
-    return value or None
+    return value if value or allow_empty else None
 
 
 def _compute_engine_provenance(repo_root: Path) -> dict[str, Any]:
@@ -175,7 +209,7 @@ def _compute_engine_provenance(repo_root: Path) -> dict[str, Any]:
     if (repo_root / ".git").exists() or _run_git_command(["rev-parse", "--show-toplevel"], repo_root):
         commit = _run_git_command(["rev-parse", "HEAD"], repo_root)
         branch = _run_git_command(["rev-parse", "--abbrev-ref", "HEAD"], repo_root)
-        status = _run_git_command(["status", "--porcelain"], repo_root)
+        status = _run_git_command(["status", "--porcelain"], repo_root, allow_empty=True)
         revision.update(
             {
                 "commit": commit,
@@ -199,6 +233,142 @@ def _build_engine_identity(app: FastAPI) -> dict[str, Any]:
         "pid": os.getpid(),
         "served_revision": dict(ENGINE_PROVENANCE),
     }
+
+def _p30_session_contract_descriptor(
+    app: FastAPI,
+    service: SessionService,
+) -> dict[str, Any]:
+    document = get_openapi(title=app.title, version=app.version, routes=app.routes)
+    operations: list[dict[str, Any]] = []
+    handler_bindings: list[dict[str, Any]] = []
+    missing_routes: list[str] = []
+    referenced_schemas: set[str] = set()
+
+    def collect_refs(value: Any) -> None:
+        if isinstance(value, dict):
+            reference = value.get("$ref")
+            if isinstance(reference, str) and reference.startswith("#/components/schemas/"):
+                referenced_schemas.add(reference.rsplit("/", 1)[-1])
+            for item in value.values():
+                collect_refs(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect_refs(item)
+
+    for method, path, expected_handler, service_method in P30_SESSION_ROUTE_BINDINGS:
+        matches = [
+            route
+            for route in app.routes
+            if isinstance(route, APIRoute)
+            and route.path == path
+            and method in route.methods
+        ]
+        operation = document.get("paths", {}).get(path, {}).get(method.lower())
+        if len(matches) != 1 or not isinstance(operation, dict):
+            missing_routes.append(f"{method} {path}")
+            continue
+        route = matches[0]
+        http_operation = {
+            "method": method,
+            "path": path,
+            "parameters": operation.get("parameters", []),
+            "requestBody": operation.get("requestBody"),
+            "responses": operation.get("responses", {}),
+        }
+        collect_refs(http_operation)
+        operations.append(http_operation)
+        bound_method = getattr(service, service_method, None)
+        implementation = getattr(bound_method, "__func__", bound_method)
+        expected_implementation = getattr(SessionService, service_method, None)
+        handler_bindings.append(
+            {
+                "method": method,
+                "path": path,
+                "handler": getattr(route.endpoint, "__name__", None),
+                "expected_handler": expected_handler,
+                "service_method": service_method,
+                "binding_exact": implementation is expected_implementation,
+            }
+        )
+
+    prepared_stream = getattr(service, "prepared_event_stream", None)
+    prepared_implementation = getattr(prepared_stream, "__func__", prepared_stream)
+    handler_bindings.append(
+        {
+            "method": "GET",
+            "path": "/v1/sessions/{session_id}/events",
+            "handler": "prepared_event_stream",
+            "expected_handler": "prepared_event_stream",
+            "service_method": "prepared_event_stream",
+            "binding_exact": (
+                prepared_implementation is SessionService.prepared_event_stream
+            ),
+        }
+    )
+    handler_bindings.append(
+        {
+            "method": "GET",
+            "path": "/v1/sessions/{session_id}/events",
+            "handler": getattr(_encode_sse_event, "__name__", None),
+            "expected_handler": "_encode_sse_event",
+            "service_method": None,
+            "serialization": "compact_session_event_asdict_v1",
+            "binding_exact": _encode_sse_event is _P30_SSE_ENCODER,
+        }
+    )
+
+    handler_bindings.append(
+        {
+            "method": "GET",
+            "path": "/v1/sessions/{session_id}/events",
+            "handler": "SessionEvent.asdict",
+            "expected_handler": "SessionEvent.asdict",
+            "service_method": None,
+            "serialization": "session_event_envelope_v1",
+            "binding_exact": SessionEvent.asdict is _P30_SESSION_EVENT_ASDICT,
+        }
+    )
+
+    handler_bindings.append(
+        {
+            "method": "GET",
+            "path": "/v1/sessions/{session_id}",
+            "handler": "SessionRecord.to_summary",
+            "expected_handler": "SessionRecord.to_summary",
+            "service_method": None,
+            "serialization": "retained_session_summary_v1",
+            "binding_exact": SessionRecord.to_summary is _P30_SESSION_RECORD_TO_SUMMARY,
+        }
+    )
+
+    schemas = document.get("components", {}).get("schemas", {})
+    pending = list(referenced_schemas)
+    while pending:
+        schema_name = pending.pop()
+        schema = schemas.get(schema_name)
+        if not isinstance(schema, dict):
+            continue
+        before = set(referenced_schemas)
+        collect_refs(schema)
+        pending.extend(sorted(referenced_schemas - before))
+
+    return p30_session_contract_schema(
+        http_contract={
+            "operations": operations,
+            "schemas": {
+                name: schemas[name]
+                for name in sorted(referenced_schemas)
+                if name in schemas
+            },
+            "missing_routes": missing_routes,
+            "delivery_chaos_config": getattr(
+                app.state,
+                "p30_session_chaos_config",
+                None,
+            ),
+        },
+        handler_bindings=handler_bindings,
+    )
 
 
 def _configured_extension_enabled(config: Dict[str, Any] | None, ext_id: str) -> bool | None:
@@ -231,11 +401,14 @@ def _http_error_content(exc: HTTPException) -> dict[str, Any]:
     detail = exc.detail
     if isinstance(detail, dict):
         error = detail.get("error") or detail.get("code") or detail.get("error_code") or _error_code_for_status(exc.status_code)
-        envelope_detail = detail.get("detail")
-        if envelope_detail is None:
-            envelope_detail = detail.get("message")
-        if envelope_detail is None:
-            envelope_detail = {key: value for key, value in detail.items() if key not in {"message", "error", "code", "error_code", "path"}}
+        if "detail" in detail:
+            envelope_detail = detail.get("detail")
+        else:
+            envelope_detail = {
+                key: value
+                for key, value in detail.items()
+                if key not in {"error", "code", "error_code", "path"}
+            }
             if not envelope_detail:
                 envelope_detail = None
         path = detail.get("path") if isinstance(detail.get("path"), str) else None
@@ -246,6 +419,49 @@ def _http_error_content(exc: HTTPException) -> dict[str, Any]:
 def _stable_json_hash(payload: Any) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _encode_sse_event(event: SessionEvent) -> bytes:
+    payload = json.dumps(event.asdict(), separators=(",", ":"))
+    cursor_line = f"id: {event.seq}\n" if event.stable_cursor and event.seq is not None else ""
+    return f"{cursor_line}data: {payload}\n\n".encode("utf-8")
+_P30_SSE_ENCODER = _encode_sse_event
+_P30_SESSION_EVENT_ASDICT = SessionEvent.asdict
+_P30_SESSION_RECORD_TO_SUMMARY = SessionRecord.to_summary
+
+def _authority_credential_buffers(
+    *values: tuple[str | None, str],
+) -> tuple[bytearray | None, ...]:
+    buffers: list[bytearray | None] = []
+    try:
+        for raw, error_code in values:
+            if raw is None:
+                buffers.append(None)
+                continue
+            try:
+                credential = bytearray(raw, "ascii")
+            except UnicodeEncodeError as exc:
+                raise LifecycleAuthorityError(
+                    error_code,
+                    "authority proof was rejected",
+                ) from exc
+            buffers.append(credential)
+            if not 32 <= len(credential) <= 256 or any(
+                value
+                not in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+                for value in credential
+            ):
+                raise LifecycleAuthorityError(
+                    error_code,
+                    "authority proof was rejected",
+                )
+        return tuple(buffers)
+    except BaseException:
+        for credential in buffers:
+            if credential is not None:
+                for index in range(len(credential)):
+                    credential[index] = 0
+        raise
 
 
 def create_app(service: SessionService | None = None, include_atp_routes: bool | None = None) -> FastAPI:
@@ -265,15 +481,49 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             content=ErrorEnvelope(error=exc.error, detail=exc.detail_text, path=exc.path).model_dump(),
         )
 
+    @app.exception_handler(LifecycleAuthorityError)
+    async def _lifecycle_authority_error_handler(
+        _request: Request,
+        exc: LifecycleAuthorityError,
+    ) -> JSONResponse:
+        if exc.code.endswith("_expired"):
+            status_code = status.HTTP_410_GONE
+        elif exc.code in {
+            "bootstrap_invalid",
+            "bootstrap_consumed",
+            "bootstrap_unavailable",
+            "owner_identity_mismatch",
+            "registration_identity_mismatch",
+        }:
+            status_code = status.HTTP_403_FORBIDDEN
+        else:
+            status_code = status.HTTP_409_CONFLICT
+        return JSONResponse(
+            status_code=status_code,
+            content=ErrorEnvelope(error=exc.code, detail=exc.detail, path=None).model_dump(),
+        )
+
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
         return JSONResponse(status_code=exc.status_code, content=_http_error_content(exc))
 
     @app.exception_handler(RequestValidationError)
     async def _validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        safe_errors = [
+            {
+                key: item[key]
+                for key in ("type", "loc", "msg", "url")
+                if key in item
+            }
+            for item in exc.errors()
+        ]
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=ErrorEnvelope(error="invalid_request", detail={"errors": exc.errors()}, path=None).model_dump(),
+            content=ErrorEnvelope(
+                error="invalid_request",
+                detail={"errors": safe_errors},
+                path=None,
+            ).model_dump(),
         )
 
     legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
@@ -294,6 +544,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             tags=["e4"],
         )
     chaos_config = _load_chaos_config()
+    app.state.p30_session_chaos_config = chaos_config
     required_token = (os.environ.get("BREADBOARD_API_TOKEN") or "").strip()
     extension_config = None
     mounted_extensions: list[str] = []
@@ -383,10 +634,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                 extra_delay = latency_ms + (random.random() * jitter_ms)
                 if extra_delay > 0:
                     await asyncio.sleep(extra_delay / 1000.0)
-            payload = json.dumps(event.asdict(), separators=(",", ":"))
-            event_id = event.seq if event.seq is not None else event.event_id
-            yield f"id: {event_id}\n".encode("utf-8")
-            yield f"data: {payload}\n\n".encode("utf-8")
+            yield _encode_sse_event(event)
 
     def _registry_payloads() -> list[tuple[Path, dict[str, Any]]]:
         registries_dir = e4_repo_root / "contracts" / "kernel" / "registries"
@@ -662,8 +910,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         responses={404: {"model": ErrorResponse}},
     )
     async def get_session(session_id: str, svc: SessionService = Depends(get_service)):
-        record = await svc.ensure_session(session_id)
-        return record.to_summary()
+        return await svc.session_snapshot(session_id)
 
     @app.get(
         "/v1/sessions/{session_id}/records",
@@ -705,6 +952,24 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     )
     async def post_input(session_id: str, payload: SessionInputRequest, svc: SessionService = Depends(get_service)):
         return await svc.send_input(session_id, payload)
+
+    @app.post(
+        "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
+        response_model=SessionTurnCancelResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+        responses={
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+            400: {"model": ErrorResponse},
+        },
+    )
+    async def cancel_turn(
+        session_id: str,
+        turn_id: str,
+        payload: SessionTurnCancelRequest,
+        svc: SessionService = Depends(get_service),
+    ):
+        return await svc.cancel_turn(session_id, turn_id, payload)
 
     @app.post(
         "/v1/sessions/{session_id}/command",
@@ -910,15 +1175,14 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         try:
             if not from_id:
                 from_id = request.headers.get("last-event-id") or request.headers.get("Last-Event-ID")
-            if from_id:
-                await svc.validate_event_stream(session_id, from_id=from_id, replay=replay)
-            generator = svc.event_stream(
+            prepared = await svc.prepare_event_stream(
                 session_id,
                 replay=replay,
                 limit=limit,
                 from_id=from_id,
-                validated=True,
+                include_open_ack=True,
             )
+            generator = svc.prepared_event_stream(prepared)
         except HTTPException as exc:
             raise exc
 
@@ -944,6 +1208,272 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def download_artifact(session_id: str, artifact: str, svc: SessionService = Depends(get_service)):
         path = await svc.resolve_artifact_path(session_id, artifact)
         return FileResponse(path)
+
+    @app.post(
+        "/v1/engine/owner/acquire",
+        response_model=OwnerLeaseResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def acquire_engine_owner(
+        payload: OwnerAcquireRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        bootstrap_proof: str | None = Header(
+            default=None,
+            alias="X-Breadboard-Bootstrap-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> OwnerLeaseResponse:
+        owner_credential, bootstrap_credential = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+            (bootstrap_proof, "bootstrap_invalid"),
+        )
+        assert owner_credential is not None
+        return await svc.acquire_owner(
+            payload,
+            owner_credential=owner_credential,
+            bootstrap_credential=bootstrap_credential,
+        )
+
+    @app.post(
+        "/v1/engine/owner/renew",
+        response_model=OwnerLeaseResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def renew_engine_owner(
+        payload: OwnerLeaseRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> OwnerLeaseResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.renew_owner(
+            payload,
+            owner_credential=owner_credential,
+        )
+
+    @app.post(
+        "/v1/engine/owner/release",
+        response_model=OwnerLeaseResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def release_engine_owner(
+        payload: OwnerLeaseRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> OwnerLeaseResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.release_owner(
+            payload,
+            owner_credential=owner_credential,
+        )
+
+    @app.post(
+        "/v1/engine/clients/register",
+        response_model=ClientRegistrationResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}},
+    )
+    async def register_engine_client(
+        payload: ClientRegisterRequest,
+        registration_proof: str = Header(
+            ...,
+            alias="X-Breadboard-Registration-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> ClientRegistrationResponse:
+        (registration_credential,) = _authority_credential_buffers(
+            (registration_proof, "registration_identity_mismatch"),
+        )
+        assert registration_credential is not None
+        return await svc.register_client(
+            payload,
+            registration_credential=registration_credential,
+        )
+
+    @app.post(
+        "/v1/engine/clients/renew",
+        response_model=ClientRegistrationResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def renew_engine_client(
+        payload: ClientLeaseRequest,
+        registration_proof: str = Header(
+            ...,
+            alias="X-Breadboard-Registration-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> ClientRegistrationResponse:
+        (registration_credential,) = _authority_credential_buffers(
+            (registration_proof, "registration_identity_mismatch"),
+        )
+        assert registration_credential is not None
+        return await svc.renew_client(
+            payload,
+            registration_credential=registration_credential,
+        )
+
+    @app.post(
+        "/v1/engine/clients/detach",
+        response_model=ClientRegistrationResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def detach_engine_client(
+        payload: ClientLeaseRequest,
+        registration_proof: str = Header(
+            ...,
+            alias="X-Breadboard-Registration-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> ClientRegistrationResponse:
+        (registration_credential,) = _authority_credential_buffers(
+            (registration_proof, "registration_identity_mismatch"),
+        )
+        assert registration_credential is not None
+        return await svc.detach_client(
+            payload,
+            registration_credential=registration_credential,
+        )
+
+    @app.post(
+        "/v1/engine/control/drain",
+        response_model=DrainControlResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def begin_engine_control_drain(
+        payload: BeginControlDrainRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        registration_proof: str = Header(
+            ...,
+            alias="X-Breadboard-Registration-Credential",
+        ),
+        svc: SessionService = Depends(get_service),
+    ) -> DrainControlResponse:
+        owner_credential, registration_credential = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+            (registration_proof, "registration_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        assert registration_credential is not None
+        return await svc.begin_control_drain(
+            payload,
+            owner_credential=owner_credential,
+            registration_credential=registration_credential,
+        )
+
+    @app.post(
+        "/v1/engine/control/graceful-result",
+        response_model=DrainControlResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def record_engine_graceful_control(
+        payload: GracefulControlResultRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> DrainControlResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.record_graceful_control(
+            payload,
+            owner_credential=owner_credential,
+        )
+
+    @app.post(
+        "/v1/engine/control/signal-decision",
+        response_model=DrainControlResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def record_engine_signal_decision(
+        payload: HardSignalDecisionRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> DrainControlResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.record_hard_signal_decision(
+            payload,
+            owner_credential=owner_credential,
+        )
+
+    @app.post(
+        "/v1/engine/control/drain-rollback",
+        response_model=DrainControlResponse,
+        responses={403: {"model": ErrorResponse}, 409: {"model": ErrorResponse}, 410: {"model": ErrorResponse}},
+    )
+    async def rollback_engine_control_drain(
+        payload: DrainControlRequest,
+        owner_proof: str = Header(..., alias="X-Breadboard-Owner-Credential"),
+        svc: SessionService = Depends(get_service),
+    ) -> DrainControlResponse:
+        (owner_credential,) = _authority_credential_buffers(
+            (owner_proof, "owner_identity_mismatch"),
+        )
+        assert owner_credential is not None
+        return await svc.rollback_control_drain(
+            payload,
+            owner_credential=owner_credential,
+        )
+
+    @app.get(
+        "/v1/engine/identity",
+        response_model=EngineIdentityReadinessResponse,
+    )
+    async def engine_identity_readiness(
+        svc: SessionService = Depends(get_service),
+    ) -> EngineIdentityReadinessResponse:
+        contract_readiness = svc.p30_session_contract_readiness(
+            _p30_session_contract_descriptor(app, svc)
+        )
+        process_identity = get_engine_process_identity()
+        served_backend_commit = ENGINE_PROVENANCE.get("commit")
+        if not isinstance(served_backend_commit, str) or len(served_backend_commit) != 40:
+            served_backend_commit = None
+        served_backend_dirty = ENGINE_PROVENANCE.get("dirty")
+        if not isinstance(served_backend_dirty, bool):
+            served_backend_dirty = None
+        return EngineIdentityReadinessResponse(
+            schema_version=ENGINE_IDENTITY_SCHEMA_VERSION,
+            liveness=EngineLiveness(),
+            process=EngineProcessStart(
+                engine_instance_id=process_identity.engine_instance_id,
+                engine_boot_id=process_identity.engine_boot_id,
+                started_at=process_identity.started_at,
+                started_at_unix=process_identity.started_at_unix,
+                pid=process_identity.pid,
+                os_process_start_token=process_identity.os_process_start_token,
+            ),
+            launch=EngineLaunchIdentity(
+                launch_id=process_identity.launch_id,
+                source=process_identity.launch_source,
+            ),
+            artifact_revision=EngineArtifactRevision(
+                engine_artifact_sha256=process_identity.engine_artifact_sha256,
+                served_backend_commit=served_backend_commit,
+                served_backend_dirty=served_backend_dirty,
+            ),
+            protocol=EngineProtocolIdentity(protocol_version=PROTOCOL_VERSION),
+            session_contract=EngineSessionContractIdentity(
+                contract_id=P30_SESSION_CONTRACT_ID,
+                schema_sha256=P30_SESSION_SCHEMA_SHA256,
+                compatibility=(
+                    "compatible"
+                    if contract_readiness.ready
+                    else "incompatible"
+                ),
+                session_replay_contract_digest=replay_configuration_digest(),
+            ),
+            session_readiness=EngineSessionReadiness(
+                ready=contract_readiness.ready,
+                reason=contract_readiness.reason,
+            ),
+        )
 
     if atp_routes_enabled:
         from .atp_router import build_atp_router

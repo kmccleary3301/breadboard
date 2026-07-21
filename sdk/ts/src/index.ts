@@ -1,5 +1,7 @@
 export { ApiError, createBreadboardClient, type BreadboardClientConfig } from "./client.js"
 export { streamSessionEvents, type EventStreamOptions, type StreamConfig } from "./stream.js"
+export * from "./session-runtime.js"
+export * from "./lifecycle-client.js"
 
 export type {
   EventType,
@@ -18,6 +20,8 @@ export type {
   SessionArtifactInfo,
   SessionCreateRequest,
   SessionCreateResponse,
+  SessionInputRequest,
+  SessionInputResponse,
   SessionSummary,
   ErrorResponse,
 } from "./types.js"

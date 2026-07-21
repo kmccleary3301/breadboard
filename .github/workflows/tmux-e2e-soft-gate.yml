@@ -22,7 +22,7 @@ jobs:
       - name: Install minimal dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pillow pytest
+          python -m pip install pillow pytest wcwidth
 
       - name: Validate tmux scenario action alias parity
         run: |

@@ -1,0 +1,51 @@
+#!/usr/bin/expect -f
+set timeout 90
+match_max 10000000
+encoding system utf-8
+
+if {$argc != 5} {
+  puts stderr "usage: ubuntu_x64_tui.exp IMAGE BACKEND_ROOT AGENT_DIR WORKSPACE_DIR ARTIFACT_PATH"
+  exit 64
+}
+
+set image [lindex $argv 0]
+set backend_root [lindex $argv 1]
+set agent_dir [lindex $argv 2]
+set workspace_dir [lindex $argv 3]
+set artifact_path [lindex $argv 4]
+
+log_user 1
+log_file -noappend $artifact_path
+spawn -noecho docker run --rm -it --platform linux/amd64 --network host -e BREADBOARD_PROOF_DIRECT_ENGINE=1 -e PI_CODING_AGENT_DIR=/agent -e TERM=xterm-256color -e NO_COLOR=1 -v $backend_root:/backend:ro -v $agent_dir:/agent -v $workspace_dir:/work -v $backend_root/scripts/p30_three_lane:/proof:ro -w /work --entrypoint /proof/container_tui_entrypoint.sh $image --cwd /work
+stty rows 30 columns 120
+fconfigure $spawn_id -encoding utf-8
+expect {
+  -exact "\u258f" {}
+  eof { puts stderr "TUI exited before composer was ready"; exit 9 }
+  timeout { puts stderr "Timed out waiting for TUI composer"; exit 8 }
+}
+send -- "THREE_LANE_SMOKE_UBUNTU_X64"
+sleep 1
+send -- "\r"
+expect {
+  -re {Hi! All systems nominal\.} {}
+  eof { puts stderr "TUI exited before deterministic response"; exit 11 }
+  timeout { puts stderr "Timed out waiting for deterministic response"; exit 10 }
+}
+expect {
+  -re {TASK COMPLETE} {}
+  eof { puts stderr "TUI exited before completion marker"; exit 13 }
+  timeout { puts stderr "Timed out waiting for completion marker"; exit 12 }
+}
+sleep 1
+send -- "\004"
+expect {
+  eof {}
+  timeout { puts stderr "TUI did not exit after completed response"; exit 14 }
+}
+catch wait result
+set exit_status [lindex $result 3]
+if {$exit_status != 0} {
+  puts stderr "TUI process exited with status $exit_status"
+  exit $exit_status
+}
