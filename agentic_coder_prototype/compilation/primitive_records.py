@@ -159,6 +159,8 @@ _E4_SCHEMA_SPECS: tuple[tuple[str, str, str | None], ...] = (
     ("bb.e4.support_claim.v4", "claim_id", None),
     ("bb.e4.lane_def.v1", "lane_id", None),
     ("bb.e4.lane_def.v2", "lane_id", None),
+    ("bb.e4.lane_manifest.v2", "lane_id", None),
+    ("bb.e4.lane_lock.v2", "lane_id", "lock_sha256"),
     ("bb.e4.lane_inventory.v2", "inventory_id", None),
     ("bb.e4.target_coverage.v2", "target_family", None),
     ("bb.e4.artifact_catalog.v1", "catalog_id", None),
