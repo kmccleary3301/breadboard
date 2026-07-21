@@ -27,15 +27,22 @@
     },
     "metadata": {"type": "object", "additionalProperties": true}
   },
-  "anyOf": [
-    {"required": ["execute"], "properties": {"execute": {"minItems": 1}}},
-    {"required": ["reuse"], "properties": {"reuse": {"minItems": 1}}}
+  "not": {
+    "properties": {"execute": {"type": "array", "maxItems": 0}, "reuse": {"type": "array", "maxItems": 0}},
+    "required": ["execute", "reuse"]
+  },
+  "allOf": [
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "capture"}}, "reuse": {"type": "array", "contains": {"const": "capture"}}}}},
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "normalize"}}, "reuse": {"type": "array", "contains": {"const": "normalize"}}}}},
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "replay"}}, "reuse": {"type": "array", "contains": {"const": "replay"}}}}},
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "compare"}}, "reuse": {"type": "array", "contains": {"const": "compare"}}}}},
+    {"not": {"properties": {"execute": {"type": "array", "contains": {"const": "claim"}}, "reuse": {"type": "array", "contains": {"const": "claim"}}}}}
   ],
   "$defs": {
     "relative_path": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?!/)(?!.*(^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+      "pattern": "^(?!.*(?:^|/)(?:\\.|\\.\\.|head|latest|main|master|trunk|develop|dev|working|workspace)(?:/|$))(?:[a-z0-9._-]+/)*[a-z0-9._-]+$"
     }
   }
 }

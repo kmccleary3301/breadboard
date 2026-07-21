@@ -286,7 +286,7 @@
     {
       "consumers": [
         {
-          "kind": "product",
+          "kind": "loader",
           "path": "breadboard/product/evidence/lanes.py"
         }
       ],
@@ -323,7 +323,7 @@
     {
       "consumers": [
         {
-          "kind": "product",
+          "kind": "evidence_machinery",
           "path": "breadboard/product/evidence/lane_lock.py"
         }
       ],
@@ -346,7 +346,7 @@
     {
       "consumers": [
         {
-          "kind": "product",
+          "kind": "loader",
           "path": "breadboard/product/evidence/lanes.py"
         }
       ],

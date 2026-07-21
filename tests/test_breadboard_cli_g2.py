@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from scripts import breadboard_cli
-from scripts.authoring.validate_lane import load_lane_manifest
+from breadboard.product.evidence import load_lane
 from breadboard.product.runtime.artifacts import ArtifactStore
 
 
@@ -73,21 +73,20 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
     assert {path: path.read_bytes() for path in before} == before
 
 
-def test_lane_init_produces_a_loader_valid_manifest_without_overwriting(
-    tmp_path: Path,
-    capsys,
-) -> None:
+def test_lane_init_produces_a_loader_valid_manifest_without_overwriting(tmp_path: Path, capsys, monkeypatch) -> None:
     out_dir = tmp_path / "lane"
 
     exit_code, _, stderr = _invoke(["lane", "init", "--out", str(out_dir)], capsys)
 
     assert exit_code == 0, stderr
-    manifest_path = out_dir / "lane.manifest.yaml"
-    loaded = load_lane_manifest(manifest_path)
-    assert loaded["schema_version"] == "bb.e4.lane_manifest.v1"
+    manifest_path = out_dir / ".breadboard/lanes/new_lane.manifest.json"
+    loaded = load_lane(manifest_path)
+    assert loaded["schema_version"] == "bb.e4.lane_manifest.v2"
 
-    exit_code, _, stderr = _invoke(["lane", "validate", str(manifest_path)], capsys)
-    assert exit_code == 0, stderr
+    exit_code, _, stderr = _invoke(["lane", "validate", str(manifest_path)], capsys); assert exit_code == 0, stderr
+    legacy = Path(__file__).resolve().parents[1] / "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.yaml"; exit_code, _, stderr = _invoke(["lane", "validate", str(legacy)], capsys); assert exit_code == 0, stderr
+    exit_code, stdout, stderr = _invoke(["--json", "lane", "lock", str(manifest_path)], capsys); assert exit_code == 3 and json.loads(stdout)["error"]["error_code"] == "path_unavailable", stderr
+    original = manifest_path.read_bytes(); payload = json.loads(original); payload["lane_id"] = "new.lane"; manifest_path.write_text(json.dumps(payload)); yaml_path = manifest_path.with_name("new.lane.manifest.yaml"); manifest_path.rename(yaml_path); monkeypatch.chdir(tmp_path); (tmp_path / "new.lane").write_text(json.dumps({**payload, "lane_id": "hijacked"})); exit_code, stdout, stderr = _invoke(["--json", "lane", "--workspace", str(out_dir), "get", "new.lane"], capsys); assert exit_code == 0, stderr; yaml_path.rename(manifest_path); manifest_path.write_bytes(original)
 
     manifest_path.write_text("author-owned lane\n", encoding="utf-8")
     before = manifest_path.read_bytes()
@@ -138,16 +137,17 @@ def test_lane_validate_returns_pointerful_schema_failure(
     out_dir = tmp_path / "lane"
     exit_code, _, stderr = _invoke(["lane", "init", "--out", str(out_dir)], capsys)
     assert exit_code == 0, stderr
-    manifest_path = out_dir / "lane.manifest.yaml"
-    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    manifest["target"] = []
-    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    manifest_path = out_dir / ".breadboard/lanes/new_lane.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["references"]["target"] = []
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
 
     exit_code, _, stderr = _invoke(["lane", "validate", str(manifest_path)], capsys)
 
     assert exit_code == 2
-    assert "/target" in stderr
-    assert "object" in stderr.lower()
+    assert "invalid_lane" in stderr
+    assert "references.target" in stderr
+    assert "repo-relative path" in stderr.lower()
 
 
 def test_pyproject_installs_cli_and_runtime_import_packages() -> None:
@@ -200,7 +200,7 @@ def test_validate_returns_resolution_failure_for_unresolvable_paths(
             "harness",
             ("minimal_harness.v2.yaml", "prompts/minimal_system.md"),
         ),
-        ("lane", ("lane.manifest.yaml",)),
+        ("lane", (".breadboard/lanes/new_lane.manifest.json",)),
     ],
 )
 def test_init_json_is_the_only_output_and_identifies_every_created_file(
@@ -228,7 +228,7 @@ def test_init_json_is_the_only_output_and_identifies_every_created_file(
     payload = json.loads(stdout)
     assert payload["ok"] is True
     assert payload["schema_version"] == "bb.cli.result.v1"
-    assert payload["data"]["path"] == str(out_dir / created_paths[0])
+    assert payload["data"]["path"] == (str(out_dir / created_paths[0]) if namespace == "harness" else created_paths[0])
     if namespace == "harness":
         assert payload["data"]["prompt_path"] == str(out_dir / created_paths[1])
     assert stderr == ""

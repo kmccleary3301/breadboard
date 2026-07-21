@@ -27,6 +27,7 @@ namespaces = true
 "agent_configs.templates.prompts" = ["*.md"]
 "config.e4_lanes" = ["*.yaml", "*.json"]
 "conformance.comparators" = ["registry.json"]
+"contracts.kernel.examples" = ["*.json"]
 "contracts.kernel.registries" = ["*.json"]
 "contracts.kernel.schemas" = ["*.schema.json"]
 "contracts.public" = ["operations.v1.json"]

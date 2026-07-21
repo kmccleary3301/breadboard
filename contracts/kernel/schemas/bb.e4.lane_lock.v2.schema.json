@@ -16,6 +16,14 @@
       "minItems": 6,
       "maxItems": 6,
       "uniqueItems": true,
+      "allOf": [
+        {"contains": {"type": "object", "required": ["name"], "properties": {"name": {"const": "harness"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["name"], "properties": {"name": {"const": "target"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["name"], "properties": {"name": {"const": "adapter"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["name"], "properties": {"name": {"const": "source"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["name"], "properties": {"name": {"const": "comparator"}}}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "required": ["name"], "properties": {"name": {"const": "policy"}}}, "minContains": 1, "maxContains": 1}
+      ],
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -34,7 +42,7 @@
     "relative_path": {
       "type": "string",
       "minLength": 1,
-      "pattern": "^(?!/)(?!.*(^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$"
+      "pattern": "^(?!.*(?:^|/)(?:\\.|\\.\\.|head|latest|main|master|trunk|develop|dev|working|workspace)(?:/|$))(?:[a-z0-9._-]+/)*[a-z0-9._-]+$"
     },
     "digest_row": {
       "type": "object",

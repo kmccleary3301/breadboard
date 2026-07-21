@@ -9,6 +9,217 @@ const Ajv2020 = Ajv2020Candidate as new (opts?: { allErrors?: boolean; validateF
 const ajv = new Ajv2020({ allErrors: true, validateFormats: false })
 
 export const GENERATED_SCHEMA_OBJECTS = {
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v3.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v3.schema.json",
+    "title": "BreadBoard E4 candidate lane definition V3",
+    "description": "Inactive candidate authoring shape. Runtime producers must not emit this schema until a later lifecycle decision.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "lane_id",
+      "status",
+      "execute",
+      "reuse",
+      "references"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.e4.lane_def.v3"
+      },
+      "lane_id": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+      },
+      "status": {
+        "enum": [
+          "draft",
+          "candidate"
+        ]
+      },
+      "execute": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "enum": [
+            "capture",
+            "normalize",
+            "replay",
+            "compare",
+            "claim"
+          ]
+        }
+      },
+      "reuse": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "enum": [
+            "capture",
+            "normalize",
+            "replay",
+            "compare",
+            "claim"
+          ]
+        }
+      },
+      "references": {
+        "$ref": "#/$defs/references"
+      },
+      "metadata": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "not": {
+      "properties": {
+        "execute": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "reuse": {
+          "type": "array",
+          "maxItems": 0
+        }
+      },
+      "required": [
+        "execute",
+        "reuse"
+      ]
+    },
+    "allOf": [
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "capture"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "capture"
+              }
+            }
+          }
+        }
+      },
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "normalize"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "normalize"
+              }
+            }
+          }
+        }
+      },
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "replay"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "replay"
+              }
+            }
+          }
+        }
+      },
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "compare"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "compare"
+              }
+            }
+          }
+        }
+      },
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "claim"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "claim"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "$defs": {
+      "references": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "harness",
+          "target",
+          "adapter",
+          "source",
+          "comparator",
+          "policy"
+        ],
+        "properties": {
+          "harness": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "target": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "adapter": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "source": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "comparator": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "policy": {
+            "$ref": "#/$defs/relative_path"
+          }
+        }
+      },
+      "relative_path": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!.*(?:^|/)(?:\\.|\\.\\.|head|latest|main|master|trunk|develop|dev|working|workspace)(?:/|$))(?:[a-z0-9._-]+/)*[a-z0-9._-]+$"
+      }
+    }
+  },
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
@@ -165,6 +376,201 @@ export const GENERATED_SCHEMA_OBJECTS = {
               "type": "string",
               "pattern": "^sha256:[0-9a-f]{64}$"
             }
+          }
+        }
+      }
+    }
+  },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v2.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v2.schema.json",
+    "title": "BreadBoard E4 candidate lane lock V2",
+    "description": "Machine-owned deterministic resolution for an inactive candidate lane.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "lock_format",
+      "lane_id",
+      "manifest",
+      "references",
+      "lock_sha256"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.e4.lane_lock.v2"
+      },
+      "lock_format": {
+        "const": "canonical-json-v2"
+      },
+      "lane_id": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+      },
+      "manifest": {
+        "$ref": "#/$defs/digest_row"
+      },
+      "references": {
+        "type": "array",
+        "minItems": 6,
+        "maxItems": 6,
+        "uniqueItems": true,
+        "allOf": [
+          {
+            "contains": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "const": "harness"
+                }
+              }
+            },
+            "minContains": 1,
+            "maxContains": 1
+          },
+          {
+            "contains": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "const": "target"
+                }
+              }
+            },
+            "minContains": 1,
+            "maxContains": 1
+          },
+          {
+            "contains": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "const": "adapter"
+                }
+              }
+            },
+            "minContains": 1,
+            "maxContains": 1
+          },
+          {
+            "contains": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "const": "source"
+                }
+              }
+            },
+            "minContains": 1,
+            "maxContains": 1
+          },
+          {
+            "contains": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "const": "comparator"
+                }
+              }
+            },
+            "minContains": 1,
+            "maxContains": 1
+          },
+          {
+            "contains": {
+              "type": "object",
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "const": "policy"
+                }
+              }
+            },
+            "minContains": 1,
+            "maxContains": 1
+          }
+        ],
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "path",
+            "sha256",
+            "bytes"
+          ],
+          "properties": {
+            "name": {
+              "enum": [
+                "harness",
+                "target",
+                "adapter",
+                "source",
+                "comparator",
+                "policy"
+              ]
+            },
+            "path": {
+              "$ref": "#/$defs/relative_path"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "bytes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      },
+      "lock_sha256": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    },
+    "$defs": {
+      "relative_path": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!.*(?:^|/)(?:\\.|\\.\\.|head|latest|main|master|trunk|develop|dev|working|workspace)(?:/|$))(?:[a-z0-9._-]+/)*[a-z0-9._-]+$"
+      },
+      "digest_row": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256",
+          "bytes"
+        ],
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }
@@ -629,12 +1035,223 @@ export const GENERATED_SCHEMA_OBJECTS = {
         "type": "string"
       }
     }
+  },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v2.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v2.schema.json",
+    "title": "BreadBoard E4 candidate lane manifest V2",
+    "description": "Author-owned inactive candidate intent; machine-owned digests live in bb.e4.lane_lock.v2.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "lane_id",
+      "status",
+      "execute",
+      "reuse",
+      "references"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.e4.lane_manifest.v2"
+      },
+      "lane_id": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+      },
+      "status": {
+        "enum": [
+          "draft",
+          "candidate"
+        ]
+      },
+      "execute": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "enum": [
+            "capture",
+            "normalize",
+            "replay",
+            "compare",
+            "claim"
+          ]
+        }
+      },
+      "reuse": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": {
+          "enum": [
+            "capture",
+            "normalize",
+            "replay",
+            "compare",
+            "claim"
+          ]
+        }
+      },
+      "references": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "harness",
+          "target",
+          "adapter",
+          "source",
+          "comparator",
+          "policy"
+        ],
+        "properties": {
+          "harness": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "target": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "adapter": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "source": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "comparator": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "policy": {
+            "$ref": "#/$defs/relative_path"
+          }
+        }
+      },
+      "metadata": {
+        "type": "object",
+        "additionalProperties": true
+      }
+    },
+    "not": {
+      "properties": {
+        "execute": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "reuse": {
+          "type": "array",
+          "maxItems": 0
+        }
+      },
+      "required": [
+        "execute",
+        "reuse"
+      ]
+    },
+    "allOf": [
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "capture"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "capture"
+              }
+            }
+          }
+        }
+      },
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "normalize"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "normalize"
+              }
+            }
+          }
+        }
+      },
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "replay"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "replay"
+              }
+            }
+          }
+        }
+      },
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "compare"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "compare"
+              }
+            }
+          }
+        }
+      },
+      {
+        "not": {
+          "properties": {
+            "execute": {
+              "type": "array",
+              "contains": {
+                "const": "claim"
+              }
+            },
+            "reuse": {
+              "type": "array",
+              "contains": {
+                "const": "claim"
+              }
+            }
+          }
+        }
+      }
+    ],
+    "$defs": {
+      "relative_path": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!.*(?:^|/)(?:\\.|\\.\\.|head|latest|main|master|trunk|develop|dev|working|workspace)(?:/|$))(?:[a-z0-9._-]+/)*[a-z0-9._-]+$"
+      }
+    }
   }
 } as const satisfies Record<string, object>
 
 const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v3.schema.json": ["bb.e4.lane_def.v3.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json": ["bb.e4.lane_lock.v1.schema.json"],
-  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json": ["bb.e4.lane_manifest.v1.schema.json"]
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v2.schema.json": ["bb.e4.lane_lock.v2.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json": ["bb.e4.lane_manifest.v1.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v2.schema.json": ["bb.e4.lane_manifest.v2.schema.json"]
 }
 
 export const GENERATED_SCHEMAS: Record<string, { schema: object; validate: ValidateFunction }> = {}

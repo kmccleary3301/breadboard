@@ -550,13 +550,14 @@ def load_manifest_lane_def(
     materialize_inputs: bool = True,
 ) -> dict[str, Any]:
     """Normalize manifest+lock+sidecar to the v2 runtime or pilot-parity contract."""
-    path = _resolve_checkout_path(path, label="lane manifest")
+    path = Path(path).expanduser().resolve()
     manifest = _load_yaml(path)
-    if manifest.get("schema_version") == PRODUCT_MANIFEST_SCHEMA_VERSION:
+    if manifest.get("schema_version") in (PRODUCT_MANIFEST_SCHEMA_VERSION, PRODUCT_LANE_SCHEMA_VERSION):
         try:
             return load_product_lane(path)
         except ValueError as exc:
             raise LaneDefValidationError(str(exc)) from exc
+    path = _resolve_checkout_path(path, label="lane manifest")
     if manifest.get("schema_version") != MANIFEST_SCHEMA_VERSION:
         raise LaneDefValidationError(f"{path}: expected {MANIFEST_SCHEMA_VERSION}")
     _validate_payload(manifest, MANIFEST_SCHEMA_VERSION, path)
@@ -679,12 +680,13 @@ def inventory_lane_sources(
     *,
     materialize_inputs: bool = True,
 ) -> list[dict[str, str | None]]:
-    """Classify and validate every YAML source consumed by the lane loader."""
+    """Classify and validate every lane source consumed by the loader."""
     if not directory.exists():
         return []
     inventory: list[dict[str, str | None]] = []
-    for path in sorted(directory.glob("*.yaml")):
-        if path.name.endswith(".manifest.yaml"):
+    paths = set(directory.glob("*.yaml")) | set(directory.glob("*.yml")) | set(directory.glob("*.manifest.json"))
+    for path in sorted(paths):
+        if path.name.endswith((".manifest.yaml", ".manifest.yml", ".manifest.json")):
             load_manifest_lane_def(path, materialize_inputs=materialize_inputs)
             kind = "lane_manifest"
             reason = None
