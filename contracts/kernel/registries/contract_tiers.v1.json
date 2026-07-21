@@ -284,6 +284,18 @@
       "tier": "evidence"
     },
     {
+      "consumers": [
+        {
+          "kind": "loader",
+          "path": "breadboard/product/evidence/lanes.py"
+        }
+      ],
+      "disposition": "keep",
+      "notes": "NS08 inactive candidate authoring lane definition.",
+      "schema_id": "bb.e4.lane_def.v3",
+      "tier": "config_algebra"
+    },
+    {
       "consumers": [],
       "disposition": "freeze",
       "notes": "Frozen for accepted evidence and not eligible for new production.",
@@ -311,12 +323,36 @@
     {
       "consumers": [
         {
+          "kind": "evidence_machinery",
+          "path": "breadboard/product/evidence/lane_lock.py"
+        }
+      ],
+      "disposition": "keep",
+      "notes": "NS08 inactive deterministic lane lock.",
+      "schema_id": "bb.e4.lane_lock.v2",
+      "tier": "config_algebra"
+    },
+    {
+      "consumers": [
+        {
           "kind": "loader",
           "path": "scripts/authoring/validate_lane.py"
         }
       ],
       "disposition": "keep",
       "schema_id": "bb.e4.lane_manifest.v1",
+      "tier": "config_algebra"
+    },
+    {
+      "consumers": [
+        {
+          "kind": "loader",
+          "path": "breadboard/product/evidence/lanes.py"
+        }
+      ],
+      "disposition": "keep",
+      "notes": "NS08 inactive candidate authoring manifest.",
+      "schema_id": "bb.e4.lane_manifest.v2",
       "tier": "config_algebra"
     },
     {

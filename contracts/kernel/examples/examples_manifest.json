@@ -146,6 +146,11 @@
       "schema_version": "bb.e4.lane_def.v2"
     },
     {
+      "example_path": "contracts/kernel/examples/e4_lane_def_v3_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.lane_def.v3.schema.json",
+      "schema_version": "bb.e4.lane_def.v3"
+    },
+    {
       "example_path": "contracts/kernel/examples/e4_lane_inventory_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.e4.lane_inventory.v1.schema.json",
       "schema_version": "bb.e4.lane_inventory.v1"
@@ -161,9 +166,19 @@
       "schema_version": "bb.e4.lane_lock.v1"
     },
     {
+      "example_path": "contracts/kernel/examples/e4_lane_lock_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.lane_lock.v2.schema.json",
+      "schema_version": "bb.e4.lane_lock.v2"
+    },
+    {
       "example_path": "contracts/kernel/examples/e4_lane_manifest_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
       "schema_version": "bb.e4.lane_manifest.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/e4_lane_manifest_v2_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.e4.lane_manifest.v2.schema.json",
+      "schema_version": "bb.e4.lane_manifest.v2"
     },
     {
       "example_path": "contracts/kernel/examples/e4_regen_failure_classification_minimal.json",

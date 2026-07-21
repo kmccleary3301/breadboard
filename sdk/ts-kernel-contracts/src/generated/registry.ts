@@ -7118,6 +7118,20 @@ export const GENERATED_SCHEMA_OBJECTS = {
           "exclusions"
         ],
         "properties": {
+          "status": {
+            "enum": [
+              "planned",
+              "captured",
+              "replayed",
+              "compared",
+              "claimed",
+              "accepted",
+              "blocked",
+              "superseded",
+              "scaffolded"
+            ],
+            "description": "Optional retained evidence status when it differs from the producer lane lifecycle status."
+          },
           "scope": {
             "type": "object",
             "additionalProperties": false,
@@ -7681,6 +7695,20 @@ export const GENERATED_SCHEMA_OBJECTS = {
                 "blocked",
                 "superseded"
               ]
+            },
+            "evidence_status": {
+              "enum": [
+                "planned",
+                "scaffolded",
+                "captured",
+                "replayed",
+                "compared",
+                "claimed",
+                "accepted",
+                "blocked",
+                "superseded"
+              ],
+              "description": "Retained evidence lifecycle when it differs from the producer lifecycle in status."
             },
             "points": {
               "type": "integer",

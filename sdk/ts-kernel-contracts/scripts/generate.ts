@@ -18,7 +18,10 @@ const PHASE20_UNPACKED_SCHEMAS: Record<string, true> = {
 }
 const INTERNAL_ONLY_SCHEMAS: Record<string, true> = {
   "bb.e4.lane_lock.v1.schema.json": true,
+  "bb.e4.lane_def.v3.schema.json": true,
+  "bb.e4.lane_lock.v2.schema.json": true,
   "bb.e4.lane_manifest.v1.schema.json": true,
+  "bb.e4.lane_manifest.v2.schema.json": true,
 }
 
 interface SchemaEntry {
@@ -77,13 +80,15 @@ function generatedHeader(sourceRel: string): string {
 async function emitTypes(entries: SchemaEntry[]): Promise<void> {
   for (const entry of entries) {
     const sourcePath = join(SCHEMA_DIR, entry.filename)
-    const output = await compile({ ...entry.schema, title: entry.typeName }, entry.typeName, {
+    let output = await compile({ ...entry.schema, title: entry.typeName }, entry.typeName, {
       cwd: SCHEMA_DIR,
       bannerComment: "",
       declareExternallyReferenced: true,
       enableConstEnums: false,
       unreachableDefinitions: true,
     })
+    if (entry.filename === "bb.e4.lane_def.v3.schema.json" || entry.filename === "bb.e4.lane_manifest.v2.schema.json")
+      output = output.replace(/^export type (\w+) = \{\n  \[k: string\]: unknown;\n\} & \{/m, "export interface $1 {")
     const outFile = join(TYPES_DIR, entry.filename.replace(/\.schema\.json$/, ".ts"))
     writeFileSync(outFile, generatedHeader(relative(PACKAGE_ROOT, sourcePath)) + output.trimEnd() + "\n", "utf8")
   }

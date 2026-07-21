@@ -1,0 +1,19 @@
+{
+  "schema_version": "bb.e4.lane_lock.v2",
+  "lock_format": "canonical-json-v2",
+  "lane_id": "candidate_lane",
+  "manifest": {
+    "path": ".breadboard/lanes/candidate_lane.manifest.json",
+    "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "bytes": 1
+  },
+  "references": [
+    {"name": "adapter", "path": "refs/adapter-0123456789abcdef.json", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 1},
+    {"name": "comparator", "path": "refs/comparator-0123456789abcdef.json", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 1},
+    {"name": "harness", "path": "refs/harness-0123456789abcdef.json", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 1},
+    {"name": "policy", "path": "refs/policy-0123456789abcdef.json", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 1},
+    {"name": "source", "path": "refs/source-0123456789abcdef.json", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 1},
+    {"name": "target", "path": "refs/target-0123456789abcdef.json", "sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "bytes": 1}
+  ],
+  "lock_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+}

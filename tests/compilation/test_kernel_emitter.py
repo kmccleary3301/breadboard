@@ -270,7 +270,7 @@ def test_session_state_add_message_dual_emits_kernel_event_v2_without_changing_l
 
 
 def test_runtime_v2_schema_files_and_registry_files_are_registered() -> None:
-    non_primitive_v2_schemas = {"bb.agent_config_surface.v2"}
+    non_primitive_v2_schemas = {"bb.agent_config_surface.v2", "bb.e4.lane_lock.v2", "bb.e4.lane_manifest.v2"}
     missing = []
     for schema_path in sorted(SCHEMA_DIR.glob("bb.*.v2.schema.json")):
         schema_version = schema_path.name.removesuffix(".schema.json")

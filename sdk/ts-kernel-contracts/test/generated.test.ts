@@ -46,7 +46,10 @@ function schemaKeyForExample(exampleFile: string, example: Record<string, unknow
 
 const INTERNAL_SCHEMA_FILES: Record<string, true> = {
   "bb.e4.lane_lock.v1.schema.json": true,
+  "bb.e4.lane_def.v3.schema.json": true,
+  "bb.e4.lane_lock.v2.schema.json": true,
   "bb.e4.lane_manifest.v1.schema.json": true,
+  "bb.e4.lane_manifest.v2.schema.json": true,
 }
 
 
@@ -82,6 +85,21 @@ test("lane manifest and lock types stay off the public package surface", () => {
 
   try {
     for (const [typeName, filename, schemaId] of [
+      [
+        "E4LaneDefV3",
+        "bb.e4.lane_def.v3.ts",
+        "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v3.schema.json",
+      ],
+      [
+        "E4LaneLockV2",
+        "bb.e4.lane_lock.v2.ts",
+        "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v2.schema.json",
+      ],
+      [
+        "E4LaneManifestV2",
+        "bb.e4.lane_manifest.v2.ts",
+        "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v2.schema.json",
+      ],
       [
         "E4LaneLockV1",
         "bb.e4.lane_lock.v1.ts",
@@ -133,8 +151,8 @@ test("lane manifest and lock types stay off the public package surface", () => {
         )
         assert.match(
           diagnostics,
-          new RegExp(`TS2305:.*${typeName}`),
-          `Expected TS2305 for ${typeName} from ${packageSpecifier}, got:\n${diagnostics}`,
+          new RegExp(`TS(?:2305|2724):.*${typeName}`),
+          `Expected a missing-export diagnostic for ${typeName} from ${packageSpecifier}, got:\n${diagnostics}`,
         )
       }
     }
