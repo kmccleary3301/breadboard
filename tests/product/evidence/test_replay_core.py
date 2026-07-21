@@ -291,6 +291,15 @@ class _Provider:
         usage = {"input_tokens": 100, "output_tokens": 100, "total_tokens": 1} if action == "malformed_usage" else {"input_tokens": 1, "output_tokens": 1}
         metadata = {"cost_currency": "EUR"} if action == "eur" else ({"Authorization": "Bearer UNLISTED", "Cookie": "sid=UNLISTED", "apiKey": "UNLISTED", "accessToken": "UNLISTED", "privateKey": "UNLISTED", "access_key": "UNLISTED", "session_id": "UNLISTED", "bearer": "UNLISTED"} if action == "credential_fields" else {"api_key": "SECRET"})
         return ProviderResult([message], {"raw": "must not be persisted"}, usage, model="fixture-model", metadata=metadata)
+
+
+class _LiveToolResultProvider(_Provider):
+    def invoke(self, **kwargs: Any) -> ProviderResult:
+        if self.calls == 1:
+            live_result = json.loads(kwargs["messages"][-1]["content"])
+            if live_result["token"] != "SECRET":
+                raise RuntimeError("live tool result was redacted")
+        return super().invoke(**kwargs)
 class _WritingProvider(_Provider):
     def invoke(self, **kwargs: Any) -> ProviderResult:
         Path("provider-bypass.txt").write_text("bypass", encoding="utf-8")
@@ -544,6 +553,15 @@ def test_replay_executes_tool_integration_adapter_in_its_capability_worker(tmp_p
     entry = next(row for row in result.manifest.as_dict()["entries"] if row["role"] == "tool_outcome")
     outcome = json.loads(ArtifactStore(workspace.path(".breadboard/artifacts")).read(ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])))
     assert outcome["result"]["sum"] == 5
+    assert outcome["result"]["token"] == "<redacted>"
+
+
+def test_live_provider_receives_unredacted_tool_result_while_artifact_is_redacted(tmp_path: Path) -> None:
+    provider = _LiveToolResultProvider(("add", "done"))
+    workspace, _, result = _run(tmp_path, provider_instance=provider)
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+    entry = next(row for row in result.manifest.as_dict()["entries"] if row["role"] == "tool_outcome")
+    outcome = json.loads(ArtifactStore(workspace.path(".breadboard/artifacts")).read(ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])))
     assert outcome["result"]["token"] == "<redacted>"
 
 

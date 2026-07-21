@@ -2035,7 +2035,7 @@ def run_replay(
                         if timed_out_code is not None:
                             detail = "replay exceeded its total deadline" if timed_out_code == "replay.total_timeout" else "tool call exceeded its deadline"
                             raise _RuntimeFailure("timed_out", timed_out_code, detail)
-                        messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(_redact(outcome, secrets=secret_values, workspace=workspace.root, counter=redaction_count), sort_keys=True)})
+                        messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(outcome, sort_keys=True)})
             except _RuntimeFailure as exc:
                 safe_detail = _redact(exc.detail, secrets=secret_values, workspace=workspace.root, counter=redaction_count)
                 terminal_status, completion_reason, failure = exc.status, safe_detail, problem(exc.error_code, safe_detail)
