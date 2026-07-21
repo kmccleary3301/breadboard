@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ import re
 import select
 import secrets
 import stat
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -96,8 +98,8 @@ class EngineProcessIdentity:
     launch_source: str
     started_at: datetime
     started_at_unix: float
+    os_process_start_token: str
     engine_artifact_sha256: str
-
 
 
 class LaunchBootstrapVerifier:
@@ -247,6 +249,67 @@ def engine_source_artifact_sha256(source_root: Path) -> str:
     return "sha256:" + digest.hexdigest()
 
 
+def _darwin_process_start_token(pid: int) -> str | None:
+    try:
+        libproc = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+        proc_pidinfo = libproc.proc_pidinfo
+        proc_pidinfo.argtypes = [
+            ctypes.c_int,
+            ctypes.c_int,
+            ctypes.c_uint64,
+            ctypes.c_void_p,
+            ctypes.c_int,
+        ]
+        proc_pidinfo.restype = ctypes.c_int
+        info = (ctypes.c_ubyte * 136)()
+        size = proc_pidinfo(pid, 3, 0, ctypes.byref(info), len(info))
+    except (AttributeError, OSError, ValueError):
+        return None
+    if size != len(info):
+        return None
+    raw = bytes(info)
+    observed_pid = int.from_bytes(raw[12:16], "little")
+    seconds = int.from_bytes(raw[120:128], "little")
+    microseconds = int.from_bytes(raw[128:136], "little")
+    if observed_pid != pid or seconds == 0 or microseconds >= 1_000_000:
+        return None
+    return f"darwin:{seconds}:{microseconds}"
+
+
+def _linux_process_start_token(pid: int) -> str | None:
+    try:
+        process_stat = Path(f"/proc/{pid}/stat").read_text(encoding="ascii")
+        boot_id = Path("/proc/sys/kernel/random/boot_id").read_text(
+            encoding="ascii"
+        ).strip()
+    except (OSError, UnicodeError):
+        return None
+    command_end = process_stat.rfind(")")
+    if command_end < 0 or re.fullmatch(r"[A-Za-z0-9._-]+", boot_id) is None:
+        return None
+    fields_after_command = process_stat[command_end + 1 :].split()
+    if len(fields_after_command) <= 19:
+        return None
+    start_ticks = fields_after_command[19]
+    if not start_ticks.isascii() or not start_ticks.isdigit():
+        return None
+    return f"linux:{boot_id}:{start_ticks}"
+
+
+def process_start_token(pid: int) -> str:
+    """Return a stable OS process-incarnation token for lifecycle binding."""
+
+    if sys.platform == "darwin":
+        token = _darwin_process_start_token(pid)
+    elif sys.platform.startswith("linux"):
+        token = _linux_process_start_token(pid)
+    else:
+        token = None
+    if token is None:
+        token = f"process:{pid}:{secrets.token_hex(16)}"
+    return token
+
+
 def resolve_launch_identity(environ: Mapping[str, str]) -> tuple[str, str]:
     """Resolve supervisor metadata or create an explicit unmanaged fallback."""
 
@@ -271,6 +334,7 @@ def _new_process_identity(pid: int) -> EngineProcessIdentity:
         launch_source=launch_source,
         started_at=datetime.fromtimestamp(started_at_unix, tz=timezone.utc),
         started_at_unix=started_at_unix,
+        os_process_start_token=process_start_token(pid),
         engine_artifact_sha256=engine_source_artifact_sha256(_ENGINE_SOURCE_ROOT),
     )
 

@@ -98,6 +98,7 @@ def identity() -> EngineProcessIdentity:
             tz=__import__("datetime").timezone.utc,
         ),
         started_at_unix=1_000.0,
+        os_process_start_token="test:12345:1000",
         engine_artifact_sha256="sha256:" + "c" * 64,
     )
 

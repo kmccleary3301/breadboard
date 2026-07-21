@@ -97,7 +97,7 @@ class ErrorResponse(ErrorEnvelope):
     pass
 
 class _StrictEngineIdentityModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
 class EngineLiveness(_StrictEngineIdentityModel):
@@ -120,6 +120,12 @@ class EngineProcessStart(_StrictEngineIdentityModel):
     started_at: datetime
     started_at_unix: float = Field(..., ge=0)
     pid: int = Field(..., ge=1)
+    os_process_start_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    )
 
 
 class EngineLaunchIdentity(_StrictEngineIdentityModel):
@@ -148,6 +154,11 @@ class EngineSessionContractIdentity(_StrictEngineIdentityModel):
         "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
     ] = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
     compatibility: Literal["compatible", "incompatible"]
+    session_replay_contract_digest: str = Field(
+        ...,
+        alias="sessionReplayContractDigest",
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
 
 
 class EngineSessionReadiness(_StrictEngineIdentityModel):

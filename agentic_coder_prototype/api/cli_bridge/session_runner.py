@@ -918,7 +918,13 @@ class SessionRunner:
             path = path.resolve()
         return path
 
-    async def _maybe_publish_todo_snapshot(self, workspace_dir: Optional[Path], *, call_id: str) -> None:
+    async def _maybe_publish_todo_snapshot(
+        self,
+        workspace_dir: Optional[Path],
+        *,
+        call_id: str,
+        publish: bool = True,
+    ) -> None:
         if not self._todo_enabled or not workspace_dir:
             return
         envelope = self._load_todo_envelope_from_disk(workspace_dir)
@@ -926,10 +932,11 @@ class SessionRunner:
             return
         self.session.metadata["todo_last_update"] = envelope
         self._persist_metadata_snapshot_threadsafe()
-        await self.publish_event_async(
-            EventType.TOOL_RESULT,
-            {"call_id": call_id, "todo": envelope},
-        )
+        if publish:
+            await self.publish_event_async(
+                EventType.TOOL_RESULT,
+                {"call_id": call_id, "todo": envelope},
+            )
 
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
@@ -1129,7 +1136,11 @@ class SessionRunner:
             except Exception:
                 todo_cfg = {"enabled": False}
             self._todo_enabled = bool(todo_cfg.get("enabled"))
-            await self._maybe_publish_todo_snapshot(self._workspace_path, call_id="todo:snapshot:init")
+            await self._maybe_publish_todo_snapshot(
+                self._workspace_path,
+                call_id="todo:snapshot:init",
+                publish=False,
+            )
             try:
                 if self._workspace_path and self._checkpoint_manager is None:
                     self._checkpoint_manager = CheckpointManager(self._workspace_path)
@@ -1724,9 +1735,30 @@ class SessionRunner:
                 self.publish_event(
                     EventType.ASSISTANT_MESSAGE,
                     {"text": text, "message": entry, "source": "turn_local_fallback"},
+                    classification="bridge_stream",
+                    family="message.assistant",
+                    actor="engine",
+                    visibility="transcript",
                 )
                 emitted_flags["assistant_text"] = True
                 break
+        if not emitted_flags["assistant_text"]:
+            final_message = completion.get("final_message")
+            if isinstance(final_message, str) and final_message.strip():
+                message = {"role": "assistant", "content": final_message}
+                self.publish_event(
+                    EventType.ASSISTANT_MESSAGE,
+                    {
+                        "text": final_message,
+                        "message": message,
+                        "source": "completion_summary_fallback",
+                    },
+                    classification="bridge_stream",
+                    family="message.assistant",
+                    actor="engine",
+                    visibility="transcript",
+                )
+                emitted_flags["assistant_text"] = True
         after_fallback_emit_at = time.monotonic()
         logging_dir = result.get("logging_dir") or result.get("run_dir")
         usage_payload = self._extract_usage_metrics(result, logging_dir, elapsed_ms=elapsed_ms)

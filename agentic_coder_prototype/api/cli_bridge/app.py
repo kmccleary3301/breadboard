@@ -32,7 +32,7 @@ if load_dotenv is not None:
         if _candidate.exists():
             load_dotenv(_candidate, override=False)
 
-from .events import SessionEvent, PROTOCOL_VERSION
+from .events import SessionEvent, PROTOCOL_VERSION, replay_configuration_digest
 from .engine_identity_config import (
     ENGINE_IDENTITY_SCHEMA_VERSION,
     P30_SESSION_CONTRACT_ID,
@@ -1447,6 +1447,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                 started_at=process_identity.started_at,
                 started_at_unix=process_identity.started_at_unix,
                 pid=process_identity.pid,
+                os_process_start_token=process_identity.os_process_start_token,
             ),
             launch=EngineLaunchIdentity(
                 launch_id=process_identity.launch_id,
@@ -1466,6 +1467,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                     if contract_readiness.ready
                     else "incompatible"
                 ),
+                session_replay_contract_digest=replay_configuration_digest(),
             ),
             session_readiness=EngineSessionReadiness(
                 ready=contract_readiness.ready,

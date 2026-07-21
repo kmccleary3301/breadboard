@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import importlib
 import json
 import os
 import subprocess
@@ -14,7 +13,10 @@ import pytest
 from fastapi.routing import APIRoute
 from pydantic import TypeAdapter, ValidationError
 
-from agentic_coder_prototype.api.cli_bridge.events import SessionEvent
+from agentic_coder_prototype.api.cli_bridge.events import (
+    SessionEvent,
+    replay_configuration_digest,
+)
 from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord
 from agentic_coder_prototype.api.cli_bridge.app import (
     _compute_engine_provenance,
@@ -70,6 +72,7 @@ def _identity_subprocess(
         "'launch_id': identity.launch_id, "
         "'launch_source': identity.launch_source, "
         "'started_at_unix': identity.started_at_unix, "
+        "'os_process_start_token': identity.os_process_start_token, "
         "'engine_artifact_sha256': identity.engine_artifact_sha256}))"
     )
     return subprocess.run(
@@ -111,6 +114,7 @@ async def test_identity_is_stable_and_exact_within_one_process(tmp_path: Path) -
         "started_at",
         "started_at_unix",
         "pid",
+        "os_process_start_token",
     }
     assert set(payload["launch"]) == {"launch_id", "source"}
     assert payload["launch"]["source"] in {"supervisor", "external_unmanaged"}
@@ -120,24 +124,45 @@ async def test_identity_is_stable_and_exact_within_one_process(tmp_path: Path) -
         "contract_id": P30_SESSION_CONTRACT_ID,
         "schema_sha256": P30_SESSION_SCHEMA_SHA256,
         "compatibility": "compatible",
+        "sessionReplayContractDigest": replay_configuration_digest(),
     }
     assert payload["session_readiness"] == {"ready": True, "reason": "ready"}
     EngineIdentityReadinessResponse.model_validate(payload)
 
 
 def test_module_reload_preserves_process_identity() -> None:
-    from agentic_coder_prototype.api.cli_bridge import engine_identity_config
+    repo_root = Path(__file__).resolve().parents[1]
+    program = """
+import importlib
+import json
+from agentic_coder_prototype.api.cli_bridge import engine_identity_config
 
-    before = engine_identity_config.get_engine_process_identity()
-    reloaded = importlib.reload(engine_identity_config)
-    after = reloaded.get_engine_process_identity()
+def snapshot():
+    identity = engine_identity_config.get_engine_process_identity()
+    return {
+        "pid": identity.pid,
+        "engine_instance_id": identity.engine_instance_id,
+        "engine_boot_id": identity.engine_boot_id,
+        "launch_id": identity.launch_id,
+        "started_at_unix": identity.started_at_unix,
+        "os_process_start_token": identity.os_process_start_token,
+        "engine_artifact_sha256": identity.engine_artifact_sha256,
+    }
 
-    assert after.pid == before.pid
-    assert after.engine_instance_id == before.engine_instance_id
-    assert after.engine_boot_id == before.engine_boot_id
-    assert after.launch_id == before.launch_id
-    assert after.started_at_unix == before.started_at_unix
-    assert after.engine_artifact_sha256 == before.engine_artifact_sha256
+before = snapshot()
+importlib.reload(engine_identity_config)
+print(json.dumps({"before": before, "after": snapshot()}))
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    identities = json.loads(completed.stdout)
+
+    assert identities["after"] == identities["before"]
 
 
 def test_preloaded_fork_rotates_process_identity() -> None:
@@ -158,6 +183,7 @@ if child_pid == 0:
         "engine_instance_id": child.engine_instance_id,
         "engine_boot_id": child.engine_boot_id,
         "started_at_unix": child.started_at_unix,
+        "os_process_start_token": child.os_process_start_token,
     }
     os.write(write_fd, json.dumps(payload).encode("utf-8"))
     os.close(write_fd)
@@ -172,6 +198,7 @@ print(json.dumps({
         "engine_instance_id": parent.engine_instance_id,
         "engine_boot_id": parent.engine_boot_id,
         "started_at_unix": parent.started_at_unix,
+        "os_process_start_token": parent.os_process_start_token,
     },
     "child": child_payload,
 }))
@@ -192,9 +219,16 @@ print(json.dumps({
     assert identities["parent"]["engine_instance_id"] != identities["child"]["engine_instance_id"]
     assert identities["parent"]["engine_boot_id"] != identities["child"]["engine_boot_id"]
     assert identities["parent"]["started_at_unix"] != identities["child"]["started_at_unix"]
+    assert (
+        identities["parent"]["os_process_start_token"]
+        != identities["child"]["os_process_start_token"]
+    )
 
 
-@pytest.mark.parametrize("identity_key", ["engine_instance_id", "engine_boot_id"])
+@pytest.mark.parametrize(
+    "identity_key",
+    ["engine_instance_id", "engine_boot_id", "os_process_start_token"],
+)
 def test_identity_rotates_on_fresh_process_restart(identity_key: str) -> None:
     first_result = _identity_subprocess()
     restarted_result = _identity_subprocess()
