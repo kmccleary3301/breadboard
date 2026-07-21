@@ -122,6 +122,13 @@ def _json_findings(
     return [ValidationFinding(
         _pointer(path), "json_type", "Value is not a JSON-domain value"
     )]
+def validate_harness_document_domain(
+    document: object,
+) -> tuple[ValidationFinding, ...]:
+    """Validate JSON-domain invariants before recursive composition."""
+    return tuple(sorted(set(_json_findings(document))))
+
+
 def _required_properties(error: ValidationError) -> list[str]:
     if not isinstance(error.validator_value, list) or not isinstance(error.instance, Mapping):
         return []

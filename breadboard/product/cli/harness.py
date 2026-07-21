@@ -6,7 +6,7 @@ from typing import Any,Mapping
 import yaml
 from breadboard.product.harness.compile import HarnessCompilation,compile_harness_definition
 from breadboard.product.harness.lock import EffectiveHarnessLock,sha256_json
-from breadboard.product.harness.validate import HarnessDefinitionValidationError,load_harness_definition
+from breadboard.product.harness.validate import HarnessDefinitionValidationError,load_harness_definition,parse_harness_definition,validate_harness_document_domain
 from .result import CliResult,EXIT_LOCK_DRIFT,from_exception,portable_ref
 from .system import resource_path
 FALLBACK="""schema_version: bb.agent_config_surface.v2
@@ -22,13 +22,22 @@ def _template(n):
 def _doc(p):
     x=yaml.safe_load(p.read_text())
     if not isinstance(x,dict):raise ValueError("harness definition must be a mapping")
+    if findings:=validate_harness_document_domain(x):raise HarnessDefinitionValidationError(findings)
     return x
-def _loadref(parent,decl,w):
-    p=Path(parent); base=p if p.is_absolute() else w/p; target=(base.parent/decl).resolve(); return _ref(target,w),_doc(target)
-def _compile(p,w):return compile_harness_definition(load_harness_definition(p),source_ref=_ref(p,w),load_ref=lambda parent,decl:_loadref(parent,decl,w))
+def _compile(p,w):
+    source_ref=_ref(p,w); paths={source_ref:p}
+    def load_ref(parent,decl):
+        target=(paths[parent].parent/decl).resolve()
+        resolved=_ref(target,w)
+        if resolved in paths and paths[resolved]!=target:raise ValueError(f"reference identity collision: {resolved}")
+        paths[resolved]=target
+        return resolved,_doc(target)
+    compiled=compile_harness_definition(_doc(p),source_ref=source_ref,load_ref=load_ref)
+    parse_harness_definition(compiled.resolved_author_dict())
+    return compiled
 def _lockpath(p,out=None):
     if out:
-        q=Path(out).expanduser(); return q if q.suffix==".json" else q/f"{p.stem}.lock.json"
+        q=Path(out).expanduser(); return q if q.is_file() or q.suffix==".json" else q/f"{p.stem}.lock.json"
     return p.with_name(p.stem+".lock.json")
 def _meta(p):return p.with_name("."+p.name+".meta.json")
 def _write(p,x):p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(x,sort_keys=True,indent=2)+"\n")
@@ -56,10 +65,13 @@ def lock(a):
             if not target.exists() or not _meta(target).exists():return CliResult.failure(["harness","lock"],5,"lock_missing","lock is missing","harness.lock")
             if json.loads(target.read_text())!=c.lock.as_dict() or json.loads(_meta(target).read_text())!=meta:return CliResult.failure(["harness","lock"],5,"lock_drift","harness definition changed after lock","harness.lock",next_actions=[f"breadboard harness lock {_ref(p,w)}"])
             return CliResult.success(["harness","lock"],{"path":_ref(target,w),"graph_hash":meta["graph_hash"],"checked":True},[_ref(target,w)],{"graph":meta["graph_hash"]},stage="harness.lock")
-        _write(target,c.lock.as_dict()); _write(_meta(target),meta); return CliResult.success(["harness","lock"],{"path":_ref(target,w),"graph_hash":meta["graph_hash"]},[_ref(target,w)],{"graph":meta["graph_hash"],"source":meta["source_sha256"]},[f"breadboard harness run {_ref(p,w)} --local"],"harness.lock")
+        _write(target,c.lock.as_dict()); _write(_meta(target),meta)
+        next_action=f"breadboard harness run {shlex.quote(str(p))} --local"
+        if target.resolve()!=_lockpath(p).resolve():next_action+=f" --lock {shlex.quote(str(target.resolve()))}"
+        return CliResult.success(["harness","lock"],{"path":_ref(target,w),"graph_hash":meta["graph_hash"]},[_ref(target,w)],{"graph":meta["graph_hash"],"source":meta["source_sha256"]},[next_action],"harness.lock")
     except Exception as e:return from_exception(["harness","lock"],e,"harness.lock")
-def load_lock(p,w):
-    t=p if p.name.endswith(".lock.json") else _lockpath(p)
+def load_lock(p,w,*,explicit=False):
+    t=p if explicit or p.name.endswith(".lock.json") else _lockpath(p)
     if not t.exists():raise FileNotFoundError(f"lock is missing: {_ref(t,w)}")
     if not _meta(t).exists():raise ValueError("lock metadata is missing; lock must be regenerated")
     return EffectiveHarnessLock._from_record(json.loads(t.read_text())),_meta(t)
@@ -108,8 +120,11 @@ def _local_server()->Iterator[str]:
 def run(a):
     p,w=_p(a),_w(a)
     try:
-        lock,mp=load_lock(p,w); c=_compile(p,w); m=json.loads(mp.read_text())
-        if m.get("source_sha256")!=sha256_json(c.resolved_author_dict()) or m.get("graph_hash")!=lock["graph_hash"] or c.lock.as_dict()!=lock.as_dict():return CliResult.failure(["harness","run"],5,"lock_drift","mutable harness definition cannot run without a fresh lock","harness.run",next_actions=[f"breadboard harness lock {_ref(p,w)}"])
+        lock_argument=getattr(a,"lock",None); lock_path=Path(lock_argument).expanduser().resolve() if lock_argument else p
+        lock,mp=load_lock(lock_path,w,explicit=bool(lock_argument)); c=_compile(p,w); m=json.loads(mp.read_text())
+        lock_action=f"breadboard harness lock {shlex.quote(str(p))}"
+        if lock_argument:lock_action+=f" --out {shlex.quote(str(lock_path))}"
+        if m.get("source_sha256")!=sha256_json(c.resolved_author_dict()) or m.get("graph_hash")!=lock["graph_hash"] or c.lock.as_dict()!=lock.as_dict():return CliResult.failure(["harness","run"],5,"lock_drift","mutable harness definition cannot run without a fresh lock","harness.run",next_actions=[lock_action])
         a._effective_lock=lock;a._workspace=w
         if getattr(a,"local",False):
             try:

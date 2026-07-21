@@ -73,6 +73,75 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
     assert {path: path.read_bytes() for path in before} == before
 
 
+def test_json_harness_explain_validates_resolved_legacy_surface(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    harness_path = tmp_path / "invalid.yaml"
+    harness = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "agent_configs/templates/minimal_harness.v2.yaml").read_text()
+    )
+    del harness["providers"]["models"][0]["adapter"]
+    harness_path.write_text(yaml.safe_dump(harness))
+
+    exit_code, stdout, stderr = _invoke(
+        ["--json", "harness", "explain", str(harness_path)],
+        capsys,
+    )
+
+    assert exit_code == 2, stderr
+    result = json.loads(stdout)
+    assert "/providers/models/0/adapter" in result["error"]["message"]
+
+
+def test_json_harness_explain_rejects_recursive_yaml_alias(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    harness_path = tmp_path / "recursive.yaml"
+    harness_path.write_text(
+        "schema_version: bb.agent_config_surface.v2\n"
+        "version: 2\n"
+        "dossier: &recursive\n"
+        "  self: *recursive\n"
+    )
+
+    exit_code, stdout, stderr = _invoke(
+        ["--json", "harness", "explain", str(harness_path)],
+        capsys,
+    )
+
+    assert exit_code == 2, stderr
+    assert "json_cycle" in json.loads(stdout)["error"]["message"]
+
+
+def test_harness_extends_resolve_from_external_source_directory(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    workspace = tmp_path / "workspace"
+    external = tmp_path / "external"
+    workspace.mkdir()
+    external.mkdir()
+    nested = external / "nested"
+    nested.mkdir()
+    template = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "agent_configs/templates/minimal_harness.v3.yaml").read_text()
+    )
+    (external / "base.yaml").write_text(yaml.safe_dump(template))
+    (nested / "child.yaml").write_text(yaml.safe_dump({**template, "extends": "../base.yaml"}))
+
+    exit_code, stdout, stderr = _invoke(
+        ["--json", "harness", "--workspace", str(workspace), "explain", str(nested / "child.yaml")],
+        capsys,
+    )
+
+    assert exit_code == 0, stderr
+    result = json.loads(stdout)
+    assert result["data"]["resolved_summary"]["extends_chain"] == ["base.yaml"]
+    assert str(tmp_path) not in stdout
+
+
 def test_lane_init_produces_a_loader_valid_manifest_without_overwriting(tmp_path: Path, capsys, monkeypatch) -> None:
     out_dir = tmp_path / "lane"
 
