@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${BREADBOARD_PROOF_DIRECT_ENGINE:-0}" == "1" ]]; then
+  exec /usr/local/bin/omp "$@"
+fi
+
 bun /proof/container_engine_proxy.mjs &
 proxy_pid=$!
 cleanup() {
