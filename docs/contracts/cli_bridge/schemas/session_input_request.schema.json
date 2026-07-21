@@ -16,6 +16,11 @@
       "description": "Attachment IDs returned by /attachments.",
       "title": "Attachments"
     },
+    "client_message_id": {
+      "description": "Stable idempotency key for this input.",
+      "title": "Client Message Id",
+      "type": "string"
+    },
     "content": {
       "description": "User supplied input text.",
       "title": "Content",
@@ -23,7 +28,8 @@
     }
   },
   "required": [
-    "content"
+    "content",
+    "client_message_id"
   ],
   "title": "SessionInputRequest",
   "type": "object"

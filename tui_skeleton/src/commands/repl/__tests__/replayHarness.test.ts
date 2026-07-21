@@ -770,6 +770,32 @@ describe("render_events_jsonl replay fixtures", () => {
     expect(controller.getState().stats.lastTurn).toBe(2)
   })
 
+  it("sends a unique client message id with each interactive input", async () => {
+    const controller = new ReplSessionController({
+      configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
+      workspace: null,
+      model: null,
+      remotePreference: null,
+      permissionMode: null,
+    })
+    const submitted: Array<Record<string, unknown>> = []
+
+    ;(controller as any).sessionId = "session-live"
+    ;(controller as any).api = () => ({
+      postInput: async (_sessionId: string, payload: Record<string, unknown>) => {
+        submitted.push(payload)
+      },
+    })
+
+    await controller.handleInput("first")
+    await controller.handleInput("second")
+
+    expect(submitted).toHaveLength(2)
+    expect(submitted[0]).toMatchObject({ content: "first", client_message_id: expect.any(String) })
+    expect(submitted[1]).toMatchObject({ content: "second", client_message_id: expect.any(String) })
+    expect(submitted[0]?.client_message_id).not.toBe(submitted[1]?.client_message_id)
+  })
+
   it("does not expose backend model-call turns as the visible local submission turn", async () => {
     const controller = new ReplSessionController({
       configPath: path.resolve("agent_configs/codex_0-107-0_e4_3-6-2026.yaml"),
