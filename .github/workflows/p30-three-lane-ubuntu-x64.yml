@@ -56,16 +56,24 @@ jobs:
       - name: Prepare proof workspace
         run: |
           mkdir -p artifacts proof-agent proof-workspace
-          cat > proof-agent/settings.json <<'JSON'
-          {
-            "breadboard": {
-              "engineMode": "local-external",
-              "baseUrl": "http://127.0.0.1:9099",
-              "sessionConfigPath": "/backend/agent_configs/misc/opencode_smoke_mock.yaml",
-              "requestTimeoutMs": 30000
-            }
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          settings = {
+              "breadboard": {
+                  "engineMode": "local-external",
+                  "baseUrl": "http://127.0.0.1:9099",
+                  "sessionConfigPath": str(
+                      Path(os.environ["GITHUB_WORKSPACE"])
+                      / "agent_configs/misc/opencode_smoke_mock.yaml"
+                  ),
+                  "requestTimeoutMs": 30000,
+              }
           }
-          JSON
+          Path("proof-agent/settings.json").write_text(json.dumps(settings))
+          PY
 
       - name: Start deterministic BreadBoard engine
         env:
