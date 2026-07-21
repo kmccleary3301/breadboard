@@ -1,6 +1,7 @@
 #!/usr/bin/expect -f
 set timeout 90
 match_max 10000000
+encoding system utf-8
 
 if {$argc != 5} {
   puts stderr "usage: ubuntu_x64_tui.exp IMAGE BACKEND_ROOT AGENT_DIR WORKSPACE_DIR ARTIFACT_PATH"
@@ -17,8 +18,9 @@ log_user 1
 log_file -noappend $artifact_path
 spawn -noecho docker run --rm -it --platform linux/amd64 --network host -e BREADBOARD_PROOF_DIRECT_ENGINE=1 -e PI_CODING_AGENT_DIR=/agent -e TERM=xterm-256color -e NO_COLOR=1 -v $backend_root:/backend:ro -v $agent_dir:/agent:ro -v $workspace_dir:/work -v $backend_root/scripts/p30_three_lane:/proof:ro -w /work --entrypoint /proof/container_tui_entrypoint.sh $image --cwd /work
 stty rows 30 columns 120
+fconfigure $spawn_id -encoding utf-8
 expect {
-  -re {╰─ ▏} {}
+  -exact "\u258f" {}
   eof { puts stderr "TUI exited before composer was ready"; exit 9 }
   timeout { puts stderr "Timed out waiting for TUI composer"; exit 8 }
 }
