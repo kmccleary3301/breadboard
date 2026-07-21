@@ -8,7 +8,7 @@ closed during preflight.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import re
 from typing import Any, Iterable, Mapping, Protocol, Sequence, runtime_checkable
 
@@ -17,6 +17,41 @@ _KIND_VALUES = {"provider_adapter", "tool_executor", "host_driver", "capture_ada
 _HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 _SCHEMA_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_RFC3339_RE = re.compile(
+    r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})[Tt]"
+    r"(?P<hour>[0-9]{2}):(?P<minute>[0-9]{2}):(?P<second>[0-9]{2})(?:\.[0-9]+)?"
+    r"(?:[Zz]|(?P<offset_sign>[+-])(?P<offset_hour>[0-9]{2}):(?P<offset_minute>[0-9]{2}))$"
+)
+_LEAP_SECOND_DATES = frozenset({
+    "1972-06-30", "1972-12-31", "1973-12-31", "1974-12-31", "1975-12-31",
+    "1976-12-31", "1977-12-31", "1978-12-31", "1979-12-31", "1981-06-30",
+    "1982-06-30", "1983-06-30", "1985-06-30", "1987-12-31", "1989-12-31",
+    "1990-12-31", "1992-06-30", "1993-06-30", "1994-06-30", "1995-12-31",
+    "1997-06-30", "1998-12-31", "2005-12-31", "2008-12-31", "2012-06-30",
+    "2015-06-30", "2016-12-31",
+})
+
+
+def _is_rfc3339_timestamp(value: object) -> bool:
+    if not isinstance(value, str) or (match := _RFC3339_RE.fullmatch(value)) is None:
+        return False
+    parts = {name: int(match[name] or 0) for name in ("year", "month", "day", "hour", "minute", "second", "offset_hour", "offset_minute")}
+    year, month, day = parts["year"], parts["month"], parts["day"]
+    month_days = (31, 29 if year % 400 == 0 or year % 4 == 0 and year % 100 != 0 else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    if not 1 <= month <= 12 or not 1 <= day <= month_days[month - 1]:
+        return False
+    if parts["hour"] > 23 or parts["minute"] > 59 or parts["second"] > 60 or parts["offset_hour"] > 23 or parts["offset_minute"] > 59:
+        return False
+    if parts["second"] < 60:
+        return True
+    if year == 0:
+        return False
+    offset_sign = 1 if match["offset_sign"] == "+" else -1 if match["offset_sign"] == "-" else 0
+    try:
+        utc_minute = datetime(year, month, day, parts["hour"], parts["minute"], 59) - timedelta(minutes=offset_sign * (parts["offset_hour"] * 60 + parts["offset_minute"]))
+    except OverflowError:
+        return False
+    return utc_minute.hour == 23 and utc_minute.minute == 59 and utc_minute.date().isoformat() in _LEAP_SECOND_DATES
 
 
 class IntegrationError(ValueError):
@@ -108,8 +143,8 @@ class ProbeReport:
             raise IntegrationError("invalid capability probe report identity")
         if not _ID_RE.fullmatch(self.integration_id) or self.kind not in _KIND_VALUES or not self.implementation_id:
             raise IntegrationError("invalid capability probe subject")
-        if not self.checked_at_utc:
-            raise IntegrationError("capability probe must include checked_at_utc")
+        if not _is_rfc3339_timestamp(self.checked_at_utc):
+            raise IntegrationError("capability probe must include an RFC3339 checked_at_utc")
         if self.status not in {"available", "unavailable"}:
             raise IntegrationError("invalid capability probe status")
         if self.status == "available" and self.error is not None:

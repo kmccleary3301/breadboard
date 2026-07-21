@@ -28,11 +28,23 @@ def test_local_declaration_is_hash_and_grant_bound(tmp_path: Path) -> None:
 
 def test_probe_identity_and_timestamp_fail_closed() -> None:
     with pytest.raises(IntegrationError): ProbeReport("bb.capability_probe_report.v1", "probe:x", "x", "tool_executor", "", "available")
+    with pytest.raises(IntegrationError): ProbeReport("bb.capability_probe_report.v1", "probe:x", "tool:x", "tool_executor", "impl", "available", checked_at_utc="now")
     descriptor = IntegrationDescriptor("bb.integration_descriptor.v1", "tool:x", "tool_executor", "v1", "impl")
     class Bad:
         def __init__(self) -> None: self.descriptor = descriptor
         def probe(self) -> ProbeReport: return ProbeReport("bb.capability_probe_report.v1", "probe:x", "tool:x", "host_driver", "impl", "available", checked_at_utc="now")
     assert IntegrationCatalog([Bad()]).probe("tool:x").status == "unavailable"
+
+
+@pytest.mark.parametrize("checked_at_utc", ["0000-01-01T00:00:00Z", "2026-07-21T12:34:56Z", "2026-07-21t12:34:56z", "2016-12-31T23:59:60Z", "2017-01-01T00:59:60+01:00", "2026-07-21T12:34:56+05:30"])
+def test_probe_accepts_rfc3339_timestamps(checked_at_utc: str) -> None:
+    ProbeReport("bb.capability_probe_report.v1", "probe:x", "tool:x", "tool_executor", "impl", "available", checked_at_utc=checked_at_utc)
+
+
+@pytest.mark.parametrize("checked_at_utc", ["now", "2026-07-21T12:34:56", "2026-02-30T12:34:56Z", "2026-07-21T24:00:00Z", "2026-07-21T12:34:60Z", "2026-07-21T12:34:56+24:00", "0001-01-01T00:00:60+00:01", "9999-12-31T23:59:60-00:01", None])
+def test_probe_rejects_non_rfc3339_timestamps(checked_at_utc: object) -> None:
+    with pytest.raises(IntegrationError):
+        ProbeReport("bb.capability_probe_report.v1", "probe:x", "tool:x", "tool_executor", "impl", "available", checked_at_utc=checked_at_utc)
 
 
 def test_configuration_schema_id_is_colon_free() -> None:
