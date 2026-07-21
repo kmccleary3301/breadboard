@@ -25,6 +25,7 @@ expect {
   timeout { puts stderr "Timed out waiting for TUI composer"; exit 8 }
 }
 send -- "THREE_LANE_SMOKE_UBUNTU_X64"
+sleep 1
 send -- "\n"
 expect {
   -re {Hi! All systems nominal\.} {}
