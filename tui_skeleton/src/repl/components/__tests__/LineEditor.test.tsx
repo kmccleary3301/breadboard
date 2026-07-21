@@ -53,7 +53,7 @@ describe("LineEditor", () => {
     await flush()
     for (const char of "[13;2u") {
       stdin.write(char)
-      await flush()
+      await new Promise((resolve) => setTimeout(resolve, 20))
     }
     await flush()
     expect(handleChange).toHaveBeenLastCalledWith("first line[13;2u", 16)

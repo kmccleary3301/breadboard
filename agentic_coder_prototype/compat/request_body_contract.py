@@ -184,6 +184,29 @@ def _apply_compat_overrides(config: Dict[str, Any]) -> Dict[str, Any]:
     return cfg
 
 
+def _resolve_compat_tool_paths(config: Dict[str, Any], config_path: str) -> None:
+    tools = config.get("tools")
+    if not isinstance(tools, dict):
+        return
+
+    base_dirs = _config_resolution_base_dirs(config_path)
+
+    def resolve_path(raw_path: Any) -> Any:
+        if not isinstance(raw_path, str) or not raw_path or Path(raw_path).is_absolute():
+            return raw_path
+        for base_dir in base_dirs:
+            candidate = (base_dir / raw_path).resolve()
+            if candidate.exists():
+                return str(candidate)
+        return raw_path
+
+    if "defs_dir" in tools:
+        tools["defs_dir"] = resolve_path(tools["defs_dir"])
+    registry = tools.get("registry")
+    if isinstance(registry, dict) and isinstance(registry.get("paths"), list):
+        registry["paths"] = [resolve_path(path) for path in registry["paths"]]
+
+
 def capture_request_body(
     *,
     config_path: str,
@@ -192,8 +215,8 @@ def capture_request_body(
     system_prompt: str = "",
     max_steps: int = 1,
 ) -> CapturedRequest:
-    config = load_agent_config(config_path)
-    config = _apply_compat_overrides(config)
+    config = _apply_compat_overrides(load_agent_config(config_path))
+    _resolve_compat_tool_paths(config, config_path)
     workspace_root.mkdir(parents=True, exist_ok=True)
     cfg_workspace = config.setdefault("workspace", {})
     cfg_workspace["root"] = str(workspace_root)
