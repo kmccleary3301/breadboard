@@ -79,7 +79,7 @@ jobs:
         env:
           BREADBOARD_CLI_HOST: 127.0.0.1
           BREADBOARD_CLI_PORT: "9099"
-          BREADBOARD_CLI_LOG_LEVEL: warning
+          BREADBOARD_CLI_LOG_LEVEL: info
           MOCK_API_KEY: gha-local-smoke
         run: |
           nohup python -m agentic_coder_prototype.api.cli_bridge.server > artifacts/engine.log 2>&1 &
@@ -101,6 +101,46 @@ jobs:
             "$GITHUB_WORKSPACE/proof-agent" \
             "$GITHUB_WORKSPACE/proof-workspace" \
             "$GITHUB_WORKSPACE/artifacts/ubuntu-x64-tui.raw"
+
+      - name: Collect backend protocol trace
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          import requests
+
+          base_url = "http://127.0.0.1:9099"
+          trace = {"sessions": [], "events": {}}
+          try:
+              sessions = requests.get(f"{base_url}/v1/sessions?limit=10", timeout=5).json()
+              trace["sessions"] = sessions
+              rows = sessions if isinstance(sessions, list) else sessions.get("sessions", [])
+              for row in rows:
+                  session_id = row.get("session_id")
+                  if not session_id:
+                      continue
+                  lines = []
+                  try:
+                      with requests.get(
+                          f"{base_url}/v1/sessions/{session_id}/events?replay=true",
+                          stream=True,
+                          timeout=(5, 2),
+                      ) as response:
+                          response.raise_for_status()
+                          for line in response.iter_lines(decode_unicode=True):
+                              if line:
+                                  lines.append(line)
+                              if len(lines) >= 200:
+                                  break
+                  except requests.RequestException as error:
+                      lines.append(f"trace-read-ended: {type(error).__name__}")
+                  trace["events"][session_id] = lines
+          except requests.RequestException as error:
+              trace["collection_error"] = f"{type(error).__name__}: {error}"
+          Path("artifacts/protocol-trace.json").write_text(json.dumps(trace, indent=2))
+          PY
 
       - name: Verify proof markers
         run: |
@@ -127,4 +167,5 @@ jobs:
             artifacts/engine.log
             artifacts/health.json
             artifacts/ubuntu-x64-tui.raw
+            artifacts/protocol-trace.json
           if-no-files-found: warn

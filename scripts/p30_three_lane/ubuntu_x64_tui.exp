@@ -16,7 +16,7 @@ set artifact_path [lindex $argv 4]
 
 log_user 1
 log_file -noappend $artifact_path
-spawn -noecho docker run --rm -it --platform linux/amd64 --network host -e BREADBOARD_PROOF_DIRECT_ENGINE=1 -e PI_CODING_AGENT_DIR=/agent -e TERM=xterm-256color -e NO_COLOR=1 -v $backend_root:/backend:ro -v $agent_dir:/agent:ro -v $workspace_dir:/work -v $backend_root/scripts/p30_three_lane:/proof:ro -w /work --entrypoint /proof/container_tui_entrypoint.sh $image --cwd /work
+spawn -noecho docker run --rm -it --platform linux/amd64 --network host -e BREADBOARD_PROOF_DIRECT_ENGINE=1 -e PI_CODING_AGENT_DIR=/agent -e TERM=xterm-256color -e NO_COLOR=1 -v $backend_root:/backend:ro -v $agent_dir:/agent -v $workspace_dir:/work -v $backend_root/scripts/p30_three_lane:/proof:ro -w /work --entrypoint /proof/container_tui_entrypoint.sh $image --cwd /work
 stty rows 30 columns 120
 fconfigure $spawn_id -encoding utf-8
 expect {
