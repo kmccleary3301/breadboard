@@ -104,6 +104,25 @@ BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
     "run_finished",
 }
 
+# The session bridge already projects these orchestration events through
+# canonical admission, tool, ctree, completion, and terminal envelopes.
+# Emitting a second error envelope for them would turn known audit telemetry
+# into a false protocol failure at strict clients.
+BRIDGE_DUPLICATE_ORCHESTRATION_EVENT_TYPES = frozenset(
+    {
+        "coordination_signal",
+        "lifecycle_event",
+        "model_call_finished",
+        "model_call_started",
+        "session_finished",
+        "session_started",
+        "tool_call_finished",
+        "tool_call_started",
+        "turn_finished",
+        "turn_started",
+    }
+)
+
 RuntimeEventContract = Dict[str, Optional[str]]
 TranslatedRuntimeEvent = Tuple[EventType, Dict[str, Any], Optional[int], RuntimeEventContract]
 
@@ -2296,8 +2315,6 @@ class SessionRunner:
             call_id = pending[0] if pending is not None else None
         if (
             pending is None
-            and isinstance(message, dict)
-            and message.get("role") == "tool"
             and self._e4_last_completed_tool_call is not None
             and (call_id is None or call_id == self._e4_last_completed_tool_call[0])
             and (tool_name is None or self._tool_names_match(tool_name, self._e4_last_completed_tool_call[1]))
@@ -2445,6 +2462,9 @@ class SessionRunner:
         payload: Dict[str, Any],
         turn: Optional[int],
     ) -> Optional[TranslatedRuntimeEvent]:
+        if event_type in BRIDGE_DUPLICATE_ORCHESTRATION_EVENT_TYPES:
+            return None
+
         mapping = {
             "turn_start": EventType.TURN_START,
             "stream.gap": EventType.STREAM_GAP,

@@ -92,6 +92,11 @@ def test_tool_call_and_result_receive_one_correlated_id_when_provider_omits_it()
         },
         1,
     )
+    translated_direct_duplicate = runner._translate_runtime_event(
+        "tool_result",
+        {"tool": "list_dir", "status": "ok", "error": False, "result": {"entries": []}},
+        1,
+    )
     translated_mismatch = runner._translate_runtime_event(
         "tool_result",
         {
@@ -114,6 +119,7 @@ def test_tool_call_and_result_receive_one_correlated_id_when_provider_omits_it()
     assert call_payload["tool"] == "list_dir"
     assert result_payload["tool"] == "list_dir_impl"
     assert translated_duplicate is None
+    assert translated_direct_duplicate is None
     assert translated_mismatch is not None
     assert translated_mismatch[1]["call_id"] == "different-call"
 
@@ -219,6 +225,24 @@ def test_tool_call_correlation_resets_between_admitted_turns() -> None:
 
     assert runner._e4_pending_tool_calls == []
     assert runner._e4_last_completed_tool_call is None
+
+
+def test_duplicate_orchestration_events_are_not_promoted_to_protocol_errors() -> None:
+    runner = _make_runner()
+
+    for event_type in (
+        "coordination_signal",
+        "lifecycle_event",
+        "model_call_finished",
+        "model_call_started",
+        "session_finished",
+        "session_started",
+        "tool_call_finished",
+        "tool_call_started",
+        "turn_finished",
+        "turn_started",
+    ):
+        assert runner._translate_runtime_event(event_type, {"audit": True}, 7) is None
 
 
 def test_unknown_runtime_event_becomes_safe_error_with_turn_correlation() -> None:
