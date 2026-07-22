@@ -177,6 +177,7 @@ def _enforce_worker_sandbox(
     allow_network: bool,
     allow_process: bool,
     allow_write: bool,
+    allow_workspace_read: bool,
     module_read_paths: Sequence[str] = (),
 ) -> None:
     import ctypes
@@ -185,7 +186,6 @@ def _enforce_worker_sandbox(
     import ssl
     containment_root = os.path.realpath(workspace)
     candidates = [
-        containment_root,
         sys.base_prefix,
         sys.prefix,
         "/System/Library",
@@ -206,6 +206,8 @@ def _enforce_worker_sandbox(
         "/dev/random",
         "/dev/urandom",
     ]
+    if allow_workspace_read:
+        candidates.append(containment_root)
     verify_paths = ssl.get_default_verify_paths()
     candidates.extend((verify_paths.cafile, verify_paths.capath))
     candidates.extend(path for path in module_read_paths if os.path.isdir(path))
@@ -495,7 +497,20 @@ def _tool_executor_envelope(executor: Any, capability_kind: str) -> bytes:
     })
 
 
-def _executor_module_read_paths(payload: bytes) -> tuple[str, ...]:
+def _path_is_within(path: str, roots: Sequence[str]) -> bool:
+    resolved = os.path.realpath(path)
+    for root in roots:
+        try:
+            if os.path.commonpath((resolved, root)) == root:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _executor_module_allowlist(
+    payload: bytes,
+) -> tuple[tuple[str, ...], tuple[tuple[str, str, tuple[str, ...]], ...]]:
     envelope = json.loads(payload)
     modules: set[str] = set(sys.modules)
     pending = [envelope]
@@ -524,30 +539,64 @@ def _executor_module_read_paths(payload: bytes) -> tuple[str, ...]:
         if os.path.isdir(path)
     )
     paths: set[str] = set(runtime_roots)
+    exact_specs: set[tuple[str, str, tuple[str, ...]]] = set()
     for module_name in modules:
         module = sys.modules.get(module_name)
-        location = getattr(module, "__file__", None)
-        if not isinstance(location, str):
+        spec = getattr(module, "__spec__", None)
+        if spec is None:
             try:
                 spec = importlib.util.find_spec(module_name)
-            except (ImportError, ValueError):
+            except (AttributeError, ImportError, ValueError):
                 spec = None
+        location = getattr(module, "__file__", None)
+        if not isinstance(location, str):
             location = None if spec is None else spec.origin
+        search_locations = tuple(
+            os.path.abspath(path)
+            for path in (() if spec is None or spec.submodule_search_locations is None else spec.submodule_search_locations)
+            if isinstance(path, str)
+        )
+        external_search_locations = tuple(
+            path for path in search_locations if not _path_is_within(path, runtime_roots)
+        )
         if not isinstance(location, str) or location in {"built-in", "frozen"}:
+            if external_search_locations:
+                exact_specs.add((module_name, "", external_search_locations))
             continue
         resolved_location = os.path.realpath(location)
-        if any(
-            os.path.commonpath((resolved_location, root)) == root
-            for root in runtime_roots
-        ):
+        if _path_is_within(resolved_location, runtime_roots):
             continue
+        exact_specs.add((module_name, os.path.abspath(location), external_search_locations))
         candidates = [location]
         if location.endswith(".py"):
             candidates.append(importlib.util.cache_from_source(location))
         for candidate in candidates:
             if os.path.isfile(candidate):
                 paths.update((os.path.abspath(candidate), os.path.realpath(candidate)))
-    return tuple(sorted(paths))
+    return tuple(sorted(paths)), tuple(sorted(exact_specs))
+
+
+class _ExactModuleFinder:
+    def __init__(self, module_specs: Sequence[tuple[str, str, tuple[str, ...]]]) -> None:
+        self._module_specs = {
+            name: (location, search_locations)
+            for name, location, search_locations in module_specs
+        }
+
+    def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> Any:
+        module_spec = self._module_specs.get(fullname)
+        if module_spec is None:
+            return None
+        location, search_locations = module_spec
+        if not location:
+            spec = importlib.machinery.ModuleSpec(fullname, loader=None, is_package=True)
+            spec.submodule_search_locations = list(search_locations)
+            return spec
+        return importlib.util.spec_from_file_location(
+            fullname,
+            location,
+            submodule_search_locations=list(search_locations) or None,
+        )
 
 
 def _restore_tool_state(value: Any) -> Any:
@@ -597,6 +646,7 @@ def _exec_tool_worker_bootstrap(
     workspace_descriptor: int,
     capability_kind: str,
     module_read_paths: Sequence[str],
+    module_specs: Sequence[tuple[str, str, tuple[str, ...]]],
 ) -> None:
     from multiprocessing.connection import Connection
     command_recv = Connection(command_fd, readable=True, writable=False)
@@ -609,9 +659,19 @@ def _exec_tool_worker_bootstrap(
         workspace,
         allow_network=capability_kind in {"host", "provider"},
         allow_process=capability_kind == "host",
+        allow_workspace_read=capability_kind in {"host", "tool"},
         allow_write=capability_kind in {"host", "tool"},
         module_read_paths=module_read_paths,
     )
+    runtime_search_roots = tuple(
+        os.path.realpath(path) for path in module_read_paths if os.path.isdir(path)
+    )
+    sys.path[:] = [
+        path
+        for path in sys.path
+        if isinstance(path, str) and path and _path_is_within(path, runtime_search_roots)
+    ]
+    sys.meta_path.insert(0, _ExactModuleFinder(module_specs))
     os.fchdir(workspace_descriptor)
     payload = bytearray()
     while True:
@@ -707,7 +767,7 @@ class _ExecToolWorker:
         from multiprocessing.connection import Connection
         self._capability_kind = capability_kind
         payload = _tool_executor_envelope(executor, capability_kind)
-        module_read_paths = _executor_module_read_paths(payload)
+        module_read_paths, module_specs = _executor_module_allowlist(payload)
         command_read, command_write = os.pipe()
         result_read, result_write = os.pipe()
         payload_read, payload_write = os.pipe()
@@ -718,7 +778,7 @@ class _ExecToolWorker:
         environment = {"PATH": os.defpath, "PYTHONPATH": os.pathsep.join(dict.fromkeys(module_paths))}
         bootstrap = (
             "from breadboard.product.evidence.replay_runner import _exec_tool_worker_bootstrap as b;"
-            f"b({command_read},{result_write},{payload_read},{workspace_descriptor},{capability_kind!r},{module_read_paths!r})"
+            f"b({command_read},{result_write},{payload_read},{workspace_descriptor},{capability_kind!r},{module_read_paths!r},{module_specs!r})"
         )
         try:
             self._process = subprocess.Popen(

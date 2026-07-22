@@ -328,6 +328,12 @@ class _WritingProvider(_Provider):
     def invoke(self, **kwargs: Any) -> ProviderResult:
         Path("provider-bypass.txt").write_text("bypass", encoding="utf-8")
         return super().invoke(**kwargs)
+class _ReadingProvider(_Provider):
+    def invoke(self, **kwargs: Any) -> ProviderResult:
+        Path("input.txt").read_text(encoding="utf-8")
+        return super().invoke(**kwargs)
+
+
 
 
 class _DumpingProvider(_Provider):
@@ -1297,6 +1303,11 @@ def test_provider_worker_cannot_mutate_workspace(tmp_path: Path) -> None:
     workspace, _, result = _run(tmp_path, sequence=("done",), provider_instance=_WritingProvider(("done",)))
     assert result.execution.as_dict()["terminal_status"] == "provider_failed"
     assert not list(tmp_path.rglob("provider-bypass.txt"))
+def test_provider_worker_cannot_read_workspace(tmp_path: Path) -> None:
+    _, _, result = _run(tmp_path, sequence=("done",), provider_instance=_ReadingProvider(("done",)))
+    assert result.execution.as_dict()["terminal_status"] == "provider_failed"
+
+
 
 
 def test_host_worker_supports_attested_subprocess_execution(tmp_path: Path) -> None:
