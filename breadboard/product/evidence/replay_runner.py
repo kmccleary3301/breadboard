@@ -1219,6 +1219,27 @@ def _provider_wire_messages(messages: Sequence[Mapping[str, Any]], reverse_alias
     return wire_messages
 
 
+def _wire_tool_choice(value: Any, aliases: Mapping[str, str]) -> Any:
+    if isinstance(value, str):
+        return aliases.get(value, value)
+    if isinstance(value, dict):
+        return {name: _wire_tool_choice(item, aliases) for name, item in value.items()}
+    if isinstance(value, list):
+        return [_wire_tool_choice(item, aliases) for item in value]
+    return value
+
+
+def _provider_context_with_wire_tool_aliases(context: ProviderRuntimeContext, reverse_aliases: Mapping[str, str]) -> ProviderRuntimeContext:
+    aliases = {canonical: wire for wire, canonical in reverse_aliases.items()}
+    provider_tools = context.agent_config.get("provider_tools")
+    if not aliases or not isinstance(provider_tools, dict):
+        return context
+    for provider_config in provider_tools.values():
+        if isinstance(provider_config, dict) and "tool_choice" in provider_config:
+            provider_config["tool_choice"] = _wire_tool_choice(provider_config["tool_choice"], aliases)
+    return context
+
+
 
 
 
@@ -1705,7 +1726,10 @@ def run_replay(
     if binding_inputs["environment_allowlist_sha256"] != environment_binding:
         raise ReplayPlanError("environment values do not match the frozen replay plan")
 
-    isolated_provider_context = _provider_context_snapshot(provider_context)
+    provider_tools, reverse_tool_aliases = _provider_tool_wire_schemas(scenario.tool_schemas)
+    isolated_provider_context = _provider_context_with_wire_tool_aliases(
+        _provider_context_snapshot(provider_context), reverse_tool_aliases
+    )
     active_clock, active_ids = clock or SystemClock(), ids or UUIDSource()
     execution_id = "replay_execution." + _portable_id(active_ids.new_id(), "id_source execution value")
     fresh_nonce = _portable_id(active_ids.new_id(), "fresh_nonce")
@@ -1830,7 +1854,6 @@ def run_replay(
                     if provider_calls >= budgets["provider_calls"] or provider_calls >= budgets["turns"]:
                         raise _RuntimeFailure("budget_exhausted", "replay.provider_budget", "replay exhausted its provider or turn budget")
                     provider_calls += 1; request_id = f"{execution_id}:request:{provider_calls}"; attempt_id = f"{request_id}:attempt:1"
-                    provider_tools, reverse_tool_aliases = _provider_tool_wire_schemas(scenario.tool_schemas)
                     provider_messages = _provider_wire_messages(messages, reverse_tool_aliases)
                     request = {"model": provider_model, "messages": provider_messages, "tools": provider_tools, "stream": False}; request_ref = put("provider_request", request, None, "secret_redacted")
                     call_start, call_started = monotonic(), active_clock.now()

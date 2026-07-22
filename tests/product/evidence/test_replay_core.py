@@ -344,6 +344,14 @@ class _CollisionAliasProvider(_Provider):
         return ProviderResult([ProviderMessage("assistant", "done", [], "stop")], None, {"input_tokens": 1, "output_tokens": 1}, model="fixture-model", metadata={})
 
 
+class _ForcedToolChoiceProvider(_Provider):
+    def invoke(self, **kwargs: Any) -> ProviderResult:
+        tool_choice = kwargs["context"].agent_config["provider_tools"]["anthropic"]["tool_choice"]
+        if tool_choice != {"type": "tool", "name": "host_execute"}:
+            raise RuntimeError("forced tool choice did not follow the provider wire alias")
+        return super().invoke(**kwargs)
+
+
 
 
 class _SpecOnlyProvider(_Provider):
@@ -627,6 +635,20 @@ def test_colliding_provider_aliases_remain_stable_across_turns(tmp_path: Path) -
         provider_instance=_CollisionAliasProvider(("unused",)),
         tool_schemas=schemas,
         tool_instances={"a.b": _AddTool(), "a_b": _AddTool()},
+    )
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+
+
+def test_forced_tool_choice_follows_provider_wire_alias(tmp_path: Path) -> None:
+    provider_context = types.SimpleNamespace(
+        agent_config={"provider_tools": {"anthropic": {"tool_choice": {"type": "tool", "name": "host.execute"}}}},
+        extra={},
+    )
+    _, _, result = _run(
+        tmp_path,
+        sequence=("host", "done"),
+        provider_instance=_ForcedToolChoiceProvider(("host", "done")),
+        provider_context=provider_context,
     )
     assert result.execution.as_dict()["terminal_status"] == "completed"
 
