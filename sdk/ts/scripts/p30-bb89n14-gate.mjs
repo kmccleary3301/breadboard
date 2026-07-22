@@ -1215,9 +1215,9 @@ const APPROVED_BACKEND_RUNTIMES = Object.freeze([
     resolvedPath: "/opt/homebrew/Cellar/python@3.11/3.11.15_3/Frameworks/Python.framework/Versions/3.11/bin/python3.11",
     version: "3.11.15",
     executableSha256: "sha256:6efa04ba77fc8c100a1238a7a3569517e2cdf5016f2be367dea9441f5b7cbe3b",
-    runtimeClosureSha256: "sha256:4d9378b43837246b56b8d3be7cb1d33ed409c7f44ff24b45bfd514fa0fbea849",
-    count: 68_001,
-    bytes: 1_992_545_712,
+    runtimeClosureSha256: "sha256:7880034b137e7c857fc2221f339cef752e12b278e15a5f3e85f9599803209fbe",
+    count: 68_002,
+    bytes: 1_992_662_684,
   }),
 ])
 
