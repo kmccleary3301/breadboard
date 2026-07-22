@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import datetime
+import enum
+import functools
 import hashlib
 import json
-import functools
-import types
 import time
+import types
+import uuid
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -470,6 +474,45 @@ class _CallableConfiguredTool:
         return {"value": self.value}
 
 
+class _ScalarMode(enum.Enum):
+    ENABLED = "enabled"
+
+
+class _ScalarConfiguredTool:
+    def __init__(self) -> None:
+        self.ratio = Decimal("0.700")
+        self.started_at = datetime.datetime(2026, 7, 22, 12, 34, 56, 789, tzinfo=datetime.timezone(datetime.timedelta(hours=-4), "EDT"), fold=1)
+        self.started_on = datetime.date(2026, 7, 22)
+        self.wake_at = datetime.time(8, 9, 10, 11, tzinfo=datetime.timezone.utc, fold=1)
+        self.duration = datetime.timedelta(days=2, seconds=3, microseconds=4)
+        self.zone = datetime.timezone(datetime.timedelta(hours=5, minutes=30), "IST")
+        self.run_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
+        self.mode = _ScalarMode.ENABLED
+
+    def execute(self, _arguments: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            "duration": [self.duration.days, self.duration.seconds, self.duration.microseconds],
+            "fold": self.started_at.fold,
+            "mode": self.mode.value,
+            "ratio": str(self.ratio),
+            "run_id": str(self.run_id),
+            "started_at": self.started_at.isoformat(),
+            "started_on": self.started_on.isoformat(),
+            "uuid_safety": self.run_id.is_safe.name,
+            "wake_at": self.wake_at.isoformat(),
+            "wake_fold": self.wake_at.fold,
+            "zone": self.zone.tzname(None),
+        }
+
+
+class _UnsupportedScalarTool:
+    def __init__(self) -> None:
+        self.value = range(3)
+
+    def execute(self, _arguments: Mapping[str, Any]) -> dict[str, Any]:
+        return {"value": list(self.value)}
+
+
 class _MetadataSink:
     def __init__(self, marker: Path) -> None:
         self.marker = marker
@@ -649,6 +692,31 @@ def test_replay_executes_tool_integration_adapter_in_its_capability_worker(tmp_p
     outcome = json.loads(ArtifactStore(workspace.path(".breadboard/artifacts")).read(ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])))
     assert outcome["result"]["sum"] == 5
     assert outcome["result"]["token"] == "<redacted>"
+def test_capability_worker_round_trips_scalar_value_configuration(tmp_path: Path) -> None:
+    workspace, _, result = _run(tmp_path, sequence=("add", "done"), tool_instances={"add": _ScalarConfiguredTool()})
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+    entry = next(row for row in result.manifest.as_dict()["entries"] if row["role"] == "tool_outcome")
+    outcome = json.loads(ArtifactStore(workspace.path(".breadboard/artifacts")).read(ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])))
+    assert outcome["result"] == {
+        "duration": [2, 3, 4],
+        "fold": 1,
+        "mode": "enabled",
+        "ratio": "0.700",
+        "run_id": "12345678-1234-5678-1234-567812345678",
+        "started_at": "2026-07-22T12:34:56.000789-04:00",
+        "started_on": "2026-07-22",
+        "uuid_safety": "unknown",
+        "wake_at": "08:09:10.000011+00:00",
+        "wake_fold": 1,
+        "zone": "IST",
+    }
+
+
+def test_capability_worker_rejects_unsupported_scalar_configuration(tmp_path: Path) -> None:
+    with pytest.raises(ReplayRunError, match="cannot be encoded losslessly"):
+        _run(tmp_path, sequence=("done",), tool_instances={"add": _UnsupportedScalarTool()})
+
+
 
 
 def test_live_provider_receives_unredacted_tool_result_while_artifact_is_redacted(tmp_path: Path) -> None:
@@ -906,6 +974,12 @@ def test_runtime_identity_binds_generic_counter_state() -> None:
     planned = replay_runner_module._runtime_type_identity(provider)
     provider.calls = 1
     assert replay_runner_module._runtime_type_identity(provider) != planned
+
+def test_runtime_identity_binds_scalar_value_state() -> None:
+    tool = _ScalarConfiguredTool()
+    planned = replay_runner_module._runtime_type_identity(tool)
+    tool.ratio = Decimal("0.701")
+    assert replay_runner_module._runtime_type_identity(tool) != planned
 
 
 

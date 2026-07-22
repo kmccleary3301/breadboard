@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import datetime
+import enum
 import encodings.idna
 import hashlib
 import functools
@@ -19,6 +21,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 from jsonschema import Draft202012Validator, SchemaError, ValidationError
@@ -408,13 +411,69 @@ def _state_capability_kind(value: Any) -> str | None:
     return None
 
 
+def _fixed_timezone_state(value: datetime.tzinfo | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if type(value) is not datetime.timezone:
+        raise ReplayRunError(f"timezone type {type(value).__module__}.{type(value).__qualname__} cannot be encoded losslessly")
+    offset = value.utcoffset(None)
+    if offset is None:
+        raise ReplayRunError("fixed timezone does not expose an offset")
+    offset_microseconds = ((offset.days * 86_400 + offset.seconds) * 1_000_000) + offset.microseconds
+    return {"offset_microseconds": offset_microseconds, "name": value.tzname(None)}
+
+
+def _scalar_state(value: Any) -> dict[str, Any] | None:
+    if type(value) is object:
+        return {"$object_sentinel": True}
+    if type(value) is Decimal:
+        return {"$decimal": str(value)}
+    if type(value) is datetime.datetime:
+        return {"$datetime": {
+            "value": value.replace(tzinfo=None).isoformat(timespec="microseconds"),
+            "fold": value.fold,
+            "timezone": _fixed_timezone_state(value.tzinfo),
+        }}
+    if type(value) is datetime.date:
+        return {"$date": value.isoformat()}
+    if type(value) is datetime.time:
+        return {"$time": {
+            "value": value.replace(tzinfo=None).isoformat(timespec="microseconds"),
+            "fold": value.fold,
+            "timezone": _fixed_timezone_state(value.tzinfo),
+        }}
+    if type(value) is datetime.timedelta:
+        return {"$timedelta": {"days": value.days, "seconds": value.seconds, "microseconds": value.microseconds}}
+    if type(value) is datetime.timezone:
+        return {"$timezone": _fixed_timezone_state(value)}
+    if type(value) is uuid.UUID:
+        return {"$uuid": {"hex": value.hex, "is_safe": value.is_safe.name}}
+    if isinstance(value, enum.Enum):
+        value_type = type(value)
+        if "<locals>" in value_type.__qualname__:
+            raise ReplayRunError("capability enum types must be importable in an isolated process")
+        if value.name is None:
+            raise ReplayRunError(f"unnamed enum value {value_type.__module__}.{value_type.__qualname__} cannot be encoded losslessly")
+        return {"$enum": {"module": value_type.__module__, "qualname": value_type.__qualname__, "name": value.name}}
+    return None
+
+
+def _restore_fixed_timezone(value: Mapping[str, Any] | None) -> datetime.tzinfo | None:
+    if value is None:
+        return None
+    return datetime.timezone(datetime.timedelta(microseconds=value["offset_microseconds"]), value["name"])
+
+
 def _tool_state_value(value: Any, capability_kind: str, seen: frozenset[int] = frozenset(), *, allow_callable: bool = False) -> Any:
     if value is None or type(value) in (bool, int, float, str):
         return value
     if isinstance(value, Path):
         return {"$path": str(value)}
-    if isinstance(value, bytes):
+    if type(value) is bytes:
         return {"$bytes": value.hex()}
+    scalar_state = _scalar_state(value)
+    if scalar_state is not None:
+        return scalar_state
     nested_kind = _state_capability_kind(value)
     if nested_kind is not None and nested_kind != capability_kind:
         raise ReplayRunError(f"{capability_kind} capability state contains a forbidden {nested_kind} capability")
@@ -437,15 +496,15 @@ def _tool_state_value(value: Any, capability_kind: str, seen: frozenset[int] = f
         if not isinstance(module, str) or not isinstance(qualname, str):
             raise ReplayRunError("built-in capability callables must expose an importable identity")
         return {"$callable": {"module": module, "qualname": qualname}}
-    if isinstance(value, Mapping):
+    if type(value) is dict:
         if any(type(name) is not str for name in value):
             raise ReplayRunError("capability executor state mappings require string keys")
         return {"$mapping": {name: _tool_state_value(item, capability_kind, next_seen) for name, item in sorted(value.items())}}
-    if isinstance(value, (list, tuple)):
-        return {"$sequence": [_tool_state_value(item, capability_kind, next_seen) for item in value], "$tuple": isinstance(value, tuple)}
-    if isinstance(value, (set, frozenset)):
+    if type(value) in (list, tuple):
+        return {"$sequence": [_tool_state_value(item, capability_kind, next_seen) for item in value], "$tuple": type(value) is tuple}
+    if type(value) in (set, frozenset):
         items = [_tool_state_value(item, capability_kind, next_seen) for item in value]
-        return {"$set": sorted(items, key=canonical_json), "$frozen": isinstance(value, frozenset)}
+        return {"$set": sorted(items, key=canonical_json), "$frozen": type(value) is frozenset}
     if inspect.isfunction(value):
         if capability_kind != "policy" and not allow_callable:
             raise ReplayRunError(f"{capability_kind} capability state contains a forbidden policy callable")
@@ -455,10 +514,13 @@ def _tool_state_value(value: Any, capability_kind: str, seen: frozenset[int] = f
     value_type = type(value)
     if "<locals>" in value_type.__qualname__:
         raise ReplayRunError("capability state types must be importable in an isolated process")
+    state = _plain_object_state(value)
+    if value_type.__new__ is not object.__new__:
+        raise ReplayRunError(f"capability value type {value_type.__module__}.{value_type.__qualname__} cannot be encoded losslessly")
     return {"$object": {
         "module": value_type.__module__,
         "qualname": value_type.__qualname__,
-        "state": {name: _tool_state_value(item, capability_kind, next_seen) for name, item in sorted(_plain_object_state(value).items())},
+        "state": {name: _tool_state_value(item, capability_kind, next_seen) for name, item in sorted(state.items())},
     }}
 
 
@@ -609,6 +671,33 @@ def _restore_tool_state(value: Any) -> Any:
         return Path(value["$path"])
     if set(value) == {"$bytes"}:
         return bytes.fromhex(value["$bytes"])
+    if set(value) == {"$object_sentinel"} and value["$object_sentinel"] is True:
+        return object()
+    if set(value) == {"$decimal"}:
+        return Decimal(value["$decimal"])
+    if set(value) == {"$datetime"}:
+        envelope = value["$datetime"]
+        restored = datetime.datetime.fromisoformat(envelope["value"])
+        return restored.replace(tzinfo=_restore_fixed_timezone(envelope["timezone"]), fold=envelope["fold"])
+    if set(value) == {"$date"}:
+        return datetime.date.fromisoformat(value["$date"])
+    if set(value) == {"$time"}:
+        envelope = value["$time"]
+        restored = datetime.time.fromisoformat(envelope["value"])
+        return restored.replace(tzinfo=_restore_fixed_timezone(envelope["timezone"]), fold=envelope["fold"])
+    if set(value) == {"$timedelta"}:
+        return datetime.timedelta(**value["$timedelta"])
+    if set(value) == {"$timezone"}:
+        return _restore_fixed_timezone(value["$timezone"])
+    if set(value) == {"$uuid"}:
+        envelope = value["$uuid"]
+        return uuid.UUID(hex=envelope["hex"], is_safe=uuid.SafeUUID[envelope["is_safe"]])
+    if set(value) == {"$enum"}:
+        envelope = value["$enum"]
+        enum_type: Any = importlib.import_module(envelope["module"])
+        for component in envelope["qualname"].split("."):
+            enum_type = getattr(enum_type, component)
+        return enum_type[envelope["name"]]
     if set(value) == {"$mapping"}:
         return {name: _restore_tool_state(item) for name, item in value["$mapping"].items()}
     if set(value) == {"$sequence", "$tuple"}:
@@ -1487,8 +1576,11 @@ def _identity_value(value: Any, seen: frozenset[int] = frozenset()) -> Any:
         return value
     if isinstance(value, Path):
         return {"path_sha256": _digest(str(value).encode("utf-8"))}
-    if isinstance(value, bytes):
+    if type(value) is bytes:
         return {"bytes_sha256": _digest(value)}
+    scalar_state = _scalar_state(value)
+    if scalar_state is not None:
+        return scalar_state
     if inspect.ismodule(value):
         source_path = getattr(value, "__file__", None)
         source_sha = _digest(Path(source_path).read_bytes()) if isinstance(source_path, str) and Path(source_path).is_file() else _digest(value.__name__.encode("utf-8"))
@@ -1506,12 +1598,12 @@ def _identity_value(value: Any, seen: frozenset[int] = frozenset()) -> Any:
     if id(value) in seen:
         return {"cycle": f"{type(value).__module__}.{type(value).__qualname__}"}
     next_seen = seen | {id(value)}
-    if isinstance(value, Mapping):
+    if type(value) is dict:
         rows = [{"key": _identity_value(key, next_seen), "value": _identity_value(item, next_seen)} for key, item in value.items()]
         return {"mapping": sorted(rows, key=canonical_json)}
-    if isinstance(value, (list, tuple, set, frozenset)):
+    if type(value) in (list, tuple, set, frozenset):
         rows = [_identity_value(item, next_seen) for item in value]
-        return sorted(rows, key=canonical_json) if isinstance(value, (set, frozenset)) else rows
+        return sorted(rows, key=canonical_json) if type(value) in (set, frozenset) else rows
     transient = {"_client_identities", "_client_replay_specs"} if type(value) is ProviderRuntimeAdapter else set()
     state = _plain_object_state(value)
     if state:
