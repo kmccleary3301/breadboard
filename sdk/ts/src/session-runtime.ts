@@ -7,6 +7,9 @@ declare const cancellationRequestKeyBrand: unique symbol
 declare const clientMessageIdBrand: unique symbol
 declare const eventIdBrand: unique symbol
 declare const replayDigestBrand: unique symbol
+declare const toolCallIdBrand: unique symbol
+declare const permissionRequestIdBrand: unique symbol
+declare const taskIdBrand: unique symbol
 
 export type SessionId = string & { readonly [sessionIdBrand]: true }
 export type InputId = string & { readonly [inputIdBrand]: true }
@@ -16,6 +19,9 @@ export type CancellationRequestKey = string & { readonly [cancellationRequestKey
 export type ClientMessageId = string & { readonly [clientMessageIdBrand]: true }
 export type EventId = string & { readonly [eventIdBrand]: true }
 export type ReplayContractDigest = string & { readonly [replayDigestBrand]: true }
+export type ToolCallId = string & { readonly [toolCallIdBrand]: true }
+export type PermissionRequestId = string & { readonly [permissionRequestIdBrand]: true }
+export type TaskId = string & { readonly [taskIdBrand]: true }
 
 export const REDACTED_VALUE = "[redacted]" as const
 export const SESSION_REPLAY_SCHEMA_VERSION = "bb.cli_bridge.session_replay.v1" as const
@@ -170,26 +176,76 @@ export type AssistantTextCompletedEvent = TurnOwnedLoggedEvent<"assistant_text_c
 export type TurnCompletedEvent = TurnOwnedLoggedEvent<"turn_completed", ExactEmptyPayload>
 export type TurnFailedEvent = TurnOwnedLoggedEvent<"turn_failed", { readonly error: RedactedTurnError }>
 export type TurnCancelledEvent = TurnOwnedLoggedEvent<"turn_cancelled", { readonly reason: CancellationReason }>
+export interface AssistantMessageStartedPayload {
+  readonly messageId: string | null
+  readonly toolCallCount: number
+}
+
+export interface ToolCalledPayload {
+  readonly callId: ToolCallId
+  readonly tool: string
+  readonly arguments: CanonicalJsonValue | null
+  readonly action: string | null
+  readonly diffPreview: CanonicalJsonValue | null
+  readonly progress: CanonicalJsonValue | null
+}
+
+export interface ToolResultObservedPayload {
+  readonly callId: ToolCallId
+  readonly tool: string | null
+  readonly status: string
+  readonly error: boolean
+  readonly result: CanonicalJsonValue | null
+  readonly artifactRef: string | null
+}
+
+export interface PermissionRequestedPayload {
+  readonly requestId: PermissionRequestId
+  readonly tool: string
+  readonly kind: string
+  readonly summary: string | null
+  readonly defaultScope: string | null
+  readonly rewindable: boolean
+}
+
+export interface PermissionRespondedPayload {
+  readonly requestId: PermissionRequestId
+  readonly decision: string
+}
+
+export interface TaskEventObservedPayload {
+  readonly taskId: TaskId
+  readonly kind: string
+  readonly status: string | null
+  readonly description: string | null
+  readonly parentTaskId: TaskId | null
+  readonly childSessionId: SessionId | null
+  readonly parentSessionId: SessionId | null
+  readonly laneId: string | null
+  readonly laneLabel: string | null
+}
+
 export type ConversationCompactionStartedEvent = TurnOwnedLoggedEvent<"conversation_compaction_started", CanonicalJsonObject>
 export type ConversationCompactionCompletedEvent = TurnOwnedLoggedEvent<"conversation_compaction_completed", CanonicalJsonObject>
-export type AssistantMessageStartedEvent = TurnOwnedLoggedEvent<"assistant_message_started", CanonicalJsonObject>
+export type AssistantMessageStartedEvent = TurnOwnedLoggedEvent<"assistant_message_started", AssistantMessageStartedPayload>
 export type AssistantReasoningDeltaEvent = TurnOwnedLoggedEvent<"assistant_reasoning_delta", { readonly text: string }>
 export type AssistantThoughtSummaryDeltaEvent = TurnOwnedLoggedEvent<"assistant_thought_summary_delta", { readonly text: string }>
 export type ToolExecutionStartedEvent = TurnOwnedLoggedEvent<"tool_execution_started", CanonicalJsonObject>
 export type ToolExecutionStdoutDeltaEvent = TurnOwnedLoggedEvent<"tool_execution_stdout_delta", CanonicalJsonObject>
 export type ToolExecutionStderrDeltaEvent = TurnOwnedLoggedEvent<"tool_execution_stderr_delta", CanonicalJsonObject>
 export type ToolExecutionCompletedEvent = TurnOwnedLoggedEvent<"tool_execution_completed", CanonicalJsonObject>
-export type ToolCalledEvent = TurnOwnedLoggedEvent<"tool_called", CanonicalJsonObject>
-export type ToolResultObservedEvent = TurnOwnedLoggedEvent<"tool_result_observed", CanonicalJsonObject>
-export type PermissionRequestedEvent = TurnOwnedLoggedEvent<"permission_requested", CanonicalJsonObject>
-export type PermissionRespondedEvent = TurnOwnedLoggedEvent<"permission_responded", CanonicalJsonObject>
+export type ToolCalledEvent = TurnOwnedLoggedEvent<"tool_called", ToolCalledPayload>
+export type ToolResultObservedEvent = TurnOwnedLoggedEvent<"tool_result_observed", ToolResultObservedPayload>
+export type TodoUpdatedEvent = LoggedEventBase<"todo_updated", CanonicalJsonObject>
+export type PermissionRequestedEvent = TurnOwnedLoggedEvent<"permission_requested", PermissionRequestedPayload>
+export type PermissionRespondedEvent = TurnOwnedLoggedEvent<"permission_responded", PermissionRespondedPayload>
 export type CheckpointListObservedEvent = LoggedEventBase<"checkpoint_list_observed", CanonicalJsonObject>
 export type CheckpointRestoredEvent = LoggedEventBase<"checkpoint_restored", CanonicalJsonObject>
 export type SkillsCatalogObservedEvent = LoggedEventBase<"skills_catalog_observed", CanonicalJsonObject>
 export type SkillsSelectionObservedEvent = LoggedEventBase<"skills_selection_observed", CanonicalJsonObject>
 export type CTreeNodeObservedEvent = TurnOwnedLoggedEvent<"ctree_node_observed", CanonicalJsonObject>
 export type CTreeSnapshotObservedEvent = LoggedEventBase<"ctree_snapshot_observed", CanonicalJsonObject>
-export type TaskEventObservedEvent = TurnOwnedLoggedEvent<"task_event_observed", CanonicalJsonObject>
+export type TaskEventObservedEvent = TurnOwnedLoggedEvent<"task_event_observed", TaskEventObservedPayload>
 export type WarningObservedEvent = TurnOwnedLoggedEvent<"warning_observed", CanonicalJsonObject>
 export type RewardUpdatedEvent = TurnOwnedLoggedEvent<"reward_updated", CanonicalJsonObject>
 export type LimitsUpdatedEvent = TurnOwnedLoggedEvent<"limits_updated", CanonicalJsonObject>
@@ -219,6 +275,7 @@ export type LoggedSessionEvent =
   | ToolExecutionCompletedEvent
   | ToolCalledEvent
   | ToolResultObservedEvent
+  | TodoUpdatedEvent
   | PermissionRequestedEvent
   | PermissionRespondedEvent
   | CheckpointListObservedEvent
@@ -573,6 +630,148 @@ const parseRuntimeFailure = (payload: unknown): { readonly error: RedactedTurnEr
   return { error: { code, message: REDACTED_VALUE } }
 }
 
+const optionalPayloadString = (payload: RawObject, key: string, field: string): string | null =>
+  optionalString(own(payload, key), field)
+
+const parseAssistantMessageStarted = (payload: unknown): AssistantMessageStartedPayload => {
+  if (!isRawObject(payload)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_assistant_message_started_payload" })
+  }
+  const message = own(payload, "message")
+  const rawMessage = isRawObject(message) ? message : null
+  const toolCalls = rawMessage === null ? own(payload, "tool_calls") : own(rawMessage, "tool_calls")
+  const messageId =
+    optionalPayloadString(payload, "message_id", "assistant_message_id")
+    ?? optionalPayloadString(payload, "item_id", "assistant_message_id")
+    ?? optionalPayloadString(payload, "id", "assistant_message_id")
+  return { messageId, toolCallCount: Array.isArray(toolCalls) ? toolCalls.length : 0 }
+}
+
+const isToolCallOnlyAssistantMessage = (payload: unknown): boolean => {
+  if (!isRawObject(payload)) return false
+  const message = own(payload, "message")
+  if (!isRawObject(message)) return false
+  const toolCalls = own(message, "tool_calls")
+  const text = payloadText(payload)
+  return Array.isArray(toolCalls) && toolCalls.length > 0 && (text === undefined || text === null || text === "")
+}
+
+const parseToolCalled = (payload: unknown): ToolCalledPayload => {
+  if (!isRawObject(payload)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_tool_called_payload" })
+  }
+  const nestedCall = own(payload, "call")
+  const call = isRawObject(nestedCall) ? nestedCall : payload
+  const nestedFunction = own(call, "function")
+  const fn = isRawObject(nestedFunction) ? nestedFunction : null
+  const callId = requiredString(
+    own(payload, "call_id") ?? own(call, "id") ?? own(call, "call_id") ?? own(call, "tool_call_id"),
+    "tool_called_call_id",
+  ) as ToolCallId
+  const tool = requiredString(
+    own(payload, "tool") ?? own(call, "name") ?? (fn === null ? undefined : own(fn, "name")),
+    "tool_called_tool",
+  )
+  const rawArguments =
+    own(payload, "arguments")
+    ?? own(call, "arguments")
+    ?? (fn === null ? undefined : own(fn, "arguments"))
+  const action = optionalPayloadString(payload, "action", "tool_called_action")
+  return {
+    callId,
+    tool,
+    arguments: rawArguments === undefined ? null : toJsonValue(rawArguments, new Set()),
+    action,
+    diffPreview: own(payload, "diff_preview") === undefined
+      ? null
+      : toJsonValue(own(payload, "diff_preview"), new Set()),
+    progress: own(payload, "progress") === undefined
+      ? null
+      : toJsonValue(own(payload, "progress"), new Set()),
+  }
+}
+
+const parseToolResultObserved = (payload: unknown): ToolResultObservedPayload => {
+  if (!isRawObject(payload)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_tool_result_observed_payload" })
+  }
+  const nestedMessage = own(payload, "message")
+  const message = isRawObject(nestedMessage) ? nestedMessage : null
+  const callId = requiredString(
+    own(payload, "call_id")
+    ?? (message === null ? undefined : own(message, "tool_call_id"))
+    ?? (message === null ? undefined : own(message, "call_id")),
+    "tool_result_call_id",
+  ) as ToolCallId
+  const errorValue = own(payload, "error")
+  if (typeof errorValue !== "boolean") {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_tool_result_error" })
+  }
+  const rawStatus = own(payload, "status")
+  const status = typeof rawStatus === "string" && rawStatus.length > 0 ? rawStatus : errorValue ? "error" : "ok"
+  const rawResult =
+    own(payload, "result")
+    ?? own(payload, "content")
+    ?? (message === null ? undefined : own(message, "content"))
+  return {
+    callId,
+    tool: optionalPayloadString(payload, "tool", "tool_result_tool"),
+    status,
+    error: errorValue,
+    result: rawResult === undefined ? null : toJsonValue(rawResult, new Set()),
+    artifactRef: optionalPayloadString(payload, "artifact_ref", "tool_result_artifact_ref"),
+  }
+}
+
+const parsePermissionRequested = (payload: unknown): PermissionRequestedPayload => {
+  if (!isRawObject(payload)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_permission_requested_payload" })
+  }
+  const rewindable = own(payload, "rewindable")
+  if (typeof rewindable !== "boolean") {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_permission_requested_rewindable" })
+  }
+  return {
+    requestId: requiredString(own(payload, "request_id"), "permission_request_id") as PermissionRequestId,
+    tool: requiredString(own(payload, "tool"), "permission_request_tool"),
+    kind: requiredString(own(payload, "kind"), "permission_request_kind"),
+    summary: optionalPayloadString(payload, "summary", "permission_request_summary"),
+    defaultScope: optionalPayloadString(payload, "default_scope", "permission_request_default_scope"),
+    rewindable,
+  }
+}
+
+const parsePermissionResponded = (payload: unknown): PermissionRespondedPayload => {
+  if (!isRawObject(payload)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_permission_responded_payload" })
+  }
+  return {
+    requestId: requiredString(own(payload, "request_id"), "permission_response_request_id") as PermissionRequestId,
+    decision: requiredString(own(payload, "decision"), "permission_response_decision"),
+  }
+}
+
+const parseTaskEventObserved = (payload: unknown): TaskEventObservedPayload => {
+  if (!isRawObject(payload)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_task_event_observed_payload" })
+  }
+  const taskId = requiredString(own(payload, "task_id"), "task_event_task_id") as TaskId
+  const parentTaskId = optionalPayloadString(payload, "parent_task_id", "task_event_parent_task_id")
+  const childSessionId = optionalPayloadString(payload, "child_session_id", "task_event_child_session_id")
+  const parentSessionId = optionalPayloadString(payload, "parent_session_id", "task_event_parent_session_id")
+  return {
+    taskId,
+    kind: requiredString(own(payload, "kind"), "task_event_kind"),
+    status: optionalPayloadString(payload, "status", "task_event_status"),
+    description: optionalPayloadString(payload, "description", "task_event_description"),
+    parentTaskId: parentTaskId as TaskId | null,
+    childSessionId: childSessionId as SessionId | null,
+    parentSessionId: parentSessionId as SessionId | null,
+    laneId: optionalPayloadString(payload, "lane_id", "task_event_lane_id"),
+    laneLabel: optionalPayloadString(payload, "lane_label", "task_event_lane_label"),
+  }
+}
+
 
 export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => {
   if (!isRawObject(value)) throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_event_envelope" })
@@ -605,32 +804,40 @@ export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => 
     }
     case "conversation.compaction.start": return { ...turnBase(), kind: "conversation_compaction_started", payload: jsonPayload("conversation_compaction_started") }
     case "conversation.compaction.end": return { ...turnBase(), kind: "conversation_compaction_completed", payload: jsonPayload("conversation_compaction_completed") }
-    case "assistant.message.start": return { ...turnBase(), kind: "assistant_message_started", payload: jsonPayload("assistant_message_started") }
+    case "assistant.message.start": return { ...turnBase(), kind: "assistant_message_started", payload: parseAssistantMessageStarted(payload) }
     case "assistant.message.delta":
     case "assistant_delta":
       return { ...turnBase(), kind: "assistant_text_delta", payload: parseTextPayload(payload, "assistant_text_delta") }
     case "assistant.message.end":
-    case "assistant_message":
       return { ...turnBase(), kind: "assistant_text_completed", payload: parseOptionalTextPayload(payload, "assistant_text_completed") }
+    case "assistant_message":
+      return isToolCallOnlyAssistantMessage(payload)
+        ? { ...turnBase(), kind: "assistant_message_started", payload: parseAssistantMessageStarted(payload) }
+        : { ...turnBase(), kind: "assistant_text_completed", payload: parseOptionalTextPayload(payload, "assistant_text_completed") }
     case "assistant.reasoning.delta": return { ...turnBase(), kind: "assistant_reasoning_delta", payload: parseTextPayload(payload, "assistant_reasoning_delta") }
     case "assistant.thought_summary.delta": return { ...turnBase(), kind: "assistant_thought_summary_delta", payload: parseTextPayload(payload, "assistant_thought_summary_delta") }
     case "tool.exec.start": return { ...turnBase(), kind: "tool_execution_started", payload: jsonPayload("tool_execution_started") }
     case "tool.exec.stdout.delta": return { ...turnBase(), kind: "tool_execution_stdout_delta", payload: jsonPayload("tool_execution_stdout_delta") }
     case "tool.exec.stderr.delta": return { ...turnBase(), kind: "tool_execution_stderr_delta", payload: jsonPayload("tool_execution_stderr_delta") }
     case "tool.exec.end": return { ...turnBase(), kind: "tool_execution_completed", payload: jsonPayload("tool_execution_completed") }
-    case "tool_call": return { ...turnBase(), kind: "tool_called", payload: jsonPayload("tool_called") }
+    case "tool_call": return { ...turnBase(), kind: "tool_called", payload: parseToolCalled(payload) }
+    case "todo_event": return { ...base, kind: "todo_updated", payload: jsonPayload("todo_updated") }
     case "tool.result":
-    case "tool_result":
-      return { ...turnBase(), kind: "tool_result_observed", payload: jsonPayload("tool_result_observed") }
-    case "permission_request": return { ...turnBase(), kind: "permission_requested", payload: jsonPayload("permission_requested") }
-    case "permission_response": return { ...turnBase(), kind: "permission_responded", payload: jsonPayload("permission_responded") }
+    case "tool_result": {
+      if (isRawObject(payload) && isRawObject(own(payload, "todo"))) {
+        return { ...base, kind: "todo_updated", payload: jsonPayload("todo_updated") }
+      }
+      return { ...turnBase(), kind: "tool_result_observed", payload: parseToolResultObserved(payload) }
+    }
+    case "permission_request": return { ...turnBase(), kind: "permission_requested", payload: parsePermissionRequested(payload) }
+    case "permission_response": return { ...turnBase(), kind: "permission_responded", payload: parsePermissionResponded(payload) }
     case "checkpoint_list": return { ...base, kind: "checkpoint_list_observed", payload: jsonPayload("checkpoint_list_observed") }
     case "checkpoint_restored": return { ...base, kind: "checkpoint_restored", payload: jsonPayload("checkpoint_restored") }
     case "skills_catalog": return { ...base, kind: "skills_catalog_observed", payload: jsonPayload("skills_catalog_observed") }
     case "skills_selection": return { ...base, kind: "skills_selection_observed", payload: jsonPayload("skills_selection_observed") }
     case "ctree_node": return { ...turnBase(), kind: "ctree_node_observed", payload: jsonPayload("ctree_node_observed") }
     case "ctree_snapshot": return { ...base, kind: "ctree_snapshot_observed", payload: jsonPayload("ctree_snapshot_observed") }
-    case "task_event": return { ...turnBase(), kind: "task_event_observed", payload: jsonPayload("task_event_observed") }
+    case "task_event": return { ...turnBase(), kind: "task_event_observed", payload: parseTaskEventObserved(payload) }
     case "warning": return { ...turnBase(), kind: "warning_observed", payload: jsonPayload("warning_observed") }
     case "reward_update": return { ...turnBase(), kind: "reward_updated", payload: jsonPayload("reward_updated") }
     case "limits_update": return { ...turnBase(), kind: "limits_updated", payload: jsonPayload("limits_updated") }

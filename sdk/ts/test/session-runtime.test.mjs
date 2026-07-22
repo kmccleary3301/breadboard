@@ -207,9 +207,10 @@ test("closed decoder covers all canonical logged families and rejects unsupporte
     ["assistant_message", { text: "answer" }, "assistant_text_completed"],
     ["assistant_delta", { text: "partial" }, "assistant_text_delta"],
     ["tool_call", { call_id: "call-1", name: "read" }, "tool_called"],
-    ["tool.result", { call_id: "call-1", output: "ok" }, "tool_result_observed"],
-    ["tool_result", { call_id: "call-1", output: "ok" }, "tool_result_observed"],
-    ["permission_request", { request_id: "permission-1" }, "permission_requested"],
+    ["tool.result", { call_id: "call-1", output: "ok", status: "ok", error: false }, "tool_result_observed"],
+    ["tool_result", { call_id: "call-1", output: "ok", status: "ok", error: false }, "tool_result_observed"],
+    ["todo_event", { todo: { op: "snapshot", items: [] } }, "todo_updated"],
+    ["permission_request", { request_id: "permission-1", tool: "read", kind: "read", rewindable: false }, "permission_requested"],
     ["permission_response", { request_id: "permission-1", decision: "allow" }, "permission_responded"],
     ["checkpoint_list", { checkpoints: [] }, "checkpoint_list_observed"],
     ["checkpoint_restored", { checkpoint_id: "checkpoint-1" }, "checkpoint_restored"],
@@ -217,7 +218,7 @@ test("closed decoder covers all canonical logged families and rejects unsupporte
     ["skills_selection", { selection: {} }, "skills_selection_observed"],
     ["ctree_node", { id: "node-1" }, "ctree_node_observed"],
     ["ctree_snapshot", { root: "node-1" }, "ctree_snapshot_observed"],
-    ["task_event", { kind: "child_started" }, "task_event_observed"],
+    ["task_event", { kind: "child_started", task_id: "task-1" }, "task_event_observed"],
     ["warning", { code: "slow_provider" }, "warning_observed"],
     ["reward_update", { reward: 1 }, "reward_updated"],
     ["limits_update", { used: 1 }, "limits_updated"],
@@ -250,8 +251,42 @@ test("closed decoder covers all canonical logged families and rejects unsupporte
   )
   const { input_id: _inputId, turn_id: _turnId, ...sessionOnlyTool } = logged(1, "tool_call", { call_id: "call-1" })
   assert.throws(() => decodeLoggedSessionEvent(sessionOnlyTool), /missing_turn_correlation/)
+  const { input_id: _todoInputId, turn_id: _todoTurnId, ...sessionTodo } = logged(
+    1,
+    "tool_result",
+    { call_id: "todo:snapshot:init", todo: { op: "snapshot", items: [] } },
+  )
+  assert.equal(decodeLoggedSessionEvent(sessionTodo).kind, "todo_updated")
+  assert.equal(
+    decodeLoggedSessionEvent(logged(1, "tool_result", { todo: { op: "snapshot", items: [] } })).kind,
+    "todo_updated",
+  )
   assert.throws(() => decodeLoggedSessionEvent(logged(1, "not_a_canonical_event", {})), /unsupported_event_family/)
+  assert.throws(
+    () => decodeLoggedSessionEvent(logged(1, "tool_call", { name: "read" })),
+    /invalid_tool_called_call_id/,
+  )
   assert.throws(() => decodeLoggedSessionEvent({ ...logged(1, "turn_completed", {}), stable_cursor: false }), /event_not_stable_cursor/)
+})
+
+test("tool-call-only assistant messages are not decoded as empty text completions", () => {
+  const decoded = decodeLoggedSessionEvent(
+    logged(1, "assistant_message", {
+      text: "",
+      message: {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: "call-1",
+            type: "function",
+            function: { name: "list_dir", arguments: "{\"path\":\".\"}" },
+          },
+        ],
+      },
+    }),
+  )
+  assert.equal(decoded.kind, "assistant_message_started")
 })
 
 test("deterministic bytes and digest do not depend on object insertion order", async () => {

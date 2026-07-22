@@ -249,6 +249,9 @@ class SessionRunner:
         self._active_bridge_timing_context: Optional[Dict[str, float]] = None
         self._accepted_task_texts: List[str] = []
         self._event_turn: Optional[TurnRecord] = None
+        self._e4_tool_call_counter = 0
+        self._e4_pending_tool_calls: List[Tuple[str, str]] = []
+        self._e4_last_completed_tool_call: Optional[Tuple[str, str]] = None
 
         # Live overrides updated via commands
         initial_metadata = dict(self.session.metadata or {})
@@ -2158,27 +2161,48 @@ class SessionRunner:
             return {"latency_ms": int(elapsed_ms)}
         return {}
 
-    def _normalize_tool_call_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        call = payload.get("call") or payload.get("tool_call") or payload.get("tool")
-        if not isinstance(call, dict):
-            return payload
-        call_id = call.get("id") or call.get("call_id") or call.get("tool_call_id")
+    def _normalize_tool_call_payload(
+        self,
+        payload: Dict[str, Any],
+        *,
+        turn: Optional[int],
+    ) -> Dict[str, Any]:
+        raw_call = payload.get("call") or payload.get("tool_call")
+        call = dict(raw_call) if isinstance(raw_call, dict) else dict(payload)
         function = call.get("function") if isinstance(call.get("function"), dict) else None
-        tool_name = call.get("name") or (function or {}).get("name")
-        arguments = call.get("arguments")
+        call_id = (
+            payload.get("call_id")
+            or call.get("id")
+            or call.get("call_id")
+            or call.get("tool_call_id")
+        )
+        tool_name = payload.get("tool") or call.get("name") or (function or {}).get("name")
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            return dict(payload)
+        tool_name = tool_name.strip()
+        if not isinstance(call_id, str) or not call_id.strip():
+            self._e4_tool_call_counter += 1
+            turn_segment = turn if isinstance(turn, int) and turn >= 0 else 0
+            call_id = f"e4-tool:{turn_segment}:{self._e4_tool_call_counter}"
+        else:
+            call_id = call_id.strip()
+        arguments = payload.get("arguments")
+        if arguments is None:
+            arguments = call.get("arguments")
         if arguments is None and isinstance(function, dict):
             arguments = function.get("arguments")
         action = None
         if isinstance(arguments, dict):
             action = arguments.get("action") or arguments.get("command") or arguments.get("operation")
-        diff_preview = call.get("diff_preview") if isinstance(call, dict) else None
-        progress = call.get("progress") if isinstance(call, dict) else None
+        diff_preview = call.get("diff_preview")
+        progress = call.get("progress")
         normalized = dict(payload)
         normalized.update(
             {
                 "call": call,
                 "call_id": call_id,
                 "tool": tool_name,
+                "arguments": arguments,
                 "action": action,
             }
         )
@@ -2186,25 +2210,76 @@ class SessionRunner:
             normalized["diff_preview"] = diff_preview
         if progress is not None and "progress" not in normalized:
             normalized["progress"] = progress
+        if not any(pending_id == call_id for pending_id, _ in self._e4_pending_tool_calls):
+            self._e4_pending_tool_calls.append((call_id, tool_name))
         return normalized
 
-    def _normalize_tool_result_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _normalize_tool_result_payload(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         normalized = dict(payload)
+        if isinstance(normalized.get("todo"), dict):
+            return normalized
         message = normalized.get("message")
         if isinstance(message, dict):
-            call_id = (
-                normalized.get("call_id")
-                or message.get("tool_call_id")
-                or message.get("tool_call_id")
-                or message.get("call_id")
-            )
+            message_call_id = message.get("tool_call_id") or message.get("call_id")
             content = message.get("content")
-            normalized.setdefault("call_id", call_id)
+            if "call_id" not in normalized or not normalized.get("call_id"):
+                normalized["call_id"] = message_call_id
             normalized.setdefault("result", content)
             normalized.setdefault("status", message.get("status") or ("error" if message.get("error") else "ok"))
             normalized.setdefault("error", bool(message.get("error")))
         if "result" not in normalized and "content" in normalized:
             normalized["result"] = normalized.get("content")
+        tool_name = normalized.get("tool") or normalized.get("name") or (message.get("name") if isinstance(message, dict) else None)
+        if isinstance(tool_name, str):
+            tool_name = tool_name.strip() or None
+        else:
+            tool_name = None
+        call_id = normalized.get("call_id")
+        if isinstance(call_id, str) and call_id.strip():
+            call_id = call_id.strip()
+            pending = next(
+                (
+                    (pending_id, pending_tool)
+                    for pending_id, pending_tool in self._e4_pending_tool_calls
+                    if pending_id == call_id
+                ),
+                None,
+            )
+        else:
+            candidates = [
+                item
+                for item in self._e4_pending_tool_calls
+                if tool_name is None or item[1] == tool_name
+            ]
+            pending = candidates[0] if len(candidates) == 1 else None
+            if pending is None and not candidates and len(self._e4_pending_tool_calls) == 1:
+                pending = self._e4_pending_tool_calls[0]
+            call_id = pending[0] if pending is not None else None
+        if (
+            pending is None
+            and isinstance(message, dict)
+            and message.get("role") == "tool"
+            and self._e4_last_completed_tool_call is not None
+            and (call_id is None or call_id == self._e4_last_completed_tool_call[0])
+            and (tool_name is None or tool_name == self._e4_last_completed_tool_call[1])
+        ):
+            return None
+        if pending is not None:
+            self._e4_pending_tool_calls.remove(pending)
+            if tool_name is None:
+                tool_name = pending[1]
+            self._e4_last_completed_tool_call = (pending[0], tool_name)
+        normalized["call_id"] = call_id
+        normalized["tool"] = tool_name
+        status = normalized.get("status")
+        error = normalized.get("error")
+        if not isinstance(error, bool):
+            success = normalized.get("success")
+            error = not success if isinstance(success, bool) else status == "error"
+        if not isinstance(status, str) or not status.strip():
+            status = "error" if error else "ok"
+        normalized["status"] = status
+        normalized["error"] = error
         artifact_ref = self._extract_artifact_ref(normalized)
         if artifact_ref is not None:
             normalized["artifact_ref"] = artifact_ref
@@ -2313,10 +2388,17 @@ class SessionRunner:
         return normalized
 
     def _normalize_task_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return normalize_task_event_payload(
+        normalized = normalize_task_event_payload(
             payload,
             parent_session_id=getattr(self.session, "session_id", None),
         )
+        task_id = normalized.get("task_id")
+        if task_id is not None:
+            normalized["task_id"] = str(task_id)
+        parent_task_id = normalized.get("parent_task_id")
+        if parent_task_id is not None:
+            normalized["parent_task_id"] = str(parent_task_id)
+        return normalized
 
     def _translate_runtime_event(
         self,
@@ -2404,9 +2486,12 @@ class SessionRunner:
                 text = content if isinstance(content, str) else ""
             normalized_payload = {"text": text, "message": message}
         elif evt is EventType.TOOL_CALL:
-            normalized_payload = self._normalize_tool_call_payload(normalized_payload)
+            normalized_payload = self._normalize_tool_call_payload(normalized_payload, turn=turn)
         elif evt in {EventType.TOOL_RESULT, EventType.TOOL_RESULT_DOT}:
-            normalized_payload = self._normalize_tool_result_payload(normalized_payload)
+            tool_result_payload = self._normalize_tool_result_payload(normalized_payload)
+            if tool_result_payload is None:
+                return None
+            normalized_payload = tool_result_payload
         elif evt is EventType.PERMISSION_REQUEST:
             normalized_payload = self._normalize_permission_request(normalized_payload)
         elif evt is EventType.PERMISSION_RESPONSE:
