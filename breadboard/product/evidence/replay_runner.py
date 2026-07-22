@@ -4,6 +4,8 @@ import encodings.idna
 import hashlib
 import functools
 import importlib
+import importlib.machinery
+import importlib.util
 import inspect
 import json
 import os
