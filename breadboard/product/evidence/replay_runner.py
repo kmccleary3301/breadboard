@@ -36,6 +36,7 @@ from agentic_coder_prototype.provider.runtime import (
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime.artifacts import AnchoredStorage, ArtifactRef, ArtifactStore
 from breadboard.product.runtime.events import Clock, IdSource, JsonlEventSink, Session, SystemClock, UUIDSource
+from breadboard.product.integrations.provider import ProviderRuntimeAdapter
 
 from .replay_execution import ReplayArtifactManifest, ReplayExecution, _portable_id, problem, validate_provider_exchange
 from .replay_plan import HASH_BINDING_NAMES, ReplayPlan, ReplayPlanError, canonical_json, sha256_json
@@ -1511,7 +1512,7 @@ def _identity_value(value: Any, seen: frozenset[int] = frozenset()) -> Any:
     if isinstance(value, (list, tuple, set, frozenset)):
         rows = [_identity_value(item, next_seen) for item in value]
         return sorted(rows, key=canonical_json) if isinstance(value, (set, frozenset)) else rows
-    transient = {"calls", "_calls", "polls", "_polls", "messages_seen", "tools_seen", "_client_identities", "_client_replay_specs"}
+    transient = {"_client_identities", "_client_replay_specs"} if type(value) is ProviderRuntimeAdapter else set()
     state = _plain_object_state(value)
     if state:
         return {

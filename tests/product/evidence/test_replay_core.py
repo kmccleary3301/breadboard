@@ -901,6 +901,13 @@ def test_runtime_rejects_route_and_toolset_drift(tmp_path: Path) -> None:
     assert record["problem"]["error_code"] == "replay.undeclared_tool"
     assert {row["kind"]: row["decision"] for row in record["policy_decisions"]}["capability"] == "denied"
 
+def test_runtime_identity_binds_generic_counter_state() -> None:
+    provider = _Provider(("done",))
+    planned = replay_runner_module._runtime_type_identity(provider)
+    provider.calls = 1
+    assert replay_runner_module._runtime_type_identity(provider) != planned
+
+
 
 def test_provider_route_identity_excludes_transient_replay_client_specs() -> None:
     descriptor = ProviderDescriptor("fixture", "fixture_runtime", "chat", True, False, False, False, "openai", None, "FIXTURE_KEY", {})
