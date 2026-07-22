@@ -367,8 +367,8 @@ class _BoundPolicyCapability:
         self.target = target
         self.method_name = method_name
 
-    def __call__(self, name: str, arguments: Mapping[str, Any]) -> Any:
-        return getattr(self.target, self.method_name)(name, arguments)
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return getattr(self.target, self.method_name)(*args, **kwargs)
 
 
 class _PartialPolicyCapability:
@@ -542,11 +542,13 @@ def _plain_object_state(value: Any) -> dict[str, Any]:
         for name in slots if isinstance(slots, (tuple, list)) else (slots,):
             if not isinstance(name, str) or name in {"__dict__", "__weakref__"}:
                 continue
+            owner_name = owner_type.__name__.lstrip("_")
+            storage_name = f"_{owner_name}{name}" if owner_name and name.startswith("__") and not name.endswith("__") else name
             try:
-                item = object.__getattribute__(value, name)
+                item = object.__getattribute__(value, storage_name)
             except AttributeError:
                 continue
-            state.setdefault(name, item)
+            state.setdefault(storage_name, item)
     return state
 
 
@@ -908,8 +910,11 @@ def _exec_tool_worker_bootstrap(
                 value = executor(command["name"], command["arguments"])
             elif capability_kind == "tool" and set(command) == {"arguments"} and isinstance(command["arguments"], dict):
                 value = executor.execute(command["arguments"])
-            elif capability_kind == "host" and set(command) == {"command", "cwd"} and isinstance(command["command"], str) and isinstance(command["cwd"], str):
-                value = executor.execute(command["command"], cwd=command["cwd"])
+            elif capability_kind == "host" and isinstance(command.get("command"), str) and isinstance(command.get("cwd"), str):
+                host_arguments = dict(command)
+                command_text = host_arguments.pop("command")
+                command_cwd = host_arguments.pop("cwd")
+                value = executor.execute(command_text, cwd=command_cwd, **host_arguments)
             else:
                 raise ReplayRunError("isolated capability command is invalid")
         except BaseException as exc:
@@ -1415,6 +1420,18 @@ def _provider_context_snapshot(context: Any) -> ProviderRuntimeContext:
     except (TypeError, ValueError) as exc:
         raise ReplayRunError("provider context must contain only canonical provider data") from exc
     return ProviderRuntimeContext(session_state=_ProviderSessionSnapshot(safe_metadata), agent_config=safe_agent_config, stream=False, extra=safe_extra)
+
+
+def _provider_context_request_payload(context: ProviderRuntimeContext) -> dict[str, Any]:
+    return json.loads(canonical_json({
+        "agent_config": context.agent_config,
+        "extra": context.extra,
+        "session_metadata": context.session_state.metadata,
+    }))
+
+
+
+
 
 
 def _host_identity(host: Any) -> str:
@@ -2187,7 +2204,7 @@ def run_replay(
                         raise _RuntimeFailure("budget_exhausted", "replay.provider_budget", "replay exhausted its provider or turn budget")
                     provider_calls += 1; request_id = f"{execution_id}:request:{provider_calls}"; attempt_id = f"{request_id}:attempt:1"
                     provider_messages = _provider_wire_messages(messages, reverse_tool_aliases)
-                    request = {"model": provider_model, "messages": provider_messages, "tools": provider_tools, "stream": False}; request_ref = put("provider_request", request, None, "secret_redacted")
+                    request = {"model": provider_model, "messages": provider_messages, "tools": provider_tools, "stream": False, "context": _provider_context_request_payload(isolated_provider_context)}; request_ref = put("provider_request", request, None, "secret_redacted")
                     call_start, call_started = monotonic(), active_clock.now()
                     usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_amount": 0, "cost_currency": "USD"}
                     prepared_calls: list[tuple[ProviderToolCall, dict[str, Any]]] = []
@@ -2260,11 +2277,12 @@ def run_replay(
                             raise _RuntimeFailure("provider_failed", "replay.invalid_provider_response", "provider returned invalid tool arguments")
                         raise _RuntimeFailure("provider_failed", "replay.provider_failed", "provider invocation failed")
                     usage_budget_exceeded = usage_accountant.add(usage)
-                    session_state = getattr(provider_context, "session_state", None)
-                    metadata_setter = getattr(session_state, "set_provider_metadata", None)
-                    if callable(metadata_setter):
-                        for metadata_name, metadata_value in evidence["metadata"].items():
-                            metadata_setter(metadata_name, metadata_value)
+                    for active_context in (provider_context, isolated_provider_context):
+                        session_state = getattr(active_context, "session_state", None)
+                        metadata_setter = getattr(session_state, "set_provider_metadata", None)
+                        if callable(metadata_setter):
+                            for metadata_name, metadata_value in evidence["metadata"].items():
+                                metadata_setter(metadata_name, metadata_value)
                     if usage_budget_exceeded:
                         raise _RuntimeFailure("budget_exhausted", "replay.usage_budget", "replay exceeded its token or cost budget")
                     session.input(f"provider turn {provider_calls}", attachments=(response_ref,)); messages.extend(_assistant_messages(result, reverse_tool_aliases))
@@ -2327,7 +2345,9 @@ def run_replay(
                                 command = arguments.get("command")
                                 if not isinstance(command, str) or not command:
                                     raise ValueError("host.execute requires a command")
-                                outcome = host_worker.invoke({"command": command, "cwd": str(fresh_workspace)}, timeout_ms=call_limit, timeout_code=timeout_code, timeout_detail=timeout_detail, cancelled=cancelled, cancellation_grace_ms=plan_record["cancellation_grace_ms"])
+                                host_arguments = dict(arguments)
+                                host_arguments["cwd"] = str(fresh_workspace)
+                                outcome = host_worker.invoke(host_arguments, timeout_ms=call_limit, timeout_code=timeout_code, timeout_detail=timeout_detail, cancelled=cancelled, cancellation_grace_ms=plan_record["cancellation_grace_ms"])
                             else:
                                 executor = tools[call.name]
                                 if not callable(getattr(executor, "execute", None)):

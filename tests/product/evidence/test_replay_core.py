@@ -98,6 +98,12 @@ class _AddTool:
         if self.fail: raise RuntimeError("tool failed with Authorization: Bearer UNLISTED")
         if self.invalid: return {"value": object()}
         return {"sum": arguments["a"] + arguments["b"], "token": "SECRET"}
+class _PrivateSlotTool:
+    __slots__ = ("__offset",)
+    def __init__(self, offset: int) -> None:
+        self.__offset = offset
+    def execute(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        return {"sum": arguments["a"] + arguments["b"] + self.__offset}
 class _RelativeWriteTool:
     def execute(self, _arguments: Mapping[str, Any]) -> dict[str, Any]:
         Path("relative-output.txt").write_text("contained", encoding="utf-8")
@@ -218,6 +224,11 @@ class _Host:
             cwd.mkdir()
         (cwd / "host.txt").write_text(command, encoding="utf-8")
         return {"exit_code": 0, "cwd": kwargs["cwd"], "token": "SECRET"}
+class _ArgumentCheckingHost(_Host):
+    def execute(self, command: str, **kwargs: Any) -> dict[str, Any]:
+        if kwargs.get("timeout") != 7 or kwargs.get("stdin_data") != "payload":
+            raise RuntimeError("approved host arguments were not forwarded")
+        return super().execute(command, **kwargs)
 
 
 class _SubprocessHost(_Host):
@@ -270,6 +281,9 @@ def _prefixed_policy(expected: str, name: str, _arguments: Mapping[str, Any]) ->
 class _PolicyOwner:
     def allow(self, _name: str, _arguments: Mapping[str, Any]) -> bool:
         return True
+class _PrefixedPolicyOwner:
+    def allow(self, expected: str, name: str, _arguments: Mapping[str, Any]) -> bool:
+        return expected == name
 
 
 
@@ -306,11 +320,12 @@ class _Provider:
         elif action == "two_adds": message = ProviderMessage("assistant", None, [ProviderToolCall("call-add-1", "add", '{"a":1,"b":2}'), ProviderToolCall("call-add-2", "add", '{"a":3,"b":4}')], "tool_calls")
         elif action == "nan_args": message = ProviderMessage("assistant", None, [ProviderToolCall("call-nan", "add", '{"a":NaN,"b":2}')], "tool_calls")
         elif action == "lazy": message = ProviderMessage("assistant", None, [ProviderToolCall("call-lazy", "lazy", "{}")], "tool_calls")
-        elif action == "host":
+        elif action in {"host", "host_args"}:
             host_names = [tool["function"]["name"] for tool in kwargs["tools"] if tool["function"]["name"].startswith("host_execute")]
             if len(host_names) != 1 or "." in host_names[0]:
                 raise RuntimeError("provider did not receive the canonical host tool through a valid wire alias")
-            message = ProviderMessage("assistant", None, [ProviderToolCall("call-host", host_names[0], json.dumps({"command": "fixture"}))], "tool_calls")
+            arguments = {"command": "fixture", "timeout": 7, "stdin_data": "payload"} if action == "host_args" else {"command": "fixture"}
+            message = ProviderMessage("assistant", None, [ProviderToolCall("call-host", host_names[0], json.dumps(arguments))], "tool_calls")
         elif action == "unknown": message = ProviderMessage("assistant", None, [ProviderToolCall("call-danger", "danger", "{}")], "tool_calls")
         elif action == "invalid_message": message = ProviderMessage("assistant", "done", [], 7)  # type: ignore[arg-type]
         elif action == "environment_value": message = ProviderMessage("assistant", __import__("os").environ["BB_REPLAY_ENV_SECRET"], [], "stop")
@@ -737,7 +752,7 @@ def test_replay_executes_callable_tool_integration_adapter_in_its_capability_wor
     assert result.execution.as_dict()["terminal_status"] == "completed"
 
 
-@pytest.mark.parametrize("authorize", [_PolicyOwner().allow, functools.partial(_prefixed_policy, "add")])
+@pytest.mark.parametrize("authorize", [_PolicyOwner().allow, functools.partial(_prefixed_policy, "add"), functools.partial(_PrefixedPolicyOwner().allow, "add")])
 def test_replay_executes_bound_and_partial_policy_capabilities(tmp_path: Path, authorize: Any) -> None:
     _, _, result = _run(tmp_path, sequence=("add", "done"), authorize=authorize)
     assert result.execution.as_dict()["terminal_status"] == "completed"
@@ -747,6 +762,34 @@ def test_replay_executes_bound_and_partial_policy_capabilities(tmp_path: Path, a
 def test_replay_executes_partial_and_builtin_tool_adapter_callables(tmp_path: Path, executor: Any) -> None:
     _, _, result = _run(tmp_path, sequence=("add", "done"), tool_instances={"add": ToolIntegrationAdapter("add", executor)})
     assert result.execution.as_dict()["terminal_status"] == "completed"
+
+
+def test_replay_preserves_private_slotted_tool_state(tmp_path: Path) -> None:
+    _, _, result = _run(tmp_path, sequence=("add", "done"), tool_instances={"add": _PrivateSlotTool(5)})
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+
+
+def test_replay_forwards_validated_host_arguments(tmp_path: Path) -> None:
+    host_schema = ({
+        "type": "function",
+        "function": {
+            "name": "host.execute",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string"},
+                    "timeout": {"type": "integer"},
+                    "stdin_data": {"type": "string"},
+                },
+                "required": ["command", "timeout", "stdin_data"],
+                "additionalProperties": False,
+            },
+        },
+    },)
+    _, _, result = _run(tmp_path, sequence=("host_args", "done"), tool_schemas=host_schema, host_instance=_ArgumentCheckingHost())
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+
+
 
 
 def test_replay_executes_sandbox_host_adapter_in_its_capability_worker(tmp_path: Path) -> None:
@@ -1062,6 +1105,23 @@ def test_provider_request_hash_matches_empty_tool_payload(tmp_path: Path) -> Non
     request_entry = next(entry for entry in result.manifest.as_dict()["entries"] if entry["role"] == "provider_request")
     request = json.loads(ArtifactStore(workspace.path(".breadboard/artifacts")).read(ArtifactRef(request_entry["sha256"], request_entry["size_bytes"], request_entry["media_type"])))
     assert request["tools"] == []
+
+
+def test_provider_request_evidence_binds_replay_context_options(tmp_path: Path) -> None:
+    contexts = (
+        ProviderRuntimeContext(session_state=None, agent_config={"provider_tools": {"anthropic": {"temperature": 0.1}}}, extra={"responses_extra": {"mode": "first"}}),
+        ProviderRuntimeContext(session_state=None, agent_config={"provider_tools": {"anthropic": {"temperature": 0.9}}}, extra={"responses_extra": {"mode": "second"}}),
+    )
+    requests = []
+    request_digests = []
+    for index, context in enumerate(contexts):
+        workspace, _, result = _run(tmp_path / str(index), sequence=("done",), provider_context=context)
+        request_entry = next(entry for entry in result.manifest.as_dict()["entries"] if entry["role"] == "provider_request")
+        requests.append(json.loads(ArtifactStore(workspace.path(".breadboard/artifacts")).read(ArtifactRef(request_entry["sha256"], request_entry["size_bytes"], request_entry["media_type"]))))
+        request_digests.append(request_entry["sha256"])
+    assert requests[0]["context"]["agent_config"]["provider_tools"]["anthropic"]["temperature"] == 0.1
+    assert requests[0]["context"]["extra"]["responses_extra"] == {"mode": "first"}
+    assert request_digests[0] != request_digests[1]
 
 
 
