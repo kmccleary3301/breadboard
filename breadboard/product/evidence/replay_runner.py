@@ -2039,11 +2039,6 @@ def run_replay(
                             for call in message.tool_calls:
                                 canonical_call = ProviderToolCall(call.id, reverse_tool_aliases.get(call.name, call.name), call.arguments, call.type, call.raw)
                                 prepared_calls.append((canonical_call, _validated_arguments(canonical_call, tool_argument_validators)))
-                        session_state = getattr(provider_context, "session_state", None)
-                        metadata_setter = getattr(session_state, "set_provider_metadata", None)
-                        if callable(metadata_setter):
-                            for metadata_name, metadata_value in evidence["metadata"].items():
-                                metadata_setter(metadata_name, metadata_value)
                         finish_reason = next((message.finish_reason for message in result.messages if message.finish_reason), "completed")
                         exchange_problem, exchange_status = None, "completed"
                     except _RuntimeFailure as exc:
@@ -2094,6 +2089,11 @@ def run_replay(
                         if exchange_status == "invalid_response":
                             raise _RuntimeFailure("provider_failed", "replay.invalid_provider_response", "provider returned invalid tool arguments")
                         raise _RuntimeFailure("provider_failed", "replay.provider_failed", "provider invocation failed")
+                    session_state = getattr(provider_context, "session_state", None)
+                    metadata_setter = getattr(session_state, "set_provider_metadata", None)
+                    if callable(metadata_setter):
+                        for metadata_name, metadata_value in evidence["metadata"].items():
+                            metadata_setter(metadata_name, metadata_value)
                     if usage_budget_exceeded:
                         raise _RuntimeFailure("budget_exhausted", "replay.usage_budget", "replay exceeded its token or cost budget")
                     session.input(f"provider turn {provider_calls}", attachments=(response_ref,)); messages.extend(_assistant_messages(result, reverse_tool_aliases))

@@ -1531,6 +1531,33 @@ def test_provider_metadata_is_not_applied_before_result_validation(tmp_path: Pat
     _, _, result = _run(tmp_path / "workspace", sequence=("invalid_message",), provider_context=context)
     assert result.execution.as_dict()["terminal_status"] == "provider_failed"
     assert not marker.exists()
+def test_provider_metadata_is_not_applied_when_exchange_is_cancelled(tmp_path: Path) -> None:
+    marker = tmp_path / "provider-metadata.json"
+    context = types.SimpleNamespace(session_state=_MetadataSink(marker))
+    _, _, result = _run(
+        tmp_path / "workspace",
+        sequence=("done",),
+        provider_context=context,
+        cancelled=_CancelAfterProvider(),
+    )
+    assert result.execution.as_dict()["terminal_status"] == "cancelled"
+    assert not marker.exists()
+
+
+def test_provider_metadata_is_not_applied_when_exchange_times_out(tmp_path: Path) -> None:
+    marker = tmp_path / "provider-metadata.json"
+    context = types.SimpleNamespace(session_state=_MetadataSink(marker))
+    _, _, result = _run(
+        tmp_path / "workspace",
+        sequence=("done",),
+        provider_context=context,
+        deadlines={"total": 10_000, "idle": 5_000, "provider_call": 999, "tool_call": 1_000},
+        monotonic=_SlowMonotonic(),
+    )
+    assert result.execution.as_dict()["terminal_status"] == "timed_out"
+    assert not marker.exists()
+
+
 
 
 def test_provider_metadata_is_applied_after_result_validation(tmp_path: Path) -> None:
