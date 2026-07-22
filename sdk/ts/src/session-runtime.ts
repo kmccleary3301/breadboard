@@ -134,6 +134,18 @@ export interface CancellationReceipt {
   readonly disposition: CancellationDisposition
   readonly originalDisposition: OriginalCancellationDisposition
 }
+export type PermissionDecision = "allow" | "deny"
+
+export interface RespondPermissionRequest {
+  readonly requestId: PermissionRequestId | string
+  readonly decision: PermissionDecision
+}
+
+export interface PermissionDecisionReceipt {
+  readonly requestId: PermissionRequestId
+  readonly decision: PermissionDecision
+}
+
 
 export interface ObserveSessionRequest {
   readonly signal?: AbortSignal
@@ -196,7 +208,7 @@ export interface ToolResultObservedPayload {
   readonly status: string
   readonly error: boolean
   readonly result: CanonicalJsonValue | null
-  readonly artifactRef: string | null
+  readonly artifactRef: CanonicalJsonValue | null
 }
 
 export interface PermissionRequestedPayload {
@@ -349,6 +361,7 @@ export interface OpenedSession {
   snapshot(): Promise<SessionSnapshot>
   submit(input: SubmitInput): Promise<SubmitReceipt>
   cancel(request: CancelTurnRequest): Promise<CancellationReceipt>
+  respondPermission(request: RespondPermissionRequest): Promise<PermissionDecisionReceipt>
   events(request?: ObserveSessionRequest): AsyncGenerator<LoggedSessionEvent, void, void>
   close(): Promise<void>
 }
@@ -719,7 +732,9 @@ const parseToolResultObserved = (payload: unknown): ToolResultObservedPayload =>
     status,
     error: errorValue,
     result: rawResult === undefined ? null : toJsonValue(rawResult, new Set()),
-    artifactRef: optionalPayloadString(payload, "artifact_ref", "tool_result_artifact_ref"),
+    artifactRef: own(payload, "artifact_ref") === undefined
+      ? null
+      : toJsonValue(own(payload, "artifact_ref"), new Set()),
   }
 }
 
@@ -1298,6 +1313,25 @@ const decodeCancellationReceipt = (value: unknown): CancellationReceipt => {
     originalDisposition: requiredEnum(own(value, "original_disposition"), "cancellation_original_disposition", ["cancellation_requested", "queued_cancelled"] as const),
   }
 }
+const decodePermissionDecisionReceipt = (
+  value: unknown,
+  requestId: PermissionRequestId,
+  decision: PermissionDecision,
+): PermissionDecisionReceipt => {
+  if (!isRawObject(value) || own(value, "status") !== "accepted") {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_permission_decision_receipt" })
+  }
+  const detail = own(value, "detail")
+  if (!isRawObject(detail)) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_permission_decision_detail" })
+  }
+  const observedRequestId = requiredString(own(detail, "request_id"), "permission_decision_request_id") as PermissionRequestId
+  if (observedRequestId !== requestId) {
+    throw new CanonicalE4ClientError({ kind: "protocol", code: "permission_decision_identity_mismatch" })
+  }
+  return { requestId, decision }
+}
+
 
 const createRequestBody = (request: CreateSessionRequest): RawObject => ({
   config_path: request.configPath,
@@ -1527,6 +1561,20 @@ class RuntimeSession implements OpenedSession {
       throw error
     }
   }
+  async respondPermission(request: RespondPermissionRequest): Promise<PermissionDecisionReceipt> {
+    this.assertOpen()
+    const requestId = requiredString(String(request.requestId), "permission_decision_request_id") as PermissionRequestId
+    const decision = requiredEnum(request.decision, "permission_decision", ["allow", "deny"] as const)
+    return decodePermissionDecisionReceipt(
+      await requestJson(this.context, pathForSession(this.sessionId, "/command"), "POST", {
+        command: "respond_permission",
+        payload: { request_id: requestId, response: decision },
+      }),
+      requestId,
+      decision,
+    )
+  }
+
 
   events(request: ObserveSessionRequest = {}): AsyncGenerator<LoggedSessionEvent, void, void> {
     this.assertOpen()

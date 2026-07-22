@@ -244,6 +244,16 @@ test("closed decoder covers all canonical logged families and rejects unsupporte
   const runtimeError = decodeLoggedSessionEvent(logged(1, "error", { code: "provider_timeout", message: "raw secret" }))
   assert.deepEqual(runtimeError.payload.error, { code: "provider_timeout", message: "[redacted]" })
   assert.equal(runtimeError.scope, "turn")
+  const structuredArtifact = decodeLoggedSessionEvent(logged(1, "tool_result", {
+    call_id: "call-1",
+    status: "ok",
+    error: false,
+    artifact_ref: { path: "artifact://tool-output", media_type: "text/plain" },
+  }))
+  assert.deepEqual(structuredArtifact.payload.artifactRef, {
+    path: "artifact://tool-output",
+    media_type: "text/plain",
+  })
   assert.equal(decodeLoggedSessionEvent(logged(1, "turn_start", {})).payload, decodeExactEmptyPayload({}))
   assert.throws(
     () => decodeLoggedSessionEvent(logged(1, "turn_start", { mode: "interactive" })),
@@ -388,6 +398,41 @@ test("create and attach use only canonical URLs; submit, cancel, and local close
   assert.equal(requests[5].method, "GET")
   assert.equal(requests.slice(4).every((request) => request.url === "https://breadboard.test/root/v1/sessions/session-2"), true)
 })
+test("permission decisions use the canonical session command endpoint and bind the receipt", async () => {
+  const requests = []
+  const responses = [
+    jsonResponse(await snapshot()),
+    jsonResponse({
+      status: "accepted",
+      detail: {
+        status: "ok",
+        request_id: "permission-1",
+        delivered: { permission_id: "permission-1", response: "allow" },
+      },
+    }, 202),
+  ]
+  const runtime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async (input, init = {}) => {
+      requests.push({ url: String(input), method: init.method, body: init.body })
+      const response = responses.shift()
+      assert.ok(response)
+      return response
+    },
+  }).attach({ sessionId: "session-1" })
+
+  assert.deepEqual(await runtime.respondPermission({ requestId: "permission-1", decision: "allow" }), {
+    requestId: "permission-1",
+    decision: "allow",
+  })
+  assert.equal(requests[1].url, "https://breadboard.test/v1/sessions/session-1/command")
+  assert.equal(requests[1].method, "POST")
+  assert.deepEqual(JSON.parse(requests[1].body), {
+    command: "respond_permission",
+    payload: { request_id: "permission-1", response: "allow" },
+  })
+})
+
 
 test("bounded JSON readers reject oversized and stalled success and error bodies", async () => {
   let createSignal

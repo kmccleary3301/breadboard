@@ -809,7 +809,6 @@ class SessionRunner:
                                 req()
                         except Exception:
                             pass
-                await self.publish_event_async(EventType.TASK_EVENT, {"kind": "stop_requested"})
                 return {"status": "ok", "stopping": True}
             case "set_model":
                 model_value = payload.get("model")
@@ -905,6 +904,7 @@ class SessionRunner:
                 queue = getattr(self, "_permission_queue", None)
                 if queue is None:
                     if self._debug_permissions_enabled():
+                        self._require_active_correlated_turn()
                         response_payload: Dict[str, Any] = {"request_id": request_id.strip()}
                         if isinstance(responses, dict):
                             response_payload["responses"] = dict(responses)
@@ -1226,6 +1226,7 @@ class SessionRunner:
                     continue
 
                 self._event_turn = turn
+                self._reset_tool_call_correlation()
                 task_text = turn.content
                 task_received_at = time.monotonic()
                 try:
@@ -1412,8 +1413,21 @@ class SessionRunner:
         except Exception:
             pass
         return bool(os.environ.get("BREADBOARD_DEBUG_PERMISSIONS"))
+    def _has_active_correlated_turn(self) -> bool:
+        turn = self._event_turn
+        return bool(
+            turn is not None
+            and turn.state == "active"
+            and self.session.active_turn_id == turn.turn_id
+        )
+
+    def _require_active_correlated_turn(self) -> None:
+        if not self._has_active_correlated_turn():
+            raise RuntimeError("debug permission command requires an active correlated turn")
+
 
     async def _emit_debug_permission_request(self, payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        self._require_active_correlated_turn()
         data = dict(payload or {})
         request_id = data.get("request_id") or f"debug-perm-{uuid.uuid4().hex[:8]}"
         suite = data.get("suite") if isinstance(data.get("suite"), str) else None
@@ -2161,6 +2175,28 @@ class SessionRunner:
             return {"latency_ms": int(elapsed_ms)}
         return {}
 
+    def _reset_tool_call_correlation(self) -> None:
+        self._e4_pending_tool_calls.clear()
+        self._e4_last_completed_tool_call = None
+
+    @staticmethod
+    def _tool_name_alias_key(tool_name: Optional[str]) -> Optional[str]:
+        if not isinstance(tool_name, str):
+            return None
+        normalized = tool_name.strip()
+        if not normalized:
+            return None
+        return normalized.removesuffix("_impl")
+
+    @classmethod
+    def _tool_names_match(cls, left: Optional[str], right: Optional[str]) -> bool:
+        if left == right:
+            return True
+        left_key = cls._tool_name_alias_key(left)
+        right_key = cls._tool_name_alias_key(right)
+        return left_key is not None and left_key == right_key
+
+
     def _normalize_tool_call_payload(
         self,
         payload: Dict[str, Any],
@@ -2227,8 +2263,11 @@ class SessionRunner:
             normalized.setdefault("result", content)
             normalized.setdefault("status", message.get("status") or ("error" if message.get("error") else "ok"))
             normalized.setdefault("error", bool(message.get("error")))
-        if "result" not in normalized and "content" in normalized:
-            normalized["result"] = normalized.get("content")
+        if "result" not in normalized:
+            if "content" in normalized:
+                normalized["result"] = normalized.get("content")
+            elif "output" in normalized:
+                normalized["result"] = normalized.get("output")
         tool_name = normalized.get("tool") or normalized.get("name") or (message.get("name") if isinstance(message, dict) else None)
         if isinstance(tool_name, str):
             tool_name = tool_name.strip() or None
@@ -2261,7 +2300,7 @@ class SessionRunner:
             and message.get("role") == "tool"
             and self._e4_last_completed_tool_call is not None
             and (call_id is None or call_id == self._e4_last_completed_tool_call[0])
-            and (tool_name is None or tool_name == self._e4_last_completed_tool_call[1])
+            and (tool_name is None or self._tool_names_match(tool_name, self._e4_last_completed_tool_call[1]))
         ):
             return None
         if pending is not None:
@@ -2446,7 +2485,12 @@ class SessionRunner:
         }
         evt = mapping.get(event_type)
         if not evt:
-            return None
+            return (
+                EventType.ERROR,
+                {"code": "unsupported_runtime_event_family"},
+                turn,
+                _default_runtime_event_contract("error"),
+            )
 
         normalized_payload: Dict[str, Any] = dict(payload or {})
         event_contract = _default_runtime_event_contract(event_type)

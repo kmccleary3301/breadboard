@@ -453,7 +453,11 @@ def test_session_runner_translates_runtime_events() -> None:
     assert turn == 3
     assert contract["visibility"] == "transcript"
 
-    assert runner._translate_runtime_event("unknown", {}, turn=None) is None
+    unsupported_translated = runner._translate_runtime_event("unknown", {"raw": "hidden"}, turn=None)
+    assert unsupported_translated is not None
+    assert unsupported_translated[0] is EventType.ERROR
+    assert unsupported_translated[1] == {"code": "unsupported_runtime_event_family"}
+    assert unsupported_translated[2] is None
 
     tool_call_translated = runner._translate_runtime_event(
         "tool_call",

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+
+import pytest
+
+from agentic_coder_prototype.api.cli_bridge.events import EventType
 from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus
 from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry
 from agentic_coder_prototype.api.cli_bridge.session_runner import SessionRunner
@@ -82,7 +86,19 @@ def test_tool_call_and_result_receive_one_correlated_id_when_provider_omits_it()
         {
             "message": {
                 "role": "tool",
-                "name": "list_dir_impl",
+                "name": "list_dir",
+                "content": '{"entries":[]}',
+            }
+        },
+        1,
+    )
+    translated_mismatch = runner._translate_runtime_event(
+        "tool_result",
+        {
+            "message": {
+                "role": "tool",
+                "name": "list_dir",
+                "tool_call_id": "different-call",
                 "content": '{"entries":[]}',
             }
         },
@@ -98,6 +114,8 @@ def test_tool_call_and_result_receive_one_correlated_id_when_provider_omits_it()
     assert call_payload["tool"] == "list_dir"
     assert result_payload["tool"] == "list_dir_impl"
     assert translated_duplicate is None
+    assert translated_mismatch is not None
+    assert translated_mismatch[1]["call_id"] == "different-call"
 
 
 def test_todo_event_does_not_consume_pending_tool_result_correlation() -> None:
@@ -177,3 +195,79 @@ def test_permission_and_subagent_events_expose_required_typed_fields() -> None:
     assert task_event[1]["task_id"] == "7"
     assert task_event[1]["parent_session_id"] == "sess-parent-42"
     assert task_event[1]["child_session_id"] == "sess-child-7"
+
+
+def test_tool_result_uses_common_output_as_canonical_result() -> None:
+    runner = _make_runner()
+
+    translated = runner._translate_runtime_event(
+        "tool_result",
+        {"tool": "list_dir", "output": {"entries": ["README.md"]}},
+        1,
+    )
+
+    assert translated is not None
+    assert translated[1]["result"] == {"entries": ["README.md"]}
+
+
+def test_tool_call_correlation_resets_between_admitted_turns() -> None:
+    runner = _make_runner()
+    runner._e4_pending_tool_calls.append(("old-call", "list_dir"))
+    runner._e4_last_completed_tool_call = ("old-call", "list_dir")
+
+    runner._reset_tool_call_correlation()
+
+    assert runner._e4_pending_tool_calls == []
+    assert runner._e4_last_completed_tool_call is None
+
+
+def test_unknown_runtime_event_becomes_safe_error_with_turn_correlation() -> None:
+    runner = _make_runner()
+
+    translated = runner._translate_runtime_event(
+        "provider.private_event",
+        {"secret": "must-not-leak"},
+        7,
+    )
+
+    assert translated is not None
+    assert translated[0] is EventType.ERROR
+    assert translated[1] == {"code": "unsupported_runtime_event_family"}
+    assert translated[2] == 7
+
+
+@pytest.mark.asyncio
+async def test_stop_command_does_not_emit_task_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = _make_runner()
+    emitted = []
+
+    async def capture(*args, **kwargs) -> None:
+        emitted.append((args, kwargs))
+
+    monkeypatch.setattr(runner, "publish_event_async", capture)
+
+    result = await runner.handle_command("stop")
+
+    assert result == {"status": "ok", "stopping": True}
+    assert emitted == []
+
+
+@pytest.mark.asyncio
+async def test_debug_permission_commands_require_active_correlated_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _make_runner()
+    runner.session.metadata["debug_permissions"] = True
+    emitted = []
+
+    async def capture(*args, **kwargs) -> None:
+        emitted.append((args, kwargs))
+
+    monkeypatch.setattr(runner, "publish_event_async", capture)
+
+    with pytest.raises(RuntimeError, match="active correlated turn"):
+        await runner.handle_command("run_tests", {})
+    with pytest.raises(RuntimeError, match="active correlated turn"):
+        await runner.handle_command("respond_permission", {"request_id": "debug-1", "response": "once"})
+
+    assert emitted == []
