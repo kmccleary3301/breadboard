@@ -52,23 +52,23 @@ let capturedAuthToken = process.env[AUTH_ENVIRONMENT_VARIABLE]
 delete process.env[AUTH_ENVIRONMENT_VARIABLE]
 const CHILD_ENVIRONMENT = { ...process.env }
 delete CHILD_ENVIRONMENT[AUTH_ENVIRONMENT_VARIABLE]
-const MANIFEST_COMMIT = "a8c952273a1191ab6ecd4e02d3ba47e00dc42f72"
+const MANIFEST_COMMIT = "cfbf887aeaa78acc9fb2b5e310e7cf22ff21c9ff"
 const CLIENT_BUILD_MANIFEST = Object.freeze({
   commit: MANIFEST_COMMIT,
   committed: Object.freeze({
-    "sdk/ts/package-lock.json": "sha256:529e9995457988ea5ed41ae380344469cb8082c5ca9e3dcd749df1a097c08e65",
+    "sdk/ts/package-lock.json": "sha256:829d1d2b57e99334a02df896d4545ad772783e6909c2f5ca2edc5d1d2829013d",
     "sdk/ts/src/client.ts": "sha256:5f2c19f53d1a5955756e0be6d0f82f4471c9101bc50c16007d191a6ab3878f9c",
-    "sdk/ts/src/index.ts": "sha256:74328b173ba8b70877b3a9230e58c445addfd5c8d207b7cb5d8d7ec0cebcf0b2",
-    "sdk/ts/src/lifecycle-client.ts": "sha256:98c5ed86053e7b22e4f70153a87021aeae82448f8a6d7a44f76270d32aee0344",
-    "sdk/ts/src/session-runtime.ts": "sha256:d5052fc47d4efa5919ed96859cc0ed1ea27be366c24d4b66e95be0223eea26d2",
+    "sdk/ts/src/index.ts": "sha256:66817164f89a6459a0c81563280b7b4db73b54674778dc79d8b3c440b749b105",
+    "sdk/ts/src/lifecycle-client.ts": "sha256:da6f35c721f72026a8f3e24a22a82fdd30fb84d1cce32f8d6bc998496415021b",
+    "sdk/ts/src/session-runtime.ts": "sha256:2cf846519aaf4b922c2dc6682e9ae3a51181969ab9dbc066e8f68cd9bb89defd",
     "sdk/ts/src/stream.ts": "sha256:9df24989851c314724aa852b204954b22f74457d8bd90b715991bf37fc9895de",
     "sdk/ts/tsconfig.json": "sha256:4ee84c7653016c88591787fb45ebe0faf73629d10973e181ed05922c02005bae",
   }),
   loaded: Object.freeze({
     "dist/client.js": "sha256:371d0a6076f6dfea5a888987f94f230a6f606382fbe8b8648a4143e0de82d4bc",
-    "dist/index.js": "sha256:873a227ad7e5d6fa7137687f2fdbab9e5e8510b59aeac71798639f0e2d287958",
-    "dist/lifecycle-client.js": "sha256:3d3c5a04a16895de79a9bdeb901a2d71efed5051d13f17440484e5bcf73f8b74",
-    "dist/session-runtime.js": "sha256:5ac08de8bdd9e38501afa32de73a8953d30ed2e6629b8fad62cbfb22fc9743d2",
+    "dist/index.js": "sha256:cefaf3d0154b3338fb416848b94e27d2c837cb245a8b892099ab49e0d09dee21",
+    "dist/lifecycle-client.js": "sha256:b59cd08e40d40a3b4bc14dfc2ef8d92bc9255ea54d48d44819719dca00f0de8a",
+    "dist/session-runtime.js": "sha256:47ac8c12964825eed316847d572b0a89e8497a6c985b296e51b497e13dba9c61",
     "dist/stream.js": "sha256:d4f82e6dd1c79cd7d631fc536998c501927759f5fee9b7ce05a40b61924eb18d",
     "node_modules/eventsource-parser/dist/index.js": "sha256:2b3e0c02c00ed19165cb125f2ad7f502695a73851a2f2a9ba4d3b2a1ef527047",
     "node_modules/eventsource-parser/package.json": "sha256:ef5b0bb8909234bd3f1879c86d71b4b119b6a82bd27858fdbd434cf265d276ed",
