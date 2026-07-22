@@ -13,7 +13,7 @@ from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
 from agentic_coder_prototype.logging.provider_dump import provider_dump_logger
-from agentic_coder_prototype.provider.runtime import ProviderMessage, ProviderResult, ProviderRuntimeError, ProviderToolCall, normalized_provider_usage
+from agentic_coder_prototype.provider.runtime import ProviderMessage, ProviderResult, ProviderRuntimeContext, ProviderRuntimeError, ProviderToolCall, normalized_provider_usage
 from agentic_coder_prototype.provider.routing import ProviderDescriptor
 from breadboard.product.evidence import (
     BreadBoardWorkspace,
@@ -412,6 +412,22 @@ class _ContextInspectingProvider(_Provider):
         capability = kwargs["context"].extra.get("host")
         if capability is not None:
             capability.execute()
+        return super().invoke(**kwargs)
+
+
+class _ProviderMetadataInspectingProvider(_Provider):
+    def invoke(self, **kwargs: Any) -> ProviderResult:
+        session_state = kwargs["context"].session_state
+        expected = {
+            "anthropic_rate_limits": {"tokens_remaining": 17},
+            "conversation_id": "conversation-fixture",
+            "current_turn_index": 3,
+            "previous_response_id": "response-fixture",
+        }
+        if {name: session_state.get_provider_metadata(name) for name in expected} != expected:
+            raise RuntimeError("provider replay metadata was not preserved")
+        if session_state.get_provider_metadata("control_queue") is not None:
+            raise RuntimeError("runtime-only provider metadata escaped into replay")
         return super().invoke(**kwargs)
 
 
@@ -1434,6 +1450,24 @@ def test_normalized_usage_preserves_large_integer_cost_exactly() -> None:
     usage = normalized_provider_usage(ProviderResult([ProviderMessage("assistant", "done")], None, {"cost_amount": value}, metadata={}))
     assert usage["cost_amount"] == value
     assert type(usage["cost_amount"]) is int
+
+
+def test_real_session_provider_context_excludes_runtime_only_metadata(tmp_path: Path) -> None:
+    from agentic_coder_prototype.state.session_state import SessionState
+    session_state = SessionState(str(tmp_path), "fixture")
+    session_state.set_provider_metadata("anthropic_rate_limits", {"tokens_remaining": 17})
+    session_state.set_provider_metadata("conversation_id", "conversation-fixture")
+    session_state.set_provider_metadata("current_turn_index", 3)
+    session_state.set_provider_metadata("previous_response_id", "response-fixture")
+    session_state.set_provider_metadata("control_queue", object())
+    context = ProviderRuntimeContext(session_state=session_state, agent_config={}, extra={})
+    _, _, result = _run(
+        tmp_path / "workspace",
+        sequence=("done",),
+        provider_instance=_ProviderMetadataInspectingProvider(("done",)),
+        provider_context=context,
+    )
+    assert result.execution.as_dict()["terminal_status"] == "completed"
 
 
 def test_provider_context_strips_execution_capabilities(tmp_path: Path) -> None:
