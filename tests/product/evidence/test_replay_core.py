@@ -221,6 +221,27 @@ class _SubprocessHost(_Host):
         return {"exit_code": completed.returncode, "error": completed.stderr.decode("utf-8", "replace"), "command": command}
 
 
+class _OutsideReadingSubprocessHost(_Host):
+    def __init__(self, outside: Path) -> None:
+        super().__init__()
+        self.outside = outside
+
+    def execute(self, command: str, **kwargs: Any) -> dict[str, Any]:
+        import subprocess
+        completed = subprocess.run(
+            ["/bin/cat", str(self.outside)],
+            cwd=kwargs["cwd"],
+            check=False,
+            capture_output=True,
+        )
+        return {
+            "exit_code": completed.returncode,
+            "output": completed.stdout.decode("utf-8", "replace"),
+            "error": completed.stderr.decode("utf-8", "replace"),
+            "command": command,
+        }
+
+
 
 
 
@@ -1287,6 +1308,25 @@ def test_host_worker_supports_attested_subprocess_execution(tmp_path: Path) -> N
     after_entry = next(row for row in result.manifest.as_dict()["entries"] if row["role"] == "workspace_after")
     after = json.loads(ArtifactStore(workspace.path(".breadboard/artifacts")).read(ArtifactRef(after_entry["sha256"], after_entry["size_bytes"], after_entry["media_type"])))
     assert "host-subprocess.txt" in {row["path"] for row in after["files"]}
+
+
+def test_host_subprocess_cannot_read_outside_replay_workspace(tmp_path: Path) -> None:
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text("OUTSIDE_REPLAY_SECRET", encoding="utf-8")
+    workspace, _, result = _run(
+        tmp_path / "workspace-root",
+        sequence=("host", "done"),
+        host_instance=_OutsideReadingSubprocessHost(outside),
+    )
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+    entry = next(row for row in result.manifest.as_dict()["entries"] if row["role"] == "tool_outcome")
+    payload = ArtifactStore(workspace.path(".breadboard/artifacts")).read(
+        ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])
+    )
+    outcome = json.loads(payload)
+    assert outcome["result"]["exit_code"] != 0
+    assert outcome["result"]["output"] == ""
+    assert b"OUTSIDE_REPLAY_SECRET" not in payload
 
 
 def test_allowlisted_environment_is_provider_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -200,8 +200,6 @@ def _enforce_worker_sandbox(workspace: str, *, allow_network: bool, allow_proces
         "/dev/urandom",
     ]
     verify_paths = ssl.get_default_verify_paths()
-    if allow_process:
-        candidates.append("/")
     candidates.extend((verify_paths.cafile, verify_paths.capath))
     candidates.extend(path for path in sys.path if isinstance(path, str) and path)
     read_roots = tuple(sorted({
@@ -215,14 +213,14 @@ def _enforce_worker_sandbox(workspace: str, *, allow_network: bool, allow_proces
         error = ctypes.c_char_p()
         library.sandbox_init.argtypes = [ctypes.c_char_p, ctypes.c_uint64, ctypes.POINTER(ctypes.c_char_p)]
         library.sandbox_init.restype = ctypes.c_int
-        readable = " ".join(f"(subpath {json.dumps(path)})" for path in read_roots)
+        readable = "(literal \"/\") " + " ".join(f"(subpath {json.dumps(path)})" for path in read_roots)
         profile = (
             "(version 1)(allow default)"
             + ("" if allow_process else "(deny process-fork)")
             + ("" if allow_network else "(deny network*)")
             + ("" if allow_write else "(deny file-write* (require-not (literal " + json.dumps(os.devnull) + ")))")
             + (f"(deny file-write* (require-not (require-any (subpath {json.dumps(containment_root)}) (literal {json.dumps(os.devnull)}))))" if allow_write else "")
-            + ("" if allow_process else f"(deny file-read-data (require-not (require-any {readable})))")
+            + f"(deny file-read-data (require-not (require-any {readable})))"
         )
         if library.sandbox_init(profile.encode("utf-8"), 0, ctypes.byref(error)) != 0:
             raise ReplayRunError("could not enforce the replay worker sandbox")
