@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 
 import pytest
 
@@ -295,3 +296,48 @@ async def test_debug_permission_commands_require_active_correlated_turn(
         await runner.handle_command("respond_permission", {"request_id": "debug-1", "response": "once"})
 
     assert emitted == []
+
+
+@pytest.mark.asyncio
+async def test_debug_permission_response_is_exact_and_consumed_only_after_publish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _make_runner()
+    runner.session.metadata["debug_permissions"] = True
+    runner.session.active_turn_id = "turn-active"
+    runner._event_turn = SimpleNamespace(state="active", turn_id="turn-active")
+    emitted = []
+
+    async def capture(*args, **kwargs) -> None:
+        emitted.append((args, kwargs))
+
+    monkeypatch.setattr(runner, "publish_event_async", capture)
+    created = await runner.handle_command("run_tests", {"request_id": "debug-exact"})
+    assert created["request_id"] == "debug-exact"
+    assert runner._has_pending_permission("debug-exact", source="session")
+
+    with pytest.raises(RuntimeError, match="unknown permission request"):
+        await runner.handle_command(
+            "respond_permission",
+            {"request_id": "debug-wrong", "response": "allow"},
+        )
+    assert runner._has_pending_permission("debug-exact", source="session")
+
+    async def fail_publish(*args, **kwargs) -> None:
+        raise RuntimeError("synthetic publish failure")
+
+    monkeypatch.setattr(runner, "publish_event_async", fail_publish)
+    with pytest.raises(RuntimeError, match="synthetic publish failure"):
+        await runner.handle_command(
+            "respond_permission",
+            {"request_id": "debug-exact", "response": "allow"},
+        )
+    assert runner._has_pending_permission("debug-exact", source="session")
+
+    monkeypatch.setattr(runner, "publish_event_async", capture)
+    delivered = await runner.handle_command(
+        "respond_permission",
+        {"request_id": "debug-exact", "response": "allow"},
+    )
+    assert delivered["request_id"] == "debug-exact"
+    assert not runner._has_pending_permission("debug-exact", source="session")

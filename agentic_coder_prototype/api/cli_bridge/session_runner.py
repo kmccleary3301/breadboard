@@ -924,14 +924,16 @@ class SessionRunner:
                 if queue is None:
                     if self._debug_permissions_enabled():
                         self._require_active_correlated_turn()
+                        if not self._has_pending_permission(request_id.strip(), source="session"):
+                            raise RuntimeError(f"unknown permission request: {request_id.strip()}")
                         response_payload: Dict[str, Any] = {"request_id": request_id.strip()}
                         if isinstance(responses, dict):
                             response_payload["responses"] = dict(responses)
                         elif isinstance(response, str) and response.strip():
                             response_payload["response"] = response.strip()
                             response_payload["decision"] = response.strip()
-                        self._update_pending_permissions("permission_response", response_payload, source="session")
                         await self.publish_event_async(EventType.PERMISSION_RESPONSE, response_payload)
+                        self._update_pending_permissions("permission_response", response_payload, source="session")
                         return {"status": "ok", "request_id": request_id.strip(), "delivered": response_payload, "debug": True}
                     raise RuntimeError("no permission request is active")
 
@@ -1464,8 +1466,8 @@ class SessionRunner:
                 "kind": "run",
             },
         }
-        self._update_pending_permissions("permission_request", event_payload, source="session")
         await self.publish_event_async(EventType.PERMISSION_REQUEST, event_payload)
+        self._update_pending_permissions("permission_request", event_payload, source="session")
         return event_payload
 
     def _pending_permission_key(self, entry: Dict[str, Any]) -> tuple[str, str, str]:
@@ -1473,6 +1475,22 @@ class SessionRunner:
         task_id = str(entry.get("task_session_id") or "")
         req_id = str(entry.get("request_id") or entry.get("id") or "")
         return source, task_id, req_id
+
+    def _has_pending_permission(
+        self,
+        request_id: str,
+        *,
+        source: str,
+        task_session_id: Optional[str] = None,
+    ) -> bool:
+        pending = self.session.metadata.get("pending_permissions")
+        if not isinstance(pending, list):
+            return False
+        expected = (source, task_session_id or "", request_id)
+        return any(
+            isinstance(entry, dict) and self._pending_permission_key(entry) == expected
+            for entry in pending
+        )
 
     def _infer_permission_category(self, request_id: str) -> Optional[str]:
         pending = self.session.metadata.get("pending_permissions")
