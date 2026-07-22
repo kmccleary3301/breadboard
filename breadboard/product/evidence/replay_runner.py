@@ -2133,9 +2133,14 @@ def run_replay(
                     response_ref: ArtifactRef | None = None
                     try:
                         total_remaining = max(1, deadlines["total"] - _duration_ms(overall_start, call_start))
-                        call_limit = min(deadlines["provider_call"], total_remaining)
-                        timeout_code = "replay.total_timeout" if total_remaining <= deadlines["provider_call"] else "replay.provider_timeout"
-                        timeout_detail = "replay exceeded its total deadline" if timeout_code == "replay.total_timeout" else "provider call exceeded its deadline"
+                        idle_remaining = max(1, deadlines["idle"] - _duration_ms(last_activity, call_start))
+                        call_limit = min(deadlines["provider_call"], total_remaining, idle_remaining)
+                        if idle_remaining == call_limit:
+                            timeout_code, timeout_detail = "replay.idle_timeout", "provider call exceeded the idle deadline"
+                        elif total_remaining == call_limit:
+                            timeout_code, timeout_detail = "replay.total_timeout", "replay exceeded its total deadline"
+                        else:
+                            timeout_code, timeout_detail = "replay.provider_timeout", "provider call exceeded its deadline"
                         raw_result = provider_worker.invoke({"messages": provider_messages, "tools": provider_tools}, timeout_ms=call_limit, timeout_code=timeout_code, timeout_detail=timeout_detail, cancelled=cancelled, cancellation_grace_ms=plan_record["cancellation_grace_ms"])
                         result = _validate_replay_provider_result(raw_result, request_id)
                         evidence = provider_result_evidence(result); usage = normalized_provider_usage(result); response_ref = put("provider_response", evidence, None, "secret_redacted")
@@ -2248,9 +2253,14 @@ def run_replay(
                         if _duration_ms(last_activity, tool_start) > deadlines["idle"]:
                             raise _RuntimeFailure("timed_out", "replay.idle_timeout", "replay exceeded its idle deadline")
                         total_remaining = max(1, deadlines["total"] - _duration_ms(overall_start, tool_start))
-                        call_limit = min(deadlines["tool_call"], total_remaining)
-                        timeout_code = "replay.total_timeout" if total_remaining <= deadlines["tool_call"] else "replay.tool_timeout"
-                        timeout_detail = "replay exceeded its total deadline" if timeout_code == "replay.total_timeout" else "tool call exceeded its deadline"
+                        idle_remaining = max(1, deadlines["idle"] - _duration_ms(last_activity, tool_start))
+                        call_limit = min(deadlines["tool_call"], total_remaining, idle_remaining)
+                        if idle_remaining == call_limit:
+                            timeout_code, timeout_detail = "replay.idle_timeout", "tool call exceeded the idle deadline"
+                        elif total_remaining == call_limit:
+                            timeout_code, timeout_detail = "replay.total_timeout", "replay exceeded its total deadline"
+                        else:
+                            timeout_code, timeout_detail = "replay.tool_timeout", "tool call exceeded its deadline"
                         try:
                             if call.name == "host.execute":
                                 command = arguments.get("command")

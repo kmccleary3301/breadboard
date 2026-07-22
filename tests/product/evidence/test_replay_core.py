@@ -903,6 +903,14 @@ def test_hung_external_calls_are_terminated_at_deadline(tmp_path: Path, sequence
     assert record["terminal_status"] == "timed_out"
     assert record["problem"]["error_code"] == error_code
 
+@pytest.mark.parametrize(("sequence", "tool_hang"), [(("hang",), False), (("add",), True)])
+def test_idle_deadline_caps_hung_provider_and_tool_calls(tmp_path: Path, sequence, tool_hang) -> None:
+    deadlines = {"total": 2_000, "idle": 20, "provider_call": 100, "tool_call": 100}
+    _, _, result = _run(tmp_path, sequence=sequence, tool_hang=tool_hang, deadlines=deadlines)
+    record = result.execution.as_dict()
+    assert record["terminal_status"] == "timed_out"
+    assert record["problem"]["error_code"] == "replay.idle_timeout"
+
 
 def test_tool_budget_counts_each_dispatch(tmp_path: Path) -> None:
     budgets = {"turns": 5, "provider_calls": 5, "tool_calls": 1, "tokens": 100, "cost": 1}
