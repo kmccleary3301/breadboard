@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+import importlib
 import datetime
 import enum
 import functools
@@ -303,6 +305,7 @@ class _Provider:
         elif action == "add_without_id": message = ProviderMessage("assistant", None, [ProviderToolCall(None, "add", json.dumps({"a": 2, "b": 3}))], "tool_calls")
         elif action == "two_adds": message = ProviderMessage("assistant", None, [ProviderToolCall("call-add-1", "add", '{"a":1,"b":2}'), ProviderToolCall("call-add-2", "add", '{"a":3,"b":4}')], "tool_calls")
         elif action == "nan_args": message = ProviderMessage("assistant", None, [ProviderToolCall("call-nan", "add", '{"a":NaN,"b":2}')], "tool_calls")
+        elif action == "lazy": message = ProviderMessage("assistant", None, [ProviderToolCall("call-lazy", "lazy", "{}")], "tool_calls")
         elif action == "host":
             host_names = [tool["function"]["name"] for tool in kwargs["tools"] if tool["function"]["name"].startswith("host_execute")]
             if len(host_names) != 1 or "." in host_names[0]:
@@ -1325,6 +1328,39 @@ def test_worker_os_sandbox_denies_tool_network_egress(tmp_path: Path) -> None:
     record = result.execution.as_dict()
     assert record["terminal_status"] == "tool_failed"
     assert record["problem"]["error_code"] == "replay.tool_failed"
+
+
+def test_worker_supports_lazy_sibling_package_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package_parent = tmp_path / "capabilities"
+    package = package_parent / "lazy_capability_fixture"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "helper.py").write_text("def result():\n    return {'lazy_imported': True}\n", encoding="utf-8")
+    (package / "tool.py").write_text(
+        "class LazyTool:\n"
+        "    def execute(self, _arguments):\n"
+        "        from .helper import result\n"
+        "        return result()\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(package_parent))
+    module = importlib.import_module("lazy_capability_fixture.tool")
+    try:
+        tool_schemas = ({"type": "function", "function": {"name": "lazy", "parameters": {"type": "object"}}},)
+        _, _, result = _run(
+            tmp_path / "workspace",
+            sequence=("lazy", "done"),
+            tool_schemas=tool_schemas,
+            tool_instances={"lazy": module.LazyTool()},
+        )
+    finally:
+        sys.modules.pop("lazy_capability_fixture.helper", None)
+        sys.modules.pop("lazy_capability_fixture.tool", None)
+        sys.modules.pop("lazy_capability_fixture", None)
+    record = result.execution.as_dict()
+    assert record["terminal_status"] == "completed"
+
+
 
 
 def test_worker_stdio_cannot_bypass_evidence_redaction(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:

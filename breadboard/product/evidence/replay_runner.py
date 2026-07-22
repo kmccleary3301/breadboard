@@ -579,11 +579,69 @@ def _path_is_within(path: str, roots: Sequence[str]) -> bool:
     return False
 
 
+def _add_package_module_allowlist(
+    module_name: str,
+    runtime_roots: Sequence[str],
+    paths: set[str],
+    exact_specs: set[tuple[str, str, tuple[str, ...]]],
+) -> None:
+    package_name = module_name
+    package_locations: tuple[str, ...] = ()
+    while package_name:
+        module = sys.modules.get(package_name)
+        spec = getattr(module, "__spec__", None)
+        if spec is None:
+            try:
+                spec = importlib.util.find_spec(package_name)
+            except (AttributeError, ImportError, ValueError):
+                spec = None
+        package_locations = tuple(
+            os.path.abspath(location)
+            for location in (() if spec is None or spec.submodule_search_locations is None else spec.submodule_search_locations)
+            if isinstance(location, str) and not _path_is_within(location, runtime_roots)
+        )
+        if package_locations:
+            break
+        package_name = package_name.rpartition(".")[0]
+    if not package_locations:
+        return
+    import_suffixes = tuple(sorted((".py", ".pyc", *importlib.machinery.EXTENSION_SUFFIXES), key=len, reverse=True))
+    for package_location in package_locations:
+        package_root = Path(package_location)
+        for candidate in package_root.rglob("*"):
+            if candidate.is_symlink() or not candidate.is_file():
+                continue
+            relative = candidate.relative_to(package_root)
+            filename = relative.name
+            suffix = next((item for item in import_suffixes if filename.endswith(item)), None)
+            if suffix is None or "__pycache__" in relative.parts:
+                continue
+            stem = filename[:-len(suffix)]
+            if stem == "__init__":
+                components = relative.parts[:-1]
+                discovered_name = ".".join((package_name, *components))
+                search_locations = (os.path.abspath(candidate.parent),)
+            else:
+                components = (*relative.parts[:-1], stem)
+                discovered_name = ".".join((package_name, *components))
+                search_locations = ()
+            location = os.path.abspath(candidate)
+            exact_specs.add((discovered_name, location, search_locations))
+            paths.update((location, os.path.realpath(location)))
+            if suffix == ".py":
+                cached = importlib.util.cache_from_source(location)
+                if os.path.isfile(cached):
+                    paths.update((os.path.abspath(cached), os.path.realpath(cached)))
+
+
+
+
 def _executor_module_allowlist(
     payload: bytes,
 ) -> tuple[tuple[str, ...], tuple[tuple[str, str, tuple[str, ...]], ...]]:
     envelope = json.loads(payload)
     modules: set[str] = set(sys.modules)
+    payload_modules: set[str] = set()
     pending = [envelope]
     while pending:
         value = pending.pop()
@@ -592,6 +650,7 @@ def _executor_module_allowlist(
             qualname = value.get("qualname")
             if isinstance(module, str) and isinstance(qualname, str):
                 modules.add(module)
+                payload_modules.add(module)
             pending.extend(value.values())
         elif isinstance(value, list):
             pending.extend(value)
@@ -644,6 +703,8 @@ def _executor_module_allowlist(
         for candidate in candidates:
             if os.path.isfile(candidate):
                 paths.update((os.path.abspath(candidate), os.path.realpath(candidate)))
+    for module_name in payload_modules:
+        _add_package_module_allowlist(module_name, runtime_roots, paths, exact_specs)
     return tuple(sorted(paths)), tuple(sorted(exact_specs))
 
 
