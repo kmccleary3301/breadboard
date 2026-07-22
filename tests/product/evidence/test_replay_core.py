@@ -1310,11 +1310,17 @@ def test_host_worker_supports_attested_subprocess_execution(tmp_path: Path) -> N
     assert "host-subprocess.txt" in {row["path"] for row in after["files"]}
 
 
-def test_host_subprocess_cannot_read_outside_replay_workspace(tmp_path: Path) -> None:
-    outside = tmp_path / "outside-secret.txt"
+def test_host_subprocess_cannot_read_outside_replay_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_checkout = tmp_path / "source-checkout"
+    source_checkout.mkdir()
+    outside = source_checkout / "outside-secret.txt"
     outside.write_text("OUTSIDE_REPLAY_SECRET", encoding="utf-8")
+    monkeypatch.syspath_prepend(source_checkout)
     workspace, _, result = _run(
-        tmp_path / "workspace-root",
+        source_checkout,
         sequence=("host", "done"),
         host_instance=_OutsideReadingSubprocessHost(outside),
     )

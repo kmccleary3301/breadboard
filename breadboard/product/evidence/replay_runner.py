@@ -171,7 +171,14 @@ def _close_inherited_descriptors(keep: set[int]) -> None:
             continue
 
 
-def _enforce_worker_sandbox(workspace: str, *, allow_network: bool, allow_process: bool, allow_write: bool) -> None:
+def _enforce_worker_sandbox(
+    workspace: str,
+    *,
+    allow_network: bool,
+    allow_process: bool,
+    allow_write: bool,
+    module_read_paths: Sequence[str] = (),
+) -> None:
     import ctypes
     import ctypes.util
     import errno
@@ -201,19 +208,36 @@ def _enforce_worker_sandbox(workspace: str, *, allow_network: bool, allow_proces
     ]
     verify_paths = ssl.get_default_verify_paths()
     candidates.extend((verify_paths.cafile, verify_paths.capath))
-    candidates.extend(path for path in sys.path if isinstance(path, str) and path)
+    candidates.extend(path for path in module_read_paths if os.path.isdir(path))
     read_roots = tuple(sorted({
         resolved
         for path in candidates
         if path and os.path.exists(path)
         for resolved in (os.path.abspath(path), os.path.realpath(path))
     }))
+    module_files = tuple(sorted({
+        resolved
+        for path in module_read_paths
+        if os.path.isfile(path)
+        for resolved in (os.path.abspath(path), os.path.realpath(path))
+    }))
+    module_directories = tuple(sorted({
+        str(parent)
+        for path in module_files
+        for parent in Path(path).parents
+        if str(parent) != os.path.sep
+    }))
     if sys.platform == "darwin":
         library = ctypes.CDLL("/usr/lib/libsandbox.dylib")
         error = ctypes.c_char_p()
         library.sandbox_init.argtypes = [ctypes.c_char_p, ctypes.c_uint64, ctypes.POINTER(ctypes.c_char_p)]
         library.sandbox_init.restype = ctypes.c_int
-        readable = "(literal \"/\") " + " ".join(f"(subpath {json.dumps(path)})" for path in read_roots)
+        readable = (
+            "(literal \"/\") "
+            + " ".join(f"(subpath {json.dumps(path)})" for path in read_roots)
+            + " "
+            + " ".join(f"(literal {json.dumps(path)})" for path in (*module_directories, *module_files))
+        )
         profile = (
             "(version 1)(allow default)"
             + ("" if allow_process else "(deny process-fork)")
@@ -282,6 +306,18 @@ def _enforce_worker_sandbox(workspace: str, *, allow_network: bool, allow_proces
             raise ReplayRunError(f"could not create replay filesystem ruleset: {os.strerror(ctypes.get_errno())}")
         opened: list[int] = []
         try:
+            for path in module_directories:
+                path_fd = os.open(path, getattr(os, "O_PATH", os.O_RDONLY) | getattr(os, "O_CLOEXEC", 0))
+                opened.append(path_fd)
+                path_rule = _PathBeneathAttr(read_dir, path_fd)
+                if libc.syscall(445, ruleset_fd, 1, ctypes.byref(path_rule), 0) < 0:
+                    raise ReplayRunError(f"could not configure replay module search boundary: {os.strerror(ctypes.get_errno())}")
+            for path in module_files:
+                path_fd = os.open(path, getattr(os, "O_PATH", os.O_RDONLY) | getattr(os, "O_CLOEXEC", 0))
+                opened.append(path_fd)
+                path_rule = _PathBeneathAttr(read_file, path_fd)
+                if libc.syscall(445, ruleset_fd, 1, ctypes.byref(path_rule), 0) < 0:
+                    raise ReplayRunError(f"could not configure replay module file boundary: {os.strerror(ctypes.get_errno())}")
             for path in read_roots:
                 path_fd = os.open(path, getattr(os, "O_PATH", os.O_RDONLY) | getattr(os, "O_CLOEXEC", 0))
                 opened.append(path_fd)
@@ -459,6 +495,61 @@ def _tool_executor_envelope(executor: Any, capability_kind: str) -> bytes:
     })
 
 
+def _executor_module_read_paths(payload: bytes) -> tuple[str, ...]:
+    envelope = json.loads(payload)
+    modules: set[str] = set(sys.modules)
+    pending = [envelope]
+    while pending:
+        value = pending.pop()
+        if isinstance(value, dict):
+            module = value.get("module")
+            qualname = value.get("qualname")
+            if isinstance(module, str) and isinstance(qualname, str):
+                modules.add(module)
+            pending.extend(value.values())
+        elif isinstance(value, list):
+            pending.extend(value)
+    runtime_roots = tuple(
+        os.path.realpath(path)
+        for path in (
+            sys.base_prefix,
+            sys.prefix,
+            "/System/Library",
+            "/Library/Apple",
+            "/usr/lib",
+            "/usr/lib64",
+            "/lib",
+            "/lib64",
+        )
+        if os.path.isdir(path)
+    )
+    paths: set[str] = set(runtime_roots)
+    for module_name in modules:
+        module = sys.modules.get(module_name)
+        location = getattr(module, "__file__", None)
+        if not isinstance(location, str):
+            try:
+                spec = importlib.util.find_spec(module_name)
+            except (ImportError, ValueError):
+                spec = None
+            location = None if spec is None else spec.origin
+        if not isinstance(location, str) or location in {"built-in", "frozen"}:
+            continue
+        resolved_location = os.path.realpath(location)
+        if any(
+            os.path.commonpath((resolved_location, root)) == root
+            for root in runtime_roots
+        ):
+            continue
+        candidates = [location]
+        if location.endswith(".py"):
+            candidates.append(importlib.util.cache_from_source(location))
+        for candidate in candidates:
+            if os.path.isfile(candidate):
+                paths.update((os.path.abspath(candidate), os.path.realpath(candidate)))
+    return tuple(sorted(paths))
+
+
 def _restore_tool_state(value: Any) -> Any:
     if not isinstance(value, dict) or not any(type(name) is str and name.startswith("$") for name in value):
         return value
@@ -499,7 +590,14 @@ def _restore_tool_state(value: Any) -> Any:
             object.__setattr__(restored, name, _restore_tool_state(item))
         return restored
     raise ReplayRunError("isolated capability executor state envelope is invalid")
-def _exec_tool_worker_bootstrap(command_fd: int, result_fd: int, payload_fd: int, workspace_descriptor: int, capability_kind: str) -> None:
+def _exec_tool_worker_bootstrap(
+    command_fd: int,
+    result_fd: int,
+    payload_fd: int,
+    workspace_descriptor: int,
+    capability_kind: str,
+    module_read_paths: Sequence[str],
+) -> None:
     from multiprocessing.connection import Connection
     command_recv = Connection(command_fd, readable=True, writable=False)
     result_send = Connection(result_fd, readable=False, writable=True)
@@ -507,7 +605,13 @@ def _exec_tool_worker_bootstrap(command_fd: int, result_fd: int, payload_fd: int
     os.environ.clear()
     _close_inherited_descriptors({command_fd, result_fd, payload_fd, workspace_descriptor})
     workspace = str(_staging_descriptor_path(workspace_descriptor))
-    _enforce_worker_sandbox(workspace, allow_network=capability_kind in {"host", "provider"}, allow_process=capability_kind == "host", allow_write=capability_kind in {"host", "tool"})
+    _enforce_worker_sandbox(
+        workspace,
+        allow_network=capability_kind in {"host", "provider"},
+        allow_process=capability_kind == "host",
+        allow_write=capability_kind in {"host", "tool"},
+        module_read_paths=module_read_paths,
+    )
     os.fchdir(workspace_descriptor)
     payload = bytearray()
     while True:
@@ -603,6 +707,7 @@ class _ExecToolWorker:
         from multiprocessing.connection import Connection
         self._capability_kind = capability_kind
         payload = _tool_executor_envelope(executor, capability_kind)
+        module_read_paths = _executor_module_read_paths(payload)
         command_read, command_write = os.pipe()
         result_read, result_write = os.pipe()
         payload_read, payload_write = os.pipe()
@@ -613,7 +718,7 @@ class _ExecToolWorker:
         environment = {"PATH": os.defpath, "PYTHONPATH": os.pathsep.join(dict.fromkeys(module_paths))}
         bootstrap = (
             "from breadboard.product.evidence.replay_runner import _exec_tool_worker_bootstrap as b;"
-            f"b({command_read},{result_write},{payload_read},{workspace_descriptor},{capability_kind!r})"
+            f"b({command_read},{result_write},{payload_read},{workspace_descriptor},{capability_kind!r},{module_read_paths!r})"
         )
         try:
             self._process = subprocess.Popen(
