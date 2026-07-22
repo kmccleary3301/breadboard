@@ -1346,7 +1346,7 @@ def _identity_value(value: Any, seen: frozenset[int] = frozenset()) -> Any:
     if isinstance(value, (list, tuple, set, frozenset)):
         rows = [_identity_value(item, next_seen) for item in value]
         return sorted(rows, key=canonical_json) if isinstance(value, (set, frozenset)) else rows
-    transient = {"calls", "_calls", "polls", "_polls", "messages_seen", "tools_seen", "_client_identities"}
+    transient = {"calls", "_calls", "polls", "_polls", "messages_seen", "tools_seen", "_client_identities", "_client_replay_specs"}
     state = _plain_object_state(value)
     if state:
         return {

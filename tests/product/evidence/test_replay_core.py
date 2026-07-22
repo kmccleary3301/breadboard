@@ -14,6 +14,7 @@ from referencing import Registry, Resource
 
 from agentic_coder_prototype.logging.provider_dump import provider_dump_logger
 from agentic_coder_prototype.provider.runtime import ProviderMessage, ProviderResult, ProviderRuntimeError, ProviderToolCall, normalized_provider_usage
+from agentic_coder_prototype.provider.routing import ProviderDescriptor
 from breadboard.product.evidence import (
     BreadBoardWorkspace,
     ReplayExecution,
@@ -35,6 +36,7 @@ from breadboard.product.harness.compile import compile_harness_definition
 from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
 from breadboard.product.integrations.tool import ToolIntegrationAdapter
 from breadboard.product.integrations.host import SandboxHostAdapter
+from breadboard.product.integrations.provider import ProviderRuntimeAdapter
 
 ROOT = Path(__file__).resolve().parents[3]
 HASH = "sha256:" + "1" * 64
@@ -813,6 +815,28 @@ def test_runtime_rejects_route_and_toolset_drift(tmp_path: Path) -> None:
     assert record["terminal_status"] == "policy_denied"
     assert record["problem"]["error_code"] == "replay.undeclared_tool"
     assert {row["kind"]: row["decision"] for row in record["policy_decisions"]}["capability"] == "denied"
+
+
+def test_provider_route_identity_excludes_transient_replay_client_specs() -> None:
+    descriptor = ProviderDescriptor("fixture", "fixture_runtime", "chat", True, False, False, False, "openai", None, "FIXTURE_KEY", {})
+
+    class Runtime:
+        def create_client(self, api_key: str, *, base_url: str | None = None, default_headers: dict[str, str] | None = None) -> Any:
+            return types.SimpleNamespace(api_key=api_key, base_url=base_url, default_headers=default_headers or {})
+
+        def invoke(self, **kwargs: Any) -> ProviderResult:
+            raise AssertionError("not used")
+
+    adapter = ProviderRuntimeAdapter(Runtime(), descriptor)
+    active_client = adapter.create_client("ACTIVE_SECRET", base_url="https://active.invalid")
+    active_identity = _provider_client_binding(adapter, active_client, {"FIXTURE_KEY": "ACTIVE_SECRET"})
+    before = _provider_route_binding("fixture", "fixture_runtime", "chat", "fixture-model", None, "1.0", adapter, active_identity)
+    adapter.create_client("UNRELATED_SECRET", base_url="https://unrelated.invalid")
+    after = _provider_route_binding("fixture", "fixture_runtime", "chat", "fixture-model", None, "1.0", adapter, active_identity)
+    assert after == before
+    encoded = json.dumps(after, sort_keys=True)
+    assert "ACTIVE_SECRET" not in encoded
+    assert "UNRELATED_SECRET" not in encoded
 
 
 def test_provider_cost_currency_cannot_change_mid_replay(tmp_path: Path) -> None:
