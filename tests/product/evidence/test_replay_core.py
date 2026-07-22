@@ -474,8 +474,9 @@ class _CallableConfiguredTool:
         return {"value": self.value}
 
 
-class _ScalarMode(enum.Enum):
-    ENABLED = "enabled"
+class _ScalarMode(enum.Flag):
+    READ = 1
+    WRITE = 2
 
 
 class _ScalarConfiguredTool:
@@ -487,7 +488,7 @@ class _ScalarConfiguredTool:
         self.duration = datetime.timedelta(days=2, seconds=3, microseconds=4)
         self.zone = datetime.timezone(datetime.timedelta(hours=5, minutes=30), "IST")
         self.run_id = uuid.UUID("12345678-1234-5678-1234-567812345678")
-        self.mode = _ScalarMode.ENABLED
+        self.mode = _ScalarMode.READ | _ScalarMode.WRITE
 
     def execute(self, _arguments: Mapping[str, Any]) -> dict[str, Any]:
         return {
@@ -700,7 +701,7 @@ def test_capability_worker_round_trips_scalar_value_configuration(tmp_path: Path
     assert outcome["result"] == {
         "duration": [2, 3, 4],
         "fold": 1,
-        "mode": "enabled",
+        "mode": 3,
         "ratio": "0.700",
         "run_id": "12345678-1234-5678-1234-567812345678",
         "started_at": "2026-07-22T12:34:56.000789-04:00",

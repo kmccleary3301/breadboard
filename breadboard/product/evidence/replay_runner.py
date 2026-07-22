@@ -14,6 +14,7 @@ import os
 import platform
 import re
 import signal
+import socket
 import stat
 import subprocess
 import time
@@ -424,6 +425,8 @@ def _fixed_timezone_state(value: datetime.tzinfo | None) -> dict[str, Any] | Non
 
 
 def _scalar_state(value: Any) -> dict[str, Any] | None:
+    if type(value) is socket.socket:
+        return {"$closed_socket": True}
     if type(value) is object:
         return {"$object_sentinel": True}
     if type(value) is Decimal:
@@ -452,9 +455,12 @@ def _scalar_state(value: Any) -> dict[str, Any] | None:
         value_type = type(value)
         if "<locals>" in value_type.__qualname__:
             raise ReplayRunError("capability enum types must be importable in an isolated process")
-        if value.name is None:
-            raise ReplayRunError(f"unnamed enum value {value_type.__module__}.{value_type.__qualname__} cannot be encoded losslessly")
-        return {"$enum": {"module": value_type.__module__, "qualname": value_type.__qualname__, "name": value.name}}
+        common = {"module": value_type.__module__, "qualname": value_type.__qualname__}
+        if isinstance(value.name, str) and value_type.__members__.get(value.name) is value:
+            return {"$enum": {**common, "name": value.name}}
+        if isinstance(value, enum.Flag) and type(value.value) is int:
+            return {"$enum": {**common, "value": value.value}}
+        raise ReplayRunError(f"enum value {value_type.__module__}.{value_type.__qualname__} cannot be encoded losslessly")
     return None
 
 
@@ -671,6 +677,8 @@ def _restore_tool_state(value: Any) -> Any:
         return Path(value["$path"])
     if set(value) == {"$bytes"}:
         return bytes.fromhex(value["$bytes"])
+    if set(value) == {"$closed_socket"} and value["$closed_socket"] is True:
+        return socket.socket.__new__(socket.socket)
     if set(value) == {"$object_sentinel"} and value["$object_sentinel"] is True:
         return object()
     if set(value) == {"$decimal"}:
@@ -697,7 +705,11 @@ def _restore_tool_state(value: Any) -> Any:
         enum_type: Any = importlib.import_module(envelope["module"])
         for component in envelope["qualname"].split("."):
             enum_type = getattr(enum_type, component)
-        return enum_type[envelope["name"]]
+        if set(envelope) == {"module", "qualname", "name"}:
+            return enum_type[envelope["name"]]
+        if set(envelope) == {"module", "qualname", "value"} and issubclass(enum_type, enum.Flag) and type(envelope["value"]) is int:
+            return enum_type(envelope["value"])
+        raise ReplayRunError("isolated capability enum state envelope is invalid")
     if set(value) == {"$mapping"}:
         return {name: _restore_tool_state(item) for name, item in value["$mapping"].items()}
     if set(value) == {"$sequence", "$tuple"}:
