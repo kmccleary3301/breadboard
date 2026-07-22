@@ -52,7 +52,7 @@ let capturedAuthToken = process.env[AUTH_ENVIRONMENT_VARIABLE]
 delete process.env[AUTH_ENVIRONMENT_VARIABLE]
 const CHILD_ENVIRONMENT = { ...process.env }
 delete CHILD_ENVIRONMENT[AUTH_ENVIRONMENT_VARIABLE]
-const MANIFEST_COMMIT = "cfbf887aeaa78acc9fb2b5e310e7cf22ff21c9ff"
+const MANIFEST_COMMIT = "802ecd539d42223384439f228e71cf30432fe117"
 const CLIENT_BUILD_MANIFEST = Object.freeze({
   commit: MANIFEST_COMMIT,
   committed: Object.freeze({
