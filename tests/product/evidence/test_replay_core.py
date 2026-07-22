@@ -295,7 +295,7 @@ class _Provider:
         if action == "provider_error": raise RuntimeError("provider failed with SECRET")
         if action == "provider_secret_error": raise RuntimeError("Authorization: Bearer UNLISTED")
         if action == "hang": time.sleep(1)
-        if action == "add": message = ProviderMessage("assistant", None, [ProviderToolCall("call-add", "add", json.dumps({"a": 2, "b": 3}))], "tool_calls")
+        if action in {"add", "add_eur"}: message = ProviderMessage("assistant", None, [ProviderToolCall("call-add", "add", json.dumps({"a": 2, "b": 3}))], "tool_calls")
         elif action == "add_without_id": message = ProviderMessage("assistant", None, [ProviderToolCall(None, "add", json.dumps({"a": 2, "b": 3}))], "tool_calls")
         elif action == "two_adds": message = ProviderMessage("assistant", None, [ProviderToolCall("call-add-1", "add", '{"a":1,"b":2}'), ProviderToolCall("call-add-2", "add", '{"a":3,"b":4}')], "tool_calls")
         elif action == "nan_args": message = ProviderMessage("assistant", None, [ProviderToolCall("call-nan", "add", '{"a":NaN,"b":2}')], "tool_calls")
@@ -313,7 +313,7 @@ class _Provider:
             message = ProviderMessage("assistant", "resolved", [], "stop")
         else: message = ProviderMessage("assistant", "done", [], "stop", annotations={"opaque": object()} if action == "opaque" else {})
         usage = {"input_tokens": 100, "output_tokens": 100, "total_tokens": 1} if action == "malformed_usage" else {"input_tokens": 1, "output_tokens": 1}
-        metadata = {"cost_currency": "EUR"} if action == "eur" else ({"Authorization": "Bearer UNLISTED", "Cookie": "sid=UNLISTED", "apiKey": "UNLISTED", "accessToken": "UNLISTED", "privateKey": "UNLISTED", "access_key": "UNLISTED", "session_id": "UNLISTED", "bearer": "UNLISTED"} if action == "credential_fields" else {"api_key": "SECRET"})
+        metadata = {"cost_currency": "EUR"} if action in {"eur", "add_eur"} else ({"Authorization": "Bearer UNLISTED", "Cookie": "sid=UNLISTED", "apiKey": "UNLISTED", "accessToken": "UNLISTED", "privateKey": "UNLISTED", "access_key": "UNLISTED", "session_id": "UNLISTED", "bearer": "UNLISTED"} if action == "credential_fields" else {"api_key": "SECRET"})
         return ProviderResult([message], {"raw": "must not be persisted"}, usage, model="fixture-model", metadata=metadata)
 
 
@@ -929,6 +929,13 @@ def test_provider_cost_currency_cannot_change_mid_replay(tmp_path: Path) -> None
     record = result.execution.as_dict()
     assert record["terminal_status"] == "provider_failed"
     assert record["problem"]["error_code"] == "replay.cost_currency_mismatch"
+def test_failed_provider_turn_preserves_failure_after_non_usd_usage(tmp_path: Path) -> None:
+    _, _, result = _run(tmp_path, sequence=("add_eur", "provider_error"))
+    record = result.execution.as_dict()
+    assert record["terminal_status"] == "provider_failed"
+    assert record["problem"]["error_code"] == "replay.provider_failed"
+
+
 
 
 def test_usage_normalization_is_conservative_and_rejects_invalid_counts() -> None:

@@ -2077,7 +2077,6 @@ def run_replay(
                     evidence_validators["exchange"].validate(exchange)
                     exchange_ref = put("provider_exchange", exchange, "bb.provider_exchange.v2", "secret_redacted")
                     provider_rows.append({"ref": exchange_ref.digest, "sha256": exchange_ref.digest, "request_id": request_id, "attempt_id": attempt_id, "normalized_usage": usage, "status": exchange_status})
-                    usage_budget_exceeded = usage_accountant.add(usage)
                     if exchange_status != "completed":
                         if exchange_status == "cancelled":
                             if prepared_calls:
@@ -2089,6 +2088,7 @@ def run_replay(
                         if exchange_status == "invalid_response":
                             raise _RuntimeFailure("provider_failed", "replay.invalid_provider_response", "provider returned invalid tool arguments")
                         raise _RuntimeFailure("provider_failed", "replay.provider_failed", "provider invocation failed")
+                    usage_budget_exceeded = usage_accountant.add(usage)
                     session_state = getattr(provider_context, "session_state", None)
                     metadata_setter = getattr(session_state, "set_provider_metadata", None)
                     if callable(metadata_setter):
