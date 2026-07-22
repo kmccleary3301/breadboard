@@ -2238,7 +2238,7 @@ test("untrusted stream codes are redacted and never echo provider bodies", { con
 
 test("closed per-kind projection and event string budget reject arbitrary or oversized payloads", { concurrency: false }, async (context) => {
   for (const [name, options, expectedCode] of [
-    ["arbitrary", { unsafeTurnPayload: { unsafe: "PAYLOAD_CANARY_89N14" } }, "unexpected_event_payload_keys"],
+    ["arbitrary", { unsafeTurnPayload: { unsafe: "PAYLOAD_CANARY_89N14" } }, "invalid_exact_empty_payload"],
     ["oversized", { oversizedAssistant: true }, "event_text_too_large"],
   ]) {
     await context.test(name, async () => {

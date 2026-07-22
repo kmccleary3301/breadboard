@@ -87,6 +87,7 @@ const SAFE_DIAGNOSTIC_CODES = new Set([
   "resume_window_exceeded",
   "sequence_discontinuity",
   "duplicate_terminal_transition",
+  "invalid_exact_empty_payload",
   "stream_truncated_before_open_head",
   "cursor_outside_advertised_replay",
   "backend_git_common_dir_mismatch",
