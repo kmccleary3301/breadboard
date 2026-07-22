@@ -1774,6 +1774,7 @@ def run_replay(
         fresh_workspace_metadata = os.fstat(fresh_workspace_descriptor)
         fresh_workspace_identity = (fresh_workspace_metadata.st_dev, fresh_workspace_metadata.st_ino)
         fresh_workspace = _staging_descriptor_path(fresh_workspace_descriptor)
+        before = _snapshot(fresh_workspace, fresh_workspace_identity, fresh_workspace_descriptor)
         session_name = "session.events.jsonl"
         session = Session.start(harness_lock, scenario.task, session_id=execution_id, clock=active_clock, sink=_AnchoredJsonlEventSink(stage_descriptor, session_name))
         store, artifact_descriptors = _anchored_artifact_store(workspace); created: set[ArtifactRef] = set(); artifacts: list[tuple[str, ArtifactRef, str | None, str]] = []
@@ -1824,6 +1825,7 @@ def run_replay(
                     raise ReplayPlanError("resolved secrets do not match the frozen secret references")
                 tool_argument_validators = _tool_argument_validators(scenario.tool_schemas)
                 usage_accountant = _UsageAccountant.from_budgets(plan_record["budgets"])
+                before_ref = put("workspace_before", before, None)
                 provider_worker = None
                 host_worker = None
                 policy_worker = None
@@ -1833,7 +1835,6 @@ def run_replay(
                 policy_worker = _ExecToolWorker(_policy_capability(authorize), fresh_workspace_descriptor, capability_kind="policy")
                 for name in sorted(tools):
                     tool_workers[name] = _ExecToolWorker(tools[name], fresh_workspace_descriptor)
-                before = _snapshot(fresh_workspace, fresh_workspace_identity, fresh_workspace_descriptor); before_ref = put("workspace_before", before, None)
                 budgets, deadlines = plan_record["budgets"], plan_record["deadlines_ms"]
                 last_activity = overall_start
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -30,6 +31,7 @@ _PROVIDER_EXCHANGE_FIELDS = {
     "started_at_utc", "completed_at_utc", "duration_ms", "status", "request_payload_sha256",
     "response_payload_sha256", "finish_reason", "usage", "evidence_refs", "fallback_used", "problem",
 }
+_REMOTE_OBJECT_REF = re.compile(r"(?![Ff][Ii][Ll][Ee]://)[A-Za-z][A-Za-z0-9+.-]*://[^/\s\\]+/[^\s\\]+")
 
 
 class ReplayExecutionError(ValueError):
@@ -239,8 +241,10 @@ def _validate_manifest(value: Mapping[str, Any]) -> dict[str, Any]:
             raise ReplayExecutionError(f"entries[{index}] metadata is invalid")
         if not isinstance(row.get("producer"), str) or not row["producer"] or not isinstance(row.get("role"), str) or not row["role"] or row.get("schema_id") is not None and (not isinstance(row["schema_id"], str) or not row["schema_id"]):
             raise ReplayExecutionError(f"entries[{index}] ownership is invalid")
-        if row["location_kind"] == "object_ref" and row["location"] != row["sha256"]:
-            raise ReplayExecutionError("CAS object_ref locations must equal the content digest")
+        if row["location_kind"] == "object_ref":
+            location = row["location"]
+            if location != row["sha256"] and _REMOTE_OBJECT_REF.fullmatch(location) is None:
+                raise ReplayExecutionError("object_ref locations must be a content digest or remote object URI")
         if row["location_kind"] == "workspace_relative_path":
             location = row["location"]
             portable = PurePosixPath(location)

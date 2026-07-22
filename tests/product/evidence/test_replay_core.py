@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import functools
 import types
@@ -27,7 +28,7 @@ from breadboard.product.evidence import (
     build_replay_plan,
     run_replay,
 )
-from breadboard.product.evidence.replay_plan import HASH_BINDING_NAMES
+from breadboard.product.evidence.replay_plan import HASH_BINDING_NAMES, canonical_json
 from breadboard.product.evidence.replay_execution import _validate_usage
 import breadboard.product.evidence.replay_runner as replay_runner_module
 from breadboard.product.evidence.replay_runner import _callable_identity, _environment_binding, _host_containment_identity, _host_platform_binding, _provider_client_binding, _provider_route_binding, _redact, _replay_schema_registry, _runtime_type_identity
@@ -572,6 +573,47 @@ def test_deterministic_multiturn_replay_completes_with_full_redacted_artifact_gr
     _validator("bb.provider_exchange.v2.schema.json").validate(exchange)
 
 
+def test_workspace_baseline_precedes_capability_worker_startup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+    import sys
+
+    module_root = tmp_path / "executor_module"
+    module_root.mkdir()
+    (module_root / "bootstrap_mutating_tool.py").write_text(
+        "from pathlib import Path\n"
+        "if Path.cwd().name == 'workspace':\n"
+        "    Path('bootstrap-write.txt').write_text('startup mutation', encoding='utf-8')\n"
+        "class BootstrapMutatingTool:\n"
+        "    def execute(self, arguments):\n"
+        "        return {'unused': True}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(module_root))
+    importlib.invalidate_caches()
+    module = importlib.import_module("bootstrap_mutating_tool")
+    try:
+        tool_schemas = ({"type": "function", "function": {"name": "bootstrap", "parameters": {"type": "object"}}},)
+        workspace, _, result = _run(
+            tmp_path / "workspace-root",
+            sequence=("done",),
+            tool_schemas=tool_schemas,
+            tool_instances={"bootstrap": module.BootstrapMutatingTool()},
+        )
+    finally:
+        sys.modules.pop("bootstrap_mutating_tool", None)
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+    entries = result.manifest.as_dict()["entries"]
+    store = ArtifactStore(workspace.path(".breadboard/artifacts"))
+
+    def snapshot(role: str) -> dict[str, Any]:
+        entry = next(row for row in entries if row["role"] == role)
+        ref = ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])
+        return json.loads(store.read(ref))
+
+    assert [row["path"] for row in snapshot("workspace_before")["files"]] == ["input.txt"]
+    assert [row["path"] for row in snapshot("workspace_after")["files"]] == ["bootstrap-write.txt", "input.txt"]
+
+
 def test_replay_executes_tool_integration_adapter_in_its_capability_worker(tmp_path: Path) -> None:
     adapter = ToolIntegrationAdapter("add", _AddTool())
     workspace, _, result = _run(tmp_path, sequence=("add", "done"), tool_instances={"add": adapter})
@@ -988,6 +1030,17 @@ def test_manifest_paths_and_content_address_are_revalidated(tmp_path: Path) -> N
     noncanonical["entries"][0]["location"] = "a//b"
     with pytest.raises(ReplayExecutionError, match="canonical"):
         ReplayArtifactManifest.from_dict(noncanonical)
+
+
+def test_manifest_accepts_schema_valid_remote_object_reference(tmp_path: Path) -> None:
+    _, _, result = _run(tmp_path, sequence=("done",))
+    remote = result.manifest.as_dict()
+    remote["entries"][0]["location"] = "s3://breadboard-evidence/replays/execution.json"
+    unsigned = dict(remote)
+    unsigned.pop("manifest_id")
+    remote["manifest_id"] = "replay_manifest:" + hashlib.sha256(canonical_json(unsigned)).hexdigest()
+    _validator("bb.replay_artifact_manifest.v1.schema.json").validate(remote)
+    assert ReplayArtifactManifest.from_dict(remote).as_dict() == remote
 
 
 def test_plan_mutation_invalidates_identity_and_execution_reuse(tmp_path: Path) -> None:
