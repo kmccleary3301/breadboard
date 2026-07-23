@@ -2221,11 +2221,14 @@ def run_replay(
                         raise _RuntimeFailure("budget_exhausted", "replay.provider_budget", "replay exhausted its provider or turn budget")
                     provider_calls += 1; request_id = f"{execution_id}:request:{provider_calls}"; attempt_id = f"{request_id}:attempt:1"
                     provider_messages = _provider_wire_messages(messages, reverse_tool_aliases)
-                    request = {"model": provider_model, "messages": provider_messages, "tools": provider_tools, "stream": False, "context": _provider_context_request_payload(isolated_provider_context)}; request_ref = put("provider_request", request, None, "secret_redacted")
+                    request = {"model": provider_model, "messages": provider_messages, "tools": provider_tools, "stream": False, "context": _provider_context_request_payload(isolated_provider_context)}
+                    request_payload_sha256 = sha256_json(request)
+                    request_ref = put("provider_request", request, None, "secret_redacted")
                     call_start, call_started = monotonic(), active_clock.now()
                     usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_amount": 0, "cost_currency": "USD"}
                     prepared_calls: list[tuple[ProviderToolCall, dict[str, Any]]] = []
                     response_ref: ArtifactRef | None = None
+                    response_payload_sha256: str | None = None
                     try:
                         total_remaining = max(1, deadlines["total"] - _duration_ms(overall_start, call_start))
                         idle_remaining = max(1, deadlines["idle"] - _duration_ms(last_activity, call_start))
@@ -2238,7 +2241,10 @@ def run_replay(
                             timeout_code, timeout_detail = "replay.provider_timeout", "provider call exceeded its deadline"
                         raw_result = provider_worker.invoke({"messages": provider_messages, "tools": provider_tools}, timeout_ms=call_limit, timeout_code=timeout_code, timeout_detail=timeout_detail, cancelled=cancelled, cancellation_grace_ms=plan_record["cancellation_grace_ms"])
                         result = _validate_replay_provider_result(raw_result, request_id)
-                        evidence = provider_result_evidence(result); usage = normalized_provider_usage(result); response_ref = put("provider_response", evidence, None, "secret_redacted")
+                        evidence = provider_result_evidence(result)
+                        response_payload_sha256 = sha256_json(evidence)
+                        usage = normalized_provider_usage(result)
+                        response_ref = put("provider_response", evidence, None, "secret_redacted")
                         prepared_calls = []
                         for message in result.messages:
                             for call in message.tool_calls:
@@ -2274,8 +2280,8 @@ def run_replay(
                         "attempt_id": attempt_id, "request_id": request_id, "route_lock_sha256": plan_record["hash_bindings"]["provider_route_lock_sha256"],
                         "provider_family": provider_id, "runtime_id": runtime_id, "runtime_version": runtime_version, "endpoint_class": endpoint_class,
                         "model_id": provider_model, "model_revision": model_revision, "started_at_utc": call_started, "completed_at_utc": active_clock.now(),
-                        "duration_ms": call_duration, "status": exchange_status, "request_payload_sha256": request_ref.digest,
-                        "response_payload_sha256": response_ref.digest if exchange_status == "completed" else None, "finish_reason": finish_reason,
+                        "duration_ms": call_duration, "status": exchange_status, "request_payload_sha256": request_payload_sha256,
+                        "response_payload_sha256": response_payload_sha256 if exchange_status == "completed" else None, "finish_reason": finish_reason,
                         "usage": usage, "evidence_refs": [response_ref.digest], "fallback_used": False, "problem": exchange_problem,
                     }
                     exchange = validate_provider_exchange(exchange)

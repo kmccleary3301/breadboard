@@ -1251,6 +1251,23 @@ def test_initial_workspace_paths_must_be_canonical() -> None:
         ReplayScenario("task", ({"role": "user", "content": "go"},), {}, (None,))  # type: ignore[arg-type]
 
 
+def test_provider_exchange_hashes_bind_unredacted_payloads(tmp_path: Path) -> None:
+    workspace, _, result = _run(tmp_path, sequence=("add", "done"))
+    store = ArtifactStore(workspace.path(".breadboard/artifacts"))
+    entries = result.manifest.as_dict()["entries"]
+    request_entries = [entry for entry in entries if entry["role"] == "provider_request"]
+    response_entries = [entry for entry in entries if entry["role"] == "provider_response"]
+    exchange_entries = [entry for entry in entries if entry["role"] == "provider_exchange"]
+
+    exchanges = [
+        json.loads(store.read(ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])))
+        for entry in exchange_entries
+    ]
+    assert len(exchanges) == len(request_entries) == len(response_entries) == 2
+    assert all(exchange["request_payload_sha256"] != entry["sha256"] for exchange, entry in zip(exchanges, request_entries, strict=True))
+    assert all(exchange["response_payload_sha256"] != entry["sha256"] for exchange, entry in zip(exchanges, response_entries, strict=True))
+
+
 def test_authorization_and_cookie_fields_are_always_redacted(tmp_path: Path) -> None:
     workspace, _, result = _run(tmp_path, sequence=("credential_fields",))
     store = ArtifactStore(workspace.path(".breadboard/artifacts"))
