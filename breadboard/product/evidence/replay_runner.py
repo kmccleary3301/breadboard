@@ -249,7 +249,7 @@ def _enforce_worker_sandbox(
         )
         profile = (
             "(version 1)(allow default)"
-            + ("" if allow_process else "(deny process-fork)")
+            + ("" if allow_process else "(deny process-fork)(deny process-exec)")
             + ("" if allow_network else "(deny network*)")
             + ("" if allow_write else "(deny file-write* (require-not (literal " + json.dumps(os.devnull) + ")))")
             + (f"(deny file-write* (require-not (require-any (subpath {json.dumps(containment_root)}) (literal {json.dumps(os.devnull)}))))" if allow_write else "")
@@ -277,7 +277,7 @@ def _enforce_worker_sandbox(
             raise ReplayRunError("could not initialize replay process containment")
         try:
             deny = 0x00050000 | errno.EPERM
-            denied_syscalls = [] if allow_process else [b"fork", b"vfork", b"clone", b"clone3"]
+            denied_syscalls = [] if allow_process else [b"fork", b"vfork", b"clone", b"clone3", b"execve", b"execveat"]
             if not allow_network:
                 denied_syscalls.extend((b"socket", b"socketpair", b"connect", b"bind", b"listen", b"accept", b"accept4", b"sendto", b"sendmsg", b"recvfrom", b"recvmsg", b"shutdown", b"getsockopt", b"setsockopt", b"getpeername", b"getsockname"))
             for syscall_name in denied_syscalls:
@@ -453,8 +453,8 @@ def _scalar_state(value: Any) -> dict[str, Any] | None:
         return {"$uuid": {"hex": value.hex, "is_safe": value.is_safe.name}}
     if isinstance(value, enum.Enum):
         value_type = type(value)
-        if "<locals>" in value_type.__qualname__:
-            raise ReplayRunError("capability enum types must be importable in an isolated process")
+        if value_type.__module__ in {"__main__", "__mp_main__"} or "<locals>" in value_type.__qualname__:
+            raise ReplayRunError("capability enum types must be importable outside the entry-point module")
         common = {"module": value_type.__module__, "qualname": value_type.__qualname__}
         if isinstance(value.name, str) and value_type.__members__.get(value.name) is value:
             return {"$enum": {**common, "name": value.name}}
@@ -499,8 +499,8 @@ def _tool_state_value(value: Any, capability_kind: str, seen: frozenset[int] = f
         }}
     if allow_callable and inspect.isbuiltin(value):
         module, qualname = getattr(value, "__module__", None), getattr(value, "__qualname__", None)
-        if not isinstance(module, str) or not isinstance(qualname, str):
-            raise ReplayRunError("built-in capability callables must expose an importable identity")
+        if not isinstance(module, str) or not isinstance(qualname, str) or module in {"__main__", "__mp_main__"}:
+            raise ReplayRunError("built-in capability callables must expose an importable identity outside the entry-point module")
         return {"$callable": {"module": module, "qualname": qualname}}
     if type(value) is dict:
         if any(type(name) is not str for name in value):
@@ -514,12 +514,12 @@ def _tool_state_value(value: Any, capability_kind: str, seen: frozenset[int] = f
     if inspect.isfunction(value):
         if capability_kind != "policy" and not allow_callable:
             raise ReplayRunError(f"{capability_kind} capability state contains a forbidden policy callable")
-        if "<locals>" in value.__qualname__ or "<lambda>" in value.__qualname__:
-            raise ReplayRunError("capability callables must be importable in an isolated process")
+        if value.__module__ in {"__main__", "__mp_main__"} or "<locals>" in value.__qualname__ or "<lambda>" in value.__qualname__:
+            raise ReplayRunError("capability callables must be importable outside the entry-point module")
         return {"$callable": {"module": value.__module__, "qualname": value.__qualname__}}
     value_type = type(value)
-    if "<locals>" in value_type.__qualname__:
-        raise ReplayRunError("capability state types must be importable in an isolated process")
+    if value_type.__module__ in {"__main__", "__mp_main__"} or "<locals>" in value_type.__qualname__:
+        raise ReplayRunError("capability state types must be importable outside the entry-point module")
     state = _plain_object_state(value)
     if value_type.__new__ is not object.__new__:
         raise ReplayRunError(f"capability value type {value_type.__module__}.{value_type.__qualname__} cannot be encoded losslessly")
@@ -554,13 +554,13 @@ def _plain_object_state(value: Any) -> dict[str, Any]:
 
 def _tool_executor_envelope(executor: Any, capability_kind: str) -> bytes:
     if inspect.isfunction(executor):
-        if "<locals>" in executor.__qualname__ or "<lambda>" in executor.__qualname__:
-            raise ReplayRunError("capability callables must be importable in an isolated process")
+        if executor.__module__ in {"__main__", "__mp_main__"} or "<locals>" in executor.__qualname__ or "<lambda>" in executor.__qualname__:
+            raise ReplayRunError("capability callables must be importable outside the entry-point module")
         return canonical_json({"kind": "symbol", "module": executor.__module__, "qualname": executor.__qualname__})
     executor_type = type(executor)
     qualname = executor_type.__qualname__
-    if "<locals>" in qualname:
-        raise ReplayRunError("capability executor types must be importable in an isolated process")
+    if executor_type.__module__ in {"__main__", "__mp_main__"} or "<locals>" in qualname:
+        raise ReplayRunError("capability executor types must be importable outside the entry-point module")
     callable_tool_adapter = capability_kind == "tool" and executor_type.__module__ == "breadboard.product.integrations.tool" and qualname == "ToolIntegrationAdapter"
     return canonical_json({
         "kind": "object",
@@ -1707,6 +1707,8 @@ def _identity_value(value: Any, seen: frozenset[int] = frozenset()) -> Any:
 def _runtime_type_identity(value: Any, seen: frozenset[int] = frozenset()) -> dict[str, Any]:
     if inspect.isfunction(value):
         symbol = f"{value.__module__}.{value.__qualname__}"
+        if value.__module__ in {"__main__", "__mp_main__"}:
+            raise ReplayRunError("runtime implementations must be importable outside the entry-point module")
         try:
             source = inspect.getsource(value).encode("utf-8")
         except (OSError, TypeError) as exc:
@@ -1727,6 +1729,8 @@ def _runtime_type_identity(value: Any, seen: frozenset[int] = frozenset()) -> di
         }
     runtime_type = type(value)
     symbol = f"{runtime_type.__module__}.{runtime_type.__qualname__}"
+    if runtime_type.__module__ in {"__main__", "__mp_main__"}:
+        raise ReplayRunError("runtime implementation types must be importable outside the entry-point module")
     try:
         source = inspect.getsource(runtime_type).encode("utf-8")
     except (OSError, TypeError) as exc:
@@ -1788,6 +1792,8 @@ def _callable_identity(value: Callable[..., Any]) -> dict[str, Any]:
     qualname = getattr(value, "__qualname__", None)
     if not isinstance(module, str) or not module or not isinstance(qualname, str) or not qualname:
         raise ReplayRunError("policy gate does not expose a stable callable identity")
+    if module in {"__main__", "__mp_main__"}:
+        raise ReplayRunError("policy callables must be importable outside the entry-point module")
     symbol = f"{module}.{qualname}"
     try:
         source = inspect.getsource(value).encode("utf-8")
