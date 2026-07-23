@@ -1843,6 +1843,14 @@ def test_provider_metadata_is_not_applied_when_exchange_times_out(tmp_path: Path
 
 
 
+def test_provider_metadata_is_not_applied_when_later_tool_fails(tmp_path: Path) -> None:
+    marker = tmp_path / "provider-metadata.json"
+    context = types.SimpleNamespace(session_state=_MetadataSink(marker))
+    _, _, result = _run(tmp_path / "workspace", sequence=("add",), provider_context=context, tool_fail=True)
+    assert result.execution.as_dict()["terminal_status"] == "tool_failed"
+    assert not marker.exists()
+
+
 def test_provider_metadata_is_applied_after_result_validation(tmp_path: Path) -> None:
     marker = tmp_path / "provider-metadata.json"
     context = types.SimpleNamespace(session_state=_MetadataSink(marker))

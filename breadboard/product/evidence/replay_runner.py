@@ -2143,7 +2143,7 @@ def run_replay(
         session_name = "session.events.jsonl"
         session = Session.start(harness_lock, scenario.task, session_id=execution_id, clock=active_clock, sink=_AnchoredJsonlEventSink(stage_descriptor, session_name))
         store, artifact_descriptors = _anchored_artifact_store(workspace); created: set[ArtifactRef] = set(); artifacts: list[tuple[str, ArtifactRef, str | None, str]] = []
-        provider_rows: list[dict[str, Any]] = []; tool_rows: list[dict[str, str]] = []
+        provider_rows: list[dict[str, Any]] = []; tool_rows: list[dict[str, str]] = []; pending_provider_metadata: dict[str, Any] = {}
         messages = [dict(row) for row in (*scenario.initial_messages, *scenario.interaction_script)]
         redaction_count, terminal_status, completion_reason, failure = [0], "completed", "provider completed without tool calls", None
         policy_state = {"capability": "allowed", "policy": "allowed", "approval": "not_required"}; provider_calls = tool_calls = 0
@@ -2300,12 +2300,10 @@ def run_replay(
                             raise _RuntimeFailure("provider_failed", "replay.invalid_provider_response", "provider returned invalid tool arguments")
                         raise _RuntimeFailure("provider_failed", "replay.provider_failed", "provider invocation failed")
                     usage_budget_exceeded = usage_accountant.add(usage)
-                    for active_context in (provider_context, isolated_provider_context):
-                        session_state = getattr(active_context, "session_state", None)
-                        metadata_setter = getattr(session_state, "set_provider_metadata", None)
-                        if callable(metadata_setter):
-                            for metadata_name, metadata_value in evidence["metadata"].items():
-                                metadata_setter(metadata_name, metadata_value)
+                    pending_provider_metadata.update(evidence["metadata"])
+                    session_state = isolated_provider_context.session_state
+                    for metadata_name, metadata_value in evidence["metadata"].items():
+                        session_state.set_provider_metadata(metadata_name, metadata_value)
                     if usage_budget_exceeded:
                         raise _RuntimeFailure("budget_exhausted", "replay.usage_budget", "replay exceeded its token or cost budget")
                     session.input(f"provider turn {provider_calls}", attachments=(response_ref,)); messages.extend(_assistant_messages(result, reverse_tool_aliases))
@@ -2532,6 +2530,11 @@ def run_replay(
             final_stat = os.stat(final_name, dir_fd=replay_parent_descriptor, follow_symlinks=False)
             if (final_stat.st_dev, final_stat.st_ino) != stage_identity:
                 raise ReplayRunError("published replay identity does not match the staging inode")
+            if terminal_status == "completed" and integrity_verified:
+                metadata_setter = getattr(getattr(provider_context, "session_state", None), "set_provider_metadata", None)
+                if callable(metadata_setter):
+                    for metadata_name, metadata_value in pending_provider_metadata.items():
+                        metadata_setter(metadata_name, metadata_value)
             published_final = _staging_descriptor_path(replay_parent_descriptor) / final_name
             _close_descriptors(artifact_descriptors)
             os.close(stage_descriptor)
