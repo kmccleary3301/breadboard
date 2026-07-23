@@ -410,6 +410,13 @@ def _state_capability_kind(value: Any) -> str | None:
             return "host"
         return "tool"
     return None
+def _host_network_access(host: Any) -> bool:
+    descriptor = getattr(host, "descriptor", None)
+    capabilities = getattr(descriptor, "capabilities", ())
+    effects = getattr(descriptor, "effects", ())
+    return "network" in capabilities or "network" in effects
+
+
 
 
 def _fixed_timezone_state(value: datetime.tzinfo | None) -> dict[str, Any] | None:
@@ -812,6 +819,7 @@ def _exec_tool_worker_bootstrap(
     payload_fd: int,
     workspace_descriptor: int,
     capability_kind: str,
+    allow_network: bool,
     module_read_paths: Sequence[str],
     module_specs: Sequence[tuple[str, str, tuple[str, ...]]],
 ) -> None:
@@ -824,7 +832,7 @@ def _exec_tool_worker_bootstrap(
     workspace = str(_staging_descriptor_path(workspace_descriptor))
     _enforce_worker_sandbox(
         workspace,
-        allow_network=capability_kind in {"host", "provider"},
+        allow_network=allow_network,
         allow_process=capability_kind == "host",
         allow_workspace_read=capability_kind in {"host", "tool"},
         allow_write=capability_kind in {"host", "tool"},
@@ -937,6 +945,7 @@ class _ExecToolWorker:
         from multiprocessing.connection import Connection
         self._capability_kind = capability_kind
         payload = _tool_executor_envelope(executor, capability_kind)
+        allow_network = capability_kind == "provider" or capability_kind == "host" and _host_network_access(executor)
         module_read_paths, module_specs = _executor_module_allowlist(payload)
         command_read, command_write = os.pipe()
         result_read, result_write = os.pipe()
@@ -948,7 +957,7 @@ class _ExecToolWorker:
         environment = {"PATH": os.defpath, "PYTHONPATH": os.pathsep.join(dict.fromkeys(module_paths))}
         bootstrap = (
             "from breadboard.product.evidence.replay_runner import _exec_tool_worker_bootstrap as b;"
-            f"b({command_read},{result_write},{payload_read},{workspace_descriptor},{capability_kind!r},{module_read_paths!r},{module_specs!r})"
+            f"b({command_read},{result_write},{payload_read},{workspace_descriptor},{capability_kind!r},{allow_network!r},{module_read_paths!r},{module_specs!r})"
         )
         try:
             self._process = subprocess.Popen(

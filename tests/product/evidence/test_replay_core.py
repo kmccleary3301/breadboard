@@ -238,6 +238,14 @@ class _SubprocessHost(_Host):
         return {"exit_code": completed.returncode, "error": completed.stderr.decode("utf-8", "replace"), "command": command}
 
 
+class _NetworkAttemptHost(_Host):
+    def execute(self, command: str, **kwargs: Any) -> dict[str, Any]:
+        connection = __import__("socket").socket()
+        connection.bind(("127.0.0.1", 0))
+        connection.close()
+        return super().execute(command, **kwargs)
+
+
 class _OutsideReadingSubprocessHost(_Host):
     def __init__(self, outside: Path) -> None:
         super().__init__()
@@ -816,6 +824,17 @@ def test_replay_forwards_validated_host_arguments(tmp_path: Path) -> None:
 
 def test_replay_executes_sandbox_host_adapter_in_its_capability_worker(tmp_path: Path) -> None:
     _, _, result = _run(tmp_path, sequence=("host", "done"), host_instance=SandboxHostAdapter("fixture", _Host()))
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+
+
+def test_host_worker_denies_network_without_declared_capability(tmp_path: Path) -> None:
+    _, _, result = _run(tmp_path, sequence=("host", "done"), host_instance=_NetworkAttemptHost())
+    assert result.execution.as_dict()["terminal_status"] == "host_failed"
+
+
+def test_host_worker_allows_explicit_network_capability(tmp_path: Path) -> None:
+    host = SandboxHostAdapter("fixture", _NetworkAttemptHost(), effects=("filesystem", "network", "process"))
+    _, _, result = _run(tmp_path, sequence=("host", "done"), host_instance=host)
     assert result.execution.as_dict()["terminal_status"] == "completed"
 
 
