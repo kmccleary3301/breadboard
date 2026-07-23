@@ -98,6 +98,15 @@ class _AddTool:
         if self.fail: raise RuntimeError("tool failed with Authorization: Bearer UNLISTED")
         if self.invalid: return {"value": object()}
         return {"sum": arguments["a"] + arguments["b"], "token": "SECRET"}
+
+class _BoundToolOwner:
+    def __init__(self, offset: int) -> None:
+        self.offset = offset
+
+    def run(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        return {"sum": arguments["a"] + arguments["b"] + self.offset}
+
+
 class _PrivateSlotTool:
     __slots__ = ("__offset",)
     def __init__(self, offset: int) -> None:
@@ -329,6 +338,7 @@ class _Provider:
         if action == "provider_error": raise RuntimeError("provider failed with SECRET")
         if action == "provider_secret_error": raise RuntimeError("Authorization: Bearer UNLISTED")
         if action == "hang": time.sleep(1)
+        if action == "brief": time.sleep(0.005)
         if action in {"add", "add_eur"}: message = ProviderMessage("assistant", None, [ProviderToolCall("call-add", "add", json.dumps({"a": 2, "b": 3}))], "tool_calls")
         elif action == "add_without_id": message = ProviderMessage("assistant", None, [ProviderToolCall(None, "add", json.dumps({"a": 2, "b": 3}))], "tool_calls")
         elif action == "two_adds": message = ProviderMessage("assistant", None, [ProviderToolCall("call-add-1", "add", '{"a":1,"b":2}'), ProviderToolCall("call-add-2", "add", '{"a":3,"b":4}')], "tool_calls")
@@ -782,6 +792,14 @@ def test_replay_executes_callable_tool_integration_adapter_in_its_capability_wor
     assert result.execution.as_dict()["terminal_status"] == "completed"
 
 
+def test_runtime_identity_binds_nested_bound_callable_owner_state() -> None:
+    owner = _BoundToolOwner(1)
+    adapter = ToolIntegrationAdapter("add", owner.run)
+    before = _runtime_type_identity(adapter)
+    owner.offset = 2
+    assert _runtime_type_identity(adapter) != before
+
+
 @pytest.mark.parametrize("authorize", [_PolicyOwner().allow, functools.partial(_prefixed_policy, "add"), functools.partial(_PrefixedPolicyOwner().allow, "add")])
 def test_replay_executes_bound_and_partial_policy_capabilities(tmp_path: Path, authorize: Any) -> None:
     _, _, result = _run(tmp_path, sequence=("add", "done"), authorize=authorize)
@@ -974,6 +992,14 @@ def test_provider_and_tool_deadlines_persist_timeout_evidence(tmp_path: Path, se
     assert len(record["tool_outcomes"]) == tool_count
     assert record["claimable"] is False
     _validator("bb.replay_execution.v1.schema.json").validate(record)
+
+
+def test_worker_result_arriving_after_call_deadline_is_timed_out(tmp_path: Path) -> None:
+    deadlines = {"total": 2_000, "idle": 1_000, "provider_call": 1, "tool_call": 1_000}
+    _, _, result = _run(tmp_path, sequence=("brief",), deadlines=deadlines)
+    record = result.execution.as_dict()
+    assert record["terminal_status"] == "timed_out"
+    assert record["problem"]["error_code"] == "replay.provider_timeout"
 
 
 @pytest.mark.parametrize(

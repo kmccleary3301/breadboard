@@ -1042,7 +1042,14 @@ class _ExecToolWorker:
         cancellation_deadline: float | None = None
         next_descendant_scan = 0.0
         while True:
-            if self._result_recv.poll(0.01):
+            now = time.monotonic()
+            if now >= deadline:
+                self._terminate()
+                raise _RuntimeFailure("timed_out", timeout_code, timeout_detail)
+            if self._result_recv.poll(min(0.01, deadline - now)):
+                if time.monotonic() >= deadline:
+                    self._terminate()
+                    raise _RuntimeFailure("timed_out", timeout_code, timeout_detail)
                 self._refresh_descendants()
                 status, _, value = _decode_worker_envelope(self._result_recv.recv_bytes())
                 if status == "ok":
@@ -1687,13 +1694,8 @@ def _identity_value(value: Any, seen: frozenset[int] = frozenset()) -> Any:
         return {"module": value.__name__, "version": str(getattr(value, "__version__", "")), "source_sha256": source_sha, "state_sha256": sha256_json(_identity_value(module_state, seen | {id(value)}))}
     if isinstance(value, type):
         return {"type": f"{value.__module__}.{value.__qualname__}"}
-    if inspect.isroutine(value):
-        symbol = f"{getattr(value, '__module__', '')}.{getattr(value, '__qualname__', type(value).__qualname__)}"
-        try:
-            source_sha = _digest(inspect.getsource(value).encode("utf-8"))
-        except (OSError, TypeError):
-            source_sha = _digest(symbol.encode("utf-8"))
-        return {"callable": symbol, "source_sha256": source_sha}
+    if isinstance(value, functools.partial) or inspect.isroutine(value):
+        return {"callable": _callable_identity(value)}
     if id(value) in seen:
         return {"cycle": f"{type(value).__module__}.{type(value).__qualname__}"}
     next_seen = seen | {id(value)}
