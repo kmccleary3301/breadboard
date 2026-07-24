@@ -699,12 +699,9 @@ def _add_top_level_sibling_allowlist(
                 paths.update((os.path.abspath(cached), os.path.realpath(cached)))
 
 
-def _executor_module_allowlist(
-    payload: bytes,
-) -> tuple[tuple[str, ...], tuple[tuple[str, str, tuple[str, ...]], ...]]:
+def _payload_module_names(payload: bytes) -> set[str]:
     envelope = json.loads(payload)
-    modules: set[str] = set(sys.modules)
-    payload_modules: set[str] = set()
+    modules: set[str] = set()
     pending = [envelope]
     while pending:
         value = pending.pop()
@@ -713,11 +710,14 @@ def _executor_module_allowlist(
             qualname = value.get("qualname")
             if isinstance(module, str) and isinstance(qualname, str):
                 modules.add(module)
-                payload_modules.add(module)
             pending.extend(value.values())
         elif isinstance(value, list):
             pending.extend(value)
-    runtime_roots = tuple(
+    return modules
+
+
+def _runtime_module_roots() -> tuple[str, ...]:
+    return tuple(
         os.path.realpath(path)
         for path in (
             sys.base_prefix,
@@ -731,6 +731,68 @@ def _executor_module_allowlist(
         )
         if os.path.isdir(path)
     )
+
+
+def _executor_module_dependency_identity(payload: bytes) -> list[dict[str, Any]]:
+    runtime_roots = _runtime_module_roots()
+    paths: set[str] = set()
+    specs: set[tuple[str, str, tuple[str, ...]]] = set()
+    for module_name in _payload_module_names(payload):
+        _add_package_module_allowlist(module_name, runtime_roots, paths, specs)
+        _add_top_level_sibling_allowlist(module_name, runtime_roots, paths, specs)
+    dependencies = []
+    for module_name, location, search_locations in sorted(specs):
+        if not location:
+            continue
+        try:
+            content = Path(location).read_bytes()
+        except OSError as exc:
+            raise ReplayRunError(f"capability dependency module {module_name} is not readable") from exc
+        dependencies.append({
+            "module": module_name,
+            "content_sha256": _digest(content),
+            "package": bool(search_locations),
+        })
+    return dependencies
+
+
+def _capability_module_payload(value: Any) -> bytes:
+    modules = []
+    pending = [value]
+    seen: set[int] = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if inspect.isfunction(current) or inspect.ismethod(current) or inspect.isbuiltin(current):
+            module = getattr(current, "__module__", None)
+            qualname = getattr(current, "__qualname__", None)
+        else:
+            module = type(current).__module__
+            qualname = type(current).__qualname__
+        if isinstance(module, str) and isinstance(qualname, str):
+            modules.append({"module": module, "qualname": qualname})
+        for name in ("provider", "runtime", "sandbox", "executor"):
+            delegate = getattr(current, name, None)
+            if delegate is not None and delegate is not current:
+                pending.append(delegate)
+    return canonical_json({"modules": sorted(modules, key=lambda row: (row["module"], row["qualname"]))})
+
+
+def _capability_runtime_identity(value: Any, capability_kind: str, *, payload: bytes | None = None) -> dict[str, Any]:
+    frozen_payload = (_capability_module_payload(value) if capability_kind == "provider" else _tool_executor_envelope(value, capability_kind)) if payload is None else payload
+    identity = _runtime_type_identity(value)
+    identity["module_dependencies_sha256"] = sha256_json(_executor_module_dependency_identity(frozen_payload))
+    return identity
+
+
+def _executor_module_allowlist(
+    payload: bytes,
+) -> tuple[tuple[str, ...], tuple[tuple[str, str, tuple[str, ...]], ...]]:
+    payload_modules = _payload_module_names(payload)
+    modules = set(sys.modules) | payload_modules
+    runtime_roots = _runtime_module_roots()
     paths: set[str] = set(runtime_roots)
     exact_specs: set[tuple[str, str, tuple[str, ...]]] = set()
     for module_name in modules:
@@ -1725,7 +1787,7 @@ def _provider_route_binding(provider_id: str, runtime_id: str, endpoint_class: s
         "provider_id": provider_id,
         "runtime_id": runtime_id,
         "runtime_version": runtime_version,
-        "runtime_implementation": _runtime_type_identity(provider),
+        "runtime_implementation": _capability_runtime_identity(provider, "provider"),
         "client_identity": dict(provider_client_identity),
         "endpoint_class": endpoint_class,
         "model_id": provider_model,
@@ -2231,10 +2293,15 @@ def run_replay(
                 route_binding = _provider_route_binding(provider_id, runtime_id, endpoint_class, provider_model, model_revision, runtime_version, provider, client_binding)
                 if binding_inputs["provider_route_lock_sha256"] != route_binding:
                     raise ReplayPlanError("provider runtime does not match the frozen provider route")
-                executor_binding = {"executors": {name: _runtime_type_identity(tools[name]) for name in sorted(tools)}}
+                host_worker_payload = _tool_executor_envelope(host, "host")
+                tool_worker_payloads = {
+                    name: _tool_executor_envelope(tools[name], "tool")
+                    for name in sorted(tools)
+                }
+                executor_binding = {"executors": {name: _capability_runtime_identity(tools[name], "tool", payload=tool_worker_payloads[name]) for name in sorted(tools)}}
                 if binding_inputs["tool_executor_identity_sha256"] != executor_binding:
                     raise ReplayPlanError("tool executors do not match the frozen runtime identities")
-                host_binding = {"driver_type": _runtime_type_identity(host), "workspace_identity": host_identity, "process_containment": _host_containment_identity(host)}
+                host_binding = {"driver_type": _capability_runtime_identity(host, "host", payload=host_worker_payload), "workspace_identity": host_identity, "process_containment": _host_containment_identity(host)}
                 if binding_inputs["host_driver_identity_sha256"] != host_binding:
                     raise ReplayPlanError("host driver does not match the frozen runtime identity")
                 policy_binding = {"callable": _callable_identity(authorize)}
@@ -2244,11 +2311,6 @@ def run_replay(
                 if binding_inputs["secret_references_sha256"] != secret_binding:
                     raise ReplayPlanError("resolved secrets do not match the frozen secret references")
                 tool_argument_validators = _tool_argument_validators(scenario.tool_schemas)
-                host_worker_payload = _tool_executor_envelope(host, "host")
-                tool_worker_payloads = {
-                    name: _tool_executor_envelope(tools[name], "tool")
-                    for name in sorted(tools)
-                }
                 usage_accountant = _UsageAccountant.from_budgets(plan_record["budgets"])
                 before_ref = put("workspace_before", before, None)
                 provider_worker = None

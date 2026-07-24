@@ -37,7 +37,7 @@ from breadboard.product.evidence import (
 from breadboard.product.evidence.replay_plan import HASH_BINDING_NAMES, canonical_json
 from breadboard.product.evidence.replay_execution import _validate_usage
 import breadboard.product.evidence.replay_runner as replay_runner_module
-from breadboard.product.evidence.replay_runner import _callable_identity, _environment_binding, _host_containment_identity, _host_platform_binding, _provider_client_binding, _provider_route_binding, _redact, _replay_schema_registry, _runtime_type_identity
+from breadboard.product.evidence.replay_runner import _callable_identity, _capability_runtime_identity, _environment_binding, _host_containment_identity, _host_platform_binding, _provider_client_binding, _provider_route_binding, _redact, _replay_schema_registry, _runtime_type_identity
 from breadboard.product.evidence.workspace import WorkspacePathError
 from breadboard.product.harness.compile import compile_harness_definition
 from breadboard.product.runtime.artifacts import ArtifactRef, ArtifactStore
@@ -604,8 +604,8 @@ def _plan(scenario: ReplayScenario, *, deadlines: dict[str, int] | None = None, 
     declared_names = {row["function"]["name"] for row in scenario.tool_schemas}
     active_tools = dict(tool_instances) if tool_instances is not None else ({"add": _AddTool()} if "add" in declared_names else {})
     active_host = host_instance or _Host()
-    frozen["tool_executor_identity_sha256"] = {"executors": {name: _runtime_type_identity(active_tools[name]) for name in sorted(active_tools)}}
-    frozen["host_driver_identity_sha256"] = {"driver_type": _runtime_type_identity(active_host), "workspace_identity": "sandbox:fixture", "process_containment": _host_containment_identity(active_host)}
+    frozen["tool_executor_identity_sha256"] = {"executors": {name: _capability_runtime_identity(active_tools[name], "tool") for name in sorted(active_tools)}}
+    frozen["host_driver_identity_sha256"] = {"driver_type": _capability_runtime_identity(active_host, "host"), "workspace_identity": "sandbox:fixture", "process_containment": _host_containment_identity(active_host)}
     bindings = scenario.binding_inputs(frozen)
     plan = build_replay_plan(
         lane_lock_sha256=HASH,
@@ -1623,6 +1623,39 @@ def test_unused_host_and_tool_capability_workers_are_not_started(
         sys.modules.pop("unused_capabilities", None)
     assert result.execution.as_dict()["terminal_status"] == "completed"
     assert not (workspace.root / "unused-worker-started.txt").exists()
+
+
+def test_lazy_sibling_module_content_is_bound_into_capability_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_root = tmp_path / "capabilities"
+    module_root.mkdir()
+    helper = module_root / "identity_helper.py"
+    helper.write_text("def result():\n    return {'version': 1}\n", encoding="utf-8")
+    (module_root / "identity_tool.py").write_text(
+        "class IdentityTool:\n"
+        "    def execute(self, _arguments):\n"
+        "        from identity_helper import result\n"
+        "        return result()\n"
+        "class IdentityProvider:\n"
+        "    def invoke(self, **_kwargs):\n"
+        "        from identity_helper import result\n"
+        "        return result()\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(module_root))
+    module = importlib.import_module("identity_tool")
+    try:
+        before = _capability_runtime_identity(module.IdentityTool(), "tool")
+        provider_before = _capability_runtime_identity(module.IdentityProvider(), "provider")
+        helper.write_text("def result():\n    return {'version': 2}\n", encoding="utf-8")
+        after = _capability_runtime_identity(module.IdentityTool(), "tool")
+        provider_after = _capability_runtime_identity(module.IdentityProvider(), "provider")
+    finally:
+        sys.modules.pop("identity_helper", None)
+        sys.modules.pop("identity_tool", None)
+    assert before != after
+    assert provider_before != provider_after
 
 
 def test_worker_stdio_cannot_bypass_evidence_redaction(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
