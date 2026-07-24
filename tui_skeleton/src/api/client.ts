@@ -315,7 +315,9 @@ const invokePublicAction = (
     case "public.session.cancel": return request("POST", `/v1/sessions/${publicIdentifier(input, "session_id")}/cancel`, { body: { reason: input.reason ?? "operator request" }, headers: publicHeaders(input) })
     case "public.session.events": {
       const sessionId = publicIdentifier(input, "session_id")
-      const query = { resume_token: input.resume_token as number | undefined, limit: input.limit as number | undefined }
+      const query: Record<string, number> = {}
+      if (typeof input.resume_token === "number") query.resume_token = input.resume_token
+      if (typeof input.limit === "number") query.limit = input.limit
       const lastEventId = typeof input.last_event_id === "number" ? String(input.last_event_id) : undefined
       return import("./stream.js").then(({ streamSessionEvents }) =>
         streamSessionEvents(decodeURIComponent(sessionId), { config, query, lastEventId }))

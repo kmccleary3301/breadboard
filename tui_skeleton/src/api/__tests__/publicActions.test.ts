@@ -58,4 +58,19 @@ describe("public candidate actions", () => {
       "/v1/sessions/session-1/artifacts",
     ])
   })
+
+  it("omits absent optional event cursor query parameters", async () => {
+    let requestedUrl: URL | undefined
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      requestedUrl = new URL(String(input))
+      return new Response("", { headers: { "content-type": "text/event-stream" } })
+    })
+    const client = createApiClient({ baseUrl: "http://breadboard.test:9099" })
+    const stream = await client.invokePublicAction("public.session.events", { session_id: "session-1" })
+
+    await (stream as AsyncGenerator<unknown>).next()
+
+    expect(requestedUrl?.searchParams.has("resume_token")).toBe(false)
+    expect(requestedUrl?.searchParams.has("limit")).toBe(false)
+  })
 })
