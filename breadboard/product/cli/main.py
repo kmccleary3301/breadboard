@@ -133,8 +133,9 @@ def _integration(ns):
     p=ns.add_parser("integration",help="discover integrations");_common(p);s=p.add_subparsers(dest="command",required=True);s.add_parser("list").set_defaults(handler=integration.list_integrations);x=s.add_parser("get");x.add_argument("INTEGRATION_ID");x.set_defaults(handler=integration.get);x=s.add_parser("probe");x.add_argument("INTEGRATION_ID",nargs="?");x.set_defaults(handler=integration.probe)
 def _artifact(ns):
     p=ns.add_parser("artifact",help="inspect artifacts");_common(p);s=p.add_subparsers(dest="command",required=True);s.add_parser("list").set_defaults(handler=artifact.list_artifacts)
-    for n in ("get","show","verify"):
-        x=s.add_parser(n);x.add_argument("REF");x.add_argument("--size",type=int);x.add_argument("--media-type");x.set_defaults(handler=(lambda a,n=n:artifact.get(a,n)) if n!="verify" else artifact.verify)
+    x=s.add_parser("put");x.add_argument("SOURCE");x.add_argument("--media-type",default="application/octet-stream");x.set_defaults(handler=artifact.put)
+    for n in ("get","show","verify","delete"):
+        x=s.add_parser(n);x.add_argument("REF");x.add_argument("--size",type=int);x.add_argument("--media-type");x.set_defaults(handler=artifact.delete if n=="delete" else (lambda a,n=n:artifact.get(a,n)) if n!="verify" else artifact.verify)
 def _system(ns):
     p=ns.add_parser("system",help="inspect installed product");_common(p);s=p.add_subparsers(dest="command",required=True)
     for n,fn in (("describe",system.describe),("health",system.health),("schemas",system.schemas)):s.add_parser(n).set_defaults(handler=lambda a,n=n,fn=fn:fn(["system",n],_w(a)))

@@ -359,3 +359,59 @@ def test_artifact_verify_infers_stored_size_when_size_is_omitted(
     payload = json.loads(stdout)
     assert payload["data"]["verified"] is True
     assert payload["data"]["artifact"]["size_bytes"] == len(b"verified artifact")
+
+
+def test_artifact_put_is_content_addressed_and_immutable(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    source = tmp_path / "proof.txt"
+    source.write_bytes(b"immutable proof")
+    argv = [
+        "--json",
+        "artifact",
+        "--workspace",
+        str(tmp_path),
+        "put",
+        str(source),
+        "--media-type",
+        "text/plain",
+    ]
+    first_code, first_stdout, first_stderr = _invoke(argv, capsys)
+    second_code, second_stdout, second_stderr = _invoke(argv, capsys)
+    first = json.loads(first_stdout)
+    second = json.loads(second_stdout)
+    assert first_code == second_code == 0
+    assert first_stderr == second_stderr == ""
+    assert first["data"]["artifact"] == second["data"]["artifact"]
+    assert first["data"]["artifact"]["media_type"] == "text/plain"
+    digest = first["data"]["artifact"]["digest"].removeprefix("sha256:")
+    stored = tmp_path / ".breadboard" / "artifacts" / "sha256" / digest[:2] / digest
+    assert stored.read_bytes() == b"immutable proof"
+
+
+def test_artifact_delete_removes_only_the_addressed_content(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    source = tmp_path / "proof.bin"
+    source.write_bytes(b"delete this proof")
+    put_code, stdout, _ = _invoke(
+        ["--json", "artifact", "--workspace", str(tmp_path), "put", str(source)],
+        capsys,
+    )
+    artifact = json.loads(stdout)["data"]["artifact"]
+    assert put_code == 0
+    delete_code, stdout, stderr = _invoke(
+        ["--json", "artifact", "--workspace", str(tmp_path), "delete", artifact["digest"]],
+        capsys,
+    )
+    deleted = json.loads(stdout)
+    assert delete_code == 0 and stderr == ""
+    assert deleted["data"]["deleted"] is True
+    get_code, stdout, _ = _invoke(
+        ["--json", "artifact", "--workspace", str(tmp_path), "get", artifact["digest"]],
+        capsys,
+    )
+    assert get_code == 3
+    assert json.loads(stdout)["error"]["error_code"] == "path_unavailable"

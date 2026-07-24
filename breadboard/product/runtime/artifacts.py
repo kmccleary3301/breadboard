@@ -271,6 +271,39 @@ def read_workspace_artifact(workspace: str | Path, ref: ArtifactRef) -> bytes:
         return ArtifactStore(artifacts, descriptor=descriptors[-1]).read(ref)
     finally:
         for descriptor in reversed(descriptors): os.close(descriptor)
+def put_workspace_artifact(workspace: str | Path, content: bytes, *, media_type: str = "application/octet-stream") -> ArtifactRef:
+    workspace = Path(workspace)
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            for path in (workspace, workspace / ".breadboard", workspace / ".breadboard" / "artifacts"):
+                handles.append(_windows_handle(path, directory=True))
+            return ArtifactStore(workspace / ".breadboard" / "artifacts").put(content, media_type=media_type)
+        finally:
+            for handle in reversed(handles): _close_windows_handle(handle)
+    descriptors = [os.open(workspace, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))]
+    try:
+        descriptors.append(_open_directory(descriptors[-1], ".breadboard", create=True)); descriptors.append(_open_directory(descriptors[-1], "artifacts", create=True))
+        return ArtifactStore(workspace / ".breadboard" / "artifacts", descriptor=descriptors[-1]).put(content, media_type=media_type)
+    finally:
+        for descriptor in reversed(descriptors): os.close(descriptor)
+def discard_workspace_artifact(workspace: str | Path, ref: ArtifactRef) -> None:
+    workspace = Path(workspace)
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            for path in (workspace, workspace / ".breadboard", workspace / ".breadboard" / "artifacts"):
+                handles.append(_windows_handle(path, directory=True, create=False))
+            ArtifactStore(workspace / ".breadboard" / "artifacts").discard(ref)
+        finally:
+            for handle in reversed(handles): _close_windows_handle(handle)
+        return
+    descriptors = [os.open(workspace, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))]
+    try:
+        descriptors.append(_open_directory(descriptors[-1], ".breadboard", create=False)); descriptors.append(_open_directory(descriptors[-1], "artifacts", create=False))
+        ArtifactStore(workspace / ".breadboard" / "artifacts", descriptor=descriptors[-1]).discard(ref)
+    finally:
+        for descriptor in reversed(descriptors): os.close(descriptor)
 class AnchoredStorage:
     """Stable platform seam for descriptor/handle-anchored workspace operations."""
     close_windows_handle = staticmethod(_close_windows_handle); descriptor_path = staticmethod(_descriptor_path); open_directory = staticmethod(_open_directory); read_at = staticmethod(_read_at); sync_directory = staticmethod(_sync_directory); windows_file_descriptor = staticmethod(_windows_file_descriptor); windows_handle = staticmethod(_windows_handle); write_at = staticmethod(_write_at)
