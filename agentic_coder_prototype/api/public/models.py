@@ -131,13 +131,17 @@ def result_response(
     PublicResult.model_validate(content)
     status_code = 202 if result.ok and operation_id in _ASYNC_OPERATIONS else 200
     return JSONResponse(status_code=status_code if result.ok else _STATUS_BY_EXIT.get(result.exit_code, 400), content=content)
+def _operation_identity(operation_id: str) -> tuple[list[str], str]:
+    command = [part.replace("_", "-") for part in operation_id.split(".")]
+    return command, ".".join(command)
 def invoke(operation_id: str, function: Callable[[Path], CliResult]) -> JSONResponse:
     workspace: Path | None = None
     try:
         workspace = public_workspace()
         result = function(workspace)
     except Exception as error:
-        result = from_exception(operation_id.split("."), error, operation_id)
+        command, stage = _operation_identity(operation_id)
+        result = from_exception(command, error, stage)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 def _write_idempotency_record(path: Path, content: bytes) -> None:
     temporary = path.with_name(f".{path.name}.{os.urandom(8).hex()}.tmp")
@@ -186,9 +190,11 @@ def invoke_idempotent(
                 _write_idempotency_record(record_path, record)
                 return JSONResponse(status_code=202, content=content)
     except Exception as error:
-        result = from_exception(operation_id.split("."), error, operation_id)
+        command, stage = _operation_identity(operation_id)
+        result = from_exception(command, error, stage)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 def problem_response(operation_id: str, status_code: int, error_code: str, message: str) -> JSONResponse:
     exit_code = {404: 3, 409: 6, 422: 2}.get(status_code, 4 if status_code >= 500 else 2)
-    result = CliResult.failure(operation_id.split("."), exit_code, error_code, message, operation_id)
+    command, stage = _operation_identity(operation_id)
+    result = CliResult.failure(command, exit_code, error_code, message, stage)
     return JSONResponse(status_code=status_code, content=_scrub(result.as_dict(), None, _secret_values()))

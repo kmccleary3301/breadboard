@@ -65,3 +65,6 @@ def test_problem_response_preserves_status_exit_semantics() -> None:
     response = public_models.problem_response("system.describe", 404, "not_found", "not found")
     assert response.status_code == 404
     assert json.loads(response.body)["exit_code"] == 3
+    send_input = json.loads(public_models.problem_response("session.send_input", 422, "invalid_request", "bad").body)
+    assert send_input["command"] == ["session", "send-input"]
+    assert send_input["stage_outcomes"][0]["stage"] == "session.send-input"
