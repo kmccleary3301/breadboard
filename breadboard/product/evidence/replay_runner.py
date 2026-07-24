@@ -996,10 +996,10 @@ def _exec_tool_worker_bootstrap(
 
 
 class _ExecToolWorker:
-    def __init__(self, executor: Any, workspace_descriptor: int, *, capability_kind: str = "tool") -> None:
+    def __init__(self, executor: Any, workspace_descriptor: int, *, capability_kind: str = "tool", payload: bytes | None = None) -> None:
         from multiprocessing.connection import Connection
         self._capability_kind = capability_kind
-        payload = _tool_executor_envelope(executor, capability_kind)
+        payload = _tool_executor_envelope(executor, capability_kind) if payload is None else payload
         allow_network = capability_kind == "provider" or capability_kind == "host" and _host_network_access(executor)
         module_read_paths, module_specs = _executor_module_allowlist(payload)
         command_read, command_write = os.pipe()
@@ -2244,6 +2244,11 @@ def run_replay(
                 if binding_inputs["secret_references_sha256"] != secret_binding:
                     raise ReplayPlanError("resolved secrets do not match the frozen secret references")
                 tool_argument_validators = _tool_argument_validators(scenario.tool_schemas)
+                host_worker_payload = _tool_executor_envelope(host, "host")
+                tool_worker_payloads = {
+                    name: _tool_executor_envelope(tools[name], "tool")
+                    for name in sorted(tools)
+                }
                 usage_accountant = _UsageAccountant.from_budgets(plan_record["budgets"])
                 before_ref = put("workspace_before", before, None)
                 provider_worker = None
@@ -2251,10 +2256,7 @@ def run_replay(
                 policy_worker = None
                 tool_workers: dict[str, _ExecToolWorker] = {}
                 provider_worker = _ExecToolWorker(_provider_capability(provider, provider_client, provider_model, isolated_provider_context, worker_environment, secret_bindings, client_binding), fresh_workspace_descriptor, capability_kind="provider")
-                host_worker = _ExecToolWorker(host, fresh_workspace_descriptor, capability_kind="host")
                 policy_worker = _ExecToolWorker(_policy_capability(authorize), fresh_workspace_descriptor, capability_kind="policy")
-                for name in sorted(tools):
-                    tool_workers[name] = _ExecToolWorker(tools[name], fresh_workspace_descriptor)
                 budgets, deadlines = plan_record["budgets"], plan_record["deadlines_ms"]
                 last_activity = overall_start
 
@@ -2374,11 +2376,17 @@ def run_replay(
                         if call.name not in declared_names:
                             policy_state["capability"] = "denied"
                             raise _RuntimeFailure("policy_denied", "replay.undeclared_tool", "provider requested a tool outside the frozen toolset")
-                        policy_start = last_activity
-                        cancellation = cancellation_state(0)
+                        policy_start = monotonic()
+                        cancellation = cancellation_state(_duration_ms(last_activity, policy_start))
                         if cancellation is not None:
                             policy_state["policy"] = "denied"
                             raise _RuntimeFailure("cancelled", cancellation[0], cancellation[1])
+                        if _duration_ms(overall_start, policy_start) > deadlines["total"]:
+                            policy_state["policy"] = "denied"
+                            raise _RuntimeFailure("timed_out", "replay.total_timeout", "replay exceeded its total deadline")
+                        if _duration_ms(last_activity, policy_start) > deadlines["idle"]:
+                            policy_state["policy"] = "denied"
+                            raise _RuntimeFailure("timed_out", "replay.idle_timeout", "replay exceeded its idle deadline")
                         policy_total_remaining = max(1, deadlines["total"] - _duration_ms(overall_start, policy_start))
                         policy_idle_remaining = max(1, deadlines["idle"] - _duration_ms(last_activity, policy_start))
                         policy_limit = min(deadlines["tool_call"], policy_total_remaining, policy_idle_remaining)
@@ -2399,6 +2407,11 @@ def run_replay(
                         if allowed is not True:
                             policy_state["policy"] = "denied"
                             raise _RuntimeFailure("policy_denied", "replay.policy_denied", "policy denied a tool call")
+                        if call.name == "host.execute":
+                            if host_worker is None:
+                                host_worker = _ExecToolWorker(host, fresh_workspace_descriptor, capability_kind="host", payload=host_worker_payload)
+                        elif call.name not in tool_workers:
+                            tool_workers[call.name] = _ExecToolWorker(tools[call.name], fresh_workspace_descriptor, payload=tool_worker_payloads[call.name])
                         tool_start = monotonic()
                         cancellation = cancellation_state(_duration_ms(last_activity, tool_start))
                         if cancellation is not None:

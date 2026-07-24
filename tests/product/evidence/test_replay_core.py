@@ -732,7 +732,7 @@ def test_workspace_baseline_precedes_capability_worker_startup(tmp_path: Path, m
         return json.loads(store.read(ref))
 
     assert [row["path"] for row in snapshot("workspace_before")["files"]] == ["input.txt"]
-    assert [row["path"] for row in snapshot("workspace_after")["files"]] == ["bootstrap-write.txt", "input.txt"]
+    assert [row["path"] for row in snapshot("workspace_after")["files"]] == ["input.txt"]
 
 
 def test_replay_executes_tool_integration_adapter_in_its_capability_worker(tmp_path: Path) -> None:
@@ -989,7 +989,7 @@ def test_reuse_execution_is_never_comparable(tmp_path: Path) -> None:
     ("sequence", "deadlines", "provider_status", "tool_count"),
     [
         (("done",), {"total": 10_000, "idle": 1_000, "provider_call": 1, "tool_call": 2_000}, "timed_out", 0),
-        (("add",), {"total": 10_000, "idle": 1_000, "provider_call": 2_000, "tool_call": 1}, "completed", 1),
+        (("add",), {"total": 10_000, "idle": 1_000, "provider_call": 2_000, "tool_call": 1}, "completed", 0),
     ],
 )
 def test_provider_and_tool_deadlines_persist_timeout_evidence(tmp_path: Path, sequence, deadlines, provider_status, tool_count) -> None:
@@ -1000,6 +1000,32 @@ def test_provider_and_tool_deadlines_persist_timeout_evidence(tmp_path: Path, se
     assert len(record["tool_outcomes"]) == tool_count
     assert record["claimable"] is False
     _validator("bb.replay_execution.v1.schema.json").validate(record)
+
+
+def test_policy_dispatch_rechecks_deadline_after_exchange_evidence_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = [0.0]
+    original_put_json = ArtifactStore.put_json
+
+    def put_json(store: ArtifactStore, value: Any, *, created: set[ArtifactRef] | None = None) -> ArtifactRef:
+        ref = original_put_json(store, value, created=created)
+        if isinstance(value, dict) and value.get("schema_version") == "bb.provider_exchange.v2":
+            clock[0] = 2.0
+        return ref
+
+    monkeypatch.setattr(ArtifactStore, "put_json", put_json)
+    deadlines = {"total": 1_000, "idle": 10_000, "provider_call": 1_000, "tool_call": 1_000}
+    _, _, result = _run(
+        tmp_path,
+        sequence=("add",),
+        authorize=_deny,
+        deadlines=deadlines,
+        monotonic=lambda: clock[0],
+    )
+    record = result.execution.as_dict()
+    assert record["terminal_status"] == "timed_out"
+    assert record["problem"]["error_code"] == "replay.total_timeout"
 
 
 def test_worker_result_arriving_after_call_deadline_is_timed_out(tmp_path: Path) -> None:
@@ -1238,7 +1264,7 @@ def test_noncanonical_tool_results_persist_failure_evidence(tmp_path: Path) -> N
     )
     timed = timed_result.execution.as_dict()
     assert timed["terminal_status"] == "timed_out"
-    assert timed["problem"]["error_code"] == "replay.tool_timeout"
+    assert timed["problem"]["error_code"] == "replay.idle_timeout"
 
 
 def test_workspace_directory_replacement_is_blocked_by_worker_sandbox(tmp_path: Path) -> None:
@@ -1558,6 +1584,45 @@ def test_worker_supports_lazy_top_level_sibling_imports(tmp_path: Path, monkeypa
         sys.modules.pop("lazy_top_level_helper", None)
         sys.modules.pop("lazy_top_level_tool", None)
     assert result.execution.as_dict()["terminal_status"] == "completed"
+
+
+def test_unused_host_and_tool_capability_workers_are_not_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_root = tmp_path / "capabilities"
+    module_root.mkdir()
+    (module_root / "unused_capabilities.py").write_text(
+        "import sys\n"
+        "from pathlib import Path\n"
+        "if sys.argv[0] == '-c':\n"
+        "    Path('unused-worker-started.txt').write_text('started', encoding='utf-8')\n"
+        "class UnusedTool:\n"
+        "    def execute(self, _arguments):\n"
+        "        return {'used': True}\n"
+        "class UnusedHost:\n"
+        "    def get_workspace(self):\n"
+        "        return 'sandbox:fixture'\n"
+        "    def replay_process_containment(self):\n"
+        "        return {'mechanism': 'fixture-supervisor', 'detached_descendants': 'contained'}\n"
+        "    def execute(self, command, **kwargs):\n"
+        "        return {'exit_code': 0, 'cwd': kwargs['cwd']}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(module_root))
+    module = importlib.import_module("unused_capabilities")
+    try:
+        tool_schemas = ({"type": "function", "function": {"name": "unused", "parameters": {"type": "object"}}},)
+        workspace, _, result = _run(
+            tmp_path / "workspace",
+            sequence=("done",),
+            tool_schemas=tool_schemas,
+            tool_instances={"unused": module.UnusedTool()},
+            host_instance=module.UnusedHost(),
+        )
+    finally:
+        sys.modules.pop("unused_capabilities", None)
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+    assert not (workspace.root / "unused-worker-started.txt").exists()
 
 
 def test_worker_stdio_cannot_bypass_evidence_redaction(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
