@@ -1,4 +1,6 @@
 from __future__ import annotations
+import os
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 from fastapi.testclient import TestClient
@@ -32,3 +34,20 @@ def test_invalid_artifact_reference_uses_stable_problem(monkeypatch, tmp_path: P
     assert response.status_code == 422
     assert response.json()["error"]["schema_version"] == "bb.problem.v1"
     assert response.json()["error"]["error_code"] == "invalid_state"
+@pytest.mark.skipif(os.name == "nt", reason="symlink creation is not reliably available on Windows CI")
+def test_artifact_operations_reject_digest_directory_symlinks(monkeypatch, tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-artifacts"
+    outside.mkdir()
+    digest = "a" * 64
+    (outside / digest).write_bytes(b"outside store content")
+    sha = tmp_path / ".breadboard/artifacts/sha256"
+    sha.mkdir(parents=True)
+    (sha / "aa").symlink_to(outside, target_is_directory=True)
+    client = _client(monkeypatch, tmp_path)
+    listing = client.get("/v1/artifacts")
+    assert listing.status_code == 200
+    assert listing.json()["data"]["artifacts"] == []
+    fetched = client.get(f"/v1/artifacts/sha256:{digest}")
+    verified = client.post(f"/v1/artifacts/sha256:{digest}/verify")
+    assert fetched.status_code == 404 and fetched.json()["error"]["error_code"] == "path_unavailable"
+    assert verified.status_code == 404 and verified.json()["error"]["error_code"] == "path_unavailable"

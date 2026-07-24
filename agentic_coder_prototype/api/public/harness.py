@@ -2,7 +2,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from fastapi import APIRouter
 from breadboard.product.cli import harness as operations
-from .models import HarnessCreateRequest, PublicResult, invoke, workspace_path
+from .models import HarnessCreateRequest, HarnessUpdateRequest, PublicResult, invoke, workspace_path
 router = APIRouter(tags=["public-harness"])
 def _args(workspace, reference: str | None = None, **values):
     fields = {"workspace": workspace, **values}
@@ -41,8 +41,8 @@ def lock(harness_id: str):
 def get_lock(lock_id: str):
     return invoke("harness_lock.get", lambda workspace: operations.get_lock(_args(workspace, lock_id)))
 @router.put("/v1/harnesses/{harness_id:path}", operation_id="harness.update", response_model=PublicResult)
-def update(harness_id: str):
-    return invoke("harness.update", lambda workspace: operations.update(_args(workspace, harness_id)))
+def update(harness_id: str, request: HarnessUpdateRequest):
+    return invoke("harness.update", lambda workspace: operations.update(_args(workspace, harness_id, document=request.definition)))
 @router.get("/v1/harnesses/{harness_id:path}", operation_id="harness.get", response_model=PublicResult)
 def get(harness_id: str):
     return invoke("harness.get", lambda workspace: operations.get(_args(workspace, harness_id)))

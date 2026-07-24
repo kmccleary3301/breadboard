@@ -64,6 +64,9 @@ class PublicResult(BaseModel):
 class HarnessCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     directory: str = "."
+class HarnessUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    definition: dict[str, Any]
 class SessionStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     lock_id: str = Field(min_length=1)

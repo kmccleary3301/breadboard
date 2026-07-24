@@ -1,5 +1,5 @@
 from __future__ import annotations
-import contextlib,json,os,shlex,shutil,socket,sys,threading,time
+import contextlib,json,os,shlex,socket,sys,threading,time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any,Mapping
@@ -41,11 +41,35 @@ def _lockpath(p,out=None):
     return p.with_name(p.stem+".lock.json")
 def _meta(p):return p.with_name("."+p.name+".meta.json")
 def _write(p,x):p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(x,sort_keys=True,indent=2)+"\n")
+_INIT_LOCK=threading.RLock()
+def _publish_seed(p,content):
+    temporary=p.with_name(f".{p.name}.{os.urandom(8).hex()}.tmp"); descriptor=None
+    try:
+        descriptor=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        with os.fdopen(descriptor,"wb") as stream:descriptor=None; stream.write(content); stream.flush(); os.fsync(stream.fileno())
+        try:os.link(temporary,p)
+        except FileExistsError:pass
+    finally:
+        if descriptor is not None:os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+def _seed_mismatch(p,content):
+    return p.is_symlink() or p.exists() and (not p.is_file() or p.read_bytes()!=content)
+def _seed(name,fallback):
+    p=_template(name); return p.read_bytes() if p else fallback.encode()
+def _init_result(h,q,w):
+    return CliResult.success(["harness","init"],{"path":_ref(h,w),"prompt_path":_ref(q,w)},[_ref(h,w),_ref(q,w)],stage="harness.init")
 def init(a):
     w=_w(a); d=Path(a.out or ".").expanduser(); h=d/"minimal_harness.v2.yaml"; q=d/"prompts/minimal_system.md"
-    if h.exists() or q.exists():return CliResult.failure(["harness","init"],2,"path_exists","refusing to overwrite existing harness bundle","harness.init")
+    seeds=((h,_seed("minimal_harness.v2.yaml",FALLBACK)),(q,_seed("prompts/minimal_system.md","You are a BreadBoard reference harness.\n")))
     try:
-        d.mkdir(parents=True,exist_ok=True); t=_template("minimal_harness.v2.yaml"); shutil.copyfile(t,h) if t else h.write_text(FALLBACK); q.parent.mkdir(parents=True,exist_ok=True); t=_template("prompts/minimal_system.md"); shutil.copyfile(t,q) if t else q.write_text("You are a BreadBoard reference harness.\n"); return CliResult.success(["harness","init"],{"path":_ref(h,w),"prompt_path":_ref(q,w)},[_ref(h,w),_ref(q,w)],stage="harness.init")
+        d.mkdir(parents=True,exist_ok=True)
+        with _INIT_LOCK:
+            if any(_seed_mismatch(p,content) for p,content in seeds):return CliResult.failure(["harness","init"],2,"path_exists","refusing to overwrite existing harness bundle","harness.init")
+            for p,content in seeds:
+                p.parent.mkdir(parents=True,exist_ok=True)
+                if not p.exists():_publish_seed(p,content)
+            if any(_seed_mismatch(p,content) for p,content in seeds):return CliResult.failure(["harness","init"],2,"path_exists","refusing to overwrite existing harness bundle","harness.init")
+        return _init_result(h,q,w)
     except Exception as e:return from_exception(["harness","init"],e,"harness.init")
 def validate(a,command_name="validate"):
     p,w=_p(a),_w(a); command=["harness",command_name]; stage=f"harness.{command_name}"
@@ -164,7 +188,20 @@ def show(a,command_name="show"):
 def get(a):
     return show(a,"get")
 def update(a):
-    return validate(a,"update")
+    p,w=_p(a),_w(a); temporary=None
+    try:
+        document=getattr(a,"document",None); source=getattr(a,"source",None)
+        if document is None:
+            if not source:return CliResult.failure(["harness","update"],2,"update_input_required","harness update requires --from or a definition","harness.update")
+            document=yaml.safe_load(Path(source).expanduser().read_text())
+        if not isinstance(document,dict):raise ValueError("harness definition must be a mapping")
+        temporary=p.with_name(f".{p.name}.{os.urandom(8).hex()}.tmp")
+        if not p.is_file():raise FileNotFoundError(f"harness definition not found: {_ref(p,w)}")
+        temporary.write_text(yaml.safe_dump(document,sort_keys=False)); _compile(temporary,w); os.replace(temporary,p)
+        return validate(a,"update")
+    except Exception as e:return from_exception(["harness","update"],e,"harness.update")
+    finally:
+        if temporary is not None:temporary.unlink(missing_ok=True)
 def get_lock(a):
     p,w=_p(a),_w(a); t=p if p.name.endswith(".lock.json") else _lockpath(p)
     try:x=json.loads(t.read_text()); return CliResult.success(["harness-lock","get"],{"path":_ref(t,w),"lock":x},[_ref(t,w)],{"graph":str(x.get("graph_hash",""))},stage="harness-lock.get")

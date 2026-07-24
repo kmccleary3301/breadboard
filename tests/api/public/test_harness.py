@@ -15,11 +15,18 @@ def test_harness_family_delegates_to_product_operations(monkeypatch, tmp_path: P
     created = client.post("/v1/harnesses", json={})
     assert created.status_code == 200
     assert created.json()["data"]["path"] == "minimal_harness.v2.yaml"
+    replayed = client.post("/v1/harnesses", json={})
+    assert replayed.status_code == 200 and replayed.json()["data"] == created.json()["data"]
     fetched = client.get("/v1/harnesses/minimal_harness.v2.yaml")
     direct = harness_operations.get(SimpleNamespace(workspace=tmp_path, PATH=tmp_path / "minimal_harness.v2.yaml"))
     assert fetched.json() == direct.as_dict()
     assert client.post("/v1/harnesses/minimal_harness.v2.yaml/validate").json()["ok"] is True
-    assert client.put("/v1/harnesses/minimal_harness.v2.yaml").json()["ok"] is True
+    definition = fetched.json()["data"]["definition"]
+    definition["modes"][0]["name"] = "review"
+    definition["loop"]["sequence"][0]["mode"] = "review"
+    updated = client.put("/v1/harnesses/minimal_harness.v2.yaml", json={"definition": definition})
+    assert updated.status_code == 200 and updated.json()["stage_outcomes"][0]["stage"] == "harness.update"
+    assert client.get("/v1/harnesses/minimal_harness.v2.yaml").json()["data"]["definition"]["modes"][0]["name"] == "review"
     assert client.post("/v1/harnesses/minimal_harness.v2.yaml/explain").json()["ok"] is True
     locked = client.post("/v1/harnesses/minimal_harness.v2.yaml/lock")
     assert locked.status_code == 200

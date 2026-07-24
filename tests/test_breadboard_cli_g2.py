@@ -73,6 +73,20 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
     assert {path: path.read_bytes() for path in before} == before
 
 
+def test_harness_update_replaces_definition_from_explicit_source(tmp_path: Path, capsys) -> None:
+    out_dir = tmp_path / "harness"
+    assert _invoke(["harness", "init", "--out", str(out_dir)], capsys)[0] == 0
+    harness_path = out_dir / "minimal_harness.v2.yaml"
+    definition = yaml.safe_load(harness_path.read_text())
+    definition["modes"][0]["name"] = "review"
+    definition["loop"]["sequence"][0]["mode"] = "review"
+    source = tmp_path / "replacement.yaml"
+    source.write_text(yaml.safe_dump(definition), encoding="utf-8")
+    exit_code, _, stderr = _invoke(["harness", "update", str(harness_path), "--from", str(source)], capsys)
+    assert exit_code == 0, stderr
+    assert yaml.safe_load(harness_path.read_text())["modes"][0]["name"] == "review"
+
+
 def test_json_harness_explain_validates_resolved_legacy_surface(
     tmp_path: Path,
     capsys,

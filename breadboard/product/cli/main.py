@@ -109,6 +109,7 @@ def _harness(ns):
     x=s.add_parser("list");x.add_argument("--directory");x.set_defaults(handler=harness.list_harnesses)
     for n,fn in (("show",harness.show),("get",harness.get),("update",harness.update),("validate",harness.validate),("explain",harness.explain),("lock",harness.lock),("run",harness.run)):
         x=s.add_parser(n);x.add_argument("PATH");
+        if n=="update":x.add_argument("--from",dest="source")
         if n=="explain":x.add_argument("--strict",action="store_true")
         if n=="lock":x.add_argument("--out");x.add_argument("--check",action="store_true")
         if n=="run":t=x.add_mutually_exclusive_group(required=True);t.add_argument("--server");t.add_argument("--local",action="store_true");x.add_argument("--task");x.add_argument("--lock")
