@@ -60,3 +60,19 @@ def test_session_invalid_state_is_stable_and_secret_free(monkeypatch, tmp_path: 
     malformed = client.post("/v1/sessions", json={})
     assert malformed.status_code == 422 and malformed.json()["schema_version"] == "bb.cli.result.v1"
     assert malformed.json()["error"]["schema_version"] == "bb.problem.v1"
+def test_event_stream_waits_for_wal_commit_before_emitting(monkeypatch, tmp_path: Path) -> None:
+    client = _client(monkeypatch, tmp_path)
+    lock_id = _locked_harness(client)
+    payload = {"lock_id": lock_id, "task": "wal visibility", "session_id": "wal-fixture"}
+    assert client.post("/v1/sessions", json=payload, headers={"Idempotency-Key": "wal-start"}).status_code == 202
+    assert client.post("/v1/sessions/wal-fixture/cancel", json={}, headers={"Idempotency-Key": "wal-cancel"}).status_code == 202
+    event_path = tmp_path / ".breadboard/sessions/wal-fixture.events.jsonl"
+    transaction_path = event_path.with_name(f".{event_path.name}.txn")
+    transaction_path.write_text("0", encoding="ascii")
+    releaser = Thread(target=lambda: (sleep(0.05), transaction_path.unlink()))
+    releaser.start()
+    streamed = client.get("/v1/sessions/wal-fixture/events")
+    releaser.join()
+    records = _stream_records(streamed)
+    assert [record["seq"] for record in records] == [1, 2]
+    assert records[-1]["kind"] == "session.canceled"

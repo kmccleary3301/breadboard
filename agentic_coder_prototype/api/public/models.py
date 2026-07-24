@@ -189,5 +189,6 @@ def invoke_idempotent(
         result = from_exception(operation_id.split("."), error, operation_id)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 def problem_response(operation_id: str, status_code: int, error_code: str, message: str) -> JSONResponse:
-    result = CliResult.failure(operation_id.split("."), 2 if status_code == 422 else 6, error_code, message, operation_id)
+    exit_code = {404: 3, 409: 6, 422: 2}.get(status_code, 4 if status_code >= 500 else 2)
+    result = CliResult.failure(operation_id.split("."), exit_code, error_code, message, operation_id)
     return JSONResponse(status_code=status_code, content=_scrub(result.as_dict(), None, _secret_values()))

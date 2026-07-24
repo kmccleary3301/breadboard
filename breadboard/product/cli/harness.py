@@ -24,10 +24,13 @@ def _doc(p):
     if not isinstance(x,dict):raise ValueError("harness definition must be a mapping")
     if findings:=validate_harness_document_domain(x):raise HarnessDefinitionValidationError(findings)
     return x
-def _compile(p,w):
+def _compile(p,w,contained=False):
     source_ref=_ref(p,w); paths={source_ref:p}
     def load_ref(parent,decl):
         target=(paths[parent].parent/decl).resolve()
+        if contained:
+            try:target.relative_to(w)
+            except ValueError as error:raise PermissionError("harness reference must remain within workspace") from error
         resolved=_ref(target,w)
         if resolved in paths and paths[resolved]!=target:raise ValueError(f"reference identity collision: {resolved}")
         paths[resolved]=target
@@ -79,12 +82,12 @@ def validate(a,command_name="validate"):
 def explain(a):
     p,w=_p(a),_w(a)
     try:
-        x=_compile(p,w).explanation.as_dict(); x["config_path"]=_ref(p,w); return CliResult.success(["harness","explain"],x,[_ref(p,w)],{"config":str(x.get("config_sha256",""))},stage="harness.explain")
+        x=_compile(p,w,getattr(a,"contained",False)).explanation.as_dict(); x["config_path"]=_ref(p,w); return CliResult.success(["harness","explain"],x,[_ref(p,w)],{"config":str(x.get("config_sha256",""))},stage="harness.explain")
     except Exception as e:return from_exception(["harness","explain"],e,"harness.explain")
 def lock(a):
     p,w=_p(a),_w(a); target=_lockpath(p,getattr(a,"out",None))
     try:
-        c=_compile(p,w); meta={"schema_version":"bb.harness_lock_metadata.v1","source_ref":_ref(p,w),"source_sha256":sha256_json(c.resolved_author_dict()),"graph_hash":c.lock["graph_hash"]}
+        c=_compile(p,w,getattr(a,"contained",False)); meta={"schema_version":"bb.harness_lock_metadata.v1","source_ref":_ref(p,w),"source_sha256":sha256_json(c.resolved_author_dict()),"graph_hash":c.lock["graph_hash"]}
         if getattr(a,"check",False):
             if not target.exists() or not _meta(target).exists():return CliResult.failure(["harness","lock"],5,"lock_missing","lock is missing","harness.lock")
             if json.loads(target.read_text())!=c.lock.as_dict() or json.loads(_meta(target).read_text())!=meta:return CliResult.failure(["harness","lock"],5,"lock_drift","harness definition changed after lock","harness.lock",next_actions=[f"breadboard harness lock {_ref(p,w)}"])
@@ -115,10 +118,11 @@ def _poll_records(client,session_id):
 def _local_server()->Iterator[str]:
     import uvicorn
     from agentic_coder_prototype.api.cli_bridge.app import create_app
-    previous=os.environ.pop("BREADBOARD_LEGACY_ROUTES",None);listener=None
+    names=("BREADBOARD_LEGACY_ROUTES","BREADBOARD_ENABLE_PUBLIC_API");previous={name:os.environ.pop(name,None) for name in names};listener=None
     def restore_environment():
-        if previous is None:os.environ.pop("BREADBOARD_LEGACY_ROUTES",None)
-        else:os.environ["BREADBOARD_LEGACY_ROUTES"]=previous
+        for name,value in previous.items():
+            if value is None:os.environ.pop(name,None)
+            else:os.environ[name]=value
     try:
         listener=socket.socket(socket.AF_INET,socket.SOCK_STREAM);listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);listener.bind(("127.0.0.1",0));listener.listen(128)
         server=uvicorn.Server(uvicorn.Config(create_app(),host="127.0.0.1",port=int(listener.getsockname()[1]),log_config=None,access_log=False))
@@ -145,7 +149,7 @@ def run(a):
     p,w=_p(a),_w(a)
     try:
         lock_argument=getattr(a,"lock",None); lock_path=Path(lock_argument).expanduser().resolve() if lock_argument else p
-        lock,mp=load_lock(lock_path,w,explicit=bool(lock_argument)); c=_compile(p,w); m=json.loads(mp.read_text())
+        lock,mp=load_lock(lock_path,w,explicit=bool(lock_argument)); c=_compile(p,w,getattr(a,"contained",False)); m=json.loads(mp.read_text())
         lock_action=f"breadboard harness lock {shlex.quote(str(p))}"
         if lock_argument:lock_action+=f" --out {shlex.quote(str(lock_path))}"
         if m.get("source_sha256")!=sha256_json(c.resolved_author_dict()) or m.get("graph_hash")!=lock["graph_hash"] or c.lock.as_dict()!=lock.as_dict():return CliResult.failure(["harness","run"],5,"lock_drift","mutable harness definition cannot run without a fresh lock","harness.run",next_actions=[lock_action])
@@ -197,7 +201,7 @@ def update(a):
         if not isinstance(document,dict):raise ValueError("harness definition must be a mapping")
         temporary=p.with_name(f".{p.name}.{os.urandom(8).hex()}.tmp")
         if not p.is_file():raise FileNotFoundError(f"harness definition not found: {_ref(p,w)}")
-        temporary.write_text(yaml.safe_dump(document,sort_keys=False)); _compile(temporary,w); os.replace(temporary,p)
+        temporary.write_text(yaml.safe_dump(document,sort_keys=False)); _compile(temporary,w,getattr(a,"contained",False)); os.replace(temporary,p)
         return validate(a,"update")
     except Exception as e:return from_exception(["harness","update"],e,"harness.update")
     finally:

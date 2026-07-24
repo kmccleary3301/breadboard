@@ -61,3 +61,7 @@ def test_idempotency_record_write_rejects_planted_temp_symlink(monkeypatch, tmp_
     with pytest.raises(FileExistsError):
         public_models._write_idempotency_record(record, b"cached result")
     assert outside.read_text() == "owner content"
+def test_problem_response_preserves_status_exit_semantics() -> None:
+    response = public_models.problem_response("system.describe", 404, "not_found", "not found")
+    assert response.status_code == 404
+    assert json.loads(response.body)["exit_code"] == 3

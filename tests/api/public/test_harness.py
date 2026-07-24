@@ -33,6 +33,14 @@ def test_harness_family_delegates_to_product_operations(monkeypatch, tmp_path: P
     assert invalid_nested_update.status_code == 422
     assert invalid_nested_update.json()["schema_version"] == "bb.cli.result.v1"
     assert invalid_nested_update.json()["error"]["schema_version"] == "bb.problem.v1"
+    outside = tmp_path.parent / f"{tmp_path.name}-outside-prompt.md"
+    outside.write_text("outside-secret-value")
+    definition["prompts"]["packs"]["base"]["system"] = "prompts/minimal_system.md"
+    definition["extends"] = f"../{outside.name}"
+    escaped = client.put("/v1/harnesses/minimal_harness.v2.yaml", json={"definition": definition})
+    assert escaped.status_code == 422 and escaped.json()["error"]["error_code"] == "invalid_state"
+    assert "outside-secret-value" not in escaped.text
+    assert client.get("/v1/harnesses/minimal_harness.v2.yaml").json()["data"]["definition"]["modes"][0]["name"] == "review"
     assert client.post("/v1/harnesses/minimal_harness.v2.yaml/explain").json()["ok"] is True
     locked = client.post("/v1/harnesses/minimal_harness.v2.yaml/lock")
     assert locked.status_code == 200

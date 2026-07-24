@@ -5,7 +5,7 @@ from breadboard.product.cli import harness as operations
 from .models import HarnessCreateRequest, HarnessUpdateRequest, PublicResult, invoke, workspace_path
 router = APIRouter(tags=["public-harness"])
 def _args(workspace, reference: str | None = None, **values):
-    fields = {"workspace": workspace, **values}
+    fields = {"workspace": workspace, "contained": True, **values}
     if reference is not None:
         fields["PATH"] = workspace_path(reference, workspace)
     return SimpleNamespace(**fields)

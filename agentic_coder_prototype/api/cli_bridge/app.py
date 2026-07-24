@@ -276,7 +276,8 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path, operation_id):
             content = _http_error_content(exc)
-            return problem_response(operation_id or "public.request", exc.status_code, str(content["error"]), str(content["detail"]))
+            detail = content["detail"] if content["detail"] is not None else content["error"]
+            return problem_response(operation_id or "public.request", exc.status_code, str(content["error"]), str(detail))
         return JSONResponse(status_code=exc.status_code, content=_http_error_content(exc))
 
     @app.exception_handler(RequestValidationError)

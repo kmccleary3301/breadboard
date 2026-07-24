@@ -179,6 +179,7 @@ def events(
             workspace=workspace,
         )
     start_after = resume_token if resume_token is not None else last_event_id or 0
+    transaction_path = event_path.with_name(f".{event_path.name}.txn")
     async def stream():
         emitted = 0
         with (await run_in_threadpool(event_path.open)) as source:
@@ -190,6 +191,14 @@ def events(
                     await asyncio.sleep(0.05)
                     continue
                 if not line.endswith("\n"):
+                    await run_in_threadpool(source.seek, position)
+                    await asyncio.sleep(0.05)
+                    continue
+                try:
+                    transaction_offset = await run_in_threadpool(lambda: int(transaction_path.read_text(encoding="ascii")))
+                except FileNotFoundError:
+                    transaction_offset = None
+                if transaction_offset is not None and position >= transaction_offset:
                     await run_in_threadpool(source.seek, position)
                     await asyncio.sleep(0.05)
                     continue
