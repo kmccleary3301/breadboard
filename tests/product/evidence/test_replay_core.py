@@ -318,6 +318,14 @@ class _BadIds:
 
 
 
+class _IdentityProviderRuntime:
+    def create_client(self, api_key: str, *, base_url: str | None = None, default_headers: dict[str, str] | None = None) -> Any:
+        return types.SimpleNamespace(api_key=api_key, base_url=base_url, default_headers=default_headers or {})
+
+    def invoke(self, **kwargs: Any) -> ProviderResult:
+        raise AssertionError("not used")
+
+
 class _Provider:
     provider_id = "fixture"
     runtime_id = "fixture_runtime"
@@ -1211,15 +1219,7 @@ def test_runtime_identity_binds_scalar_value_state() -> None:
 
 def test_provider_route_identity_excludes_transient_replay_client_specs() -> None:
     descriptor = ProviderDescriptor("fixture", "fixture_runtime", "chat", True, False, False, False, "openai", None, "FIXTURE_KEY", {})
-
-    class Runtime:
-        def create_client(self, api_key: str, *, base_url: str | None = None, default_headers: dict[str, str] | None = None) -> Any:
-            return types.SimpleNamespace(api_key=api_key, base_url=base_url, default_headers=default_headers or {})
-
-        def invoke(self, **kwargs: Any) -> ProviderResult:
-            raise AssertionError("not used")
-
-    adapter = ProviderRuntimeAdapter(Runtime(), descriptor)
+    adapter = ProviderRuntimeAdapter(_IdentityProviderRuntime(), descriptor)
     active_client = adapter.create_client("ACTIVE_SECRET", base_url="https://active.invalid")
     active_identity = _provider_client_binding(adapter, active_client, {"FIXTURE_KEY": "ACTIVE_SECRET"})
     before = _provider_route_binding("fixture", "fixture_runtime", "chat", "fixture-model", None, "1.0", adapter, active_identity)
@@ -1824,6 +1824,38 @@ def test_lazy_sibling_module_content_is_bound_into_capability_identity(
         sys.modules.pop("identity_tool", None)
     assert before != after
     assert provider_before != provider_after
+
+
+def test_provider_collaborator_modules_are_bound_into_route_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    provider_root = tmp_path / "provider"
+    helper_root = tmp_path / "helper"
+    provider_root.mkdir()
+    helper_root.mkdir()
+    helper = helper_root / "external_state_helper.py"
+    helper.write_text("class Helper:\n    def value(self):\n        return 1\n", encoding="utf-8")
+    (provider_root / "stateful_provider.py").write_text(
+        "from external_state_helper import Helper\n"
+        "class StatefulProvider:\n"
+        "    def __init__(self):\n"
+        "        self.collaborator = Helper()\n"
+        "    def invoke(self, **_kwargs):\n"
+        "        return self.collaborator.value()\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(helper_root))
+    monkeypatch.syspath_prepend(str(provider_root))
+    module = importlib.import_module("stateful_provider")
+    try:
+        provider = module.StatefulProvider()
+        before = _capability_runtime_identity(provider, "provider")
+        helper.write_text("class Helper:\n    def value(self):\n        return 2\n", encoding="utf-8")
+        after = _capability_runtime_identity(provider, "provider")
+    finally:
+        sys.modules.pop("external_state_helper", None)
+        sys.modules.pop("stateful_provider", None)
+    assert before != after
 
 
 def test_worker_stdio_cannot_bypass_evidence_redaction(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:

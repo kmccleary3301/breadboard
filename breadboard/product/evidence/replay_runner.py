@@ -389,16 +389,21 @@ def _policy_capability(authorize: Any) -> Any:
     return authorize
 
 
+def _isolated_provider(provider: Any) -> Any:
+    if type(provider).__module__ != "breadboard.product.integrations.provider" or type(provider).__qualname__ != "ProviderRuntimeAdapter":
+        return provider
+    isolated_provider = type(provider).__new__(type(provider))
+    for name, value in _plain_object_state(provider).items():
+        object.__setattr__(isolated_provider, name, [] if name in {"_client_identities", "_client_replay_specs"} else value)
+    return isolated_provider
+
+
 def _provider_capability(provider: Any, client: Any, model: str, context: Any, environment: Mapping[str, str], secret_bindings: Mapping[str, str], expected_client_binding: Mapping[str, Any]) -> _ProviderCapability:
     spec_method = getattr(provider, "replay_worker_client_spec", None)
     client_spec = spec_method(client, secret_bindings) if callable(spec_method) else None
     if client_spec is not None and not callable(getattr(provider, "replay_worker_client", None)):
         raise ReplayRunError("provider client spec requires replay_worker_client reconstruction")
-    isolated_provider = provider
-    if type(provider).__module__ == "breadboard.product.integrations.provider" and type(provider).__qualname__ == "ProviderRuntimeAdapter":
-        isolated_provider = type(provider).__new__(type(provider))
-        for name, value in _plain_object_state(provider).items():
-            object.__setattr__(isolated_provider, name, [] if name in {"_client_identities", "_client_replay_specs"} else value)
+    isolated_provider = _isolated_provider(provider)
     return _ProviderCapability(isolated_provider, None if client_spec is not None else client, client_spec, model, context, environment, secret_bindings, expected_client_binding)
 
 
@@ -765,32 +770,10 @@ def _executor_module_dependency_identity(payload: bytes) -> list[dict[str, Any]]
     return dependencies
 
 
-def _capability_module_payload(value: Any) -> bytes:
-    modules = []
-    pending = [value]
-    seen: set[int] = set()
-    while pending:
-        current = pending.pop()
-        if id(current) in seen:
-            continue
-        seen.add(id(current))
-        if inspect.isfunction(current) or inspect.ismethod(current) or inspect.isbuiltin(current):
-            module = getattr(current, "__module__", None)
-            qualname = getattr(current, "__qualname__", None)
-        else:
-            module = type(current).__module__
-            qualname = type(current).__qualname__
-        if isinstance(module, str) and isinstance(qualname, str):
-            modules.append({"module": module, "qualname": qualname})
-        for name in ("provider", "runtime", "sandbox", "executor"):
-            delegate = getattr(current, name, None)
-            if delegate is not None and delegate is not current:
-                pending.append(delegate)
-    return canonical_json({"modules": sorted(modules, key=lambda row: (row["module"], row["qualname"]))})
 
 
 def _capability_runtime_identity(value: Any, capability_kind: str, *, payload: bytes | None = None) -> dict[str, Any]:
-    frozen_payload = (_capability_module_payload(value) if capability_kind == "provider" else _tool_executor_envelope(value, capability_kind)) if payload is None else payload
+    frozen_payload = _tool_executor_envelope(_isolated_provider(value) if capability_kind == "provider" else value, capability_kind) if payload is None else payload
     identity = _runtime_type_identity(value)
     identity["module_dependencies_sha256"] = sha256_json(_executor_module_dependency_identity(frozen_payload))
     return identity
