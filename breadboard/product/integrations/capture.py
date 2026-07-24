@@ -6,7 +6,7 @@ from hashlib import sha256
 from importlib import metadata
 import json
 from pathlib import Path
-from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence, runtime_checkable
+from typing import Any, Callable, Iterable, Mapping, Protocol, runtime_checkable
 
 from .catalog import (
     IntegrationDescriptor,
@@ -14,6 +14,7 @@ from .catalog import (
     ProjectDeclarationError,
     ProbeReport,
     probe_for,
+    _valid_sha256,
 )
 
 _CAPTURE_GROUP = "breadboard.capture_adapters"
@@ -41,7 +42,7 @@ class ProjectCaptureDeclaration:
             raise ProjectDeclarationError("local capture declaration requires adapter, source, and source_sha256")
         if not isinstance(grants, (list, tuple, set)) or not grants or not all(isinstance(item, str) and item for item in grants):
             raise ProjectDeclarationError("local capture declaration requires explicit grants")
-        if not digest.startswith("sha256:") or len(digest) != 71:
+        if not _valid_sha256(digest):
             raise ProjectDeclarationError("local capture declaration requires a sha256 source hash")
         return cls(adapter_id, source_path, digest, tuple(sorted(set(grants))))
 
@@ -78,7 +79,7 @@ class CaptureIntegrationAdapter:
     ) -> None:
         if not adapter_id or not callable(implementation) and not callable(getattr(implementation, "capture", None)):
             raise IncompatibleAdapterError("capture adapter must expose capture()")
-        if not _valid_hash(source_sha256):
+        if not _valid_sha256(source_sha256):
             raise IncompatibleAdapterError("capture adapter source hash is required")
         self.adapter_id = adapter_id
         self.implementation = implementation
@@ -165,6 +166,3 @@ def resolve_local_capture_declaration(
         raise ProjectDeclarationError("local adapter source hash does not match declaration")
     return selected
 
-
-def _valid_hash(value: Any) -> bool:
-    return isinstance(value, str) and len(value) == 71 and value.startswith("sha256:") and all(char in "0123456789abcdef" for char in value[7:])

@@ -1,7 +1,7 @@
 """Provider runtime adapter for the frozen integration catalog port."""
 from __future__ import annotations
 
-from typing import Any, Mapping, Protocol, Sequence, runtime_checkable
+from typing import Any, Mapping, Protocol, runtime_checkable
 
 from agentic_coder_prototype.provider.routing import ProviderDescriptor
 from agentic_coder_prototype.provider.runtime import ProviderResult, ProviderRuntime, ProviderRuntimeContext
