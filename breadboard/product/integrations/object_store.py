@@ -1,7 +1,7 @@
 """Artifact/object-store adapter for the frozen integration catalog port."""
 from __future__ import annotations
 
-from typing import Any, Iterable, Mapping, Protocol, runtime_checkable
+from typing import Any, Iterable, Protocol, runtime_checkable
 
 from .catalog import IntegrationDescriptor, ProbeReport, probe_for
 

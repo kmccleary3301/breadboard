@@ -5,6 +5,7 @@ import json
 import pytest
 from jsonschema import Draft202012Validator
 from breadboard.product.integrations import CaptureIntegrationAdapter, IncompatibleAdapterError, IntegrationCatalog, IntegrationDescriptor, IntegrationError, ProbeReport, ProjectDeclarationError, internal_capture_adapters, load_capture_entry_points, resolve_local_capture_declaration
+from breadboard.product.integrations.catalog import probe_for
 
 
 def test_internal_and_external_adapters(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -24,6 +25,7 @@ def test_local_declaration_is_hash_and_grant_bound(tmp_path: Path) -> None:
     declaration = {"adapter_id": "local", "source_path": "adapter.py", "source_sha256": digest, "grants": ["capture"]}
     assert resolve_local_capture_declaration(declaration, project_root=str(tmp_path), adapter=adapter) is adapter
     with pytest.raises(ProjectDeclarationError): resolve_local_capture_declaration({**declaration, "grants": []}, project_root=str(tmp_path), adapter=adapter)
+    with pytest.raises(ProjectDeclarationError): resolve_local_capture_declaration({**declaration, "source_sha256": "sha256:" + "g" * 64}, project_root=str(tmp_path), adapter=adapter)
 
 
 def test_probe_identity_and_timestamp_fail_closed() -> None:
@@ -34,6 +36,13 @@ def test_probe_identity_and_timestamp_fail_closed() -> None:
         def __init__(self) -> None: self.descriptor = descriptor
         def probe(self) -> ProbeReport: return ProbeReport("bb.capability_probe_report.v1", "probe:x", "tool:x", "host_driver", "impl", "available", checked_at_utc="now")
     assert IntegrationCatalog([Bad()]).probe("tool:x").status == "unavailable"
+
+
+def test_unavailable_descriptor_probe_has_stable_error() -> None:
+    descriptor = IntegrationDescriptor("bb.integration_descriptor.v1", "tool:x", "tool_executor", "v1", "impl", status="unavailable")
+    report = probe_for(descriptor)
+    assert report.status == "unavailable"
+    assert report.error == "descriptor unavailable"
 
 
 @pytest.mark.parametrize("checked_at_utc", ["0000-01-01T00:00:00Z", "2026-07-21T12:34:56Z", "2026-07-21t12:34:56z", "2016-12-31T23:59:60Z", "2017-01-01T00:59:60+01:00", "2026-07-21T12:34:56+05:30"])
@@ -84,10 +93,11 @@ def test_capture_adapter_batches_register_atomically(tmp_path: Path, monkeypatch
     assert catalog.list() == []
 
 
-def test_records_match_public_schemas_and_traversal_is_rejected(tmp_path: Path) -> None:
+def test_records_match_public_schemas_and_traversal_is_rejected(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
     catalog = IntegrationCatalog(internal_capture_adapters())
     for name, record in (("bb.integration_descriptor.v1", catalog.list()[0].to_record()), ("bb.capability_probe_report.v1", catalog.probe("capture:json").to_record())):
-        schema = json.load(open("contracts/public/schemas/" + name + ".schema.json"))
+        schema = json.loads((Path(__file__).resolve().parents[3] / "contracts/public/schemas" / f"{name}.schema.json").read_text())
         assert list(Draft202012Validator(schema).iter_errors(record)) == []
     declaration = {"adapter_id": "local", "source_path": "../adapter.py", "source_sha256": "sha256:" + "0" * 64, "grants": ["capture"]}
     with pytest.raises(ProjectDeclarationError): resolve_local_capture_declaration(declaration, project_root=str(tmp_path), adapter=internal_capture_adapters()[0])

@@ -17,6 +17,10 @@ _KIND_VALUES = {"provider_adapter", "tool_executor", "host_driver", "capture_ada
 _HASH_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 _SCHEMA_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+def _valid_sha256(value: object) -> bool:
+    return isinstance(value, str) and _HASH_RE.fullmatch(value) is not None
 _RFC3339_RE = re.compile(
     r"^(?P<year>[0-9]{4})-(?P<month>[0-9]{2})-(?P<day>[0-9]{2})[Tt]"
     r"(?P<hour>[0-9]{2}):(?P<minute>[0-9]{2}):(?P<second>[0-9]{2})(?:\.[0-9]+)?"
@@ -112,7 +116,7 @@ class IntegrationDescriptor:
         if self.configuration_schema_id is not None and not _SCHEMA_ID_RE.fullmatch(self.configuration_schema_id):
             raise IntegrationError("invalid configuration schema id")
         _validate_metadata_arrays(self.capabilities, self.effects, self.permissions, self.secret_reference_names)
-        if self.probe_evidence_sha256 is not None and not _HASH_RE.fullmatch(self.probe_evidence_sha256):
+        if self.probe_evidence_sha256 is not None and not _valid_sha256(self.probe_evidence_sha256):
             raise IntegrationError("probe evidence must be a sha256 digest")
 
     def to_record(self) -> dict[str, Any]:
@@ -299,6 +303,7 @@ def probe_for(
     permissions: Iterable[str] | None = None,
     error: str | None = None,
 ) -> ProbeReport:
+    error = error or ("descriptor unavailable" if descriptor.status == "unavailable" else None)
     status = "unavailable" if error else descriptor.status
     report = ProbeReport(
         "bb.capability_probe_report.v1",
