@@ -5,8 +5,9 @@ import os
 import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Awaitable, Literal
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 from breadboard.product.cli.result import CliResult, from_exception
 from breadboard.product.runtime.events import ProcessLock
@@ -143,6 +144,15 @@ def invoke(operation_id: str, function: Callable[[Path], CliResult]) -> JSONResp
         command, stage = _operation_identity(operation_id)
         result = from_exception(command, error, stage)
     return result_response(result, workspace=workspace, operation_id=operation_id)
+async def invoke_async(operation_id: str, function: Callable[[Path], Awaitable[CliResult]]) -> JSONResponse:
+    workspace: Path | None = None
+    try:
+        workspace = public_workspace()
+        result = await function(workspace)
+    except Exception as error:
+        command, stage = _operation_identity(operation_id)
+        result = from_exception(command, error, stage)
+    return result_response(result, workspace=workspace, operation_id=operation_id)
 def _write_idempotency_record(path: Path, content: bytes) -> None:
     temporary = path.with_name(f".{path.name}.{os.urandom(8).hex()}.tmp")
     descriptor = None
@@ -192,6 +202,49 @@ def invoke_idempotent(
     except Exception as error:
         command, stage = _operation_identity(operation_id)
         result = from_exception(command, error, stage)
+    return result_response(result, workspace=workspace, operation_id=operation_id)
+async def invoke_idempotent_async(
+    operation_id: str,
+    idempotency_key: str | None,
+    canonical_input: Mapping[str, Any],
+    function: Callable[[Path], Awaitable[CliResult]],
+) -> JSONResponse:
+    if not idempotency_key:
+        return problem_response(operation_id, 422, "idempotency_key_required", "Idempotency-Key is required")
+    workspace: Path | None = None
+    lock: ProcessLock | None = None
+    entered = False
+    try:
+        workspace = public_workspace()
+        encoded = json.dumps(canonical_input, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+        input_sha256 = "sha256:" + hashlib.sha256(encoded).hexdigest()
+        bucket = hashlib.sha256(f"{operation_id}\0{idempotency_key}".encode()).hexdigest()
+        directory = workspace_path(".breadboard/public_api/idempotency", workspace)
+        directory.mkdir(parents=True, exist_ok=True)
+        record_path = workspace_path(str(directory.joinpath(f"{bucket}.json").relative_to(workspace)), workspace)
+        lock = ProcessLock(record_path)
+        await run_in_threadpool(lock.__enter__)
+        entered = True
+        if record_path.exists():
+            record = json.loads(record_path.read_text())
+            if record.get("input_sha256") != input_sha256:
+                return problem_response(operation_id, 409, "idempotency_conflict", "Idempotency-Key was used with different input")
+            cached = scrub_public(record["result"], workspace)
+            PublicResult.model_validate(cached)
+            return JSONResponse(status_code=202, content=cached)
+        result = await function(workspace)
+        if result.ok:
+            content = scrub_public(result.as_dict(), workspace)
+            PublicResult.model_validate(content)
+            record = json.dumps({"input_sha256": input_sha256, "result": content}, sort_keys=True).encode()
+            _write_idempotency_record(record_path, record)
+            return JSONResponse(status_code=202, content=content)
+    except Exception as error:
+        command, stage = _operation_identity(operation_id)
+        result = from_exception(command, error, stage)
+    finally:
+        if entered and lock is not None:
+            await run_in_threadpool(lock.__exit__, None, None, None)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 def problem_response(operation_id: str, status_code: int, error_code: str, message: str) -> JSONResponse:
     exit_code = {404: 3, 409: 6, 422: 2}.get(status_code, 4 if status_code >= 500 else 2)

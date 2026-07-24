@@ -146,13 +146,14 @@ class SessionService:
         if publish_records and runtime_record_dir != event_dir: staged_event_dir.replace(event_dir); AnchoredStorage.sync_directory(event_dir.parent)
         for owner in {target / _START_OWNER, event_dir / _START_OWNER}: owner.unlink(missing_ok=True)
         for root in {target, event_dir}: AnchoredStorage.sync_directory(root) if root.is_dir() else None
-    async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
-        session_id, metadata = str(uuid.uuid4()), dict(request.metadata or {}); metadata.setdefault("config_path", request.config_path)
+    async def create_session(self, request: SessionCreateRequest, *, session_id: str | None = None, event_root: Path | None = None, runtime_root: Path | None = None) -> SessionCreateResponse:
+        session_id, metadata = session_id or str(uuid.uuid4()), dict(request.metadata or {}); metadata.setdefault("config_path", request.config_path)
+        if await self.registry.get(session_id) is not None: raise ValueError(f"session already exists: {session_id}")
         if self._bridge_chaos: metadata.setdefault("bridgeChaos", self._bridge_chaos)
         session_title = request.task if request.task.strip() else DEFAULT_INTERACTIVE_SESSION_TITLE
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata); runner = SessionRunner(session=record, registry=self.registry, request=request)
         runtime_config = runner.prepare_runtime_config(); persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config); runtime_graph = compile_runtime_effective_config_graph(session_id, persisted_runtime_config, request.config_path); runtime_lock = EffectiveHarnessLock._from_record(runtime_graph)
-        emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = default_runtime_record_root() / session_id, _event_root() / session_id
+        emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = (runtime_root or default_runtime_record_root()) / session_id, (event_root or _event_root()) / session_id
         staging_record_root = runtime_record_dir.parent / f".{session_id}.records.starting"
         staged_record_dir, staged_event_dir = staging_record_root / session_id, event_dir.with_name(f".{session_id}.events.starting")
         if event_dir.exists() or emit_primitives and runtime_record_dir.exists(): raise RuntimeError(f"session bundle already exists: {session_id}")

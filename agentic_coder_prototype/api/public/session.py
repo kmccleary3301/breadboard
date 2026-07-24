@@ -3,152 +3,113 @@ import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import uuid4
 from fastapi import APIRouter, Header, Query, Request
-from fastapi.responses import StreamingResponse; from starlette.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
+from agentic_coder_prototype.api.cli_bridge.models import (
+    SessionCommandRequest as BridgeSessionCommandRequest,
+    SessionCreateRequest as BridgeSessionCreateRequest,
+    SessionInputRequest as BridgeSessionInputRequest,
+)
 from breadboard.product.cli import harness as harness_operations
-from breadboard.product.cli import session as operations
-from breadboard.product.cli.result import CliResult, from_exception, portable_ref
-from breadboard.product.runtime.events import JsonlEventSink, ProcessLock, Session
+from breadboard.product.cli.result import CliResult, from_exception
 from .models import (
     PublicResult,
     SessionApprovalRequest,
     SessionCancelRequest,
     SessionInputRequest,
     SessionStartRequest,
-    invoke,
-    invoke_idempotent,
+    invoke_async,
+    invoke_idempotent_async,
     public_workspace,
     result_response,
     scrub_public,
     workspace_path,
 )
 router = APIRouter(tags=["public-session"])
-def _args(workspace, session_id: str, **values):
-    return SimpleNamespace(workspace=workspace, SESSION_ID=session_id, **values)
-def _session_paths(workspace, session_id: str):
+def _service(request: Request):
+    return request.app.state.session_service
+async def _product_session(service, session_id: str):
     if not session_id or session_id != Path(session_id).name:
         raise ValueError("session_id must be a portable identifier")
-    directory = workspace_path(str(operations.session_directory(workspace).relative_to(workspace)), workspace)
-    directory.mkdir(parents=True, exist_ok=True)
-    event_path = workspace_path(str(operations.session_event_path(workspace, session_id).relative_to(workspace)), workspace)
-    metadata_path = workspace_path(str(operations.session_metadata_path(workspace, session_id).relative_to(workspace)), workspace)
-    return event_path, metadata_path, directory / f"{session_id}.mutation"
-def _mutate(workspace, session_id: str, function):
-    _, _, guard = _session_paths(workspace, session_id)
-    with ProcessLock(guard):
-        return function()
-def start_session_result(request: SessionStartRequest, workspace):
-    session_id = request.session_id or str(uuid4())
-    event_path, metadata_path, guard = _session_paths(workspace, session_id)
-    lock_path = workspace_path(request.lock_id, workspace)
-    lock, _ = harness_operations.load_lock(lock_path, workspace, explicit=True)
-    with ProcessLock(guard):
-        if event_path.exists() or metadata_path.exists():
-            raise ValueError(f"session already exists: {session_id}")
-        session = Session.start(lock, request.task, session_id=session_id, sink=JsonlEventSink(event_path))
-        operations.persist_session(workspace, session)
+    record = await service.ensure_session(session_id)
+    session = getattr(record, "product_session", None)
+    if session is None:
+        raise RuntimeError("session product state is unavailable")
+    return record, session
+async def _session_result(service, session_id: str, command_name: str) -> CliResult:
+    _, session = await _product_session(service, session_id)
     view = session.read_model
     return CliResult.success(
-        ["session", "start"],
+        ["session", command_name],
         {"session": view.as_dict()},
-        refs=[portable_ref(event_path, workspace)],
         hashes={"lock": view.effective_lock_hash, "task": view.task_hash},
-        next_actions=[f"breadboard session get {session_id}"],
-        stage="session.start",
+        stage=f"session.{command_name}",
     )
-@router.post("/v1/sessions", operation_id="session.start", response_model=PublicResult, status_code=202)
-def start(
-    request: SessionStartRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    return invoke_idempotent(
-        "session.start",
-        idempotency_key,
-        request.model_dump(mode="json"),
-        lambda workspace: start_session_result(request, workspace),
+async def _start_result(request: SessionStartRequest, workspace: Path, service) -> CliResult:
+    if request.session_id and request.session_id != Path(request.session_id).name:
+        raise ValueError("session_id must be a portable identifier")
+    lock_path = workspace_path(request.lock_id, workspace)
+    _, metadata_path = harness_operations.load_lock(lock_path, workspace, explicit=True)
+    metadata = json.loads(metadata_path.read_text())
+    source_ref = metadata.get("source_ref")
+    if not isinstance(source_ref, str) or not source_ref:
+        raise ValueError("lock metadata source_ref is missing")
+    source_path = workspace_path(source_ref, workspace)
+    checked = harness_operations.lock(SimpleNamespace(
+        workspace=workspace,
+        PATH=source_path,
+        out=lock_path,
+        check=True,
+        contained=True,
+    ))
+    if not checked.ok:
+        raise ValueError(str((checked.error or {}).get("message") or "harness lock validation failed"))
+    created = await service.create_session(
+        BridgeSessionCreateRequest(config_path=str(source_path), task=request.task, workspace=str(workspace)),
+        session_id=request.session_id,
+        event_root=workspace_path(".breadboard/service_events", workspace),
+        runtime_root=workspace_path(".breadboard/service_records", workspace),
     )
-@router.get("/v1/sessions", operation_id="session.list", response_model=PublicResult)
-def list_sessions():
-    return invoke("session.list", lambda workspace: (workspace_path(".breadboard/sessions", workspace), operations.list_sessions(SimpleNamespace(workspace=workspace)))[1])
-@router.post("/v1/sessions/{session_id}/input", operation_id="session.send_input", response_model=PublicResult, status_code=202)
-def send_input(
-    session_id: str,
-    request: SessionInputRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    values = {"session_id": session_id, "content": request.content}
-    return invoke_idempotent(
-        "session.send_input",
-        idempotency_key,
-        values,
-        lambda workspace: _mutate(
-            workspace,
-            session_id,
-            lambda: operations.send_input(_args(workspace, session_id, content=request.content, TEXT=None)),
-        ),
-    )
-@router.post("/v1/sessions/{session_id}/approve", operation_id="session.approve", response_model=PublicResult, status_code=202)
-def approve(
-    session_id: str,
-    request: SessionApprovalRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    values = {"session_id": session_id, "request_id": request.request_id, "decision": request.decision}
-    return invoke_idempotent(
-        "session.approve",
-        idempotency_key,
-        values,
-        lambda workspace: _mutate(
-            workspace,
-            session_id,
-            lambda: operations.approve(
-                _args(workspace, session_id, request_id=request.request_id, decision=request.decision)
-            ),
-        ),
-    )
-@router.post("/v1/sessions/{session_id}/resume", operation_id="session.resume", response_model=PublicResult, status_code=202)
-def resume(
-    session_id: str,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    return invoke_idempotent(
-        "session.resume",
-        idempotency_key,
-        {"session_id": session_id},
-        lambda workspace: _mutate(
-            workspace,
-            session_id,
-            lambda: operations.resume(_args(workspace, session_id)),
-        ),
-    )
-@router.post("/v1/sessions/{session_id}/cancel", operation_id="session.cancel", response_model=PublicResult, status_code=202)
-def cancel(
-    session_id: str,
-    request: SessionCancelRequest,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-):
-    values = {"session_id": session_id, "reason": request.reason}
-    return invoke_idempotent(
-        "session.cancel",
-        idempotency_key,
-        values,
-        lambda workspace: _mutate(
-            workspace,
-            session_id,
-            lambda: operations.cancel(_args(workspace, session_id, reason=request.reason)),
-        ),
-    )
+    return await _session_result(service, created.session_id, "start")
+async def _list_result(service) -> CliResult:
+    rows = []
+    for summary in await service.list_sessions():
+        try:
+            _, session = await _product_session(service, summary.session_id)
+            view = session.read_model
+            rows.append({"session_id": view.session_id, "status": view.status, "event_count": view.event_count})
+        except Exception:
+            continue
+    return CliResult.success(["session", "list"], {"sessions": rows, "count": len(rows)}, stage="session.list")
+async def _send_result(service, session_id: str, content: str) -> CliResult:
+    await service.send_input(session_id, BridgeSessionInputRequest(content=content))
+    return await _session_result(service, session_id, "send-input")
+async def _command_result(service, session_id: str, command: str, payload: dict, command_name: str) -> CliResult:
+    await service.execute_command(session_id, BridgeSessionCommandRequest(command=command, payload=payload))
+    return await _session_result(service, session_id, command_name)
+async def _cancel_result(service, session_id: str, reason: str) -> CliResult:
+    await service.stop_session(session_id)
+    _, session = await _product_session(service, session_id)
+    if session.read_model.status not in {"completed", "failed", "canceled"}:
+        session.cancel(reason)
+    return await _session_result(service, session_id, "cancel")
+async def _artifacts_result(service, session_id: str) -> CliResult:
+    record, _ = await _product_session(service, session_id)
+    artifacts = getattr(record, "product_artifacts", {})
+    rows = [{"name": name, **ref.as_dict()} for name, ref in sorted(artifacts.items())]
+    return CliResult.success(["session", "artifacts"], {"session_id": session_id, "artifacts": rows}, stage="session.artifacts")
 def _kernel_event(event):
     session_id, sequence = str(event["session_id"]), int(event["sequence"])
     return {
         "schema_version": "bb.kernel_event.v2",
-        "event_id": f"{session_id}:{sequence}",
-        "run_id": session_id,
-        "session_id": session_id,
+        "event_id": f"session:{session_id}:{sequence}",
         "seq": sequence,
-        "occurred_at_utc": event["occurred_at"],
-        "actor": {"actor_kind": "system", "actor_id": "product.session"},
+        "timestamp": event["occurred_at"],
+        "work_item_id": None,
+        "parent_work_item_id": None,
+        "attempt_id": None,
+        "session_id": session_id,
+        "span_id": None,
         "visibility": {
             "model_visible": True,
             "provider_visible": True,
@@ -159,79 +120,88 @@ def _kernel_event(event):
         "payload": event["payload"],
         "payload_schema_version": event["schema_version"],
     }
+@router.post("/v1/sessions", operation_id="session.start", response_model=PublicResult, status_code=202)
+async def start(request: SessionStartRequest, context: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    values = request.model_dump(mode="json")
+    return await invoke_idempotent_async(
+        "session.start",
+        idempotency_key,
+        values,
+        lambda workspace: _start_result(request, workspace, _service(context)),
+    )
+@router.get("/v1/sessions", operation_id="session.list", response_model=PublicResult)
+async def list_sessions(request: Request):
+    return await invoke_async("session.list", lambda _workspace: _list_result(_service(request)))
+@router.post("/v1/sessions/{session_id}/input", operation_id="session.send_input", response_model=PublicResult, status_code=202)
+async def send_input(session_id: str, request: SessionInputRequest, context: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    values = {"session_id": session_id, **request.model_dump(mode="json")}
+    return await invoke_idempotent_async(
+        "session.send_input",
+        idempotency_key,
+        values,
+        lambda _workspace: _send_result(_service(context), session_id, request.content),
+    )
+@router.post("/v1/sessions/{session_id}/approve", operation_id="session.approve", response_model=PublicResult, status_code=202)
+async def approve(session_id: str, request: SessionApprovalRequest, context: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    values = {"session_id": session_id, **request.model_dump(mode="json")}
+    return await invoke_idempotent_async(
+        "session.approve",
+        idempotency_key,
+        values,
+        lambda _workspace: _command_result(
+            _service(context), session_id, "permission_response",
+            {"request_id": request.request_id, "response": request.decision}, "approve",
+        ),
+    )
+@router.post("/v1/sessions/{session_id}/resume", operation_id="session.resume", response_model=PublicResult, status_code=202)
+async def resume(session_id: str, request: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    return await invoke_idempotent_async(
+        "session.resume",
+        idempotency_key,
+        {"session_id": session_id},
+        lambda _workspace: _command_result(_service(request), session_id, "resume", {}, "resume"),
+    )
+@router.post("/v1/sessions/{session_id}/cancel", operation_id="session.cancel", response_model=PublicResult, status_code=202)
+async def cancel(session_id: str, request: SessionCancelRequest, context: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    values = {"session_id": session_id, **request.model_dump(mode="json")}
+    return await invoke_idempotent_async(
+        "session.cancel",
+        idempotency_key,
+        values,
+        lambda _workspace: _cancel_result(_service(context), session_id, request.reason),
+    )
 @router.get("/v1/sessions/{session_id}/events", operation_id="session.events")
-def events(
-    session_id: str,
-    request: Request,
-    resume_token: int | None = Query(default=None, ge=0),
-    last_event_id: int | None = Header(default=None, alias="Last-Event-ID", ge=0),
-    limit: int = Query(default=256, ge=1, le=1000),
-):
+async def events(session_id: str, request: Request, resume_token: int | None = Query(default=None, ge=0), last_event_id: int | None = Header(default=None, alias="Last-Event-ID", ge=0), limit: int = Query(default=256, ge=1, le=1000)):
     workspace = None
     try:
         workspace = public_workspace()
-        event_path, _, _ = _session_paths(workspace, session_id)
-        if not event_path.is_file():
-            raise FileNotFoundError(f"session not found: {session_id}")
+        _, session = await _product_session(_service(request), session_id)
     except Exception as error:
-        return result_response(
-            from_exception(["session", "events"], error, "session.events"),
-            workspace=workspace,
-        )
+        return result_response(from_exception(["session", "events"], error, "session.events"), workspace=workspace)
     start_after = resume_token if resume_token is not None else last_event_id or 0
-    transaction_path = event_path.with_name(f".{event_path.name}.txn")
-    async def stream():
+    async def bounded_stream():
         emitted = 0
-        with (await run_in_threadpool(event_path.open)) as source:
-            while emitted < limit:
-                position, line = await run_in_threadpool(lambda: (source.tell(), source.readline()))
-                if not line:
-                    if await request.is_disconnected():
-                        return
-                    await asyncio.sleep(0.05)
-                    continue
-                if not line.endswith("\n"):
-                    await run_in_threadpool(source.seek, position)
-                    await asyncio.sleep(0.05)
-                    continue
-                try:
-                    transaction_offset = await run_in_threadpool(lambda: int(transaction_path.read_text(encoding="ascii")))
-                except FileNotFoundError:
-                    transaction_offset = None
-                if transaction_offset is not None and position >= transaction_offset:
-                    await run_in_threadpool(source.seek, position)
-                    await asyncio.sleep(0.05)
-                    continue
-                event = await run_in_threadpool(lambda: operations.event_from_record(json.loads(line)).as_dict())
-                terminal = event["kind"] in {"session.completed", "session.failed", "session.canceled"}
-                if int(event["sequence"]) <= start_after:
-                    if terminal:
-                        return
-                    continue
-                item = scrub_public(_kernel_event(event), workspace)
-                sequence = int(event["sequence"])
-                yield f"id: {sequence}\nevent: {event['kind']}\ndata: {json.dumps(item, sort_keys=True, separators=(',', ':'))}\n\n"
-                emitted += 1
-                if terminal:
+        cursor = start_after
+        while emitted < limit:
+            ready = [event for event in session.events if event.sequence > cursor]
+            if not ready:
+                if session.read_model.status in {"completed", "failed", "canceled"} or await request.is_disconnected():
                     return
-    return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
+                await asyncio.sleep(0.05)
+                continue
+            for item in ready:
+                event = item.as_dict()
+                terminal = event["kind"] in {"session.completed", "session.failed", "session.canceled"}
+                public_event = scrub_public(_kernel_event(event), workspace)
+                cursor = int(event["sequence"])
+                yield f"id: {cursor}\nevent: {event['kind']}\ndata: {json.dumps(public_event, sort_keys=True, separators=(',', ':'))}\n\n"
+                emitted += 1
+                if terminal or emitted >= limit:
+                    return
+    return StreamingResponse(bounded_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 @router.get("/v1/sessions/{session_id}/artifacts", operation_id="session.artifacts", response_model=PublicResult)
-def artifacts(session_id: str):
-    return invoke(
-        "session.artifacts",
-        lambda workspace: _mutate(
-            workspace,
-            session_id,
-            lambda: operations.artifacts(_args(workspace, session_id)),
-        ),
-    )
+async def artifacts(session_id: str, request: Request):
+    return await invoke_async("session.artifacts", lambda _workspace: _artifacts_result(_service(request), session_id))
 @router.get("/v1/sessions/{session_id}", operation_id="session.get", response_model=PublicResult)
-def get(session_id: str):
-    return invoke(
-        "session.get",
-        lambda workspace: _mutate(
-            workspace,
-            session_id,
-            lambda: operations.get(_args(workspace, session_id)),
-        ),
-    )
+async def get(session_id: str, request: Request):
+    return await invoke_async("session.get", lambda _workspace: _session_result(_service(request), session_id, "get"))

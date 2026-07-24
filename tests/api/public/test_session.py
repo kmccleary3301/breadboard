@@ -1,16 +1,20 @@
 from __future__ import annotations
+from collections.abc import Iterator
 import json
 from pathlib import Path
 from threading import Thread
-from time import sleep
+from time import monotonic, sleep
+import pytest
 from fastapi.testclient import TestClient
 from agentic_coder_prototype.api.cli_bridge.app import create_app
-def _client(monkeypatch, workspace: Path) -> TestClient:
-    monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(workspace))
+@pytest.fixture
+def client(monkeypatch, tmp_path: Path) -> Iterator[TestClient]:
+    monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
     monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
-    return TestClient(create_app(include_atp_routes=False))
+    with TestClient(create_app(include_atp_routes=False)) as test_client:
+        yield test_client
 def _locked_harness(client: TestClient) -> str:
     assert client.post("/v1/harnesses", json={}).json()["ok"] is True
     result = client.post("/v1/harnesses/minimal_harness.v2.yaml/lock").json()
@@ -18,8 +22,7 @@ def _locked_harness(client: TestClient) -> str:
     return result["data"]["path"]
 def _stream_records(response) -> list[dict]:
     return [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
-def test_session_lifecycle_and_resumable_event_stream(monkeypatch, tmp_path: Path) -> None:
-    client = _client(monkeypatch, tmp_path)
+def test_session_lifecycle_and_resumable_event_stream(client: TestClient, monkeypatch, tmp_path: Path) -> None:
     lock_id = _locked_harness(client)
     started = client.post(
         "/v1/sessions",
@@ -39,17 +42,17 @@ def test_session_lifecycle_and_resumable_event_stream(monkeypatch, tmp_path: Pat
     streamed = client.get("/v1/sessions/session-fixture/events"); worker.join()
     first = _stream_records(streamed)
     assert '"reason":"abc"' not in streamed.text
-    assert [event["seq"] for event in first] == [1, 2, 3]
+    sequences = [event["seq"] for event in first]
+    assert len(sequences) >= 2 and sequences == list(range(1, len(sequences) + 1))
     assert all(event["schema_version"] == "bb.kernel_event.v2" for event in first)
     assert first[-1]["kind"] == "session.canceled"
     resumed = _stream_records(
-        client.get("/v1/sessions/session-fixture/events", headers={"Last-Event-ID": "2"})
+        client.get("/v1/sessions/session-fixture/events", headers={"Last-Event-ID": str(first[-2]["seq"])})
     )
     assert resumed == [first[-1]]
     assert client.get("/v1/sessions/session-fixture").json()["data"]["session"]["status"] == "canceled"
     assert client.get("/v1/sessions/session-fixture/artifacts").json()["ok"] is True
-def test_session_invalid_state_is_stable_and_secret_free(monkeypatch, tmp_path: Path) -> None:
-    client = _client(monkeypatch, tmp_path)
+def test_session_invalid_state_is_stable_and_secret_free(client: TestClient, tmp_path: Path) -> None:
     lock_id = _locked_harness(client)
     payload = {"lock_id": lock_id, "task": "secret-free error", "session_id": "duplicate"}
     assert client.post("/v1/sessions", json=payload, headers={"Idempotency-Key": "first"}).status_code == 202
@@ -60,19 +63,18 @@ def test_session_invalid_state_is_stable_and_secret_free(monkeypatch, tmp_path: 
     malformed = client.post("/v1/sessions", json={})
     assert malformed.status_code == 422 and malformed.json()["schema_version"] == "bb.cli.result.v1"
     assert malformed.json()["error"]["schema_version"] == "bb.problem.v1"
-def test_event_stream_waits_for_wal_commit_before_emitting(monkeypatch, tmp_path: Path) -> None:
-    client = _client(monkeypatch, tmp_path)
+def test_session_start_dispatches_task_to_execution_service(client: TestClient) -> None:
     lock_id = _locked_harness(client)
-    payload = {"lock_id": lock_id, "task": "wal visibility", "session_id": "wal-fixture"}
-    assert client.post("/v1/sessions", json=payload, headers={"Idempotency-Key": "wal-start"}).status_code == 202
-    assert client.post("/v1/sessions/wal-fixture/cancel", json={}, headers={"Idempotency-Key": "wal-cancel"}).status_code == 202
-    event_path = tmp_path / ".breadboard/sessions/wal-fixture.events.jsonl"
-    transaction_path = event_path.with_name(f".{event_path.name}.txn")
-    transaction_path.write_text("0", encoding="ascii")
-    releaser = Thread(target=lambda: (sleep(0.05), transaction_path.unlink()))
-    releaser.start()
-    streamed = client.get("/v1/sessions/wal-fixture/events")
-    releaser.join()
-    records = _stream_records(streamed)
-    assert [record["seq"] for record in records] == [1, 2]
+    payload = {"lock_id": lock_id, "task": "complete the execution probe", "session_id": "execution-fixture"}
+    started = client.post("/v1/sessions", json=payload, headers={"Idempotency-Key": "execution-start"})
+    assert started.status_code == 202
+    deadline = monotonic() + 10
+    record = client.portal.call(client.app.state.session_service.ensure_session, "execution-fixture")
+    while not record.event_log and monotonic() < deadline:
+        sleep(0.05)
+        record = client.portal.call(client.app.state.session_service.ensure_session, "execution-fixture")
+    assert record.event_log and record.event_log[0].asdict()["type"] == "skills_catalog"
+    assert client.post("/v1/sessions/execution-fixture/cancel", json={}, headers={"Idempotency-Key": "execution-cancel"}).status_code == 202
+    records = _stream_records(client.get("/v1/sessions/execution-fixture/events"))
+    assert records[0]["kind"] == "session.started"
     assert records[-1]["kind"] == "session.canceled"

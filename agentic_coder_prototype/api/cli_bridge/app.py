@@ -256,6 +256,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
+    app.state.session_service = _service
     rl_service = LiveRLRunService(Path(os.environ.get("BREADBOARD_RL_RUN_STORE", ":memory:")))
     rl_router = create_phase3_rl_router(rl_service)
     app.include_router(rl_router, prefix="/v1/rl", tags=["rl"])
@@ -273,7 +274,9 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
         operation_id = getattr(request.scope.get("route"), "operation_id", None)
         if legacy_routes_enabled:
-            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+            content = _http_error_content(exc)
+            content["detail"] = exc.detail
+            return JSONResponse(status_code=exc.status_code, content=content)
         if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path, operation_id):
             content = _http_error_content(exc)
             detail = content["detail"] if content["detail"] is not None else content["error"]
