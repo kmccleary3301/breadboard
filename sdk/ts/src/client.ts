@@ -1,8 +1,10 @@
+import { streamSessionEvents, type EventStreamOptions } from "./stream.js"
 import type {
   CTreeSnapshotResponse,
   HealthResponse,
   ModelCatalogResponse,
   SessionCreateRequest,
+  PublicResult,
   SessionCreateResponse,
   SessionFileContent,
   SessionFileInfo,
@@ -22,7 +24,7 @@ export class ApiError extends Error {
   }
 }
 
-type JsonMethod = "GET" | "POST" | "DELETE"
+type JsonMethod = "GET" | "POST" | "PUT" | "DELETE"
 
 export interface ReadSessionFileOptions {
   readonly mode?: "cat" | "snippet"
@@ -54,6 +56,9 @@ const buildUrl = (baseUrl: string, path: string, query?: RequestOptions["query"]
   }
   return url
 }
+const resourcePath = (value: string): string => value.split("/").map(encodeURIComponent).join("/")
+const idempotencyHeaders = (key?: string): Record<string, string> | undefined =>
+  key ? { "Idempotency-Key": key } : undefined
 
 const requestWithConfig = async <T>(
   config: BreadboardClientConfig,
@@ -99,6 +104,63 @@ const requestWithConfig = async <T>(
 }
 
 export const createBreadboardClient = (config: BreadboardClientConfig) => ({
+  describeSystem: () => requestWithConfig<PublicResult>(config, "/v1/system", "GET"),
+  healthSystem: () => requestWithConfig<PublicResult>(config, "/v1/health", "GET"),
+  schemasSystem: () => requestWithConfig<PublicResult>(config, "/v1/schemas", "GET"),
+  createHarness: (directory = ".") => requestWithConfig<PublicResult>(config, "/v1/harnesses", "POST", { body: { directory } }),
+  listHarness: () => requestWithConfig<PublicResult>(config, "/v1/harnesses", "GET"),
+  getHarness: (harnessId: string) => requestWithConfig<PublicResult>(config, `/v1/harnesses/${resourcePath(harnessId)}`, "GET"),
+  updateHarness: (harnessId: string, definition: Record<string, unknown>) =>
+    requestWithConfig<PublicResult>(config, `/v1/harnesses/${resourcePath(harnessId)}`, "PUT", { body: { definition } }),
+  validateHarness: (harnessId: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/harnesses/${resourcePath(harnessId)}/validate`, "POST"),
+  explainHarness: (harnessId: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/harnesses/${resourcePath(harnessId)}/explain`, "POST"),
+  lockHarness: (harnessId: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/harnesses/${resourcePath(harnessId)}/lock`, "POST"),
+  getHarnessLock: (lockId: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/harness-locks/${resourcePath(lockId)}`, "GET"),
+  listIntegration: () => requestWithConfig<PublicResult>(config, "/v1/integrations", "GET"),
+  getIntegration: (integrationId: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/integrations/${encodeURIComponent(integrationId)}`, "GET"),
+  probeIntegration: (integrationId: string, idempotencyKey?: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/integrations/${encodeURIComponent(integrationId)}/probe`, "POST", {
+      headers: idempotencyHeaders(idempotencyKey),
+    }),
+  listArtifact: () => requestWithConfig<PublicResult>(config, "/v1/artifacts", "GET"),
+  getArtifact: (artifactId: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/artifacts/${encodeURIComponent(artifactId)}`, "GET"),
+  verifyArtifact: (artifactId: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/artifacts/${encodeURIComponent(artifactId)}/verify`, "POST"),
+  startSession: (payload: Record<string, unknown>, idempotencyKey?: string) =>
+    requestWithConfig<PublicResult>(config, "/v1/sessions", "POST", {
+      body: payload,
+      headers: idempotencyHeaders(idempotencyKey),
+    }),
+  listSession: () => requestWithConfig<PublicResult>(config, "/v1/sessions", "GET"),
+  sendInputSession: (sessionId: string, content: string, idempotencyKey?: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/sessions/${encodeURIComponent(sessionId)}/input`, "POST", {
+      body: { content },
+      headers: idempotencyHeaders(idempotencyKey),
+    }),
+  approveSession: (sessionId: string, requestId: string, decision: string, idempotencyKey?: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/sessions/${encodeURIComponent(sessionId)}/approve`, "POST", {
+      body: { request_id: requestId, decision },
+      headers: idempotencyHeaders(idempotencyKey),
+    }),
+  resumeSession: (sessionId: string, idempotencyKey?: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/sessions/${encodeURIComponent(sessionId)}/resume`, "POST", {
+      headers: idempotencyHeaders(idempotencyKey),
+    }),
+  cancelSession: (sessionId: string, reason = "operator request", idempotencyKey?: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/sessions/${encodeURIComponent(sessionId)}/cancel`, "POST", {
+      body: { reason },
+      headers: idempotencyHeaders(idempotencyKey),
+    }),
+  artifactsSession: (sessionId: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/sessions/${encodeURIComponent(sessionId)}/artifacts`, "GET"),
+  eventsSession: (sessionId: string, options: Omit<EventStreamOptions, "config"> = {}) =>
+    streamSessionEvents(sessionId, { ...options, config }),
   health: () => requestWithConfig<HealthResponse>(config, "/health", "GET"),
   createSession: (payload: SessionCreateRequest) =>
     requestWithConfig<SessionCreateResponse>(config, "/v1/sessions", "POST", { body: payload }),

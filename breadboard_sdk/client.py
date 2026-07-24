@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, Generator, List, Optional
-from urllib.parse import urlencode, urljoin
+from urllib.parse import quote, urlencode, urljoin
 
 import requests
 
@@ -52,14 +52,24 @@ class BreadboardClient:
             headers["Authorization"] = f"Bearer {self.auth_token}"
         return headers
 
-    def _request(self, method: str, path: str, *, query: Dict[str, Any] | None = None, body: Any | None = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        query: Dict[str, Any] | None = None,
+        body: Any | None = None,
+        headers: Dict[str, str] | None = None,
+    ) -> Any:
         url = urljoin(self.base_url, path.lstrip("/"))
         if query:
             url = f"{url}?{urlencode({k: v for k, v in query.items() if v is not None})}"
+        request_headers = self._headers()
+        request_headers.update(headers or {})
         resp = requests.request(
             method=method,
             url=url,
-            headers=self._headers(),
+            headers=request_headers,
             data=json.dumps(body) if body is not None else None,
             timeout=self.timeout_s,
         )
@@ -81,6 +91,92 @@ class BreadboardClient:
 
     def health(self) -> HealthResponse:
         return self._request("GET", "/health")
+    @staticmethod
+    def _idempotency(value: str | None) -> Dict[str, str] | None:
+        return {"Idempotency-Key": value} if value else None
+
+    def describe_system(self) -> Dict[str, Any]:
+        return self._request("GET", "/v1/system")
+
+    def health_system(self) -> Dict[str, Any]:
+        return self._request("GET", "/v1/health")
+
+    def schemas_system(self) -> Dict[str, Any]:
+        return self._request("GET", "/v1/schemas")
+
+    def create_harness(self, directory: str = ".") -> Dict[str, Any]:
+        return self._request("POST", "/v1/harnesses", body={"directory": directory})
+
+    def list_harness(self) -> Dict[str, Any]:
+        return self._request("GET", "/v1/harnesses")
+
+    def get_harness(self, harness_id: str) -> Dict[str, Any]:
+        return self._request("GET", f"/v1/harnesses/{quote(harness_id, safe='/')}")
+
+    def update_harness(self, harness_id: str, definition: Dict[str, Any]) -> Dict[str, Any]:
+        return self._request("PUT", f"/v1/harnesses/{quote(harness_id, safe='/')}", body={"definition": definition})
+
+    def validate_harness(self, harness_id: str) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/harnesses/{quote(harness_id, safe='/')}/validate")
+
+    def explain_harness(self, harness_id: str) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/harnesses/{quote(harness_id, safe='/')}/explain")
+
+    def lock_harness(self, harness_id: str) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/harnesses/{quote(harness_id, safe='/')}/lock")
+
+    def get_harness_lock(self, lock_id: str) -> Dict[str, Any]:
+        return self._request("GET", f"/v1/harness-locks/{quote(lock_id, safe='/')}")
+
+    def list_integration(self) -> Dict[str, Any]:
+        return self._request("GET", "/v1/integrations")
+
+    def get_integration(self, integration_id: str) -> Dict[str, Any]:
+        return self._request("GET", f"/v1/integrations/{quote(integration_id, safe='')}")
+
+    def probe_integration(self, integration_id: str, *, idempotency_key: str | None = None) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/integrations/{quote(integration_id, safe='')}/probe", headers=self._idempotency(idempotency_key))
+
+    def list_artifact(self) -> Dict[str, Any]:
+        return self._request("GET", "/v1/artifacts")
+
+    def get_artifact(self, artifact_id: str) -> Dict[str, Any]:
+        return self._request("GET", f"/v1/artifacts/{quote(artifact_id, safe='')}")
+
+    def verify_artifact(self, artifact_id: str) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/artifacts/{quote(artifact_id, safe='')}/verify")
+
+    def start_session(self, payload: Dict[str, Any], *, idempotency_key: str | None = None) -> Dict[str, Any]:
+        return self._request("POST", "/v1/sessions", body=payload, headers=self._idempotency(idempotency_key))
+
+    def list_session(self) -> Dict[str, Any]:
+        return self._request("GET", "/v1/sessions")
+
+    def send_input_session(self, session_id: str, content: str, *, idempotency_key: str | None = None) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/sessions/{quote(session_id, safe='')}/input", body={"content": content}, headers=self._idempotency(idempotency_key))
+
+    def approve_session(self, session_id: str, request_id: str, decision: str, *, idempotency_key: str | None = None) -> Dict[str, Any]:
+        body = {"request_id": request_id, "decision": decision}
+        return self._request("POST", f"/v1/sessions/{quote(session_id, safe='')}/approve", body=body, headers=self._idempotency(idempotency_key))
+
+    def resume_session(self, session_id: str, *, idempotency_key: str | None = None) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/sessions/{quote(session_id, safe='')}/resume", headers=self._idempotency(idempotency_key))
+
+    def cancel_session(self, session_id: str, reason: str = "operator request", *, idempotency_key: str | None = None) -> Dict[str, Any]:
+        return self._request("POST", f"/v1/sessions/{quote(session_id, safe='')}/cancel", body={"reason": reason}, headers=self._idempotency(idempotency_key))
+
+    def artifacts_session(self, session_id: str) -> Dict[str, Any]:
+        return self._request("GET", f"/v1/sessions/{quote(session_id, safe='')}/artifacts")
+    def events_session(
+        self,
+        session_id: str,
+        *,
+        resume_token: int | None = None,
+        last_event_id: int | None = None,
+        limit: int = 256,
+    ) -> Generator[SessionEvent, None, None]:
+        query = {"resume_token": resume_token, "limit": limit}
+        return self.stream_events(session_id, last_event_id=str(last_event_id) if last_event_id is not None else None, query=query)
 
     def create_session(
         self,
