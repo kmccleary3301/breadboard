@@ -81,12 +81,6 @@ class _CancelAfterProvider:
     def __call__(self) -> bool:
         self.polls += 1
         return self.polls > 1
-class _CancelBeforePolicy:
-    def __init__(self) -> None:
-        self.polls = 0
-    def __call__(self) -> bool:
-        self.polls += 1
-        return self.polls > 2
 
 
 
@@ -1035,7 +1029,7 @@ def test_reuse_execution_is_never_comparable(tmp_path: Path) -> None:
     ("sequence", "deadlines", "provider_status", "tool_count"),
     [
         (("done",), {"total": 10_000, "idle": 1_000, "provider_call": 1, "tool_call": 2_000}, "timed_out", 0),
-        (("add",), {"total": 10_000, "idle": 1_000, "provider_call": 2_000, "tool_call": 1}, "completed", 0),
+        (("add",), {"total": 10_000, "idle": 1_000, "provider_call": 2_000, "tool_call": 1}, "timed_out", 0),
     ],
 )
 def test_provider_and_tool_deadlines_persist_timeout_evidence(tmp_path: Path, sequence, deadlines, provider_status, tool_count) -> None:
@@ -1046,6 +1040,37 @@ def test_provider_and_tool_deadlines_persist_timeout_evidence(tmp_path: Path, se
     assert len(record["tool_outcomes"]) == tool_count
     assert record["claimable"] is False
     _validator("bb.replay_execution.v1.schema.json").validate(record)
+
+def test_tool_worker_startup_obeys_tool_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_root = tmp_path / "capabilities"
+    module_root.mkdir()
+    (module_root / "slow_start_tool.py").write_text(
+        "import time\n"
+        "time.sleep(1.6)\n"
+        "class SlowStartTool:\n"
+        "    def execute(self, _arguments):\n"
+        "        return {'started': True}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(module_root))
+    module = importlib.import_module("slow_start_tool")
+    try:
+        tool_schemas = ({"type": "function", "function": {"name": "lazy", "parameters": {"type": "object"}}},)
+        _, _, result = _run(
+            tmp_path / "workspace",
+            sequence=("lazy",),
+            tool_schemas=tool_schemas,
+            tool_instances={"lazy": module.SlowStartTool()},
+            deadlines={"total": 10_000, "idle": 3_000, "provider_call": 1_000, "tool_call": 1_200},
+        )
+    finally:
+        sys.modules.pop("slow_start_tool", None)
+    record = result.execution.as_dict()
+    assert record["terminal_status"] == "timed_out"
+    assert record["problem"]["error_code"] == "replay.tool_timeout"
+
 
 
 def test_policy_dispatch_rechecks_deadline_after_exchange_evidence_write(
@@ -1083,14 +1108,13 @@ def test_worker_result_arriving_after_call_deadline_is_timed_out(tmp_path: Path)
 
 
 @pytest.mark.parametrize(
-    ("sequence", "tool_hang", "error_code"),
+    ("sequence", "tool_hang", "deadlines", "error_code"),
     [
-        (("hang",), False, "replay.provider_timeout"),
-        (("add",), True, "replay.tool_timeout"),
+        (("hang",), False, {"total": 2_000, "idle": 1_000, "provider_call": 700, "tool_call": 1_000}, "replay.provider_timeout"),
+        (("add",), True, {"total": 5_000, "idle": 2_000, "provider_call": 1_000, "tool_call": 1_000}, "replay.tool_timeout"),
     ],
 )
-def test_hung_external_calls_are_terminated_at_deadline(tmp_path: Path, sequence, tool_hang, error_code) -> None:
-    deadlines = {"total": 2_000, "idle": 1_000, "provider_call": 20, "tool_call": 20}
+def test_hung_external_calls_are_terminated_at_deadline(tmp_path: Path, sequence, tool_hang, deadlines, error_code) -> None:
     _, _, result = _run(tmp_path, sequence=sequence, tool_hang=tool_hang, deadlines=deadlines)
     record = result.execution.as_dict()
     assert record["terminal_status"] == "timed_out"
@@ -1118,7 +1142,7 @@ def test_total_and_idle_deadlines_are_enforced_independently(tmp_path: Path) -> 
     _, _, total_result = _run(
         tmp_path / "total",
         sequence=("done",),
-        deadlines={"total": 2_500, "idle": 1_000, "provider_call": 2_000, "tool_call": 2_000},
+        deadlines={"total": 2_500, "idle": 10_000, "provider_call": 2_000, "tool_call": 2_000},
         monotonic=_SlowMonotonic(),
     )
     total = total_result.execution.as_dict()
@@ -1530,7 +1554,7 @@ def test_manifest_rejects_workspace_root_location(tmp_path: Path) -> None:
 
 
 def test_policy_evaluation_obeys_deadline_and_persists_timeout(tmp_path: Path) -> None:
-    _, _, result = _run(tmp_path, sequence=("add",), authorize=_hang_policy, deadlines={"total": 1_000, "idle": 1_000, "provider_call": 100, "tool_call": 20})
+    _, _, result = _run(tmp_path, sequence=("add",), authorize=_hang_policy, deadlines={"total": 2_000, "idle": 2_000, "provider_call": 1_000, "tool_call": 20})
     record = result.execution.as_dict()
     assert record["terminal_status"] == "timed_out"
     assert record["problem"]["error_code"] == "replay.policy_timeout"
@@ -1538,7 +1562,16 @@ def test_policy_evaluation_obeys_deadline_and_persists_timeout(tmp_path: Path) -
     assert next(row for row in record["policy_decisions"] if row["kind"] == "policy")["decision"] == "denied"
 
 def test_cancellation_before_policy_dispatch_records_denial(tmp_path: Path) -> None:
-    _, _, result = _run(tmp_path, sequence=("add",), cancelled=_CancelBeforePolicy())
+    ticks = [0]
+
+    def monotonic() -> float:
+        ticks[0] += 1
+        return ticks[0] / 1_000
+
+    def cancelled() -> bool:
+        return ticks[0] >= 6
+
+    _, _, result = _run(tmp_path, sequence=("add",), monotonic=monotonic, cancelled=cancelled)
     record = result.execution.as_dict()
     assert record["terminal_status"] == "cancelled"
     assert next(row for row in record["policy_decisions"] if row["kind"] == "policy")["decision"] == "denied"
@@ -1552,7 +1585,7 @@ def test_cancellation_after_policy_result_precedes_policy_denial(tmp_path: Path)
         return ticks[0] / 1_000
 
     def cancelled() -> bool:
-        return ticks[0] >= 6
+        return ticks[0] >= 8
 
     _, _, result = _run(
         tmp_path,
@@ -1660,6 +1693,36 @@ def test_worker_supports_and_binds_package_resource_files(
         sys.modules.pop("resource_capability_fixture", None)
     assert before != after
     assert result.execution.as_dict()["terminal_status"] == "completed"
+
+
+def test_top_level_capability_does_not_allowlist_unrelated_sibling_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_root = tmp_path / "capabilities"
+    module_root.mkdir()
+    unrelated = module_root / ".env"
+    unrelated.write_text("PRIVATE=first", encoding="utf-8")
+    (module_root / "top_level_resource_tool.py").write_text(
+        "from pathlib import Path\n"
+        "class ResourceTool:\n"
+        "    def execute(self, _arguments):\n"
+        "        return {'content': Path(__file__).with_name('.env').read_text(encoding='utf-8')}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(module_root))
+    module = importlib.import_module("top_level_resource_tool")
+    try:
+        tool = module.ResourceTool()
+        before = _capability_runtime_identity(tool, "tool")
+        unrelated.write_text("PRIVATE=second", encoding="utf-8")
+        after = _capability_runtime_identity(tool, "tool")
+        payload = replay_runner_module._tool_executor_envelope(tool, "tool")
+        module_read_paths, _ = replay_runner_module._executor_module_allowlist(payload)
+    finally:
+        sys.modules.pop("top_level_resource_tool", None)
+    assert before == after
+    assert str(unrelated) not in module_read_paths
+    assert str(unrelated.resolve()) not in module_read_paths
 
 
 

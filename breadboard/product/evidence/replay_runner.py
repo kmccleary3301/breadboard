@@ -245,7 +245,7 @@ def _enforce_worker_sandbox(
             "(literal \"/\") "
             + " ".join(f"(subpath {json.dumps(path)})" for path in read_roots)
             + " "
-            + " ".join(f"(literal {json.dumps(path)})" for path in (*module_directories, *module_files))
+            + " ".join(f"(literal {json.dumps(path)})" for path in module_files)
         )
         profile = (
             "(version 1)(allow default)"
@@ -690,23 +690,16 @@ def _add_top_level_sibling_allowlist(
                     dependency_files.add((f"{module_name}:{candidate.name}/{package_init.name}", location))
                 _add_package_module_allowlist(package_name, runtime_roots, paths, exact_specs, dependency_files)
                 continue
-            for resource in candidate.rglob("*"):
-                if resource.is_symlink() or not resource.is_file() or "__pycache__" in resource.parts:
-                    continue
-                location = os.path.abspath(resource)
-                paths.update((location, os.path.realpath(location)))
-                if dependency_files is not None:
-                    dependency_files.add((f"{module_name}:{resource.relative_to(module_root).as_posix()}", location))
             continue
         if not candidate.is_file():
+            continue
+        suffix = next((item for item in import_suffixes if candidate.name.endswith(item)), None)
+        if suffix is None:
             continue
         location = os.path.abspath(candidate)
         paths.update((location, os.path.realpath(location)))
         if dependency_files is not None:
             dependency_files.add((f"{module_name}:{candidate.name}", location))
-        suffix = next((item for item in import_suffixes if candidate.name.endswith(item)), None)
-        if suffix is None:
-            continue
         sibling_name = candidate.name[:-len(suffix)]
         if sibling_name == "__init__" or not sibling_name.isidentifier():
             continue
@@ -1074,7 +1067,7 @@ def _exec_tool_worker_bootstrap(
 
 
 class _ExecToolWorker:
-    def __init__(self, executor: Any, workspace_descriptor: int, *, capability_kind: str = "tool", payload: bytes | None = None) -> None:
+    def __init__(self, executor: Any, workspace_descriptor: int, *, capability_kind: str = "tool", payload: bytes | None = None, startup_timeout_ms: int = 2_000, startup_timeout_code: str = "replay.tool_timeout", startup_timeout_detail: str = "capability worker startup exceeded its deadline", cancelled: Callable[[], bool] | None = None) -> None:
         from multiprocessing.connection import Connection
         self._capability_kind = capability_kind
         payload = _tool_executor_envelope(executor, capability_kind) if payload is None else payload
@@ -1127,9 +1120,14 @@ class _ExecToolWorker:
             raise
         else:
             os.close(payload_write)
-        if not self._result_recv.poll(2):
-            self.close()
-            raise ReplayRunError("isolated capability worker did not become ready")
+        startup_deadline = time.monotonic() + max(1, startup_timeout_ms) / 1_000
+        while not self._result_recv.poll(max(0, min(0.01, startup_deadline - time.monotonic()))):
+            if cancelled is not None and cancelled():
+                self.close()
+                raise _RuntimeFailure("cancelled", "replay.cancelled", "replay was cancelled")
+            if time.monotonic() >= startup_deadline:
+                self.close()
+                raise _RuntimeFailure("timed_out", startup_timeout_code, startup_timeout_detail)
         try:
             status, _, _ = _decode_worker_envelope(self._result_recv.recv_bytes())
         except BaseException as exc:
@@ -2316,6 +2314,10 @@ def run_replay(
                     name: _tool_executor_envelope(tools[name], "tool")
                     for name in sorted(tools)
                 }
+                provider_capability = _provider_capability(provider, provider_client, provider_model, isolated_provider_context, worker_environment, secret_bindings, client_binding)
+                provider_worker_payload = _tool_executor_envelope(provider_capability, "provider")
+                policy_capability = _policy_capability(authorize)
+                policy_worker_payload = _tool_executor_envelope(policy_capability, "policy")
                 executor_binding = {"executors": {name: _capability_runtime_identity(tools[name], "tool", payload=tool_worker_payloads[name]) for name in sorted(tools)}}
                 if binding_inputs["tool_executor_identity_sha256"] != executor_binding:
                     raise ReplayPlanError("tool executors do not match the frozen runtime identities")
@@ -2335,8 +2337,6 @@ def run_replay(
                 host_worker = None
                 policy_worker = None
                 tool_workers: dict[str, _ExecToolWorker] = {}
-                provider_worker = _ExecToolWorker(_provider_capability(provider, provider_client, provider_model, isolated_provider_context, worker_environment, secret_bindings, client_binding), fresh_workspace_descriptor, capability_kind="provider")
-                policy_worker = _ExecToolWorker(_policy_capability(authorize), fresh_workspace_descriptor, capability_kind="policy")
                 budgets, deadlines = plan_record["budgets"], plan_record["deadlines_ms"]
                 last_activity = overall_start
 
@@ -2376,6 +2376,38 @@ def run_replay(
                             timeout_code, timeout_detail = "replay.total_timeout", "replay exceeded its total deadline"
                         else:
                             timeout_code, timeout_detail = "replay.provider_timeout", "provider call exceeded its deadline"
+                        if provider_worker is None:
+                            provider_worker = _ExecToolWorker(
+                                provider_capability,
+                                fresh_workspace_descriptor,
+                                capability_kind="provider",
+                                payload=provider_worker_payload,
+                                startup_timeout_ms=call_limit,
+                                startup_timeout_code=timeout_code,
+                                startup_timeout_detail=timeout_detail,
+                                cancelled=cancelled,
+                            )
+                            provider_ready = monotonic()
+                            cancellation = cancellation_state(_duration_ms(last_activity, provider_ready))
+                            if cancellation is not None:
+                                raise _RuntimeFailure("cancelled", cancellation[0], cancellation[1])
+                            if _duration_ms(overall_start, provider_ready) > deadlines["total"]:
+                                raise _RuntimeFailure("timed_out", "replay.total_timeout", "replay exceeded its total deadline")
+                            if _duration_ms(last_activity, provider_ready) > deadlines["idle"]:
+                                raise _RuntimeFailure("timed_out", "replay.idle_timeout", "provider call exceeded the idle deadline")
+                            provider_elapsed = _duration_ms(call_start, provider_ready)
+                            if provider_elapsed > deadlines["provider_call"]:
+                                raise _RuntimeFailure("timed_out", "replay.provider_timeout", "provider call exceeded its deadline")
+                            total_remaining = max(1, deadlines["total"] - _duration_ms(overall_start, provider_ready))
+                            idle_remaining = max(1, deadlines["idle"] - _duration_ms(last_activity, provider_ready))
+                            provider_remaining = max(1, deadlines["provider_call"] - provider_elapsed)
+                            call_limit = min(provider_remaining, total_remaining, idle_remaining)
+                            if idle_remaining == call_limit:
+                                timeout_code, timeout_detail = "replay.idle_timeout", "provider call exceeded the idle deadline"
+                            elif total_remaining == call_limit:
+                                timeout_code, timeout_detail = "replay.total_timeout", "replay exceeded its total deadline"
+                            else:
+                                timeout_code, timeout_detail = "replay.provider_timeout", "provider call exceeded its deadline"
                         raw_result = provider_worker.invoke({"messages": provider_messages, "tools": provider_tools}, timeout_ms=call_limit, timeout_code=timeout_code, timeout_detail=timeout_detail, cancelled=cancelled, cancellation_grace_ms=plan_record["cancellation_grace_ms"])
                         result = _validate_replay_provider_result(raw_result, request_id)
                         evidence = provider_result_evidence(result)
@@ -2477,6 +2509,38 @@ def run_replay(
                         else:
                             policy_timeout_code, policy_timeout_detail = "replay.policy_timeout", "policy evaluation exceeded its deadline"
                         try:
+                            if policy_worker is None:
+                                policy_worker = _ExecToolWorker(
+                                    policy_capability,
+                                    fresh_workspace_descriptor,
+                                    capability_kind="policy",
+                                    payload=policy_worker_payload,
+                                    startup_timeout_ms=policy_limit,
+                                    startup_timeout_code=policy_timeout_code,
+                                    startup_timeout_detail=policy_timeout_detail,
+                                    cancelled=cancelled,
+                                )
+                                policy_ready = monotonic()
+                                cancellation = cancellation_state(_duration_ms(last_activity, policy_ready))
+                                if cancellation is not None:
+                                    raise _RuntimeFailure("cancelled", cancellation[0], cancellation[1])
+                                if _duration_ms(overall_start, policy_ready) > deadlines["total"]:
+                                    raise _RuntimeFailure("timed_out", "replay.total_timeout", "replay exceeded its total deadline")
+                                if _duration_ms(last_activity, policy_ready) > deadlines["idle"]:
+                                    raise _RuntimeFailure("timed_out", "replay.idle_timeout", "policy evaluation exceeded the idle deadline")
+                                policy_elapsed = _duration_ms(policy_start, policy_ready)
+                                if policy_elapsed > deadlines["tool_call"]:
+                                    raise _RuntimeFailure("timed_out", "replay.policy_timeout", "policy evaluation exceeded its deadline")
+                                policy_total_remaining = max(1, deadlines["total"] - _duration_ms(overall_start, policy_ready))
+                                policy_idle_remaining = max(1, deadlines["idle"] - _duration_ms(last_activity, policy_ready))
+                                policy_call_remaining = max(1, deadlines["tool_call"] - policy_elapsed)
+                                policy_limit = min(policy_call_remaining, policy_total_remaining, policy_idle_remaining)
+                                if policy_idle_remaining == policy_limit:
+                                    policy_timeout_code, policy_timeout_detail = "replay.idle_timeout", "policy evaluation exceeded the idle deadline"
+                                elif policy_total_remaining == policy_limit:
+                                    policy_timeout_code, policy_timeout_detail = "replay.total_timeout", "replay exceeded its total deadline"
+                                else:
+                                    policy_timeout_code, policy_timeout_detail = "replay.policy_timeout", "policy evaluation exceeded its deadline"
                             allowed = policy_worker.invoke({"name": call.name, "arguments": arguments}, timeout_ms=policy_limit, timeout_code=policy_timeout_code, timeout_detail=policy_timeout_detail, cancelled=cancelled, cancellation_grace_ms=plan_record["cancellation_grace_ms"])
                         except _RuntimeFailure:
                             policy_state["policy"] = "denied"
@@ -2501,11 +2565,6 @@ def run_replay(
                         if allowed is not True:
                             policy_state["policy"] = "denied"
                             raise _RuntimeFailure("policy_denied", "replay.policy_denied", "policy denied a tool call")
-                        if call.name == "host.execute":
-                            if host_worker is None:
-                                host_worker = _ExecToolWorker(host, fresh_workspace_descriptor, capability_kind="host", payload=host_worker_payload)
-                        elif call.name not in tool_workers:
-                            tool_workers[call.name] = _ExecToolWorker(tools[call.name], fresh_workspace_descriptor, payload=tool_worker_payloads[call.name])
                         tool_start = monotonic()
                         cancellation = cancellation_state(_duration_ms(last_activity, tool_start))
                         if cancellation is not None:
@@ -2524,6 +2583,52 @@ def run_replay(
                         else:
                             timeout_code, timeout_detail = "replay.tool_timeout", "tool call exceeded its deadline"
                         try:
+                            started_worker = False
+                            if call.name == "host.execute" and host_worker is None:
+                                host_worker = _ExecToolWorker(
+                                    host,
+                                    fresh_workspace_descriptor,
+                                    capability_kind="host",
+                                    payload=host_worker_payload,
+                                    startup_timeout_ms=call_limit,
+                                    startup_timeout_code=timeout_code,
+                                    startup_timeout_detail=timeout_detail,
+                                    cancelled=cancelled,
+                                )
+                                started_worker = True
+                            elif call.name != "host.execute" and call.name not in tool_workers:
+                                tool_workers[call.name] = _ExecToolWorker(
+                                    tools[call.name],
+                                    fresh_workspace_descriptor,
+                                    payload=tool_worker_payloads[call.name],
+                                    startup_timeout_ms=call_limit,
+                                    startup_timeout_code=timeout_code,
+                                    startup_timeout_detail=timeout_detail,
+                                    cancelled=cancelled,
+                                )
+                                started_worker = True
+                            if started_worker:
+                                worker_ready = monotonic()
+                                cancellation = cancellation_state(_duration_ms(last_activity, worker_ready))
+                                if cancellation is not None:
+                                    raise _RuntimeFailure("cancelled", cancellation[0], cancellation[1])
+                                if _duration_ms(overall_start, worker_ready) > deadlines["total"]:
+                                    raise _RuntimeFailure("timed_out", "replay.total_timeout", "replay exceeded its total deadline")
+                                if _duration_ms(last_activity, worker_ready) > deadlines["idle"]:
+                                    raise _RuntimeFailure("timed_out", "replay.idle_timeout", "tool call exceeded the idle deadline")
+                                tool_elapsed = _duration_ms(tool_start, worker_ready)
+                                if tool_elapsed > deadlines["tool_call"]:
+                                    raise _RuntimeFailure("timed_out", "replay.tool_timeout", "tool call exceeded its deadline")
+                                total_remaining = max(1, deadlines["total"] - _duration_ms(overall_start, worker_ready))
+                                idle_remaining = max(1, deadlines["idle"] - _duration_ms(last_activity, worker_ready))
+                                tool_remaining = max(1, deadlines["tool_call"] - tool_elapsed)
+                                call_limit = min(tool_remaining, total_remaining, idle_remaining)
+                                if idle_remaining == call_limit:
+                                    timeout_code, timeout_detail = "replay.idle_timeout", "tool call exceeded the idle deadline"
+                                elif total_remaining == call_limit:
+                                    timeout_code, timeout_detail = "replay.total_timeout", "replay exceeded its total deadline"
+                                else:
+                                    timeout_code, timeout_detail = "replay.tool_timeout", "tool call exceeded its deadline"
                             if call.name == "host.execute":
                                 command = arguments.get("command")
                                 if not isinstance(command, str) or not command:
