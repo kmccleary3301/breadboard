@@ -57,3 +57,6 @@ def test_session_invalid_state_is_stable_and_secret_free(monkeypatch, tmp_path: 
     assert duplicate.status_code == 422
     assert duplicate.json()["error"]["error_code"] == "invalid_state"
     assert str(tmp_path) not in duplicate.text
+    malformed = client.post("/v1/sessions", json={})
+    assert malformed.status_code == 422 and malformed.json()["schema_version"] == "bb.cli.result.v1"
+    assert malformed.json()["error"]["schema_version"] == "bb.problem.v1"

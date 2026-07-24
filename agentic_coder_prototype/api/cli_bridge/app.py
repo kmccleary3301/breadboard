@@ -57,7 +57,7 @@ from .service import SessionService
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 from agentic_coder_prototype.api.public import create_public_router
-from agentic_coder_prototype.api.public.models import is_public_operation_request
+from agentic_coder_prototype.api.public.models import is_public_operation_request, problem_response
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
@@ -271,12 +271,15 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
 
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-        if not (public_api_enabled and is_public_operation_request(request.method, request.url.path)):
+        if not (public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path)):
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         return JSONResponse(status_code=exc.status_code, content=_http_error_content(exc))
 
     @app.exception_handler(RequestValidationError)
-    async def _validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path):
+            operation_id = getattr(request.scope.get("route"), "operation_id", "public.request")
+            return problem_response(operation_id, 422, "invalid_request", "request validation failed")
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content=ErrorEnvelope(error="invalid_request", detail={"errors": exc.errors()}, path=None).model_dump(),
