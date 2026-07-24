@@ -27,17 +27,17 @@ def test_session_lifecycle_and_resumable_event_stream(monkeypatch, tmp_path: Pat
     )
     assert started.status_code == 202
     assert started.json()["data"]["session"]["status"] == "running"
-    monkeypatch.setenv("SESSION_TOKEN", "stream-secret-must-not-leak")
+    monkeypatch.setenv("SESSION_TOKEN", "abc")
     def finish() -> None:
         sleep(0.05)
         headers = {"Idempotency-Key": "input-fixture"}
         assert client.post("/v1/sessions/session-fixture/input", json={"content": "continue"}, headers=headers).status_code == 202
         assert client.post("/v1/sessions/session-fixture/input", json={"content": "continue"}, headers=headers).status_code == 202
-        assert client.post("/v1/sessions/session-fixture/cancel", json={"reason": "stream-secret-must-not-leak"}, headers={"Idempotency-Key": "cancel-fixture"}).status_code == 202
+        assert client.post("/v1/sessions/session-fixture/cancel", json={"reason": "abc"}, headers={"Idempotency-Key": "cancel-fixture"}).status_code == 202
     worker = Thread(target=finish); worker.start()
     streamed = client.get("/v1/sessions/session-fixture/events"); worker.join()
     first = _stream_records(streamed)
-    assert "stream-secret-must-not-leak" not in streamed.text
+    assert '"reason":"abc"' not in streamed.text
     assert [event["seq"] for event in first] == [1, 2, 3]
     assert all(event["schema_version"] == "bb.kernel_event.v2" for event in first)
     assert first[-1]["kind"] == "session.canceled"

@@ -102,12 +102,12 @@ def workspace_path(reference: str, workspace: Path) -> Path:
     return resolved
 def _secret_values() -> tuple[str, ...]:
     markers = ("SECRET", "TOKEN", "PASSWORD", "API_KEY", "CREDENTIAL")
-    return tuple(value for name, value in os.environ.items() if value and len(value) >= 4 and any(marker in name.upper() for marker in markers))
+    return tuple(value for name, value in os.environ.items() if value and any(marker in name.upper() for marker in markers))
 def _scrub(value: Any, workspace: Path | None, secrets: Sequence[str]) -> Any:
     if isinstance(value, str):
         text = value.replace(str(workspace), ".") if workspace is not None else value
         for secret in secrets:
-            text = text.replace(secret, "<redacted>")
+            text = "<redacted>" if text == secret else text.replace(secret, "<redacted>") if len(secret) >= 4 else text
         return text
     if isinstance(value, Mapping):
         return {str(key): _scrub(item, workspace, secrets) for key, item in value.items()}
