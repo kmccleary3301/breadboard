@@ -18,9 +18,9 @@ def _create(request: HarnessCreateRequest, workspace):
     return operations.init(_args(workspace, out=directory))
 def _lock(harness_id: str, workspace):
     args = _args(workspace, harness_id, out=None, check=False)
-    target = operations._lockpath(args.PATH)
+    target = operations.lock_path(args.PATH)
     _contained(target, workspace)
-    _contained(operations._meta(target), workspace)
+    _contained(operations.lock_metadata_path(target), workspace)
     return operations.lock(args)
 @router.post("/v1/harnesses", operation_id="harness.create", response_model=PublicResult)
 def create(request: HarnessCreateRequest):

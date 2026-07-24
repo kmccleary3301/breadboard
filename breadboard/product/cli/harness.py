@@ -38,11 +38,11 @@ def _compile(p,w,contained=False):
     compiled=compile_harness_definition(_doc(p),source_ref=source_ref,load_ref=load_ref)
     parse_harness_definition(compiled.resolved_author_dict())
     return compiled
-def _lockpath(p,out=None):
+def lock_path(p,out=None):
     if out:
         q=Path(out).expanduser(); return q if q.is_file() or q.suffix==".json" else q/f"{p.stem}.lock.json"
     return p.with_name(p.stem+".lock.json")
-def _meta(p):return p.with_name("."+p.name+".meta.json")
+def lock_metadata_path(p):return p.with_name("."+p.name+".meta.json")
 def _write(p,x):p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(x,sort_keys=True,indent=2)+"\n")
 _INIT_LOCK=threading.RLock()
 def _publish_seed(p,content):
@@ -85,23 +85,23 @@ def explain(a):
         x=_compile(p,w,getattr(a,"contained",False)).explanation.as_dict(); x["config_path"]=_ref(p,w); return CliResult.success(["harness","explain"],x,[_ref(p,w)],{"config":str(x.get("config_sha256",""))},stage="harness.explain")
     except Exception as e:return from_exception(["harness","explain"],e,"harness.explain")
 def lock(a):
-    p,w=_p(a),_w(a); target=_lockpath(p,getattr(a,"out",None))
+    p,w=_p(a),_w(a); target=lock_path(p,getattr(a,"out",None))
     try:
         c=_compile(p,w,getattr(a,"contained",False)); meta={"schema_version":"bb.harness_lock_metadata.v1","source_ref":_ref(p,w),"source_sha256":sha256_json(c.resolved_author_dict()),"graph_hash":c.lock["graph_hash"]}
         if getattr(a,"check",False):
-            if not target.exists() or not _meta(target).exists():return CliResult.failure(["harness","lock"],5,"lock_missing","lock is missing","harness.lock")
-            if json.loads(target.read_text())!=c.lock.as_dict() or json.loads(_meta(target).read_text())!=meta:return CliResult.failure(["harness","lock"],5,"lock_drift","harness definition changed after lock","harness.lock",next_actions=[f"breadboard harness lock {_ref(p,w)}"])
+            if not target.exists() or not lock_metadata_path(target).exists():return CliResult.failure(["harness","lock"],5,"lock_missing","lock is missing","harness.lock")
+            if json.loads(target.read_text())!=c.lock.as_dict() or json.loads(lock_metadata_path(target).read_text())!=meta:return CliResult.failure(["harness","lock"],5,"lock_drift","harness definition changed after lock","harness.lock",next_actions=[f"breadboard harness lock {_ref(p,w)}"])
             return CliResult.success(["harness","lock"],{"path":_ref(target,w),"graph_hash":meta["graph_hash"],"checked":True},[_ref(target,w)],{"graph":meta["graph_hash"]},stage="harness.lock")
-        _write(target,c.lock.as_dict()); _write(_meta(target),meta)
+        _write(target,c.lock.as_dict()); _write(lock_metadata_path(target),meta)
         next_action=f"breadboard harness run {shlex.quote(str(p))} --local"
-        if target.resolve()!=_lockpath(p).resolve():next_action+=f" --lock {shlex.quote(str(target.resolve()))}"
+        if target.resolve()!=lock_path(p).resolve():next_action+=f" --lock {shlex.quote(str(target.resolve()))}"
         return CliResult.success(["harness","lock"],{"path":_ref(target,w),"graph_hash":meta["graph_hash"]},[_ref(target,w)],{"graph":meta["graph_hash"],"source":meta["source_sha256"]},[next_action],"harness.lock")
     except Exception as e:return from_exception(["harness","lock"],e,"harness.lock")
 def load_lock(p,w,*,explicit=False):
-    t=p if explicit or p.name.endswith(".lock.json") else _lockpath(p)
+    t=p if explicit or p.name.endswith(".lock.json") else lock_path(p)
     if not t.exists():raise FileNotFoundError(f"lock is missing: {_ref(t,w)}")
-    if not _meta(t).exists():raise ValueError("lock metadata is missing; lock must be regenerated")
-    return EffectiveHarnessLock._from_record(json.loads(t.read_text())),_meta(t)
+    if not lock_metadata_path(t).exists():raise ValueError("lock metadata is missing; lock must be regenerated")
+    return EffectiveHarnessLock._from_record(json.loads(t.read_text())),lock_metadata_path(t)
 def _record_count(response):
     if not isinstance(response,dict):return 0
     total=response.get("total")
@@ -207,6 +207,6 @@ def update(a):
     finally:
         if temporary is not None:temporary.unlink(missing_ok=True)
 def get_lock(a):
-    p,w=_p(a),_w(a); t=p if p.name.endswith(".lock.json") else _lockpath(p)
+    p,w=_p(a),_w(a); t=p if p.name.endswith(".lock.json") else lock_path(p)
     try:x=json.loads(t.read_text()); return CliResult.success(["harness-lock","get"],{"path":_ref(t,w),"lock":x},[_ref(t,w)],{"graph":str(x.get("graph_hash",""))},stage="harness-lock.get")
     except Exception as e:return from_exception(["harness-lock","get"],e,"harness-lock.get")

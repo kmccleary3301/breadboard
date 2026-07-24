@@ -9,7 +9,7 @@ from typing import Any, Literal
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from breadboard.product.cli.result import CliResult, from_exception
-from breadboard.product.runtime.events import _ProcessLock
+from breadboard.product.runtime.events import ProcessLock
 _FAMILIES = frozenset({"artifact", "harness", "harness_lock", "integration", "session", "system"})
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MAINTAINER_ROOTS = (_REPO_ROOT / "contracts", _REPO_ROOT / "docs", _REPO_ROOT.parent / "docs_tmp")
@@ -171,7 +171,7 @@ def invoke_idempotent(
         directory = workspace_path(".breadboard/public_api/idempotency", workspace)
         directory.mkdir(parents=True, exist_ok=True)
         record_path = workspace_path(str(directory.joinpath(f"{bucket}.json").relative_to(workspace)), workspace)
-        with _ProcessLock(record_path):
+        with ProcessLock(record_path):
             if record_path.exists():
                 record = json.loads(record_path.read_text())
                 if record.get("input_sha256") != input_sha256:

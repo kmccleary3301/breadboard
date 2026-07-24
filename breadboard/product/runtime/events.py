@@ -5,9 +5,9 @@ from collections.abc import Callable, Iterable, Mapping; from dataclasses import
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from .artifacts import ArtifactRef
 def _sync(stream: Any) -> None: stream.flush(); os.fsync(stream.fileno())
-class _ProcessLock:
+class ProcessLock:
     def __init__(self, path: Path) -> None: self.stream = os.fdopen(os.open(path.with_name(f".{path.name}.lock"), os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600), "a+b", buffering=0)
-    def __enter__(self) -> "_ProcessLock":
+    def __enter__(self) -> "ProcessLock":
         if os.name == "nt": import msvcrt; self.stream.seek(0, os.SEEK_END); self.stream.write(b"\0") if not self.stream.tell() else None; self.stream.seek(0); msvcrt.locking(self.stream.fileno(), msvcrt.LK_LOCK, 1); self.unlock = lambda: (self.stream.seek(0), msvcrt.locking(self.stream.fileno(), msvcrt.LK_UNLCK, 1))
         else: import fcntl; fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX); self.unlock = lambda: fcntl.flock(self.stream.fileno(), fcntl.LOCK_UN)
         return self
@@ -29,7 +29,7 @@ class JsonlEventSink:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path).resolve(); path, state = self.path, _STATES[hash(self.path) % len(_STATES)]
         with state.lock: self._mkdir_parent(path.parent)
-        with state.lock, _ProcessLock(path): self._recover(path, state)
+        with state.lock, ProcessLock(path): self._recover(path, state)
     def _mkdir_parent(self, path: Path) -> None:
         if path.exists(): return
         self._mkdir_parent(path.parent)
@@ -63,7 +63,7 @@ class JsonlEventSink:
         wal, temporary = self._transaction_paths(path); temporary.unlink(missing_ok=True); wal.unlink(missing_ok=True); self._sync_parent(path)
     def append(self, event: object) -> None:
         payload = (json.dumps(event.as_dict(), sort_keys=True, separators=(",", ":")) + "\n").encode(); path = Path(self.path).resolve(); state = _STATES[hash(path) % len(_STATES)]  # type: ignore[attr-defined]
-        with state.lock, _ProcessLock(path):
+        with state.lock, ProcessLock(path):
             if path in state.poisoned: raise RuntimeError("event sink is poisoned after an unconfirmed rollback")
             self._recover(path, state)
             try: stream = path.open("x+b", buffering=0); created = True

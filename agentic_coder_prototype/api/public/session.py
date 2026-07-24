@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse; from starlette.concurrency impo
 from breadboard.product.cli import harness as harness_operations
 from breadboard.product.cli import session as operations
 from breadboard.product.cli.result import CliResult, from_exception, portable_ref
-from breadboard.product.runtime.events import JsonlEventSink, Session, _ProcessLock
+from breadboard.product.runtime.events import JsonlEventSink, ProcessLock, Session
 from .models import (
     PublicResult,
     SessionApprovalRequest,
@@ -29,25 +29,25 @@ def _args(workspace, session_id: str, **values):
 def _session_paths(workspace, session_id: str):
     if not session_id or session_id != Path(session_id).name:
         raise ValueError("session_id must be a portable identifier")
-    directory = workspace_path(".breadboard/sessions", workspace)
+    directory = workspace_path(str(operations.session_directory(workspace).relative_to(workspace)), workspace)
     directory.mkdir(parents=True, exist_ok=True)
-    event_path = workspace_path(str(operations._ep(workspace, session_id).relative_to(workspace)), workspace)
-    metadata_path = workspace_path(str(operations._meta(workspace, session_id).relative_to(workspace)), workspace)
+    event_path = workspace_path(str(operations.session_event_path(workspace, session_id).relative_to(workspace)), workspace)
+    metadata_path = workspace_path(str(operations.session_metadata_path(workspace, session_id).relative_to(workspace)), workspace)
     return event_path, metadata_path, directory / f"{session_id}.mutation"
 def _mutate(workspace, session_id: str, function):
     _, _, guard = _session_paths(workspace, session_id)
-    with _ProcessLock(guard):
+    with ProcessLock(guard):
         return function()
 def start_session_result(request: SessionStartRequest, workspace):
     session_id = request.session_id or str(uuid4())
     event_path, metadata_path, guard = _session_paths(workspace, session_id)
     lock_path = workspace_path(request.lock_id, workspace)
     lock, _ = harness_operations.load_lock(lock_path, workspace, explicit=True)
-    with _ProcessLock(guard):
+    with ProcessLock(guard):
         if event_path.exists() or metadata_path.exists():
             raise ValueError(f"session already exists: {session_id}")
         session = Session.start(lock, request.task, session_id=session_id, sink=JsonlEventSink(event_path))
-        operations._persist(workspace, session)
+        operations.persist_session(workspace, session)
     view = session.read_model
     return CliResult.success(
         ["session", "start"],
@@ -202,7 +202,7 @@ def events(
                     await run_in_threadpool(source.seek, position)
                     await asyncio.sleep(0.05)
                     continue
-                event = await run_in_threadpool(lambda: operations._event(json.loads(line)).as_dict())
+                event = await run_in_threadpool(lambda: operations.event_from_record(json.loads(line)).as_dict())
                 terminal = event["kind"] in {"session.completed", "session.failed", "session.canceled"}
                 if int(event["sequence"]) <= start_after:
                     if terminal:
