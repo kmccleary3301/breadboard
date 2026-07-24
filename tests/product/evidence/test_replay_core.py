@@ -1544,6 +1544,28 @@ def test_cancellation_before_policy_dispatch_records_denial(tmp_path: Path) -> N
     assert next(row for row in record["policy_decisions"] if row["kind"] == "policy")["decision"] == "denied"
 
 
+def test_cancellation_after_policy_result_precedes_policy_denial(tmp_path: Path) -> None:
+    ticks = [0]
+
+    def monotonic() -> float:
+        ticks[0] += 1
+        return ticks[0] / 1_000
+
+    def cancelled() -> bool:
+        return ticks[0] >= 6
+
+    _, _, result = _run(
+        tmp_path,
+        sequence=("add",),
+        authorize=_deny,
+        monotonic=monotonic,
+        cancelled=cancelled,
+    )
+    record = result.execution.as_dict()
+    assert record["terminal_status"] == "cancelled"
+    assert record["problem"]["error_code"] == "replay.cancelled"
+
+
 def test_tool_relative_filesystem_writes_are_workspace_anchored(tmp_path: Path) -> None:
     workspace, _, result = _run(tmp_path, sequence=("add",), tool_instances={"add": _RelativeWriteTool()})
     entry = next(row for row in result.manifest.as_dict()["entries"] if row["role"] == "workspace_after")

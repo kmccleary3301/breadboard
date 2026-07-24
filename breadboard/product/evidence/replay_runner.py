@@ -2484,6 +2484,20 @@ def run_replay(
                         except Exception as exc:
                             policy_state["policy"] = "denied"
                             raise _RuntimeFailure("policy_denied", "replay.policy_error", "policy evaluation failed for a tool call") from exc
+                        policy_end = monotonic()
+                        cancellation = cancellation_state(_duration_ms(last_activity, policy_end))
+                        if cancellation is not None:
+                            policy_state["policy"] = "denied"
+                            raise _RuntimeFailure("cancelled", cancellation[0], cancellation[1])
+                        if _duration_ms(overall_start, policy_end) > deadlines["total"]:
+                            policy_state["policy"] = "denied"
+                            raise _RuntimeFailure("timed_out", "replay.total_timeout", "replay exceeded its total deadline")
+                        if _duration_ms(last_activity, policy_end) > deadlines["idle"]:
+                            policy_state["policy"] = "denied"
+                            raise _RuntimeFailure("timed_out", "replay.idle_timeout", "replay exceeded its idle deadline")
+                        if _duration_ms(policy_start, policy_end) > deadlines["tool_call"]:
+                            policy_state["policy"] = "denied"
+                            raise _RuntimeFailure("timed_out", "replay.policy_timeout", "policy evaluation exceeded its deadline")
                         if allowed is not True:
                             policy_state["policy"] = "denied"
                             raise _RuntimeFailure("policy_denied", "replay.policy_denied", "policy denied a tool call")
