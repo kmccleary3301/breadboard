@@ -13,9 +13,10 @@ import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
+from starlette.concurrency import run_in_threadpool
 
 try:
     from dotenv import load_dotenv
@@ -57,7 +58,7 @@ from .service import SessionService
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 from agentic_coder_prototype.api.public import create_public_router
-from agentic_coder_prototype.api.public.models import PublicResult, SessionStartRequest as PublicSessionStartRequest, invoke as invoke_public
+from agentic_coder_prototype.api.public.models import PublicResult, SessionStartRequest as PublicSessionStartRequest, invoke_idempotent
 from agentic_coder_prototype.api.public.session import start_session_result
 
 logger = logging.getLogger(__name__)
@@ -643,9 +644,17 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     async def create_session(
         payload: SessionCreateRequest | PublicSessionStartRequest,
         svc: SessionService = Depends(get_service),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ):
         if isinstance(payload, PublicSessionStartRequest):
-            return invoke_public("session.start", lambda workspace: start_session_result(payload, workspace))
+            return await run_in_threadpool(
+                lambda: invoke_idempotent(
+                    "session.start",
+                    idempotency_key,
+                    payload.model_dump(mode="json"),
+                    lambda workspace: start_session_result(payload, workspace),
+                )
+            )
         return await svc.create_session(payload)
 
     @app.get(
