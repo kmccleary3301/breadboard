@@ -134,7 +134,7 @@ def _decode_worker_envelope(payload: bytes) -> tuple[str, str | None, Any]:
 
 
 def _provider_result_from_evidence(value: Any) -> ProviderResult:
-    if not isinstance(value, dict) or set(value) != {"messages", "usage", "model", "metadata"} or not isinstance(value["messages"], list):
+    if not isinstance(value, dict) or set(value) != {"messages", "usage", "encrypted_reasoning", "reasoning_summaries", "model", "metadata"} or not isinstance(value["messages"], list):
         raise _RemoteCallError("isolated provider returned malformed normalized evidence")
     messages = []
     for row in value["messages"]:
@@ -146,7 +146,7 @@ def _provider_result_from_evidence(value: Any) -> ProviderResult:
                 raise _RemoteCallError("isolated provider returned a malformed normalized tool call")
             calls.append(ProviderToolCall(call["id"], call["name"], call["arguments"], call["type"]))
         messages.append(ProviderMessage(row["role"], row["content"], calls, row["finish_reason"], row["index"], annotations=row["annotations"]))
-    return ProviderResult(messages, None, value["usage"], model=value["model"], metadata=value["metadata"])
+    return ProviderResult(messages, None, value["usage"], encrypted_reasoning=value["encrypted_reasoning"], reasoning_summaries=value["reasoning_summaries"], model=value["model"], metadata=value["metadata"])
 
 
 def _redirect_worker_stdio() -> None:
@@ -645,6 +645,60 @@ def _add_package_module_allowlist(
 
 
 
+def _add_top_level_sibling_allowlist(
+    module_name: str,
+    runtime_roots: Sequence[str],
+    paths: set[str],
+    exact_specs: set[tuple[str, str, tuple[str, ...]]],
+) -> None:
+    if "." in module_name:
+        return
+    module = sys.modules.get(module_name)
+    spec = getattr(module, "__spec__", None)
+    if spec is None:
+        try:
+            spec = importlib.util.find_spec(module_name)
+        except (AttributeError, ImportError, ValueError):
+            return
+    location = getattr(module, "__file__", None) or getattr(spec, "origin", None)
+    if not isinstance(location, str) or location in {"built-in", "frozen"}:
+        return
+    module_root = Path(os.path.realpath(location)).parent
+    if _path_is_within(str(module_root), runtime_roots):
+        return
+    import_suffixes = tuple(sorted((".py", ".pyc", *importlib.machinery.EXTENSION_SUFFIXES), key=len, reverse=True))
+    for candidate in module_root.iterdir():
+        if candidate.is_symlink():
+            continue
+        if candidate.is_dir():
+            package_name = candidate.name
+            if not package_name.isidentifier():
+                continue
+            package_init = next((candidate / f"__init__{suffix}" for suffix in import_suffixes if (candidate / f"__init__{suffix}").is_file()), None)
+            if package_init is None:
+                continue
+            location = os.path.abspath(package_init)
+            exact_specs.add((package_name, location, (os.path.abspath(candidate),)))
+            paths.update((location, os.path.realpath(location)))
+            _add_package_module_allowlist(package_name, runtime_roots, paths, exact_specs)
+            continue
+        if not candidate.is_file():
+            continue
+        suffix = next((item for item in import_suffixes if candidate.name.endswith(item)), None)
+        if suffix is None:
+            continue
+        sibling_name = candidate.name[:-len(suffix)]
+        if sibling_name == "__init__" or not sibling_name.isidentifier():
+            continue
+        location = os.path.abspath(candidate)
+        exact_specs.add((sibling_name, location, ()))
+        paths.update((location, os.path.realpath(location)))
+        if suffix == ".py":
+            cached = importlib.util.cache_from_source(location)
+            if os.path.isfile(cached):
+                paths.update((os.path.abspath(cached), os.path.realpath(cached)))
+
+
 def _executor_module_allowlist(
     payload: bytes,
 ) -> tuple[tuple[str, ...], tuple[tuple[str, str, tuple[str, ...]], ...]]:
@@ -714,6 +768,7 @@ def _executor_module_allowlist(
                 paths.update((os.path.abspath(candidate), os.path.realpath(candidate)))
     for module_name in payload_modules:
         _add_package_module_allowlist(module_name, runtime_roots, paths, exact_specs)
+        _add_top_level_sibling_allowlist(module_name, runtime_roots, paths, exact_specs)
     return tuple(sorted(paths)), tuple(sorted(exact_specs))
 
 

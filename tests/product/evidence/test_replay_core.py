@@ -361,6 +361,14 @@ class _Provider:
         usage = {"input_tokens": 100, "output_tokens": 100, "total_tokens": 1} if action == "malformed_usage" else {"input_tokens": 1, "output_tokens": 1}
         metadata = {"cost_currency": "EUR"} if action in {"eur", "add_eur"} else ({"Authorization": "Bearer UNLISTED", "Cookie": "sid=UNLISTED", "apiKey": "UNLISTED", "accessToken": "UNLISTED", "privateKey": "UNLISTED", "access_key": "UNLISTED", "session_id": "UNLISTED", "bearer": "UNLISTED"} if action == "credential_fields" else {"api_key": "SECRET"})
         return ProviderResult([message], {"raw": "must not be persisted"}, usage, model="fixture-model", metadata=metadata)
+class _ReasoningProvider(_Provider):
+    def invoke(self, **kwargs: Any) -> ProviderResult:
+        result = super().invoke(**kwargs)
+        result.encrypted_reasoning = [{"encrypted_content": "ciphertext", "metadata": {"response_id": "response-1"}}]
+        result.reasoning_summaries = ["reasoning summary"]
+        return result
+
+
 
 
 class _LiveToolResultProvider(_Provider):
@@ -1268,6 +1276,18 @@ def test_provider_exchange_hashes_bind_unredacted_payloads(tmp_path: Path) -> No
     assert all(exchange["response_payload_sha256"] != entry["sha256"] for exchange, entry in zip(exchanges, response_entries, strict=True))
 
 
+def test_provider_response_evidence_preserves_reasoning_fields(tmp_path: Path) -> None:
+    workspace, _, result = _run(tmp_path, sequence=("done",), provider_instance=_ReasoningProvider(("done",)))
+    entry = next(entry for entry in result.manifest.as_dict()["entries"] if entry["role"] == "provider_response")
+    payload = json.loads(
+        ArtifactStore(workspace.path(".breadboard/artifacts")).read(
+            ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])
+        )
+    )
+    assert payload["encrypted_reasoning"] == [{"encrypted_content": "ciphertext", "metadata": {"response_id": "response-1"}}]
+    assert payload["reasoning_summaries"] == ["reasoning summary"]
+
+
 def test_authorization_and_cookie_fields_are_always_redacted(tmp_path: Path) -> None:
     workspace, _, result = _run(tmp_path, sequence=("credential_fields",))
     store = ArtifactStore(workspace.path(".breadboard/artifacts"))
@@ -1511,6 +1531,33 @@ def test_worker_supports_lazy_sibling_package_imports(tmp_path: Path, monkeypatc
     assert record["terminal_status"] == "completed"
 
 
+
+
+def test_worker_supports_lazy_top_level_sibling_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    module_root = tmp_path / "capabilities"
+    module_root.mkdir()
+    (module_root / "lazy_top_level_helper.py").write_text("def result():\n    return {'lazy_imported': True}\n", encoding="utf-8")
+    (module_root / "lazy_top_level_tool.py").write_text(
+        "class LazyTool:\n"
+        "    def execute(self, _arguments):\n"
+        "        from lazy_top_level_helper import result\n"
+        "        return result()\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(module_root))
+    module = importlib.import_module("lazy_top_level_tool")
+    try:
+        tool_schemas = ({"type": "function", "function": {"name": "lazy", "parameters": {"type": "object"}}},)
+        _, _, result = _run(
+            tmp_path / "workspace",
+            sequence=("lazy", "done"),
+            tool_schemas=tool_schemas,
+            tool_instances={"lazy": module.LazyTool()},
+        )
+    finally:
+        sys.modules.pop("lazy_top_level_helper", None)
+        sys.modules.pop("lazy_top_level_tool", None)
+    assert result.execution.as_dict()["terminal_status"] == "completed"
 
 
 def test_worker_stdio_cannot_bypass_evidence_redaction(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:

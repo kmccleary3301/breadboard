@@ -120,6 +120,8 @@ def provider_result_evidence(result: ProviderResult) -> Dict[str, Any]:
     return {
         "messages": messages,
         "usage": _provider_evidence_value(result.usage),
+        "encrypted_reasoning": _provider_evidence_value(result.encrypted_reasoning),
+        "reasoning_summaries": _provider_evidence_value(result.reasoning_summaries),
         "model": result.model,
         "metadata": _provider_evidence_value(result.metadata),
     }
