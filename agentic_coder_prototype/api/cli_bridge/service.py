@@ -87,8 +87,8 @@ def _create_owned_stage(path: Path) -> None:
         temporary.replace(path); AnchoredStorage.sync_directory(path.parent)
     finally:
         shutil.rmtree(temporary, ignore_errors=True)
-def _cleanup_incomplete_starts() -> None:
-    record_root, event_root = default_runtime_record_root(), _event_root()
+def _cleanup_incomplete_starts(record_root: Path | None = None, event_root: Path | None = None) -> None:
+    record_root, event_root = record_root or default_runtime_record_root(), event_root or _event_root()
     for root in (record_root, event_root):
         for staged in root.glob(".*.start-owner") if root.is_dir() else ():
             if not _start_active(staged): shutil.rmtree(staged, ignore_errors=True)
@@ -154,6 +154,7 @@ class SessionService:
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata); runner = SessionRunner(session=record, registry=self.registry, request=request)
         runtime_config = runner.prepare_runtime_config(); persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config); runtime_graph = compile_runtime_effective_config_graph(session_id, persisted_runtime_config, request.config_path); runtime_lock = EffectiveHarnessLock._from_record(runtime_graph)
         emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = (runtime_root or default_runtime_record_root()) / session_id, (event_root or _event_root()) / session_id
+        await asyncio.to_thread(_cleanup_incomplete_starts, runtime_record_dir.parent, event_dir.parent)
         staging_record_root = runtime_record_dir.parent / f".{session_id}.records.starting"
         staged_record_dir, staged_event_dir = staging_record_root / session_id, event_dir.with_name(f".{session_id}.events.starting")
         if event_dir.exists() or emit_primitives and runtime_record_dir.exists(): raise RuntimeError(f"session bundle already exists: {session_id}")
@@ -478,12 +479,12 @@ class SessionService:
             if event.event_id == from_id:
                 return idx + 1
         return None
-    async def stop_session(self, session_id: str) -> None:
-        async with self._session_lock(session_id): await self._stop_session_locked(session_id)
-    async def _stop_session_locked(self, session_id: str) -> None:
+    async def stop_session(self, session_id: str, *, reason: str | None = None) -> None:
+        async with self._session_lock(session_id): await self._stop_session_locked(session_id, reason=reason)
+    async def _stop_session_locked(self, session_id: str, *, reason: str | None = None) -> None:
         record = await self.ensure_session(session_id); runner: Optional[SessionRunner] = getattr(record, "runner", None)
         try:
-            if runner: await runner.stop()
+            if runner: await runner.stop(reason) if reason is not None else await runner.stop()
         finally:
             try:
                 product_session: ProductSession | None = getattr(record, "product_session", None)

@@ -256,10 +256,10 @@ class SessionRunner:
                 try: remote() if callable(remote) else request_stop() if callable(request_stop) else None
                 except Exception: pass
             return stopping
-    async def stop(self) -> None:
+    async def stop(self, reason: str = "operator request") -> None:
         if self._closed:
             return
-        self._request_stop("operator request")
+        self._request_stop(reason)
         if self._task and not self._start_authority.is_set():
             self._task.cancel()
         if self._task and not self._task.done():

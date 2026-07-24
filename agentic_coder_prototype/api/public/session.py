@@ -5,19 +5,21 @@ from pathlib import Path
 from types import SimpleNamespace
 from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 from agentic_coder_prototype.api.cli_bridge.models import (
     SessionCommandRequest as BridgeSessionCommandRequest,
     SessionCreateRequest as BridgeSessionCreateRequest,
     SessionInputRequest as BridgeSessionInputRequest,
 )
 from breadboard.product.cli import harness as harness_operations
-from breadboard.product.cli.result import CliResult, from_exception
+from breadboard.product.cli.result import CliResult
 from .models import (
     PublicResult,
     SessionApprovalRequest,
     SessionCancelRequest,
     SessionInputRequest,
     SessionStartRequest,
+    from_public_exception,
     invoke_async,
     invoke_idempotent_async,
     public_workspace,
@@ -45,9 +47,7 @@ async def _session_result(service, session_id: str, command_name: str) -> CliRes
         hashes={"lock": view.effective_lock_hash, "task": view.task_hash},
         stage=f"session.{command_name}",
     )
-async def _start_result(request: SessionStartRequest, workspace: Path, service) -> CliResult:
-    if request.session_id and request.session_id != Path(request.session_id).name:
-        raise ValueError("session_id must be a portable identifier")
+def _resolve_start_lock(request: SessionStartRequest, workspace: Path):
     lock_path = workspace_path(request.lock_id, workspace)
     _, metadata_path = harness_operations.load_lock(lock_path, workspace, explicit=True)
     metadata = json.loads(metadata_path.read_text())
@@ -62,8 +62,23 @@ async def _start_result(request: SessionStartRequest, workspace: Path, service) 
         check=True,
         contained=True,
     ))
+    return lock_path, source_path, checked
+async def _start_result(request: SessionStartRequest, workspace: Path, service) -> CliResult:
+    if request.session_id and request.session_id != Path(request.session_id).name:
+        raise ValueError("session_id must be a portable identifier")
+    _, source_path, checked = await run_in_threadpool(_resolve_start_lock, request, workspace)
     if not checked.ok:
-        raise ValueError(str((checked.error or {}).get("message") or "harness lock validation failed"))
+        error = checked.error or {}
+        return CliResult.failure(
+            ["session", "start"],
+            checked.exit_code,
+            str(error.get("error_code") or "lock_drift"),
+            str(error.get("message") or "harness lock validation failed"),
+            "session.start",
+            hint=error.get("hint"),
+            refs=checked.record_refs,
+            next_actions=checked.next_actions,
+        )
     created = await service.create_session(
         BridgeSessionCreateRequest(config_path=str(source_path), task=request.task, workspace=str(workspace)),
         session_id=request.session_id,
@@ -88,10 +103,7 @@ async def _command_result(service, session_id: str, command: str, payload: dict,
     await service.execute_command(session_id, BridgeSessionCommandRequest(command=command, payload=payload))
     return await _session_result(service, session_id, command_name)
 async def _cancel_result(service, session_id: str, reason: str) -> CliResult:
-    await service.stop_session(session_id)
-    _, session = await _product_session(service, session_id)
-    if session.read_model.status not in {"completed", "failed", "canceled"}:
-        session.cancel(reason)
+    await service.stop_session(session_id, reason=reason)
     return await _session_result(service, session_id, "cancel")
 async def _artifacts_result(service, session_id: str) -> CliResult:
     record, _ = await _product_session(service, session_id)
@@ -177,13 +189,13 @@ async def events(session_id: str, request: Request, resume_token: int | None = Q
         workspace = public_workspace()
         _, session = await _product_session(_service(request), session_id)
     except Exception as error:
-        return result_response(from_exception(["session", "events"], error, "session.events"), workspace=workspace)
+        return result_response(from_public_exception("session.events", error), workspace=workspace)
     start_after = resume_token if resume_token is not None else last_event_id or 0
     async def bounded_stream():
         emitted = 0
         cursor = start_after
         while emitted < limit:
-            ready = [event for event in session.events if event.sequence > cursor]
+            ready = await run_in_threadpool(lambda: [event for event in session.events if event.sequence > cursor])
             if not ready:
                 if session.read_model.status in {"completed", "failed", "canceled"} or await request.is_disconnected():
                     return

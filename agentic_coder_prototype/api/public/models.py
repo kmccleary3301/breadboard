@@ -1,4 +1,5 @@
 from __future__ import annotations
+import asyncio
 import json
 import hashlib
 import os
@@ -6,6 +7,8 @@ import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Awaitable, Literal
+import weakref
+from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,6 +18,7 @@ _FAMILIES = frozenset({"artifact", "harness", "harness_lock", "integration", "se
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MAINTAINER_ROOTS = (_REPO_ROOT / "contracts", _REPO_ROOT / "docs", _REPO_ROOT.parent / "docs_tmp")
 _STATUS_BY_EXIT = {2: 422, 3: 404, 4: 500, 5: 409, 6: 409}
+_IDEMPOTENCY_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
 _ASYNC_OPERATIONS = frozenset(
     {"integration.probe", "session.approve", "session.cancel", "session.resume", "session.send_input", "session.start"}
 )
@@ -135,14 +139,21 @@ def result_response(
 def _operation_identity(operation_id: str) -> tuple[list[str], str]:
     command = [part.replace("_", "-") for part in operation_id.split(".")]
     return command, ".".join(command)
+def from_public_exception(operation_id: str, error: Exception) -> CliResult:
+    command, stage = _operation_identity(operation_id)
+    if isinstance(error, HTTPException):
+        status_code = int(error.status_code)
+        exit_code = {404: 3, 409: 6, 422: 2}.get(status_code, 4 if status_code >= 500 else 2)
+        error_code = {404: "path_unavailable", 409: "invalid_state", 422: "invalid_state"}.get(status_code, "runtime_failure" if status_code >= 500 else "invalid_state")
+        return CliResult.failure(command, exit_code, error_code, str(error.detail), stage)
+    return from_exception(command, error, stage)
 def invoke(operation_id: str, function: Callable[[Path], CliResult]) -> JSONResponse:
     workspace: Path | None = None
     try:
         workspace = public_workspace()
         result = function(workspace)
     except Exception as error:
-        command, stage = _operation_identity(operation_id)
-        result = from_exception(command, error, stage)
+        result = from_public_exception(operation_id, error)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 async def invoke_async(operation_id: str, function: Callable[[Path], Awaitable[CliResult]]) -> JSONResponse:
     workspace: Path | None = None
@@ -150,8 +161,7 @@ async def invoke_async(operation_id: str, function: Callable[[Path], Awaitable[C
         workspace = public_workspace()
         result = await function(workspace)
     except Exception as error:
-        command, stage = _operation_identity(operation_id)
-        result = from_exception(command, error, stage)
+        result = from_public_exception(operation_id, error)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 def _write_idempotency_record(path: Path, content: bytes) -> None:
     temporary = path.with_name(f".{path.name}.{os.urandom(8).hex()}.tmp")
@@ -200,8 +210,7 @@ def invoke_idempotent(
                 _write_idempotency_record(record_path, record)
                 return JSONResponse(status_code=202, content=content)
     except Exception as error:
-        command, stage = _operation_identity(operation_id)
-        result = from_exception(command, error, stage)
+        result = from_public_exception(operation_id, error)
     return result_response(result, workspace=workspace, operation_id=operation_id)
 async def invoke_idempotent_async(
     operation_id: str,
@@ -214,6 +223,8 @@ async def invoke_idempotent_async(
     workspace: Path | None = None
     lock: ProcessLock | None = None
     entered = False
+    local_lock: asyncio.Lock | None = None
+    local_lock_entered = False
     try:
         workspace = public_workspace()
         encoded = json.dumps(canonical_input, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -222,6 +233,9 @@ async def invoke_idempotent_async(
         directory = workspace_path(".breadboard/public_api/idempotency", workspace)
         directory.mkdir(parents=True, exist_ok=True)
         record_path = workspace_path(str(directory.joinpath(f"{bucket}.json").relative_to(workspace)), workspace)
+        local_lock = _IDEMPOTENCY_LOCKS.setdefault(str(record_path), asyncio.Lock())
+        await local_lock.acquire()
+        local_lock_entered = True
         lock = ProcessLock(record_path)
         await run_in_threadpool(lock.__enter__)
         entered = True
@@ -240,11 +254,12 @@ async def invoke_idempotent_async(
             _write_idempotency_record(record_path, record)
             return JSONResponse(status_code=202, content=content)
     except Exception as error:
-        command, stage = _operation_identity(operation_id)
-        result = from_exception(command, error, stage)
+        result = from_public_exception(operation_id, error)
     finally:
         if entered and lock is not None:
             await run_in_threadpool(lock.__exit__, None, None, None)
+        if local_lock_entered and local_lock is not None:
+            local_lock.release()
     return result_response(result, workspace=workspace, operation_id=operation_id)
 def problem_response(operation_id: str, status_code: int, error_code: str, message: str) -> JSONResponse:
     exit_code = {404: 3, 409: 6, 422: 2}.get(status_code, 4 if status_code >= 500 else 2)

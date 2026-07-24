@@ -46,6 +46,7 @@ def test_session_lifecycle_and_resumable_event_stream(client: TestClient, monkey
     assert len(sequences) >= 2 and sequences == list(range(1, len(sequences) + 1))
     assert all(event["schema_version"] == "bb.kernel_event.v2" for event in first)
     assert first[-1]["kind"] == "session.canceled"
+    assert first[-1]["payload"]["reason"] == "<redacted>"
     resumed = _stream_records(
         client.get("/v1/sessions/session-fixture/events", headers={"Last-Event-ID": str(first[-2]["seq"])})
     )
@@ -63,6 +64,37 @@ def test_session_invalid_state_is_stable_and_secret_free(client: TestClient, tmp
     malformed = client.post("/v1/sessions", json={})
     assert malformed.status_code == 422 and malformed.json()["schema_version"] == "bb.cli.result.v1"
     assert malformed.json()["error"]["schema_version"] == "bb.problem.v1"
+    missing = client.get("/v1/sessions/does-not-exist")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["error_code"] == "path_unavailable"
+    inactive = client.post(
+        "/v1/sessions/duplicate/cancel",
+        json={},
+        headers={"Idempotency-Key": "cancel-duplicate"},
+    )
+    assert inactive.status_code == 202
+    rejected_input = client.post(
+        "/v1/sessions/duplicate/input",
+        json={"content": "late"},
+        headers={"Idempotency-Key": "late-input"},
+    )
+    assert rejected_input.status_code == 409
+    assert rejected_input.json()["error"]["error_code"] == "invalid_state"
+def test_session_start_preserves_lock_drift_error(client: TestClient, tmp_path: Path) -> None:
+    lock_id = _locked_harness(client)
+    harness = tmp_path / "minimal_harness.v2.yaml"
+    original = harness.read_text()
+    changed = original.replace("name: respond", "name: changed", 1).replace("mode: respond", "mode: changed", 1)
+    assert changed != original
+    harness.write_text(changed)
+    response = client.post(
+        "/v1/sessions",
+        json={"lock_id": lock_id, "task": "must reject drift"},
+        headers={"Idempotency-Key": "drifted-start"},
+    )
+    assert response.status_code == 409
+    assert response.json()["command"] == ["session", "start"]
+    assert response.json()["error"]["error_code"] == "lock_drift"
 def test_session_start_dispatches_task_to_execution_service(client: TestClient) -> None:
     lock_id = _locked_harness(client)
     payload = {"lock_id": lock_id, "task": "complete the execution probe", "session_id": "execution-fixture"}
