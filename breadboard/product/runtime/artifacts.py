@@ -1,6 +1,6 @@
 """Content-addressed artifact ownership without machine-path references."""
 from __future__ import annotations
-import hashlib, json, os, tempfile, threading
+import hashlib, json, os, stat, tempfile, threading
 from contextlib import contextmanager; from dataclasses import dataclass; from pathlib import Path; from typing import Any, Iterator
 _RESERVED_NAME_CHARACTERS, _UNSAFE_EDGE_CHARACTERS = frozenset('<>:"/\\|?*'), frozenset(". ")
 _WINDOWS_DEVICE_BASENAMES = frozenset({"aux", "clock$", "con", "conin$", "conout$", "nul", "prn", *(f"com{index}" for index in range(1, 10)), *(f"lpt{index}" for index in range(1, 10))})
@@ -205,6 +205,57 @@ class ArtifactStore:
         rows = [{"name": name, **ref.as_dict()} for name, ref in sorted(artifacts.items())]; body = {"schema_version": "bb.artifact_manifest.v1", "session_id": session_id, "artifacts": rows}
         canonical = json.dumps(body, sort_keys=True, separators=(",", ":")).encode(); body["manifest_id"] = "artifact_manifest:" + hashlib.sha256(canonical).hexdigest()
         return body
+def workspace_artifact_ref(workspace: str | Path, digest: str, *, media_type: str = "application/octet-stream") -> ArtifactRef:
+    value=_hexdigest(digest,"unsupported artifact digest"); workspace=Path(workspace); target=workspace/".breadboard"/"artifacts"/"sha256"/value[:2]/value; descriptor=None
+    if os.name=="nt":
+        handles=[]
+        try:
+            for path in (workspace,target.parent.parent.parent,target.parent.parent,target.parent):handles.append(_windows_handle(path,directory=True,create=False))
+            descriptor=_windows_file_descriptor(target,create=False); metadata=os.fstat(descriptor)
+        finally:
+            if descriptor is not None:os.close(descriptor)
+            for handle in reversed(handles):_close_windows_handle(handle)
+    else:
+        descriptors=[os.open(workspace,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))]
+        try:
+            for name in (".breadboard","artifacts","sha256",value[:2]):descriptors.append(_open_directory(descriptors[-1],name,create=False))
+            descriptor=os.open(value,os.O_RDONLY|getattr(os,"O_NOFOLLOW",0),dir_fd=descriptors[-1]); metadata=os.fstat(descriptor)
+        finally:
+            if descriptor is not None:os.close(descriptor)
+            for item in reversed(descriptors):os.close(item)
+    if not stat.S_ISREG(metadata.st_mode):raise OSError("artifact digest does not identify a regular file")
+    return ArtifactRef(digest,metadata.st_size,media_type)
+def list_workspace_artifacts(workspace: str | Path) -> list[ArtifactRef]:
+    workspace=Path(workspace); sha=workspace/".breadboard"/"artifacts"/"sha256"; names:set[str]=set()
+    try:
+        if os.name=="nt":
+            handles=[]
+            try:
+                for path in (workspace,sha.parent.parent,sha.parent,sha):handles.append(_windows_handle(path,directory=True,create=False))
+                for prefix in os.scandir(sha):
+                    if len(prefix.name)!=2 or any(c not in "0123456789abcdef" for c in prefix.name) or not prefix.is_dir(follow_symlinks=False):continue
+                    handle=_windows_handle(Path(prefix.path),directory=True,create=False)
+                    try:names.update(item.name for item in os.scandir(prefix.path) if item.is_file(follow_symlinks=False) and len(item.name)==64 and item.name.startswith(prefix.name) and all(c in "0123456789abcdef" for c in item.name))
+                    finally:_close_windows_handle(handle)
+            finally:
+                for handle in reversed(handles):_close_windows_handle(handle)
+        else:
+            descriptors=[os.open(workspace,os.O_RDONLY|getattr(os,"O_DIRECTORY",0)|getattr(os,"O_NOFOLLOW",0))]
+            try:
+                for name in (".breadboard","artifacts","sha256"):descriptors.append(_open_directory(descriptors[-1],name,create=False))
+                for prefix in os.scandir(descriptors[-1]):
+                    if len(prefix.name)!=2 or any(c not in "0123456789abcdef" for c in prefix.name) or not prefix.is_dir(follow_symlinks=False):continue
+                    directory=_open_directory(descriptors[-1],prefix.name,create=False)
+                    try:names.update(item.name for item in os.scandir(directory) if item.is_file(follow_symlinks=False) and len(item.name)==64 and item.name.startswith(prefix.name) and all(c in "0123456789abcdef" for c in item.name))
+                    finally:os.close(directory)
+            finally:
+                for descriptor in reversed(descriptors):os.close(descriptor)
+    except FileNotFoundError:return []
+    rows=[]
+    for name in sorted(names):
+        try:rows.append(workspace_artifact_ref(workspace,f"sha256:{name}"))
+        except FileNotFoundError:pass
+    return rows
 def read_workspace_artifact(workspace: str | Path, ref: ArtifactRef) -> bytes:
     workspace = Path(workspace); metadata, artifacts = workspace / ".breadboard", workspace / ".breadboard" / "artifacts"
     if os.name == "nt":
@@ -218,6 +269,39 @@ def read_workspace_artifact(workspace: str | Path, ref: ArtifactRef) -> bytes:
     try:
         descriptors.append(_open_directory(descriptors[-1], ".breadboard", create=False)); descriptors.append(_open_directory(descriptors[-1], "artifacts", create=False))
         return ArtifactStore(artifacts, descriptor=descriptors[-1]).read(ref)
+    finally:
+        for descriptor in reversed(descriptors): os.close(descriptor)
+def put_workspace_artifact(workspace: str | Path, content: bytes, *, media_type: str = "application/octet-stream") -> ArtifactRef:
+    workspace = Path(workspace)
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            for path in (workspace, workspace / ".breadboard", workspace / ".breadboard" / "artifacts"):
+                handles.append(_windows_handle(path, directory=True))
+            return ArtifactStore(workspace / ".breadboard" / "artifacts").put(content, media_type=media_type)
+        finally:
+            for handle in reversed(handles): _close_windows_handle(handle)
+    descriptors = [os.open(workspace, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))]
+    try:
+        descriptors.append(_open_directory(descriptors[-1], ".breadboard", create=True)); descriptors.append(_open_directory(descriptors[-1], "artifacts", create=True))
+        return ArtifactStore(workspace / ".breadboard" / "artifacts", descriptor=descriptors[-1]).put(content, media_type=media_type)
+    finally:
+        for descriptor in reversed(descriptors): os.close(descriptor)
+def discard_workspace_artifact(workspace: str | Path, ref: ArtifactRef) -> None:
+    workspace = Path(workspace)
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            for path in (workspace, workspace / ".breadboard", workspace / ".breadboard" / "artifacts"):
+                handles.append(_windows_handle(path, directory=True, create=False))
+            ArtifactStore(workspace / ".breadboard" / "artifacts").discard(ref)
+        finally:
+            for handle in reversed(handles): _close_windows_handle(handle)
+        return
+    descriptors = [os.open(workspace, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))]
+    try:
+        descriptors.append(_open_directory(descriptors[-1], ".breadboard", create=False)); descriptors.append(_open_directory(descriptors[-1], "artifacts", create=False))
+        ArtifactStore(workspace / ".breadboard" / "artifacts", descriptor=descriptors[-1]).discard(ref)
     finally:
         for descriptor in reversed(descriptors): os.close(descriptor)
 class AnchoredStorage:

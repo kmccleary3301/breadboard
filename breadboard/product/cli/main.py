@@ -109,6 +109,7 @@ def _harness(ns):
     x=s.add_parser("list");x.add_argument("--directory");x.set_defaults(handler=harness.list_harnesses)
     for n,fn in (("show",harness.show),("get",harness.get),("update",harness.update),("validate",harness.validate),("explain",harness.explain),("lock",harness.lock),("run",harness.run)):
         x=s.add_parser(n);x.add_argument("PATH");
+        if n=="update":x.add_argument("--from",dest="source")
         if n=="explain":x.add_argument("--strict",action="store_true")
         if n=="lock":x.add_argument("--out");x.add_argument("--check",action="store_true")
         if n=="run":t=x.add_mutually_exclusive_group(required=True);t.add_argument("--server");t.add_argument("--local",action="store_true");x.add_argument("--task");x.add_argument("--lock")
@@ -132,8 +133,9 @@ def _integration(ns):
     p=ns.add_parser("integration",help="discover integrations");_common(p);s=p.add_subparsers(dest="command",required=True);s.add_parser("list").set_defaults(handler=integration.list_integrations);x=s.add_parser("get");x.add_argument("INTEGRATION_ID");x.set_defaults(handler=integration.get);x=s.add_parser("probe");x.add_argument("INTEGRATION_ID",nargs="?");x.set_defaults(handler=integration.probe)
 def _artifact(ns):
     p=ns.add_parser("artifact",help="inspect artifacts");_common(p);s=p.add_subparsers(dest="command",required=True);s.add_parser("list").set_defaults(handler=artifact.list_artifacts)
-    for n in ("get","show","verify"):
-        x=s.add_parser(n);x.add_argument("REF");x.add_argument("--size",type=int);x.add_argument("--media-type");x.set_defaults(handler=(lambda a,n=n:artifact.get(a,n)) if n!="verify" else artifact.verify)
+    x=s.add_parser("put");x.add_argument("SOURCE");x.add_argument("--media-type",default="application/octet-stream");x.set_defaults(handler=artifact.put)
+    for n in ("get","show","verify","delete"):
+        x=s.add_parser(n);x.add_argument("REF");x.add_argument("--size",type=int);x.add_argument("--media-type");x.set_defaults(handler=artifact.delete if n=="delete" else (lambda a,n=n:artifact.get(a,n)) if n!="verify" else artifact.verify)
 def _system(ns):
     p=ns.add_parser("system",help="inspect installed product");_common(p);s=p.add_subparsers(dest="command",required=True)
     for n,fn in (("describe",system.describe),("health",system.health),("schemas",system.schemas)):s.add_parser(n).set_defaults(handler=lambda a,n=n,fn=fn:fn(["system",n],_w(a)))

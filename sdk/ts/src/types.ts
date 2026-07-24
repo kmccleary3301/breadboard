@@ -1,3 +1,18 @@
+export interface PublicResult {
+  readonly schema_version: "bb.cli.result.v1"
+  readonly ok: boolean
+  readonly status: "ok" | "error"
+  readonly command: ReadonlyArray<string>
+  readonly record_refs: ReadonlyArray<string>
+  readonly hashes: Readonly<Record<string, string>>
+  readonly stage_outcomes: ReadonlyArray<Readonly<Record<string, unknown>>>
+  readonly warnings: ReadonlyArray<string>
+  readonly next_actions: ReadonlyArray<string>
+  readonly error: Readonly<Record<string, unknown>> | null
+  readonly exit_code: number
+  readonly data: Readonly<Record<string, unknown>>
+}
+
 export type EventType =
   | "turn_start"
   | "stream.gap"

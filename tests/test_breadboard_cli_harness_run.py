@@ -1,13 +1,16 @@
 from __future__ import annotations
+import os
 
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
+import requests
 
 import breadboard_sdk
 from scripts import breadboard_cli
+from breadboard.product.cli import harness as harness_operations
 
 
 HARNESS_PATH = Path("agent_configs/templates/minimal_harness.v2.yaml")
@@ -65,6 +68,13 @@ class _EofClient(_RunClient):
         assert query == {"replay": "true"}
         self.calls.append(("events", session_id))
         yield {"type": "assistant_message", "payload": {"content": "still working"}}
+
+
+def test_local_server_isolates_public_api_activation_and_restores_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
+    with harness_operations._local_server() as base_url:
+        assert requests.get(f"{base_url}/v1/system", timeout=5).status_code == 404
+    assert os.environ["BREADBOARD_ENABLE_PUBLIC_API"] == "1"
 
 
 def test_harness_run_submits_task_once_and_reports_completed_session(

@@ -257,7 +257,7 @@ export const streamSessionEvents = async function* (
   options: EventStreamOptions = {},
 ): AsyncGenerator<SessionEvent, void, void> {
   const config = options.config ?? loadAppConfig()
-  const url = new URL(`v1/sessions/${sessionId}/events`, config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`)
+  const url = new URL(`v1/sessions/${encodeURIComponent(sessionId)}/events`, config.baseUrl.endsWith("/") ? config.baseUrl : `${config.baseUrl}/`)
   const query: Record<string, string | number | boolean> = { ...(options.query ?? {}) }
   if (!("schema" in query) && !("v" in query)) {
     query.schema = config.streamSchema ?? 2

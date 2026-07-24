@@ -1,5 +1,5 @@
 from __future__ import annotations
-import contextlib,json,os,shlex,shutil,socket,sys,threading,time
+import contextlib,json,os,shlex,socket,sys,threading,time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any,Mapping
@@ -24,10 +24,13 @@ def _doc(p):
     if not isinstance(x,dict):raise ValueError("harness definition must be a mapping")
     if findings:=validate_harness_document_domain(x):raise HarnessDefinitionValidationError(findings)
     return x
-def _compile(p,w):
+def _compile(p,w,contained=False):
     source_ref=_ref(p,w); paths={source_ref:p}
     def load_ref(parent,decl):
         target=(paths[parent].parent/decl).resolve()
+        if contained:
+            try:target.relative_to(w)
+            except ValueError as error:raise PermissionError("harness reference must remain within workspace") from error
         resolved=_ref(target,w)
         if resolved in paths and paths[resolved]!=target:raise ValueError(f"reference identity collision: {resolved}")
         paths[resolved]=target
@@ -35,17 +38,41 @@ def _compile(p,w):
     compiled=compile_harness_definition(_doc(p),source_ref=source_ref,load_ref=load_ref)
     parse_harness_definition(compiled.resolved_author_dict())
     return compiled
-def _lockpath(p,out=None):
+def lock_path(p,out=None):
     if out:
         q=Path(out).expanduser(); return q if q.is_file() or q.suffix==".json" else q/f"{p.stem}.lock.json"
     return p.with_name(p.stem+".lock.json")
-def _meta(p):return p.with_name("."+p.name+".meta.json")
+def lock_metadata_path(p):return p.with_name("."+p.name+".meta.json")
 def _write(p,x):p.parent.mkdir(parents=True,exist_ok=True); p.write_text(json.dumps(x,sort_keys=True,indent=2)+"\n")
+_INIT_LOCK=threading.RLock()
+def _publish_seed(p,content):
+    temporary=p.with_name(f".{p.name}.{os.urandom(8).hex()}.tmp"); descriptor=None
+    try:
+        descriptor=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+        with os.fdopen(descriptor,"wb") as stream:descriptor=None; stream.write(content); stream.flush(); os.fsync(stream.fileno())
+        try:os.link(temporary,p)
+        except FileExistsError:pass
+    finally:
+        if descriptor is not None:os.close(descriptor)
+        temporary.unlink(missing_ok=True)
+def _seed_mismatch(p,content):
+    return p.is_symlink() or p.exists() and (not p.is_file() or p.read_bytes()!=content)
+def _seed(name,fallback):
+    p=_template(name); return p.read_bytes() if p else fallback.encode()
+def _init_result(h,q,w):
+    return CliResult.success(["harness","init"],{"path":_ref(h,w),"prompt_path":_ref(q,w)},[_ref(h,w),_ref(q,w)],stage="harness.init")
 def init(a):
     w=_w(a); d=Path(a.out or ".").expanduser(); h=d/"minimal_harness.v2.yaml"; q=d/"prompts/minimal_system.md"
-    if h.exists() or q.exists():return CliResult.failure(["harness","init"],2,"path_exists","refusing to overwrite existing harness bundle","harness.init")
+    seeds=((h,_seed("minimal_harness.v2.yaml",FALLBACK)),(q,_seed("prompts/minimal_system.md","You are a BreadBoard reference harness.\n")))
     try:
-        d.mkdir(parents=True,exist_ok=True); t=_template("minimal_harness.v2.yaml"); shutil.copyfile(t,h) if t else h.write_text(FALLBACK); q.parent.mkdir(parents=True,exist_ok=True); t=_template("prompts/minimal_system.md"); shutil.copyfile(t,q) if t else q.write_text("You are a BreadBoard reference harness.\n"); return CliResult.success(["harness","init"],{"path":_ref(h,w),"prompt_path":_ref(q,w)},[_ref(h,w),_ref(q,w)],stage="harness.init")
+        d.mkdir(parents=True,exist_ok=True)
+        with _INIT_LOCK:
+            if any(_seed_mismatch(p,content) for p,content in seeds):return CliResult.failure(["harness","init"],2,"path_exists","refusing to overwrite existing harness bundle","harness.init")
+            for p,content in seeds:
+                p.parent.mkdir(parents=True,exist_ok=True)
+                if not p.exists():_publish_seed(p,content)
+            if any(_seed_mismatch(p,content) for p,content in seeds):return CliResult.failure(["harness","init"],2,"path_exists","refusing to overwrite existing harness bundle","harness.init")
+        return _init_result(h,q,w)
     except Exception as e:return from_exception(["harness","init"],e,"harness.init")
 def validate(a,command_name="validate"):
     p,w=_p(a),_w(a); command=["harness",command_name]; stage=f"harness.{command_name}"
@@ -55,26 +82,26 @@ def validate(a,command_name="validate"):
 def explain(a):
     p,w=_p(a),_w(a)
     try:
-        x=_compile(p,w).explanation.as_dict(); x["config_path"]=_ref(p,w); return CliResult.success(["harness","explain"],x,[_ref(p,w)],{"config":str(x.get("config_sha256",""))},stage="harness.explain")
+        x=_compile(p,w,getattr(a,"contained",False)).explanation.as_dict(); x["config_path"]=_ref(p,w); return CliResult.success(["harness","explain"],x,[_ref(p,w)],{"config":str(x.get("config_sha256",""))},stage="harness.explain")
     except Exception as e:return from_exception(["harness","explain"],e,"harness.explain")
 def lock(a):
-    p,w=_p(a),_w(a); target=_lockpath(p,getattr(a,"out",None))
+    p,w=_p(a),_w(a); target=lock_path(p,getattr(a,"out",None))
     try:
-        c=_compile(p,w); meta={"schema_version":"bb.harness_lock_metadata.v1","source_ref":_ref(p,w),"source_sha256":sha256_json(c.resolved_author_dict()),"graph_hash":c.lock["graph_hash"]}
+        c=_compile(p,w,getattr(a,"contained",False)); meta={"schema_version":"bb.harness_lock_metadata.v1","source_ref":_ref(p,w),"source_sha256":sha256_json(c.resolved_author_dict()),"graph_hash":c.lock["graph_hash"]}
         if getattr(a,"check",False):
-            if not target.exists() or not _meta(target).exists():return CliResult.failure(["harness","lock"],5,"lock_missing","lock is missing","harness.lock")
-            if json.loads(target.read_text())!=c.lock.as_dict() or json.loads(_meta(target).read_text())!=meta:return CliResult.failure(["harness","lock"],5,"lock_drift","harness definition changed after lock","harness.lock",next_actions=[f"breadboard harness lock {_ref(p,w)}"])
+            if not target.exists() or not lock_metadata_path(target).exists():return CliResult.failure(["harness","lock"],5,"lock_missing","lock is missing","harness.lock")
+            if json.loads(target.read_text())!=c.lock.as_dict() or json.loads(lock_metadata_path(target).read_text())!=meta:return CliResult.failure(["harness","lock"],5,"lock_drift","harness definition changed after lock","harness.lock",next_actions=[f"breadboard harness lock {_ref(p,w)}"])
             return CliResult.success(["harness","lock"],{"path":_ref(target,w),"graph_hash":meta["graph_hash"],"checked":True},[_ref(target,w)],{"graph":meta["graph_hash"]},stage="harness.lock")
-        _write(target,c.lock.as_dict()); _write(_meta(target),meta)
+        _write(target,c.lock.as_dict()); _write(lock_metadata_path(target),meta)
         next_action=f"breadboard harness run {shlex.quote(str(p))} --local"
-        if target.resolve()!=_lockpath(p).resolve():next_action+=f" --lock {shlex.quote(str(target.resolve()))}"
+        if target.resolve()!=lock_path(p).resolve():next_action+=f" --lock {shlex.quote(str(target.resolve()))}"
         return CliResult.success(["harness","lock"],{"path":_ref(target,w),"graph_hash":meta["graph_hash"]},[_ref(target,w)],{"graph":meta["graph_hash"],"source":meta["source_sha256"]},[next_action],"harness.lock")
     except Exception as e:return from_exception(["harness","lock"],e,"harness.lock")
 def load_lock(p,w,*,explicit=False):
-    t=p if explicit or p.name.endswith(".lock.json") else _lockpath(p)
+    t=p if explicit or p.name.endswith(".lock.json") else lock_path(p)
     if not t.exists():raise FileNotFoundError(f"lock is missing: {_ref(t,w)}")
-    if not _meta(t).exists():raise ValueError("lock metadata is missing; lock must be regenerated")
-    return EffectiveHarnessLock._from_record(json.loads(t.read_text())),_meta(t)
+    if not lock_metadata_path(t).exists():raise ValueError("lock metadata is missing; lock must be regenerated")
+    return EffectiveHarnessLock._from_record(json.loads(t.read_text())),lock_metadata_path(t)
 def _record_count(response):
     if not isinstance(response,dict):return 0
     total=response.get("total")
@@ -91,10 +118,11 @@ def _poll_records(client,session_id):
 def _local_server()->Iterator[str]:
     import uvicorn
     from agentic_coder_prototype.api.cli_bridge.app import create_app
-    previous=os.environ.pop("BREADBOARD_LEGACY_ROUTES",None);listener=None
+    names=("BREADBOARD_LEGACY_ROUTES","BREADBOARD_ENABLE_PUBLIC_API");previous={name:os.environ.pop(name,None) for name in names};listener=None
     def restore_environment():
-        if previous is None:os.environ.pop("BREADBOARD_LEGACY_ROUTES",None)
-        else:os.environ["BREADBOARD_LEGACY_ROUTES"]=previous
+        for name,value in previous.items():
+            if value is None:os.environ.pop(name,None)
+            else:os.environ[name]=value
     try:
         listener=socket.socket(socket.AF_INET,socket.SOCK_STREAM);listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);listener.bind(("127.0.0.1",0));listener.listen(128)
         server=uvicorn.Server(uvicorn.Config(create_app(),host="127.0.0.1",port=int(listener.getsockname()[1]),log_config=None,access_log=False))
@@ -121,7 +149,7 @@ def run(a):
     p,w=_p(a),_w(a)
     try:
         lock_argument=getattr(a,"lock",None); lock_path=Path(lock_argument).expanduser().resolve() if lock_argument else p
-        lock,mp=load_lock(lock_path,w,explicit=bool(lock_argument)); c=_compile(p,w); m=json.loads(mp.read_text())
+        lock,mp=load_lock(lock_path,w,explicit=bool(lock_argument)); c=_compile(p,w,getattr(a,"contained",False)); m=json.loads(mp.read_text())
         lock_action=f"breadboard harness lock {shlex.quote(str(p))}"
         if lock_argument:lock_action+=f" --out {shlex.quote(str(lock_path))}"
         if m.get("source_sha256")!=sha256_json(c.resolved_author_dict()) or m.get("graph_hash")!=lock["graph_hash"] or c.lock.as_dict()!=lock.as_dict():return CliResult.failure(["harness","run"],5,"lock_drift","mutable harness definition cannot run without a fresh lock","harness.run",next_actions=[lock_action])
@@ -164,8 +192,21 @@ def show(a,command_name="show"):
 def get(a):
     return show(a,"get")
 def update(a):
-    return validate(a,"update")
+    p,w=_p(a),_w(a); temporary=None
+    try:
+        document=getattr(a,"document",None); source=getattr(a,"source",None)
+        if document is None:
+            if not source:return CliResult.failure(["harness","update"],2,"update_input_required","harness update requires --from or a definition","harness.update")
+            document=yaml.safe_load(Path(source).expanduser().read_text())
+        if not isinstance(document,dict):raise ValueError("harness definition must be a mapping")
+        temporary=p.with_name(f".{p.name}.{os.urandom(8).hex()}.tmp")
+        if not p.is_file():raise FileNotFoundError(f"harness definition not found: {_ref(p,w)}")
+        temporary.write_text(yaml.safe_dump(document,sort_keys=False)); _compile(temporary,w,getattr(a,"contained",False)); os.replace(temporary,p)
+        return validate(a,"update")
+    except Exception as e:return from_exception(["harness","update"],e,"harness.update")
+    finally:
+        if temporary is not None:temporary.unlink(missing_ok=True)
 def get_lock(a):
-    p,w=_p(a),_w(a); t=p if p.name.endswith(".lock.json") else _lockpath(p)
+    p,w=_p(a),_w(a); t=p if p.name.endswith(".lock.json") else lock_path(p)
     try:x=json.loads(t.read_text()); return CliResult.success(["harness-lock","get"],{"path":_ref(t,w),"lock":x},[_ref(t,w)],{"graph":str(x.get("graph_hash",""))},stage="harness-lock.get")
     except Exception as e:return from_exception(["harness-lock","get"],e,"harness-lock.get")

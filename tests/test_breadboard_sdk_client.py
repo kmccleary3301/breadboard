@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+import json
+from pathlib import Path
 
 import pytest
 
@@ -209,7 +211,39 @@ def test_stream_events_gets_exact_v1_session_url(
     monkeypatch.setattr(client_module.requests, "get", fake_get)
     client = BreadboardClient(base_url="https://breadboard.test/api-root/")
 
-    received = list(client.stream_events("session-123"))
+    received = list(client.stream_events("session ?/#"))
 
-    assert streamed_urls == ["https://breadboard.test/api-root/v1/sessions/session-123/events"]
+    assert streamed_urls == ["https://breadboard.test/api-root/v1/sessions/session%20%3F%2F%23/events"]
     assert received == [event]
+
+
+def test_candidate_product_bindings_exist_on_python_sdk() -> None:
+    contract = json.loads((Path(__file__).parents[1] / "contracts/public/operations.v1.json").read_text())
+    families = {"artifact", "harness", "harness_lock", "integration", "session", "system"}
+    methods = {
+        operation["bindings"]["python_sdk"]["method"]
+        for operation in contract["operations"]
+        if operation["status"] == "candidate" and operation["module"] in families
+    }
+    assert methods
+    assert all(callable(getattr(BreadboardClient, method, None)) for method in methods)
+
+
+def test_candidate_python_sdk_preserves_public_result_and_idempotency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    result = {
+        "schema_version": "bb.cli.result.v1", "ok": True, "status": "ok", "command": [],
+        "record_refs": [], "hashes": {}, "stage_outcomes": [], "warnings": [],
+        "next_actions": [], "error": None, "exit_code": 0, "data": {},
+    }
+    requests: list[dict[str, Any]] = []
+    def fake_request(**kwargs: Any) -> _JsonResponse:
+        requests.append(kwargs)
+        return _JsonResponse(result)
+    monkeypatch.setattr(client_module.requests, "request", fake_request)
+    client = BreadboardClient(base_url="https://breadboard.test/")
+    assert client.start_session({"lock_id": "lock.json", "task": "run"}, idempotency_key="start-key") == result
+    assert client.get_artifact("sha256:abc") == result
+    assert requests[0]["headers"]["Idempotency-Key"] == "start-key"
+    assert requests[1]["url"] == "https://breadboard.test/v1/artifacts/sha256%3Aabc"
