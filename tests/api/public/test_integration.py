@@ -28,6 +28,7 @@ class _Adapter:
 def _client(monkeypatch, workspace: Path) -> TestClient:
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(workspace))
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     monkeypatch.setenv("FIXTURE_TOKEN", "token-value-must-not-leak")
     monkeypatch.setattr(api_integration.operations, "_catalog", lambda: IntegrationCatalog((_Adapter(),)))

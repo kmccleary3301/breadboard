@@ -16,7 +16,6 @@ from typing import Any, AsyncIterator, Dict
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
-from starlette.concurrency import run_in_threadpool
 
 try:
     from dotenv import load_dotenv
@@ -58,8 +57,7 @@ from .service import SessionService
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 from agentic_coder_prototype.api.public import create_public_router
-from agentic_coder_prototype.api.public.models import PublicResult, SessionStartRequest as PublicSessionStartRequest, invoke_idempotent
-from agentic_coder_prototype.api.public.session import start_session_result
+from agentic_coder_prototype.api.public.models import is_public_operation_request
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
@@ -128,10 +126,12 @@ def _env_flag_default(name: str, *, default: bool) -> bool:
     return default
 
 
-def _drop_legacy_routes(app: FastAPI) -> None:
+def _drop_legacy_routes(app: FastAPI, *, drop_versioned_sessions: bool = False) -> None:
     # "/status" stays first-class: main's engine metadata contract (tests/test_cli_bridge_ready.py) and the TUI doctor consume it.
     legacy_exact = {"/models", "/features"}
-    legacy_prefixes = ("/sessions", "/rl", "/atp", "/ext/evolake")
+    legacy_prefixes = ("/sessions", "/rl", "/atp", "/ext/evolake") + (
+        ("/v1/sessions",) if drop_versioned_sessions else ()
+    )
 
     def _route_path(route: Any) -> str:
         path = getattr(route, "path", None)
@@ -270,7 +270,9 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         )
 
     @app.exception_handler(HTTPException)
-    async def _http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
+    async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        if not (public_api_enabled and is_public_operation_request(request.method, request.url.path)):
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         return JSONResponse(status_code=exc.status_code, content=_http_error_content(exc))
 
     @app.exception_handler(RequestValidationError)
@@ -281,6 +283,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         )
 
     legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
+    public_api_enabled = _env_flag_default("BREADBOARD_ENABLE_PUBLIC_API", default=False)
     e4_api_flag = os.environ.get("BREADBOARD_ENABLE_E4_API", "").strip().lower()
     if e4_api_flag not in {"0", "false", "no"}:
         app.include_router(
@@ -632,31 +635,21 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
 
     @app.post(
         "/v1/sessions",
-        operation_id="session.start",
-        response_model=SessionCreateResponse | PublicResult,
-        responses={202: {"model": PublicResult}, 400: {"model": ErrorResponse}},
+        response_model=SessionCreateResponse,
+        responses={400: {"model": ErrorResponse}},
     )
     @app.post(
         "/sessions",
         response_model=SessionCreateResponse,
         responses={400: {"model": ErrorResponse}},
     )
-    async def create_session(
-        payload: SessionCreateRequest | PublicSessionStartRequest,
-        svc: SessionService = Depends(get_service),
-        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    ):
-        if isinstance(payload, PublicSessionStartRequest):
-            return await run_in_threadpool(
-                lambda: invoke_idempotent(
-                    "session.start",
-                    idempotency_key,
-                    payload.model_dump(mode="json"),
-                    lambda workspace: start_session_result(payload, workspace),
-                )
-            )
+    async def create_session(payload: SessionCreateRequest, svc: SessionService = Depends(get_service)):
         return await svc.create_session(payload)
 
+    @app.get(
+        "/v1/sessions",
+        response_model=list[SessionSummary],
+    )
     @app.get(
         "/sessions",
         response_model=list[SessionSummary],
@@ -665,6 +658,11 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         summaries = await svc.list_sessions()
         return list(summaries)
 
+    @app.get(
+        "/v1/sessions/{session_id}",
+        response_model=SessionSummary,
+        responses={404: {"model": ErrorResponse}},
+    )
     @app.get(
         "/sessions/{session_id}",
         response_model=SessionSummary,
@@ -692,6 +690,16 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             limit=limit,
         )
 
+    @app.post(
+        "/v1/sessions/{session_id}/input",
+        response_model=SessionInputResponse,
+        status_code=status.HTTP_202_ACCEPTED,
+        responses={
+            404: {"model": ErrorResponse},
+            409: {"model": ErrorResponse},
+            400: {"model": ErrorResponse},
+        },
+    )
     @app.post(
         "/sessions/{session_id}/input",
         response_model=SessionInputResponse,
@@ -891,6 +899,10 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get(
+        "/v1/sessions/{session_id}/events",
+        responses={404: {"model": ErrorResponse}},
+    )
+    @app.get(
         "/sessions/{session_id}/events",
         responses={404: {"model": ErrorResponse}},
     )
@@ -956,9 +968,11 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                 provider.register_routes(app, get_service)
         mounted_extensions.append("evolake")
 
-    if not legacy_routes_enabled:
+    if public_api_enabled and not legacy_routes_enabled:
+        _drop_legacy_routes(app, drop_versioned_sessions=True)
+        app.include_router(create_public_router())
+    elif not legacy_routes_enabled:
         _drop_legacy_routes(app)
-    app.include_router(create_public_router())
 
     return app
 

@@ -7,6 +7,7 @@ from breadboard.product.cli import system as system_operations
 def _client(monkeypatch, workspace: Path) -> TestClient:
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(workspace))
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     return TestClient(create_app(include_atp_routes=False))
 def test_candidate_family_routes_are_mounted_exactly_once(monkeypatch, tmp_path: Path) -> None:
@@ -26,6 +27,10 @@ def test_candidate_family_routes_are_mounted_exactly_once(monkeypatch, tmp_path:
     ]
     assert len(observed) == len(set(observed)) == 26
     assert set(observed) == expected
+def test_candidate_routes_wait_for_atomic_activation(monkeypatch) -> None:
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    monkeypatch.delenv("BREADBOARD_ENABLE_PUBLIC_API", raising=False)
+    assert TestClient(create_app(include_atp_routes=False)).get("/v1/system").status_code == 404
 def test_system_describe_matches_cli_result(monkeypatch, tmp_path: Path) -> None:
     client = _client(monkeypatch, tmp_path)
     response = client.get("/v1/system")

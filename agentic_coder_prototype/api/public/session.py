@@ -57,6 +57,17 @@ def start_session_result(request: SessionStartRequest, workspace):
         next_actions=[f"breadboard session get {session_id}"],
         stage="session.start",
     )
+@router.post("/v1/sessions", operation_id="session.start", response_model=PublicResult, status_code=202)
+def start(
+    request: SessionStartRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    return invoke_idempotent(
+        "session.start",
+        idempotency_key,
+        request.model_dump(mode="json"),
+        lambda workspace: start_session_result(request, workspace),
+    )
 @router.get("/v1/sessions", operation_id="session.list", response_model=PublicResult)
 def list_sessions():
     return invoke("session.list", lambda workspace: (workspace_path(".breadboard/sessions", workspace), operations.list_sessions(SimpleNamespace(workspace=workspace)))[1])

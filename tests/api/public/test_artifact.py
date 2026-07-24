@@ -8,6 +8,7 @@ from breadboard.product.runtime.artifacts import ArtifactStore
 def _client(monkeypatch, workspace: Path) -> TestClient:
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(workspace))
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     return TestClient(create_app(include_atp_routes=False))
 def test_artifact_family_reads_and_verifies_immutable_store(monkeypatch, tmp_path: Path) -> None:

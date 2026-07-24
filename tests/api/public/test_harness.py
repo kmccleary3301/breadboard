@@ -7,6 +7,7 @@ from breadboard.product.cli import harness as harness_operations
 def _client(monkeypatch, workspace: Path) -> TestClient:
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(workspace))
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     return TestClient(create_app(include_atp_routes=False))
 def test_harness_family_delegates_to_product_operations(monkeypatch, tmp_path: Path) -> None:
