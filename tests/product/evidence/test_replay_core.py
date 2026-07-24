@@ -446,6 +446,15 @@ class _FlatForcedToolChoiceProvider(_Provider):
         return super().invoke(**kwargs)
 
 
+class _MixedForcedToolChoiceProvider(_Provider):
+    def invoke(self, **kwargs: Any) -> ProviderResult:
+        provider_tools = kwargs["context"].agent_config["provider_tools"]
+        expected = {"type": "tool", "name": "host_execute"}
+        if provider_tools["tool_choice"] != expected or provider_tools["anthropic"]["tool_choice"] != expected:
+            raise RuntimeError("mixed forced tool choices did not follow the provider wire alias")
+        return super().invoke(**kwargs)
+
+
 class _SpecOnlyProvider(_Provider):
     def replay_worker_client_spec(self, _client: Any, _secret_bindings: Mapping[str, str]) -> dict[str, Any]:
         return {}
@@ -939,6 +948,21 @@ def test_flat_forced_tool_choice_follows_provider_wire_alias(tmp_path: Path) -> 
         tmp_path,
         sequence=("host", "done"),
         provider_instance=_FlatForcedToolChoiceProvider(("host", "done")),
+        provider_context=provider_context,
+    )
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+
+
+def test_mixed_flat_and_scoped_tool_choices_follow_provider_wire_alias(tmp_path: Path) -> None:
+    canonical_choice = {"type": "tool", "name": "host.execute"}
+    provider_context = types.SimpleNamespace(
+        agent_config={"provider_tools": {"tool_choice": canonical_choice, "anthropic": {"tool_choice": canonical_choice}}},
+        extra={},
+    )
+    _, _, result = _run(
+        tmp_path,
+        sequence=("host", "done"),
+        provider_instance=_MixedForcedToolChoiceProvider(("host", "done")),
         provider_context=provider_context,
     )
     assert result.execution.as_dict()["terminal_status"] == "completed"

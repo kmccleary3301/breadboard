@@ -1730,7 +1730,6 @@ def _provider_context_with_wire_tool_aliases(context: ProviderRuntimeContext, re
         return context
     if "tool_choice" in provider_tools:
         provider_tools["tool_choice"] = _wire_tool_choice(provider_tools["tool_choice"], aliases)
-        return context
     for provider_config in provider_tools.values():
         if isinstance(provider_config, dict) and "tool_choice" in provider_config:
             provider_config["tool_choice"] = _wire_tool_choice(provider_config["tool_choice"], aliases)
