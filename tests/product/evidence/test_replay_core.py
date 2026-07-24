@@ -1370,6 +1370,9 @@ def test_provider_exchange_hashes_bind_unredacted_payloads(tmp_path: Path) -> No
     assert len(exchanges) == len(request_entries) == len(response_entries) == 2
     assert all(exchange["request_payload_sha256"] != entry["sha256"] for exchange, entry in zip(exchanges, request_entries, strict=True))
     assert all(exchange["response_payload_sha256"] != entry["sha256"] for exchange, entry in zip(exchanges, response_entries, strict=True))
+    request_digests = {entry["sha256"] for entry in request_entries}
+    assert all(len(request_digests.intersection(exchange["evidence_refs"])) == 1 for exchange in exchanges)
+    assert {ref for exchange in exchanges for ref in exchange["evidence_refs"] if ref in request_digests} == request_digests
 
 
 def test_provider_response_evidence_preserves_reasoning_fields(tmp_path: Path) -> None:

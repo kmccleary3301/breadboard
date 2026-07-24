@@ -2434,7 +2434,7 @@ def run_replay(
                         "model_id": provider_model, "model_revision": model_revision, "started_at_utc": call_started, "completed_at_utc": active_clock.now(),
                         "duration_ms": call_duration, "status": exchange_status, "request_payload_sha256": request_payload_sha256,
                         "response_payload_sha256": response_payload_sha256 if exchange_status == "completed" else None, "finish_reason": finish_reason,
-                        "usage": usage, "evidence_refs": [response_ref.digest], "fallback_used": False, "problem": exchange_problem,
+                        "usage": usage, "evidence_refs": [request_ref.digest, response_ref.digest], "fallback_used": False, "problem": exchange_problem,
                     }
                     exchange = validate_provider_exchange(exchange)
                     evidence_validators["exchange"].validate(exchange)
