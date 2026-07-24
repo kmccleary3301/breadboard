@@ -107,7 +107,7 @@ def _scrub(value: Any, workspace: Path | None, secrets: Sequence[str]) -> Any:
     if isinstance(value, str):
         text = value.replace(str(workspace), ".") if workspace is not None else value
         for secret in secrets:
-            text = "<redacted>" if text == secret else text.replace(secret, "<redacted>") if len(secret) >= 4 else text
+            text = text.replace(secret, "<redacted>")
         return text
     if isinstance(value, Mapping):
         return {str(key): _scrub(item, workspace, secrets) for key, item in value.items()}
@@ -156,8 +156,8 @@ def invoke_idempotent(
                 record = json.loads(record_path.read_text())
                 if record.get("input_sha256") != input_sha256:
                     return problem_response(operation_id, 409, "idempotency_conflict", "Idempotency-Key was used with different input")
-                PublicResult.model_validate(record["result"])
-                return JSONResponse(status_code=202, content=record["result"])
+                cached = scrub_public(record["result"], workspace)
+                PublicResult.model_validate(cached); return JSONResponse(status_code=202, content=cached)
             result = function(workspace)
             if result.ok:
                 content = scrub_public(result.as_dict(), workspace)

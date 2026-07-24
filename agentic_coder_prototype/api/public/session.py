@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 from fastapi import APIRouter, Header, Query, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse; from starlette.concurrency import run_in_threadpool
 from breadboard.product.cli import harness as harness_operations
 from breadboard.product.cli import session as operations
 from breadboard.product.cli.result import CliResult, from_exception, portable_ref
@@ -170,19 +170,19 @@ def events(
     start_after = resume_token if resume_token is not None else last_event_id or 0
     async def stream():
         emitted = 0
-        with event_path.open() as source:
+        with (await run_in_threadpool(event_path.open)) as source:
             while emitted < limit:
-                position, line = source.tell(), source.readline()
+                position, line = await run_in_threadpool(lambda: (source.tell(), source.readline()))
                 if not line:
                     if await request.is_disconnected():
                         return
                     await asyncio.sleep(0.05)
                     continue
                 if not line.endswith("\n"):
-                    source.seek(position)
+                    await run_in_threadpool(source.seek, position)
                     await asyncio.sleep(0.05)
                     continue
-                event = operations._event(json.loads(line)).as_dict()
+                event = await run_in_threadpool(lambda: operations._event(json.loads(line)).as_dict())
                 terminal = event["kind"] in {"session.completed", "session.failed", "session.canceled"}
                 if int(event["sequence"]) <= start_after:
                     if terminal:
