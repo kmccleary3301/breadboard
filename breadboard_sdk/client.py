@@ -32,6 +32,12 @@ class ApiError(Exception):
         return f"{self.message} (status={self.status})"
 
 
+def _resource_path(value: str) -> str:
+    parts = value.split("/")
+    if any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("resource identifiers cannot contain empty or dot segments")
+    return "/".join(quote(part, safe="") for part in parts)
+
 class BreadboardClient:
     """Python SDK for the BreadBoard CLI bridge API (HTTP + SSE)."""
 
@@ -111,22 +117,22 @@ class BreadboardClient:
         return self._request("GET", "/v1/harnesses")
 
     def get_harness(self, harness_id: str) -> Dict[str, Any]:
-        return self._request("GET", f"/v1/harnesses/{quote(harness_id, safe='/')}")
+        return self._request("GET", f"/v1/harnesses/{_resource_path(harness_id)}")
 
     def update_harness(self, harness_id: str, definition: Dict[str, Any]) -> Dict[str, Any]:
-        return self._request("PUT", f"/v1/harnesses/{quote(harness_id, safe='/')}", body={"definition": definition})
+        return self._request("PUT", f"/v1/harnesses/{_resource_path(harness_id)}", body={"definition": definition})
 
     def validate_harness(self, harness_id: str) -> Dict[str, Any]:
-        return self._request("POST", f"/v1/harnesses/{quote(harness_id, safe='/')}/validate")
+        return self._request("POST", f"/v1/harnesses/{_resource_path(harness_id)}/validate")
 
     def explain_harness(self, harness_id: str) -> Dict[str, Any]:
-        return self._request("POST", f"/v1/harnesses/{quote(harness_id, safe='/')}/explain")
+        return self._request("POST", f"/v1/harnesses/{_resource_path(harness_id)}/explain")
 
     def lock_harness(self, harness_id: str) -> Dict[str, Any]:
-        return self._request("POST", f"/v1/harnesses/{quote(harness_id, safe='/')}/lock")
+        return self._request("POST", f"/v1/harnesses/{_resource_path(harness_id)}/lock")
 
     def get_harness_lock(self, lock_id: str) -> Dict[str, Any]:
-        return self._request("GET", f"/v1/harness-locks/{quote(lock_id, safe='/')}")
+        return self._request("GET", f"/v1/harness-locks/{_resource_path(lock_id)}")
 
     def list_integration(self) -> Dict[str, Any]:
         return self._request("GET", "/v1/integrations")
@@ -298,7 +304,7 @@ class BreadboardClient:
         last_event_id: str | None = None,
         query: Dict[str, Any] | None = None,
     ) -> Generator[SessionEvent, None, None]:
-        url = urljoin(self.base_url, f"/v1/sessions/{session_id}/events".lstrip("/"))
+        url = urljoin(self.base_url, f"/v1/sessions/{quote(session_id, safe='')}/events".lstrip("/"))
         if query:
             url = f"{url}?{urlencode({k: v for k, v in query.items() if v is not None})}"
         headers: Dict[str, str] = {}

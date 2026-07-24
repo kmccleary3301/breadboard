@@ -267,10 +267,16 @@ const publicIdentifier = (input: Readonly<Record<string, unknown>>, name: string
 const publicResource = (input: Readonly<Record<string, unknown>>, name: string): string => {
   const value = input[name]
   if (typeof value !== "string" || value.length === 0) throw new Error(`${name} is required`)
-  return value.split("/").map(encodeURIComponent).join("/")
+  const parts = value.split("/")
+  if (parts.some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error(`${name} cannot contain empty or dot segments`)
+  }
+  return parts.map(encodeURIComponent).join("/")
 }
 const publicHeaders = (input: Readonly<Record<string, unknown>>): Record<string, string> | undefined =>
-  typeof input.idempotency_key === "string" ? { "Idempotency-Key": input.idempotency_key } : undefined
+  typeof input.idempotency_key === "string" && input.idempotency_key.length > 0
+    ? { "Idempotency-Key": input.idempotency_key }
+    : undefined
 const invokePublicAction = (
   config: ApiClientConfig,
   actionId: PublicActionId,
@@ -307,7 +313,13 @@ const invokePublicAction = (
     case "public.session.approve": return request("POST", `/v1/sessions/${publicIdentifier(input, "session_id")}/approve`, { body: { request_id: input.request_id, decision: input.decision }, headers: publicHeaders(input) })
     case "public.session.resume": return request("POST", `/v1/sessions/${publicIdentifier(input, "session_id")}/resume`, { headers: publicHeaders(input) })
     case "public.session.cancel": return request("POST", `/v1/sessions/${publicIdentifier(input, "session_id")}/cancel`, { body: { reason: input.reason ?? "operator request" }, headers: publicHeaders(input) })
-    case "public.session.events": return request("GET", `/v1/sessions/${publicIdentifier(input, "session_id")}/events`, { query: { resume_token: input.resume_token as number | undefined, limit: input.limit as number | undefined }, responseType: "text", headers: typeof input.last_event_id === "number" ? { "Last-Event-ID": String(input.last_event_id) } : undefined })
+    case "public.session.events": {
+      const sessionId = publicIdentifier(input, "session_id")
+      const query = { resume_token: input.resume_token as number | undefined, limit: input.limit as number | undefined }
+      const lastEventId = typeof input.last_event_id === "number" ? String(input.last_event_id) : undefined
+      return import("./stream.js").then(({ streamSessionEvents }) =>
+        streamSessionEvents(decodeURIComponent(sessionId), { config, query, lastEventId }))
+    }
     case "public.session.artifacts": return request("GET", `/v1/sessions/${publicIdentifier(input, "session_id")}/artifacts`)
   }
 }

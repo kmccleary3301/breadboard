@@ -56,7 +56,13 @@ const buildUrl = (baseUrl: string, path: string, query?: RequestOptions["query"]
   }
   return url
 }
-const resourcePath = (value: string): string => value.split("/").map(encodeURIComponent).join("/")
+const resourcePath = (value: string): string => {
+  const parts = value.split("/")
+  if (parts.some((part) => part === "" || part === "." || part === "..")) {
+    throw new Error("resource identifiers cannot contain empty or dot segments")
+  }
+  return parts.map(encodeURIComponent).join("/")
+}
 const idempotencyHeaders = (key?: string): Record<string, string> | undefined =>
   key ? { "Idempotency-Key": key } : undefined
 

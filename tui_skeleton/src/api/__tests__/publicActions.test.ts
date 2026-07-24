@@ -45,7 +45,8 @@ describe("public candidate actions", () => {
       ["public.session.artifacts", { session_id: "session-1" }],
     ]
     for (const [actionId, input] of calls) await expect(client.invokePublicAction(actionId, input)).resolves.toEqual(result)
-    await expect(client.invokePublicAction("public.session.events", { session_id: "session-1", resume_token: 2 })).resolves.toEqual(JSON.stringify(result))
+    const eventStream = await client.invokePublicAction("public.session.events", { session_id: "session-1", resume_token: 2 })
+    expect(typeof (eventStream as AsyncIterable<unknown>)[Symbol.asyncIterator]).toBe("function")
     expect(requests.map((row) => row[1])).toEqual([
       "/v1/system", "/v1/health", "/v1/schemas", "/v1/harnesses", "/v1/harnesses",
       "/v1/harnesses/bundles/main.yaml", "/v1/harnesses/bundles/main.yaml", "/v1/harnesses/bundles/main.yaml/validate",
@@ -54,7 +55,7 @@ describe("public candidate actions", () => {
       "/v1/artifacts", "/v1/artifacts/sha256%3Aabc", "/v1/artifacts/sha256%3Aabc/verify",
       "/v1/sessions", "/v1/sessions", "/v1/sessions/session-1", "/v1/sessions/session-1/input",
       "/v1/sessions/session-1/approve", "/v1/sessions/session-1/resume", "/v1/sessions/session-1/cancel",
-      "/v1/sessions/session-1/artifacts", "/v1/sessions/session-1/events",
+      "/v1/sessions/session-1/artifacts",
     ])
   })
 })

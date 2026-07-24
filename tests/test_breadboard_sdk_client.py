@@ -211,9 +211,9 @@ def test_stream_events_gets_exact_v1_session_url(
     monkeypatch.setattr(client_module.requests, "get", fake_get)
     client = BreadboardClient(base_url="https://breadboard.test/api-root/")
 
-    received = list(client.stream_events("session-123"))
+    received = list(client.stream_events("session ?/#"))
 
-    assert streamed_urls == ["https://breadboard.test/api-root/v1/sessions/session-123/events"]
+    assert streamed_urls == ["https://breadboard.test/api-root/v1/sessions/session%20%3F%2F%23/events"]
     assert received == [event]
 
 
