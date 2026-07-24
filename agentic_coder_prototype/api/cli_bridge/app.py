@@ -56,6 +56,9 @@ from agentic_coder_prototype.api.e4.models import E4ApiError
 from .service import SessionService
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
+from agentic_coder_prototype.api.public import create_public_router
+from agentic_coder_prototype.api.public.models import PublicResult, SessionStartRequest as PublicSessionStartRequest, invoke as invoke_public
+from agentic_coder_prototype.api.public.session import start_session_result
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
@@ -628,21 +631,23 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
 
     @app.post(
         "/v1/sessions",
-        response_model=SessionCreateResponse,
-        responses={400: {"model": ErrorResponse}},
+        operation_id="session.start",
+        response_model=SessionCreateResponse | PublicResult,
+        responses={202: {"model": PublicResult}, 400: {"model": ErrorResponse}},
     )
     @app.post(
         "/sessions",
         response_model=SessionCreateResponse,
         responses={400: {"model": ErrorResponse}},
     )
-    async def create_session(payload: SessionCreateRequest, svc: SessionService = Depends(get_service)):
+    async def create_session(
+        payload: SessionCreateRequest | PublicSessionStartRequest,
+        svc: SessionService = Depends(get_service),
+    ):
+        if isinstance(payload, PublicSessionStartRequest):
+            return invoke_public("session.start", lambda workspace: start_session_result(payload, workspace))
         return await svc.create_session(payload)
 
-    @app.get(
-        "/v1/sessions",
-        response_model=list[SessionSummary],
-    )
     @app.get(
         "/sessions",
         response_model=list[SessionSummary],
@@ -651,11 +656,6 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         summaries = await svc.list_sessions()
         return list(summaries)
 
-    @app.get(
-        "/v1/sessions/{session_id}",
-        response_model=SessionSummary,
-        responses={404: {"model": ErrorResponse}},
-    )
     @app.get(
         "/sessions/{session_id}",
         response_model=SessionSummary,
@@ -683,16 +683,6 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             limit=limit,
         )
 
-    @app.post(
-        "/v1/sessions/{session_id}/input",
-        response_model=SessionInputResponse,
-        status_code=status.HTTP_202_ACCEPTED,
-        responses={
-            404: {"model": ErrorResponse},
-            409: {"model": ErrorResponse},
-            400: {"model": ErrorResponse},
-        },
-    )
     @app.post(
         "/sessions/{session_id}/input",
         response_model=SessionInputResponse,
@@ -892,10 +882,6 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get(
-        "/v1/sessions/{session_id}/events",
-        responses={404: {"model": ErrorResponse}},
-    )
-    @app.get(
         "/sessions/{session_id}/events",
         responses={404: {"model": ErrorResponse}},
     )
@@ -963,6 +949,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
 
     if not legacy_routes_enabled:
         _drop_legacy_routes(app)
+    app.include_router(create_public_router())
 
     return app
 
