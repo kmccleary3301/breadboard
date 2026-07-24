@@ -838,6 +838,19 @@ class SessionState:
 
     def get_provider_metadata(self, key: str, default: Any = None) -> Any:
         return self.provider_metadata.get(key, default)
+    def provider_metadata_snapshot(self) -> Dict[str, Any]:
+        replay_safe_keys = (
+            "anthropic_rate_limits",
+            "conversation_id",
+            "current_turn_index",
+            "previous_response_id",
+        )
+        return {
+            key: self.provider_metadata[key]
+            for key in replay_safe_keys
+            if key in self.provider_metadata
+        }
+
 
     def clear_provider_metadata(self) -> None:
         self.provider_metadata.clear()

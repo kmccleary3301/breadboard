@@ -4,7 +4,10 @@ from types import SimpleNamespace
 import json
 import pytest
 from jsonschema import Draft202012Validator
+from agentic_coder_prototype.provider.routing import ProviderDescriptor
 from breadboard.product.integrations import CaptureIntegrationAdapter, IncompatibleAdapterError, IntegrationCatalog, IntegrationDescriptor, IntegrationError, ProbeReport, ProjectDeclarationError, internal_capture_adapters, load_capture_entry_points, resolve_local_capture_declaration
+from breadboard.product.integrations.provider import ProviderRuntimeAdapter
+from breadboard.product.integrations.host import SandboxHostAdapter
 
 
 def test_internal_and_external_adapters(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -91,3 +94,60 @@ def test_records_match_public_schemas_and_traversal_is_rejected(tmp_path: Path) 
         assert list(Draft202012Validator(schema).iter_errors(record)) == []
     declaration = {"adapter_id": "local", "source_path": "../adapter.py", "source_sha256": "sha256:" + "0" * 64, "grants": ["capture"]}
     with pytest.raises(ProjectDeclarationError): resolve_local_capture_declaration(declaration, project_root=str(tmp_path), adapter=internal_capture_adapters()[0])
+
+
+def test_provider_replay_client_identity_binds_creation_options() -> None:
+    descriptor = ProviderDescriptor("fixture", "fixture_runtime", "chat", True, False, False, False, "openai", None, "FIXTURE_KEY", {})
+
+    class Runtime:
+        def create_client(self, api_key: str, *, base_url: str | None = None, default_headers: dict[str, str] | None = None):
+            return SimpleNamespace(api_key=api_key, base_url=base_url, timeout=10, max_retries=2)
+        def invoke(self, **kwargs):
+            raise AssertionError("not used")
+
+    adapter = ProviderRuntimeAdapter(Runtime(), descriptor)
+    first = adapter.create_client("secret", base_url="https://fixture.invalid", default_headers={"X-Tenant": "one"})
+    second = adapter.create_client("secret", base_url="https://fixture.invalid", default_headers={"X-Tenant": "two"})
+    first_identity = adapter.replay_client_identity(first, {"FIXTURE_KEY": "secret"})
+    second_identity = adapter.replay_client_identity(second, {"FIXTURE_KEY": "secret"})
+    assert first_identity["verified"] is True
+    assert first_identity["creation_options"] != second_identity["creation_options"]
+    assert adapter.replay_client_identity(SimpleNamespace(api_key="secret"), {"FIXTURE_KEY": "secret"})["verified"] is False
+    assert "secret" not in json.dumps(first_identity)
+    assert "one" not in json.dumps(first_identity)
+
+
+def test_provider_replay_client_identity_supports_mapping_clients() -> None:
+    descriptor = ProviderDescriptor("fixture", "fixture_runtime", "chat", True, False, False, False, "openai", None, "FIXTURE_KEY", {})
+
+    class Runtime:
+        def create_client(self, api_key: str, *, base_url: str | None = None, default_headers: dict[str, str] | None = None):
+            return {"api_key": api_key, "base_url": base_url}
+        def invoke(self, **kwargs):
+            raise AssertionError("not used")
+
+    adapter = ProviderRuntimeAdapter(Runtime(), descriptor)
+    client = adapter.create_client("secret", base_url="https://fixture.invalid")
+    assert adapter.replay_client_identity(client, {"FIXTURE_KEY": "secret"})["verified"] is True
+    client["api_key"] = "changed"
+    assert adapter.replay_client_identity(client, {"FIXTURE_KEY": "secret"})["verified"] is False
+    client["api_key"] = "secret"
+    client["base_url"] = "https://changed.invalid"
+    assert adapter.replay_client_identity(client, {"FIXTURE_KEY": "secret"})["verified"] is False
+
+
+def test_host_adapter_rejects_missing_replay_containment_port() -> None:
+    sandbox = SimpleNamespace(get_workspace=lambda: "sandbox:fixture", execute=lambda command, **kwargs: None)
+    with pytest.raises(TypeError, match="replay_process_containment"):
+        SandboxHostAdapter("fixture", sandbox)
+
+
+def test_host_probe_fails_closed_on_invalid_replay_containment_attestation() -> None:
+    sandbox = SimpleNamespace(
+        get_workspace=lambda: "sandbox:fixture",
+        execute=lambda command, **kwargs: None,
+        replay_process_containment=lambda: {"detached_descendants": "uncontained"},
+    )
+    report = SandboxHostAdapter("fixture", sandbox).probe()
+    assert report.status == "unavailable"
+    assert report.error == "RuntimeError"

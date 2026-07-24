@@ -10,6 +10,7 @@ from .catalog import IntegrationDescriptor, ProbeReport, probe_for
 class HostPort(Protocol):
     def get_workspace(self) -> str: ...
     def execute(self, command: str, **kwargs: Any) -> Any: ...
+    def replay_process_containment(self) -> Mapping[str, str]: ...
 
 
 class SandboxHostAdapter:
@@ -25,8 +26,9 @@ class SandboxHostAdapter:
         effects: Iterable[str] = ("filesystem", "process"),
         permissions: Iterable[str] = ("host.execute",),
     ) -> None:
-        if not host_id or not callable(getattr(sandbox, "get_workspace", None)) or not callable(getattr(sandbox, "execute", None)):
-            raise TypeError("host adapter requires a sandbox with get_workspace() and execute()")
+        required_methods = ("get_workspace", "execute", "replay_process_containment")
+        if not host_id or any(not callable(getattr(sandbox, name, None)) for name in required_methods):
+            raise TypeError("host adapter requires a sandbox with get_workspace(), execute(), and replay_process_containment()")
         self.host_id = host_id
         self.sandbox = sandbox
         self.descriptor = IntegrationDescriptor(
@@ -52,9 +54,19 @@ class SandboxHostAdapter:
             raise RuntimeError("sandbox does not expose the frozen execute port")
         return method(command, **kwargs)
 
+    def replay_process_containment(self) -> Mapping[str, str]:
+        method = getattr(self.sandbox, "replay_process_containment", None)
+        if not callable(method):
+            raise RuntimeError("sandbox does not attest detached-descendant containment")
+        identity = method()
+        if not isinstance(identity, Mapping) or identity.get("detached_descendants") != "contained":
+            raise RuntimeError("sandbox process containment attestation is invalid")
+        return dict(identity)
+
     def probe(self) -> ProbeReport:
         try:
             self.workspace()
+            self.replay_process_containment()
         except Exception as exc:
             return probe_for(self.descriptor, error=type(exc).__name__)
         return probe_for(self.descriptor)

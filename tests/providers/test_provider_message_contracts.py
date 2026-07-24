@@ -130,7 +130,7 @@ def test_openai_chat_runtime_produces_string_content_and_tool_call_arguments(mon
         assert call.arguments.startswith("{") and call.arguments.endswith("}")
 
 
-def test_openai_chat_runtime_converts_null_content_to_empty_string() -> None:
+def test_openai_chat_runtime_preserves_tool_transcript_and_normalizes_content() -> None:
     descriptor, _model = provider_router.get_runtime_descriptor("openai/gpt-4o-mini")
     runtime = provider_registry.create_runtime(descriptor)
     converted = runtime._convert_messages_to_chat(
@@ -145,12 +145,19 @@ def test_openai_chat_runtime_converts_null_content_to_empty_string() -> None:
                         "function": {"name": "tool_a", "arguments": "{}"},
                     }
                 ],
-            }
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_1",
+                "content": "{\"ok\": true}",
+            },
         ]
     )
     assert isinstance(converted, list) and converted
     assert converted[0]["role"] == "assistant"
     assert converted[0]["content"] == ""
+    assert converted[0]["tool_calls"][0]["id"] == "call_1"
+    assert converted[1] == {"role": "tool", "content": "{\"ok\": true}", "tool_call_id": "call_1"}
 
 
 def test_responses_runtime_produces_string_content(monkeypatch):
