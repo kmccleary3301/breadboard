@@ -7,6 +7,7 @@ def _catalog():
     return IntegrationCatalog()
 def _record(x):
     if hasattr(x,"to_record"):return x.to_record()
+    if hasattr(x,"descriptor"):return _record(x.descriptor)
     if isinstance(x,(list,tuple)):return [_record(v) for v in x]
     if isinstance(x,dict):return {str(k):_record(v) for k,v in x.items()}
     return x
@@ -18,6 +19,7 @@ def list_integrations(args):
 def get(args):
     try:
         x=_record(_catalog().get(args.INTEGRATION_ID)); return CliResult.failure(["integration","get"],EXIT_BLOCKED,"integration_not_found",f"integration not found: {args.INTEGRATION_ID}","integration.get",next_actions=["breadboard integration list"],status="blocked") if x is None else CliResult.success(["integration","get"],{"integration":x},stage="integration.get")
+    except KeyError:return CliResult.failure(["integration","get"],EXIT_BLOCKED,"integration_not_found",f"integration not found: {args.INTEGRATION_ID}","integration.get",next_actions=["breadboard integration list"],status="blocked")
     except ModuleNotFoundError:return CliResult.failure(["integration","get"],EXIT_BLOCKED,"integration_catalog_unavailable","integration catalog is unavailable in this installation","integration.get",status="blocked")
     except Exception as e:return from_exception(["integration","get"],e,"integration.get")
 def probe(args):

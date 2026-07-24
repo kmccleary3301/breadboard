@@ -27,12 +27,18 @@ def test_harness_family_delegates_to_product_operations(monkeypatch, tmp_path: P
     updated = client.put("/v1/harnesses/minimal_harness.v2.yaml", json={"definition": definition})
     assert updated.status_code == 200 and updated.json()["stage_outcomes"][0]["stage"] == "harness.update"
     assert client.get("/v1/harnesses/minimal_harness.v2.yaml").json()["data"]["definition"]["modes"][0]["name"] == "review"
+    nested = client.post("/v1/harnesses", json={"directory": "bundles"})
+    assert nested.status_code == 200
+    invalid_nested_update = client.put("/v1/harnesses/bundles/minimal_harness.v2.yaml", json={})
+    assert invalid_nested_update.status_code == 422
+    assert invalid_nested_update.json()["schema_version"] == "bb.cli.result.v1"
+    assert invalid_nested_update.json()["error"]["schema_version"] == "bb.problem.v1"
     assert client.post("/v1/harnesses/minimal_harness.v2.yaml/explain").json()["ok"] is True
     locked = client.post("/v1/harnesses/minimal_harness.v2.yaml/lock")
     assert locked.status_code == 200
     lock_id = locked.json()["data"]["path"]
     assert client.get(f"/v1/harness-locks/{lock_id}").json()["ok"] is True
-    assert client.get("/v1/harnesses").json()["data"]["harnesses"] == ["minimal_harness.v2.yaml"]
+    assert client.get("/v1/harnesses").json()["data"]["harnesses"] == ["bundles/minimal_harness.v2.yaml", "minimal_harness.v2.yaml"]
 def test_public_api_cannot_write_maintainer_evidence_trees(monkeypatch, tmp_path: Path) -> None:
     maintainer_tree = Path(__file__).resolve().parents[4] / "docs_tmp"
     marker = maintainer_tree / "minimal_harness.v2.yaml"

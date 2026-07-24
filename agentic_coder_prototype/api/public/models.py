@@ -17,21 +17,23 @@ _STATUS_BY_EXIT = {2: 422, 3: 404, 4: 500, 5: 409, 6: 409}
 _ASYNC_OPERATIONS = frozenset(
     {"integration.probe", "session.approve", "session.cancel", "session.resume", "session.send_input", "session.start"}
 )
-def _operation_routes() -> frozenset[tuple[str, re.Pattern[str]]]:
+def _operation_contract() -> tuple[frozenset[str], frozenset[tuple[str, re.Pattern[str]]]]:
     document = json.loads((_REPO_ROOT / "contracts/public/operations.v1.json").read_text())
+    operation_ids: set[str] = set()
     routes: set[tuple[str, re.Pattern[str]]] = set()
     for operation in document.get("operations", []):
         operation_id = str(operation.get("operation_id", ""))
         binding = operation.get("bindings", {}).get("openapi", {})
         if operation_id.split(".", 1)[0] not in _FAMILIES or binding.get("status") != "candidate":
             continue
+        operation_ids.add(operation_id)
         path = re.escape(str(binding["path"]))
         pattern = re.sub(r"\\\{[^}]+\\\}", r"[^/]+", path)
         routes.add((str(binding["method"]).upper(), re.compile(f"^{pattern}$")))
-    return frozenset(routes)
-PUBLIC_OPERATION_ROUTES = _operation_routes()
-def is_public_operation_request(method: str, path: str) -> bool:
-    return any(candidate == method.upper() and pattern.fullmatch(path) for candidate, pattern in PUBLIC_OPERATION_ROUTES)
+    return frozenset(operation_ids), frozenset(routes)
+PUBLIC_OPERATION_IDS, PUBLIC_OPERATION_ROUTES = _operation_contract()
+def is_public_operation_request(method: str, path: str, operation_id: str | None = None) -> bool:
+    return operation_id in PUBLIC_OPERATION_IDS or any(candidate == method.upper() and pattern.fullmatch(path) for candidate, pattern in PUBLIC_OPERATION_ROUTES)
 class Problem(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal["bb.problem.v1"] = "bb.problem.v1"
@@ -137,6 +139,21 @@ def invoke(operation_id: str, function: Callable[[Path], CliResult]) -> JSONResp
     except Exception as error:
         result = from_exception(operation_id.split("."), error, operation_id)
     return result_response(result, workspace=workspace, operation_id=operation_id)
+def _write_idempotency_record(path: Path, content: bytes) -> None:
+    temporary = path.with_name(f".{path.name}.{os.urandom(8).hex()}.tmp")
+    descriptor = None
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(descriptor, "wb") as stream:
+            descriptor = None
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        temporary.unlink(missing_ok=True)
 def invoke_idempotent(
     operation_id: str,
     idempotency_key: str | None,
@@ -165,10 +182,8 @@ def invoke_idempotent(
             if result.ok:
                 content = scrub_public(result.as_dict(), workspace)
                 PublicResult.model_validate(content)
-                temporary = record_path.with_name(f".{record_path.name}.{os.getpid()}.tmp")
-                temporary.unlink(missing_ok=True)
-                temporary.write_text(json.dumps({"input_sha256": input_sha256, "result": content}, sort_keys=True))
-                os.replace(temporary, record_path)
+                record = json.dumps({"input_sha256": input_sha256, "result": content}, sort_keys=True).encode()
+                _write_idempotency_record(record_path, record)
                 return JSONResponse(status_code=202, content=content)
     except Exception as error:
         result = from_exception(operation_id.split("."), error, operation_id)

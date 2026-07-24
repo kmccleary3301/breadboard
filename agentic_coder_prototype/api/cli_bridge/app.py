@@ -271,15 +271,19 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
 
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-        if not (public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path)):
+        operation_id = getattr(request.scope.get("route"), "operation_id", None)
+        if legacy_routes_enabled:
             return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path, operation_id):
+            content = _http_error_content(exc)
+            return problem_response(operation_id or "public.request", exc.status_code, str(content["error"]), str(content["detail"]))
         return JSONResponse(status_code=exc.status_code, content=_http_error_content(exc))
 
     @app.exception_handler(RequestValidationError)
     async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-        if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path):
-            operation_id = getattr(request.scope.get("route"), "operation_id", "public.request")
-            return problem_response(operation_id, 422, "invalid_request", "request validation failed")
+        operation_id = getattr(request.scope.get("route"), "operation_id", None)
+        if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path, operation_id):
+            return problem_response(operation_id or "public.request", 422, "invalid_request", "request validation failed")
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content=ErrorEnvelope(error="invalid_request", detail={"errors": exc.errors()}, path=None).model_dump(),
@@ -971,6 +975,8 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                 provider.register_routes(app, get_service)
         mounted_extensions.append("evolake")
 
+    if public_api_enabled and legacy_routes_enabled:
+        logger.warning("BREADBOARD_LEGACY_ROUTES takes precedence; candidate public API routes remain disabled")
     if public_api_enabled and not legacy_routes_enabled:
         _drop_legacy_routes(app, drop_versioned_sessions=True)
         app.include_router(create_public_router())

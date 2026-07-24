@@ -48,3 +48,5 @@ def test_integration_list_get_and_async_probe(monkeypatch, tmp_path: Path) -> No
     assert "token-value-must-not-leak" not in fetched.text + probed.text
     missing = client.get("/v1/integrations/missing")
     assert missing.status_code == 409 and missing.json()["error"]["error_code"] == "integration_not_found"
+    direct_missing = api_integration.operations.get(api_integration.SimpleNamespace(workspace=tmp_path, INTEGRATION_ID="missing"))
+    assert missing.json() == direct_missing.as_dict()
