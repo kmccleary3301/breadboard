@@ -165,4 +165,3 @@ def resolve_local_capture_declaration(
     if selected.source_sha256 != parsed.source_sha256:
         raise ProjectDeclarationError("local adapter source hash does not match declaration")
     return selected
-
