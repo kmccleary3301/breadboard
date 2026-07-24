@@ -67,6 +67,13 @@ def test_session_invalid_state_is_stable_and_secret_free(client: TestClient, tmp
     missing = client.get("/v1/sessions/does-not-exist")
     assert missing.status_code == 404
     assert missing.json()["error"]["error_code"] == "path_unavailable"
+    stray_approval = client.post(
+        "/v1/sessions/duplicate/approve",
+        json={"request_id": "not-pending", "decision": "allow"},
+        headers={"Idempotency-Key": "stray-approval"},
+    )
+    assert stray_approval.status_code == 422
+    assert client.get("/v1/sessions/duplicate").json()["data"]["session"]["status"] == "running"
     inactive = client.post(
         "/v1/sessions/duplicate/cancel",
         json={},

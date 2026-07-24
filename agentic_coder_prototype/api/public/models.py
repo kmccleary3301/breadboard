@@ -239,8 +239,8 @@ async def invoke_idempotent_async(
         lock = ProcessLock(record_path)
         await run_in_threadpool(lock.__enter__)
         entered = True
-        if record_path.exists():
-            record = json.loads(record_path.read_text())
+        if await run_in_threadpool(record_path.exists):
+            record = json.loads(await run_in_threadpool(record_path.read_text))
             if record.get("input_sha256") != input_sha256:
                 return problem_response(operation_id, 409, "idempotency_conflict", "Idempotency-Key was used with different input")
             cached = scrub_public(record["result"], workspace)
@@ -251,15 +251,17 @@ async def invoke_idempotent_async(
             content = scrub_public(result.as_dict(), workspace)
             PublicResult.model_validate(content)
             record = json.dumps({"input_sha256": input_sha256, "result": content}, sort_keys=True).encode()
-            _write_idempotency_record(record_path, record)
+            await run_in_threadpool(_write_idempotency_record, record_path, record)
             return JSONResponse(status_code=202, content=content)
     except Exception as error:
         result = from_public_exception(operation_id, error)
     finally:
-        if entered and lock is not None:
-            await run_in_threadpool(lock.__exit__, None, None, None)
-        if local_lock_entered and local_lock is not None:
-            local_lock.release()
+        try:
+            if entered and lock is not None:
+                await run_in_threadpool(lock.__exit__, None, None, None)
+        finally:
+            if local_lock_entered and local_lock is not None:
+                local_lock.release()
     return result_response(result, workspace=workspace, operation_id=operation_id)
 def problem_response(operation_id: str, status_code: int, error_code: str, message: str) -> JSONResponse:
     exit_code = {404: 3, 409: 6, 422: 2}.get(status_code, 4 if status_code >= 500 else 2)

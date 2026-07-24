@@ -595,8 +595,7 @@ class SessionRunner:
                             self._update_pending_permissions("permission_response", response_payload, source="session")
                         await self.publish_event_async(EventType.PERMISSION_RESPONSE, response_payload)
                         return {"status": "ok", "request_id": normalized_request_id, "decision": resolution, "delivered": response_payload, "debug": True}
-                    self.transition_product_session("fail", "permission_delivery_failed", "no permission request is active")
-                    raise RuntimeError("no permission request is active")
+                    raise ValueError("no permission request is active")
                 if canonical_responses is not None:
                     item: Dict[str, Any] = {"request_id": normalized_request_id, "responses": canonical_responses}
                 else:

@@ -12,7 +12,7 @@ from types import SimpleNamespace
 from typing import Any, AsyncIterator, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import AnchoredStorage, ArtifactStore, Session as ProductSession
-from breadboard.product.runtime.events import JsonlEventSink
+from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
 from fastapi import HTTPException, UploadFile, status
 from .events import EventType, SessionEvent
 from .models import (
@@ -108,6 +108,29 @@ def _cleanup_incomplete_starts(record_root: Path | None = None, event_root: Path
             (target / _START_OWNER).unlink(missing_ok=True); shutil.rmtree(staged, ignore_errors=True); _sync_tree(target)
         else: shutil.rmtree(staged, ignore_errors=True)
     for root in (record_root, event_root): AnchoredStorage.sync_directory(root) if root.is_dir() else None
+def _prepare_start_stages(
+    record_root: Path,
+    event_root: Path,
+    runtime_record_dir: Path,
+    event_dir: Path,
+    active_stages: set[Path],
+    publish_records: bool,
+) -> list[Path]:
+    record_root.parent.mkdir(parents=True, exist_ok=True)
+    with ProcessLock(record_root.parent / f"{record_root.name}.start-staging"):
+        _cleanup_incomplete_starts(record_root, event_root)
+        if event_dir.exists() or publish_records and runtime_record_dir.exists():
+            raise RuntimeError(f"session bundle already exists: {event_dir.name}")
+        created: list[Path] = []
+        try:
+            for path in active_stages:
+                _create_owned_stage(path); created.append(path)
+            return created
+        except BaseException:
+            for path in created:
+                shutil.rmtree(path, ignore_errors=True)
+                if path.parent.is_dir(): AnchoredStorage.sync_directory(path.parent)
+            raise
 class SessionService:
     """Facade that coordinates the registry, runners, and FastAPI endpoints."""
     def __init__(self, registry: SessionRegistry | None = None) -> None:
@@ -154,17 +177,18 @@ class SessionService:
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata); runner = SessionRunner(session=record, registry=self.registry, request=request)
         runtime_config = runner.prepare_runtime_config(); persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config); runtime_graph = compile_runtime_effective_config_graph(session_id, persisted_runtime_config, request.config_path); runtime_lock = EffectiveHarnessLock._from_record(runtime_graph)
         emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = (runtime_root or default_runtime_record_root()) / session_id, (event_root or _event_root()) / session_id
-        await asyncio.to_thread(_cleanup_incomplete_starts, runtime_record_dir.parent, event_dir.parent)
         staging_record_root = runtime_record_dir.parent / f".{session_id}.records.starting"
         staged_record_dir, staged_event_dir = staging_record_root / session_id, event_dir.with_name(f".{session_id}.events.starting")
-        if event_dir.exists() or emit_primitives and runtime_record_dir.exists(): raise RuntimeError(f"session bundle already exists: {session_id}")
-        active_stages, created_stages = {staged_event_dir, *({staging_record_root} if emit_primitives else set())}, []
-        try:
-            for path in active_stages:
-                _create_owned_stage(path); created_stages.append(path)
-        except BaseException:
-            for path in created_stages: shutil.rmtree(path, ignore_errors=True); AnchoredStorage.sync_directory(path.parent) if path.parent.is_dir() else None
-            raise
+        active_stages = {staged_event_dir, *({staging_record_root} if emit_primitives else set())}
+        created_stages = await asyncio.to_thread(
+            _prepare_start_stages,
+            runtime_record_dir.parent,
+            event_dir.parent,
+            runtime_record_dir,
+            event_dir,
+            active_stages,
+            emit_primitives,
+        )
         if emit_primitives: metadata.setdefault("runtime_record_dir", str(runtime_record_dir))
         record.runner, record.product_artifacts, published = runner, {}, False
         try:
