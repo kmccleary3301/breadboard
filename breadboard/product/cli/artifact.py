@@ -12,17 +12,20 @@ def _read(w,r):
     try:return read_workspace_artifact(w,r)
     except OSError as e:raise PermissionError("artifact path is unavailable") from e
 def put(a):
-    w=_workspace(a)
-    try:
-        source=Path(a.SOURCE).expanduser(); body=source.read_bytes(); r=put_workspace_artifact(w,body,media_type=a.media_type)
-        return CliResult.success(["artifact","put"],{"artifact":r.as_dict(),"source":portable_ref(source,w)},refs=[portable_ref(source,w)],hashes={"artifact":r.digest},stage="artifact.put")
+    w=_workspace(a); source=Path(a.SOURCE).expanduser()
+    try: body=source.read_bytes()
     except OSError:return from_exception(["artifact","put"],PermissionError("artifact source is unavailable"),"artifact.put")
+    try:
+        r=put_workspace_artifact(w,body,media_type=a.media_type)
+        return CliResult.success(["artifact","put"],{"artifact":r.as_dict(),"source":portable_ref(source,w)},refs=[portable_ref(source,w)],hashes={"artifact":r.digest},stage="artifact.put")
+    except OSError:return from_exception(["artifact","put"],PermissionError("artifact store is unavailable"),"artifact.put")
     except Exception as e:return from_exception(["artifact","put"],e,"artifact.put")
 def delete(a):
     w=_workspace(a)
     try:
         r=_ref(a.REF,w,getattr(a,"size",None),getattr(a,"media_type",None)); discard_workspace_artifact(w,r)
         return CliResult.success(["artifact","delete"],{"artifact":r.as_dict(),"deleted":True},hashes={"artifact":r.digest},stage="artifact.delete")
+    except OSError:return from_exception(["artifact","delete"],PermissionError("artifact path is unavailable"),"artifact.delete")
     except Exception as e:return from_exception(["artifact","delete"],e,"artifact.delete")
 def list_artifacts(a):
     w=_workspace(a); root=w/".breadboard"/"artifacts"/"sha256"
