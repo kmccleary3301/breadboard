@@ -609,7 +609,7 @@ def _scenario(interaction_script: tuple[Mapping[str, Any], ...] = ()) -> ReplayS
     )
 
 
-def _plan(scenario: ReplayScenario, *, deadlines: dict[str, int] | None = None, provider_route: dict[str, Any] | None = None, budgets: dict[str, int | float] | None = None, authorize=_allow, provider_instance: _Provider | None = None, provider_client: Any = None, tool_instances: Mapping[str, Any] | None = None, host_instance: Any = None, environment_allowlist: tuple[str, ...] = ()):
+def _plan(scenario: ReplayScenario, *, deadlines: dict[str, int] | None = None, provider_route: dict[str, Any] | None = None, budgets: dict[str, int | float] | None = None, authorize=_allow, provider_instance: _Provider | None = None, provider_client: Any = None, provider_context: Any = None, tool_instances: Mapping[str, Any] | None = None, host_instance: Any = None, environment_allowlist: tuple[str, ...] = ()):
     lock = _harness_lock()
     frozen = {name: {"binding": name} for name in HASH_BINDING_NAMES if name not in _SPECIAL_BINDINGS}
     frozen["operation_policy_sha256"] = {"callable": _callable_identity(authorize)}
@@ -625,6 +625,15 @@ def _plan(scenario: ReplayScenario, *, deadlines: dict[str, int] | None = None, 
     active_host = host_instance or _Host()
     frozen["tool_executor_identity_sha256"] = {"executors": {name: _capability_runtime_identity(active_tools[name], "tool") for name in sorted(active_tools)}}
     frozen["host_driver_identity_sha256"] = {"driver_type": _capability_runtime_identity(active_host, "host"), "workspace_identity": "sandbox:fixture", "process_containment": _host_containment_identity(active_host)}
+    _, reverse_tool_aliases = replay_runner_module._provider_tool_wire_schemas(scenario.tool_schemas)
+    isolated_provider_context = replay_runner_module._provider_context_with_wire_tool_aliases(
+        replay_runner_module._provider_context_snapshot(provider_context if provider_context is not None else object()),
+        reverse_tool_aliases,
+    )
+    frozen["model_policy_sha256"] = replay_runner_module._model_policy_binding(
+        {"binding": "model_policy_sha256"},
+        isolated_provider_context,
+    )
     bindings = scenario.binding_inputs(frozen)
     plan = build_replay_plan(
         lane_lock_sha256=HASH,
@@ -641,16 +650,17 @@ def _plan(scenario: ReplayScenario, *, deadlines: dict[str, int] | None = None, 
     )
     return lock, bindings, plan
 
-def _run(tmp_path: Path, *, sequence: tuple[str, ...] = ("add", "host", "done"), tool_fail: bool = False, tool_invalid: bool = False, tool_hang: bool = False, host_fail: bool = False, host_replace: bool = False, host_instance: Any = None, authorize=None, deadlines: dict[str, int] | None = None, budgets: dict[str, int | float] | None = None, monotonic=None, cancelled=None, provider_route: dict[str, Any] | None = None, tool_schemas: tuple[dict[str, Any], ...] | None = None, interaction_script: tuple[Mapping[str, Any], ...] = (), provider_instance: _Provider | None = None, provider_context: Any = None, tool_instances: Mapping[str, Any] | None = None, ids: Any = None, runtime_bindings: Mapping[str, Any] | None = None, environment_allowlist: tuple[str, ...] = ()):
+def _run(tmp_path: Path, *, sequence: tuple[str, ...] = ("add", "host", "done"), tool_fail: bool = False, tool_invalid: bool = False, tool_hang: bool = False, host_fail: bool = False, host_replace: bool = False, host_instance: Any = None, authorize=None, deadlines: dict[str, int] | None = None, budgets: dict[str, int | float] | None = None, monotonic=None, cancelled=None, provider_route: dict[str, Any] | None = None, tool_schemas: tuple[dict[str, Any], ...] | None = None, interaction_script: tuple[Mapping[str, Any], ...] = (), provider_instance: _Provider | None = None, provider_context: Any = None, planned_provider_context: Any = None, tool_instances: Mapping[str, Any] | None = None, ids: Any = None, runtime_bindings: Mapping[str, Any] | None = None, environment_allowlist: tuple[str, ...] = ()):
     workspace = BreadBoardWorkspace(tmp_path)
     scenario = _scenario(interaction_script) if tool_schemas is None else ReplayScenario("fixture task", ({"role": "user", "content": "go SECRET"},), {"input.txt": "hello"}, tool_schemas, interaction_script)
     active_authorize = authorize or _allow
     active_provider = provider_instance or _Provider(sequence)
+    active_provider_context = provider_context if provider_context is not None else object()
     active_client = object()
     declared_names = {row["function"]["name"] for row in scenario.tool_schemas}
     active_tools = dict(tool_instances) if tool_instances is not None else ({"add": _AddTool(fail=tool_fail, invalid=tool_invalid, hang=tool_hang)} if "add" in declared_names else {})
     active_host = host_instance or _Host(fail=host_fail, replace=host_replace)
-    lock, bindings, plan = _plan(scenario, deadlines=deadlines, provider_route=provider_route, budgets=budgets, authorize=active_authorize, provider_instance=active_provider, provider_client=active_client, tool_instances=active_tools, host_instance=active_host, environment_allowlist=environment_allowlist)
+    lock, bindings, plan = _plan(scenario, deadlines=deadlines, provider_route=provider_route, budgets=budgets, authorize=active_authorize, provider_instance=active_provider, provider_client=active_client, provider_context=planned_provider_context if planned_provider_context is not None else active_provider_context, tool_instances=active_tools, host_instance=active_host, environment_allowlist=environment_allowlist)
     result = run_replay(
         plan,
         binding_inputs=bindings,
@@ -662,7 +672,7 @@ def _run(tmp_path: Path, *, sequence: tuple[str, ...] = ("add", "host", "done"),
         provider_client=active_client,
         provider=active_provider,
         provider_model="fixture-model",
-        provider_context=provider_context if provider_context is not None else object(),
+        provider_context=active_provider_context,
         tools=active_tools,
         host=active_host,
         authorize=active_authorize,
@@ -1054,16 +1064,29 @@ def test_tool_worker_startup_obeys_tool_deadline(
 ) -> None:
     module_root = tmp_path / "capabilities"
     module_root.mkdir()
-    (module_root / "slow_start_tool.py").write_text(
-        "import time\n"
-        "time.sleep(1.6)\n"
+    module_path = module_root / "slow_start_tool.py"
+    module_path.write_text(
         "class SlowStartTool:\n"
+        "    def __init__(self):\n"
+        "        self.payload = 'x' * (512 * 1024)\n"
         "    def execute(self, _arguments):\n"
         "        return {'started': True}\n",
         encoding="utf-8",
     )
     monkeypatch.syspath_prepend(str(module_root))
     module = importlib.import_module("slow_start_tool")
+    module_path.write_text(
+        "import time\n"
+        "time.sleep(10)\n"
+        "class SlowStartTool:\n"
+        "    def __init__(self):\n"
+        "        self.payload = 'x' * (512 * 1024)\n"
+        "    def execute(self, _arguments):\n"
+        "        return {'started': True}\n",
+        encoding="utf-8",
+    )
+    importlib.invalidate_caches()
+    started = time.monotonic()
     try:
         tool_schemas = ({"type": "function", "function": {"name": "lazy", "parameters": {"type": "object"}}},)
         _, _, result = _run(
@@ -1076,6 +1099,7 @@ def test_tool_worker_startup_obeys_tool_deadline(
     finally:
         sys.modules.pop("slow_start_tool", None)
     record = result.execution.as_dict()
+    assert time.monotonic() - started < 8
     assert record["terminal_status"] == "timed_out"
     assert record["problem"]["error_code"] == "replay.tool_timeout"
 
@@ -1475,6 +1499,21 @@ def test_persistence_failure_rolls_back_cas_and_staging(tmp_path: Path, monkeypa
     assert digest_files == []
     assert list((tmp_path / ".breadboard/replays").glob(".*.staging")) == []
 
+def test_post_publication_metadata_failure_removes_replay_and_cas(tmp_path: Path) -> None:
+    class FailingMetadataSink:
+        def provider_metadata_snapshot(self) -> dict[str, Any]:
+            return {}
+
+        def set_provider_metadata(self, _name: str, _value: Any) -> None:
+            raise RuntimeError("injected metadata persistence failure")
+
+    context = ProviderRuntimeContext(session_state=FailingMetadataSink(), agent_config={}, extra={})
+    with pytest.raises(RuntimeError, match="metadata persistence"):
+        _run(tmp_path, sequence=("done",), provider_context=context)
+    assert not any((tmp_path / ".breadboard/replays").iterdir())
+    artifact_root = tmp_path / ".breadboard/artifacts"
+    assert not [path for path in artifact_root.rglob("*") if path.is_file() and len(path.name) == 64]
+
 
 def test_replay_contracts_remain_candidate_until_lifecycle_promotion() -> None:
     surface = json.loads((ROOT / "contracts/public/record_surface.v1.json").read_text(encoding="utf-8"))
@@ -1727,6 +1766,23 @@ def test_top_level_capability_does_not_allowlist_unrelated_sibling_files(
     assert str(unrelated) not in module_read_paths
     assert str(unrelated.resolve()) not in module_read_paths
 
+def test_loaded_unrelated_module_is_not_in_worker_allowlist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module_root = tmp_path / "unrelated"
+    module_root.mkdir()
+    module_path = module_root / "unrelated_capability_module.py"
+    module_path.write_text("VALUE = 'unrelated'\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(module_root))
+    importlib.import_module("unrelated_capability_module")
+    try:
+        payload = replay_runner_module._tool_executor_envelope(_AddTool(), "tool")
+        module_read_paths, module_specs = replay_runner_module._executor_module_allowlist(payload)
+    finally:
+        sys.modules.pop("unrelated_capability_module", None)
+    assert str(module_path) not in module_read_paths
+    assert "unrelated_capability_module" not in {name for name, _, _ in module_specs}
+
 
 
 
@@ -1921,6 +1977,22 @@ def test_workspace_special_file_is_rejected_from_snapshot(tmp_path: Path) -> Non
     assert record["problem"]["error_code"] == "replay.workspace_special_file"
     assert result.manifest.as_dict()["publish_status"] == "quarantined"
 
+def test_workspace_snapshot_checks_deadline_between_file_chunks(tmp_path: Path) -> None:
+    workspace_file = tmp_path / "large.bin"
+    workspace_file.write_bytes(b"x" * (3 * 1024 * 1024))
+    metadata = tmp_path.stat()
+    checks = [0]
+
+    def check() -> None:
+        checks[0] += 1
+        if checks[0] == 4:
+            raise replay_runner_module._RuntimeFailure("timed_out", "replay.total_timeout", "snapshot deadline")
+
+    with pytest.raises(replay_runner_module._RuntimeFailure) as raised:
+        replay_runner_module._snapshot(tmp_path, (metadata.st_dev, metadata.st_ino), check=check)
+    assert raised.value.error_code == "replay.total_timeout"
+    assert checks == [4]
+
 
 def test_exec_isolated_tool_cannot_reach_sibling_capabilities(tmp_path: Path) -> None:
     workspace, _, result = _run(tmp_path, sequence=("add", "done"), tool_instances={"add": _FrameInspectionTool()})
@@ -1941,18 +2013,13 @@ def test_provider_worker_cannot_read_workspace(tmp_path: Path) -> None:
 
 
 
-def test_host_worker_supports_attested_subprocess_execution(tmp_path: Path) -> None:
-    workspace, _, result = _run(tmp_path, sequence=("host", "done"), host_instance=_SubprocessHost())
-    assert result.execution.as_dict()["terminal_status"] == "completed"
-    entry = next(row for row in result.manifest.as_dict()["entries"] if row["role"] == "tool_outcome")
-    outcome = json.loads(ArtifactStore(workspace.path(".breadboard/artifacts")).read(ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])))
-    assert outcome["result"]["exit_code"] == 0, outcome
-    after_entry = next(row for row in result.manifest.as_dict()["entries"] if row["role"] == "workspace_after")
-    after = json.loads(ArtifactStore(workspace.path(".breadboard/artifacts")).read(ArtifactRef(after_entry["sha256"], after_entry["size_bytes"], after_entry["media_type"])))
-    assert "host-subprocess.txt" in {row["path"] for row in after["files"]}
+def test_host_worker_denies_local_subprocess_execution(tmp_path: Path) -> None:
+    workspace, _, result = _run(tmp_path, sequence=("host",), host_instance=_SubprocessHost())
+    assert result.execution.as_dict()["terminal_status"] == "host_failed"
+    assert not (workspace.root / "host-subprocess.txt").exists()
 
 
-def test_host_subprocess_cannot_read_outside_replay_workspace(
+def test_host_worker_denies_subprocess_reads_outside_replay_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1963,18 +2030,17 @@ def test_host_subprocess_cannot_read_outside_replay_workspace(
     monkeypatch.syspath_prepend(source_checkout)
     workspace, _, result = _run(
         source_checkout,
-        sequence=("host", "done"),
+        sequence=("host",),
         host_instance=_OutsideReadingSubprocessHost(outside),
     )
-    assert result.execution.as_dict()["terminal_status"] == "completed"
-    entry = next(row for row in result.manifest.as_dict()["entries"] if row["role"] == "tool_outcome")
-    payload = ArtifactStore(workspace.path(".breadboard/artifacts")).read(
-        ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])
-    )
-    outcome = json.loads(payload)
-    assert outcome["result"]["exit_code"] != 0
-    assert outcome["result"]["output"] == ""
-    assert b"OUTSIDE_REPLAY_SECRET" not in payload
+    assert result.execution.as_dict()["terminal_status"] == "host_failed"
+    payloads = [
+        ArtifactStore(workspace.path(".breadboard/artifacts")).read(
+            ArtifactRef(entry["sha256"], entry["size_bytes"], entry["media_type"])
+        )
+        for entry in result.manifest.as_dict()["entries"]
+    ]
+    assert all(b"OUTSIDE_REPLAY_SECRET" not in payload for payload in payloads)
 
 
 def test_allowlisted_environment_is_provider_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2115,6 +2181,14 @@ def test_generated_execution_id_is_validated_before_path_creation(tmp_path: Path
         _run(tmp_path, sequence=("done",), ids=_BadIds())
     assert not (tmp_path / ".breadboard/replays").exists()
 
+def test_replay_rejects_unsupported_windows_backend_before_storage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(replay_runner_module.sys, "platform", "win32")
+    with pytest.raises(ReplayRunError, match="Linux and macOS"):
+        _run(tmp_path, sequence=("done",))
+    assert not (tmp_path / ".breadboard/replays").exists()
+
 def test_worker_resets_workspace_cwd_between_calls(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -2130,6 +2204,23 @@ def test_active_runtime_bindings_must_match_frozen_plan(tmp_path: Path) -> None:
     active["model_policy_sha256"] = {"binding": "changed"}
     with pytest.raises(ReplayPlanError, match="model_policy_sha256"):
         _run(tmp_path, sequence=("done",), runtime_bindings=active)
+    assert not (tmp_path / ".breadboard/replays").exists()
+
+def test_provider_context_must_match_frozen_model_policy_binding(tmp_path: Path) -> None:
+    planned_state = types.SimpleNamespace(provider_metadata_snapshot=lambda: {"previous_response_id": "response-1"})
+    active_state = types.SimpleNamespace(provider_metadata_snapshot=lambda: {"previous_response_id": "response-2"})
+    planned = ProviderRuntimeContext(
+        session_state=planned_state,
+        agent_config={"provider_tools": {"anthropic": {"temperature": 0.1}}},
+        extra={"responses_extra": {"reasoning": {"effort": "low"}}},
+    )
+    active = ProviderRuntimeContext(
+        session_state=active_state,
+        agent_config={"provider_tools": {"anthropic": {"temperature": 0.9}}},
+        extra={"responses_extra": {"reasoning": {"effort": "high"}}},
+    )
+    with pytest.raises(ReplayPlanError, match="model_policy_sha256"):
+        _run(tmp_path, sequence=("done",), provider_context=active, planned_provider_context=planned)
     assert not (tmp_path / ".breadboard/replays").exists()
 
 

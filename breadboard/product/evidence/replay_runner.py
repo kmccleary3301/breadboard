@@ -17,6 +17,7 @@ import signal
 import socket
 import stat
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -620,6 +621,28 @@ def _add_package_module_allowlist(
         package_name = package_name.rpartition(".")[0]
     if not package_locations:
         return
+    parent_name = package_name.rpartition(".")[0]
+    while parent_name:
+        parent_module = sys.modules.get(parent_name)
+        parent_spec = getattr(parent_module, "__spec__", None)
+        if parent_spec is None:
+            try:
+                parent_spec = importlib.util.find_spec(parent_name)
+            except (AttributeError, ImportError, ValueError):
+                parent_spec = None
+        parent_location = getattr(parent_module, "__file__", None) or getattr(parent_spec, "origin", None)
+        parent_search_locations = tuple(
+            os.path.abspath(location)
+            for location in (() if parent_spec is None or parent_spec.submodule_search_locations is None else parent_spec.submodule_search_locations)
+            if isinstance(location, str)
+        )
+        if isinstance(parent_location, str) and parent_location not in {"built-in", "frozen"}:
+            parent_location = os.path.abspath(parent_location)
+            paths.update((parent_location, os.path.realpath(parent_location)))
+            exact_specs.add((parent_name, parent_location, parent_search_locations))
+            if dependency_files is not None:
+                dependency_files.add((f"{parent_name}:__init__", parent_location))
+        parent_name = parent_name.rpartition(".")[0]
     import_suffixes = tuple(sorted((".py", ".pyc", *importlib.machinery.EXTENSION_SUFFIXES), key=len, reverse=True))
     for package_location in package_locations:
         package_root = Path(package_location)
@@ -730,6 +753,45 @@ def _payload_module_names(payload: bytes) -> set[str]:
         elif isinstance(value, list):
             pending.extend(value)
     return modules
+_WORKER_BOOTSTRAP_MODULES = frozenset({
+    "agentic_coder_prototype.logging.provider_dump",
+    "agentic_coder_prototype.provider.runtime",
+    "breadboard.product.evidence.replay_execution",
+    "breadboard.product.evidence.replay_plan",
+    "breadboard.product.evidence.replay_runner",
+    "breadboard.product.evidence.workspace",
+    "breadboard.product.harness.lock",
+    "breadboard.product.integrations.provider",
+    "breadboard.product.runtime.artifacts",
+    "breadboard.product.runtime.events",
+    "jsonschema",
+    "referencing",
+})
+
+
+def _worker_module_names(payload: bytes) -> set[str]:
+    return {*_WORKER_BOOTSTRAP_MODULES, *_payload_module_names(payload)}
+def _loaded_module_closure(module_names: Sequence[str]) -> set[str]:
+    pending = list(module_names)
+    discovered = set(pending)
+    while pending:
+        module = sys.modules.get(pending.pop())
+        if module is None:
+            continue
+        for value in tuple(vars(module).values()):
+            referenced_name = (
+                value.__name__ if inspect.ismodule(value)
+                else getattr(value, "__module__", None) if inspect.isclass(value) or inspect.isfunction(value)
+                else None
+            )
+            if isinstance(referenced_name, str) and referenced_name not in discovered:
+                discovered.add(referenced_name)
+                pending.append(referenced_name)
+    return discovered
+
+
+
+
 
 
 def _runtime_module_roots() -> tuple[str, ...]:
@@ -754,7 +816,11 @@ def _executor_module_dependency_identity(payload: bytes) -> list[dict[str, Any]]
     paths: set[str] = set()
     specs: set[tuple[str, str, tuple[str, ...]]] = set()
     dependency_files: set[tuple[str, str]] = set()
-    for module_name in _payload_module_names(payload):
+    payload_modules = _payload_module_names(payload)
+    modules = _loaded_module_closure(_worker_module_names(payload))
+    for module_name in modules - payload_modules:
+        _add_package_module_allowlist(module_name, runtime_roots, paths, specs, dependency_files)
+    for module_name in payload_modules:
         _add_package_module_allowlist(module_name, runtime_roots, paths, specs, dependency_files)
         _add_top_level_sibling_allowlist(module_name, runtime_roots, paths, specs, dependency_files)
     dependencies = []
@@ -783,7 +849,7 @@ def _executor_module_allowlist(
     payload: bytes,
 ) -> tuple[tuple[str, ...], tuple[tuple[str, str, tuple[str, ...]], ...]]:
     payload_modules = _payload_module_names(payload)
-    modules = set(sys.modules) | payload_modules
+    modules = _loaded_module_closure(_worker_module_names(payload))
     runtime_roots = _runtime_module_roots()
     paths: set[str] = set(runtime_roots)
     exact_specs: set[tuple[str, str, tuple[str, ...]]] = set()
@@ -820,6 +886,8 @@ def _executor_module_allowlist(
         for candidate in candidates:
             if os.path.isfile(candidate):
                 paths.update((os.path.abspath(candidate), os.path.realpath(candidate)))
+    for module_name in modules - payload_modules:
+        _add_package_module_allowlist(module_name, runtime_roots, paths, exact_specs)
     for module_name in payload_modules:
         _add_package_module_allowlist(module_name, runtime_roots, paths, exact_specs)
         _add_top_level_sibling_allowlist(module_name, runtime_roots, paths, exact_specs)
@@ -942,7 +1010,7 @@ def _exec_tool_worker_bootstrap(
     _enforce_worker_sandbox(
         workspace,
         allow_network=allow_network,
-        allow_process=capability_kind == "host",
+        allow_process=False,
         allow_workspace_read=capability_kind in {"host", "tool"},
         allow_write=capability_kind in {"host", "tool"},
         module_read_paths=module_read_paths,
@@ -956,6 +1024,16 @@ def _exec_tool_worker_bootstrap(
         if isinstance(path, str) and path and _path_is_within(path, runtime_search_roots)
     ]
     sys.meta_path.insert(0, _ExactModuleFinder(module_specs))
+    allowed_module_names = {name for name, _, _ in module_specs}
+    for loaded_name, loaded_module in tuple(sys.modules.items()):
+        loaded_location = getattr(loaded_module, "__file__", None)
+        if (
+            isinstance(loaded_location, str)
+            and not _path_is_within(loaded_location, runtime_search_roots)
+            and loaded_name not in allowed_module_names
+            and not any(allowed_name.startswith(loaded_name + ".") for allowed_name in allowed_module_names)
+        ):
+            sys.modules.pop(loaded_name, None)
     os.fchdir(workspace_descriptor)
     payload = bytearray()
     while True:
@@ -1058,7 +1136,11 @@ class _ExecToolWorker:
         module_read_paths, module_specs = _executor_module_allowlist(payload)
         command_read, command_write = os.pipe()
         result_read, result_write = os.pipe()
-        payload_read, payload_write = os.pipe()
+        payload_stream = tempfile.TemporaryFile()
+        payload_stream.write(payload)
+        payload_stream.flush()
+        payload_stream.seek(0)
+        payload_read = payload_stream.fileno()
         self._terminated = False
         self._command_send = Connection(command_write, readable=False, writable=True)
         self._result_recv = Connection(result_read, readable=True, writable=False)
@@ -1080,8 +1162,9 @@ class _ExecToolWorker:
                 start_new_session=True,
             )
         except BaseException:
-            for descriptor in (command_read, result_write, payload_read, payload_write):
+            for descriptor in (command_read, result_write):
                 os.close(descriptor)
+            payload_stream.close()
             self._command_send.close()
             self._result_recv.close()
             raise
@@ -1089,20 +1172,7 @@ class _ExecToolWorker:
         self._closed = False
         os.close(command_read)
         os.close(result_write)
-        os.close(payload_read)
-        try:
-            remaining = memoryview(payload)
-            while remaining:
-                written = os.write(payload_write, remaining)
-                if written < 1:
-                    raise OSError("short isolated capability payload write")
-                remaining = remaining[written:]
-        except BaseException:
-            os.close(payload_write)
-            self.close()
-            raise
-        else:
-            os.close(payload_write)
+        payload_stream.close()
         startup_deadline = time.monotonic() + max(1, startup_timeout_ms) / 1_000
         while not self._result_recv.poll(max(0, min(0.01, startup_deadline - time.monotonic()))):
             if cancelled is not None and cancelled():
@@ -1369,13 +1439,17 @@ def _remove_entry_at(parent_descriptor: int, name: str) -> None:
 
 
 
-def _snapshot(root: Path, expected_identity: tuple[int, int], source_descriptor: int | None = None) -> dict[str, Any]:
+def _snapshot(root: Path, expected_identity: tuple[int, int], source_descriptor: int | None = None, *, check: Callable[[], None] | None = None) -> dict[str, Any]:
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
     root_descriptor: int | None = None
     rows: list[dict[str, Any]] = []
 
     def walk(directory_descriptor: int, prefix: tuple[str, ...]) -> None:
+        if check is not None:
+            check()
         for name in sorted(os.listdir(directory_descriptor)):
+            if check is not None:
+                check()
             metadata = os.stat(name, dir_fd=directory_descriptor, follow_symlinks=False)
             relative = "/".join((*prefix, name))
             if stat.S_ISLNK(metadata.st_mode):
@@ -1402,6 +1476,8 @@ def _snapshot(root: Path, expected_identity: tuple[int, int], source_descriptor:
                 digest = hashlib.sha256()
                 size_bytes = 0
                 while True:
+                    if check is not None:
+                        check()
                     chunk = os.read(file_descriptor, 1024 * 1024)
                     if not chunk:
                         break
@@ -1558,6 +1634,13 @@ def _provider_context_request_payload(context: ProviderRuntimeContext) -> dict[s
         "extra": context.extra,
         "session_metadata": context.session_state.metadata,
     }))
+def _model_policy_binding(model_policy: Any, provider_context: ProviderRuntimeContext) -> dict[str, Any]:
+    return {
+        "model_policy": json.loads(canonical_json(model_policy)),
+        "provider_context": _provider_context_request_payload(provider_context),
+    }
+
+
 
 
 
@@ -1583,7 +1666,7 @@ def _host_containment_identity(host: Any) -> dict[str, Any]:
     value = json.loads(canonical_json(method()).decode("utf-8"))
     if not isinstance(value, dict) or value.get("detached_descendants") != "contained":
         raise ReplayRunError("host detached-descendant containment attestation is invalid")
-    return value
+    return {**value, "worker_process_creation": "denied"}
 
 
 def _provider_identity(provider: Any) -> tuple[str, str, str]:
@@ -1948,6 +2031,7 @@ def _host_platform_binding() -> dict[str, str]:
         "python_implementation": platform.python_implementation(),
         "python_version": platform.python_version(),
         "byteorder": sys.byteorder,
+        "replay_containment_backend": "seatbelt" if sys.platform == "darwin" else "landlock+seccomp" if sys.platform.startswith("linux") else "unsupported",
     }
 
 
@@ -2170,6 +2254,8 @@ def run_replay(
 ) -> ReplayRunResult:
     if not isinstance(plan, ReplayPlan) or plan.mode != "execute":
         raise ReplayPlanError("run_replay requires an execute ReplayPlan")
+    if sys.platform != "darwin" and not sys.platform.startswith("linux"):
+        raise ReplayRunError("replay execution supports Linux and macOS containment backends only")
     if not isinstance(harness_lock, EffectiveHarnessLock):
         raise ReplayRunError("harness_lock must be an EffectiveHarnessLock")
     plan.verify_bindings(binding_inputs)
@@ -2180,7 +2266,7 @@ def run_replay(
     runtime_binding_names = {"capability_probe_sha256", "model_policy_sha256", "normalizer_config_sha256", "comparator_config_sha256"}
     if not isinstance(runtime_bindings, Mapping) or set(runtime_bindings) != runtime_binding_names:
         raise ReplayRunError("runtime_bindings must provide the active capability, model policy, normalizer, and comparator configurations")
-    for binding_name in sorted(runtime_binding_names):
+    for binding_name in sorted(runtime_binding_names - {"model_policy_sha256"}):
         if sha256_json(runtime_bindings[binding_name]) != plan_record["hash_bindings"][binding_name]:
             raise ReplayPlanError(f"{binding_name} does not match the frozen replay plan")
     schema_binding, evidence_validators = _replay_schema_registry()
@@ -2211,6 +2297,8 @@ def run_replay(
     isolated_provider_context = _provider_context_with_wire_tool_aliases(
         _provider_context_snapshot(provider_context), reverse_tool_aliases
     )
+    if sha256_json(_model_policy_binding(runtime_bindings["model_policy_sha256"], isolated_provider_context)) != plan_record["hash_bindings"]["model_policy_sha256"]:
+        raise ReplayPlanError("model_policy_sha256 does not match the frozen replay plan")
     active_clock, active_ids = clock or SystemClock(), ids or UUIDSource()
     execution_id = "replay_execution." + _portable_id(active_ids.new_id(), "id_source execution value")
     fresh_nonce = _portable_id(active_ids.new_id(), "fresh_nonce")
@@ -2706,14 +2794,22 @@ def run_replay(
                     elif worker_value is not None:
                         worker_value.close()
 
+            def check_snapshot_deadline() -> None:
+                snapshot_time = monotonic()
+                cancellation = cancellation_state(_duration_ms(last_activity, snapshot_time))
+                if cancellation is not None:
+                    raise _RuntimeFailure("cancelled", cancellation[0], cancellation[1])
+                if _duration_ms(overall_start, snapshot_time) > deadlines["total"]:
+                    raise _RuntimeFailure("timed_out", "replay.total_timeout", "replay exceeded its total deadline")
+
             try:
-                after = _snapshot(fresh_workspace, fresh_workspace_identity, fresh_workspace_descriptor)
+                after = _snapshot(fresh_workspace, fresh_workspace_identity, fresh_workspace_descriptor, check=check_snapshot_deadline)
             except _RuntimeFailure as exc:
                 integrity_verified = False
                 safe_detail = _redact(exc.detail, secrets=secret_values, workspace=workspace.root, counter=redaction_count)
                 terminal_status, completion_reason, failure = exc.status, safe_detail, problem(exc.error_code, safe_detail)
                 if session.read_model.status not in ("completed", "failed", "canceled"):
-                    session.fail(exc.error_code, safe_detail)
+                    session.cancel(safe_detail) if exc.status == "cancelled" else session.fail(exc.error_code, safe_detail)
                 after = {"schema_version": "bb.replay_workspace_snapshot.v1", "files": [], "snapshot_sha256": sha256_json([])}
             if fresh_workspace_descriptor is not None:
                 os.close(fresh_workspace_descriptor)
@@ -2802,12 +2898,7 @@ def run_replay(
                     worker_value.close()
             except BaseException as exc:
                 cleanup_errors.append(exc)
-        try:
-            with store.transaction():
-                for ref in tuple(created):
-                    store.discard(ref)
-        except BaseException as exc:
-            cleanup_errors.append(exc)
+        published_tree_removed = False
         if "publication_succeeded" in locals() and publication_succeeded:
             try:
                 final_metadata = os.stat(final_name, dir_fd=replay_parent_descriptor, follow_symlinks=False)
@@ -2816,6 +2907,12 @@ def run_replay(
             except BaseException as exc:
                 cleanup_errors.append(exc)
             else:
+                if (final_metadata.st_dev, final_metadata.st_ino) == stage_identity:
+                    try:
+                        _remove_tree_verified(replay_parent_descriptor, final_name, stage_identity, stage_descriptor)
+                        published_tree_removed = True
+                    except BaseException as exc:
+                        cleanup_errors.append(exc)
                 if (final_metadata.st_dev, final_metadata.st_ino) != stage_identity:
                     try:
                         if stat.S_ISDIR(final_metadata.st_mode):
@@ -2830,12 +2927,21 @@ def run_replay(
                 fresh_workspace_descriptor = None
             except BaseException as exc:
                 cleanup_errors.append(exc)
+        if not published_tree_removed:
+            try:
+                _remove_tree_verified(replay_parent_descriptor, stage_name, stage_identity, stage_descriptor)
+            except BaseException as exc:
+                cleanup_errors.append(exc)
         try:
-            _remove_tree_verified(replay_parent_descriptor, stage_name, stage_identity, stage_descriptor)
+            os.close(stage_descriptor)
         except BaseException as exc:
             cleanup_errors.append(exc)
-        finally:
-            os.close(stage_descriptor)
+        try:
+            with store.transaction():
+                for ref in tuple(created):
+                    store.discard(ref)
+        except BaseException as exc:
+            cleanup_errors.append(exc)
         try:
             _close_descriptors(artifact_descriptors)
         except BaseException as exc:
