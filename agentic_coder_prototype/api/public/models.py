@@ -107,7 +107,7 @@ def _scrub(value: Any, workspace: Path | None, secrets: Sequence[str]) -> Any:
     if isinstance(value, str):
         text = value.replace(str(workspace), ".") if workspace is not None else value
         for secret in secrets:
-            text = text.replace(secret, "<redacted>")
+            text = text.replace(secret, "<redacted>") if len(secret) >= 4 else re.sub(rf"(?<!\w){re.escape(secret)}(?!\w)", "<redacted>", text)
         return text
     if isinstance(value, Mapping):
         return {str(key): _scrub(item, workspace, secrets) for key, item in value.items()}
