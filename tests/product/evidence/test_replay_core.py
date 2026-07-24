@@ -438,6 +438,14 @@ class _ForcedToolChoiceProvider(_Provider):
 
 
 
+class _FlatForcedToolChoiceProvider(_Provider):
+    def invoke(self, **kwargs: Any) -> ProviderResult:
+        tool_choice = kwargs["context"].agent_config["provider_tools"]["tool_choice"]
+        if tool_choice != {"type": "tool", "name": "host_execute"}:
+            raise RuntimeError("flat forced tool choice did not follow the provider wire alias")
+        return super().invoke(**kwargs)
+
+
 class _SpecOnlyProvider(_Provider):
     def replay_worker_client_spec(self, _client: Any, _secret_bindings: Mapping[str, str]) -> dict[str, Any]:
         return {}
@@ -917,6 +925,20 @@ def test_forced_tool_choice_follows_provider_wire_alias(tmp_path: Path) -> None:
         tmp_path,
         sequence=("host", "done"),
         provider_instance=_ForcedToolChoiceProvider(("host", "done")),
+        provider_context=provider_context,
+    )
+    assert result.execution.as_dict()["terminal_status"] == "completed"
+
+
+def test_flat_forced_tool_choice_follows_provider_wire_alias(tmp_path: Path) -> None:
+    provider_context = types.SimpleNamespace(
+        agent_config={"provider_tools": {"tool_choice": {"type": "tool", "name": "host.execute"}}},
+        extra={},
+    )
+    _, _, result = _run(
+        tmp_path,
+        sequence=("host", "done"),
+        provider_instance=_FlatForcedToolChoiceProvider(("host", "done")),
         provider_context=provider_context,
     )
     assert result.execution.as_dict()["terminal_status"] == "completed"
@@ -1555,6 +1577,43 @@ def test_worker_supports_lazy_sibling_package_imports(tmp_path: Path, monkeypatc
         sys.modules.pop("lazy_capability_fixture", None)
     record = result.execution.as_dict()
     assert record["terminal_status"] == "completed"
+
+
+def test_worker_supports_and_binds_package_resource_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package_parent = tmp_path / "capabilities"
+    package = package_parent / "resource_capability_fixture"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    resource = package / "data.json"
+    resource.write_text('{"version":1}', encoding="utf-8")
+    (package / "tool.py").write_text(
+        "import json\n"
+        "from pathlib import Path\n"
+        "class ResourceTool:\n"
+        "    def execute(self, _arguments):\n"
+        "        return json.loads(Path(__file__).with_name('data.json').read_text(encoding='utf-8'))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(package_parent))
+    module = importlib.import_module("resource_capability_fixture.tool")
+    try:
+        before = _capability_runtime_identity(module.ResourceTool(), "tool")
+        resource.write_text('{"version":2}', encoding="utf-8")
+        after = _capability_runtime_identity(module.ResourceTool(), "tool")
+        tool_schemas = ({"type": "function", "function": {"name": "resource", "parameters": {"type": "object"}}},)
+        _, _, result = _run(
+            tmp_path / "workspace",
+            sequence=("resource", "done"),
+            tool_schemas=tool_schemas,
+            tool_instances={"resource": module.ResourceTool()},
+        )
+    finally:
+        sys.modules.pop("resource_capability_fixture.tool", None)
+        sys.modules.pop("resource_capability_fixture", None)
+    assert before != after
+    assert result.execution.as_dict()["terminal_status"] == "completed"
 
 
 

@@ -593,6 +593,7 @@ def _add_package_module_allowlist(
     runtime_roots: Sequence[str],
     paths: set[str],
     exact_specs: set[tuple[str, str, tuple[str, ...]]],
+    dependency_files: set[tuple[str, str]] | None = None,
 ) -> None:
     package_name = module_name
     package_locations: tuple[str, ...] = ()
@@ -621,9 +622,15 @@ def _add_package_module_allowlist(
             if candidate.is_symlink() or not candidate.is_file():
                 continue
             relative = candidate.relative_to(package_root)
+            if "__pycache__" in relative.parts:
+                continue
+            location = os.path.abspath(candidate)
+            paths.update((location, os.path.realpath(location)))
+            if dependency_files is not None:
+                dependency_files.add((f"{package_name}:{relative.as_posix()}", location))
             filename = relative.name
             suffix = next((item for item in import_suffixes if filename.endswith(item)), None)
-            if suffix is None or "__pycache__" in relative.parts:
+            if suffix is None:
                 continue
             stem = filename[:-len(suffix)]
             if stem == "__init__":
@@ -634,9 +641,7 @@ def _add_package_module_allowlist(
                 components = (*relative.parts[:-1], stem)
                 discovered_name = ".".join((package_name, *components))
                 search_locations = ()
-            location = os.path.abspath(candidate)
             exact_specs.add((discovered_name, location, search_locations))
-            paths.update((location, os.path.realpath(location)))
             if suffix == ".py":
                 cached = importlib.util.cache_from_source(location)
                 if os.path.isfile(cached):
@@ -650,6 +655,7 @@ def _add_top_level_sibling_allowlist(
     runtime_roots: Sequence[str],
     paths: set[str],
     exact_specs: set[tuple[str, str, tuple[str, ...]]],
+    dependency_files: set[tuple[str, str]] | None = None,
 ) -> None:
     if "." in module_name:
         return
@@ -672,27 +678,39 @@ def _add_top_level_sibling_allowlist(
             continue
         if candidate.is_dir():
             package_name = candidate.name
-            if not package_name.isidentifier():
+            package_init = next(
+                (candidate / f"__init__{suffix}" for suffix in import_suffixes if (candidate / f"__init__{suffix}").is_file()),
+                None,
+            ) if package_name.isidentifier() else None
+            if package_init is not None:
+                location = os.path.abspath(package_init)
+                exact_specs.add((package_name, location, (os.path.abspath(candidate),)))
+                paths.update((location, os.path.realpath(location)))
+                if dependency_files is not None:
+                    dependency_files.add((f"{module_name}:{candidate.name}/{package_init.name}", location))
+                _add_package_module_allowlist(package_name, runtime_roots, paths, exact_specs, dependency_files)
                 continue
-            package_init = next((candidate / f"__init__{suffix}" for suffix in import_suffixes if (candidate / f"__init__{suffix}").is_file()), None)
-            if package_init is None:
-                continue
-            location = os.path.abspath(package_init)
-            exact_specs.add((package_name, location, (os.path.abspath(candidate),)))
-            paths.update((location, os.path.realpath(location)))
-            _add_package_module_allowlist(package_name, runtime_roots, paths, exact_specs)
+            for resource in candidate.rglob("*"):
+                if resource.is_symlink() or not resource.is_file() or "__pycache__" in resource.parts:
+                    continue
+                location = os.path.abspath(resource)
+                paths.update((location, os.path.realpath(location)))
+                if dependency_files is not None:
+                    dependency_files.add((f"{module_name}:{resource.relative_to(module_root).as_posix()}", location))
             continue
         if not candidate.is_file():
             continue
+        location = os.path.abspath(candidate)
+        paths.update((location, os.path.realpath(location)))
+        if dependency_files is not None:
+            dependency_files.add((f"{module_name}:{candidate.name}", location))
         suffix = next((item for item in import_suffixes if candidate.name.endswith(item)), None)
         if suffix is None:
             continue
         sibling_name = candidate.name[:-len(suffix)]
         if sibling_name == "__init__" or not sibling_name.isidentifier():
             continue
-        location = os.path.abspath(candidate)
         exact_specs.add((sibling_name, location, ()))
-        paths.update((location, os.path.realpath(location)))
         if suffix == ".py":
             cached = importlib.util.cache_from_source(location)
             if os.path.isfile(cached):
@@ -737,21 +755,19 @@ def _executor_module_dependency_identity(payload: bytes) -> list[dict[str, Any]]
     runtime_roots = _runtime_module_roots()
     paths: set[str] = set()
     specs: set[tuple[str, str, tuple[str, ...]]] = set()
+    dependency_files: set[tuple[str, str]] = set()
     for module_name in _payload_module_names(payload):
-        _add_package_module_allowlist(module_name, runtime_roots, paths, specs)
-        _add_top_level_sibling_allowlist(module_name, runtime_roots, paths, specs)
+        _add_package_module_allowlist(module_name, runtime_roots, paths, specs, dependency_files)
+        _add_top_level_sibling_allowlist(module_name, runtime_roots, paths, specs, dependency_files)
     dependencies = []
-    for module_name, location, search_locations in sorted(specs):
-        if not location:
-            continue
+    for logical_name, location in sorted(dependency_files):
         try:
             content = Path(location).read_bytes()
         except OSError as exc:
-            raise ReplayRunError(f"capability dependency module {module_name} is not readable") from exc
+            raise ReplayRunError(f"capability dependency {logical_name} is not readable") from exc
         dependencies.append({
-            "module": module_name,
+            "name": logical_name,
             "content_sha256": _digest(content),
-            "package": bool(search_locations),
         })
     return dependencies
 
@@ -1711,6 +1727,9 @@ def _provider_context_with_wire_tool_aliases(context: ProviderRuntimeContext, re
     aliases = {canonical: wire for wire, canonical in reverse_aliases.items()}
     provider_tools = context.agent_config.get("provider_tools")
     if not aliases or not isinstance(provider_tools, dict):
+        return context
+    if "tool_choice" in provider_tools:
+        provider_tools["tool_choice"] = _wire_tool_choice(provider_tools["tool_choice"], aliases)
         return context
     for provider_config in provider_tools.values():
         if isinstance(provider_config, dict) and "tool_choice" in provider_config:
