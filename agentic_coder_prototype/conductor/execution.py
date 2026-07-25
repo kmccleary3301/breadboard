@@ -1025,6 +1025,8 @@ def _force_post_receipt_final_answer(
     *,
     reason: str,
 ) -> bool:
+    if _todo_work_remains(session_state):
+        return False
     final_message = _build_post_receipt_final_message(session_state)
     session_state.add_message({"role": "assistant", "content": final_message}, to_provider=False)
     try:
@@ -1219,8 +1221,6 @@ def _maybe_force_post_write_auto_verification_closure(
     already performed the requested write, and BreadBoard can run the exact
     requested smoke/build receipt, continuing the model loop only creates churn.
     """
-    if _todo_work_remains(session_state):
-        return False
     if _implementation_receipts_satisfied(conductor, session_state):
         return _force_post_receipt_final_answer(session_state, reason=reason)
     if not _maybe_auto_verify_make_after_write_receipts(conductor, session_state):
