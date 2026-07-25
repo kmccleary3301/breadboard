@@ -769,6 +769,172 @@ test("event cursor commits only after yield; reconnect is exclusive and dedupes 
   assert.equal(streamRequests[2].headers.get("last-event-id"), "event-2")
 })
 
+test("external resume cursor is exclusive on the wire and preserves strict contiguous replay", async () => {
+  const replayAtEight = {
+    earliestRetainedSequence: 7,
+    earliestRetainedEventId: "event-7",
+    headSequence: 8,
+    headEventId: "event-8",
+    retainedHistory: "partial",
+  }
+  const requests = []
+  const responses = [
+    jsonResponse(await snapshot()),
+    sseResponse([
+      await openEnvelope(replayAtEight),
+      logged(8, "turn_start", {}),
+    ]),
+  ]
+  const runtime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async (input, init = {}) => {
+      requests.push({ url: String(input), headers: new Headers(init.headers) })
+      return responses.shift()
+    },
+  }).attach({ sessionId: "session-1" })
+
+  const events = runtime.events({ after: { eventId: "event-7", sequence: 7 } })
+  assert.equal((await events.next()).value.sequence, 8)
+  assert.equal((await events.next()).done, true)
+  const streamRequest = requests[1]
+  assert.equal(new URL(streamRequest.url).searchParams.get("from_id"), "event-7")
+  assert.equal(streamRequest.headers.get("last-event-id"), "event-7")
+
+  const skippedResponses = [
+    jsonResponse(await snapshot()),
+    sseResponse([
+      await openEnvelope({
+        earliestRetainedSequence: 7,
+        earliestRetainedEventId: "event-7",
+        headSequence: 9,
+        headEventId: "event-9",
+        retainedHistory: "partial",
+      }),
+      logged(9, "turn_start", {}),
+    ]),
+  ]
+  const skippedRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => skippedResponses.shift(),
+  }).attach({ sessionId: "session-1" })
+  const skipped = await failureOf(() => skippedRuntime.events({ after: { eventId: "event-7", sequence: 7 } }).next())
+  assert.equal(skipped.kind, "resume-gap")
+  assert.equal(skipped.code, "sequence_discontinuity")
+  assert.equal(skipped.lastAppliedEventId, "event-7")
+  assert.equal(skipped.lastAppliedSequence, 7)
+})
+
+test("external resume cursor validation fails before fetch", async () => {
+  let fetchCount = 0
+  const runtime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => {
+      fetchCount += 1
+      return jsonResponse(await snapshot())
+    },
+  }).attach({ sessionId: "session-1" })
+  assert.equal(fetchCount, 1)
+
+  const assertProtocolFailure = (operation, code) => {
+    assert.throws(operation, (error) => {
+      assert.ok(error instanceof CanonicalE4ClientError)
+      assert.deepEqual(error.failure, { kind: "protocol", code })
+      return true
+    })
+  }
+  assertProtocolFailure(
+    () => runtime.events({ after: { eventId: "", sequence: 1 } }),
+    "invalid_external_resume_event_id",
+  )
+  assertProtocolFailure(
+    () => runtime.events({ after: { eventId: "event-1\r\nX-Injected: yes", sequence: 1 } }),
+    "invalid_external_resume_event_id",
+  )
+  assertProtocolFailure(
+    () => runtime.events({ after: { eventId: "event-1", sequence: 0 } }),
+    "invalid_external_resume_sequence",
+  )
+  assertProtocolFailure(
+    () => runtime.events({ after: { eventId: "event-1", sequence: 1.5 } }),
+    "invalid_external_resume_sequence",
+  )
+  assertProtocolFailure(
+    () => runtime.events({ after: { eventId: "event-1", sequence: Number.MAX_SAFE_INTEGER + 1 } }),
+    "invalid_external_resume_sequence",
+  )
+  assert.equal(fetchCount, 1)
+})
+
+test("external resume cursor may repeat only until local progress advances", async () => {
+  const openAtSeven = await openEnvelope({
+    earliestRetainedSequence: 7,
+    earliestRetainedEventId: "event-7",
+    headSequence: 7,
+    headEventId: "event-7",
+    retainedHistory: "partial",
+  })
+  const openAtEight = await openEnvelope({
+    earliestRetainedSequence: 7,
+    earliestRetainedEventId: "event-7",
+    headSequence: 8,
+    headEventId: "event-8",
+    retainedHistory: "partial",
+  })
+  const requests = []
+  const responses = [
+    jsonResponse(await snapshot()),
+    sseResponse([openAtSeven]),
+    sseResponse([openAtSeven]),
+    sseResponse([openAtEight, logged(8, "turn_start", {})]),
+    sseResponse([openAtEight]),
+  ]
+  const runtime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async (input) => {
+      requests.push(String(input))
+      return responses.shift()
+    },
+  }).attach({ sessionId: "session-1" })
+  const seed = { eventId: "event-7", sequence: 7 }
+
+  assert.equal((await runtime.events({ after: seed }).next()).done, true)
+  assert.equal((await runtime.events({ after: seed }).next()).done, true)
+  assert.throws(
+    () => runtime.events({ after: { eventId: "event-6", sequence: 6 } }),
+    /conflicting_external_resume_cursor/,
+  )
+
+  const progressed = runtime.events()
+  assert.equal((await progressed.next()).value.eventId, "event-8")
+  assert.equal((await progressed.next()).done, true)
+  assert.throws(
+    () => runtime.events({ after: { eventId: "event-8", sequence: 8 } }),
+    /conflicting_external_resume_cursor/,
+  )
+  assert.throws(
+    () => runtime.events({ after: seed }),
+    /conflicting_external_resume_cursor/,
+  )
+  assert.equal((await runtime.events().next()).done, true)
+
+  const streamRequests = requests.slice(1).map((url) => new URL(url).searchParams.get("from_id"))
+  assert.deepEqual(streamRequests, ["event-7", "event-7", "event-7", "event-8"])
+
+  const cursorlessResponses = [
+    jsonResponse(await snapshot()),
+    sseResponse([await openEnvelope()]),
+  ]
+  const cursorlessRuntime = await createCanonicalE4Client({
+    baseUrl: "https://breadboard.test",
+    fetch: async () => cursorlessResponses.shift(),
+  }).attach({ sessionId: "session-1" })
+  assert.equal((await cursorlessRuntime.events().next()).done, true)
+  assert.throws(
+    () => cursorlessRuntime.events({ after: seed }),
+    /conflicting_external_resume_cursor/,
+  )
+})
+
 test("local close terminates a stream suspended at delivery without committing it", async () => {
   const open = await openEnvelope({ earliestRetainedSequence: 1, earliestRetainedEventId: "event-1", headSequence: 1, headEventId: "event-1" })
   const requests = []

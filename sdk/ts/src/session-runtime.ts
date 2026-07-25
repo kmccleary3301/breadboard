@@ -149,6 +149,10 @@ export interface PermissionDecisionReceipt {
 
 export interface ObserveSessionRequest {
   readonly signal?: AbortSignal
+  readonly after?: {
+    readonly eventId: EventId | string
+    readonly sequence: number
+  }
 }
 
 export class ExactEmptyPayload {
@@ -1468,6 +1472,9 @@ class RuntimeSession implements OpenedSession {
   private closed = false
   private lastAppliedEventId: EventId | null = null
   private lastAppliedSequence = 0
+  private observationStarted = false
+  private externalResumeEventId: EventId | null = null
+  private externalResumeSequence = 0
   private readonly retainedDigests = new Map<EventId, string>()
   private readonly activeStreams = new Map<AbortController, Promise<void>>()
   private readonly terminalTurns = new Map<TurnId, "turn_completed" | "turn_failed" | "turn_cancelled">()
@@ -1581,6 +1588,8 @@ class RuntimeSession implements OpenedSession {
     if (this.streamGenerators.size > 0) {
       throw new CanonicalE4ClientError({ kind: "protocol", code: "observation_already_active" })
     }
+    if (request.after !== undefined) this.applyExternalResumeCursor(request.after)
+    this.observationStarted = true
     const source = this.eventGenerator(request)
     let wrapper!: AsyncGenerator<LoggedSessionEvent, void, void>
     const self = this
@@ -1609,6 +1618,38 @@ class RuntimeSession implements OpenedSession {
     }
     this.streamGenerators.add(wrapper)
     return wrapper
+  }
+
+  private applyExternalResumeCursor(after: NonNullable<ObserveSessionRequest["after"]>): void {
+    if (!isRawObject(after)) {
+      throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_external_resume_cursor" })
+    }
+    const eventId = requiredString(after.eventId, "external_resume_event_id") as EventId
+    let headerSafe = false
+    try {
+      headerSafe = new Headers({ "Last-Event-ID": eventId }).get("Last-Event-ID") === eventId
+    } catch {
+      // Invalid header bytes are reported as a typed cursor error below.
+    }
+    if (!headerSafe) {
+      throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_external_resume_event_id" })
+    }
+    const sequence = requiredInteger(after.sequence, "external_resume_sequence", 1)
+    if (
+      this.externalResumeEventId === eventId
+      && this.externalResumeSequence === sequence
+      && this.lastAppliedEventId === eventId
+      && this.lastAppliedSequence === sequence
+    ) {
+      return
+    }
+    if (this.observationStarted || this.lastAppliedEventId !== null || this.lastAppliedSequence !== 0) {
+      throw new CanonicalE4ClientError({ kind: "protocol", code: "conflicting_external_resume_cursor" })
+    }
+    this.lastAppliedEventId = eventId
+    this.lastAppliedSequence = sequence
+    this.externalResumeEventId = eventId
+    this.externalResumeSequence = sequence
   }
 
   private async *eventGenerator(request: ObserveSessionRequest): AsyncGenerator<LoggedSessionEvent, void, void> {
