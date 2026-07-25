@@ -24,10 +24,10 @@ def _runtime() -> CliMockRuntime:
     )
 
 
-def _assistant_call(name: str) -> dict[str, object]:
+def _assistant_call(name: str, arguments: dict[str, object] | None = None) -> dict[str, object]:
     return {
         "role": "assistant",
-        "tool_calls": [{"function": {"name": name, "arguments": "{}"}}],
+        "tool_calls": [{"function": {"name": name, "arguments": json.dumps(arguments or {})}}],
     }
 
 
@@ -61,12 +61,26 @@ def test_cli_mock_runtime_emits_executable_write_and_shell_sequence() -> None:
     assert shell_call.name == "run_shell"
     assert json.loads(shell_call.arguments)["command"] == "python3 bubble_sort.py"
 
+    final_todo_result = _invoke(
+        runtime,
+        [
+            _assistant_call("todo.write_board"),
+            _assistant_call("write"),
+            _assistant_call("run_shell"),
+        ],
+    )
+    final_todo_call = final_todo_result.messages[0].tool_calls[0]
+    assert final_todo_call.name == "todo.write_board"
+    final_todo_arguments = json.loads(final_todo_call.arguments)
+    assert {todo["status"] for todo in final_todo_arguments["todos"]} == {"completed"}
+
     completion = _invoke(
         runtime,
         [
             _assistant_call("todo.write_board"),
             _assistant_call("write"),
             _assistant_call("run_shell"),
+            _assistant_call("todo.write_board", final_todo_arguments),
         ],
     )
     assert completion.messages[0].content == "TASK COMPLETE"

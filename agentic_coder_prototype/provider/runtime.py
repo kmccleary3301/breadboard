@@ -2671,6 +2671,7 @@ class CliMockRuntime(ProviderRuntime):
     ) -> ProviderResult:
         prior_calls = 0
         has_todo = False
+        has_completed_todos = False
         has_write = False
         has_shell = False
         for msg in messages:
@@ -2682,15 +2683,27 @@ class CliMockRuntime(ProviderRuntime):
             prior_calls += len(tool_calls)
             for call in tool_calls:
                 name = None
+                arguments = None
                 if isinstance(call, dict):
                     fn_block = call.get("function")
                     if isinstance(fn_block, dict):
                         name = fn_block.get("name")
+                        arguments = fn_block.get("arguments")
                     name = name or call.get("name")
+                    arguments = arguments or call.get("arguments")
                 if not name:
                     continue
                 if name.startswith("todo."):
                     has_todo = True
+                    try:
+                        todo_payload = json.loads(arguments) if isinstance(arguments, str) else arguments
+                        todos = todo_payload.get("todos") if isinstance(todo_payload, dict) else None
+                        has_completed_todos = bool(todos) and all(
+                            isinstance(todo, dict) and todo.get("status") in {"completed", "done"}
+                            for todo in todos
+                        )
+                    except (TypeError, ValueError):
+                        pass
                 elif name.startswith("write") or name == "create_file_from_block":
                     has_write = True
                 elif name.startswith("run_shell") or name == "bash.run":
@@ -2733,6 +2746,18 @@ class CliMockRuntime(ProviderRuntime):
             )
         elif not has_shell:
             call = _mk_tool_call("run_shell", {"command": "python3 bubble_sort.py", "timeout": 30})
+            out_messages.append(
+                ProviderMessage(role="assistant", content=None, tool_calls=[call], finish_reason="stop", index=0)
+            )
+        elif not has_completed_todos:
+            board = {
+                "todos": [
+                    {"content": "Plan work", "status": "completed"},
+                    {"content": "Implement feature", "status": "completed"},
+                    {"content": "Validate output", "status": "completed"},
+                ]
+            }
+            call = _mk_tool_call("todo.write_board", board)
             out_messages.append(
                 ProviderMessage(role="assistant", content=None, tool_calls=[call], finish_reason="stop", index=0)
             )
