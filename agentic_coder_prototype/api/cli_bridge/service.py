@@ -129,6 +129,20 @@ class PreparedEventStream:
     subscriber: SubscriberState
 
 
+def _configured_session_model(request: SessionCreateRequest) -> Optional[str]:
+    config = load_agent_config(request.config_path)
+    providers = config.get("providers", {}) if isinstance(config, dict) else {}
+    selected = (
+        (request.overrides or {}).get("providers.default_model")
+        or providers.get("default_model")
+        or (config.get("model") if isinstance(config, dict) else None)
+    )
+    if selected is None:
+        return None
+    normalized = str(selected).strip()
+    return normalized or None
+
+
 class SessionService:
     """Facade that coordinates the registry, runners, and FastAPI endpoints."""
 
@@ -327,6 +341,10 @@ class SessionService:
     async def create_session(self, request: SessionCreateRequest) -> SessionCreateResponse:
         session_id = str(uuid.uuid4())
         metadata = dict(request.metadata or {})
+        if "model" not in metadata:
+            configured_model = _configured_session_model(request)
+            if configured_model is not None:
+                metadata["model"] = configured_model
         if self._bridge_chaos:
             metadata.setdefault("bridgeChaos", self._bridge_chaos)
         metadata.setdefault("config_path", request.config_path)

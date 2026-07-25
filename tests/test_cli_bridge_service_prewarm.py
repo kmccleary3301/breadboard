@@ -74,3 +74,26 @@ async def test_session_service_prewarms_for_interactive_sessions(monkeypatch) ->
     if record.dispatcher_task:
         await record.event_queue.put(None)
         await record.dispatcher_task
+
+
+@pytest.mark.asyncio
+async def test_session_snapshot_identifies_the_configured_default_model(monkeypatch) -> None:
+    service = SessionService()
+
+    monkeypatch.setattr(
+        "agentic_coder_prototype.api.cli_bridge.session_runner.SessionRunner.start_execution",
+        lambda self: None,
+    )
+    request = SessionCreateRequest(
+        config_path="agent_configs/templates/minimal_harness.v2.yaml",
+        workspace=".",
+    )
+
+    response = await service.create_session(request)
+    record = await service.ensure_session(response.session_id)
+
+    assert record.metadata["model"] == "mock/reference"
+    assert record.to_summary().model == "mock/reference"
+    if record.dispatcher_task:
+        await record.event_queue.put(None)
+        await record.dispatcher_task
