@@ -111,6 +111,7 @@ BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
 BRIDGE_DUPLICATE_ORCHESTRATION_EVENT_TYPES = frozenset(
     {
         "coordination_signal",
+        "guardrail_event",
         "implementation_post_receipt_forced_closure",
         "lifecycle_event",
         "model_call_finished",

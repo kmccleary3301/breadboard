@@ -466,6 +466,7 @@ def test_session_runner_translates_runtime_events() -> None:
         )
         is None
     )
+    assert runner._translate_runtime_event("guardrail_event", {"type": "receipt_guard"}, turn=3) is None
 
     tool_call_translated = runner._translate_runtime_event(
         "tool_call",
