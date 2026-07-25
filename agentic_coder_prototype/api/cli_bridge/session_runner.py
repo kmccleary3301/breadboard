@@ -1843,6 +1843,14 @@ class SessionRunner:
                 )
                 emitted_flags["assistant_text"] = True
                 break
+        if not emitted_flags["assistant_text"]:
+            final_message = completion.get("final_message")
+            if isinstance(final_message, str) and final_message.strip():
+                self.publish_event(
+                    EventType.ASSISTANT_MESSAGE,
+                    {"text": final_message, "source": "completion_summary_fallback"},
+                )
+                emitted_flags["assistant_text"] = True
         after_fallback_emit_at = time.monotonic()
         logging_dir = result.get("logging_dir") or result.get("run_dir")
         usage_payload = self._extract_usage_metrics(result, logging_dir, elapsed_ms=elapsed_ms)
