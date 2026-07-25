@@ -52,11 +52,11 @@ let capturedAuthToken = process.env[AUTH_ENVIRONMENT_VARIABLE]
 delete process.env[AUTH_ENVIRONMENT_VARIABLE]
 const CHILD_ENVIRONMENT = { ...process.env }
 delete CHILD_ENVIRONMENT[AUTH_ENVIRONMENT_VARIABLE]
-const MANIFEST_COMMIT = "9190686b3239db571eed0c02a13bd4a225a9a611"
+const MANIFEST_COMMIT = "a7d4b0038253f0a54cb0f69e2beafdcc84df7d92"
 const CLIENT_BUILD_MANIFEST = Object.freeze({
   commit: MANIFEST_COMMIT,
   committed: Object.freeze({
-    "sdk/ts/package-lock.json": "sha256:5d51127e09ed01d4457befdf35129c9d4465be774964c74c340270c3f67cc71a",
+    "sdk/ts/package-lock.json": "sha256:ff1a3a62dc9dfbeee6c68b6b947bca9c455035ad32ab28775dca998e093f0a2c",
     "sdk/ts/src/client.ts": "sha256:5f2c19f53d1a5955756e0be6d0f82f4471c9101bc50c16007d191a6ab3878f9c",
     "sdk/ts/src/index.ts": "sha256:66817164f89a6459a0c81563280b7b4db73b54674778dc79d8b3c440b749b105",
     "sdk/ts/src/lifecycle-client.ts": "sha256:da6f35c721f72026a8f3e24a22a82fdd30fb84d1cce32f8d6bc998496415021b",
