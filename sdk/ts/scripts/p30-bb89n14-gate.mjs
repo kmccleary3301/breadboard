@@ -52,7 +52,7 @@ let capturedAuthToken = process.env[AUTH_ENVIRONMENT_VARIABLE]
 delete process.env[AUTH_ENVIRONMENT_VARIABLE]
 const CHILD_ENVIRONMENT = { ...process.env }
 delete CHILD_ENVIRONMENT[AUTH_ENVIRONMENT_VARIABLE]
-const MANIFEST_COMMIT = "a578aaadc08bcf8ad3095532fa14cc1d69c0c975"
+const MANIFEST_COMMIT = "9190686b3239db571eed0c02a13bd4a225a9a611"
 const CLIENT_BUILD_MANIFEST = Object.freeze({
   commit: MANIFEST_COMMIT,
   committed: Object.freeze({
@@ -60,7 +60,7 @@ const CLIENT_BUILD_MANIFEST = Object.freeze({
     "sdk/ts/src/client.ts": "sha256:5f2c19f53d1a5955756e0be6d0f82f4471c9101bc50c16007d191a6ab3878f9c",
     "sdk/ts/src/index.ts": "sha256:66817164f89a6459a0c81563280b7b4db73b54674778dc79d8b3c440b749b105",
     "sdk/ts/src/lifecycle-client.ts": "sha256:da6f35c721f72026a8f3e24a22a82fdd30fb84d1cce32f8d6bc998496415021b",
-    "sdk/ts/src/session-runtime.ts": "sha256:254b9ea3a917d1992acd684c4f6d753172488a6683606fa3cd2953744f993f21",
+    "sdk/ts/src/session-runtime.ts": "sha256:fb8081eeeca6ef41bd801d5da141afe206156b7cb954406ae45b70669aa24e9c",
     "sdk/ts/src/stream.ts": "sha256:9df24989851c314724aa852b204954b22f74457d8bd90b715991bf37fc9895de",
     "sdk/ts/tsconfig.json": "sha256:4ee84c7653016c88591787fb45ebe0faf73629d10973e181ed05922c02005bae",
   }),
@@ -68,7 +68,7 @@ const CLIENT_BUILD_MANIFEST = Object.freeze({
     "dist/client.js": "sha256:371d0a6076f6dfea5a888987f94f230a6f606382fbe8b8648a4143e0de82d4bc",
     "dist/index.js": "sha256:cefaf3d0154b3338fb416848b94e27d2c837cb245a8b892099ab49e0d09dee21",
     "dist/lifecycle-client.js": "sha256:b59cd08e40d40a3b4bc14dfc2ef8d92bc9255ea54d48d44819719dca00f0de8a",
-    "dist/session-runtime.js": "sha256:bae837866ad815d672c5eaccbbfa533c0fb701eccdd5ff0a654e0890aae7f2ff",
+    "dist/session-runtime.js": "sha256:becf50de902cc35c7983e5abf52445e604ba8bc90e5dcb764227d8c7d7fda9a1",
     "dist/stream.js": "sha256:d4f82e6dd1c79cd7d631fc536998c501927759f5fee9b7ce05a40b61924eb18d",
     "node_modules/eventsource-parser/dist/index.js": "sha256:2b3e0c02c00ed19165cb125f2ad7f502695a73851a2f2a9ba4d3b2a1ef527047",
     "node_modules/eventsource-parser/package.json": "sha256:ef5b0bb8909234bd3f1879c86d71b4b119b6a82bd27858fdbd434cf265d276ed",
