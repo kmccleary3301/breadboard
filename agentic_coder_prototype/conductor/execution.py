@@ -1191,6 +1191,22 @@ def _ensure_tool_completion_final_message(
     return final_message
 
 
+def _todo_work_remains(session_state: SessionState) -> bool:
+    snapshot = session_state.todo_snapshot()
+    if not isinstance(snapshot, dict):
+        return False
+    todos = snapshot.get("todos")
+    if not isinstance(todos, list) or not todos:
+        return False
+    terminal_statuses = {"done", "canceled", "cancelled"}
+    return any(
+        not isinstance(todo, dict) or str(todo.get("status") or "todo").lower() not in terminal_statuses
+        for todo in todos
+    )
+
+
+
+
 def _maybe_force_post_write_auto_verification_closure(
     conductor: ConductorContext,
     session_state: SessionState,
@@ -1203,6 +1219,8 @@ def _maybe_force_post_write_auto_verification_closure(
     already performed the requested write, and BreadBoard can run the exact
     requested smoke/build receipt, continuing the model loop only creates churn.
     """
+    if _todo_work_remains(session_state):
+        return False
     if _implementation_receipts_satisfied(conductor, session_state):
         return _force_post_receipt_final_answer(session_state, reason=reason)
     if not _maybe_auto_verify_make_after_write_receipts(conductor, session_state):

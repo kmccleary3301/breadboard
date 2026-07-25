@@ -1037,6 +1037,64 @@ def test_post_write_auto_verification_forces_closure_without_waiting_for_complet
     assert "node --check src/args.ts && bash smoke_test.sh" in session_state.messages[-1]["content"]
 
 
+def test_post_write_auto_verification_waits_for_open_todos(tmp_path: Path) -> None:
+    session_state = SessionState(str(tmp_path), None, {})
+    session_state.add_message(
+        {
+            "role": "user",
+            "content": "Fix calc.c cleanly, then run make --version.",
+        },
+        to_provider=True,
+    )
+    session_state.todo_manager = SimpleNamespace(
+        snapshot=lambda: {
+            "todos": [
+                {"id": "todo-1", "title": "Implement feature", "status": "done"},
+                {"id": "todo-2", "title": "Validate output", "status": "in_progress"},
+            ]
+        }
+    )
+    session_state.record_tool_event(
+        1,
+        "apply_unified_patch",
+        success=True,
+        metadata={
+            "is_write": True,
+            "is_user_facing_write": True,
+            "write_targets": ["calc.c"],
+            "requested_write_targets": ["calc.c"],
+            "requested_write_matches": ["calc.c"],
+            "is_requested_file_write": True,
+        },
+        result={"ok": True},
+    )
+    session_state.record_tool_event(
+        2,
+        "run_shell",
+        success=True,
+        metadata={
+            "is_run_shell": True,
+            "is_test_command": True,
+            "command": "make --version",
+            "exit_code": 0,
+        },
+        result={"exit": 0},
+    )
+    conductor = SimpleNamespace(
+        workspace=str(tmp_path),
+        config={"workloop_guards": {"implementation_write_receipts": {"enabled": True}}},
+    )
+
+    closed = _maybe_force_post_write_auto_verification_closure(
+        conductor,
+        session_state,
+        reason="unit_test_open_todos",
+    )
+
+    assert closed is False
+    assert session_state.completion_summary == {}
+
+
 def test_requested_write_targets_ignore_negated_file_mentions(tmp_path: Path) -> None:
     session_state = SessionState(str(tmp_path), None, {})
     session_state.add_message(
