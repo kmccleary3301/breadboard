@@ -851,6 +851,14 @@ test("external resume cursor validation fails before fetch", async () => {
     "invalid_external_resume_event_id",
   )
   assertProtocolFailure(
+    () => runtime.events({ after: { eventId: "event-1\x01", sequence: 1 } }),
+    "invalid_external_resume_event_id",
+  )
+  assertProtocolFailure(
+    () => runtime.events({ after: { eventId: "event-1\x7f", sequence: 1 } }),
+    "invalid_external_resume_event_id",
+  )
+  assertProtocolFailure(
     () => runtime.events({ after: { eventId: "event-1", sequence: 0 } }),
     "invalid_external_resume_sequence",
   )

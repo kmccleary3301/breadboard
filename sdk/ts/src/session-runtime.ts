@@ -1625,6 +1625,9 @@ class RuntimeSession implements OpenedSession {
       throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_external_resume_cursor" })
     }
     const eventId = requiredString(after.eventId, "external_resume_event_id") as EventId
+    if (/[\x00-\x1f\x7f]/.test(eventId) || utf8ByteLength(eventId) > MAX_SSE_EVENT_ID_BYTES) {
+      throw new CanonicalE4ClientError({ kind: "protocol", code: "invalid_external_resume_event_id" })
+    }
     let headerSafe = false
     try {
       headerSafe = new Headers({ "Last-Event-ID": eventId }).get("Last-Event-ID") === eventId
