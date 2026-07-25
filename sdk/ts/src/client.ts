@@ -1,7 +1,13 @@
 import type {
   CTreeSnapshotResponse,
+  EngineFeatureAuditResponse,
   HealthResponse,
   ModelCatalogResponse,
+  ProviderAuthAttachRequest,
+  ProviderAuthAttachResponse,
+  ProviderAuthDetachRequest,
+  ProviderAuthDetachResponse,
+  ProviderAuthStatusResponse,
   SessionCreateRequest,
   SessionCreateResponse,
   SessionInputRequest,
@@ -36,6 +42,7 @@ export interface ReadSessionFileOptions {
 export interface BreadboardClientConfig {
   readonly baseUrl: string
   readonly authToken?: string
+  readonly fetch?: typeof globalThis.fetch
   readonly requestTimeoutMs?: number
 }
 
@@ -75,7 +82,8 @@ const requestWithConfig = async <T>(
     headers.Authorization = `Bearer ${config.authToken}`
   }
   try {
-    const response = await fetch(url, {
+    const fetchImpl = config.fetch ?? globalThis.fetch
+    const response = await fetchImpl(url, {
       method,
       headers,
       body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -102,6 +110,7 @@ const requestWithConfig = async <T>(
 
 export const createBreadboardClient = (config: BreadboardClientConfig) => ({
   health: () => requestWithConfig<HealthResponse>(config, "/health", "GET"),
+  getFeatures: () => requestWithConfig<EngineFeatureAuditResponse>(config, "/v1/features", "GET"),
   createSession: (payload: SessionCreateRequest) =>
     requestWithConfig<SessionCreateResponse>(config, "/v1/sessions", "POST", { body: payload }),
   listSessions: () => requestWithConfig<SessionSummary[]>(config, "/v1/sessions", "GET"),
@@ -129,6 +138,12 @@ export const createBreadboardClient = (config: BreadboardClientConfig) => ({
     }),
   getModelCatalog: (configPath: string) =>
     requestWithConfig<ModelCatalogResponse>(config, "/v1/models", "GET", { query: { config_path: configPath } }),
+  getProviderAuthStatus: () =>
+    requestWithConfig<ProviderAuthStatusResponse>(config, "/v1/provider-auth/status", "GET"),
+  attachProviderAuth: (payload: ProviderAuthAttachRequest) =>
+    requestWithConfig<ProviderAuthAttachResponse>(config, "/v1/provider-auth/attach", "POST", { body: payload }),
+  detachProviderAuth: (payload: ProviderAuthDetachRequest) =>
+    requestWithConfig<ProviderAuthDetachResponse>(config, "/v1/provider-auth/detach", "POST", { body: payload }),
   getSkillsCatalog: (sessionId: string) => requestWithConfig<SkillCatalogResponse>(config, `/v1/sessions/${sessionId}/skills`, "GET"),
   getCtreeSnapshot: (sessionId: string) => requestWithConfig<CTreeSnapshotResponse>(config, `/v1/sessions/${sessionId}/ctrees`, "GET"),
 })

@@ -99,6 +99,89 @@ export interface ModelCatalogResponse {
   readonly config_path?: string | null
 }
 
+export interface EmulationProfileRequirement {
+  readonly profile_id: string
+  readonly conformance_hash: string
+  readonly locked_json_pointers?: ReadonlyArray<string>
+}
+
+export interface ProviderAuthMaterial {
+  readonly provider_id: string
+  readonly alias?: string | null
+  readonly api_key?: string | null
+  readonly headers?: Record<string, string>
+  readonly base_url?: string | null
+  readonly routing?: Record<string, unknown> | null
+  readonly issued_at_ms?: number | null
+  readonly expires_at_ms?: number | null
+  readonly ttl_seconds?: number | null
+  readonly is_subscription_plan?: boolean
+}
+
+export interface ProviderAuthAttachRequest {
+  readonly material: ProviderAuthMaterial
+  readonly required_profile?: EmulationProfileRequirement | null
+  readonly config_path?: string | null
+  readonly overrides?: Record<string, unknown> | null
+}
+
+export interface ProviderAuthAttachResponse {
+  readonly ok?: boolean
+  readonly detail?: Record<string, unknown> | null
+}
+
+export interface ProviderAuthDetachRequest {
+  readonly provider_id: string
+  readonly alias?: string | null
+}
+
+export interface ProviderAuthDetachResponse {
+  readonly ok?: boolean
+}
+
+export interface ProviderAuthStatusItem {
+  readonly provider_id: string
+  readonly alias?: string | null
+  readonly has_api_key?: boolean
+  readonly header_keys?: ReadonlyArray<string>
+  readonly base_url?: string | null
+  readonly routing_keys?: ReadonlyArray<string>
+  readonly issued_at_ms?: number | null
+  readonly expires_at_ms?: number | null
+  readonly expires_in_ms?: number | null
+  readonly is_subscription_plan?: boolean
+  readonly required_profile?: EmulationProfileRequirement | null
+}
+
+export interface ProviderAuthStatusResponse {
+  readonly attached?: ReadonlyArray<ProviderAuthStatusItem>
+}
+
+export interface EngineExtensionFeatureStatus {
+  readonly enabled: boolean
+  readonly mounted: boolean
+}
+
+export interface EngineAtpFeatureStatus {
+  readonly enabled: boolean
+  readonly service_initialized: boolean
+  readonly runtime_capabilities: Record<string, unknown>
+}
+
+export interface EngineFeatureAuditMetadata {
+  readonly mounted_extensions: ReadonlyArray<string>
+}
+
+export interface EngineFeatureAuditResponse {
+  readonly status: string
+  readonly extensions: {
+    readonly atp: EngineExtensionFeatureStatus
+    readonly evolake: EngineExtensionFeatureStatus
+  }
+  readonly atp: EngineAtpFeatureStatus
+  readonly metadata: EngineFeatureAuditMetadata
+}
+
 export type SkillType = "prompt" | "graph"
 
 export interface SkillEntry {
