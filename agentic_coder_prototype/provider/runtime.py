@@ -2724,7 +2724,7 @@ class CliMockRuntime(ProviderRuntime):
             call = _mk_tool_call(
                 "write",
                 {
-                    "path": "bubble_sort.py",
+                    "file_name": "bubble_sort.py",
                     "content": "def bubble_sort(nums):\n    n = len(nums)\n    for i in range(n):\n        for j in range(0, n - i - 1):\n            if nums[j] > nums[j + 1]:\n                nums[j], nums[j + 1] = nums[j + 1], nums[j]\n    return nums\n\nif __name__ == '__main__':\n    data = [5, 3, 1, 4, 2]\n    print(bubble_sort(data))\n",
                 },
             )
@@ -2732,7 +2732,7 @@ class CliMockRuntime(ProviderRuntime):
                 ProviderMessage(role="assistant", content=None, tool_calls=[call], finish_reason="stop", index=0)
             )
         elif not has_shell:
-            call = _mk_tool_call("run_shell", {"command": "python bubble_sort.py", "timeout": 30})
+            call = _mk_tool_call("run_shell", {"command": "python3 bubble_sort.py", "timeout": 30})
             out_messages.append(
                 ProviderMessage(role="assistant", content=None, tool_calls=[call], finish_reason="stop", index=0)
             )
