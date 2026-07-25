@@ -2747,7 +2747,7 @@ class CliMockRuntime(ProviderRuntime):
         elif not has_shell:
             call = _mk_tool_call(
                 "run_shell",
-                {"command": "python3 bubble_sort.py && python3 -m pytest --version", "timeout": 30},
+                {"command": "python3 bubble_sort.py && make --version", "timeout": 30},
             )
             out_messages.append(
                 ProviderMessage(role="assistant", content=None, tool_calls=[call], finish_reason="stop", index=0)

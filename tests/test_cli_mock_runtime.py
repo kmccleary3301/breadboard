@@ -59,7 +59,7 @@ def test_cli_mock_runtime_emits_executable_write_and_shell_sequence() -> None:
     )
     shell_call = shell_result.messages[0].tool_calls[0]
     assert shell_call.name == "run_shell"
-    assert json.loads(shell_call.arguments)["command"] == "python3 bubble_sort.py && python3 -m pytest --version"
+    assert json.loads(shell_call.arguments)["command"] == "python3 bubble_sort.py && make --version"
 
     final_todo_result = _invoke(
         runtime,
