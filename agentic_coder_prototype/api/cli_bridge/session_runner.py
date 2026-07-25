@@ -111,6 +111,7 @@ BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES = {
 BRIDGE_DUPLICATE_ORCHESTRATION_EVENT_TYPES = frozenset(
     {
         "coordination_signal",
+        "implementation_post_receipt_forced_closure",
         "lifecycle_event",
         "model_call_finished",
         "model_call_started",
@@ -1830,6 +1831,7 @@ class SessionRunner:
             provenance=result.get("_breadboard_turn_message_provenance"),
             invocation_id=invocation_id,
         )
+        fallback_contract = _default_runtime_event_contract("assistant_message")
         if not emitted_flags["assistant_text"]:
             for entry in reversed(messages):
                 if entry.get("role") != "assistant":
@@ -1840,6 +1842,10 @@ class SessionRunner:
                 self.publish_event(
                     EventType.ASSISTANT_MESSAGE,
                     {"text": text, "message": entry, "source": "turn_local_fallback"},
+                    classification=fallback_contract.get("classification"),
+                    family=fallback_contract.get("family"),
+                    actor=fallback_contract.get("actor"),
+                    visibility=fallback_contract.get("visibility"),
                 )
                 emitted_flags["assistant_text"] = True
                 break
@@ -1849,6 +1855,10 @@ class SessionRunner:
                 self.publish_event(
                     EventType.ASSISTANT_MESSAGE,
                     {"text": final_message, "source": "completion_summary_fallback"},
+                    classification=fallback_contract.get("classification"),
+                    family=fallback_contract.get("family"),
+                    actor=fallback_contract.get("actor"),
+                    visibility=fallback_contract.get("visibility"),
                 )
                 emitted_flags["assistant_text"] = True
         after_fallback_emit_at = time.monotonic()

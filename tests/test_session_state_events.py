@@ -458,6 +458,14 @@ def test_session_runner_translates_runtime_events() -> None:
     assert unsupported_translated[0] is EventType.ERROR
     assert unsupported_translated[1] == {"code": "unsupported_runtime_event_family"}
     assert unsupported_translated[2] is None
+    assert (
+        runner._translate_runtime_event(
+            "implementation_post_receipt_forced_closure",
+            {"reason": "post_write_auto_verified_before_continuation"},
+            turn=3,
+        )
+        is None
+    )
 
     tool_call_translated = runner._translate_runtime_event(
         "tool_call",
