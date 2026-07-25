@@ -2073,6 +2073,8 @@ def summarize_execution_results(
             except Exception:
                 metadata["is_user_facing_write"] = False
                 metadata["is_requested_file_write"] = False
+        if tool_name == "TodoWrite" or tool_name.startswith("todo."):
+            metadata["is_todo"] = True
         call_id_value = getattr(tool_parsed, "call_id", None)
         if isinstance(call_id_value, str) and call_id_value.strip():
             metadata.setdefault("call_id", call_id_value.strip())

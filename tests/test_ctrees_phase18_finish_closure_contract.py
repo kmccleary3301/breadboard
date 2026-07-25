@@ -254,6 +254,47 @@ def test_provider_native_tool_names_update_guardrail_usage_summary(tmp_path: Pat
     assert session_state.tool_usage_summary["successful_tests"] == 1
 
 
+def test_todo_tools_are_counted_separately_from_product_tools(tmp_path: Path) -> None:
+    session_state = SessionState(str(tmp_path), None, {})
+    conductor = SimpleNamespace(
+        _record_diff_metrics=lambda *args, **kwargs: None,
+        _is_test_command=lambda _command: False,
+        _is_read_only_tool=lambda _tool_name: False,
+        _record_lsp_reward_metrics=lambda *args, **kwargs: None,
+        _record_test_reward_metric=lambda *args, **kwargs: None,
+        agent_executor=SimpleNamespace(
+            is_tool_failure=lambda _tool_name, result: bool((result or {}).get("error")),
+        ),
+    )
+
+    summarize_execution_results(
+        conductor,
+        SimpleNamespace(),
+        [
+            (
+                SimpleNamespace(
+                    function="todo.write_board",
+                    arguments={"todos": [{"content": "Validate output", "status": "completed"}]},
+                    call_id="call_todo",
+                ),
+                {"todos": [{"title": "Validate output", "status": "done"}]},
+            )
+        ],
+        session_state,
+        1,
+    )
+
+    assert session_state.tool_usage_summary["todo_calls"] == 1
+    assert session_state.tool_usage_summary["total_calls"] == 0
+    assert session_state.turn_tool_usage[1]["tools"] == [
+        {
+            "name": "todo.write_board",
+            "success": True,
+            "meta": {"is_todo": True, "call_id": "call_todo"},
+        }
+    ]
+
+
 def test_codex_apply_patch_input_payload_counts_requested_write_receipts(tmp_path: Path) -> None:
     session_state = SessionState(str(tmp_path), None, {})
     session_state.add_message(
