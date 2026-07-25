@@ -3798,35 +3798,6 @@ def handle_native_tool_calls(
         except Exception:
             pass
 
-        if _maybe_force_post_write_auto_verification_closure(
-            conductor,
-            session_state,
-            reason="post_write_auto_verified_before_continuation",
-        ):
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return True
-
-        if _maybe_force_requested_shell_command_closure(
-            session_state,
-            reason="requested_shell_command_observed_before_continuation",
-        ):
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return True
-
-        if _force_failed_verification_final_answer(
-            session_state,
-            reason="failed_verification_after_retries",
-        ):
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return True
-
-        if _force_failed_write_final_answer(
-            conductor,
-            session_state,
-            reason="failed_requested_write_after_retries",
-        ):
-            finalize_turn_context_snapshot(conductor, session_state, turn_ctx, turn_index_int)
-            return True
 
         if execution_error:
             try:
@@ -4038,6 +4009,32 @@ def handle_native_tool_calls(
 
             if tool_messages_to_relay:
                 session_state.provider_messages.extend(tool_messages_to_relay)
+
+        if _maybe_force_post_write_auto_verification_closure(
+            conductor,
+            session_state,
+            reason="post_write_auto_verified_before_continuation",
+        ):
+            return True
+
+        if _maybe_force_requested_shell_command_closure(
+            session_state,
+            reason="requested_shell_command_observed_before_continuation",
+        ):
+            return True
+
+        if _force_failed_verification_final_answer(
+            session_state,
+            reason="failed_verification_after_retries",
+        ):
+            return True
+
+        if _force_failed_write_final_answer(
+            conductor,
+            session_state,
+            reason="failed_requested_write_after_retries",
+        ):
+            return True
 
         maybe_transition_plan_mode(conductor, session_state, markdown_logger)
         return False
