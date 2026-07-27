@@ -1,0 +1,151 @@
+North-Star Recovery execution goal
+
+Work in:
+/Users/kylemccleary/projects/breadboard/breadboard_ns11a_api_20260724
+
+Objective
+
+Make BreadBoard's existing vision operationally singular: one authored Harness Definition, one immutable Harness Lock, one default product execution path across CLI/API/Python SDK/TypeScript SDK/TUI, and one separate internal E4 evidence backend. Permanently retire the blocked replay implementation, install hard packet controls, rebuild replay through bounded R0-R4 packets, run named production-provider conformance, produce one exact-scope claim, and pass separate product and evidence outsider falsifiers.
+
+Required authorities
+
+Read these files in full before selecting work:
+
+1. docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md
+2. docs/plans/north_star_recovery/EXECUTION_PLAN.md
+3. docs/plans/north_star_recovery/LOOP_SPEC.yaml
+4. docs/plans/north_star_recovery/WORKER_CONTRACTS.md
+5. docs/plans/north_star_recovery/STATE.json
+6. docs/DIRECTION_CHARTER.md
+7. docs/plans/phase_20_right_shape/FREEZE_POLICY.md
+
+Treat STATE.json as a generated materialized view. Refresh it from current source identity, Beads, GitHub, exact-head evidence, and the current E4 inventory before relying on its frontier. Preserve conflicts instead of choosing a convenient head or score.
+
+Start-up
+
+- Run bd prime.
+- Before any task/subagent spawn, inspect the effective `task.agentModelOverrides` route and record the resolved agent/model. Do not spawn if the resolved model name contains `fable` or the route cannot be verified. Task effort is relative to the resolved model, not a literal level.
+- If goal mode has no active goal, create the objective above. If the goal is paused, resume it.
+- Confirm the current branch, source authority, base ref, merge base, open PRs, tracker states, and required external resources.
+- Verify every planning artifact exists and record its SHA-256.
+- If `STATE.json` records the planning-package review as pending or request-changes, run two fresh-session exact-hash independent lenses after the routing preflight. Resolve every P0-P2 finding, rerun both lenses on all six artifacts, and refresh STATE through the reviewed-predecessor hash policy before selecting G0.
+- Refresh STATE.json through the authority rules in LOOP_SPEC.yaml. Do not edit it as authored truth.
+- Treat goal mode as campaign state: keep the goal active while any packet is open or blocked; complete it only after all packets are terminal, all completion gates pass, and the human approves final closure.
+- Inspect the current ready frontier and choose only a dependency-ready packet.
+- Before any implementation, create or validate the packet record, allowed and forbidden paths, budgets, derived test plan, exact base, exact merge base, and human gates.
+- Run `scripts/check_phase20_freeze.py` at preflight and local gates. Before G2 installs packet controls, only G0 may use the bounded state-validation bootstrap in `LOOP_SPEC.yaml`; G2 uses the one-time checker bootstrap in `EXECUTION_PLAN.md`.
+
+Fixed decisions
+
+- `contracts/public/operations.v1.json` remains immutable historical evidence. The 26 ordinary product operations are authored at `contracts/public/operations.v2.json`: artifact(3), harness(7), harness_lock(1), integration(3), session(9), and system(3).
+- The 19 lane, lane_execution, lane_lock, and claim operations are authored at `contracts/internal/evidence/operations.v1.json` for internal evidence/maintainer surfaces only.
+- E4 HTTP routes default off and do not appear in ordinary OpenAPI, SDK, TUI, or product docs.
+- Product package data includes both current catalogs. The default product import loads no E4 module. E4 enablement accepts only `1`, `true`, or `yes`; unknown values fail closed.
+- The product API becomes the default only after the lock-first installed CLI/API/SDK/TUI journey passes at one exact head.
+- The open draft replay PR never merges. Salvage immutable contracts, canonical identity rules, security invariants, and selected behavior tests. Discard its runner and replay-specific provider expansion.
+- Replay is rebuilt records-first: G0, G2, R0, R1, R2, R3A/R3B/R3C, R4, then production deadlines/provider conformance and the internal composed lane/claim lifecycle.
+- Visibility semantics are corrected before R4 can support comparison or claims.
+- Provider runtime seams are extracted before production replay adapters and production-provider conformance.
+- SessionRunner seams are extracted before default product API activation.
+- Historical evidence is immutable. Current disposition changes through explicit successor and supersession records.
+- Campaign scores, packet scores, and ten-axis medians do not certify product readiness or target support.
+- Completion is reported as current product readiness, current active exact-scope claims, and current packet state.
+
+OMP execution policy
+
+Use OMP as the primary loop engine.
+
+- Keep at most four subagents active.
+- Use at most two isolated writing workers, only when dependencies and file ownership are disjoint.
+- Use remaining slots for read-only investigation, exact-head review, or CI diagnosis.
+- Use task batches for independent work. Do not serialize work that is genuinely independent.
+- Every writing worker uses an isolated worktree and the implementer contract in WORKER_CONTRACTS.md.
+- Use LSP for symbol references, definitions, renames, implementations, and diagnostics when available.
+- Use structural search for dispatch, import, schema-consumer, and generated-callsite coverage.
+- Use eval for deterministic state rendering, manifest analysis, fixture generation, and log aggregation.
+- Use the debugger for hangs, cancellation, child-process, or runtime-state failures.
+- Use the native GitHub/PR/CI tools when available.
+- Keep one promotion owner and one CI watcher.
+- The implementer never reviews itself.
+- Run one read-only exact-head reviewer for every packet. Run the second security/standards/generated-drift lens for every packet listed in LOOP_SPEC.yaml.
+- Route only current actionable P0-P2 findings to the implementer. Rerun review on the new head.
+- Stop after each packet's implementation, evidence-attempt, review-round, or CI-rerun limit. Route exhausted implementation/evidence attempts or CI reruns to `blocked_budget` and exhausted reviews to `blocked_review`; every exhaustion transition must prove the current counter is at its limit.
+- Run focused owned tests during edits. Run shared integration and broad CI once at a stable packet head.
+- Cache only with the complete key in LOOP_SPEC.yaml. Never reuse target evidence across changed target, fixture, provider/model, comparator, or environment.
+- Treat head, base, merge-base, or generated-input changes as `source_identity_changed`; invalidate diff/path/test/integration state, generated fixed points and caches, scope-bound approvals, local/exact-head results, reviews, CI, promotion, evidence dossiers, and provider/target results before `refresh_state`.
+- On any environment change in an environment-bound active, blocked, or closed state, invalidate environment-bound results, reviews, CI, and promotion eligibility and route through `refresh_state`.
+- Any scope or budget expansion starts only from a blocked packet, routes through `scope_budget_approval`, and requires a current granted typed `scope_budget_amendment` before refreshed preflight.
+
+Managed PR autonomy
+
+You are authorized to create isolated worktrees, edit within an approved packet, run checks, commit, push packet branches, open or update PRs, route independent review, watch CI, and update nonterminal packet state.
+
+Stop for one precise human decision before:
+
+- merging;
+- closing or superseding an issue or PR;
+- rewriting the campaign dependency graph;
+- expanding packet scope or budget;
+- changing a public catalog, route default, schema, or generated ordinary client surface;
+- changing isolation, secret, filesystem, network, capability, or approval behavior;
+- activating or changing authoritative artifact publication semantics;
+- accepting a test waiver or known P0-P2 defect;
+- spending external provider/target resources;
+- publishing a claim or release.
+
+The approval that created this planning package does not erase those previously selected gates.
+
+Execution order
+
+Follow the dependency graph and packet specifications in EXECUTION_PLAN.md. The first controlled actions are:
+
+1. G0: prepare the exact never-merge/supersession action and exact 21-issue title/dependency map. Ask separately for `tracker_supersession`, PR `packet_closure`, and `campaign_graph_rewrite`; perform no mutation before all three typed grants and both G0 prevalidators pass. Require the digest/schema postcheck plus live GitHub/Beads verification before refreshing STATE with packet issue IDs.
+2. G2 after G0: install packet-control enforcement through its one-time, independently reviewed, human-approved bootstrap. The new checker must validate G2 before review.
+3. G1 after G2: split product/evidence surfaces. G1 read-only research may overlap G2, but no G1 branch or edit starts before G2 closes.
+4. After G2: run R0, V1, and P0 in bounded parallel worktrees.
+5. Continue through R1/R2/provider seams/adapters/R4. Do not skip isolation or visibility to reach orchestration.
+6. Run production-provider conformance only after named credentials, routes, runtime, and spend pass preflight.
+7. Reframe the existing public lane/claim API packet as internal evidence work, or cancel it if no second HTTP-service consumer exists.
+8. Activate the product API only after SessionRunner seams, the `integration.probe` policy review, and the full lock-first product journey pass.
+9. During C1, keep the product candidate opt-in while generating product-only OpenAPI/SDK/TUI/docs, prove their fixed point and the five-client journey, then make the final reviewed diff flip the product default.
+10. Run product and evidence outsider falsifiers separately.
+11. Run the final audit at one stable candidate head with two independent reviews.
+
+Fail-closed rules
+
+- No fake provider, target, sandbox, claim, approval, or CI evidence.
+- No current-source claim from an evidence head unless tree/head equivalence is proven.
+- No execution claim from a stored capture or imported normalized record.
+- No claim from failed, canceled, timed-out, integrity-failed, or unverified execution.
+- No blanket parity claim from exact micro-lanes.
+- No product completion claim from 1000/1000, 1065/1000, 100/100, or an axis median.
+- No progress past a forbidden path, missing dependency, missing test owner, stale base, or exhausted budget.
+- No required CI check may be counted green because its guard script or prerequisite is absent and the job skipped.
+- No broad cleanup, provider rewrite, SessionRunner rewrite, second sandbox architecture, or new campaign platform.
+- No accepted historical artifact is hand-edited.
+- No runtime dependency on docs_tmp.
+
+Verification and evidence
+
+For every packet, retain:
+
+- packet key and title;
+- exact base, head, merge base, branch, worktree, PR, and CI run;
+- file and line budget use;
+- behavior before and after;
+- exact test commands, environment fingerprints, durations, results, and artifact refs;
+- generated outputs with authored inputs and generator command;
+- independent review findings and resolution table;
+- CI classification;
+- unresolved risks and external holds;
+- exact approval scope when a human gate is crossed.
+
+After an approved merge, run post-merge verification, update Beads, push the Beads Dolt remote, then regenerate STATE.json from authorities.
+
+Completion
+
+Do not stop at a phase boundary. The goal is complete only when every completion condition in ARCHITECTURE_SPEC.md and EXECUTION_PLAN.md is observed, the final candidate audit is green, both outsider falsifiers have raw evidence, two terminal reviewers have no unresolved P0-P2 findings, the human approves final closure, and STATE.json reports the closed program without authority conflicts that affect the conclusion.
+
+Final handoff
+
+Return a merge/release brief with exact identities, changed files, budgets, tests, review verdicts, CI, active exact-scope claim counts, product readiness facts, compatibility removal work, external holds, and the one human action required. Use the recommendation: merge, do not merge, or blocked. Do not use a cumulative readiness score.

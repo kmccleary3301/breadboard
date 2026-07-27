@@ -1,0 +1,1893 @@
+schema_version: bb.north_star_recovery.loop_spec.v1
+loop_id: north-star-recovery
+status: approved_planning_direction
+title: North-Star Recovery OMP Loop
+owner: human
+promotion_owner: supervisor
+repo_root: breadboard_ns11a_api_20260724
+base_ref: origin/main
+sync_before_spawn: true
+model_routing_preflight:
+  before_every_spawn: true
+  inspect_effective_task_overrides: true
+  forbidden_model_patterns:
+    - fable
+  require_explicit_resolved_model: true
+  on_unverifiable_or_forbidden_route: do_not_spawn
+  effort_is_relative_to_resolved_model: true
+spawn_gate:
+  applies_before_every_task_or_subagent_spawn: true
+  required_record:
+    - requested_agent
+    - resolved_agent
+    - resolved_model
+    - effective_task_override_source
+    - forbidden_pattern_check
+    - checked_at_utc
+  pass_condition: resolved_model_is_explicit_and_contains_no_forbidden_pattern
+  on_failure:
+    action: do_not_spawn
+    packet_transition: blocked_external
+    reason: model_route_unverifiable_or_forbidden
+
+mission:
+  goal: >-
+    Establish one default BreadBoard product path across CLI, API, Python SDK,
+    TypeScript SDK, and TUI; keep E4 as an internal opt-in evidence backend;
+    rebuild replay through bounded R0-R4 packets; and prove product and evidence
+    separately with clean-room falsifiers.
+  success:
+    - product_catalog_has_exactly_26_operations
+    - e4_http_api_is_disabled_by_default
+    - ordinary_clients_have_no_lane_or_claim_operations
+    - replay_r0_through_r4_has_completed_execution_evidence
+    - named_production_provider_conformance_passes
+    - one_exact_scope_claim_is_generated_and_reverified
+    - recovery_claim_record_has_execution_comparison_and_reverification_digests
+    - product_outsider_falsifier_passes
+    - evidence_outsider_falsifier_passes
+    - no_unresolved_p0_or_p1_findings
+    - compatibility_paths_have_removal_owners
+  non_goals:
+    - broad_repository_cleanup
+    - historical_evidence_rewrite
+    - cumulative_readiness_score
+    - blanket_target_parity
+    - provider_or_session_runtime_rewrite_in_one_packet
+    - automatic_merge_or_release
+
+required_artifacts:
+  architecture: docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md
+  execution: docs/plans/north_star_recovery/EXECUTION_PLAN.md
+  loop: docs/plans/north_star_recovery/LOOP_SPEC.yaml
+  workers: docs/plans/north_star_recovery/WORKER_CONTRACTS.md
+  state: docs/plans/north_star_recovery/STATE.json
+  entry_prompt: docs/plans/north_star_recovery/GOAL_PROMPT.txt
+  direction_charter: docs/DIRECTION_CHARTER.md
+  freeze_policy: docs/plans/phase_20_right_shape/FREEZE_POLICY.md
+  planning_review_record: STATE.json#planning_package.independent_review
+
+source_authority:
+  order:
+    - exact_merged_source
+    - exact_head_executed_results
+    - frozen_target_capture
+    - validated_replay_comparison_claim
+    - regenerated_inventory_or_lock
+    - github_and_beads
+    - exact_base_head_packet_report
+    - historical_score_or_progress
+    - prose_or_transcript
+  state_file_is_authority: false
+  preserve_historical_evidence: true
+  supersession_requires_explicit_successor: true
+
+parallelism:
+  max_subagents: 4
+  max_isolated_writers: 2
+  shared_checkout_writers: 0
+  one_writer_per_worktree: true
+  disjoint_files_required: true
+  shared_contract_writes_serial: true
+  generated_surface_writes_serial: true
+  evidence_regeneration_serial: true
+  state_render_serial: true
+
+budgets:
+  default:
+    implementation_attempts_max: 2
+    review_rounds_max: 2
+    ci_reruns_max: 1
+  tripwires:
+    - percent: 70
+      action: warn
+    - percent: 85
+      action: require_owner_acknowledgement
+    - percent: 100
+      action: block
+  hard_block_on:
+    - forbidden_path_changed
+    - file_budget_exceeded
+    - non_generated_line_budget_exceeded
+    - implementation_attempts_exhausted
+    - review_rounds_exhausted
+    - ci_reruns_exhausted
+    - dependency_not_closed
+    - missing_test_ownership
+    - stale_base_or_merge_base
+    - unapproved_public_change
+    - unapproved_security_change
+    - planning_package_review_missing_or_stale
+    - state_contract_invalid_for_current_phase
+    - phase20_freeze_check_missing_or_failed
+    - required_human_approval_missing_or_stale
+
+packet_register:
+  catalog_authority: bootstrap_policy.G0.pre_literal_requirements.planned_packet_issue_titles_and_planned_packet_dependencies
+  rendered_copy: docs/plans/north_star_recovery/EXECUTION_PLAN.md#4-packet-register
+  cross_validation_command: bootstrap_policy.G0.packet_catalog_cross_validation_command
+  keys:
+    - G0
+    - G1
+    - G2
+    - R0
+    - R1
+    - R2
+    - V1
+    - P0
+    - P1
+    - R3A
+    - R3B
+    - R3C
+    - R4
+    - N9B
+    - N10
+    - S1
+    - A1
+    - C1
+    - O1
+    - O2
+    - F1
+  budget_owner: execution_plan
+  scope_owner: execution_plan
+packet_kinds:
+  external_governance:
+    - G0
+  evidence_only:
+    - O1
+    - O2
+  code_or_contract:
+    - G1
+    - G2
+    - R0
+    - R1
+    - R2
+    - V1
+    - P0
+    - P1
+    - R3A
+    - R3B
+    - R3C
+    - R4
+    - N9B
+    - N10
+    - S1
+    - A1
+    - C1
+    - F1
+
+packet_human_gate_map:
+  G0: [tracker_supersession, packet_closure, campaign_graph_rewrite]
+  G1: [public_boundary, architecture_change]
+  G2: [governance_schema]
+  R0: [governance_schema]
+  R1: [security_boundary]
+  R2: [security_boundary, artifact_publication]
+  V1: [public_boundary]
+  P0: []
+  P1: [architecture_change]
+  R3A: []
+  R3B: [security_boundary]
+  R3C: [security_boundary]
+  R4: [architecture_change]
+  N9B: [external_spend]
+  N10: [artifact_publication]
+  S1: [architecture_change]
+  A1: [public_boundary, security_boundary]
+  C1: [public_boundary]
+  O1: [external_spend]
+  O2: [external_spend]
+  F1: []
+  missing_mapping_action: block
+dynamic_human_gate_map:
+  scope_or_budget_expansion: [scope_budget_amendment]
+  partial_external_governance_recovery: [partial_governance_recovery]
+  missing_mapping_action: block
+postverification_human_gate_map:
+  F1: [release]
+  missing_mapping_action: block
+
+
+
+states:
+  - bootstrap
+  - refresh_state
+  - select_frontier
+  - preflight
+  - preimplementation_approval
+  - evidence_running
+  - evidence_review_requested
+  - implementing
+  - local_gates
+  - review_requested
+  - changes_requested
+  - approved
+  - ci_pending
+  - ci_failed
+  - ci_green
+  - promotion_gate
+  - human_approval
+  - scope_budget_approval
+  - merge_ready
+  - merged
+  - post_merge_verify
+  - verified
+  - closed
+  - blocked_scope
+  - blocked_budget
+  - blocked_dependency
+  - blocked_environment
+  - blocked_external
+  - blocked_review
+  - abandoned
+  - superseded
+  - complete
+
+terminal_states:
+  - abandoned
+  - superseded
+  - complete
+
+transitions:
+  - from: bootstrap
+    event: run_started
+    to: refresh_state
+    actions:
+      - read_repo_instructions
+      - read_required_artifacts
+      - run_bd_prime
+      - verify_base_ref
+  - from: refresh_state
+    event: authorities_loaded
+    to: select_frontier
+    guards:
+      - source_identity_recorded
+      - beads_reachable
+      - github_reachable_or_explicitly_blocked
+      - state_conflicts_materialized
+      - state_contract_valid_for_current_phase
+      - planning_package_review_approved
+      - reviewed_authored_artifact_hashes_match_and_state_review_input_lineage_valid
+    actions:
+      - render_state_from_authorities
+  - from: select_frontier
+    event: packet_selected
+    to: preflight
+    guards:
+      - selected_packet_key_and_title_match_registered_open_nonterminal_packet_and_rendered_next_frontier
+      - dependencies_closed
+      - no_overlapping_writer_scope
+      - human_gate_requirements_classified
+      - implementation_owner_route_preflight_passed_or_no_spawn_needed
+  - from: preflight
+    event: preflight_passed
+    to: implementing
+    guards:
+      - exact_base_recorded
+      - exact_merge_base_recorded
+      - allowed_and_forbidden_paths_recorded
+      - budgets_recorded
+      - test_plan_derived
+      - behavior_reproduced_on_base_when_applicable
+      - isolated_worktree_created
+      - scope_budget_amendment_approval_current_if_scope_or_budget_changed_since_prior_scope_version
+      - packet_human_gate_ids_empty
+      - packet_checker_passed_or_selected_packet_is_G0_with_valid_g0_bootstrap_record_or_selected_packet_is_G2_with_valid_g2_bootstrap_record
+      - phase20_freeze_preflight_passed
+  - from: preflight
+    event: preimplementation_human_approval_required
+    to: preimplementation_approval
+    guards:
+      - approval_request_names_packet_scope_base_merge_base_budget_and_protected_action
+      - packet_human_gate_ids_nonempty
+      - every_required_gate_id_is_named
+      - proposed_action_or_change_is_exact_enough_to_decide
+      - common_preflight_record_matches_current_packet_base_merge_base_scope_budget_paths_test_plan_behavior_worktree_checker_or_bootstrap_and_freeze
+      - scope_budget_amendment_approval_current_if_scope_or_budget_changed_since_prior_scope_version
+  - from: preimplementation_approval
+    event: approval_granted_for_exact_scope
+    to: implementing
+    guards:
+      - packet_kind_is_code_or_contract_or_external_governance
+      - all_required_preimplementation_approvals_current
+      - all_required_preimplementation_approval_decisions_are_granted
+      - approval_gate_ids_exactly_equal_packet_human_gate_map
+      - approval_record_bound_to_packet_scope_base_merge_base_and_expiry
+      - every_approval_record_protected_action_exactly_equals_the_current_approval_request_protected_action_for_the_same_gate
+      - every_approval_record_head_sha_equals_current_packet_head_when_a_head_exists_and_is_absent_only_before_any_packet_head_exists
+      - common_preflight_record_matches_current_packet_base_merge_base_scope_budget_paths_test_plan_behavior_worktree_checker_or_bootstrap_and_freeze
+      - scope_budget_amendment_approval_current_if_scope_or_budget_changed_since_prior_scope_version
+      - external_spend_approval_matches_named_provider_target_route_model_environment_exact_numeric_limit_units_request_token_or_runtime_caps_consumed_remaining_scope_and_expiry_when_gate_present
+      - packet_checker_passed_or_selected_packet_is_G0_with_valid_g0_bootstrap_record_or_selected_packet_is_G2_with_valid_g2_bootstrap_record
+      - phase20_freeze_preflight_passed
+  - from: preimplementation_approval
+    event: evidence_approval_granted_for_exact_scope
+    to: evidence_running
+    guards:
+      - packet_kind_is_evidence_only
+      - all_required_preimplementation_approvals_current
+      - all_required_preimplementation_approval_decisions_are_granted
+      - approval_gate_ids_exactly_equal_packet_human_gate_map
+      - external_spend_approvals_match_target_environment_exact_numeric_limit_units_request_token_or_runtime_caps_consumed_remaining_and_expiry
+      - approval_record_bound_to_packet_scope_base_merge_base_and_expiry
+      - every_approval_record_protected_action_exactly_equals_the_current_approval_request_protected_action_for_the_same_gate
+      - every_approval_record_head_sha_equals_current_packet_head_when_a_head_exists_and_is_absent_only_before_any_packet_head_exists
+      - common_preflight_record_matches_current_packet_base_merge_base_scope_budget_paths_test_plan_behavior_worktree_checker_or_bootstrap_and_freeze
+      - scope_budget_amendment_approval_current_if_scope_or_budget_changed_since_prior_scope_version
+      - phase20_freeze_preflight_passed
+  - from: preimplementation_approval
+    event: approval_denied
+    to: blocked_scope
+    guards:
+      - approval_gate_ids_exactly_equal_packet_human_gate_map
+      - approval_record_matches_packet_scope_base_head_merge_base_and_expiry
+      - approval_decision_is_denied
+  - from: preimplementation_approval
+    event: source_identity_changed
+    to: refresh_state
+    actions: &source_refresh_actions
+      - invalidate_diff_paths_test_plan_integration_generated_fixed_point_dependent_claims_cached_generated_checks_local_tests_reviews_ci_promotion_exact_head_evidence_provider_target_and_scope_bound_approvals
+  - from: preflight
+    event: dependency_missing
+    to: blocked_dependency
+  - from: preflight
+    event: scope_invalid
+    to: blocked_scope
+  - from: preflight
+    event: environment_missing
+    to: blocked_environment
+  - from: implementing
+    event: implementation_yielded
+    to: local_gates
+    guards:
+      - packet_checker_passed_and_if_selected_packet_is_G2_valid_digest_bound_g2_postcheck_record_present_or_selected_packet_is_G0_with_valid_g0_postcheck_record
+      - no_stub_or_todo_delivery
+      - no_forbidden_path_change
+      - budgets_below_100_percent
+      - phase20_freeze_check_passed
+  - from: implementing
+    event: budget_exhausted
+    to: blocked_budget
+    guards:
+      - file_or_line_or_attempt_budget_counter_is_at_limit
+  - from: implementing
+    event: implementation_attempts_exhausted
+    to: blocked_budget
+    guards:
+      - implementation_budget_record_matches_current_packet_scope_base_head_if_present_merge_base_and_environment
+      - implementation_attempt_counter_is_at_limit
+  - from: local_gates
+    event: required_local_tiers_passed
+    to: review_requested
+    guards:
+      - exact_head_recorded
+      - test_results_bound_to_head
+      - independent_reviewer_route_preflight_passed
+      - generated_outputs_at_fixed_point_if_touched
+  - from: local_gates
+    event: product_defect
+    to: preflight
+    guards:
+      - implementation_attempt_available
+    actions:
+      - invalidate_review_ci_and_exact_head_results
+  - from: local_gates
+    event: implementation_attempts_exhausted
+    to: blocked_budget
+    guards:
+      - implementation_budget_record_matches_current_packet_scope_base_head_merge_base_and_environment
+      - implementation_attempt_counter_is_at_limit
+  - from: local_gates
+    event: external_requirement_missing
+    to: blocked_external
+  - from: review_requested
+    event: reviewer_changes_requested
+    to: changes_requested
+    guards:
+      - findings_are_exact_head
+      - review_matches_current_base_head_merge_base_scope_and_environment
+      - review_round_available
+  - from: changes_requested
+    event: remediation_authorized
+    to: preflight
+    guards:
+      - implementation_attempt_available
+    actions:
+      - route_only_actionable_findings
+      - invalidate_review_ci_and_exact_head_results
+  - from: changes_requested
+    event: implementation_attempts_exhausted
+    to: blocked_budget
+    guards:
+      - implementation_budget_record_matches_current_packet_scope_base_head_merge_base_and_environment
+      - implementation_attempt_counter_is_at_limit
+  - from: review_requested
+    event: all_required_reviewers_approved
+    to: approved
+    guards:
+      - no_open_p0_p1_p2_findings
+      - reviews_match_base_and_head
+      - reviews_match_merge_base_and_scope_version
+      - external_spend_receipts_match_approval_and_consumed_plus_remaining_equals_limit_when_gate_present
+      - reviews_match_environment_and_target_identity
+  - from: review_requested
+    event: review_budget_exhausted
+    to: blocked_review
+    guards:
+      - review_budget_record_matches_current_base_head_merge_base_scope_and_environment
+      - review_round_counter_is_at_limit
+  - from: approved
+    event: external_governance_actions_completed
+    to: verified
+    guards:
+      - packet_kind_is_external_governance
+      - exact_protected_action_approvals_current
+      - exact_protected_action_approval_decisions_are_granted
+      - action_receipts_match_approved_issue_pr_and_graph_mutations
+      - selected_packet_is_G0_and_valid_digest_bound_g0_postcheck_record_matches_current_source_scope_and_action_receipts
+      - schema_valid_salvage_artifact_and_exact_scope_diff_match_g0_postcheck_and_approved_successor_graph
+      - no_code_pr_ci_merge_or_product_change_claimed
+    actions:
+      - render_state_from_authorities
+      - push_beads_remote
+  - from: approved
+    event: external_governance_action_failed_or_partially_mutated
+    to: blocked_external
+    guards:
+      - packet_kind_is_external_governance
+      - typed_failure_and_partial_receipts_match_current_source_scope_action_attempt_and_exact_granted_approvals
+      - external_governance_attempt_counter_is_one_and_at_packet_limit
+      - completed_and_remaining_mutations_are_enumerated_from_live_authorities
+      - no_success_verification_closure_or_promotion_claimed
+      - no_further_external_mutation_without_a_new_exact_recovery_approval_request
+    actions:
+      - render_state_from_authorities
+      - push_beads_remote
+  - from: approved
+    event: ci_started
+    to: ci_pending
+    guards:
+      - packet_kind_is_code_or_contract
+      - ci_run_matches_current_head_base_merge_base_and_environment
+      - external_spend_receipts_match_approval_and_remain_within_exact_limit_when_gate_present
+      - one_ci_watcher_registered
+  - from: ci_pending
+    event: ci_product_defect
+    to: ci_failed
+    guards:
+      - ci_run_matches_current_head_base_merge_base_and_environment
+  - from: ci_pending
+    event: ci_environmental_hold
+    to: blocked_environment
+    guards:
+      - ci_run_matches_current_head_base_merge_base_and_environment
+  - from: ci_pending
+    event: ci_gate_defect
+    to: blocked_external
+    guards:
+      - ci_run_matches_current_head_base_merge_base_and_environment
+  - from: ci_pending
+    event: required_ci_passed
+    to: ci_green
+    guards:
+      - ci_run_matches_current_head_base_merge_base_and_environment
+      - required_ci_checks_are_not_skipped
+  - from: ci_failed
+    event: fix_authorized
+    to: preflight
+    guards:
+      - ci_rerun_available
+      - failed_ci_record_matches_current_head_base_merge_base_and_environment
+      - implementation_attempt_available
+    actions:
+      - invalidate_review_ci_and_exact_head_results
+  - from: ci_failed
+    event: ci_reruns_or_implementation_attempts_exhausted
+    to: blocked_budget
+    guards:
+      - ci_and_implementation_budget_records_match_current_packet_scope_base_head_merge_base_and_environment
+      - ci_rerun_or_implementation_attempt_counter_is_at_limit
+  - from: ci_green
+    event: promotion_preflight_passed
+    to: promotion_gate
+    guards:
+      - packet_kind_is_code_or_contract
+      - exact_head_unchanged
+      - exact_base_unchanged
+      - exact_merge_base_unchanged
+      - exact_environment_fingerprint_unchanged
+      - packet_checker_passed
+      - required_evidence_present
+      - no_open_p0_p1_p2_findings
+  - from: promotion_gate
+    event: merge_approval_required
+    guards:
+      - packet_kind_is_code_or_contract
+    to: human_approval
+  - from: human_approval
+    event: approval_granted_for_exact_head
+    to: merge_ready
+    guards:
+      - packet_kind_is_code_or_contract
+      - approval_gate_id_is_merge_and_protected_actions_are_exact
+      - approval_record_matches_packet_pr_head_base_merge_base_scope_and_expiry
+      - merge_approval_decision_is_granted
+  - from: human_approval
+    event: approval_denied
+    guards:
+      - approval_request_matches_current_packet_scope_base_head_merge_base_and_expiry
+      - approval_decision_is_denied
+    to: blocked_scope
+  - from: human_approval
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: merge_ready
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: merge_ready
+    event: human_merged
+    to: merged
+    guards:
+      - packet_kind_is_code_or_contract
+      - approval_gate_id_is_merge_and_protected_actions_are_exact
+      - approval_record_matches_packet_pr_head_base_merge_base_scope_and_expiry
+      - merge_approval_decision_is_granted
+      - human_merge_approval_current
+      - merge_policy_allows
+      - merged_commit_recorded
+  - from: merged
+    event: post_merge_checks_started
+    to: post_merge_verify
+  - from: post_merge_verify
+    event: post_merge_checks_passed
+    to: verified
+    guards:
+      - post_merge_results_match_current_merged_commit_and_environment
+  - from: post_merge_verify
+    event: post_merge_checks_failed
+    to: blocked_external
+    guards:
+      - typed_post_merge_failure_record_matches_current_merged_commit_scope_environment_and_checks
+      - no_packet_closure_or_success_claimed
+  - from: post_merge_verify
+    event: post_merge_checks_unclassified
+    to: blocked_review
+    guards:
+      - typed_post_merge_unclassified_record_matches_current_merged_commit_scope_environment_and_checks
+      - no_packet_closure_or_success_claimed
+  - from: evidence_running
+    event: evidence_dossier_failed_or_contaminated_or_unredacted_or_missing_hash
+    to: blocked_environment
+    guards:
+      - typed_negative_dossier_recorded_with_current_source_head_base_merge_base_scope_environment_target_fixture_and_runtime_identities
+      - negative_dossier_not_misclassified_as_evidence_complete
+      - evidence_attempt_counter_is_at_or_below_limit
+      - external_spend_receipts_match_approval_and_remain_within_exact_limit
+  - from: evidence_running
+    event: evidence_dossier_over_budget
+    to: blocked_budget
+    guards:
+      - typed_negative_dossier_recorded_with_current_source_head_base_merge_base_scope_environment_target_fixture_and_runtime_identities
+      - evidence_budget_record_matches_current_packet_and_scope
+  - from: evidence_running
+    event: dossier_recorded
+    to: evidence_review_requested
+    guards:
+      - packet_kind_is_evidence_only
+      - raw_dossier_content_hash_recorded
+      - participant_approval_and_current_source_head_base_merge_base_scope_environment_target_fixture_and_runtime_identities_recorded
+      - commands_inputs_outputs_failures_timings_and_redaction_recorded
+      - dossier_status_is_evidence_complete_within_budget_redacted_and_hash_complete
+      - external_spend_receipts_match_approval_and_consumed_plus_remaining_equals_limit
+      - independent_reviewer_route_preflight_passed
+      - evidence_attempt_available
+  - from: evidence_review_requested
+    event: evidence_reviewers_approved
+    to: verified
+    guards:
+      - dossier_hash_unchanged
+      - exact_hash_evidence_reviews_current
+      - evidence_review_matches_current_dossier_scope_environment_target_fixture_runtime_and_source_identities
+      - dossier_status_is_evidence_complete_within_budget_redacted_and_hash_complete
+      - external_spend_receipts_match_current_dossier_and_exact_approval_limit
+      - no_open_p0_p1_p2_findings
+      - no_code_pr_ci_or_merge_claimed
+  - from: evidence_review_requested
+    event: evidence_changes_requested
+    to: preflight
+    guards:
+      - evidence_review_matches_current_dossier_scope_environment_target_fixture_runtime_and_source_identities
+      - evidence_attempt_available
+      - evidence_review_round_available
+    actions:
+      - invalidate_review_ci_and_exact_head_results
+  - from: evidence_review_requested
+    event: evidence_review_rounds_exhausted
+    to: blocked_review
+    guards:
+      - evidence_review_budget_record_matches_current_dossier_scope_and_identities
+      - evidence_review_round_counter_is_at_limit
+  - from: evidence_review_requested
+    event: evidence_attempts_exhausted
+    to: blocked_budget
+    guards:
+      - evidence_attempt_budget_record_matches_current_dossier_scope_and_identities
+      - evidence_attempt_counter_is_at_limit
+  - from: verified
+    event: evidence_closure_approved
+    to: closed
+    guards:
+      - packet_kind_is_evidence_only
+      - packet_closure_approval_gate_id_and_protected_actions_are_exact
+      - closure_names_existing_packet_issue_and_dossier_hash_without_inventing_branch_or_pr
+      - exact_hash_evidence_reviews_current
+      - closure_approval_matches_packet_scope_base_head_merge_base_environment_target_fixture_runtime_and_expiry
+      - dossier_status_is_evidence_complete_within_budget_redacted_and_hash_complete
+      - external_spend_receipts_match_current_dossier_and_exact_approval_limit
+      - closure_approval_decision_is_granted
+      - no_identity_changed_since_closure_approval
+    actions:
+      - update_beads
+      - render_state_from_authorities
+      - push_beads_remote
+  - from: verified
+    event: human_closure_approved
+    to: closed
+    guards:
+      - packet_kind_is_code_or_contract_or_external_governance
+      - packet_closure_approval_gate_id_and_protected_actions_are_exact
+      - closure_approval_matches_packet_scope_base_head_merge_base_environment_and_expiry
+      - closure_approval_decision_is_granted
+      - no_identity_changed_since_closure_approval
+    actions:
+      - update_beads
+      - render_state_from_authorities
+      - push_beads_remote
+  - from: preflight
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: implementing
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: local_gates
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: review_requested
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: changes_requested
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: approved
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: ci_pending
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: ci_failed
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: ci_green
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: promotion_gate
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: evidence_running
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: evidence_review_requested
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: verified
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: scope_budget_approval
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: merged
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: post_merge_verify
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: closed
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: preflight
+    event: environment_changed
+    to: refresh_state
+    actions: &environment_refresh_actions
+      - invalidate_environment_bound_results_reviews_ci_promotion_evidence_dossiers_provider_target_results_dependent_claims_and_scope_bound_approvals
+  - from: preimplementation_approval
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: implementing
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: local_gates
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: review_requested
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: changes_requested
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: approved
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: ci_pending
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: ci_failed
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: ci_green
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: promotion_gate
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: human_approval
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: merge_ready
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: merged
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: post_merge_verify
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: evidence_running
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: evidence_review_requested
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: verified
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: scope_budget_approval
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: blocked_scope
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: blocked_budget
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: blocked_dependency
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: blocked_environment
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: blocked_external
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: blocked_review
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: blocked_scope
+    event: typed_blocker_resolution_approved
+    to: refresh_state
+    guards:
+      - human_scope_or_successor_decision_current
+      - source_scope_and_budget_identities_refreshed
+  - from: blocked_budget
+    event: typed_blocker_resolution_approved
+    to: refresh_state
+    guards:
+      - human_budget_split_abandon_or_successor_decision_current
+      - source_scope_and_budget_identities_refreshed
+  - from: blocked_dependency
+    event: blocker_resolved
+    to: refresh_state
+    guards:
+      - dependency_now_closed_or_successor_approved
+  - from: blocked_environment
+    event: blocker_resolved
+    to: refresh_state
+    guards:
+      - environment_fingerprint_refreshed
+      - required_external_approval_current_if_applicable
+      - evidence_attempt_available_or_packet_is_not_evidence_only
+  - from: blocked_external
+    event: blocker_resolved
+    to: refresh_state
+    guards:
+      - external_requirement_evidence_recorded
+      - required_external_approval_current_if_applicable
+      - no_partial_external_governance_mutation_exists
+      - G0_failed_action_attempt_requires_current_scope_budget_amendment_or_packet_is_not_G0
+  - from: blocked_external
+    event: partial_external_governance_recovery_approved
+    to: approved
+    guards:
+      - selected_packet_is_G0
+      - typed_partial_governance_recovery_record_matches_current_source_scope_environment_original_attempt_and_live_authorities
+      - partial_governance_recovery_gate_id_and_protected_action_are_exact
+      - partial_governance_recovery_approval_decision_is_granted_current_and_future_utc_expiring
+      - partial_governance_recovery_count_is_zero_and_recovery_max_is_one
+      - recovery_continues_original_attempt_one_and_does_not_reset_the_packet_attempt_counter
+      - completed_and_remaining_mutations_are_disjoint_complete_and_bound_to_receipts
+      - every_partially_created_packet_issue_has_the_approved_title_labels_and_dependencies
+      - existing_partial_packet_issue_ids_are_reused_and_no_duplicate_packet_key_issue_exists
+      - original_tracker_closure_and_graph_approvals_are_current_or_replaced_by_exact_current_approvals
+      - unrelated_tracker_nodes_and_edges_match_the_pre_attempt_authority_snapshot
+  - from: blocked_environment
+    event: evidence_attempts_exhausted
+    to: blocked_budget
+    guards:
+      - packet_kind_is_evidence_only
+      - evidence_attempt_counter_is_at_limit
+      - negative_dossier_is_current_and_identity_bound
+  - from: blocked_review
+    event: typed_blocker_resolution_approved
+    to: refresh_state
+    guards:
+      - human_review_budget_or_successor_decision_current
+      - source_scope_and_budget_identities_refreshed
+  - from: blocked_scope
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: blocked_budget
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: blocked_dependency
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: blocked_environment
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: blocked_external
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: blocked_review
+    event: source_identity_changed
+    to: refresh_state
+    actions: *source_refresh_actions
+  - from: blocked_scope
+    event: scope_or_budget_expansion_requested
+    to: scope_budget_approval
+    guards:
+      - requested_amendment_names_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
+      - requested_gate_ids_exactly_equal_dynamic_human_gate_map
+  - from: blocked_budget
+    event: scope_or_budget_expansion_requested
+    to: scope_budget_approval
+    guards:
+      - requested_amendment_names_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
+      - requested_gate_ids_exactly_equal_dynamic_human_gate_map
+  - from: scope_budget_approval
+    event: scope_budget_amendment_granted
+    to: refresh_state
+    guards:
+      - scope_budget_amendment_gate_id_and_protected_action_are_exact
+      - scope_budget_amendment_decision_is_granted
+      - amendment_approval_binds_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
+      - no_identity_changed_since_amendment_approval
+  - from: scope_budget_approval
+    event: scope_budget_amendment_denied
+    to: blocked_scope
+    guards:
+      - scope_budget_amendment_gate_id_and_protected_action_are_exact
+      - scope_budget_amendment_denial_record_matches_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
+      - scope_budget_amendment_decision_is_denied
+  - from: scope_budget_approval
+    event: source_or_environment_identity_changed
+    to: refresh_state
+    actions:
+      - invalidate_diff_paths_test_plan_integration_generated_fixed_point_dependent_claims_cached_generated_checks_local_tests_reviews_ci_promotion_exact_head_evidence_provider_target_and_scope_bound_approvals
+      - invalidate_scope_budget_approval
+  - from: blocked_scope
+    event: human_abandonment_approved
+    to: abandoned
+    guards: &abandonment_guards
+      - packet_closure_approval_gate_id_and_protected_actions_are_exact_for_existing_packet_issue
+      - exact_reason_consequences_and_remaining_success_path_recorded
+      - abandoned_packet_not_required_for_mission_success
+      - packet_closure_approval_decision_is_granted
+      - packet_closure_approval_matches_current_packet_scope_base_merge_base_head_if_present_environment_and_expiry
+      - no_identity_changed_since_disposition_approval
+    actions: &terminal_disposition_actions
+      - update_beads
+      - render_state_from_authorities
+      - push_beads_remote
+  - from: blocked_budget
+    event: human_abandonment_approved
+    to: abandoned
+    guards: *abandonment_guards
+    actions: *terminal_disposition_actions
+  - from: blocked_dependency
+    event: human_abandonment_approved
+    to: abandoned
+    guards: *abandonment_guards
+    actions: *terminal_disposition_actions
+  - from: blocked_environment
+    event: human_abandonment_approved
+    to: abandoned
+    guards: *abandonment_guards
+    actions: *terminal_disposition_actions
+  - from: blocked_external
+    event: human_abandonment_approved
+    to: abandoned
+    guards: *abandonment_guards
+    actions: *terminal_disposition_actions
+  - from: blocked_review
+    event: human_abandonment_approved
+    to: abandoned
+    guards: *abandonment_guards
+    actions: *terminal_disposition_actions
+  - from: blocked_scope
+    event: human_supersession_approved
+    to: superseded
+    guards: &supersession_guards
+      - packet_closure_and_tracker_supersession_gate_ids_and_protected_actions_are_exact
+      - campaign_graph_rewrite_approval_current_and_exact
+      - exact_successor_keys_dependencies_and_remaining_success_path_recorded
+      - packet_closure_and_tracker_supersession_approval_decisions_are_granted
+      - disposition_approvals_match_current_packet_scope_base_merge_base_head_if_present_environment_and_expiry
+      - no_identity_changed_since_disposition_approvals
+    actions: *terminal_disposition_actions
+  - from: blocked_budget
+    event: human_supersession_approved
+    to: superseded
+    guards: *supersession_guards
+    actions: *terminal_disposition_actions
+  - from: blocked_dependency
+    event: human_supersession_approved
+    to: superseded
+    guards: *supersession_guards
+    actions: *terminal_disposition_actions
+  - from: blocked_environment
+    event: human_supersession_approved
+    to: superseded
+    guards: *supersession_guards
+    actions: *terminal_disposition_actions
+  - from: blocked_external
+    event: human_supersession_approved
+    to: superseded
+    guards: *supersession_guards
+    actions: *terminal_disposition_actions
+  - from: blocked_review
+    event: human_supersession_approved
+    to: superseded
+    guards: *supersession_guards
+    actions: *terminal_disposition_actions
+  - from: closed
+    event: environment_changed
+    to: refresh_state
+    actions: *environment_refresh_actions
+  - from: closed
+    event: frontier_remaining
+    to: refresh_state
+  - from: closed
+    event: frontier_empty_and_terminal_gates_passed
+    to: complete
+    guards:
+      - every_packet_register_entry_is_terminal
+      - no_packet_is_open_or_blocked
+      - all_required_packets_closed
+      - every_mission_success_condition_observed
+      - final_candidate_audit_green
+      - product_and_evidence_outsider_raw_evidence_present
+      - two_terminal_reviews_have_no_open_p0_p1_p2_findings
+      - recovery_claim_record_current_and_provenance_bound
+      - recovery_claim_record_binds_scope_input_environment_execution_comparison_support_and_reverification_digests
+      - current_source_claim_reverification_passed_and_active_claim_count_materialized
+      - no_unresolved_conclusion_affecting_authority_or_boundary_conflicts
+      - no_blocked_abandoned_or_superseded_packet_is_required_for_success
+      - no_blocked_state_misclassified_as_success
+      - final_human_closure_approved
+      - postverification_human_gate_map_for_F1_exactly_requires_release
+      - release_approval_gate_id_and_protected_action_are_exact_for_final_campaign_closure
+      - final_human_closure_approval_decision_is_granted_current_and_bound_to_final_candidate_head
+    actions:
+      - complete_goal
+
+  - from: preflight
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: &bound_evidence_identity_change_guards
+      - typed_old_and_new_identity_record_names_exactly_one_or_more_of_target_fixture_provider_route_model_comparator_or_runtime
+      - changed_identity_was_bound_to_current_packet_results_reviews_cache_spend_approval_or_promotion
+      - new_identity_is_known_or_packet_remains_blocked
+    actions: &bound_evidence_identity_refresh_actions
+      - invalidate_target_fixture_provider_model_comparator_runtime_bound_results_reviews_dossiers_claims_cache_spend_approvals_closure_and_promotion
+      - render_state_from_authorities
+  - from: preimplementation_approval
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: evidence_running
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: implementing
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: local_gates
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: review_requested
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: changes_requested
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: approved
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: ci_pending
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: ci_failed
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: scope_budget_approval
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: ci_green
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: merged
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: post_merge_verify
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: evidence_review_requested
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: human_approval
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: promotion_gate
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: merge_ready
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: blocked_dependency
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: blocked_environment
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: blocked_external
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: blocked_review
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: blocked_scope
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: blocked_budget
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: verified
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: closed
+    event: bound_evidence_identity_changed
+    to: refresh_state
+    guards: *bound_evidence_identity_change_guards
+    actions: *bound_evidence_identity_refresh_actions
+  - from: implementing
+    event: external_spend_exhausted
+    to: blocked_budget
+    guards: &external_spend_exhausted_guards
+      - typed_spend_receipt_matches_current_approval_identity_mode_applicable_provider_or_target_route_model_participant_context_environment_and_units
+      - consumed_value_is_at_least_limit_value_or_request_count_is_at_least_request_cap_or_token_or_runtime_consumed_is_at_least_token_or_runtime_cap
+      - no_further_request_or_target_launch_started
+      - negative_or_partial_result_recorded_without_claim_promotion_or_success
+  - from: evidence_running
+    event: external_spend_exhausted
+    to: blocked_budget
+    guards: *external_spend_exhausted_guards
+invalidation_event_bindings:
+  source_identity_changed:
+    includes:
+      - head_changed
+      - base_or_merge_base_changed
+      - generated_input_changed
+    applies_to: every_nonterminal_packet_state_except_bootstrap_select_frontier_and_refresh_state
+    required_transition: source_identity_changed_to_refresh_state_from_every_source_or_generated_input_bound_state
+    transition_action: invalidate_diff_paths_test_plan_integration_generated_fixed_point_dependent_claims_cached_generated_checks_local_tests_reviews_ci_promotion_exact_head_evidence_provider_target_and_scope_bound_approvals
+    invalidates:
+      - diff_budget_allowed_paths_test_plan_and_integration_risk
+      - generated_fixed_point_dependent_claims_and_cached_generated_checks
+      - local_tests_reviews_ci_promotion_exact_head_evidence_and_provider_target_results
+      - scope_bound_approvals
+    missing_route_action: block
+  bound_evidence_identity_changed:
+    includes: [target_identity_changed, fixture_identity_changed, provider_route_or_model_changed, comparator_version_changed, runtime_fingerprint_changed]
+    applies_to: every_target_fixture_provider_comparator_or_runtime_bound_state_including_blocked_verified_and_closed
+    required_transition: bound_evidence_identity_changed_to_refresh_state
+    transition_action: invalidate_target_fixture_provider_model_comparator_runtime_bound_results_reviews_dossiers_claims_cache_spend_approvals_closure_and_promotion
+    missing_route_action: block
+  terminal_states:
+    states: [abandoned, superseded, complete]
+    identity_or_environment_change_behavior: remain_terminal_and_record_change_for_campaign_level_completion_reassessment
+    transition_to_refresh_state: forbidden
+
+invalidation:
+  head_changed:
+    invalidates:
+      - local_test_results
+      - independent_reviews
+      - ci_status
+      - promotion_eligibility
+      - exact_head_results
+      - evidence_dossiers
+      - provider_or_target_results
+  base_or_merge_base_changed:
+    invalidates:
+      - diff_budget
+      - allowed_path_calculation
+      - test_plan
+      - independent_reviews
+      - integration_risk
+      - ci_status
+      - promotion_eligibility
+      - local_test_results
+      - exact_head_results
+      - evidence_dossiers
+      - provider_or_target_results
+  scope_changed:
+    requires:
+      - human_signed_amendment
+      - new_scope_version
+      - new_budget
+      - scope_budget_amendment_gate_id_and_protected_action_are_exact
+      - scope_budget_amendment_decision_is_granted
+      - amendment_approval_binds_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
+      - review_reset
+      - reason
+  environment_changed:
+    invalidates:
+      - environment_bound_results
+      - provider_or_target_results
+      - ci_status
+      - promotion_eligibility
+      - evidence_dossiers
+      - dependent_claims
+      - scope_bound_approvals
+  generated_input_changed:
+    invalidates:
+      - generated_fixed_point
+      - dependent_claims
+      - cached_generated_checks
+
+proof_tiers:
+  T0:
+    target_seconds: 60
+    includes:
+      - changed_file_lint_and_type_checks
+      - focused_owned_unit_tests
+      - schema_validation
+      - touched_generator_check
+      - touched_package_import_cycle_check
+      - phase20_freeze_validation
+  T1:
+    target_seconds: 180
+    includes:
+      - owning_package_tests
+      - contract_boundary_tests
+      - import_dependency_negatives
+  T2:
+    target_seconds: 600
+    includes:
+      - product_integration
+      - clean_install_or_installed_wheel
+      - generated_surface_fixed_point
+  T3:
+    includes:
+      - required_github_ci
+      - exact_head_integration_matrix
+  T4:
+    includes:
+      - provider_or_target_preflight
+      - frozen_capture
+      - replay_and_comparison
+      - exact_scope_claim_or_fixed_point
+  derivation_inputs:
+    - changed_paths
+    - import_dependents
+    - schema_consumers
+    - generated_input_dependencies
+    - conformance_owner_rows
+    - packet_acceptance
+  missing_mapping_action: block
+
+cache_policy:
+  required_key_parts:
+    - packet_key
+    - scope_version
+    - source_tree_or_head_sha
+    - base_sha
+    - merge_base_sha
+    - test_manifest_sha256
+    - exact_command_sha256
+    - dependency_lock_sha256
+    - environment_fingerprint_sha256
+    - generated_input_sha256s
+  T4_additional_key_parts:
+    - target_version
+    - fixture_sha256
+    - provider_route_and_model
+    - comparator_version
+    - runtime_fingerprint
+  allow_cross_head_reuse: false
+  record_cache_hit: true
+
+review_policy:
+  exact_head_required: true
+  implementer_may_self_review: false
+  default_reviewers:
+    - specification_correctness
+  dual_lens_packets:
+    - G1
+    - G2
+    - R0
+    - R1
+    - R2
+    - V1
+    - P1
+    - R3A
+    - R3B
+    - R3C
+    - R4
+    - N9B
+    - N10
+    - S1
+    - A1
+    - C1
+    - F1
+  second_lens: security_standards_generated_drift
+  blocking_severities:
+    - P0
+    - P1
+    - P2
+  nonblocking_severities:
+    - P3
+    - Q
+
+ci_policy:
+  watchers_max: 1
+  promotion_owners_max: 1
+  reruns_max: 1
+  classifications:
+    - product_defect
+    - specification_gap
+    - flaky_check
+    - environmental_hold
+    - gate_defect
+  skipped_required_check_is_green: false
+  absent_guard_is_green: false
+
+workers:
+  supervisor:
+    agent: loop-architect
+    write_access: tracker_and_orchestration_only
+    self_approval: false
+  investigator:
+    agent: scout
+    write_access: none
+  implementer:
+    agent: loop-surgeon
+    isolated_worktree: required
+    write_access: packet_scope_only
+    self_approval: false
+  reviewer:
+    agent: loop-reviewer
+    write_access: none
+  security_reviewer:
+    agent: reviewer
+    write_access: none
+  ci_diagnostician:
+    agent: ci-loop-diagnostician
+    write_access: none
+  state_renderer:
+    agent: sonic
+    write_access: state_file_only
+
+bootstrap_policy:
+  record_root: ../docs_tmp/north_star_recovery/bootstrap
+  json_validation_command: >-
+    python3 -c "import json,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); expected=set(sys.argv[2].split(',')); actual=set(d); literals=json.loads(sys.argv[4]); assert actual == expected, (sorted(expected-actual), sorted(actual-expected)); assert d['packet_key'] == sys.argv[3]; assert all(d.get(k) == v for k,v in literals.items()), literals" RECORD_PATH COMMA_SEPARATED_EXACT_KEYS PACKET_KEY LITERAL_REQUIREMENTS_JSON
+  bootstrap_approval_record_schema:
+    schema_version: bb.north_star_recovery.approval.v1
+    exception_to_global_approval_record_required_fields: true
+    mapping: singular protected_action is the one-element bootstrap equivalent of protected_actions; base/merge/head/tree/scope and action-specific target fields are required by each closed bootstrap validator; environment/target/provider fields omitted by a closed bootstrap schema are not applicable before G2 installs the general schema
+    prohibition: bootstrap approval records are valid only inside G0/G2 bootstrap commands and cannot satisfy any post-G2 generic approval guard
+  G0:
+    pre_record: ../docs_tmp/north_star_recovery/bootstrap/G0_preflight.json
+    pre_required_fields:
+      - schema_version
+      - packet_key
+      - base_sha
+      - merge_base_sha
+      - base_ref
+      - planning_head_sha
+      - planning_tree_sha
+      - scope_version
+      - source_pr_number
+      - source_pr_head_sha
+      - source_pr_base_sha
+      - source_pr_tree_sha
+      - blocked_bead_id
+      - blocked_bead_title
+      - successor_packet_keys
+      - planned_packet_issue_titles
+      - planned_packet_dependencies
+      - allowed_paths
+      - forbidden_paths
+      - salvage_contract_sha256
+      - salvage_tests_sha256
+      - discarded_code_sha256
+      - phase20_freeze_result_path
+      - phase20_freeze_result_sha256
+      - exact_hash_review_refs
+      - planning_review_round
+      - exact_hash_review_records
+      - approval_records
+      - campaign_graph_rewrite_approval_record
+      - preexisting_campaign_graph_snapshot_path
+      - preexisting_campaign_graph_snapshot_sha256
+      - campaign_graph_rewrite_approval_context
+      - validator_interpreter_identity_sha256
+      - validator_command_sha256
+      - salvage_schema_validator_identity_sha256
+      - scope_diff_validator_identity_sha256
+      - generated_at_utc
+    pre_literal_requirements:
+      schema_version: bb.north_star_recovery.g0_bootstrap.v1
+      packet_key: G0
+      base_ref: refs/remotes/origin/main
+      source_pr_number: 44
+      blocked_bead_id: bb-06u.11
+      blocked_bead_title: "NS09A: Executable replay plan and runtime core"
+      planning_review_round: 7
+      allowed_paths: [docs/plans/north_star_recovery/g0_replay_salvage_record.v1.json]
+      successor_packet_keys: [R0, R1, R2, R3A, R3B, R3C, R4, N9B]
+      planned_packet_issue_titles: {G0: "G0 Retire blocked replay implementation", G1: "G1 Split product and evidence surfaces", G2: "G2 Install packet-control enforcement", R0: "R0 Replay records and admission", R1: "R1 Worker protocol and minimal isolation", R2: "R2 Workspace, publication, and redaction", V1: "V1 Correct visibility semantics", P0: "P0 Lock provider behavior", P1: "P1 Extract provider runtime seams", R3A: "R3A Provider replay adapter", R3B: "R3B Tool replay adapter", R3C: "R3C Host replay adapter", R4: "R4 Replay coordinator", N9B: "N9B Production deadlines and provider conformance", N10: "N10 Internal composed lane and claim lifecycle", S1: "S1 Extract SessionRunner seams", A1: "A1 Stage the product API candidate", C1: "C1 Cut over product clients and activate the default", O1: "O1 Product outsider falsifier", O2: "O2 Evidence outsider falsifier", F1: "F1 Final candidate audit"}
+      planned_packet_dependencies: {G0: [], G1: [G0, G2], G2: [G0], R0: [G2], R1: [R0], R2: [R1], V1: [G2], P0: [G2], P1: [P0, R1], R3A: [R2, P1, V1], R3B: [R2], R3C: [R2], R4: [R3A, R3B, R3C, V1], N9B: [R4, P1], N10: [N9B], S1: [G1, N10], A1: [S1], C1: [A1], O1: [C1], O2: [N10, C1], F1: [O1, O2]}
+      forbidden_paths: [breadboard/**, agentic_coder_prototype/**, sdk/**, tui_skeleton/**, contracts/**, docs/conformance/**]
+    pre_validation_command: >-
+      python3 -c "import json,re,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); expected=set(sys.argv[2].split(',')); literals=json.loads(sys.argv[4]); assert set(d)==expected and d['packet_key']==sys.argv[3] and all(d.get(k)==v for k,v in literals.items()); sha=lambda x:isinstance(x,str) and re.fullmatch(r'sha256:[0-9a-f]{64}',x) is not None; hex40=lambda x:isinstance(x,str) and re.fullmatch(r'[0-9a-f]{40}',x) is not None; assert all(hex40(d[k]) for k in ('base_sha','merge_base_sha','source_pr_head_sha','source_pr_base_sha','source_pr_tree_sha')) and d['base_ref']=='refs/remotes/origin/main' and isinstance(d['scope_version'],str) and d['scope_version']; assert set(d['planned_packet_issue_titles'])=={'G0','G1','G2','R0','R1','R2','V1','P0','P1','R3A','R3B','R3C','R4','N9B','N10','S1','A1','C1','O1','O2','F1'} and all(isinstance(v,str) and v for v in d['planned_packet_issue_titles'].values()); assert all(sha(d[k]) for k in ('salvage_contract_sha256','salvage_tests_sha256','discarded_code_sha256','phase20_freeze_result_sha256','validator_interpreter_identity_sha256','validator_command_sha256','salvage_schema_validator_identity_sha256','scope_diff_validator_identity_sha256')); assert isinstance(d['exact_hash_review_refs'],list) and len(d['exact_hash_review_refs'])==2 and all(isinstance(x,str) and x for x in d['exact_hash_review_refs']); keys={'schema_version','approval_id','gate_id','protected_action','decision','packet_key','source_pr_number','blocked_bead_id','successor_packet_keys','base_sha','merge_base_sha','head_sha','scope_version','granted_by','granted_at_utc','expires_at_utc_or_terminal_event'}; a=d['approval_records']; assert isinstance(a,list) and len(a)==2 and all(set(x)==keys and x['schema_version']=='bb.north_star_recovery.approval.v1' and x['decision']=='granted' and x['packet_key']=='G0' and x['source_pr_number']==44 and x['blocked_bead_id']=='bb-06u.11' and x['successor_packet_keys']==d['successor_packet_keys'] and x['base_sha']==d['base_sha'] and x['merge_base_sha']==d['merge_base_sha'] and x['head_sha']==d['source_pr_head_sha'] and x['scope_version']==d['scope_version'] and isinstance(x['approval_id'],str) and x['approval_id'] and isinstance(x['granted_by'],str) and x['granted_by'] and isinstance(x['granted_at_utc'],str) and x['granted_at_utc'] and isinstance(x['expires_at_utc_or_terminal_event'],str) and x['expires_at_utc_or_terminal_event'] for x in a); by={x['gate_id']:x for x in a}; assert set(by)=={'tracker_supersession','packet_closure'} and by['tracker_supersession']['protected_action']=='supersede_bead_bb-06u.11_and_install_successors_R0_R1_R2_R3A_R3B_R3C_R4_N9B' and by['packet_closure']['protected_action']=='close_pr_44_without_merge'" RECORD_PATH COMMA_SEPARATED_EXACT_KEYS PACKET_KEY LITERAL_REQUIREMENTS_JSON
+    campaign_graph_rewrite_validation_command: >-
+      python3 -c "import hashlib,json,re,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); sha=lambda x:isinstance(x,str) and re.fullmatch(r'sha256:[0-9a-f]{64}',x) is not None; hex40=lambda x:isinstance(x,str) and re.fullmatch(r'[0-9a-f]{40}',x) is not None; canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); assert hex40(d['planning_head_sha']) and hex40(d['planning_tree_sha']) and set(d['planned_packet_dependencies'])==set(d['planned_packet_issue_titles']); a=d['campaign_graph_rewrite_approval_record']; keys={'schema_version','approval_id','gate_id','protected_action','decision','packet_key','planned_packet_issue_titles_sha256','planned_packet_dependencies_sha256','base_sha','merge_base_sha','head_sha','tree_sha','scope_version','granted_by','granted_at_utc','expires_at_utc_or_terminal_event'}; assert set(a)==keys and a['schema_version']=='bb.north_star_recovery.approval.v1' and a['gate_id']=='campaign_graph_rewrite' and a['protected_action']=='materialize_north_star_recovery_packet_issue_map_and_dependency_graph' and a['decision']=='granted' and a['packet_key']=='G0' and a['planned_packet_issue_titles_sha256']==canon(d['planned_packet_issue_titles']) and a['planned_packet_dependencies_sha256']==canon(d['planned_packet_dependencies']) and a['base_sha']==d['base_sha'] and a['merge_base_sha']==d['merge_base_sha'] and a['head_sha']==d['planning_head_sha'] and a['tree_sha']==d['planning_tree_sha'] and a['scope_version']==d['scope_version'] and isinstance(a['approval_id'],str) and a['approval_id'] and isinstance(a['granted_by'],str) and a['granted_by'] and isinstance(a['granted_at_utc'],str) and a['granted_at_utc'] and isinstance(a['expires_at_utc_or_terminal_event'],str) and a['expires_at_utc_or_terminal_event']" RECORD_PATH
+    packet_catalog_cross_validation_command: >-
+      python3 -c "import json,pathlib,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); text=pathlib.Path('docs/plans/north_star_recovery/EXECUTION_PLAN.md').read_text(encoding='utf-8'); titles=d['planned_packet_issue_titles']; rows={}; deps={}; exec(\"for line in text.splitlines():\\n cols=[x.strip() for x in line.strip().split('|')[1:-1]] if line.strip().startswith('|') else []\\n if len(cols)>=3 and cols[0] in titles:\\n  rows[cols[0]]=cols[0]+' '+cols[1]\\n  deps[cols[0]]=[] if cols[2]=='none' else [x.strip() for x in cols[2].split(',')]\" ); assert rows==titles and deps==d['planned_packet_dependencies']" RECORD_PATH
+    approval_freshness_validation_command: >-
+      python3 -c "import datetime,json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); now=datetime.datetime.now(datetime.timezone.utc); parse=lambda s:datetime.datetime.fromisoformat(s.replace('Z','+00:00')); records=d['approval_records']+[d['campaign_graph_rewrite_approval_record']]; assert all(isinstance(a['granted_at_utc'],str) and a['granted_at_utc'].endswith('Z') and parse(a['granted_at_utc'])<=now and isinstance(a['expires_at_utc_or_terminal_event'],str) and a['expires_at_utc_or_terminal_event'].endswith('Z') and parse(a['expires_at_utc_or_terminal_event'])>now for a in records)" RECORD_PATH
+    clean_execution_worktree_validation_command: >-
+      python3 -c "import subprocess; assert subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all'],text=True)==''" 
+    current_source_prevalidation_command: >-
+      python3 -c "import json,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); run=lambda a:subprocess.check_output(a,text=True).strip(); live_main=run(['gh','api','repos/kmccleary3301/breadboard/commits/main','--jq','.sha']); assert d['base_sha']==live_main and d['base_sha']==run(['git','rev-parse',d['base_ref']]) and d['merge_base_sha']==run(['git','merge-base','HEAD',d['base_ref']]) and d['planning_head_sha']==run(['git','rev-parse','HEAD']) and d['planning_tree_sha']==run(['git','rev-parse','HEAD^{tree}'])" RECORD_PATH
+    external_state_prevalidation_command: >-
+      python3 -c "import json,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); run=lambda a:json.loads(subprocess.check_output(a,text=True)); pr=run(['gh','pr','view','44','--repo','kmccleary3301/breadboard','--json','number,state,isDraft,mergedAt,headRefOid,baseRefOid,url']); assert pr=={'number':44,'state':'OPEN','isDraft':True,'mergedAt':None,'headRefOid':d['source_pr_head_sha'],'baseRefOid':d['source_pr_base_sha'],'url':'https://github.com/kmccleary3301/breadboard/pull/44'}; tree=subprocess.check_output(['gh','api','repos/kmccleary3301/breadboard/commits/'+d['source_pr_head_sha'],'--jq','.commit.tree.sha'],text=True).strip(); assert tree==d['source_pr_tree_sha']; bead=run(['bd','show',d['blocked_bead_id'],'--json']); assert isinstance(bead,list) and len(bead)==1 and bead[0]['id']==d['blocked_bead_id'] and bead[0]['title']==d['blocked_bead_title'] and bead[0]['status']=='blocked'" RECORD_PATH
+    exact_hash_review_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,re,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); paths=['docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md','docs/plans/north_star_recovery/EXECUTION_PLAN.md','docs/plans/north_star_recovery/LOOP_SPEC.yaml','docs/plans/north_star_recovery/WORKER_CONTRACTS.md','docs/plans/north_star_recovery/GOAL_PROMPT.txt','docs/plans/north_star_recovery/STATE.json']; actual={p:'sha256:'+hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths[:-1]}; state=json.load(open(paths[-1],encoding='utf-8')); lineage=state['planning_review_lineage']; sha=lambda x:isinstance(x,str) and re.fullmatch(r'sha256:[0-9a-f]{64}',x) is not None; canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); refs=d['exact_hash_review_records']; keys={'reviewer_id','verdict_ref','verdict_sha256','verdict','review_round','artifact_sha256','predecessor_state_sha256','findings_sha256','completed_at_utc'}; vkeys={'schema_version','reviewer_id','verdict','review_round','artifact_sha256','predecessor_state_sha256','findings','completed_at_utc'}; verdicts=[json.load(open(r['verdict_ref'],encoding='utf-8')) for r in refs]; assert isinstance(refs,list) and len(refs)==2 and len({r['reviewer_id'] for r in refs})==2 and {r['verdict_ref'] for r in refs}==set(d['exact_hash_review_refs']) and all(set(r)==keys and set(v)==vkeys and v['schema_version']=='bb.north_star_recovery.planning_review.v1' and sha(r['verdict_sha256']) and r['verdict_sha256']=='sha256:'+hashlib.sha256(pathlib.Path(r['verdict_ref']).read_bytes()).hexdigest() and r['reviewer_id']==v['reviewer_id'] and r['verdict']==v['verdict']=='approve' and r['review_round']==v['review_round']==d['planning_review_round'] and r['artifact_sha256']==v['artifact_sha256'] and set(r['artifact_sha256'])==set(paths) and all(r['artifact_sha256'][p]==actual[p] for p in paths[:-1]) and r['predecessor_state_sha256']==v['predecessor_state_sha256']==r['artifact_sha256'][paths[-1]] and sha(r['predecessor_state_sha256']) and r['findings_sha256']==canon(v['findings']) and r['completed_at_utc']==v['completed_at_utc'] and isinstance(r['completed_at_utc'],str) and r['completed_at_utc'] and not any(f.get('severity') in {'P0','P1','P2'} for f in v['findings']) for r,v in zip(refs,verdicts)); predecessor=refs[0]['predecessor_state_sha256']; assert all(r['predecessor_state_sha256']==predecessor for r in refs) and lineage['status']=='fresh_exact_hash_reviews_approved' and lineage['reviewed_pre_refresh_state_sha256']==predecessor and set(lineage['reviewer_verdict_refs'])==set(d['exact_hash_review_refs']) and isinstance(lineage['refreshed_state_handoff_manifest'],str) and lineage['refreshed_state_handoff_manifest']" RECORD_PATH
+    campaign_graph_snapshot_prevalidation_command: >-
+      python3 -c "import hashlib,json,pathlib,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); p=pathlib.Path(d['preexisting_campaign_graph_snapshot_path']); digest='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest(); assert digest==d['preexisting_campaign_graph_snapshot_sha256']; snap=json.load(open(p,encoding='utf-8')); assert set(snap)=={'schema_version','captured_at_utc','issues'} and snap['schema_version']=='bb.north_star_recovery.tracker_snapshot.v1' and isinstance(snap['issues'],dict); run=lambda a:json.loads(subprocess.check_output(a,text=True)); listed=run(['bd','list','--json','--limit','0']); ids={x['id'] for x in listed}; live={i:run(['bd','show',i,'--json'])[0] for i in ids}; assert live==snap['issues']; labels=[label for issue in live.values() for label in issue.get('labels',[])]; assert 'north-star-recovery' not in labels and not any(isinstance(x,str) and x.startswith('packet:') for x in labels); a=d['campaign_graph_rewrite_approval_record']; c=d['campaign_graph_rewrite_approval_context']; canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); keys={'schema_version','approval_id','approval_record_sha256','preexisting_campaign_graph_snapshot_sha256','preserve_every_unrelated_tracker_node_and_edge','no_preexisting_north_star_recovery_packet_issue'}; assert set(c)==keys and c['schema_version']=='bb.north_star_recovery.campaign_graph_approval_context.v1' and c['approval_id']==a['approval_id'] and c['approval_record_sha256']==canon(a) and c['preexisting_campaign_graph_snapshot_sha256']==digest and c['preserve_every_unrelated_tracker_node_and_edge'] is True and c['no_preexisting_north_star_recovery_packet_issue'] is True" RECORD_PATH
+    phase20_freeze_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); p=pathlib.Path(d['phase20_freeze_result_path']); assert 'sha256:'+hashlib.sha256(p.read_bytes()).hexdigest()==d['phase20_freeze_result_sha256']; r=json.load(open(p,encoding='utf-8')); keys={'schema_version','command','exit_code','stdout','stderr','source_identity','completed_at_utc'}; q=subprocess.run(['uv','run','python','scripts/check_phase20_freeze.py'],capture_output=True,text=True); assert set(r)==keys and r['schema_version']=='bb.north_star_recovery.phase20_freeze_check.v1' and r['command']=='uv run python scripts/check_phase20_freeze.py' and r['exit_code']==q.returncode==0 and r['stdout']==q.stdout and r['stderr']==q.stderr and r['source_identity']=={'base_sha':d['base_sha'],'merge_base_sha':d['merge_base_sha'],'head_sha':d['planning_head_sha'],'tree_sha':d['planning_tree_sha']} and isinstance(r['completed_at_utc'],str) and r['completed_at_utc']" RECORD_PATH
+    state_handoff_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); state_path=pathlib.Path('docs/plans/north_star_recovery/STATE.json'); state=json.load(open(state_path,encoding='utf-8')); lineage=state['planning_review_lineage']; m=json.load(open(lineage['refreshed_state_handoff_manifest'],encoding='utf-8')); paths=['docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md','docs/plans/north_star_recovery/EXECUTION_PLAN.md','docs/plans/north_star_recovery/LOOP_SPEC.yaml','docs/plans/north_star_recovery/WORKER_CONTRACTS.md','docs/plans/north_star_recovery/GOAL_PROMPT.txt']; digest=lambda p:'sha256:'+hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest(); keys={'schema_version','predecessor_state_sha256','refreshed_state_sha256','authored_artifact_sha256','reviewer_verdict_sha256','generated_at_utc'}; assert set(m)==keys and m['schema_version']=='bb.north_star_recovery.state_handoff.v1' and m['predecessor_state_sha256']==lineage['reviewed_pre_refresh_state_sha256'] and m['refreshed_state_sha256']==digest(state_path) and m['authored_artifact_sha256']=={p:digest(p) for p in paths} and m['reviewer_verdict_sha256']=={r['verdict_ref']:r['verdict_sha256'] for r in d['exact_hash_review_records']} and lineage['current_state_sha256_in_manifest'] is True and isinstance(m['generated_at_utc'],str) and m['generated_at_utc']" RECORD_PATH
+    preflight_required_commands: [pre_validation_command, campaign_graph_rewrite_validation_command, packet_catalog_cross_validation_command, approval_freshness_validation_command, current_source_prevalidation_command, clean_execution_worktree_validation_command, external_state_prevalidation_command, exact_hash_review_validation_command, campaign_graph_snapshot_prevalidation_command, phase20_freeze_validation_command, state_handoff_validation_command]
+    post_record: ../docs_tmp/north_star_recovery/bootstrap/G0_postcheck.json
+    post_required_fields:
+      - schema_version
+      - packet_key
+      - pre_record_path
+      - pre_record_sha256
+      - closed_pr_receipt_path
+      - closed_pr_receipt_sha256
+      - superseded_bead_receipt_path
+      - superseded_bead_receipt_sha256
+      - amended_graph_receipt_path
+      - campaign_graph_approval_binding_receipt_path
+      - campaign_graph_approval_binding_receipt_sha256
+      - amended_graph_receipt_sha256
+      - post_campaign_graph_snapshot_path
+      - post_campaign_graph_snapshot_sha256
+      - salvage_artifact_path
+      - salvage_artifact_sha256
+      - salvage_schema_validation_report_path
+      - salvage_schema_validation_report_sha256
+      - scope_diff_report_path
+      - scope_diff_report_sha256
+      - salvage_schema_validator_identity_sha256
+      - scope_diff_validator_identity_sha256
+      - successor_packet_keys
+      - packet_issue_map
+      - current_source_identity
+      - no_product_file_changes
+      - independent_review_refs
+      - generated_at_utc
+    post_literal_requirements:
+      schema_version: bb.north_star_recovery.g0_postcheck.v1
+      packet_key: G0
+      salvage_artifact_path: docs/plans/north_star_recovery/g0_replay_salvage_record.v1.json
+      successor_packet_keys: [R0, R1, R2, R3A, R3B, R3C, R4, N9B]
+      no_product_file_changes: true
+    post_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,re,subprocess,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); expected=set(sys.argv[2].split(',')); literals=json.loads(sys.argv[4]); assert set(d) == expected, (sorted(expected-set(d)), sorted(set(d)-expected)); assert d['packet_key'] == sys.argv[3] and all(d.get(k) == v for k,v in literals.items()); sha=lambda x: isinstance(x,str) and re.fullmatch(r'sha256:[0-9a-f]{64}',x) is not None; hex40=lambda x: isinstance(x,str) and re.fullmatch(r'[0-9a-f]{40}',x) is not None; pairs=[('pre_record_path','pre_record_sha256'),('closed_pr_receipt_path','closed_pr_receipt_sha256'),('superseded_bead_receipt_path','superseded_bead_receipt_sha256'),('amended_graph_receipt_path','amended_graph_receipt_sha256'),('salvage_artifact_path','salvage_artifact_sha256'),('salvage_schema_validation_report_path','salvage_schema_validation_report_sha256'),('scope_diff_report_path','scope_diff_report_sha256')]; assert all(sha(d[h]) and d[h] == 'sha256:'+hashlib.sha256(pathlib.Path(d[p]).read_bytes()).hexdigest() for p,h in pairs); pre=json.load(open(d['pre_record_path'], encoding='utf-8')); assert pre['schema_version']=='bb.north_star_recovery.g0_bootstrap.v1' and pre['packet_key']=='G0' and pre['source_pr_number']==44 and pre['blocked_bead_id']=='bb-06u.11' and pre['base_ref']=='refs/remotes/origin/main' and all(hex40(pre[k]) for k in ('base_sha','merge_base_sha','source_pr_head_sha','source_pr_base_sha','source_pr_tree_sha')); git=lambda *a:subprocess.check_output(['git',*a],text=True).strip(); actual={'base_sha':git('rev-parse',pre['base_ref']),'merge_base_sha':git('merge-base','HEAD',pre['base_ref']),'head_sha':git('rev-parse','HEAD'),'tree_sha':git('rev-parse','HEAD^{tree}')}; assert d['current_source_identity']==actual and actual['base_sha']==pre['base_sha'] and actual['merge_base_sha']==pre['merge_base_sha']; assert d['successor_packet_keys']==pre['successor_packet_keys']==['R0','R1','R2','R3A','R3B','R3C','R4','N9B']; approval_keys={'schema_version','approval_id','gate_id','protected_action','decision','packet_key','source_pr_number','blocked_bead_id','successor_packet_keys','base_sha','merge_base_sha','head_sha','scope_version','granted_by','granted_at_utc','expires_at_utc_or_terminal_event'}; approvals=pre['approval_records']; assert isinstance(approvals,list) and len(approvals)==2 and all(set(a)==approval_keys and a['schema_version']=='bb.north_star_recovery.approval.v1' and a['decision']=='granted' and a['packet_key']=='G0' and a['source_pr_number']==44 and a['blocked_bead_id']=='bb-06u.11' and a['successor_packet_keys']==d['successor_packet_keys'] and a['base_sha']==pre['base_sha'] and a['merge_base_sha']==pre['merge_base_sha'] and a['head_sha']==pre['source_pr_head_sha'] and a['scope_version']==pre['scope_version'] and isinstance(a['approval_id'],str) and a['approval_id'] and isinstance(a['granted_by'],str) and a['granted_by'] and isinstance(a['granted_at_utc'],str) and a['granted_at_utc'] and isinstance(a['expires_at_utc_or_terminal_event'],str) and a['expires_at_utc_or_terminal_event'] for a in approvals); bygate={a['gate_id']:a for a in approvals}; assert set(bygate)=={'tracker_supersession','packet_closure'} and bygate['tracker_supersession']['protected_action']=='supersede_bead_bb-06u.11_and_install_successors_R0_R1_R2_R3A_R3B_R3C_R4_N9B' and bygate['packet_closure']['protected_action']=='close_pr_44_without_merge'; assert d['salvage_schema_validator_identity_sha256']==pre['salvage_schema_validator_identity_sha256'] and d['scope_diff_validator_identity_sha256']==pre['scope_diff_validator_identity_sha256'] and sha(d['salvage_schema_validator_identity_sha256']) and sha(d['scope_diff_validator_identity_sha256']); issue_keys={'G0','G1','G2','R0','R1','R2','V1','P0','P1','R3A','R3B','R3C','R4','N9B','N10','S1','A1','C1','O1','O2','F1'}; assert set(d['packet_issue_map'])==issue_keys and len(set(d['packet_issue_map'].values()))==len(issue_keys) and all(isinstance(v,str) and re.fullmatch(r'bb-[a-z0-9]+(?:[.][0-9]+)?',v) for v in d['packet_issue_map'].values()) and d['packet_issue_map']['G0']!=pre['blocked_bead_id']; art=json.load(open(d['salvage_artifact_path'], encoding='utf-8')); artkeys={'schema_version','packet_key','old_pr_number','old_pr_url','old_base_sha','old_head_sha','old_tree_sha','retained_contract_refs','retained_test_vector_refs','discarded_implementation_paths','successor_packet_keys','beads_action','github_action','human_approval_ids','actor','started_at_utc','completed_at_utc','action_result_refs'}; assert set(art)==artkeys and art['schema_version']=='bb.north_star_recovery.g0_replay_salvage.v1' and art['packet_key']=='G0' and art['old_pr_number']==pre['source_pr_number'] and art['old_base_sha']==pre['source_pr_base_sha'] and art['old_head_sha']==pre['source_pr_head_sha'] and art['old_tree_sha']==pre['source_pr_tree_sha'] and art['successor_packet_keys']==d['successor_packet_keys']; refs=art['retained_contract_refs']+art['retained_test_vector_refs']+art['action_result_refs']; assert art['retained_contract_refs'] and art['retained_test_vector_refs'] and art['discarded_implementation_paths'] and all(set(x)=={'path','sha256'} and isinstance(x['path'],str) and x['path'] and sha(x['sha256']) for x in refs); assert art['human_approval_ids']==[bygate['tracker_supersession']['approval_id'],bygate['packet_closure']['approval_id']] and isinstance(art['actor'],str) and art['actor'] and art['beads_action']=={'type':'supersede','bead_id':pre['blocked_bead_id']} and art['github_action']=={'type':'close_without_merge','pr_number':pre['source_pr_number']}; closed=json.load(open(d['closed_pr_receipt_path'], encoding='utf-8')); assert set(closed)=={'schema_version','pr_number','action','merged','head_sha','base_sha','actor','approval_id','completed_at_utc'} and closed['schema_version']=='bb.north_star_recovery.github_receipt.v1' and closed['pr_number']==44 and closed['action']=='closed_without_merge' and closed['merged'] is False and closed['head_sha']==pre['source_pr_head_sha'] and closed['base_sha']==pre['source_pr_base_sha'] and closed['approval_id']==bygate['packet_closure']['approval_id']; bead=json.load(open(d['superseded_bead_receipt_path'], encoding='utf-8')); assert set(bead)=={'schema_version','bead_id','action','actor','approval_id','completed_at_utc'} and bead['schema_version']=='bb.north_star_recovery.bead_receipt.v1' and bead['bead_id']==pre['blocked_bead_id'] and bead['action']=='superseded' and bead['approval_id']==bygate['tracker_supersession']['approval_id']; graph=json.load(open(d['amended_graph_receipt_path'], encoding='utf-8')); assert set(graph)=={'schema_version','retired_bead_id','successor_packet_keys','packet_issue_map','action','actor','approval_id','completed_at_utc'} and graph['schema_version']=='bb.north_star_recovery.graph_receipt.v1' and graph['retired_bead_id']==pre['blocked_bead_id'] and graph['successor_packet_keys']==d['successor_packet_keys'] and graph['packet_issue_map']==d['packet_issue_map'] and graph['action']=='successors_and_packet_issues_installed' and graph['approval_id']==bygate['tracker_supersession']['approval_id']; current=d['current_source_identity']; assert set(current)=={'base_sha','merge_base_sha','head_sha','tree_sha'} and all(hex40(v) for v in current.values()); schema=json.load(open(d['salvage_schema_validation_report_path'], encoding='utf-8')); assert set(schema)=={'schema_version','validator_identity_sha256','artifact_sha256','passed','errors'} and schema['schema_version']=='bb.north_star_recovery.salvage_schema_report.v1' and schema['validator_identity_sha256']==d['salvage_schema_validator_identity_sha256'] and schema['passed'] is True and schema['errors']==[] and schema['artifact_sha256']==d['salvage_artifact_sha256']; diff=json.load(open(d['scope_diff_report_path'], encoding='utf-8')); assert set(diff)=={'schema_version','validator_identity_sha256','changed_paths','no_forbidden_path_changes','passed','errors'} and diff['schema_version']=='bb.north_star_recovery.scope_diff_report.v1' and diff['validator_identity_sha256']==d['scope_diff_validator_identity_sha256'] and diff['passed'] is True and diff['errors']==[] and diff['changed_paths']==[d['salvage_artifact_path']] and diff['no_forbidden_path_changes'] is True" RECORD_PATH COMMA_SEPARATED_EXACT_KEYS PACKET_KEY LITERAL_REQUIREMENTS_JSON
+    authoritative_state_validation_command: >-
+      python3 -c "import json,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); run=lambda a:json.loads(subprocess.check_output(a,text=True)); pr=run(['gh','pr','view','44','--repo','kmccleary3301/breadboard','--json','number,state,mergedAt,headRefOid,baseRefOid,url']); assert pr=={'number':44,'state':'CLOSED','mergedAt':None,'headRefOid':pre['source_pr_head_sha'],'baseRefOid':pre['source_pr_base_sha'],'url':'https://github.com/kmccleary3301/breadboard/pull/44'}; old=run(['bd','show',pre['blocked_bead_id'],'--json']); assert isinstance(old,list) and len(old)==1 and old[0]['id']==pre['blocked_bead_id'] and old[0]['status']=='closed' and 'supersed' in old[0].get('close_reason','').lower(); issue_keys=set(pre['planned_packet_issue_titles']); assert set(d['packet_issue_map'])==issue_keys; live={}; [live.update({k:run(['bd','show',v,'--json'])[0]}) for k,v in d['packet_issue_map'].items()]; assert all(x['id']==d['packet_issue_map'][k] and x['title']==pre['planned_packet_issue_titles'][k] and x['status'] in {'open','in_progress','blocked'} and 'north-star-recovery' in x.get('labels',[]) and ('packet:'+k) in x.get('labels',[]) for k,x in live.items()); assert all({(dep.get('id'),dep.get('dependency_type')) for dep in live[k].get('dependencies',[])}=={(d['packet_issue_map'][p],'blocks') for p in pre['planned_packet_dependencies'][k]} for k in issue_keys); a=pre['campaign_graph_rewrite_approval_record']; assert a['decision']=='granted' and a['gate_id']=='campaign_graph_rewrite' and a['protected_action']=='materialize_north_star_recovery_packet_issue_map_and_dependency_graph'" POST_RECORD_PATH
+    post_approval_freshness_validation_command: >-
+      python3 -c "import datetime,json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); now=datetime.datetime.now(datetime.timezone.utc); parse=lambda s:datetime.datetime.fromisoformat(s.replace('Z','+00:00')); records=pre['approval_records']+[pre['campaign_graph_rewrite_approval_record']]; assert all(isinstance(a['granted_at_utc'],str) and a['granted_at_utc'].endswith('Z') and parse(a['granted_at_utc'])<=now and isinstance(a['expires_at_utc_or_terminal_event'],str) and a['expires_at_utc_or_terminal_event'].endswith('Z') and parse(a['expires_at_utc_or_terminal_event'])>now for a in records)" POST_RECORD_PATH
+    campaign_graph_post_binding_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); p=pathlib.Path(d['campaign_graph_approval_binding_receipt_path']); digest='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest(); assert digest==d['campaign_graph_approval_binding_receipt_sha256']; r=json.load(open(p,encoding='utf-8')); canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); keys={'schema_version','approval_id','packet_issue_map_sha256','planned_packet_issue_titles_sha256','planned_packet_dependencies_sha256','action','actor','completed_at_utc'}; a=pre['campaign_graph_rewrite_approval_record']; assert set(r)==keys and r['schema_version']=='bb.north_star_recovery.campaign_graph_binding_receipt.v1' and r['approval_id']==a['approval_id'] and r['packet_issue_map_sha256']==canon(d['packet_issue_map']) and r['planned_packet_issue_titles_sha256']==canon(pre['planned_packet_issue_titles']) and r['planned_packet_dependencies_sha256']==canon(pre['planned_packet_dependencies']) and r['action']=='materialized_packet_issue_map_and_dependency_graph' and isinstance(r['actor'],str) and r['actor'] and isinstance(r['completed_at_utc'],str) and r['completed_at_utc']; art=json.load(open(d['salvage_artifact_path'],encoding='utf-8')); assert {'path':d['campaign_graph_approval_binding_receipt_path'],'sha256':digest} in art['action_result_refs']" POST_RECORD_PATH
+    post_source_identity_validation_command: >-
+      python3 -c "import json,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); run=lambda a:subprocess.check_output(a,text=True).strip(); actual={'base_sha':run(['git','rev-parse',pre['base_ref']]),'merge_base_sha':run(['git','merge-base','HEAD',pre['base_ref']]),'head_sha':run(['git','rev-parse','HEAD']),'tree_sha':run(['git','rev-parse','HEAD^{tree}'])}; assert run(['gh','api','repos/kmccleary3301/breadboard/commits/main','--jq','.sha'])==pre['base_sha'] and actual==d['current_source_identity'] and actual=={'base_sha':pre['base_sha'],'merge_base_sha':pre['merge_base_sha'],'head_sha':pre['planning_head_sha'],'tree_sha':pre['planning_tree_sha']}" POST_RECORD_PATH
+    tracker_graph_preservation_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); load=lambda p:json.load(open(p,encoding='utf-8')); digest=lambda p:'sha256:'+hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest(); assert digest(pre['preexisting_campaign_graph_snapshot_path'])==pre['preexisting_campaign_graph_snapshot_sha256'] and digest(d['post_campaign_graph_snapshot_path'])==d['post_campaign_graph_snapshot_sha256']; before=load(pre['preexisting_campaign_graph_snapshot_path']); after=load(d['post_campaign_graph_snapshot_path']); assert before['schema_version']==after['schema_version']=='bb.north_star_recovery.tracker_snapshot.v1'; run=lambda a:json.loads(subprocess.check_output(a,text=True)); ids={x['id'] for x in run(['bd','list','--json','--limit','0'])}; live={i:run(['bd','show',i,'--json'])[0] for i in ids}; assert live==after['issues']; old=pre['blocked_bead_id']; newids=set(d['packet_issue_map'].values()); assert set(after['issues'])==set(before['issues'])|newids and all(after['issues'][i]==before['issues'][i] for i in before['issues'] if i!=old); mutable={'status','close_reason','closed_at','updated_at'}; assert all(before['issues'][old].get(k)==after['issues'][old].get(k) for k in set(before['issues'][old])|set(after['issues'][old]) if k not in mutable); assert after['issues'][old]['status']=='closed' and 'supersed' in after['issues'][old].get('close_reason','').lower(); assert all(sum(1 for issue in after['issues'].values() if ('packet:'+k) in issue.get('labels',[]))==1 and d['packet_issue_map'][k] in after['issues'] for k in d['packet_issue_map'])" POST_RECORD_PATH
+    salvage_reference_revalidation_command: >-
+      python3 -c "import hashlib,json,pathlib,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); art=json.load(open(d['salvage_artifact_path'],encoding='utf-8')); digest=lambda b:'sha256:'+hashlib.sha256(b).hexdigest(); source_refs=art['retained_contract_refs']+art['retained_test_vector_refs']+art['discarded_implementation_paths']; assert all(digest(subprocess.check_output(['git','show',pre['source_pr_head_sha']+':'+r['path']]))==r['sha256'] for r in source_refs); assert all(digest(pathlib.Path(r['path']).read_bytes())==r['sha256'] for r in art['action_result_refs'])" POST_RECORD_PATH
+    salvage_partition_binding_validation_command: >-
+      python3 -c "import hashlib,json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); art=json.load(open(d['salvage_artifact_path'],encoding='utf-8')); canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); groups=[art['retained_contract_refs'],art['retained_test_vector_refs'],art['discarded_implementation_paths']]; assert all(g and all(set(r)=={'path','sha256'} for r in g) for g in groups) and len({r['path'] for g in groups for r in g})==sum(map(len,groups)); assert canon(groups[0])==pre['salvage_contract_sha256'] and canon(groups[1])==pre['salvage_tests_sha256'] and canon(groups[2])==pre['discarded_code_sha256']" POST_RECORD_PATH
+    scope_diff_revalidation_command: >-
+      python3 -c "import json,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); lines=subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all'],text=True).splitlines(); changed=sorted({line[3:].split(' -> ')[-1] for line in lines if line}); assert changed==[d['salvage_artifact_path']]" POST_RECORD_PATH
+    postcheck_required_commands: [post_validation_command, salvage_reference_revalidation_command, salvage_partition_binding_validation_command, scope_diff_revalidation_command, authoritative_state_validation_command, post_approval_freshness_validation_command, campaign_graph_post_binding_validation_command, post_source_identity_validation_command, tracker_graph_preservation_validation_command]
+    postcheck_order: all postcheck_required_commands run before render_state_from_authorities; after they pass the state renderer may replace only docs/plans/north_star_recovery/STATE.json and the handoff manifest records its digest
+  G2:
+    pre_record: ../docs_tmp/north_star_recovery/bootstrap/G2_preflight.json
+    pre_required_fields:
+      - schema_version
+      - packet_key
+      - base_sha
+      - merge_base_sha
+      - base_ref
+      - planning_head_sha
+      - planning_tree_sha
+      - scope_version
+      - allowed_paths
+      - forbidden_paths
+      - budgets
+      - derived_test_plan
+      - checker_absent_on_base
+      - phase20_freeze_result_sha256
+      - phase20_freeze_result_path
+      - g0_post_record_sha256
+      - g0_post_record_path
+      - exact_base_review_refs
+      - exact_base_review_record
+      - governance_schema_approval_record
+      - governance_schema_approval_context
+      - validator_interpreter_identity_sha256
+      - validator_command_sha256
+      - generated_at_utc
+    pre_literal_requirements:
+      schema_version: bb.north_star_recovery.g2_bootstrap.v1
+      packet_key: G2
+      base_ref: refs/remotes/origin/main
+      checker_absent_on_base: true
+    pre_validation_command: >-
+      python3 -c "import json,re,sys; d=json.load(open(sys.argv[1], encoding='utf-8')); expected=set(sys.argv[2].split(',')); literals=json.loads(sys.argv[4]); assert set(d)==expected and d['packet_key']==sys.argv[3] and all(d.get(k)==v for k,v in literals.items()); sha=lambda x:isinstance(x,str) and re.fullmatch(r'sha256:[0-9a-f]{64}',x) is not None; hex40=lambda x:isinstance(x,str) and re.fullmatch(r'[0-9a-f]{40}',x) is not None; assert hex40(d['base_sha']) and hex40(d['merge_base_sha']) and isinstance(d['scope_version'],str) and d['scope_version']; assert isinstance(d['allowed_paths'],list) and d['allowed_paths'] and all(isinstance(x,str) and x for x in d['allowed_paths']) and isinstance(d['forbidden_paths'],list) and d['forbidden_paths'] and all(isinstance(x,str) and x for x in d['forbidden_paths']); budget_keys={'files_max','non_generated_lines_max','implementation_attempts_max','review_rounds_max','ci_reruns_max'}; assert set(d['budgets'])==budget_keys and all(isinstance(v,int) and not isinstance(v,bool) and v>=0 for v in d['budgets'].values()); plan=d['derived_test_plan']; assert set(plan)=={'commands','ownership_manifest_sha256','derivation_sha256'} and isinstance(plan['commands'],list) and plan['commands'] and all(isinstance(x,str) and x for x in plan['commands']) and sha(plan['ownership_manifest_sha256']) and sha(plan['derivation_sha256']); assert all(sha(d[k]) for k in ('phase20_freeze_result_sha256','g0_post_record_sha256','validator_interpreter_identity_sha256','validator_command_sha256')) and isinstance(d['exact_base_review_refs'],list) and len(d['exact_base_review_refs'])==1 and isinstance(d['exact_base_review_refs'][0],str) and d['exact_base_review_refs'][0]; a=d['governance_schema_approval_record']; keys={'schema_version','approval_id','gate_id','protected_action','decision','packet_key','base_sha','merge_base_sha','scope_version','granted_by','granted_at_utc','expires_at_utc_or_terminal_event'}; assert set(a)==keys and a['schema_version']=='bb.north_star_recovery.approval.v1' and a['gate_id']=='governance_schema' and a['protected_action']=='install_packet_checker_and_governance_schema_for_G2' and a['decision']=='granted' and a['packet_key']=='G2' and a['base_sha']==d['base_sha'] and a['merge_base_sha']==d['merge_base_sha'] and a['scope_version']==d['scope_version'] and isinstance(a['approval_id'],str) and a['approval_id'] and isinstance(a['granted_by'],str) and a['granted_by'] and isinstance(a['granted_at_utc'],str) and a['granted_at_utc'] and isinstance(a['expires_at_utc_or_terminal_event'],str) and a['expires_at_utc_or_terminal_event']" RECORD_PATH COMMA_SEPARATED_EXACT_KEYS PACKET_KEY LITERAL_REQUIREMENTS_JSON
+    approval_freshness_validation_command: >-
+      python3 -c "import datetime,json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); a=d['governance_schema_approval_record']; granted=a['granted_at_utc']; expiry=a['expires_at_utc_or_terminal_event']; now=datetime.datetime.now(datetime.timezone.utc); parse=lambda s:datetime.datetime.fromisoformat(s.replace('Z','+00:00')); assert isinstance(granted,str) and granted.endswith('Z') and parse(granted)<=now and isinstance(expiry,str) and expiry.endswith('Z') and parse(expiry)>now" RECORD_PATH
+    phase20_freeze_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); p=pathlib.Path(d['phase20_freeze_result_path']); assert 'sha256:'+hashlib.sha256(p.read_bytes()).hexdigest()==d['phase20_freeze_result_sha256']; r=json.load(open(p,encoding='utf-8')); keys={'schema_version','command','exit_code','stdout','stderr','source_identity','completed_at_utc'}; q=subprocess.run(['uv','run','python','scripts/check_phase20_freeze.py'],capture_output=True,text=True); assert set(r)==keys and r['schema_version']=='bb.north_star_recovery.phase20_freeze_check.v1' and r['command']=='uv run python scripts/check_phase20_freeze.py' and r['exit_code']==q.returncode==0 and r['stdout']==q.stdout and r['stderr']==q.stderr and r['source_identity']=={'base_sha':d['base_sha'],'merge_base_sha':d['merge_base_sha'],'head_sha':d['planning_head_sha'],'tree_sha':d['planning_tree_sha']} and isinstance(r['completed_at_utc'],str) and r['completed_at_utc']" RECORD_PATH
+    exact_base_review_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,re,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); r=d['exact_base_review_record']; keys={'reviewer_id','verdict_ref','verdict_sha256','verdict','packet_key','base_sha','merge_base_sha','scope_version','reviewed_preflight_payload_sha256','findings_sha256','completed_at_utc'}; vkeys={'schema_version','reviewer_id','verdict','packet_key','base_sha','merge_base_sha','scope_version','reviewed_preflight_payload_sha256','findings','completed_at_utc'}; v=json.load(open(r['verdict_ref'],encoding='utf-8')); sha=lambda x:isinstance(x,str) and re.fullmatch(r'sha256:[0-9a-f]{64}',x) is not None; canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); payload={k:v for k,v in d.items() if k not in {'exact_base_review_refs','exact_base_review_record'}}; assert set(r)==keys and set(v)==vkeys and d['exact_base_review_refs']==[r['verdict_ref']] and v['schema_version']=='bb.north_star_recovery.g2_base_review.v1' and r['verdict_sha256']=='sha256:'+hashlib.sha256(pathlib.Path(r['verdict_ref']).read_bytes()).hexdigest() and sha(r['verdict_sha256']) and r['reviewer_id']==v['reviewer_id'] and r['verdict']==v['verdict']=='approve' and r['packet_key']==v['packet_key']=='G2' and r['base_sha']==v['base_sha']==d['base_sha'] and r['merge_base_sha']==v['merge_base_sha']==d['merge_base_sha'] and r['scope_version']==v['scope_version']==d['scope_version'] and r['reviewed_preflight_payload_sha256']==v['reviewed_preflight_payload_sha256']==canon(payload) and r['findings_sha256']==canon(v['findings']) and r['completed_at_utc']==v['completed_at_utc'] and not any(f.get('severity') in {'P0','P1','P2'} for f in v['findings'])" RECORD_PATH
+    g0_predecessor_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); p=pathlib.Path(d['g0_post_record_path']); digest=lambda x:'sha256:'+hashlib.sha256(pathlib.Path(x).read_bytes()).hexdigest(); assert digest(p)==d['g0_post_record_sha256']; post=json.load(open(p,encoding='utf-8')); assert post['schema_version']=='bb.north_star_recovery.g0_postcheck.v1' and post['packet_key']=='G0' and post['no_product_file_changes'] is True; stems=['pre_record','closed_pr_receipt','superseded_bead_receipt','amended_graph_receipt','salvage_artifact','salvage_schema_validation_report','scope_diff_report','campaign_graph_approval_binding_receipt','post_campaign_graph_snapshot']; assert all(digest(post[s+'_path'])==post[s+'_sha256'] for s in stems); pre=json.load(open(post['pre_record_path'],encoding='utf-8')); run=lambda a:json.loads(subprocess.check_output(a,text=True)); pr=run(['gh','pr','view','44','--repo','kmccleary3301/breadboard','--json','state,mergedAt,headRefOid,baseRefOid']); assert pr=={'state':'CLOSED','mergedAt':None,'headRefOid':pre['source_pr_head_sha'],'baseRefOid':pre['source_pr_base_sha']}; old=run(['bd','show',pre['blocked_bead_id'],'--json'])[0]; assert old['status']=='closed' and 'supersed' in old.get('close_reason','').lower(); state=json.load(open('docs/plans/north_star_recovery/STATE.json',encoding='utf-8')); row=next(x for x in state['packets']['items'] if x['key']=='G0'); assert row['state']=='closed' and row['post_record_ref']==d['g0_post_record_path'] and row['post_record_sha256']==d['g0_post_record_sha256'] and set(post['packet_issue_map'])==set(pre['planned_packet_issue_titles']) and all(run(['bd','show',bid,'--json'])[0]['id']==bid for bid in post['packet_issue_map'].values())" RECORD_PATH
+    current_source_prevalidation_command: >-
+      python3 -c "import hashlib,json,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); run=lambda a:subprocess.check_output(a,text=True).strip(); actual={'base_sha':run(['git','rev-parse',d['base_ref']]),'merge_base_sha':run(['git','merge-base','HEAD',d['base_ref']]),'head_sha':run(['git','rev-parse','HEAD']),'tree_sha':run(['git','rev-parse','HEAD^{tree}'])}; assert run(['gh','api','repos/kmccleary3301/breadboard/commits/main','--jq','.sha'])==d['base_sha'] and actual=={'base_sha':d['base_sha'],'merge_base_sha':d['merge_base_sha'],'head_sha':d['planning_head_sha'],'tree_sha':d['planning_tree_sha']}; a=d['governance_schema_approval_record']; c=d['governance_schema_approval_context']; canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); keys={'schema_version','approval_id','approval_record_sha256','head_sha','tree_sha'}; assert set(c)==keys and c['schema_version']=='bb.north_star_recovery.g2_approval_context.v1' and c['approval_id']==a['approval_id'] and c['approval_record_sha256']==canon(a) and c['head_sha']==d['planning_head_sha'] and c['tree_sha']==d['planning_tree_sha']" RECORD_PATH
+    preflight_required_commands: [pre_validation_command, approval_freshness_validation_command, phase20_freeze_validation_command, exact_base_review_validation_command, g0_predecessor_validation_command, current_source_prevalidation_command]
+    postcheck_command: >-
+      python3 scripts/packet/check_packet.py --packet-record ../docs_tmp/north_star_recovery/bootstrap/G2_preflight.json --require-self-hosted-g2
+    post_record: ../docs_tmp/north_star_recovery/bootstrap/G2_postcheck.json
+    post_required_fields:
+      - schema_version
+      - packet_key
+      - pre_record_sha256
+      - base_sha
+      - merge_base_sha
+      - head_sha
+      - scope_version
+      - environment_fingerprint_sha256
+      - installed_checker_report_path
+      - installed_checker_report_sha256
+      - governance_schema_and_validator_tests_report_path
+      - governance_schema_and_validator_tests_report_sha256
+      - negative_checker_tests_report_path
+      - negative_checker_tests_report_sha256
+      - phase20_freeze_check_report_path
+      - phase20_freeze_check_report_sha256
+      - exact_hash_review_refs
+      - generated_at_utc
+    post_literal_requirements:
+      schema_version: bb.north_star_recovery.g2_postcheck.v1
+      packet_key: G2
+    post_validation_command: >-
+      python3 scripts/packet/check_packet.py --packet-record ../docs_tmp/north_star_recovery/bootstrap/G2_preflight.json --require-self-hosted-g2 --postcheck-record ../docs_tmp/north_star_recovery/bootstrap/G2_postcheck.json --require-postcheck-schema bb.north_star_recovery.g2_postcheck.v1 --require-report-digests --require-current-base-merge-head-scope-and-environment
+
+managed_pr_autonomy:
+  supervisor_may:
+    - create_isolated_worktree
+    - edit_within_approved_packet_via_implementer
+    - run_tests
+    - commit_packet
+    - push_packet_branch
+    - open_or_update_pr
+    - route_review
+    - watch_ci
+    - update_nonterminal_packet_state
+  supervisor_may_not_without_human:
+    - merge
+    - close_or_supersede_issue
+    - expand_scope_or_budget
+    - change_governance_or_packet_control_schema
+    - change_architecture_dependency_direction_or_runtime_seam
+    - change_public_contract_or_default
+    - change_security_boundary
+    - accept_test_waiver
+    - publish_claim
+    - release
+    - rewrite_campaign_graph
+    - force_push
+
+human_gates:
+  - id: tracker_supersession
+    triggers:
+      - close_or_supersede_issue
+  - id: campaign_graph_rewrite
+    triggers:
+      - rewrite_campaign_graph
+  - id: packet_closure
+    triggers:
+      - any_packet_issue_closure
+      - any_packet_pr_closure
+  - id: governance_schema
+    triggers:
+      - packet_control_schema_change
+      - state_schema_activation
+      - governance_validator_change
+  - id: architecture_change
+    triggers:
+      - dependency_direction_change
+      - runtime_seam_change
+      - coordinator_boundary_change
+  - id: public_boundary
+    triggers:
+      - product_catalog_change
+      - route_default_change
+      - ordinary_client_surface_change
+      - public_schema_change
+  - id: security_boundary
+    triggers:
+      - isolation_change
+      - secret_handling_change
+      - filesystem_or_network_policy_change
+      - capability_or_approval_change
+  - id: artifact_publication
+    triggers:
+      - transactional_artifact_publication_activation
+      - authoritative_artifact_store_publication_change
+  - id: external_spend
+    triggers:
+      - provider_credentials
+      - paid_target_run
+      - clean_room_participant
+  - id: scope_budget_amendment
+    triggers:
+      - expand_scope
+      - expand_budget
+  - id: partial_governance_recovery
+    triggers:
+      - resume_G0_after_partial_external_mutation
+      - reconcile_or_reuse_partially_created_packet_issue_ids
+  - id: merge
+    triggers:
+      - any_pr_merge
+  - id: release
+    triggers:
+      - claim_publication
+      - package_release
+      - final_campaign_closure
+approval_record_required_fields:
+  - approval_id
+  - gate_id
+  - packet_key
+  - scope_version
+  - base_sha
+  - merge_base_sha
+  - environment_fingerprint_sha256
+  - target_identity_when_applicable
+  - provider_route_and_model_when_applicable
+  - external_spend_limit_when_applicable
+  - old_and_new_scope_or_budget_when_applicable
+  - reason_when_applicable
+  - head_sha_when_known
+  - pr_number_when_known
+  - protected_actions
+  - granted_by
+  - granted_at_utc
+  - expires_at_utc_or_terminal_event
+  - decision
+partial_governance_recovery_record_required_fields:
+  - schema_version
+  - packet_key
+  - original_attempt_id
+  - original_pre_record_sha256
+  - pre_attempt_tracker_snapshot_sha256
+  - current_source_identity
+  - current_environment_fingerprint_sha256
+  - live_partial_tracker_snapshot_path
+  - live_partial_tracker_snapshot_sha256
+  - completed_action_receipts
+  - remaining_protected_actions
+  - reconciled_packet_issue_map
+  - duplicate_packet_key_scan_report_sha256
+  - unrelated_tracker_graph_diff_report_sha256
+  - approval_record
+  - recovery_count
+  - recovery_max
+  - generated_at_utc
+
+external_spend_limit_contract:
+  required_approval_fields: [identity_mode, provider_or_target_identity, route, model, limit_value, unit, currency_or_not_applicable, request_cap, token_or_runtime_cap, consumed_before, remaining_before]
+  identity_modes:
+    provider: provider_or_target_identity route and model are nonempty strings
+    target: provider_or_target_identity is a nonempty string and route and model are each the exact approved nonempty string or null
+    participant_only: provider_or_target_identity route and model are all null
+  numeric_rules: limit_value consumed_before and remaining_before are nonnegative numbers; request_cap is a nonnegative integer; token_or_runtime_cap is a nonnegative number; consumed_before plus remaining_before equals limit_value
+  attempt_receipt_required_fields: [schema_version, approval_id, packet_key, participant_or_context_identity_sha256, identity_mode, provider_or_target_identity, route, model, environment_fingerprint_sha256, consumed_value, remaining_value, unit, request_count, token_or_runtime_consumed, started_at_utc, completed_at_utc]
+  attempt_receipt_reference_fields: [path, sha256]
+  receipt_invariants: every referenced receipt is dereferenced and its sha256 recomputed; participant_or_context_identity_sha256 is present; identity_mode and its provider target route and model values exactly match the approval and the typed identity-mode rule; consumed_value and remaining_value are nonnegative; consumed_value is at most the prior remaining value; remaining_value equals prior remaining value minus consumed_value; request_count is at most request_cap; token_or_runtime_consumed is at most token_or_runtime_cap; ordered balances are monotone; final aggregate counters and balance equal the ordered receipts
+  enforcement: no request or target launch starts when its worst-case authorized consumption exceeds remaining_value or would exceed request_cap or token_or_runtime_cap; reaching or exceeding any one cap routes through external_spend_exhausted and over-cap receipts remain typed negative evidence; every attempt records a receipt, including failed and zero-cost actions; zero-cost routes require unit zero_cost and a zero value limit but retain request and token/runtime caps
+state_materialization:
+  output: docs/plans/north_star_recovery/STATE.json
+  schema_after_G2: contracts/governance/schemas/bb.north_star_recovery.state.v1.schema.json
+  validator_after_G2: scripts/packet/render_state.py
+  validation_mode: fail_closed_before_frontier_selection
+  pre_G2_bootstrap_validation:
+    allowed_frontier: G0
+    requires:
+      - json_parse_passed
+      - required_top_level_fields_present
+      - packet_keys_and_dependencies_match_execution_plan
+      - exact_source_identities_present
+      - two_independent_exact_hash_planning_reviews_approved
+    forbids:
+      - implementation_packet_selection
+      - treating_state_as_authored_input
+  authored_input: false
+  do_not_edit: true
+  review_hash_policy:
+    authored_artifacts: exact_current_hash_required
+    state_artifact: bind_reviewed_pre_refresh_hash
+    predecessor_field: planning_review_lineage.reviewed_pre_refresh_state_sha256
+    external_manifest_schema: bb.north_star_recovery.state_handoff.v1
+    external_manifest_required_fields:
+      - schema_version
+      - generated_at_utc
+      - reviewed_pre_refresh_state_sha256
+      - refreshed_state_sha256
+      - authored_artifact_sha256s
+      - reviewer_verdict_refs
+    frontier_guard: predecessor_field_matches_reviewed_pre_refresh_hash_and_external_manifest_matches_current_state
+    refreshed_state_must_record_predecessor_hash: true
+    current_state_self_hash_location: external_run_or_handoff_manifest
+  sources:
+    - beads
+    - github
+    - exact_source_identity
+    - immutable_evidence_refs
+    - generated_claim_inventory
+    - planning_review_verdicts_and_handoff_manifest
+  required_fields:
+    - generated_at_utc
+    - generator
+    - planning_review_lineage
+    - source_identities
+    - authority_matrix
+    - packets
+    - pull_requests
+    - active_claim_summary
+    - conflicts
+    - blockers
+    - next_frontier
+    - approvals
+    - completion
+  conflict_policy: materialize_do_not_choose
+
+omp_features:
+  task_batch:
+    use: true
+    reason: independent research_review_and_disjoint_packets
+  task_isolation:
+    use: true
+    reason: every_writing_worker_uses_an_isolated_worktree
+  irc:
+    use: true
+    reason: bounded_coordination_for_shared_contract_or_dependency_questions
+  github:
+    use: true
+    reason: structured_pr_review_and_ci_state_when_available
+  lsp:
+    use: true
+    reason: references_renames_diagnostics_and_import_boundaries
+  debug:
+    use: conditional
+    reason: hangs_cancellation_or_process_lifecycle_only
+  eval:
+    use: true
+    reason: state_rendering_fixture_generation_log_and_manifest_analysis
+  ast_grep:
+    use: true
+    reason: structural_dispatch_import_and_callsite_coverage
+  ast_edit:
+    use: conditional
+    reason: previewed_mechanical_rewrites_only
+  checkpoint_rewind:
+    use: true
+    reason: compact_broad_investigation_before_implementation
+  todo:
+    use: true
+    reason: supervisor_state_mirror_not_authority
+  ask:
+    use: true
+    reason: exact_human_gates_only
+  advisor:
+    use: true
+    reason: public_security_and_terminal_review
+  watchdog:
+    use: deferred
+    reason: install_after_manual_loop_proves_stable_project_traps
+  memory:
+    use: conditional
+    reason: retain_only_verified_project_traps_and_loop_lessons
+  rules_hooks:
+    use: deferred
+    reason: derive_from_repeated_packet_checker_failures
+  project_commands:
+    use: deferred
+    reason: no_project_omp_surface_exists_and_scaffold_follows_first_successful_manual_run
+  project_agents:
+    use: deferred
+    reason: use_bundled_agents_until_roles_require_stable_custom_schemas
+  breadboard_self_hosting:
+    use: deferred
+    reason: replay_and_product_execution_boundaries_are_under_repair
+
+handoff:
+  required:
+    - packet_key_and_title
+    - exact_base_head_merge_base
+    - branch_worktree_and_pr
+    - files_changed
+    - budget_usage
+    - tests_with_commands_and_artifact_refs
+    - review_findings_and_resolutions
+    - ci_run_and_status
+    - observed_inferred_and_unverified_claims
+    - open_risks
+    - human_attention
+  final_recommendation_values:
+    - merge
+    - do_not_merge
+    - blocked
