@@ -441,7 +441,7 @@ class ProviderRouter:
         # (and eventually the TUI) to attach short-lived auth material without writing
         # secrets to disk.
         try:
-            from .auth.store import DEFAULT_PROVIDER_AUTH_STORE  # local import to avoid import cycles
+            from ..auth.store import DEFAULT_PROVIDER_AUTH_STORE  # local import to avoid import cycles
 
             alias_env = f"BREADBOARD_PROVIDER_AUTH_ALIAS_{config.provider_id.upper()}"
             overlay_alias = (os.getenv(alias_env) or "").strip()

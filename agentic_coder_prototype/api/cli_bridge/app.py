@@ -101,8 +101,6 @@ from breadboard.rl.phase3.service_live import LiveRLRunService
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
 ENGINE_STARTED_AT_ISO = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ENGINE_STARTED_AT))
-_OPENAI_AUTH_HEADERS_ENV = "BREADBOARD_OPENAI_AUTH_HEADERS_JSON"
-_OPENAI_AUTH_BASE_URL_ENV = "BREADBOARD_OPENAI_AUTH_BASE_URL"
 
 
 def _is_loopback_host(host: str | None) -> bool:
@@ -111,25 +109,6 @@ def _is_loopback_host(host: str | None) -> bool:
     host = str(host).strip().lower()
     return host in {"127.0.0.1", "localhost", "::1"}
 
-
-def _project_provider_auth_material_to_env(
-    provider_id: str,
-    *,
-    api_key: str | None,
-    headers: dict[str, str] | None,
-    base_url: str | None,
-) -> None:
-    if (provider_id or "").strip().lower() != "openai":
-        return
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-    if headers:
-        try:
-            os.environ[_OPENAI_AUTH_HEADERS_ENV] = json.dumps(headers)
-        except Exception:
-            pass
-    if base_url:
-        os.environ[_OPENAI_AUTH_BASE_URL_ENV] = base_url
 
 
 def _load_chaos_config() -> Dict[str, float] | None:
@@ -835,12 +814,6 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             material,
             ttl_seconds=payload.material.ttl_seconds,
             required_profile=required_profile,
-        )
-        _project_provider_auth_material_to_env(
-            material.provider_id,
-            api_key=material.api_key,
-            headers=material.headers or {},
-            base_url=material.base_url,
         )
         return ProviderAuthAttachResponse(ok=True, detail={"attached": True})
 
