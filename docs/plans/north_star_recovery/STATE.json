@@ -1,0 +1,1083 @@
+{
+  "schema_version": "bb.north_star_recovery.state.v1",
+  "generated_at_utc": "2026-07-27T23:29:50Z",
+  "generator": {
+    "id": "north_star_recovery_manual_renderer",
+    "version": "1",
+    "do_not_edit": true,
+    "authored_input": false,
+    "refresh_rule": "Rebuild from Beads, GitHub, exact source identities, immutable evidence, and generated claim inventories. Never use the prior STATE.json as authority.",
+    "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
+  },
+  "planning_package": {
+    "status": "round_7_approved_materialized_on_clean_execution_branch_tracker_closed",
+    "authorization": {
+      "decision": "approved",
+      "granted_by": "user",
+      "granted_at": "2026-07-24",
+      "scope": [
+        "create the six planning artifacts",
+        "adopt the recorded planning decisions",
+        "prepare and execute managed PR work under LOOP_SPEC.yaml"
+      ],
+      "does_not_remove_gates": [
+        "merge",
+        "issue or PR closure or supersession",
+        "campaign graph rewrite",
+        "governance or packet-control schema change",
+        "architecture, dependency-direction, or runtime-seam change",
+        "public contract or default change",
+        "security boundary change",
+        "external spend",
+        "scope or budget expansion",
+        "authoritative artifact publication activation",
+        "claim publication",
+        "release"
+      ]
+    },
+    "independent_review": {
+      "status": "approved",
+      "round": 7,
+      "reviewed_artifact_hashes": {
+        "ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+        "EXECUTION_PLAN.md": "sha256:82cc7339fe5526524d7764247e4cb096acc234c4f6d3a414c45abe84ff49b73a",
+        "LOOP_SPEC.yaml": "sha256:6781f4d5fd510ee9705997b3d90326fb89b6d14be6175d7e3b3b6933d16606d0",
+        "WORKER_CONTRACTS.md": "sha256:ec08b36cd7ccf48415f43794a94795a154f17e84b62d3b09309748af967673bd",
+        "GOAL_PROMPT.txt": "sha256:87f6e900fb1450498118d7ac6e6c9b302766b7ef7955483e46ed9b7303bde538",
+        "STATE.json": "sha256:5f86349151f9a7ec337b2ca3ebb6c0dce5dd6e8776f6ece9dc4100114f5f4c2d"
+      },
+      "reviewers": [
+        {
+          "agent": "loop-reviewer",
+          "agent_ref": "agent://LunaStateReviewFinal",
+          "lens": "state_machine_and_specification",
+          "verdict": "approve",
+          "blocking_findings": 0,
+          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round7/LunaStateReviewFinal.json",
+          "verdict_sha256": "sha256:934b455f210004d40cb3bf812005a52c5e92bf06f76bb0448f903d23b0bd5a83"
+        },
+        {
+          "agent": "loop-reviewer",
+          "agent_ref": "agent://LunaSpecReview",
+          "lens": "execution_contract_and_boundary_safety",
+          "verdict": "approve",
+          "blocking_findings": 0,
+          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round7/LunaSpecReview.json",
+          "verdict_sha256": "sha256:59048cea2128eec3aba2867bd289632bd18e385b98fc47ceda8259005dee1eb3"
+        }
+      ],
+      "corrections_status": "round_7_exact_hash_reviews_approved",
+      "round_4": {
+        "status": "request_changes",
+        "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
+        "reviewer_verdict_refs": [
+          "agent://LunaStateReviewRound4",
+          "agent://LunaBoundaryReviewRound4"
+        ],
+        "blocking_findings": 7
+      },
+      "round_5": {
+        "status": "request_changes",
+        "reviewed_state_input_sha256": "sha256:f05a74cfb74891a80d22e90fc16ae2f6616e249d8adadea9cf68a3754567a8a3",
+        "reviewer_verdict_refs": [
+          "agent://LunaStateReviewRound5",
+          "agent://LunaBoundaryReviewRound5"
+        ],
+        "blocking_findings": 8
+      },
+      "round_6": {
+        "status": "superseded_by_round_7_exact_hash_review",
+        "reviewed_state_input_sha256": null,
+        "reviewer_verdict_refs": []
+      },
+      "round_7": {
+        "status": "approved",
+        "reviewed_state_input_sha256": "sha256:5f86349151f9a7ec337b2ca3ebb6c0dce5dd6e8776f6ece9dc4100114f5f4c2d",
+        "reviewed_authored_artifact_hashes": {
+          "ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "EXECUTION_PLAN.md": "sha256:82cc7339fe5526524d7764247e4cb096acc234c4f6d3a414c45abe84ff49b73a",
+          "LOOP_SPEC.yaml": "sha256:6781f4d5fd510ee9705997b3d90326fb89b6d14be6175d7e3b3b6933d16606d0",
+          "WORKER_CONTRACTS.md": "sha256:ec08b36cd7ccf48415f43794a94795a154f17e84b62d3b09309748af967673bd",
+          "GOAL_PROMPT.txt": "sha256:87f6e900fb1450498118d7ac6e6c9b302766b7ef7955483e46ed9b7303bde538"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round7/LunaStateReviewFinal.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round7/LunaSpecReview.json"
+        ],
+        "blocking_findings": 0
+      }
+    },
+    "artifacts": [
+      {
+        "path": "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md",
+        "bytes": 16934,
+        "sha256": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+        "owner": "domain boundaries, invariants, target ownership, completion conditions"
+      },
+      {
+        "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
+        "bytes": 35621,
+        "sha256": "sha256:82cc7339fe5526524d7764247e4cb096acc234c4f6d3a414c45abe84ff49b73a",
+        "owner": "packet DAG, scopes, budgets, acceptance, approvals"
+      },
+      {
+        "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
+        "bytes": 110992,
+        "sha256": "sha256:6781f4d5fd510ee9705997b3d90326fb89b6d14be6175d7e3b3b6933d16606d0",
+        "owner": "OMP state machine, invalidation, evidence and autonomy policy"
+      },
+      {
+        "path": "docs/plans/north_star_recovery/WORKER_CONTRACTS.md",
+        "bytes": 24894,
+        "sha256": "sha256:ec08b36cd7ccf48415f43794a94795a154f17e84b62d3b09309748af967673bd",
+        "owner": "worker permissions, assignments, result and review contracts"
+      },
+      {
+        "path": "docs/plans/north_star_recovery/GOAL_PROMPT.txt",
+        "bytes": 12384,
+        "sha256": "sha256:87f6e900fb1450498118d7ac6e6c9b302766b7ef7955483e46ed9b7303bde538",
+        "owner": "fresh-session execution entry point"
+      },
+      {
+        "path": "docs/plans/north_star_recovery/STATE.json",
+        "bytes": null,
+        "sha256": null,
+        "hash_location": "external run or handoff manifest",
+        "owner": "generated materialized campaign state; never an authored input"
+      }
+    ]
+  },
+  "planning_review_lineage": {
+    "status": "fresh_exact_hash_reviews_approved",
+    "reviewed_pre_refresh_state_sha256": "sha256:5f86349151f9a7ec337b2ca3ebb6c0dce5dd6e8776f6ece9dc4100114f5f4c2d",
+    "reviewer_verdict_refs": [
+      "../docs_tmp/north_star_recovery/planning_reviews/round7/LunaStateReviewFinal.json",
+      "../docs_tmp/north_star_recovery/planning_reviews/round7/LunaSpecReview.json"
+    ],
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/execution/startup/state_refresh_handoff.json",
+    "current_state_sha256_in_manifest": true
+  },
+  "authority_matrix": [
+    {
+      "concern": "source implementation",
+      "authority": "current GitHub main commit, fetched locally before planning materialization",
+      "current_ref": "github:kmccleary3301/breadboard@3fe342b49a760b8ae95347bbb4394da71deb2609"
+    },
+    {
+      "concern": "packet lifecycle and dependencies",
+      "authority": "Beads Dolt state",
+      "current_ref": "beads:Execute North-Star Closure Campaign v2"
+    },
+    {
+      "concern": "PR, review, CI, and merge provenance",
+      "authority": "GitHub",
+      "current_ref": "github:kmccleary3301/breadboard"
+    },
+    {
+      "concern": "executed behavior",
+      "authority": "raw result tied to exact head and environment",
+      "current_ref": "evidence:exact-head"
+    },
+    {
+      "concern": "inventory target-support claims",
+      "authority": "accepted inventory rows plus referenced claim artifacts; current active status requires reverification",
+      "current_ref": "docs/conformance/e4_lane_inventory.json"
+    },
+    {
+      "concern": "planning direction",
+      "authority": "this approved package plus the Direction Charter",
+      "current_ref": "docs/plans/north_star_recovery"
+    },
+    {
+      "concern": "materialized status",
+      "authority": "external authorities above",
+      "current_ref": "STATE.json is output only"
+    }
+  ],
+  "input_refs": [
+    {
+      "path": "docs/DIRECTION_CHARTER.md",
+      "sha256": "sha256:deb1f2b0437c963bfab25f2c0141d847b7cf768bea668581aa3187c7561f41af",
+      "source_status": "present_current_source"
+    },
+    {
+      "path": "docs/plans/phase_20_right_shape/FREEZE_POLICY.md",
+      "sha256": "sha256:4c209726f8c95d951f545cbebf6f9728f9a82b1cbba560c1a46cafa2a8ee6391",
+      "source_status": "present_current_source"
+    },
+    {
+      "path": "../docs_tmp/phase_19/pro_request_omp_pi_cleanup/BB_OMP_PI_NORTH_STAR_PRO_REVIEW_RESPONSE.md",
+      "sha256": "sha256:c64e81ee91c141abd99b9050ca780da9f80e3565af24cedcad7d2aa9c7a9405d",
+      "source_status": "present_external_evidence"
+    },
+    {
+      "path": "contracts/public/operations.v1.json",
+      "sha256": null,
+      "source_status": "missing_current_source",
+      "historical_expected_sha256": "sha256:dc0103f12335add9efb5ce1147270cfe073867469975b1aad38270aa682c2ff0"
+    },
+    {
+      "path": "docs/conformance/e4_lane_inventory.json",
+      "sha256": "sha256:5d2d9496a51d6e70e51e6ff8880689fc1a4347362a6ae526a4345d481212b011",
+      "source_status": "present_current_source"
+    },
+    {
+      "path": "../docs_tmp/phase_25/BB_NS11A_PROGRESS.json",
+      "sha256": "sha256:7267f1e95406ef090833834a66133ec7bfae861080b5abac05087f513b9705a9",
+      "source_status": "present_external_evidence"
+    },
+    {
+      "path": "../docs_tmp/phase_25/BB_NS11A_SCORECARD.json",
+      "sha256": "sha256:a31a1848746ce967b1c8617bc6c2c53aa56e26773791f3e8da6a88fa3dc55063",
+      "source_status": "present_external_evidence"
+    }
+  ],
+  "source_identities": {
+    "planning_checkout": {
+      "path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
+      "branch": "north-star/recovery-execution",
+      "head_sha": "e6bfc6a20dafa98a6deb51f9ed253918295df595",
+      "tree_sha": "1d80dc6b94bcf4c4b781ca6035f27526bf7c459f",
+      "local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
+      "merge_base_with_local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
+      "working_tree_state": "clean_authored_planning_commit_plus_generated_STATE_pending_commit_at_render",
+      "role": "clean execution-planning worktree rooted at current remote main; authored planning-package anchor for G0 preflight"
+    },
+    "current_remote_main": {
+      "repository": "kmccleary3301/breadboard",
+      "commit_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
+      "tree_sha": "4864c0a9b7c086f16022c9090a58b938e72a18f4",
+      "observed_via": "GitHub commits/main API and fetched local refs/remotes/origin/main",
+      "local_fetch_required": false,
+      "role": "current merged source authority"
+    },
+    "historical_ns11a_merge": {
+      "commit_sha": "8c7788e7b51883eebc99faff05f4422c1168a693",
+      "tree_sha": "217a21c687c1972600e0f64ff3d8f3c18b225a5d",
+      "is_current_remote_main": false,
+      "role": "PR 45 merge identity and historical packet provenance, not current source authority"
+    },
+    "ns11a_packet_evidence": {
+      "verified_head_sha": "b412345416912b03f95ea6eaa5dfb678edd79909",
+      "tree_sha": "c1941c2a9b4dd11f5434432c1370c46f6ca8e182",
+      "merge_commit_sha": "8c7788e7b51883eebc99faff05f4422c1168a693",
+      "tree_equivalent_to_merge": false,
+      "role": "packet-scoped executed and reviewed evidence"
+    },
+    "ns11a_additional_review_head": {
+      "head_sha": "8c71c7b4c68e68f453e20104f9c3bf7de9e22c0e",
+      "tree_sha": "276b7a2474f0700ec2823bcec031ac287e77dc94",
+      "tree_equivalent_to_merge": false,
+      "role": "GitHub maintainer-comment review head, distinct from packet and merge identities"
+    }
+  },
+  "product_surface": {
+    "current_catalog": {
+      "path": "contracts/public/operations.v1.json",
+      "status": "missing_from_current_remote_main_historical_PR45_artifact_only",
+      "operation_count": null,
+      "declared_bindings_per_operation": null,
+      "classification_conflict": true
+    },
+    "target_product_catalog": {
+      "operation_count": 26,
+      "families": {
+        "artifact": 3,
+        "harness": 7,
+        "harness_lock": 1,
+        "integration": 3,
+        "session": 9,
+        "system": 3
+      }
+    },
+    "target_internal_evidence_catalog": {
+      "operation_count": 19,
+      "families": {
+        "claim": 4,
+        "lane": 12,
+        "lane_execution": 2,
+        "lane_lock": 1
+      }
+    },
+    "current_defaults": {
+      "BREADBOARD_ENABLE_PUBLIC_API": false,
+      "BREADBOARD_LEGACY_ROUTES": false,
+      "BREADBOARD_ENABLE_E4_API": "effectively_true_unless_0_false_or_no"
+    },
+    "current_execution_authority": "No breadboard/product package or public API package exists on current remote main; historical PR45 packet evidence is not current source authority.",
+    "readiness": {
+      "status": "not_ready",
+      "reason": "Current remote main lacks the accepted product spine and public catalog; historical packet evidence is source-divergent. The target default product API and lock-first journey are absent."
+    }
+  },
+  "evidence_surface": {
+    "lane_inventory": {
+      "path": "docs/conformance/e4_lane_inventory.json",
+      "sha256": "sha256:5d2d9496a51d6e70e51e6ff8880689fc1a4347362a6ae526a4345d481212b011",
+      "total_rows": 21,
+      "inventory_accepted_target_support_rows": 12,
+      "inventory_accepted_non_target_accounting_rows": 9,
+      "superseded": 0,
+      "captured_unaccepted": 0
+    },
+    "broad_parity_allowed": false,
+    "claim_boundary": "The current-source inventory contains 12 accepted target-support rows and 9 accepted non-target accounting rows; current active counts are unknown until reverification, and no blanket target parity is allowed.",
+    "historical_scores_are_current_authority": false
+  },
+  "active_claim_summary": {
+    "inventory_generated_at_utc": "2026-07-07T00:25:00Z",
+    "inventory_sha256": "sha256:5d2d9496a51d6e70e51e6ff8880689fc1a4347362a6ae526a4345d481212b011",
+    "inventory_accepted_target_support_rows": 12,
+    "validated_active_target_support_claims": null,
+    "counts_authoritative_for_completion": false,
+    "artifact_reference_validation": "12 support claims and 12 evidence manifests parse; claim IDs match; accepted=true; per-file digests are bound below; structural_errors=0",
+    "current_source_reverification": "not_run_blocking_for_active_count",
+    "identity_policy": "Each claim carries typed target, fixture, environment, and runtime identities. Unknown identities are explicit and block active-count materialization and completion.",
+    "claims": [
+      {
+        "claim_id": "claude_code_haiku45_north_star_capture_v1_c4_support_claim",
+        "lane_id": "claude_code_north_star_capture_v1",
+        "target": "claude-code 2.1.63",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260707_north_star_claude_code_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:5380de2d14cbe892a330f10b03f4c9b2a2846bd8476c1f10772441237a5ae148",
+        "evidence_manifest": "docs/conformance/support_claims/claude_code_haiku45_north_star_capture_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:629b61aea9f6bf776d23b652ffe04208ecaae887d4e858a974e387fae8cf7754",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim",
+        "lane_id": "codex_cli_e4_capture_probe_v1",
+        "target": "codex-cli 0.139.0",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260630_codex_gpt55_capture_probe",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:298988e35b75461168ae6b0f63d57e642e5c7de8313d7ee331731e78e89b2ef5",
+        "evidence_manifest": "docs/conformance/support_claims/codex_cli_gpt55_e4_capture_probe_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:0a15579ded3595a9c73c30aec57b55316cb9d580141fab57cdf49cf840ac59d2",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim",
+        "lane_id": "oh_my_pi_p6_0_l1_config_context_tool_surface",
+        "target": "@oh-my-pi/pi-coding-agent@16.2.13",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:1c0844e192d07239d71b11aa4057ce2c4c95fdc6cc4952e6035cba8c7bda4ea1",
+        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l1_config_context_tool_surface_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:1282ac962cf3cae65469926be1d35ffc4e83e86134feac1e868317df57d855b5",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim",
+        "lane_id": "oh_my_pi_p6_0_l2_tool_execution",
+        "target": "@oh-my-pi/pi-coding-agent@16.2.13",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260701_oh_my_pi_p6_0_l2_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:c8dd1db601e4306a231c4b1cee02622000dda2f9de2b528c9348bb032d934b34",
+        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l2_tool_execution_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:40e156dc1eea689435e35c24fe0f8b06009f59cd6d41a650e25ff9d13575f37d",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim",
+        "lane_id": "oh_my_pi_p6_0_l3_command_network_hook",
+        "target": "@oh-my-pi/pi-coding-agent@16.2.13",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260701_oh_my_pi_p6_0_l3_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:731826ccd3147aea979fea1e72305ce2d8ad05cbf048ccdaef57769ccd83536d",
+        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l3_command_network_hook_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:3be7eb2afee08f2d00b71484f096eb7d1c2faaa4d3b351c35b3a974b2262c4b7",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim",
+        "lane_id": "oh_my_pi_p6_0_l4_mcp_browser_resource",
+        "target": "@oh-my-pi/pi-coding-agent@16.2.13",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260702_oh_my_pi_p6_0_l4_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:0516496deb308c0557d06dfa53928628feca8cd6a7afe6a59795c897298105a6",
+        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:c446cd4f0dab1bb33051b3a31e08039e84ca7d9ba730434e600ced40a9ca4475",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim",
+        "lane_id": "oh_my_pi_p6_0_l5_memory_compaction",
+        "target": "@oh-my-pi/pi-coding-agent@16.2.13",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260701_oh_my_pi_p6_0_l5_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:099d8d89639267a22aca216e01d0625fe13786e6217340e2c745330c138ccbc3",
+        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l5_memory_compaction_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:346c2725374f0ece99fd216c81a1a1b358a6cb4029c9620e41a5bec59f3ca5a8",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim",
+        "lane_id": "oh_my_pi_p6_0_l6_tui_projection",
+        "target": "@oh-my-pi/pi-coding-agent@16.2.13",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260701_oh_my_pi_p6_0_l6_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:c926f3557fe67ea70294f10a5b26392195858e7c263c4d2bbf1baf55ebdddd63",
+        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_0_l6_tui_projection_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:eb337971d5226267ac977d21eee1cec5a660da26a218781f06b79b047f948c2c",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim",
+        "lane_id": "oh_my_pi_p6_6_task_job_subagent",
+        "target": "@oh-my-pi/pi-coding-agent@16.2.13",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260703_oh_my_pi_p6_6_task_job_subagent_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:1bce9940b9fffd6c2d91e60190c0aca73bb5af93a6f0ce91a62ceb5413962295",
+        "evidence_manifest": "docs/conformance/support_claims/oh_my_pi_p6_6_task_job_subagent_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:78fa3e7f826b43511237ce5181bf884618918d00fa94979eaec2424250a3ebb6",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "opencode_gpt51mini_north_star_capture_v1_c4_support_claim",
+        "lane_id": "opencode_north_star_capture_v1",
+        "target": "opencode 1.2.17",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260707_north_star_opencode_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:d58570a5202cd93df0531646159694b7c29e23e3f9cb008f75bed72016a37e3f",
+        "evidence_manifest": "docs/conformance/support_claims/opencode_gpt51mini_north_star_capture_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:e792edc033eb69b026fefe568e3d42422da2efa74526b7124d971758e140016a",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim",
+        "lane_id": "pi_p5_l1_cli_config_context_tool_surface",
+        "target": "@mariozechner/pi-coding-agent@0.57.1",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260703_pi_p5_l1_cli_config_context_tool_surface_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:521f5fa479db7cd5807c33f51e35c6b8c34388fbddc1b9b9467959f97afe3c4d",
+        "evidence_manifest": "docs/conformance/support_claims/pi_p5_l1_cli_config_context_tool_surface_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:eb7aee21e9db6564ff049f07c99c3678b46a560a854f2cf252c7cb173d67adc2",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      },
+      {
+        "claim_id": "pi_p5_l2_extension_session_residual_v1_c4_support_claim",
+        "lane_id": "pi_p5_l2_extension_session_residual",
+        "target": "@mariozechner/pi-coding-agent@0.57.1",
+        "target_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "run_id": "20260703_pi_p5_l2_extension_session_residual_capture",
+        "fixture_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "environment_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "runtime_identity": {
+          "status": "unknown",
+          "value": null
+        },
+        "support_claim": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
+        "support_claim_sha256": "sha256:9a05ce743c2ea17da01b6f6247bae8051957f0d1a01d4c82cefdb0183097181a",
+        "evidence_manifest": "docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+        "evidence_manifest_sha256": "sha256:30dd1ea6ce75376c001e32e2b697078b62522ae18c53dbf37d2726b9240f7d61",
+        "validation_result": "structural_pass_identity_fields_unknown_current_source_reverification_pending"
+      }
+    ]
+  },
+  "pull_requests": [
+    {
+      "number": 44,
+      "title": "NS09A: executable replay plan and runtime core",
+      "url": "https://github.com/kmccleary3301/breadboard/pull/44",
+      "state": "OPEN",
+      "draft": true,
+      "mergeable": "CONFLICTING",
+      "base_sha": "e1f5d84e48029ad1854a1ea766b0100bb8cb63b9",
+      "head_sha": "b4e9907adf9922a57c30a37c282aa8077cb10d08",
+      "disposition": "blocked_budget_never_merge_candidate",
+      "accepted_implementation": false
+    },
+    {
+      "number": 45,
+      "title": "NS11A: core public API operation families",
+      "url": "https://github.com/kmccleary3301/breadboard/pull/45",
+      "state": "MERGED",
+      "draft": false,
+      "packet_verified_head_sha": "b412345416912b03f95ea6eaa5dfb678edd79909",
+      "additional_review_head_sha": "8c71c7b4c68e68f453e20104f9c3bf7de9e22c0e",
+      "merge_commit_sha": "8c7788e7b51883eebc99faff05f4422c1168a693",
+      "identity_equivalence": "false_by_tree_sha",
+      "disposition": "merged_packet_with_head_scoped_evidence"
+    }
+  ],
+  "tracker": {
+    "wayfinder_map": {
+      "id": "bb-z4b",
+      "title": "Wayfind North-Star Recovery: Singular Product Path and Replay Core",
+      "status": "closed",
+      "child_count": 15,
+      "open_child_count": 0,
+      "role": "closed planning trace; exact package approval and independent review are preserved in the round-7 handoff"
+    },
+    "execution_campaign": {
+      "id": "bb-06u",
+      "title": "Execute North-Star Closure Campaign v2",
+      "status": "in_progress",
+      "disposition": "preserve history; amend after human graph-rewrite approval"
+    },
+    "blocked_replay_packet": {
+      "id": "bb-06u.11",
+      "title": "NS09A: Executable replay plan and runtime core",
+      "status": "blocked",
+      "label": "governance:blocked-budget",
+      "successor_keys": [
+        "R0",
+        "R1",
+        "R2",
+        "R3A",
+        "R3B",
+        "R3C",
+        "R4",
+        "N9B"
+      ]
+    },
+    "merged_core_api_packet": {
+      "id": "bb-06u.14",
+      "title": "NS11A: Core public API operation families",
+      "status": "closed",
+      "meaning": "packet accepted at its evidence heads; not product certification"
+    },
+    "current_composed_lane_packet": {
+      "id": "bb-06u.13",
+      "title": "NS10: Composed Lane run and exact-scope claim lifecycle",
+      "status": "open",
+      "disposition": "blocked behind replay recovery and reframed as internal evidence work"
+    },
+    "current_lane_claim_api_packet": {
+      "id": "bb-06u.15",
+      "title": "NS11B: Lane and claim API operation families",
+      "status": "open",
+      "disposition": "reframe as internal evidence service or cancel if no second HTTP consumer"
+    }
+  },
+  "packets": {
+    "scope_version": "north-star-recovery-v1-proposed",
+    "tracker_materialization": "pending_exact_G0_campaign_graph_rewrite_approval_and_live_postcheck",
+    "pre_G0_materialization_exception": "No packet is selectable. G0 uses legacy blocked bead bb-06u.11 only as the bootstrap control object; its approved action atomically materializes all 21 new packet issues.",
+    "planned_issue_contract": "docs/plans/north_star_recovery/LOOP_SPEC.yaml#bootstrap_policy.G0.pre_literal_requirements",
+    "postcheck_issue_map_field": "packet_issue_map",
+    "items": [
+      {
+        "key": "G0",
+        "bead_id": null,
+        "depends_on": [],
+        "state": "awaiting_G0_preflight_and_human_gates"
+      },
+      {
+        "key": "G1",
+        "bead_id": null,
+        "depends_on": [
+          "G0",
+          "G2"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "G2",
+        "bead_id": null,
+        "depends_on": [
+          "G0"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "R0",
+        "bead_id": null,
+        "depends_on": [
+          "G2"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "R1",
+        "bead_id": null,
+        "depends_on": [
+          "R0"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "R2",
+        "bead_id": null,
+        "depends_on": [
+          "R1"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "V1",
+        "bead_id": null,
+        "depends_on": [
+          "G2"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "P0",
+        "bead_id": null,
+        "depends_on": [
+          "G2"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "P1",
+        "bead_id": null,
+        "depends_on": [
+          "P0",
+          "R1"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "R3A",
+        "bead_id": null,
+        "depends_on": [
+          "R2",
+          "P1",
+          "V1"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "R3B",
+        "bead_id": null,
+        "depends_on": [
+          "R2"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "R3C",
+        "bead_id": null,
+        "depends_on": [
+          "R2"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "R4",
+        "bead_id": null,
+        "depends_on": [
+          "R3A",
+          "R3B",
+          "R3C",
+          "V1"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "N9B",
+        "bead_id": null,
+        "depends_on": [
+          "R4",
+          "P1"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "N10",
+        "bead_id": null,
+        "depends_on": [
+          "N9B"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "S1",
+        "bead_id": null,
+        "depends_on": [
+          "G1",
+          "N10"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "A1",
+        "bead_id": null,
+        "depends_on": [
+          "S1"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "C1",
+        "bead_id": null,
+        "depends_on": [
+          "A1"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "O1",
+        "bead_id": null,
+        "depends_on": [
+          "C1"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "O2",
+        "bead_id": null,
+        "depends_on": [
+          "N10",
+          "C1"
+        ],
+        "state": "proposed_blocked_dependency"
+      },
+      {
+        "key": "F1",
+        "bead_id": null,
+        "depends_on": [
+          "O1",
+          "O2"
+        ],
+        "state": "proposed_blocked_dependency"
+      }
+    ]
+  },
+  "packet_scores": {
+    "ns11a": {
+      "accounting_score": 100,
+      "accounting_max": 100,
+      "promoted_product_score": null,
+      "score_promoted": false,
+      "meaning": "packet stage accounting only"
+    },
+    "product_readiness_score": null,
+    "policy": "No cumulative numeric readiness score is authoritative."
+  },
+  "conflicts": [
+    {
+      "id": "product_catalog_boundary",
+      "severity": "blocking",
+      "left": "Direction Charter says lanes, claims, catalogs, ledgers, and regeneration are internal.",
+      "right": "The current candidate public catalog and frozen surface classify all 45 operations as public.",
+      "resolution_packet": "G1"
+    },
+    {
+      "id": "route_defaults",
+      "severity": "blocking",
+      "left": "The target is a default product API with E4 opt-in.",
+      "right": "The current product API defaults off and E4 defaults on.",
+      "resolution_packets": [
+        "G1",
+        "A1"
+      ]
+    },
+    {
+      "id": "ns11a_identity_split",
+      "severity": "material",
+      "left": "Packet evidence is tied to b412345416912b03f95ea6eaa5dfb678edd79909 and a distinct additional review head.",
+      "right": "Current remote main authority is 3fe342b49a760b8ae95347bbb4394da71deb2609; the PR 45 merge, packet evidence, review head, and current source trees differ.",
+      "resolution": "Keep evidence packet-scoped until current-source verification is run."
+    },
+    {
+      "id": "ns11a_score_semantics",
+      "severity": "material",
+      "left": "BB_NS11A_SCORECARD.json reports 100/100 complete.",
+      "right": "P4 axis smoke says smoke_only_no_score and score_promoted=false.",
+      "resolution": "Treat 100/100 as packet accounting and no product score as promoted."
+    },
+    {
+      "id": "historical_score_status",
+      "severity": "material",
+      "left": "Historical Phase 15-19 reports contain 1000/1000 or 1065/1000 accounting.",
+      "right": "Later stale-pin evidence and current claim inventory do not support a current universal completion claim.",
+      "resolution": "Retain historical reports; use current product, claim, and packet facts separately."
+    },
+    {
+      "id": "current_main_missing_accepted_product_spine",
+      "severity": "blocking",
+      "left": "Historical PR45 is recorded merged and packet-scoped evidence exists for the product spine and candidate public catalog.",
+      "right": "Current GitHub main 3fe342b49a760b8ae95347bbb4394da71deb2609 does not contain breadboard/product, contracts/public, or agentic_coder_prototype/api/public.",
+      "resolution": "Keep current main as source authority. G0 must bind the clean planning base and approved salvage/retirement actions; G1 then restores only the approved product/evidence split rather than treating historical heads as current."
+    },
+    {
+      "id": "e4_inventory_source_drift",
+      "severity": "material",
+      "left": "The round-7 pre-refresh STATE was derived from inventory sha256:b67bbba32ba12a9f930bd8ec2b3098b5f1edf6116a0c9ac06694323552ac09e1 with 22 mixed-status rows.",
+      "right": "Current GitHub main contains sha256:5d2d9496a51d6e70e51e6ff8880689fc1a4347362a6ae526a4345d481212b011 with 21 accepted rows (12 target-support, 9 non-target accounting).",
+      "resolution": "This refresh materializes the current inventory structurally, leaves active exact-scope claim count unknown, and requires current-source reverification before any claim can become active."
+    }
+  ],
+  "blockers": [
+    {
+      "id": "blocked_replay_pr_open",
+      "blocks": [
+        "R0",
+        "R1",
+        "R2",
+        "R3A",
+        "R3B",
+        "R3C",
+        "R4",
+        "N9B"
+      ],
+      "unblock": "Human approves G0 PR/tracker retirement and successor amendment."
+    },
+    {
+      "id": "packet_control_missing",
+      "blocks": [
+        "R0",
+        "R1",
+        "R2",
+        "V1",
+        "P0",
+        "P1",
+        "R3A",
+        "R3B",
+        "R3C",
+        "R4"
+      ],
+      "unblock": "G2 packet schema, checker, test derivation, and negative tests pass."
+    },
+    {
+      "id": "provider_target_preflight_not_run",
+      "blocks": [
+        "N9B"
+      ],
+      "unblock": "Named credentials, routes/models, runtime, redaction, and spend are approved and preflighted."
+    },
+    {
+      "id": "tracker_graph_not_amended",
+      "blocks": [
+        "campaign_closure"
+      ],
+      "unblock": "Human approves the exact Beads dependency and disposition update."
+    }
+  ],
+  "next_frontier": [
+    {
+      "gate": "G0_preflight_and_human_gates",
+      "state": "awaiting_prevalidation_then_blocked_human",
+      "reason": "Round 7 approved the exact planning package and it is materialized on a clean branch rooted at current GitHub main. G0 still requires Phase 20, review-record, tracker-snapshot, packet-record, clean-worktree, source-conflict, and state-handoff prevalidation, then separate granted tracker_supersession, packet_closure, and campaign_graph_rewrite approvals."
+    }
+  ],
+  "approvals": {
+    "planning_package_creation": "approved",
+    "managed_pr_preparation": "approved",
+    "planning_package_round_7_review": "approved",
+    "tracker_supersession": "pending_for_G0_exact_actions",
+    "campaign_graph_rewrite": "pending_for_exact_G0_titles_dependencies_and_planning_head_tree",
+    "packet_closure": "pending_per_packet",
+    "governance_schema": "pending_for_exact_diff",
+    "architecture_change": "pending_for_exact_diff",
+    "public_boundary": "pending_for_exact_diff",
+    "security_boundary": "pending_for_exact_diff",
+    "artifact_publication": "pending_for_exact_diff",
+    "external_spend": "pending_for_named_target_and_expiry",
+    "scope_budget_amendment": "pending_on_request",
+    "merge": "pending_per_packet",
+    "release": "pending_for_claim_publication_package_release_or_final_closure"
+  },
+  "completion": {
+    "status": "not_started",
+    "product_readiness": "not_ready",
+    "inventory_accepted_target_support_rows": 11,
+    "inventory_accepted_non_target_accounting_rows": 8,
+    "recovery_claim": {
+      "status": "not_generated",
+      "record_ref": null,
+      "record_sha256": null,
+      "claim_id": null,
+      "scope": null,
+      "input_sha256": null,
+      "environment_sha256": null,
+      "execution_sha256": null,
+      "comparison_sha256": null,
+      "support_claim_sha256": null,
+      "reverification_sha256": null
+    },
+    "recovery_packets_closed": [],
+    "terminal_reviews": [],
+    "outsider_product_falsifier": "not_run",
+    "outsider_evidence_falsifier": "not_run"
+  }
+}
