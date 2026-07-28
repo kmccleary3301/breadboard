@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-28T04:35:49Z",
+  "generated_at_utc": "2026-07-28T05:14:52Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "round_14_exact_hash_review_pending_after_round_13_findings_resolved",
+    "status": "round_16_exact_hash_review_pending_after_round_15_findings_resolved",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,11 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "pending_round_15_exact_hash_review",
-      "round": 15,
+      "status": "pending_round_16_exact_hash_review",
+      "round": 16,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_14_request_changes_resolved_round_15_pending",
+      "corrections_status": "round_15_request_changes_resolved_round_16_pending",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -193,6 +193,27 @@
         "resolution": "Anchored the immutable first-action preflight; made every protected command, G0 issue closure, and Beads push an atomic no-replace runner-owned operation; bound canonical argv, fixed snapshots, writer/time/output evidence, exact result schemas, and before/after transition semantics into postcheck and G2; admitted the exact non-applied attempt-1 recovery case; canonicalized all dynamic authority paths before load; and enforced independent reviewer role/run identities."
       },
       "round_15": {
+        "status": "request_changes_resolved_pending_round_16",
+        "reviewed_state_input_sha256": "sha256:e7ec74e143b40b15b8ad6ffc37e90dc1c0c39b7afc16db49714632058c0f848c",
+        "reviewed_authored_artifact_hashes": {
+          "ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "EXECUTION_PLAN.md": "sha256:0df64f85ab58004e365213cc4598509b77a8ebd4417b320427add1a3e173cec8",
+          "LOOP_SPEC.yaml": "sha256:c33b9d67d289e7a76cc8e8444bddec36a550e87a9cf796275b61333cacfc9da1",
+          "WORKER_CONTRACTS.md": "sha256:1af224c64e896e92730a690b3e72460784bff3e67fa14312f031d7f0be8d31e0",
+          "GOAL_PROMPT.txt": "sha256:ed0ee2e858a947589b85024a701312f383dfdd08c2b6b9d4448d7a0ab4b51f46"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round15/Round15StateReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round15/Round15BoundaryReview.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:466ff831dfada5dd7ffca2efac7a03f8066f73e8c1d113901f59d0c96298b57c",
+          "sha256:c381c339730de108fbe49a53a8fb091cc21a34cddbcb639f9bcb752f51ddf2be"
+        ],
+        "blocking_findings": 9,
+        "resolution": "Fixed the non-applied recovery NameError; made final preflight validation and anchor/ledger genesis one byte-stable operation; moved approval/source/worktree/graph checks inside mutation and closure runners; anchored all critical I/O to no-follow root descriptors; ledger-bound artifact device/inode/digests and run identities; sealed closure and terminal results; and replaced weak Dolt status evidence with authenticated origin fetch plus equal local/remote revision proof."
+      },
+      "round_16": {
         "status": "pending_exact_hash_review",
         "reviewed_state_input_sha256": null,
         "reviewer_verdict_refs": [],
@@ -208,26 +229,26 @@
       },
       {
         "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
-        "bytes": 44766,
-        "sha256": "sha256:0df64f85ab58004e365213cc4598509b77a8ebd4417b320427add1a3e173cec8",
+        "bytes": 43508,
+        "sha256": "sha256:0a39bfcd9a1b5e6be96fdb12e8eaae941041111cfa58c1925e2d19f33cfcd09f",
         "owner": "packet DAG, scopes, budgets, acceptance, approvals"
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 300939,
-        "sha256": "sha256:c33b9d67d289e7a76cc8e8444bddec36a550e87a9cf796275b61333cacfc9da1",
+        "bytes": 427429,
+        "sha256": "sha256:b1230118f2cda15eab42cec323857b91f2aad9d1cc9378e5e7dfd6617a5e7ee4",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
         "path": "docs/plans/north_star_recovery/WORKER_CONTRACTS.md",
-        "bytes": 26354,
-        "sha256": "sha256:1af224c64e896e92730a690b3e72460784bff3e67fa14312f031d7f0be8d31e0",
+        "bytes": 26278,
+        "sha256": "sha256:9cce7bb6881d1576d1a6fd879c8f63c58bdb606509123799d1cdea3376155e03",
         "owner": "worker permissions, assignments, result and review contracts"
       },
       {
         "path": "docs/plans/north_star_recovery/GOAL_PROMPT.txt",
-        "bytes": 13670,
-        "sha256": "sha256:ed0ee2e858a947589b85024a701312f383dfdd08c2b6b9d4448d7a0ab4b51f46",
+        "bytes": 13501,
+        "sha256": "sha256:6593f14f7473d8ec87a56713b0c9b00ce20ab5e017a6cc72e5e0192aecbed045",
         "owner": "fresh-session execution entry point"
       },
       {
@@ -240,10 +261,10 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_round_15_exact_hash_review",
+    "status": "pending_round_16_exact_hash_review",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round15/state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round16/state_handoff.json",
     "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
@@ -1124,9 +1145,9 @@
   ],
   "next_frontier": [
     {
-      "gate": "planning_package_round_15_exact_hash_review",
+      "gate": "planning_package_round_16_exact_hash_review",
       "state": "blocked_review",
-      "reason": "Round 14 found mutable preflight authority, non-applied recovery unsatisfiability, caller-run mutation/outcome bypasses, weak G2 action-result semantics, aliasable dynamic authorities, unenforced reviewer independence, and preseedable closure/push evidence. The repairs are materialized in the current six-artifact candidate; two fresh exact-hash reviewers must approve it before the post-review STATE handoff commit and G0 preflight."
+      "reason": "Round 15 found a non-applied recovery NameError, stale generated status, preflight and per-command TOCTOU gaps, replaceable post-command evidence, ancestor symlink races, stale closure authority, and unproved Dolt remote synchronization. The round-16 candidate installs byte-stable finalization, root-FD no-follow I/O, an inode/digest/run-identity ledger, runner-owned live checks, result seals, and independent remote revision proof. Two fresh exact-hash reviewers must approve all six artifacts before G0 preflight."
     }
   ],
   "approvals": {
@@ -1152,7 +1173,8 @@
     "planning_package_round_12_review": "request_changes_resolved_pending_round_13",
     "planning_package_round_13_review": "request_changes_resolved_pending_round_14",
     "planning_package_round_14_review": "request_changes_resolved_pending_round_15",
-    "planning_package_round_15_review": "pending"
+    "planning_package_round_15_review": "request_changes_resolved_pending_round_16",
+    "planning_package_round_16_review": "pending"
   },
   "completion": {
     "status": "not_started",
