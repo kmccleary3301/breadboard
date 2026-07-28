@@ -31,6 +31,7 @@ Start-up
 - Confirm the current branch, source authority, base ref, merge base, open PRs, tracker states, and required external resources.
 - Verify every planning artifact exists and record its SHA-256.
 - If `STATE.json` records the planning-package review as pending or request-changes, run two fresh-session exact-hash independent lenses after the routing preflight. Resolve every P0-P2 finding, rerun both lenses on all six artifacts, and refresh STATE through the reviewed-predecessor hash policy before selecting G0.
+- While that review is active, the generated predecessor `STATE.json` may be the sole dirty file and is not a G0 execution root. After both lenses approve, render the refreshed STATE and exact handoff manifest, commit only STATE on the reviewed authored anchor, record the resulting head/tree, and require an empty status before selecting G0.
 - Refresh STATE.json through the authority rules in LOOP_SPEC.yaml. Do not edit it as authored truth.
 - Treat goal mode as campaign state: keep the goal active while any packet is open or blocked; complete it only after all packets are terminal, all completion gates pass, and the human approves final closure.
 - Inspect the current ready frontier and choose only a dependency-ready packet.

@@ -709,6 +709,8 @@ transitions:
       - selected_packet_is_G0_and_packet_kind_is_external_governance
       - G0_post_review_packet_closure_approval_names_only_materialized_G0_packet_issue_closure
       - G0_post_review_packet_closure_approval_binds_issue_map_pre_post_salvage_review_planning_head_tree_base_merge_base_scope_and_future_expiry
+      - G0_post_review_closure_preflight_record_path_and_sha256_are_dereferenced_and_exact_key_validation_command_passes
+      - G0_post_review_packet_closure_approval_has_nonfuture_grant_and_at_least_900_seconds_remaining_immediately_before_closure
       - G0_postcheck_and_independent_review_are_current_approved_and_hash_bound
       - packet_issue_map_contains_one_unique_open_G0_issue_with_exact_title_labels_and_dependencies
       - live_PR_44_is_closed_unmerged_and_legacy_bead_is_superseded
@@ -716,6 +718,7 @@ transitions:
     actions:
       - close_only_the_materialized_G0_packet_issue
       - record_G0_packet_issue_closure_receipt
+      - run_G0_packet_closure_receipt_validation_command_against_live_Beads
       - render_state_from_authorities
       - push_beads_remote
   - from: verified
@@ -1558,7 +1561,7 @@ bootstrap_policy:
       source_pr_number: 44
       blocked_bead_id: bb-06u.11
       blocked_bead_title: "NS09A: Executable replay plan and runtime core"
-      planning_review_round: 9
+      planning_review_round: 10
       allowed_paths: [docs/plans/north_star_recovery/g0_replay_salvage_record.v1.json]
       successor_packet_keys: [R0, R1, R2, R3A, R3B, R3C, R4, N9B]
       planned_packet_issue_titles: {G0: "G0 Retire blocked replay implementation", G1: "G1 Split product and evidence surfaces", G2: "G2 Install packet-control enforcement", R0: "R0 Replay records and admission", R1: "R1 Worker protocol and minimal isolation", R2: "R2 Workspace, publication, and redaction", V1: "V1 Correct visibility semantics", P0: "P0 Lock provider behavior", P1: "P1 Extract provider runtime seams", R3A: "R3A Provider replay adapter", R3B: "R3B Tool replay adapter", R3C: "R3C Host replay adapter", R4: "R4 Replay coordinator", N9B: "N9B Production deadlines and provider conformance", N10: "N10 Internal composed lane and claim lifecycle", S1: "S1 Extract SessionRunner seams", A1: "A1 Stage the product API candidate", C1: "C1 Cut over product clients and activate the default", O1: "O1 Product outsider falsifier", O2: "O2 Evidence outsider falsifier", F1: "F1 Final candidate audit"}
@@ -1609,18 +1612,30 @@ bootstrap_policy:
     minimum_remaining_approval_seconds_at_action_boundary: 900
     pre_action_approval_freshness_validation_command: >-
       python3 -c "import datetime,json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); now=datetime.datetime.now(datetime.timezone.utc); parse=lambda s:datetime.datetime.fromisoformat(s.replace('Z','+00:00')); records=d['approval_records']+[d['campaign_graph_rewrite_approval_record']]; assert all(parse(a['granted_at_utc'])<=now and parse(a['expires_at_utc_or_terminal_event'])-now>=datetime.timedelta(seconds=900) for a in records)" RECORD_PATH
-    pre_action_required_commands: [pre_action_approval_freshness_validation_command, current_source_prevalidation_command, clean_execution_worktree_validation_command, external_state_prevalidation_command, campaign_graph_snapshot_prevalidation_command]
-    pre_action_order: run every pre_action_required_command immediately before the first GitHub or Beads mutation; any nonzero result or less than 900 seconds remaining approval life blocks all protected actions
+    initial_action_required_commands: [pre_action_approval_freshness_validation_command, current_source_prevalidation_command, clean_execution_worktree_validation_command, external_state_prevalidation_command, campaign_graph_snapshot_prevalidation_command]
+    per_mutation_required_commands: [pre_action_approval_freshness_validation_command, current_source_prevalidation_command, clean_execution_worktree_validation_command, protected_mutation_sequence_validation_command]
+    protected_mutation_sequence_validation_command: >-
+      python3 -c "import datetime,json,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); nxt=sys.argv[2]; done=json.loads(sys.argv[3]); seq=['close_pr_44_without_merge','supersede_bb-06u.11','materialize_packet_issue_map_and_dependency_graph']; assert done==seq[:len(done)] and len(done)<len(seq) and nxt==seq[len(done)]; now=datetime.datetime.now(datetime.timezone.utc); parse=lambda s:datetime.datetime.fromisoformat(s.replace('Z','+00:00')); approvals=d['approval_records']+[d['campaign_graph_rewrite_approval_record']]; assert all(parse(a['granted_at_utc'])<=now and parse(a['expires_at_utc_or_terminal_event'])-now>=datetime.timedelta(seconds=900) for a in approvals); run=lambda a:subprocess.check_output(a,text=True).strip(); assert run(['gh','api','repos/kmccleary3301/breadboard/commits/main','--jq','.sha'])==d['base_sha']==run(['git','rev-parse',d['base_ref']]) and run(['git','merge-base','HEAD',d['base_ref']])==d['merge_base_sha'] and run(['git','rev-parse','HEAD'])==d['planning_head_sha'] and run(['git','rev-parse','HEAD^{tree}'])==d['planning_tree_sha']" RECORD_PATH NEXT_ACTION COMPLETED_ACTIONS_JSON
+    per_mutation_order: run every initial_action_required_command before the first protected mutation, then run every per_mutation_required_command immediately before each GitHub or Beads mutation and before every individual issue-create or dependency-edge command in graph materialization; any nonzero result, identity drift, dirty worktree, sequence mismatch, or less than 900 seconds remaining blocks that mutation and records partial state
+    partial_graph_subcommand_guard: before every issue-create or dependency-edge command, live planned-key issues remain a duplicate-free subset of the approved key map; every existing title and exact two-label set matches; every existing edge is a unique approved edge; every unrelated canonical issue digest matches the pre-action snapshot
     post_review_packet_closure_approval:
+      closure_preflight_record: ../docs_tmp/north_star_recovery/bootstrap/G0_closure_preflight.json
+      approval_record: ../docs_tmp/north_star_recovery/bootstrap/G0_packet_closure_approval.json
+      closure_receipt: ../docs_tmp/north_star_recovery/bootstrap/G0_packet_closure_receipt.json
       required_after: G0 postcheck and independent exact-head salvage review pass
-      required_fields: [schema_version, approval_id, gate_id, protected_action, decision, packet_key, packet_issue_id, packet_issue_map_sha256, pre_record_sha256, post_record_sha256, salvage_artifact_sha256, independent_review_sha256, base_sha, merge_base_sha, planning_head_sha, planning_tree_sha, scope_version, granted_by, granted_at_utc, expires_at_utc_or_terminal_event]
+      closure_preflight_required_fields: [schema_version, packet_key, approval_record_path, approval_record_sha256, pre_record_path, pre_record_sha256, post_record_path, post_record_sha256, salvage_artifact_path, salvage_artifact_sha256, independent_review_path, independent_review_sha256, packet_issue_map_sha256, packet_issue_id, base_sha, merge_base_sha, planning_head_sha, planning_tree_sha, scope_version, generated_at_utc]
+      approval_required_fields: [schema_version, approval_id, gate_id, protected_action, decision, packet_key, packet_issue_id, packet_issue_map_sha256, pre_record_sha256, post_record_sha256, salvage_artifact_sha256, independent_review_sha256, base_sha, merge_base_sha, planning_head_sha, planning_tree_sha, scope_version, granted_by, granted_at_utc, expires_at_utc_or_terminal_event]
       literal_requirements:
-        schema_version: bb.north_star_recovery.approval.v1
+        closure_preflight_schema_version: bb.north_star_recovery.g0_closure_preflight.v1
+        approval_schema_version: bb.north_star_recovery.approval.v1
         gate_id: packet_closure
         protected_action: close_only_materialized_G0_packet_issue_after_postcheck_and_exact_review
         decision: granted
         packet_key: G0
-      validation: exact_key_set_nonfuture_grant_future_expiry_minimum_900_seconds_remaining_and_all_issue_map_pre_post_salvage_review_source_scope_hashes_match_current_authorities
+      validation_command: >-
+        python3 -c "import datetime,hashlib,json,pathlib,subprocess,sys; c=json.load(open(sys.argv[1],encoding='utf-8')); ck={'schema_version','packet_key','approval_record_path','approval_record_sha256','pre_record_path','pre_record_sha256','post_record_path','post_record_sha256','salvage_artifact_path','salvage_artifact_sha256','independent_review_path','independent_review_sha256','packet_issue_map_sha256','packet_issue_id','base_sha','merge_base_sha','planning_head_sha','planning_tree_sha','scope_version','generated_at_utc'}; assert set(c)==ck and c['schema_version']=='bb.north_star_recovery.g0_closure_preflight.v1' and c['packet_key']=='G0'; digest=lambda p:'sha256:'+hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest(); pairs=[('approval_record_path','approval_record_sha256'),('pre_record_path','pre_record_sha256'),('post_record_path','post_record_sha256'),('salvage_artifact_path','salvage_artifact_sha256'),('independent_review_path','independent_review_sha256')]; assert all(digest(c[p])==c[h] for p,h in pairs); a=json.load(open(c['approval_record_path'],encoding='utf-8')); ak={'schema_version','approval_id','gate_id','protected_action','decision','packet_key','packet_issue_id','packet_issue_map_sha256','pre_record_sha256','post_record_sha256','salvage_artifact_sha256','independent_review_sha256','base_sha','merge_base_sha','planning_head_sha','planning_tree_sha','scope_version','granted_by','granted_at_utc','expires_at_utc_or_terminal_event'}; assert set(a)==ak and a['schema_version']=='bb.north_star_recovery.approval.v1' and a['gate_id']=='packet_closure' and a['protected_action']=='close_only_materialized_G0_packet_issue_after_postcheck_and_exact_review' and a['decision']=='granted' and a['packet_key']=='G0' and all(a[k]==c[k] for k in ('packet_issue_id','packet_issue_map_sha256','pre_record_sha256','post_record_sha256','salvage_artifact_sha256','independent_review_sha256','base_sha','merge_base_sha','planning_head_sha','planning_tree_sha','scope_version')); now=datetime.datetime.now(datetime.timezone.utc); parse=lambda s:datetime.datetime.fromisoformat(s.replace('Z','+00:00')); assert parse(a['granted_at_utc'])<=now and parse(a['expires_at_utc_or_terminal_event'])-now>=datetime.timedelta(seconds=900); post=json.load(open(c['post_record_path'],encoding='utf-8')); canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); assert canon(post['packet_issue_map'])==c['packet_issue_map_sha256'] and post['packet_issue_map']['G0']==c['packet_issue_id']; review=json.load(open(c['independent_review_path'],encoding='utf-8')); assert review['verdict']=='approve'; run=lambda x:subprocess.check_output(x,text=True).strip(); assert run(['gh','api','repos/kmccleary3301/breadboard/commits/main','--jq','.sha'])==c['base_sha']==run(['git','rev-parse','refs/remotes/origin/main']) and run(['git','merge-base','HEAD','refs/remotes/origin/main'])==c['merge_base_sha'] and run(['git','rev-parse','HEAD'])==c['planning_head_sha'] and run(['git','rev-parse','HEAD^{tree}'])==c['planning_tree_sha']; issue=json.loads(run(['bd','show',c['packet_issue_id'],'--json']))[0]; assert issue['status'] in {'open','in_progress','blocked'} and issue['title']=='G0 Retire blocked replay implementation' and len(issue.get('labels',[]))==2 and set(issue['labels'])=={'north-star-recovery','packet:G0'}" CLOSURE_PREFLIGHT_RECORD_PATH
+      closure_receipt_validation_command: >-
+        python3 -c "import hashlib,json,pathlib,subprocess,sys; c=json.load(open(sys.argv[1],encoding='utf-8')); r=json.load(open(sys.argv[2],encoding='utf-8')); a=json.load(open(c['approval_record_path'],encoding='utf-8')); keys={'schema_version','packet_key','packet_issue_id','action','actor','approval_id','approval_record_sha256','completed_at_utc'}; assert set(r)==keys and r['schema_version']=='bb.north_star_recovery.g0_packet_closure_receipt.v1' and r['packet_key']=='G0' and r['packet_issue_id']==c['packet_issue_id'] and r['action']=='closed_materialized_G0_packet_issue' and r['approval_id']==a['approval_id'] and r['approval_record_sha256']==c['approval_record_sha256']; issue=json.loads(subprocess.check_output(['bd','show',c['packet_issue_id'],'--json'],text=True))[0]; assert issue['status']=='closed' and 'G0' in issue.get('close_reason','')" CLOSURE_PREFLIGHT_RECORD_PATH CLOSURE_RECEIPT_PATH
     post_record: ../docs_tmp/north_star_recovery/bootstrap/G0_postcheck.json
     post_required_fields:
       - schema_version
@@ -1923,6 +1938,18 @@ state_materialization:
     frontier_guard: predecessor_field_matches_reviewed_pre_refresh_hash_and_external_manifest_matches_current_state
     refreshed_state_must_record_predecessor_hash: true
     current_state_self_hash_location: external_run_or_handoff_manifest
+    exact_review_candidate_worktree_exception:
+      allowed_only_while_frontier: planning_package_exact_hash_review
+      allowed_dirty_paths: [docs/plans/north_star_recovery/STATE.json]
+      meaning: the generated predecessor STATE is the exact review input and is not yet a G0 execution root
+    post_review_materialization_sequence:
+      - require_two_approve_verdicts_bound_to_the_five_authored_hashes_and_reviewed_predecessor_STATE_hash
+      - render_refreshed_STATE_from_current_authorities_with_the_reviewed_predecessor_hash
+      - write_the_exact_state_handoff_manifest_and_verify_its_current_STATE_digest_and_reviewer_digests
+      - commit_only_docs_plans_north_star_recovery_STATE_json_on_the_reviewed_authored_anchor
+      - record_the_resulting_clean_planning_head_tree_base_and_merge_base_in_G0_preflight
+      - require_empty_git_status_before_G0_selection_or_any_G0_preflight_command
+    prohibition: the STATE-only review-candidate exception never satisfies G0 clean_execution_worktree_validation_command and expires when the exact review frontier closes
   sources:
     - beads
     - github
