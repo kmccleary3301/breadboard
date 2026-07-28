@@ -4,7 +4,7 @@ status: approved_planning_direction
 title: North-Star Recovery OMP Loop
 owner: human
 promotion_owner: supervisor
-repo_root: breadboard_ns11a_api_20260724
+repo_root: breadboard_north_star_recovery_20260725
 base_ref: origin/main
 sync_before_spawn: true
 model_routing_preflight:
@@ -279,6 +279,24 @@ transitions:
       - no_overlapping_writer_scope
       - human_gate_requirements_classified
       - implementation_owner_route_preflight_passed_or_no_spawn_needed
+  - from: select_frontier
+    event: g0_bootstrap_selected
+    to: preflight
+    guards:
+      - selected_packet_is_G0_and_rendered_next_frontier_is_G0_preflight_and_human_gates
+      - legacy_bootstrap_control_bead_bb_06u_11_is_blocked_and_exact_title_matches
+      - no_materialized_G0_packet_issue_exists
+      - no_preexisting_north_star_recovery_or_planned_packet_key_label_exists
+      - round_current_exact_hash_planning_reviews_approved
+      - implementation_owner_route_preflight_passed_or_no_spawn_needed
+      - G0_dependencies_are_empty
+      - G0_bootstrap_scope_budget_paths_and_human_gates_match_bootstrap_policy
+      - current_remote_main_and_clean_execution_root_are_recorded
+      - current_state_conflicts_are_materialized_without_selecting_historical_source
+    actions:
+      - initialize_closed_G0_bootstrap_preflight_record
+      - retain_legacy_blocked_bead_as_bootstrap_control_only
+      - do_not_select_any_code_or_contract_packet
   - from: preflight
     event: preflight_passed
     to: implementing
@@ -304,6 +322,25 @@ transitions:
       - proposed_action_or_change_is_exact_enough_to_decide
       - common_preflight_record_matches_current_packet_base_merge_base_scope_budget_paths_test_plan_behavior_worktree_checker_or_bootstrap_and_freeze
       - scope_budget_amendment_approval_current_if_scope_or_budget_changed_since_prior_scope_version
+  - from: preimplementation_approval
+    event: bootstrap_approval_granted_for_exact_scope
+    to: implementing
+    guards:
+      - selected_packet_is_G0_or_G2
+      - selected_bootstrap_closed_preflight_record_passes_every_required_command
+      - bootstrap_approval_gate_ids_exactly_equal_packet_human_gate_map
+      - every_bootstrap_approval_decision_is_granted
+      - every_bootstrap_approval_protected_action_matches_the_closed_record_for_its_gate
+      - G0_direct_approvals_bind_both_source_PR_head_and_planning_head_tree_or_selected_packet_is_G2
+      - campaign_graph_approval_binds_exact_titles_dependencies_snapshot_planning_head_tree_and_scope_or_selected_packet_is_G2
+      - bootstrap_approval_freshness_and_minimum_remaining_expiry_margin_pass_immediately_before_first_protected_action
+      - current_source_external_authority_snapshot_and_clean_worktree_revalidated_immediately_before_first_protected_action
+      - common_preflight_record_matches_current_packet_base_merge_base_scope_budget_paths_test_plan_behavior_worktree_bootstrap_and_freeze
+      - phase20_freeze_preflight_passed
+    actions:
+      - consume_bootstrap_approval_records_only_for_their_named_G0_or_G2_actions
+      - record_immediate_pre_action_validation_receipt
+      - begin_bootstrap_action_attempt
   - from: preimplementation_approval
     event: approval_granted_for_exact_scope
     to: implementing
@@ -376,6 +413,19 @@ transitions:
     guards:
       - implementation_budget_record_matches_current_packet_scope_base_head_if_present_merge_base_and_environment
       - implementation_attempt_counter_is_at_limit
+  - from: implementing
+    event: external_governance_action_failed_or_partially_mutated
+    to: blocked_external
+    guards:
+      - selected_packet_is_G0_and_packet_kind_is_external_governance
+      - typed_failure_and_partial_receipts_match_current_source_scope_action_attempt_and_exact_granted_bootstrap_approvals
+      - external_governance_attempt_counter_is_one_and_at_packet_limit
+      - completed_and_remaining_mutations_are_enumerated_from_live_authorities
+      - no_success_verification_closure_or_promotion_claimed
+      - no_further_external_mutation_without_a_new_exact_recovery_approval_request
+    actions:
+      - render_state_from_authorities
+      - push_beads_remote
   - from: local_gates
     event: required_local_tiers_passed
     to: review_requested
@@ -653,10 +703,26 @@ transitions:
       - render_state_from_authorities
       - push_beads_remote
   - from: verified
+    event: g0_post_review_packet_closure_approved
+    to: closed
+    guards:
+      - selected_packet_is_G0_and_packet_kind_is_external_governance
+      - G0_post_review_packet_closure_approval_names_only_materialized_G0_packet_issue_closure
+      - G0_post_review_packet_closure_approval_binds_issue_map_pre_post_salvage_review_planning_head_tree_base_merge_base_scope_and_future_expiry
+      - G0_postcheck_and_independent_review_are_current_approved_and_hash_bound
+      - packet_issue_map_contains_one_unique_open_G0_issue_with_exact_title_labels_and_dependencies
+      - live_PR_44_is_closed_unmerged_and_legacy_bead_is_superseded
+      - no_identity_changed_since_post_review_packet_closure_approval
+    actions:
+      - close_only_the_materialized_G0_packet_issue
+      - record_G0_packet_issue_closure_receipt
+      - render_state_from_authorities
+      - push_beads_remote
+  - from: verified
     event: human_closure_approved
     to: closed
     guards:
-      - packet_kind_is_code_or_contract_or_external_governance
+      - packet_kind_is_code_or_contract
       - packet_closure_approval_gate_id_and_protected_actions_are_exact
       - closure_approval_matches_packet_scope_base_head_merge_base_environment_and_expiry
       - closure_approval_decision_is_granted
@@ -925,6 +991,31 @@ transitions:
       - requested_amendment_names_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
       - requested_gate_ids_exactly_equal_dynamic_human_gate_map
   - from: blocked_budget
+    event: scope_or_budget_expansion_requested
+    to: scope_budget_approval
+    guards:
+      - requested_amendment_names_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
+      - requested_gate_ids_exactly_equal_dynamic_human_gate_map
+  - from: blocked_dependency
+    event: scope_or_budget_expansion_requested
+    to: scope_budget_approval
+    guards:
+      - requested_amendment_names_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
+      - requested_gate_ids_exactly_equal_dynamic_human_gate_map
+  - from: blocked_environment
+    event: scope_or_budget_expansion_requested
+    to: scope_budget_approval
+    guards:
+      - requested_amendment_names_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
+      - requested_gate_ids_exactly_equal_dynamic_human_gate_map
+  - from: blocked_external
+    event: scope_or_budget_expansion_requested
+    to: scope_budget_approval
+    guards:
+      - requested_amendment_names_packet_old_and_new_scope_old_and_new_budget_base_merge_base_reason_and_expiry
+      - requested_gate_ids_exactly_equal_dynamic_human_gate_map
+      - G0_failed_action_attempt_record_is_current_or_selected_packet_is_not_G0
+  - from: blocked_review
     event: scope_or_budget_expansion_requested
     to: scope_budget_approval
     guards:
@@ -1467,7 +1558,7 @@ bootstrap_policy:
       source_pr_number: 44
       blocked_bead_id: bb-06u.11
       blocked_bead_title: "NS09A: Executable replay plan and runtime core"
-      planning_review_round: 7
+      planning_review_round: 9
       allowed_paths: [docs/plans/north_star_recovery/g0_replay_salvage_record.v1.json]
       successor_packet_keys: [R0, R1, R2, R3A, R3B, R3C, R4, N9B]
       planned_packet_issue_titles: {G0: "G0 Retire blocked replay implementation", G1: "G1 Split product and evidence surfaces", G2: "G2 Install packet-control enforcement", R0: "R0 Replay records and admission", R1: "R1 Worker protocol and minimal isolation", R2: "R2 Workspace, publication, and redaction", V1: "V1 Correct visibility semantics", P0: "P0 Lock provider behavior", P1: "P1 Extract provider runtime seams", R3A: "R3A Provider replay adapter", R3B: "R3B Tool replay adapter", R3C: "R3C Host replay adapter", R4: "R4 Replay coordinator", N9B: "N9B Production deadlines and provider conformance", N10: "N10 Internal composed lane and claim lifecycle", S1: "S1 Extract SessionRunner seams", A1: "A1 Stage the product API candidate", C1: "C1 Cut over product clients and activate the default", O1: "O1 Product outsider falsifier", O2: "O2 Evidence outsider falsifier", F1: "F1 Final candidate audit"}
@@ -1490,12 +1581,46 @@ bootstrap_policy:
     exact_hash_review_validation_command: >-
       python3 -c "import hashlib,json,pathlib,re,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); paths=['docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md','docs/plans/north_star_recovery/EXECUTION_PLAN.md','docs/plans/north_star_recovery/LOOP_SPEC.yaml','docs/plans/north_star_recovery/WORKER_CONTRACTS.md','docs/plans/north_star_recovery/GOAL_PROMPT.txt','docs/plans/north_star_recovery/STATE.json']; actual={p:'sha256:'+hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest() for p in paths[:-1]}; state=json.load(open(paths[-1],encoding='utf-8')); lineage=state['planning_review_lineage']; sha=lambda x:isinstance(x,str) and re.fullmatch(r'sha256:[0-9a-f]{64}',x) is not None; canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); refs=d['exact_hash_review_records']; keys={'reviewer_id','verdict_ref','verdict_sha256','verdict','review_round','artifact_sha256','predecessor_state_sha256','findings_sha256','completed_at_utc'}; vkeys={'schema_version','reviewer_id','verdict','review_round','artifact_sha256','predecessor_state_sha256','findings','completed_at_utc'}; verdicts=[json.load(open(r['verdict_ref'],encoding='utf-8')) for r in refs]; assert isinstance(refs,list) and len(refs)==2 and len({r['reviewer_id'] for r in refs})==2 and {r['verdict_ref'] for r in refs}==set(d['exact_hash_review_refs']) and all(set(r)==keys and set(v)==vkeys and v['schema_version']=='bb.north_star_recovery.planning_review.v1' and sha(r['verdict_sha256']) and r['verdict_sha256']=='sha256:'+hashlib.sha256(pathlib.Path(r['verdict_ref']).read_bytes()).hexdigest() and r['reviewer_id']==v['reviewer_id'] and r['verdict']==v['verdict']=='approve' and r['review_round']==v['review_round']==d['planning_review_round'] and r['artifact_sha256']==v['artifact_sha256'] and set(r['artifact_sha256'])==set(paths) and all(r['artifact_sha256'][p]==actual[p] for p in paths[:-1]) and r['predecessor_state_sha256']==v['predecessor_state_sha256']==r['artifact_sha256'][paths[-1]] and sha(r['predecessor_state_sha256']) and r['findings_sha256']==canon(v['findings']) and r['completed_at_utc']==v['completed_at_utc'] and isinstance(r['completed_at_utc'],str) and r['completed_at_utc'] and not any(f.get('severity') in {'P0','P1','P2'} for f in v['findings']) for r,v in zip(refs,verdicts)); predecessor=refs[0]['predecessor_state_sha256']; assert all(r['predecessor_state_sha256']==predecessor for r in refs) and lineage['status']=='fresh_exact_hash_reviews_approved' and lineage['reviewed_pre_refresh_state_sha256']==predecessor and set(lineage['reviewer_verdict_refs'])==set(d['exact_hash_review_refs']) and isinstance(lineage['refreshed_state_handoff_manifest'],str) and lineage['refreshed_state_handoff_manifest']" RECORD_PATH
     campaign_graph_snapshot_prevalidation_command: >-
-      python3 -c "import hashlib,json,pathlib,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); p=pathlib.Path(d['preexisting_campaign_graph_snapshot_path']); digest='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest(); assert digest==d['preexisting_campaign_graph_snapshot_sha256']; snap=json.load(open(p,encoding='utf-8')); assert set(snap)=={'schema_version','captured_at_utc','issues'} and snap['schema_version']=='bb.north_star_recovery.tracker_snapshot.v1' and isinstance(snap['issues'],dict); run=lambda a:json.loads(subprocess.check_output(a,text=True)); listed=run(['bd','list','--json','--limit','0']); ids={x['id'] for x in listed}; live={i:run(['bd','show',i,'--json'])[0] for i in ids}; assert live==snap['issues']; labels=[label for issue in live.values() for label in issue.get('labels',[])]; assert 'north-star-recovery' not in labels and not any(isinstance(x,str) and x.startswith('packet:') for x in labels); a=d['campaign_graph_rewrite_approval_record']; c=d['campaign_graph_rewrite_approval_context']; canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); keys={'schema_version','approval_id','approval_record_sha256','preexisting_campaign_graph_snapshot_sha256','preserve_every_unrelated_tracker_node_and_edge','no_preexisting_north_star_recovery_packet_issue'}; assert set(c)==keys and c['schema_version']=='bb.north_star_recovery.campaign_graph_approval_context.v1' and c['approval_id']==a['approval_id'] and c['approval_record_sha256']==canon(a) and c['preexisting_campaign_graph_snapshot_sha256']==digest and c['preserve_every_unrelated_tracker_node_and_edge'] is True and c['no_preexisting_north_star_recovery_packet_issue'] is True" RECORD_PATH
+      python3 -c "import hashlib,json,pathlib,subprocess,sys;
+      d=json.load(open(sys.argv[1],encoding='utf-8'));
+      p=pathlib.Path(d['preexisting_campaign_graph_snapshot_path']);
+      digest='sha256:'+hashlib.sha256(p.read_bytes()).hexdigest();
+      assert digest==d['preexisting_campaign_graph_snapshot_sha256'];
+      snap=json.load(open(p,encoding='utf-8'));
+      assert set(snap)=={'schema_version','captured_at_utc','issues'} and snap['schema_version']=='bb.north_star_recovery.tracker_snapshot.v1' and isinstance(snap['issues'],dict);
+      run=lambda a:json.loads(subprocess.check_output(a,text=True));
+      listed=run(['bd','list','--json','--limit','0']);
+      ids={x['id'] for x in listed};
+      live={i:run(['bd','show',i,'--json'])[0] for i in ids};
+      assert live==snap['issues'];
+      labels=[label for issue in live.values() for label in issue.get('labels',[])];
+      planned=set(d['planned_packet_issue_titles']);
+      assert 'north-star-recovery' not in labels and not any(isinstance(x,str) and x in {'packet:'+k for k in planned} for x in labels);
+      a=d['campaign_graph_rewrite_approval_record'];
+      c=d['campaign_graph_rewrite_approval_context'];
+      canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest();
+      keys={'schema_version','approval_id','approval_record_sha256','preexisting_campaign_graph_snapshot_sha256','preserve_every_unrelated_tracker_node_and_edge','no_preexisting_north_star_recovery_packet_issue'};
+      assert set(c)==keys and c['schema_version']=='bb.north_star_recovery.campaign_graph_approval_context.v1' and c['approval_id']==a['approval_id'] and c['approval_record_sha256']==canon(a) and c['preexisting_campaign_graph_snapshot_sha256']==digest and c['preserve_every_unrelated_tracker_node_and_edge'] is True and c['no_preexisting_north_star_recovery_packet_issue'] is True" RECORD_PATH
     phase20_freeze_validation_command: >-
       python3 -c "import hashlib,json,pathlib,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); p=pathlib.Path(d['phase20_freeze_result_path']); assert 'sha256:'+hashlib.sha256(p.read_bytes()).hexdigest()==d['phase20_freeze_result_sha256']; r=json.load(open(p,encoding='utf-8')); keys={'schema_version','command','exit_code','stdout','stderr','source_identity','completed_at_utc'}; q=subprocess.run(['uv','run','python','scripts/check_phase20_freeze.py'],capture_output=True,text=True); assert set(r)==keys and r['schema_version']=='bb.north_star_recovery.phase20_freeze_check.v1' and r['command']=='uv run python scripts/check_phase20_freeze.py' and r['exit_code']==q.returncode==0 and r['stdout']==q.stdout and r['stderr']==q.stderr and r['source_identity']=={'base_sha':d['base_sha'],'merge_base_sha':d['merge_base_sha'],'head_sha':d['planning_head_sha'],'tree_sha':d['planning_tree_sha']} and isinstance(r['completed_at_utc'],str) and r['completed_at_utc']" RECORD_PATH
     state_handoff_validation_command: >-
       python3 -c "import hashlib,json,pathlib,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); state_path=pathlib.Path('docs/plans/north_star_recovery/STATE.json'); state=json.load(open(state_path,encoding='utf-8')); lineage=state['planning_review_lineage']; m=json.load(open(lineage['refreshed_state_handoff_manifest'],encoding='utf-8')); paths=['docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md','docs/plans/north_star_recovery/EXECUTION_PLAN.md','docs/plans/north_star_recovery/LOOP_SPEC.yaml','docs/plans/north_star_recovery/WORKER_CONTRACTS.md','docs/plans/north_star_recovery/GOAL_PROMPT.txt']; digest=lambda p:'sha256:'+hashlib.sha256(pathlib.Path(p).read_bytes()).hexdigest(); keys={'schema_version','predecessor_state_sha256','refreshed_state_sha256','authored_artifact_sha256','reviewer_verdict_sha256','generated_at_utc'}; assert set(m)==keys and m['schema_version']=='bb.north_star_recovery.state_handoff.v1' and m['predecessor_state_sha256']==lineage['reviewed_pre_refresh_state_sha256'] and m['refreshed_state_sha256']==digest(state_path) and m['authored_artifact_sha256']=={p:digest(p) for p in paths} and m['reviewer_verdict_sha256']=={r['verdict_ref']:r['verdict_sha256'] for r in d['exact_hash_review_records']} and lineage['current_state_sha256_in_manifest'] is True and isinstance(m['generated_at_utc'],str) and m['generated_at_utc']" RECORD_PATH
     preflight_required_commands: [pre_validation_command, campaign_graph_rewrite_validation_command, packet_catalog_cross_validation_command, approval_freshness_validation_command, current_source_prevalidation_command, clean_execution_worktree_validation_command, external_state_prevalidation_command, exact_hash_review_validation_command, campaign_graph_snapshot_prevalidation_command, phase20_freeze_validation_command, state_handoff_validation_command]
+    minimum_remaining_approval_seconds_at_action_boundary: 900
+    pre_action_approval_freshness_validation_command: >-
+      python3 -c "import datetime,json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); now=datetime.datetime.now(datetime.timezone.utc); parse=lambda s:datetime.datetime.fromisoformat(s.replace('Z','+00:00')); records=d['approval_records']+[d['campaign_graph_rewrite_approval_record']]; assert all(parse(a['granted_at_utc'])<=now and parse(a['expires_at_utc_or_terminal_event'])-now>=datetime.timedelta(seconds=900) for a in records)" RECORD_PATH
+    pre_action_required_commands: [pre_action_approval_freshness_validation_command, current_source_prevalidation_command, clean_execution_worktree_validation_command, external_state_prevalidation_command, campaign_graph_snapshot_prevalidation_command]
+    pre_action_order: run every pre_action_required_command immediately before the first GitHub or Beads mutation; any nonzero result or less than 900 seconds remaining approval life blocks all protected actions
+    post_review_packet_closure_approval:
+      required_after: G0 postcheck and independent exact-head salvage review pass
+      required_fields: [schema_version, approval_id, gate_id, protected_action, decision, packet_key, packet_issue_id, packet_issue_map_sha256, pre_record_sha256, post_record_sha256, salvage_artifact_sha256, independent_review_sha256, base_sha, merge_base_sha, planning_head_sha, planning_tree_sha, scope_version, granted_by, granted_at_utc, expires_at_utc_or_terminal_event]
+      literal_requirements:
+        schema_version: bb.north_star_recovery.approval.v1
+        gate_id: packet_closure
+        protected_action: close_only_materialized_G0_packet_issue_after_postcheck_and_exact_review
+        decision: granted
+        packet_key: G0
+      validation: exact_key_set_nonfuture_grant_future_expiry_minimum_900_seconds_remaining_and_all_issue_map_pre_post_salvage_review_source_scope_hashes_match_current_authorities
     post_record: ../docs_tmp/north_star_recovery/bootstrap/G0_postcheck.json
     post_required_fields:
       - schema_version
@@ -1550,8 +1675,14 @@ bootstrap_policy:
       python3 -c "import hashlib,json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); art=json.load(open(d['salvage_artifact_path'],encoding='utf-8')); canon=lambda x:'sha256:'+hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); groups=[art['retained_contract_refs'],art['retained_test_vector_refs'],art['discarded_implementation_paths']]; assert all(g and all(set(r)=={'path','sha256'} for r in g) for g in groups) and len({r['path'] for g in groups for r in g})==sum(map(len,groups)); assert canon(groups[0])==pre['salvage_contract_sha256'] and canon(groups[1])==pre['salvage_tests_sha256'] and canon(groups[2])==pre['discarded_code_sha256']" POST_RECORD_PATH
     scope_diff_revalidation_command: >-
       python3 -c "import json,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); lines=subprocess.check_output(['git','status','--porcelain=v1','--untracked-files=all'],text=True).splitlines(); changed=sorted({line[3:].split(' -> ')[-1] for line in lines if line}); assert changed==[d['salvage_artifact_path']]" POST_RECORD_PATH
-    postcheck_required_commands: [post_validation_command, salvage_reference_revalidation_command, salvage_partition_binding_validation_command, scope_diff_revalidation_command, authoritative_state_validation_command, post_approval_freshness_validation_command, campaign_graph_post_binding_validation_command, post_source_identity_validation_command, tracker_graph_preservation_validation_command]
-    postcheck_order: all postcheck_required_commands run before render_state_from_authorities; after they pass the state renderer may replace only docs/plans/north_star_recovery/STATE.json and the handoff manifest records its digest
+    independent_review_binding_validation_command: >-
+      python3 -c "import hashlib,json,pathlib,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); expected=sorted([{'path':r['verdict_ref'],'sha256':r['verdict_sha256']} for r in pre['exact_hash_review_records']],key=lambda x:x['path']); assert d['independent_review_refs']==expected and len(expected)==2; assert all('sha256:'+hashlib.sha256(pathlib.Path(r['path']).read_bytes()).hexdigest()==r['sha256'] and json.load(open(r['path'],encoding='utf-8'))['verdict']=='approve' for r in expected)" POST_RECORD_PATH
+    new_packet_exact_shape_validation_command: >-
+      python3 -c "import json,subprocess,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); run=lambda a:json.loads(subprocess.check_output(a,text=True))[0]; live={k:run(['bd','show',v,'--json']) for k,v in d['packet_issue_map'].items()}; assert all(len(x.get('labels',[]))==2 and set(x['labels'])=={'north-star-recovery','packet:'+k} for k,x in live.items()); edges=lambda x:[(e.get('id'),e.get('dependency_type')) for e in x.get('dependencies',[])]; expected=lambda k:[(d['packet_issue_map'][p],'blocks') for p in pre['planned_packet_dependencies'][k]]; assert all(len(edges(x))==len(expected(k))==len(set(edges(x))) and set(edges(x))==set(expected(k)) for k,x in live.items())" POST_RECORD_PATH
+    canonical_tracker_preservation_validation_command: >-
+      python3 -c "import hashlib,json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); before=json.load(open(pre['preexisting_campaign_graph_snapshot_path'],encoding='utf-8')); after=json.load(open(d['post_campaign_graph_snapshot_path'],encoding='utf-8')); canon=lambda x:hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); old=pre['blocked_bead_id']; assert all(canon(before['issues'][i])==canon(after['issues'][i]) for i in before['issues'] if i!=old)" POST_RECORD_PATH
+    postcheck_required_commands: [post_validation_command, salvage_reference_revalidation_command, salvage_partition_binding_validation_command, scope_diff_revalidation_command, authoritative_state_validation_command, post_approval_freshness_validation_command, campaign_graph_post_binding_validation_command, post_source_identity_validation_command, tracker_graph_preservation_validation_command, independent_review_binding_validation_command, new_packet_exact_shape_validation_command, canonical_tracker_preservation_validation_command]
+    postcheck_order: run every postcheck_required_command before the independent exact-head salvage review; after that review approves and the separate exact G0-issue packet_closure approval closes only the bound G0 issue, the state renderer may replace only docs/plans/north_star_recovery/STATE.json and the handoff manifest records its digest
   G2:
     pre_record: ../docs_tmp/north_star_recovery/bootstrap/G2_preflight.json
     pre_required_fields:
@@ -1784,11 +1915,11 @@ state_materialization:
     external_manifest_schema: bb.north_star_recovery.state_handoff.v1
     external_manifest_required_fields:
       - schema_version
-      - generated_at_utc
-      - reviewed_pre_refresh_state_sha256
+      - predecessor_state_sha256
       - refreshed_state_sha256
-      - authored_artifact_sha256s
-      - reviewer_verdict_refs
+      - authored_artifact_sha256
+      - reviewer_verdict_sha256
+      - generated_at_utc
     frontier_guard: predecessor_field_matches_reviewed_pre_refresh_hash_and_external_manifest_matches_current_state
     refreshed_state_must_record_predecessor_hash: true
     current_state_self_hash_location: external_run_or_handoff_manifest

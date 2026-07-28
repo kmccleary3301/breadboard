@@ -1,7 +1,9 @@
 North-Star Recovery execution goal
 
 Work in:
-/Users/kylemccleary/projects/breadboard/breadboard_ns11a_api_20260724
+/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725
+
+The earlier `/Users/kylemccleary/projects/breadboard/breadboard_ns11a_api_20260724` checkout is historical planning and packet-evidence input only. Do not execute packets from it. The clean execution checkout above is rooted at current GitHub `main` and contains the reviewed planning package.
 
 Objective
 
