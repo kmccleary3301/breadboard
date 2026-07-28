@@ -102,7 +102,7 @@ Execution order
 
 Follow the dependency graph and packet specifications in EXECUTION_PLAN.md. The first controlled actions are:
 
-1. G0: prepare the exact never-merge/supersession action and exact 21-issue title/dependency map. Ask separately for `tracker_supersession`, PR `packet_closure`, and `campaign_graph_rewrite`; perform no mutation before all three typed grants and both G0 prevalidators pass. Require the digest/schema postcheck plus live GitHub/Beads verification before refreshing STATE with packet issue IDs.
+1. G0: prepare the exact never-merge/supersession action and exact ordered 21-issue title/dependency map. Ask separately for `tracker_supersession`, PR `packet_closure`, and `campaign_graph_rewrite`; perform no mutation before all three distinct typed grants and both G0 prevalidators pass. Use canonical paths and `bd list --all --json --limit 0` for every authority snapshot. Require the full digest/schema postcheck and live GitHub/Beads verification; after the separate post-review close approval, enter `closure_pending_receipt`, require the canonical receipt-validation result, then commit only the salvage artifact and generated destination-closed STATE and validate the clean terminal handoff before G0 closes or G2 starts.
 2. G2 after G0: install packet-control enforcement through its one-time, independently reviewed, human-approved bootstrap. The new checker must validate G2 before review.
 3. G1 after G2: split product/evidence surfaces. G1 read-only research may overlap G2, but no G1 branch or edit starts before G2 closes.
 4. After G2: run R0, V1, and P0 in bounded parallel worktrees.

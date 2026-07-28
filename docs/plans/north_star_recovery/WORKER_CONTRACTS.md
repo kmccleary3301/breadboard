@@ -152,6 +152,8 @@ Write access is limited to one isolated worktree and the packet's allowed paths.
 
 1. Verify base, merge-base, branch, and worktree.
 2. Run the packet checker before editing. G0 and G2 alone follow their distinct exact bootstrap records in `EXECUTION_PLAN.md`; G0 runs its deterministic JSON/diff postcheck, and G2 must run the newly installed checker on itself before review.
+
+G0's supervisor assignment may authorize one terminal bootstrap commit only after the canonical closure receipt validation result passes. That commit contains exactly the salvage artifact and generated destination-closed `STATE.json`; it uses the fixed subject, writes the external terminal-handoff manifest, validates the committed head/tree and exact two-file diff, and leaves an empty worktree. Any partial commit or manifest failure enters the typed G0 terminal-handoff recovery flow. No implementer may broaden that exception, repeat an already-applied external close, or start G2 from an uncommitted G0 artifact.
 3. Reproduce the existing behavior or failure on the base when applicable.
 4. Use existing patterns and owners. Do not create a second convention.
 5. Apply one bounded logical change.

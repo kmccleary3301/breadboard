@@ -129,6 +129,7 @@ GitHub PR: https://github.com/kmccleary3301/breadboard/pull/44
 Beads packet: bb-06u.11
 Salvage artifact: docs/plans/north_star_recovery/g0_replay_salvage_record.v1.json
 Allowed repository path: docs/plans/north_star_recovery/g0_replay_salvage_record.v1.json
+Generated terminal-handoff path: docs/plans/north_star_recovery/STATE.json
 Forbidden repository paths: breadboard/**, agentic_coder_prototype/**, sdk/**, tui_skeleton/**, contracts/**, docs/conformance/**
 ```
 
@@ -144,7 +145,13 @@ The executable action-boundary wrapper owns the complete ordered sequence: close
 The independent salvage review uses a closed record schema bound to the salvage artifact digest, G0 postcheck digest, current source identity, empty findings digest, reviewer identity, and review round. Immediately after that review, a closure-status command proves the salvage artifact is the sole dirty path and writes a digest-bound status record. The closure preflight and separate approval bind that status record, review, postcheck, salvage artifact, issue map, source identities, and materialized G0 issue. Immediately before closure, executable validators recheck the exact record schemas and referenced content, current status, all source identities, the full live tracker snapshot and dependency graph, PR and legacy-Bead state, and the 900-second approval margin. The closure receipt repeats the approval, status, postcheck, and review digests and is validated against live Beads. G2 cannot start until its preflight dereferences that receipt and proves the exact G0 issue is live-closed with its approved title, labels, and dependencies.
 
 Recovery is state-specific. A failure during the initial PR/legacy-Bead/graph sequence enters `blocked_external`; one approved recovery returns to `implementing`, preserves the original attempt and completed prefix, reuses conforming IDs, reruns every action-boundary wrapper, completes remaining mutations, then repeats local gates, postcheck, and independent review. A close-command or closure-receipt failure from `verified` records the live issue state and invalidates the consumed closure approval before entering `blocked_external`; one separately approved reconciliation returns to `verified` for a fresh closure preflight and approval. No recovery path skips postcheck, review, or live receipt validation.
-If the live G0 issue remains open, reconciliation returns to `verified` and requires a fresh closure preflight and approval before retrying the close. If Beads already closed the issue and only receipt validation failed, a distinct reconciliation event may reconstruct the receipt from the exact live closed issue and reach `closed` only after the receipt validator passes; it never repeats the close command.
+If the live G0 issue remains open, reconciliation restores committed reviewed STATE so the salvage artifact is again the sole dirty path, returns to `verified`, and requires a fresh closure preflight and approval before retrying the close. If Beads already closed the issue—whether the close command reported success, failure, or an ambiguous result—the distinct reconciliation route proves the exact live closed issue and full graph, reconstructs the canonical receipt without repeating the close command, restores reviewed STATE, and continues through receipt validation.
+
+Every tracker snapshot command uses `bd list --all --json --limit 0`; pre-action, per-command, post-action, closure, reconciliation, and G2 predecessor checks therefore share one all-issues scope, including the superseded legacy Bead. Each per-command wrapper uses the canonical G0 preflight path, derives a canonical receipt and snapshot path from a hard-coded register/action order, refuses symlinks or aliases, persists the full live snapshot, and binds its digest into the receipt. Fixed no-argument closed-policy validators own the G0/G2 schema and literal sets; caller-supplied key or literal arguments cannot weaken them.
+
+Closing the materialized G0 issue enters `closure_pending_receipt`, not `closed`. A canonical receipt validator writes a digest-bound validation result after checking exact actor/time/approval/reason and the live issue. Only that result enters `g0_terminal_handoff`. The final transition renders destination-closed STATE, commits exactly the salvage artifact plus generated STATE, records the predecessor and committed head/tree in an external handoff manifest, verifies the exact two-file commit and empty worktree, and only then enters `closed`. G2 binds that manifest and independently dereferences the closure approval, status, review, postcheck, receipt, full 21-issue graph, and live closed G0 issue.
+
+Closure and terminal-handoff failures use separate closed-schema records and executable validators. Recovery requires a fresh `partial_governance_recovery` approval with the exact retry, already-closed reconciliation, or terminal-handoff action and at least 900 seconds remaining. An already-applied close is never repeated; an already-created terminal commit is validated and reused rather than recreated.
 
 
 Actions:
@@ -154,10 +161,11 @@ Actions:
 - for every issue-create and dependency-edge command, rerun the wrapper and partial-graph guard; under the separate exact `campaign_graph_rewrite` approval, create one uniquely labeled Beads issue for each of the 21 packet keys with the exact register title and dependency edges, and record the resulting key-to-ID map;
 - write the fixed salvage artifact naming hashed retained contracts, retained test vectors, and discarded implementation paths from the exact old head, plus exact old base/head/tree, successor packets, approvals, and external action results;
 - query GitHub and Beads live to verify PR #44 is closed and unmerged, `bb-06u.11` is superseded, and every new issue and dependency edge matches the approved map.
-- capture the full pre/post Beads authority snapshots and reject any change outside `bb-06u.11` plus the exact 21 newly approved packet issues.
-- after the postcheck and independent salvage review pass, obtain the separate exact closure-preflight record and approval, run its executable validator with at least 900 seconds remaining, close only the bound materialized G0 packet issue, and validate the live closure receipt;
+- capture the full pre/post all-issues Beads authority snapshots with `bd list --all --json --limit 0` and reject any change outside `bb-06u.11` plus the exact 21 newly approved packet issues;
+- after the postcheck and independent salvage review pass, obtain the separate exact closure-preflight record and approval, rerun all postcheck and closure validators with at least 900 seconds remaining, close only the bound materialized G0 packet issue into `closure_pending_receipt`, and require the canonical live receipt-validation result;
+- render destination-closed STATE, commit exactly the salvage artifact and generated STATE, record and validate the clean terminal-handoff manifest, then enter `closed`.
 
-Do not edit any path outside the one allowed salvage artifact. Do not merge PR #44, run its implementation, alter its branch, or rewrite accepted evidence.
+Do not edit any product path or any repository path outside the one allowed salvage artifact; generated STATE is the only additional terminal-handoff path. Do not merge PR #44, run its implementation, alter its branch, or rewrite accepted evidence.
 A closed, unmerged PR has no promotion transition in this state machine. Reopening, merging, or attaching a new promotion path is a new protected action requiring a new current human gate; absent that action, the old branch is archival input only.
 
 Acceptance:
@@ -166,7 +174,8 @@ Acceptance:
 - `bb-06u.11` is `superseded` with exact successors R0, R1, R2, R3A, R3B, R3C, R4, and N9B;
 - the schema-valid salvage artifact separates retained immutable contracts/tests from discarded code and binds the human approval plus external action evidence;
 - the materialized G0 packet issue is closed only after the postcheck and independent salvage review pass under a separate exact `packet_closure` approval bound to its materialized issue ID and evidence digests;
-- the refreshed `STATE.json` records the exact unique Beads ID for every packet key before `select_frontier` can select G0 or any successor;
+- the refreshed destination-closed `STATE.json` records the exact unique Beads ID for every packet key and is committed with the salvage artifact under the validated clean terminal handoff before `select_frontier` can select any G0 successor;
+- G2 binds the terminal-handoff head/tree and independently validates the canonical closure approval, receipt, postcheck, review, all-issues graph, and live closed G0 issue.
 - the old branch is archival input only and has no active promotion path.
 
 ### G1: Split product and evidence surfaces
