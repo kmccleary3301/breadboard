@@ -1622,7 +1622,7 @@ bootstrap_policy:
       closure_preflight_record: ../docs_tmp/north_star_recovery/bootstrap/G0_closure_preflight.json
       approval_record: ../docs_tmp/north_star_recovery/bootstrap/G0_packet_closure_approval.json
       closure_receipt: ../docs_tmp/north_star_recovery/bootstrap/G0_packet_closure_receipt.json
-      required_after: G0 postcheck and independent exact-head salvage review pass
+      required_after: G0 postcheck and independent exact-hash salvage-artifact review pass
       closure_preflight_required_fields: [schema_version, packet_key, approval_record_path, approval_record_sha256, pre_record_path, pre_record_sha256, post_record_path, post_record_sha256, salvage_artifact_path, salvage_artifact_sha256, independent_review_path, independent_review_sha256, packet_issue_map_sha256, packet_issue_id, base_sha, merge_base_sha, planning_head_sha, planning_tree_sha, scope_version, generated_at_utc]
       approval_required_fields: [schema_version, approval_id, gate_id, protected_action, decision, packet_key, packet_issue_id, packet_issue_map_sha256, pre_record_sha256, post_record_sha256, salvage_artifact_sha256, independent_review_sha256, base_sha, merge_base_sha, planning_head_sha, planning_tree_sha, scope_version, granted_by, granted_at_utc, expires_at_utc_or_terminal_event]
       literal_requirements:
@@ -1697,7 +1697,7 @@ bootstrap_policy:
     canonical_tracker_preservation_validation_command: >-
       python3 -c "import hashlib,json,sys; d=json.load(open(sys.argv[1],encoding='utf-8')); pre=json.load(open(d['pre_record_path'],encoding='utf-8')); before=json.load(open(pre['preexisting_campaign_graph_snapshot_path'],encoding='utf-8')); after=json.load(open(d['post_campaign_graph_snapshot_path'],encoding='utf-8')); canon=lambda x:hashlib.sha256(json.dumps(x,sort_keys=True,separators=(',',':')).encode()).hexdigest(); old=pre['blocked_bead_id']; assert all(canon(before['issues'][i])==canon(after['issues'][i]) for i in before['issues'] if i!=old)" POST_RECORD_PATH
     postcheck_required_commands: [post_validation_command, salvage_reference_revalidation_command, salvage_partition_binding_validation_command, scope_diff_revalidation_command, authoritative_state_validation_command, post_approval_freshness_validation_command, campaign_graph_post_binding_validation_command, post_source_identity_validation_command, tracker_graph_preservation_validation_command, independent_review_binding_validation_command, new_packet_exact_shape_validation_command, canonical_tracker_preservation_validation_command]
-    postcheck_order: run every postcheck_required_command before the independent exact-head salvage review; after that review approves and the separate exact G0-issue packet_closure approval closes only the bound G0 issue, the state renderer may replace only docs/plans/north_star_recovery/STATE.json and the handoff manifest records its digest
+    postcheck_order: run every postcheck_required_command before the independent exact-hash salvage-artifact review; after that review approves and the separate exact G0-issue packet_closure approval closes only the bound G0 issue, the state renderer may replace only docs/plans/north_star_recovery/STATE.json and the handoff manifest records its digest
   G2:
     pre_record: ../docs_tmp/north_star_recovery/bootstrap/G2_preflight.json
     pre_required_fields:
