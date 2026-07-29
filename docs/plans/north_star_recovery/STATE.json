@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-29T20:52:30Z",
+  "generated_at_utc": "2026-07-29T21:20:26Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "round_21_exact_hash_review_pending_after_round_20_findings_resolved",
+    "status": "round_22_exact_hash_review_pending_after_round_21_findings_resolved",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,11 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "pending_round_21_exact_hash_review",
-      "round": 21,
+      "status": "pending_round_22_exact_hash_review",
+      "round": 22,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_20_request_changes_resolved_round_21_pending",
+      "corrections_status": "round_21_request_changes_resolved_round_22_pending",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -319,6 +319,29 @@
         "resolution": "Changed existing-record restart seals to use the immutable record's base runner identity instead of the already-used start-row identity; routed every failure-ledger publication through an explicit exit-74 no-replay hold; made the publication validators accept only one authenticated orphan start with optional matching failure record and writer-error row; and corrected G2 writer-error key derivation to the base runner identity."
       },
       "round_21": {
+        "status": "request_changes_resolved_pending_round_22",
+        "reviewed_state_input_sha256": "sha256:0719598f8309c42a845afe9a5a6145a3732283a5902c271038883ac8babf09e8",
+        "reviewed_authored_artifact_hashes": {
+          "ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "EXECUTION_PLAN.md": "sha256:0d058faeb73a5ce6e74db0cb3fc824be6df0a50845d539a2b408171a87669f4c",
+          "LOOP_SPEC.yaml": "sha256:bb07c85b758aec0eab1cefa5cbe9a4af3f671f5ba9dc38f0147f26767adad873",
+          "WORKER_CONTRACTS.md": "sha256:744b9d1a345b96479b53a7197f6b16533ce107af52ba7136a538f099a57e7975",
+          "GOAL_PROMPT.txt": "sha256:9f16b116f8a7d8e2e5c537d4492ddb5436f5b3578f0715fb117b1759a061cd47"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round21/Round21StateReview.raw.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round21/Round21BoundaryReview.raw.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:bbbe8284072e745f1abb41910d7e3c8058a6f40c8810b9e5c6123e757da683e3",
+          "sha256:e12fcc937949d2b94302517a85aceac26b16a4b45e873b4c7fa45485bd85d928"
+        ],
+        "verdict_correction_ref": "../docs_tmp/north_star_recovery/planning_reviews/round21/verdict_corrections.json",
+        "verdict_correction_sha256": "sha256:abc40a28068761e72a03fa98892cfafffc627d0c77bb4781bf6f7c7f45828233",
+        "blocking_findings": 4,
+        "resolution": "Embedded a read-only canonical recovery freshness validator in the initial attempt-2 mutation runner; made closure and terminal runners rerun recovery approval and reconciliation validators at the mutation boundary; bound optional recovery approval IDs and digests into success and failure records; and added an authenticated terminal commit intent/start/completion protocol that covers render, commit, manifest, and pre-push validation crashes before the Beads push start."
+      },
+      "round_22": {
         "status": "pending_exact_hash_review",
         "reviewed_state_input_sha256": null,
         "reviewer_verdict_refs": [],
@@ -334,26 +357,26 @@
       },
       {
         "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
-        "bytes": 44710,
-        "sha256": "sha256:0d058faeb73a5ce6e74db0cb3fc824be6df0a50845d539a2b408171a87669f4c",
+        "bytes": 45364,
+        "sha256": "sha256:dbc4a468f455dcb749986810c490187b619fba1dedd790f47dffd887ed5b1953",
         "owner": "packet DAG, scopes, budgets, acceptance, approvals"
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 589534,
-        "sha256": "sha256:bb07c85b758aec0eab1cefa5cbe9a4af3f671f5ba9dc38f0147f26767adad873",
+        "bytes": 683945,
+        "sha256": "sha256:93b5673ea66db17f61ceb2f82bfa6b00fdba9231d841872e38a48c6698c34221",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
         "path": "docs/plans/north_star_recovery/WORKER_CONTRACTS.md",
-        "bytes": 26359,
-        "sha256": "sha256:744b9d1a345b96479b53a7197f6b16533ce107af52ba7136a538f099a57e7975",
+        "bytes": 26718,
+        "sha256": "sha256:b34181ca63dcf1a757de2037ff1bc4d6f43a45f576c2bd2c193b630c7469bcd9",
         "owner": "worker permissions, assignments, result and review contracts"
       },
       {
         "path": "docs/plans/north_star_recovery/GOAL_PROMPT.txt",
-        "bytes": 13923,
-        "sha256": "sha256:9f16b116f8a7d8e2e5c537d4492ddb5436f5b3578f0715fb117b1759a061cd47",
+        "bytes": 14071,
+        "sha256": "sha256:4e67ff7acd4bf68717d1ecba4c1f19b1daf329b2fa1a3c13cfde23f1f35053c7",
         "owner": "fresh-session execution entry point"
       },
       {
@@ -366,10 +389,10 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_round_21_exact_hash_review",
+    "status": "pending_round_22_exact_hash_review",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round21/state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round22/state_handoff.json",
     "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
@@ -451,12 +474,12 @@
     "planning_checkout": {
       "path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
       "branch": "north-star/recovery-execution",
-      "head_sha": "9afa76afbfc47cd3375854933098b6041073b66c",
-      "tree_sha": "fe7ee003d1ec835c67453b6214a644add0e7c872",
+      "head_sha": "8353bbe27092fa67211edfad350c4e15d6f9f3ed",
+      "tree_sha": "d9bb1a9c2b0098df6d295830db8feda57292775e",
       "local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
       "merge_base_with_local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "working_tree_state": "generated_round_21_review_candidate_STATE_and_authored_corrections_uncommitted",
-      "role": "clean committed round-20 planning anchor rooted at current remote main; the reviewed round-21 candidate is identified by the exact artifact hashes in this file and its external structural-review record"
+      "working_tree_state": "generated_round_22_review_candidate_STATE_and_authored_corrections_uncommitted",
+      "role": "clean committed round-21 planning anchor rooted at current remote main; the reviewed round-22 candidate is identified by the exact artifact hashes in this file and its external structural-review record"
     },
     "current_remote_main": {
       "repository": "kmccleary3301/breadboard",
@@ -1250,9 +1273,9 @@
   ],
   "next_frontier": [
     {
-      "gate": "planning_package_round_21_exact_hash_review",
+      "gate": "planning_package_round_22_exact_hash_review",
       "state": "blocked_review",
-      "reason": "Round 20 found duplicate restart identities and non-total failure-ledger publication handling. The round-21 candidate seals existing records under the original runner identity, uses a validator-proven orphan-start no-replay hold when publication is unavailable, and fixes G2 fallback-row replay keys. Two fresh exact-hash reviewers must approve all six artifacts before G0 preflight."
+      "reason": "Round 21 found transition-only recovery approval checks in three mutation runners and an unbound terminal commit/manifest/pre-push crash interval. The round-22 candidate revalidates recovery authority inside every runner, binds recovery digests in outcomes, and adds a dual-ledger-replayed terminal commit intent boundary. Two fresh exact-hash reviewers must approve all six artifacts before G0 preflight."
     }
   ],
   "approvals": {
@@ -1284,7 +1307,8 @@
     "planning_package_round_18_review": "request_changes_resolved_pending_round_19",
     "planning_package_round_19_review": "request_changes_resolved_pending_round_20",
     "planning_package_round_20_review": "request_changes_resolved_pending_round_21",
-    "planning_package_round_21_review": "pending"
+    "planning_package_round_21_review": "request_changes_resolved_pending_round_22",
+    "planning_package_round_22_review": "pending"
   },
   "completion": {
     "status": "not_started",
