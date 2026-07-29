@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-29T19:57:51Z",
+  "generated_at_utc": "2026-07-29T20:25:20Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "round_19_exact_hash_review_pending_after_round_18_findings_resolved",
+    "status": "round_20_exact_hash_review_pending_after_round_19_findings_resolved",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,11 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "pending_round_19_exact_hash_review",
-      "round": 19,
+      "status": "pending_round_20_exact_hash_review",
+      "round": 20,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_18_request_changes_resolved_round_19_pending",
+      "corrections_status": "round_19_request_changes_resolved_round_20_pending",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -277,6 +277,27 @@
         "resolution": "Installed a separate anchored failure ledger with pre-mutation closure and push start rows; bound success and failure records to the start-row digest, writer, and run identity; made provider and subprocess observations total through nullable fields and caught error classes; added restart sealing without mutation replay; and extended exact-hash records and authority guards with distinct review-run and author identities."
       },
       "round_19": {
+        "status": "request_changes_resolved_pending_round_20",
+        "reviewed_state_input_sha256": "sha256:c3d1c37c3a50b527eb888b3d50e8b3732a4ab9f3b75011a7ef5eda8059ed1482",
+        "reviewed_authored_artifact_hashes": {
+          "ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "EXECUTION_PLAN.md": "sha256:8b180ba1317bd8748c525ee774967a2d774ad41faf702f8049f6911db6a0a355",
+          "LOOP_SPEC.yaml": "sha256:7756f4e5b2d3aed8977ba944b82061df46b46b2b4e353ec86b5e3d4fa10c6293",
+          "WORKER_CONTRACTS.md": "sha256:a10e08cde354c270553b98f86403e9b216127ff0c71842aa0a7f920c27c18daa",
+          "GOAL_PROMPT.txt": "sha256:03f89972f0924a022fdd22f10cd0eeb0d138dcc98312677d4317476d411304e7"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round19/Round19StateReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round19/Round19BoundaryReview.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:6dcebaa776b3243563d07fd57f32fe06d7587dade60a6028c2e92a7fea663cda",
+          "sha256:eaf9ccd9574e66f2276b3bdeb8f5eb69e4e6c907696d82b6db1613bee7c0ed2c"
+        ],
+        "blocking_findings": 8,
+        "resolution": "Made STATE source identity describe the current reviewed planning checkout; added immutable attempt-2 failure and writer-preflight slots; made closure and terminal producers total across post-mutation evidence-write and ledger-append failures; preserved each failure kind through restart; made failure validators require non-success outcomes; and made G0/G2 replay both anchored ledgers with exact action/kind bindings, orphan-start rejection, fallback-row sealing, and success-row provenance."
+      },
+      "round_20": {
         "status": "pending_exact_hash_review",
         "reviewed_state_input_sha256": null,
         "reviewer_verdict_refs": [],
@@ -292,26 +313,26 @@
       },
       {
         "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
-        "bytes": 44973,
-        "sha256": "sha256:8b180ba1317bd8748c525ee774967a2d774ad41faf702f8049f6911db6a0a355",
+        "bytes": 44124,
+        "sha256": "sha256:25c6c739e98c83cdf18d525d3df8dcaac1613842fd2879027b00993a5a4f10e0",
         "owner": "packet DAG, scopes, budgets, acceptance, approvals"
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 543293,
-        "sha256": "sha256:7756f4e5b2d3aed8977ba944b82061df46b46b2b4e353ec86b5e3d4fa10c6293",
+        "bytes": 586498,
+        "sha256": "sha256:5aa8062b64a8c4b2d332984d36781ea23bec133b88ca875875a371e29e80ec6e",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
         "path": "docs/plans/north_star_recovery/WORKER_CONTRACTS.md",
-        "bytes": 26400,
-        "sha256": "sha256:a10e08cde354c270553b98f86403e9b216127ff0c71842aa0a7f920c27c18daa",
+        "bytes": 26221,
+        "sha256": "sha256:bc30d5ee4e9f7e187685feb9dfb7ad537fd027bb1f22be43ed131b892584d76b",
         "owner": "worker permissions, assignments, result and review contracts"
       },
       {
         "path": "docs/plans/north_star_recovery/GOAL_PROMPT.txt",
-        "bytes": 13804,
-        "sha256": "sha256:03f89972f0924a022fdd22f10cd0eeb0d138dcc98312677d4317476d411304e7",
+        "bytes": 13700,
+        "sha256": "sha256:2ede2096750a75579d4a5057aecaabc19888817eed3fbc67104ea8a2498ccfbd",
         "owner": "fresh-session execution entry point"
       },
       {
@@ -324,10 +345,10 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_round_19_exact_hash_review",
+    "status": "pending_round_20_exact_hash_review",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round19/state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round20/state_handoff.json",
     "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
@@ -409,12 +430,12 @@
     "planning_checkout": {
       "path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
       "branch": "north-star/recovery-execution",
-      "head_sha": "ef17e2bb3dd78a3a1cdc63e6d3f451c641cb9263",
-      "tree_sha": "a8a71b8dfa2c11f95b233f1ec1233eacd9e81746",
+      "head_sha": "ba16e64d2d06d18b7f1440afe7cdf95d23cc8b587",
+      "tree_sha": "4812a836c482b4fa336317db8a411b264688ec35",
       "local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
       "merge_base_with_local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "working_tree_state": "generated_round_14_review_candidate_STATE_only_uncommitted",
-      "role": "clean authored round-14 planning anchor rooted at current remote main; generated predecessor STATE is the sole dirty exact-review input and is not a G0 execution root"
+      "working_tree_state": "generated_round_20_review_candidate_STATE_and_authored_corrections_uncommitted",
+      "role": "clean committed round-19 planning anchor rooted at current remote main; the reviewed round-20 candidate is identified by the exact artifact hashes in this file and its external structural-review record"
     },
     "current_remote_main": {
       "repository": "kmccleary3301/breadboard",
@@ -1208,9 +1229,9 @@
   ],
   "next_frontier": [
     {
-      "gate": "planning_package_round_19_exact_hash_review",
+      "gate": "planning_package_round_20_exact_hash_review",
       "state": "blocked_review",
-      "reason": "Round 18 found nontotal closure and push failure producers, restart gaps between artifact write and ledger append, missing failure-writer provenance, and incomplete review-run/author exclusion. The round-19 candidate installs dual anchored ledgers, writer canaries, pre-mutation start rows, total nullable failure records, restart sealing, and complete review identity bindings. Two fresh exact-hash reviewers must approve all six artifacts before G0 preflight."
+      "reason": "Round 19 found stale STATE source identity, mutable or unrecoverable failure slots, incomplete failure-kind and success-start bindings, and post-mutation writer gaps. The round-20 candidate installs current source identity, immutable retry slots, total stage-specific failure producers, dual-ledger replay, and exact start/final-seal provenance. Two fresh exact-hash reviewers must approve all six artifacts before G0 preflight."
     }
   ],
   "approvals": {
@@ -1240,7 +1261,8 @@
     "planning_package_round_16_review": "request_changes_resolved_pending_round_17",
     "planning_package_round_17_review": "request_changes_resolved_pending_round_18",
     "planning_package_round_18_review": "request_changes_resolved_pending_round_19",
-    "planning_package_round_19_review": "pending"
+    "planning_package_round_19_review": "request_changes_resolved_pending_round_20",
+    "planning_package_round_20_review": "pending"
   },
   "completion": {
     "status": "not_started",
