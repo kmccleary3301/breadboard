@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-29T23:09:04Z",
+  "generated_at_utc": "2026-07-29T23:25:47Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "round_27_exact_hash_review_pending_after_round_26_findings_resolved",
+    "status": "round_28_exact_hash_review_pending_after_round_27_findings_resolved",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,11 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "pending_round_27_exact_hash_review",
-      "round": 27,
+      "status": "pending_round_28_exact_hash_review",
+      "round": 28,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_26_request_changes_resolved_round_27_pending",
+      "corrections_status": "round_27_request_changes_resolved_round_28_pending",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -457,6 +457,29 @@
         "resolution": "Made empty closure and terminal failure-publication holds fail closed; replaced direct final-path JSON writes with complete same-directory temporary files plus fsync and atomic publication; and added the executable terminal runner that owns atomic STATE render, exact two-file commit, manifest, validation, completion seal, and mandatory stage-aware failure trapping."
       },
       "round_27": {
+        "status": "request_changes_resolved_pending_round_28",
+        "reviewed_state_input_sha256": "sha256:c725283ec95acbf782ebb5061c609b677ba564abad168f461b0074cda5c07764",
+        "reviewed_authored_artifact_hashes": {
+          "ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "EXECUTION_PLAN.md": "sha256:4c13be940d548a16d9a297a772eec91b0db4477db9612eafe99183900c13f1ef",
+          "LOOP_SPEC.yaml": "sha256:5100e9ed6cc1ba35d7edd7712252a199a1a09186d604ce8d096969cd8a03d331",
+          "WORKER_CONTRACTS.md": "sha256:e362c30af05b7f1f3c4c05a7ac2f1d4d8d300be77f6ae94b941f2e2605218934",
+          "GOAL_PROMPT.txt": "sha256:dcd1b87e0c81363e54cccfeb788440b4aa2725de9844d33a91cf443d620d622f"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round27/Round27StateReview.raw.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round27/Round27BoundaryReview.raw.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:c9dd73104f28204d96d3e86efa65f6d96bee761064f49cfca3cc1466f4a7c78c",
+          "sha256:4a6363bf14a973023ac73535a6e5db7779418c6325241c10f0fac0f08b697489"
+        ],
+        "verdict_correction_ref": "../docs_tmp/north_star_recovery/planning_reviews/round27/verdict_corrections.json",
+        "verdict_correction_sha256": "sha256:5763bce8124599c9cb215c9bf8cae4264933812389c01e816107121cf3dda119",
+        "blocking_findings": 2,
+        "resolution": "Unified every terminal runner/writer stage, made the trap validate the writer or publication-hold result instead of ignoring it, caught BaseException throughout closure and terminal failure publication, and made protected ledger appenders write every payload byte before fsync."
+      },
+      "round_28": {
         "status": "pending_exact_hash_review",
         "reviewed_state_input_sha256": null,
         "reviewer_verdict_refs": [],
@@ -472,26 +495,26 @@
       },
       {
         "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
-        "bytes": 45327,
-        "sha256": "sha256:4c13be940d548a16d9a297a772eec91b0db4477db9612eafe99183900c13f1ef",
+        "bytes": 44904,
+        "sha256": "sha256:16f94ce4163432109c2797837b254bcc5da9474269f2226a6ade0009b76770e7",
         "owner": "packet DAG, scopes, budgets, acceptance, approvals"
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 923558,
-        "sha256": "sha256:5100e9ed6cc1ba35d7edd7712252a199a1a09186d604ce8d096969cd8a03d331",
+        "bytes": 963723,
+        "sha256": "sha256:1ca90872327632d93c8271248ff5ce9c751da8874da2b32839396c5481ed7cce",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
         "path": "docs/plans/north_star_recovery/WORKER_CONTRACTS.md",
-        "bytes": 26429,
-        "sha256": "sha256:e362c30af05b7f1f3c4c05a7ac2f1d4d8d300be77f6ae94b941f2e2605218934",
+        "bytes": 26240,
+        "sha256": "sha256:7753029cb6a1c505976cb7351bce6650bbb0e00e81296b0ffb2b5f3af9c2b809",
         "owner": "worker permissions, assignments, result and review contracts"
       },
       {
         "path": "docs/plans/north_star_recovery/GOAL_PROMPT.txt",
-        "bytes": 14369,
-        "sha256": "sha256:dcd1b87e0c81363e54cccfeb788440b4aa2725de9844d33a91cf443d620d622f",
+        "bytes": 14126,
+        "sha256": "sha256:4c929465de48a74062101d3a9772ae2baf78326f1e4ca27cdcd6b4adc2b70097",
         "owner": "fresh-session execution entry point"
       },
       {
@@ -504,10 +527,10 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_round_27_exact_hash_review",
+    "status": "pending_round_28_exact_hash_review",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round27/state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round28/state_handoff.json",
     "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
@@ -589,12 +612,12 @@
     "planning_checkout": {
       "path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
       "branch": "north-star/recovery-execution",
-      "head_sha": "1775d1d3ff3f97a1cf12176c3e5454d8abc5c92a",
-      "tree_sha": "ec91347b0c5ec17ae738c613709d4ff068941b00",
+      "head_sha": "9f1e7e027c80ee006b7cd1627ce4dbedf6d902a9",
+      "tree_sha": "7e314f31c9c404f7fb3bbd746df6e2088a626263",
       "local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
       "merge_base_with_local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "working_tree_state": "generated_round_27_review_candidate_STATE_and_authored_corrections_uncommitted",
-      "role": "clean committed round-26 planning anchor rooted at current remote main; the reviewed round-27 candidate is identified by the exact artifact hashes in this file and its external structural-review record"
+      "working_tree_state": "generated_round_28_review_candidate_STATE_and_authored_corrections_uncommitted",
+      "role": "clean committed round-27 planning anchor rooted at current remote main; the reviewed round-28 candidate is identified by the exact artifact hashes in this file and its external structural-review record"
     },
     "current_remote_main": {
       "repository": "kmccleary3301/breadboard",
@@ -1388,9 +1411,9 @@
   ],
   "next_frontier": [
     {
-      "gate": "planning_package_round_27_exact_hash_review",
+      "gate": "planning_package_round_28_exact_hash_review",
       "state": "blocked_review",
-      "reason": "Round 26 found empty failure-publication holds, partial final-path writes, and no executable terminal commit boundary. The round-27 candidate rejects empty holds, uses atomic complete-file publication, and supplies a stage-trapped executable STATE/commit/manifest/completion runner. Two fresh exact-hash reviewers must approve all six artifacts before G0 preflight."
+      "reason": "Round 27 found mismatched terminal trap stages and closure interruption paths that bypassed failure publication. The round-28 candidate shares one stage vocabulary, validates failure-writer outcomes, catches BaseException for both mutation boundaries, and uses write-all ledger appenders. Two fresh exact-hash reviewers must approve all six artifacts before G0 preflight."
     }
   ],
   "approvals": {
@@ -1428,7 +1451,8 @@
     "planning_package_round_24_review": "request_changes_resolved_pending_round_25",
     "planning_package_round_25_review": "request_changes_resolved_pending_round_26",
     "planning_package_round_26_review": "request_changes_resolved_pending_round_27",
-    "planning_package_round_27_review": "pending"
+    "planning_package_round_27_review": "request_changes_resolved_pending_round_28",
+    "planning_package_round_28_review": "pending"
   },
   "completion": {
     "status": "not_started",
