@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-29T22:28:57Z",
+  "generated_at_utc": "2026-07-29T22:48:04Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "round_25_exact_hash_review_pending_after_round_24_findings_resolved",
+    "status": "round_26_exact_hash_review_pending_after_round_25_findings_resolved",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,11 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "pending_round_25_exact_hash_review",
-      "round": 25,
+      "status": "pending_round_26_exact_hash_review",
+      "round": 26,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_24_request_changes_resolved_round_25_pending",
+      "corrections_status": "round_25_request_changes_resolved_round_26_pending",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -411,6 +411,29 @@
         "resolution": "Made interruption restart preserve an existing terminal failure record's original stage and append only its missing observation; made source identity mandatory before both predecessor and manifest hold branches and fully validated the manifest/parent/head/tree/two-file commit; and moved complete operational-versus-authority identity rejection inside intent before canary/start and inside the original-runner reconciliation/push gate."
       },
       "round_25": {
+        "status": "request_changes_resolved_pending_round_26",
+        "reviewed_state_input_sha256": "sha256:ca12e3f38dd6db586ef0976a410daa7b658c43c9fb32a5d01af294686708d606",
+        "reviewed_authored_artifact_hashes": {
+          "ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "EXECUTION_PLAN.md": "sha256:6c9bbeb171811cb09c7afb6064d486d1833171ee1b709cf8f37fb349e4a39a4e",
+          "LOOP_SPEC.yaml": "sha256:e6c1f60484607f0a1edba545b8ca61c7e74936cfe89620b1ed0019470f20a9fd",
+          "WORKER_CONTRACTS.md": "sha256:162049b0e892aaf6d51dbac75efc03c914a0dffadff16c358f7c6b45570be405",
+          "GOAL_PROMPT.txt": "sha256:770e1ca53a34aca5e0bf46f7936661b0b3bd28a9ebb477a33dd22e0554a9c7f7"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round25/Round25StateReview.raw.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round25/Round25BoundaryReview.raw.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:39902243d8600391b7ab2b69be373145ef9fc5b01411df2729c20745e1cd36f0",
+          "sha256:0aeb48b3358314a1f9152e4f09ce02ebddb87559464454343715e2d4cdf849d6"
+        ],
+        "verdict_correction_ref": "../docs_tmp/north_star_recovery/planning_reviews/round25/verdict_corrections.json",
+        "verdict_correction_sha256": "sha256:ae58b0aa0e54d4e376803c3bc6702f0a217ade06cf1028904fd10c47104b8143",
+        "blocking_findings": 2,
+        "resolution": "Made one earlier authenticated writer-error row admissible after same-intent record/observation recovery with exact refs and sequence order; included every live row in the pre-canary collision gate; and made reconciliation plus push re-read both ledgers, reject all main-ledger operational collisions, and permit only exact bound current-run failure-ledger event/action pairs."
+      },
+      "round_26": {
         "status": "pending_exact_hash_review",
         "reviewed_state_input_sha256": null,
         "reviewer_verdict_refs": [],
@@ -426,26 +449,26 @@
       },
       {
         "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
-        "bytes": 45963,
-        "sha256": "sha256:6c9bbeb171811cb09c7afb6064d486d1833171ee1b709cf8f37fb349e4a39a4e",
+        "bytes": 45907,
+        "sha256": "sha256:2b5c6e752babefcb229dad166d537da5c2399a57f0ffdd4a82ee6c3e9562a946",
         "owner": "packet DAG, scopes, budgets, acceptance, approvals"
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 829386,
-        "sha256": "sha256:e6c1f60484607f0a1edba545b8ca61c7e74936cfe89620b1ed0019470f20a9fd",
+        "bytes": 841321,
+        "sha256": "sha256:7fc32c6411fb522d3d585b69a47d7ff135a91761770cde7353434a717918820e",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
         "path": "docs/plans/north_star_recovery/WORKER_CONTRACTS.md",
-        "bytes": 27184,
-        "sha256": "sha256:162049b0e892aaf6d51dbac75efc03c914a0dffadff16c358f7c6b45570be405",
+        "bytes": 26826,
+        "sha256": "sha256:0b5b9821fa84de3a62393e8aeb321abe2ffff738e9d5b81879706a973dd61d4f",
         "owner": "worker permissions, assignments, result and review contracts"
       },
       {
         "path": "docs/plans/north_star_recovery/GOAL_PROMPT.txt",
-        "bytes": 14439,
-        "sha256": "sha256:770e1ca53a34aca5e0bf46f7936661b0b3bd28a9ebb477a33dd22e0554a9c7f7",
+        "bytes": 14466,
+        "sha256": "sha256:b0e59a8ce743f162540c8341b6f0a8578cc7183a867724495c1c7ed89751d7bb",
         "owner": "fresh-session execution entry point"
       },
       {
@@ -458,10 +481,10 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_round_25_exact_hash_review",
+    "status": "pending_round_26_exact_hash_review",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round25/state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round26/state_handoff.json",
     "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
@@ -543,12 +566,12 @@
     "planning_checkout": {
       "path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
       "branch": "north-star/recovery-execution",
-      "head_sha": "efd45a3122ef88d52ad94ee4bdf9fe0fec647725",
-      "tree_sha": "9e0b5e9132cc7372c9fef70b18d8819f23acc740",
+      "head_sha": "c67e09a51c27574f86115db3555e0b89d80e3c57",
+      "tree_sha": "7e69621962d545ee31a7e9913d880455ca604a86",
       "local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
       "merge_base_with_local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "working_tree_state": "generated_round_25_review_candidate_STATE_and_authored_corrections_uncommitted",
-      "role": "clean committed round-24 planning anchor rooted at current remote main; the reviewed round-25 candidate is identified by the exact artifact hashes in this file and its external structural-review record"
+      "working_tree_state": "generated_round_26_review_candidate_STATE_and_authored_corrections_uncommitted",
+      "role": "clean committed round-25 planning anchor rooted at current remote main; the reviewed round-26 candidate is identified by the exact artifact hashes in this file and its external structural-review record"
     },
     "current_remote_main": {
       "repository": "kmccleary3301/breadboard",
@@ -1342,9 +1365,9 @@
   ],
   "next_frontier": [
     {
-      "gate": "planning_package_round_25_exact_hash_review",
+      "gate": "planning_package_round_26_exact_hash_review",
       "state": "blocked_review",
-      "reason": "Round 24 found cross-stage writer restart failure, an OR-precedence source-identity bypass in the manifest hold branch, and late operational-identity collision rejection. The round-25 candidate preserves original failure stages, validates source plus the exact manifest branch, and rejects complete authority collisions before canary/start and again before reconciliation/push. Two fresh exact-hash reviewers must approve all six artifacts before G0 preflight."
+      "reason": "Round 25 found that a durable writer-error row deadlocked later record/observation recovery and that identity gates sampled only ledger genesis rows. The round-26 candidate validates ordered writer-error recovery and all live rows before canary, reconciliation, and push while allowlisting only bound current-run failure events. Two fresh exact-hash reviewers must approve all six artifacts before G0 preflight."
     }
   ],
   "approvals": {
@@ -1380,7 +1403,8 @@
     "planning_package_round_22_review": "request_changes_resolved_pending_round_23",
     "planning_package_round_23_review": "request_changes_resolved_pending_round_24",
     "planning_package_round_24_review": "request_changes_resolved_pending_round_25",
-    "planning_package_round_25_review": "pending"
+    "planning_package_round_25_review": "request_changes_resolved_pending_round_26",
+    "planning_package_round_26_review": "pending"
   },
   "completion": {
     "status": "not_started",
