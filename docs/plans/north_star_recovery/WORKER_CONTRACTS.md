@@ -157,7 +157,7 @@ G0's supervisor assignment may authorize one terminal bootstrap commit only afte
 
 After either closure or terminal start, the whole mutation boundary catches `BaseException` and publishes under one shared stage vocabulary. Protected ledger writers loop until the entire row payload is written and fsynced. A writer result is not self-authenticating: the supervisor requires the full failure validator after success or the bounded publication validator after writer failure; empty or partial publication remains unsealed.
 
-The executable terminal runner owns live validation, atomic STATE replacement, exact commit, manifest, terminal validation, and completion seal. Its trap accepts every stage the runner can emit, validates the writer outcome, and then re-raises. Closure applies the same interruption rule around close, evidence, and ledger publication. Reconciliation and push admit only exact bound current-run rows.
+The executable terminal runner owns live validation, atomic STATE replacement, exact commit, manifest, terminal validation, and completion seal. Its trap accepts every emitted stage and validates the writer outcome. G2 independently replays G0 and requires the exact current closure receipt v5 and terminal Beads-push receipt v4 schemas; stale consumer pins fail review before G0.
 3. Reproduce the existing behavior or failure on the base when applicable.
 4. Use existing patterns and owners. Do not create a second convention.
 5. Apply one bounded logical change.
