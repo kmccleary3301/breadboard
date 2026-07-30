@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-30T20:38:38Z",
+  "generated_at_utc": "2026-07-30T20:51:05Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "pending_round_46_exact_hash_reviews",
+    "status": "pending_round_47_exact_hash_reviews",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -37,17 +37,17 @@
     },
     "independent_review": {
       "status": "pending",
-      "round": 46,
+      "round": 47,
       "reviewed_artifact_hashes": {
         "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
         "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
         "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
-        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:60ba5a2c8e138ce6a835006ee5c2cbd836757e41d3688e12768d1b1fbdffabed",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:10045bb2b42e2b71fde47ace2ffdad8e509fbeda017c4d0af17e87fddf3013c1",
         "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
         "docs/plans/north_star_recovery/STATE.json": null
       },
       "reviewers": [],
-      "corrections_status": "Round 45 exact reviews approved, but the first protected-mutation preflight failed closed before mutation; stale literal digest and evidence-shape findings repaired, fresh exact-head reviews required",
+      "corrections_status": "Round 46 reviewers found the captured pre_validation literal still bound to round 45; regenerated all 14 captured argv entries from canonical Round 47 commands and literals; fresh exact-head reviews required",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -925,8 +925,30 @@
         "execution_blocking_findings": 3,
         "execution_incident_ref": "../docs_tmp/north_star_recovery/bootstrap/aborted_g0_preflight_20260730T203346Z/incident.json"
       },
+      "round_46": {
+        "status": "request_changes_resolved_pending_round_47",
+        "reviewed_state_input_sha256": "sha256:0916fc32e77729fc7c4f2af3579a0b960e292ba9521db2b5986ce4708f00c9f1",
+        "reviewed_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:60ba5a2c8e138ce6a835006ee5c2cbd836757e41d3688e12768d1b1fbdffabed",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:0916fc32e77729fc7c4f2af3579a0b960e292ba9521db2b5986ce4708f00c9f1"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round46/Round46AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round46/Round46ExecutionReview.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:569a90807eee8e3beef8749965c85b5668be27829a674023280a473524828497",
+          "sha256:00862158ada208a5fce3a5b5288b41233fdc29e0238514b69d688f48cf0b5477"
+        ],
+        "blocking_findings": 2,
+        "resolution": "Regenerated the entire captured preflight argv list from canonical Round 47 command templates, declared operands, required fields, and pre_literal_requirements; the captured planning_review_round is now 47 and byte-parity checks pass."
+      },
       "round_40_boundary_execution_correction": {
-        "status": "request_changes_resolved_pending_round_46_exact_hash_reviews",
+        "status": "request_changes_resolved_pending_round_47_exact_hash_reviews",
         "trigger": "G0 preflight failed closed before mutation because four workflow bodies were indented inside helper functions and therefore no-op wrappers.",
         "corrections": [
           "dedented per_mutation_action_boundary_validation_command workflow",
@@ -951,7 +973,8 @@
           "advanced exact-review and handoff dispatch plus captured preflight literals to Round 45",
           "updated closed_preflight_policy_validation_command literal digest for the active planning review round and synchronized its captured copy",
           "required canonical relative artifact paths in reissued exact-review evidence",
-          "added schema_version to the generated preexisting tracker snapshot before the next approval request"
+          "added schema_version to the generated preexisting tracker snapshot before the next approval request",
+          "regenerated all captured preflight argv entries from canonical Round 47 command values and replaced the stale embedded planning_review_round 45 literal with 47"
         ],
         "aborted_evidence_ref": "../docs_tmp/north_star_recovery/bootstrap/aborted_g0_preflight_20260730T054210Z/incident.json",
         "protected_mutations_applied": false
@@ -973,7 +996,7 @@
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
         "bytes": 1253476,
-        "sha256": "sha256:60ba5a2c8e138ce6a835006ee5c2cbd836757e41d3688e12768d1b1fbdffabed",
+        "sha256": "sha256:10045bb2b42e2b71fde47ace2ffdad8e509fbeda017c4d0af17e87fddf3013c1",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
@@ -998,7 +1021,7 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_round_46_exact_hash_reviews_after_round_45_execution_preflight_abort",
+    "status": "pending_round_47_exact_hash_reviews_after_round_46_captured_literal_correction",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
     "refreshed_state_handoff_manifest": null,
