@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-30T02:44:00Z",
+  "generated_at_utc": "2026-07-30T02:58:53Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "round_38_exact_hash_review_pending_after_round_37_findings_resolved",
+    "status": "round_39_final_exact_hash_review_pending_after_round_38_findings_resolved",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,11 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "pending_round_38_exact_hash_review",
-      "round": 38,
+      "status": "pending_round_39_final_exact_hash_review",
+      "round": 39,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_37_request_changes_resolved_round_38_pending",
+      "corrections_status": "round_38_request_changes_resolved_round_39_final_pending",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -710,7 +710,30 @@
         "resolution": "Removed synthetic not_started and exception-name stderr from every unobserved closure/push CompletedProcess. Exit -1 now always carries empty stdout/stderr; exception identity remains only in failure_error_classes or observation_errors. Actual returned CompletedProcess objects remain unchanged."
       },
       "round_38": {
-        "status": "pending_exact_hash_review",
+        "status": "request_changes_resolved_pending_round_39_final",
+        "reviewed_state_input_sha256": "sha256:3a91ffb02ad132fb6781df051c726b931967b0979fd7fd43c9f9e8e631bb0ed7",
+        "reviewed_authored_artifact_hashes": {
+          "ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "EXECUTION_PLAN.md": "sha256:7e08e0b05470f8adcb4fd9f814ea60406ba463968a7bef871815dd8202f59966",
+          "LOOP_SPEC.yaml": "sha256:ec44121624b78f268dddc823358430ab117f82815182f0d1b96db270d3c22172",
+          "WORKER_CONTRACTS.md": "sha256:a33069d5f1f63865799b835d8547bc939ea89791d36abaab1060e33fa601cb48",
+          "GOAL_PROMPT.txt": "sha256:599f73e38f1ccd4b059748c601214f84b506ccecf5b1c614443a27ccc8681c7d"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round38/Round38StateReview.raw.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round38/Round38BoundaryReview.raw.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:265dee05de61872fbd3532c8054db342faa8cb9a752b86fba5f2841315370e76",
+          "sha256:eee1a5fbcce1a32c84f5189e807b932735c0bf4546923a0a344e9ba7900d714d"
+        ],
+        "verdict_correction_ref": "../docs_tmp/north_star_recovery/planning_reviews/round38/verdict_corrections.json",
+        "verdict_correction_sha256": "sha256:737dc42bff6bbfebe901cb8e7c7d75f952558e72584b111d5fa690f099bd1cf8",
+        "blocking_findings": 3,
+        "resolution": "Propagated fresh push/fetch exception classes into failure metadata while retaining unobserved empty-stream sentinels; persisted digest-bound nested pre-close results in closure failure v4; designated authenticated writer-failure ledger actions as the last-resort exception channel when record publication itself fails. Rejected the cross-branch claim that existing-receipt handling can discard fresh push results."
+      },
+      "round_39": {
+        "status": "pending_final_exact_hash_review",
         "reviewed_state_input_sha256": null,
         "reviewer_verdict_refs": [],
         "blocking_findings": null
@@ -725,26 +748,26 @@
       },
       {
         "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
-        "bytes": 44230,
-        "sha256": "sha256:7e08e0b05470f8adcb4fd9f814ea60406ba463968a7bef871815dd8202f59966",
+        "bytes": 44290,
+        "sha256": "sha256:d3a57b8cd73bde961c4e38dd9ce6f6dd45f03665898820e846facbaf5dc26aa2",
         "owner": "packet DAG, scopes, budgets, acceptance, approvals"
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 1133396,
-        "sha256": "sha256:ec44121624b78f268dddc823358430ab117f82815182f0d1b96db270d3c22172",
+        "bytes": 1138404,
+        "sha256": "sha256:7f697c866c7f90b9b7d101205c73191dc0f06149644ccd2fa2030586ef543725",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
         "path": "docs/plans/north_star_recovery/WORKER_CONTRACTS.md",
-        "bytes": 26246,
-        "sha256": "sha256:a33069d5f1f63865799b835d8547bc939ea89791d36abaab1060e33fa601cb48",
+        "bytes": 26223,
+        "sha256": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
         "owner": "worker permissions, assignments, result and review contracts"
       },
       {
         "path": "docs/plans/north_star_recovery/GOAL_PROMPT.txt",
-        "bytes": 14374,
-        "sha256": "sha256:599f73e38f1ccd4b059748c601214f84b506ccecf5b1c614443a27ccc8681c7d",
+        "bytes": 14362,
+        "sha256": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
         "owner": "fresh-session execution entry point"
       },
       {
@@ -757,10 +780,10 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_round_38_exact_hash_review",
+    "status": "pending_round_39_final_exact_hash_review",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round38/state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round39/state_handoff.json",
     "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
@@ -842,12 +865,12 @@
     "planning_checkout": {
       "path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
       "branch": "north-star/recovery-execution",
-      "head_sha": "949c9163092467f0bdfd06648532da7bade237d3",
-      "tree_sha": "1c51951337c0fae0719cc79e5baf3cc71ea4501d",
+      "head_sha": "f721fd122543357cbb8ee280e8f7340f87435d7a",
+      "tree_sha": "f3ebbdc3a434fe1fb008ae2851b6e931520bfabb",
       "local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
       "merge_base_with_local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "working_tree_state": "generated_round_38_review_candidate_STATE_and_authored_corrections_uncommitted",
-      "role": "clean committed round-37 planning anchor rooted at current remote main; round-38 exact hashes and unobserved-command evidence checks identify the candidate"
+      "working_tree_state": "generated_round_39_final_review_candidate_STATE_and_authored_corrections_uncommitted",
+      "role": "clean committed round-38 planning anchor; round-39 is the bounded final exact-hash gate before G0"
     },
     "current_remote_main": {
       "repository": "kmccleary3301/breadboard",
@@ -1641,9 +1664,9 @@
   ],
   "next_frontier": [
     {
-      "gate": "planning_package_round_38_exact_hash_review",
+      "gate": "planning_package_round_39_final_exact_hash_review",
       "state": "blocked_review",
-      "reason": "Round 37 found synthetic exception/not-started text was hashed as command stderr for unobserved closure and push subprocesses. Round 38 clears every unobserved stdout/stderr, retains exception identity only as metadata, and preserves every actual returned process result. Two fresh reviewers must approve all six artifacts before G0."
+      "reason": "Round 38 found lost push/fetch exception identity, non-persisted nested pre-close results, and an over-narrow fallback metadata contract. Round 39 fixes those exact evidence seams. This is the bounded final review gate: two fresh exact-head approvals end planning; unrelated new assurance ideas do not extend this tranche."
     }
   ],
   "approvals": {
@@ -1692,7 +1715,8 @@
     "planning_package_round_35_review": "request_changes_resolved_pending_round_36",
     "planning_package_round_36_review": "request_changes_resolved_pending_round_37",
     "planning_package_round_37_review": "request_changes_resolved_pending_round_38",
-    "planning_package_round_38_review": "pending"
+    "planning_package_round_38_review": "request_changes_resolved_pending_round_39_final",
+    "planning_package_round_39_review": "pending_final"
   },
   "completion": {
     "status": "not_started",

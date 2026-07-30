@@ -157,7 +157,7 @@ G0's supervisor assignment may authorize one terminal bootstrap commit only afte
 
 After either closure or terminal start, every external mutation boundary catches `BaseException`. Protected ledger writers complete the whole row or truncate and fsync to the locked pre-append length. Validation and intent rows use deterministic IDs, exact matching-row recovery, and conflict rejection. A writer result is not self-authenticating: the supervisor requires full failure validation after success or bounded publication validation after writer failure.
 
-Inventory both closure and push primary/retry failure and writer artifacts before start. Preserve every observed `CompletedProcess`; represent every unobserved closure/push command only as exit `-1` with empty stdout/stderr. Keep exception identity solely in failure or observation metadata. Every `beads_remote_push` producer and consumer uses `push_authenticated_beads_remote`.
+Preserve every returned command result; encode unobserved closure/push commands only as exit `-1` with empty streams. Persist push/fetch exception classes in failure metadata and nested pre-close results in closure failure v4. Use the authenticated writer-failure ledger action as exception metadata only when the failure record itself cannot be published.
 3. Reproduce the existing behavior or failure on the base when applicable.
 4. Use existing patterns and owners. Do not create a second convention.
 5. Apply one bounded logical change.
