@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-30T00:31:31Z",
+  "generated_at_utc": "2026-07-30T00:57:01Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "round_32_exact_hash_review_pending_after_round_31_findings_resolved",
+    "status": "round_33_exact_hash_review_pending_after_round_32_findings_resolved",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,11 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "pending_round_32_exact_hash_review",
-      "round": 32,
+      "status": "pending_round_33_exact_hash_review",
+      "round": 33,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_31_request_changes_resolved_round_32_pending",
+      "corrections_status": "round_32_request_changes_resolved_round_33_pending",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -572,6 +572,29 @@
         "resolution": "Made the ordered terminal precheck receipt-aware; required canonical writer and sole healthy origin in both precheck and reconciler; required failure_stage=beads_push in reconciler and terminal validator; added valid, bad-writer, bad-remote, and wrong-stage pre-append scenarios."
       },
       "round_32": {
+        "status": "request_changes_resolved_pending_round_33",
+        "reviewed_state_input_sha256": "sha256:2404e8510c5933102385ba6b017f63a1318b1982b00f38fa3714f71efcaa8a8a",
+        "reviewed_authored_artifact_hashes": {
+          "ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "EXECUTION_PLAN.md": "sha256:f4df01542e7d1e91e18d8e00cd9eeb1ac61eebfe34c4a3a1151a6e05cd8b8702",
+          "LOOP_SPEC.yaml": "sha256:4e4128c97e55ae069b470dccb98ff1b182c0f5bd969640a8e7c1bc24e254856a",
+          "WORKER_CONTRACTS.md": "sha256:7fc5d41236f4041bad445bf9e378b3ecc0553ff6f42aca0493f5dd0663a327cb",
+          "GOAL_PROMPT.txt": "sha256:061a8095b59cb86bcf30fb37e382fba7c4f3dff8a52950cc97c0e608e6458e6e"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round32/Round32StateReview.raw.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round32/Round32BoundaryReview.raw.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:f9489bf7796e2f24ecebad4ff57e8e80259727b0cb8e38f051dd2a44d973a1b3",
+          "sha256:e84e5f7dd05cdb7a4a3e1a3dfc9eb9258795d28329a0935068fcb97234c2cde5"
+        ],
+        "verdict_correction_ref": "../docs_tmp/north_star_recovery/planning_reviews/round32/verdict_corrections.json",
+        "verdict_correction_sha256": "sha256:89781c7ed303c57231f004386128e4c432b4583d40555285d084a66d8f0727a3",
+        "blocking_findings": 6,
+        "resolution": "Replaced v4 with a 17-field v5 receipt containing only independently revalidated facts; removed unbound output digests/timestamps; enforced one complete healthy origin before fresh push and recovery; ran complete optional-failure validation before success append and reconciled validation in terminal/G2; bound G2 to receipt start and main row."
+      },
+      "round_33": {
         "status": "pending_exact_hash_review",
         "reviewed_state_input_sha256": null,
         "reviewer_verdict_refs": [],
@@ -587,26 +610,26 @@
       },
       {
         "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
-        "bytes": 44321,
-        "sha256": "sha256:f4df01542e7d1e91e18d8e00cd9eeb1ac61eebfe34c4a3a1151a6e05cd8b8702",
+        "bytes": 44146,
+        "sha256": "sha256:c081bd8805722d458a1f01e3879b25a9cd2dca7fa999b0d76988d0462ffdd179",
         "owner": "packet DAG, scopes, budgets, acceptance, approvals"
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 995496,
-        "sha256": "sha256:4e4128c97e55ae069b470dccb98ff1b182c0f5bd969640a8e7c1bc24e254856a",
+        "bytes": 1045059,
+        "sha256": "sha256:4fb984ba1ce4adf5b397d6de21af4b05435641ca1cd31640ce826a5288ee40b9",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
         "path": "docs/plans/north_star_recovery/WORKER_CONTRACTS.md",
-        "bytes": 26238,
-        "sha256": "sha256:7fc5d41236f4041bad445bf9e378b3ecc0553ff6f42aca0493f5dd0663a327cb",
+        "bytes": 26234,
+        "sha256": "sha256:5991ff005544b1de5ebe450c2b521a498c8d4539916b254d39eed1ed97f1d710",
         "owner": "worker permissions, assignments, result and review contracts"
       },
       {
         "path": "docs/plans/north_star_recovery/GOAL_PROMPT.txt",
-        "bytes": 14286,
-        "sha256": "sha256:061a8095b59cb86bcf30fb37e382fba7c4f3dff8a52950cc97c0e608e6458e6e",
+        "bytes": 14310,
+        "sha256": "sha256:97da85e7aeeff87272bc40ad61dd3f75d33c7b57f54d1597d0ff27559218f901",
         "owner": "fresh-session execution entry point"
       },
       {
@@ -619,10 +642,10 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_round_32_exact_hash_review",
+    "status": "pending_round_33_exact_hash_review",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round32/state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round33/state_handoff.json",
     "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
@@ -704,12 +727,12 @@
     "planning_checkout": {
       "path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
       "branch": "north-star/recovery-execution",
-      "head_sha": "d9ec85e531b25895740f2d867122c7e1bc499ecc",
-      "tree_sha": "fdaeab17f1169a3dd821e48c511c237e950983b9",
+      "head_sha": "c90ddb3bc06aefc58d63c10cc7fa96dacbf55620",
+      "tree_sha": "b707142247e04d9e8b47cb119d7a6cf173c48329",
       "local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
       "merge_base_with_local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "working_tree_state": "generated_round_32_review_candidate_STATE_and_authored_corrections_uncommitted",
-      "role": "clean committed round-31 planning anchor rooted at current remote main; the reviewed round-32 candidate is identified by exact artifact hashes and external structural evidence"
+      "working_tree_state": "generated_round_33_review_candidate_STATE_and_authored_corrections_uncommitted",
+      "role": "clean committed round-32 planning anchor rooted at current remote main; round-33 exact hashes and external structural evidence identify the candidate"
     },
     "current_remote_main": {
       "repository": "kmccleary3301/breadboard",
@@ -1503,9 +1526,9 @@
   ],
   "next_frontier": [
     {
-      "gate": "planning_package_round_32_exact_hash_review",
+      "gate": "planning_package_round_33_exact_hash_review",
       "state": "blocked_review",
-      "reason": "Round 31 found missing canonical receipt predicates and an ordered precheck that blocked reconciliation. The round-32 candidate validates the canonical writer/origin and narrow failure stage in the reachable ordered path before any ledger append. Two fresh reviewers must approve all six artifacts before G0."
+      "reason": "Round 32 found unbound receipt fields, incomplete fresh-origin/failure checks, and incomplete G2 replay. The round-33 v5 receipt contains only independently revalidated fields and all fresh/recovery/terminal/G2 paths use complete predicates. Two fresh reviewers must approve all six artifacts before G0."
     }
   ],
   "approvals": {
@@ -1548,7 +1571,8 @@
     "planning_package_round_29_review": "request_changes_resolved_pending_round_30",
     "planning_package_round_30_review": "request_changes_resolved_pending_round_31",
     "planning_package_round_31_review": "request_changes_resolved_pending_round_32",
-    "planning_package_round_32_review": "pending"
+    "planning_package_round_32_review": "request_changes_resolved_pending_round_33",
+    "planning_package_round_33_review": "pending"
   },
   "completion": {
     "status": "not_started",

@@ -157,7 +157,7 @@ G0's supervisor assignment may authorize one terminal bootstrap commit only afte
 
 After either closure or terminal start, every external mutation boundary catches `BaseException`. Protected ledger writers complete the whole row or truncate and fsync to the locked pre-append length. Validation and intent rows use deterministic IDs, exact matching-row recovery, and conflict rejection. A writer result is not self-authenticating: the supervisor requires full failure validation after success or bounded publication validation after writer failure.
 
-The terminal runner reconciles a durable push receipt before any push. Both the ordered precheck and reconciler require the canonical writer and sole healthy origin. The reconciler validates exact original runner/start, schema, hashes, results, live heads, and only the narrowly typed `beads_push` main-ledger-append failure. Mismatch produces no success row and no push.
+The v5 push receipt contains no unbound output or timing claims. Fresh push, ordered precheck, reconciliation, terminal validation, and G2 require the same complete canonical origin and receipt predicates. A receipt-bound optional failure is completely validated before success append and revalidated afterward; G2 binds start, main row, and live heads independently.
 3. Reproduce the existing behavior or failure on the base when applicable.
 4. Use existing patterns and owners. Do not create a second convention.
 5. Apply one bounded logical change.
