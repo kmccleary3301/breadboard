@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-30T08:23:00Z",
+  "generated_at_utc": "2026-07-30T20:38:38Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "approved_round_45_exact_hash_review_g0_pending",
+    "status": "pending_round_46_exact_hash_reviews",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,35 +36,18 @@
       ]
     },
     "independent_review": {
-      "status": "approved",
-      "round": 45,
+      "status": "pending",
+      "round": 46,
       "reviewed_artifact_hashes": {
         "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
         "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
         "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
-        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:4896929f42c92e3a8c4386a4540b7e15cb73d8398fd1648ca9128c79d9ce883e",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:60ba5a2c8e138ce6a835006ee5c2cbd836757e41d3688e12768d1b1fbdffabed",
         "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
-        "docs/plans/north_star_recovery/STATE.json": "sha256:619a5bce6a2767dfac471567c15fffaf09d10c576fe74cacaf9a58c037a716cf"
+        "docs/plans/north_star_recovery/STATE.json": null
       },
-      "reviewers": [
-        {
-          "reviewer_id": "Round45AuthorityReview",
-          "review_run_id": "round45-authority-review-20260730T082241Z-01",
-          "author_identity": "openai-codex/gpt-5.6-luna:Round45AuthorityReview",
-          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round45/Round45AuthorityReview.json",
-          "verdict_sha256": "sha256:57dda5503907481cadbb161435370e8271ed2a30f40659930f5a121f6d668fcb",
-          "completed_at_utc": "2026-07-30T08:22:41Z"
-        },
-        {
-          "reviewer_id": "Round45ExecutionReview",
-          "review_run_id": "Round45ExecutionReview-20260730T082130Z-88d3e8a",
-          "author_identity": "openai-codex/gpt-5.6-luna/execution-reviewer",
-          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round45/Round45ExecutionReview.json",
-          "verdict_sha256": "sha256:3326f5066f7cd400c0cfe54cf2f2e2b6e9b1e0a2140261f36d3f0e21fbe89f53",
-          "completed_at_utc": "2026-07-30T08:21:30Z"
-        }
-      ],
-      "corrections_status": "round_44_corrected_findings_resolved_and_round_45_finally_approved",
+      "reviewers": [],
+      "corrections_status": "Round 45 exact reviews approved, but the first protected-mutation preflight failed closed before mutation; stale literal digest and evidence-shape findings repaired, fresh exact-head reviews required",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -901,7 +884,7 @@
         "resolution": "Separated direct and graph approval schemas, bound every approval-record consumer to the complete current campaign graph approval including nested copies, declared the two missing RECORD_PATH operands, regenerated captured argv from canonical commands, and advanced executable review dispatch to Round 45."
       },
       "round_45": {
-        "status": "approved_after_corrections",
+        "status": "approved_but_preflight_aborted_pending_round_46",
         "reviewed_state_input_sha256": "sha256:619a5bce6a2767dfac471567c15fffaf09d10c576fe74cacaf9a58c037a716cf",
         "reviewed_artifact_hashes": {
           "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
@@ -938,10 +921,12 @@
           }
         ],
         "blocking_findings": 0,
-        "resolution": "Two independent Round 45 exact-head reviews approved the corrected candidate with no P0-P2 findings."
+        "resolution": "Round 45 reviewers approved the candidate, but the first G0 preflight failed closed before mutation on a stale hardcoded literal digest, noncanonical review artifact paths, and an incomplete tracker snapshot schema. No protected mutation ran.",
+        "execution_blocking_findings": 3,
+        "execution_incident_ref": "../docs_tmp/north_star_recovery/bootstrap/aborted_g0_preflight_20260730T203346Z/incident.json"
       },
       "round_40_boundary_execution_correction": {
-        "status": "request_changes_resolved_pending_round_45_exact_hash_reviews",
+        "status": "request_changes_resolved_pending_round_46_exact_hash_reviews",
         "trigger": "G0 preflight failed closed before mutation because four workflow bodies were indented inside helper functions and therefore no-op wrappers.",
         "corrections": [
           "dedented per_mutation_action_boundary_validation_command workflow",
@@ -963,7 +948,10 @@
           "declared RECORD_PATH on exact_hash_review_validation_command and state_handoff_validation_command",
           "synchronized every nested validator copy with its corrected canonical top-level command",
           "regenerated the captured preflight argv list from the canonical command surface",
-          "advanced exact-review and handoff dispatch plus captured preflight literals to Round 45"
+          "advanced exact-review and handoff dispatch plus captured preflight literals to Round 45",
+          "updated closed_preflight_policy_validation_command literal digest for the active planning review round and synchronized its captured copy",
+          "required canonical relative artifact paths in reissued exact-review evidence",
+          "added schema_version to the generated preexisting tracker snapshot before the next approval request"
         ],
         "aborted_evidence_ref": "../docs_tmp/north_star_recovery/bootstrap/aborted_g0_preflight_20260730T054210Z/incident.json",
         "protected_mutations_applied": false
@@ -985,7 +973,7 @@
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
         "bytes": 1253476,
-        "sha256": "sha256:4896929f42c92e3a8c4386a4540b7e15cb73d8398fd1648ca9128c79d9ce883e",
+        "sha256": "sha256:60ba5a2c8e138ce6a835006ee5c2cbd836757e41d3688e12768d1b1fbdffabed",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
@@ -1010,14 +998,11 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "fresh_exact_hash_reviews_approved",
-    "reviewed_pre_refresh_state_sha256": "sha256:619a5bce6a2767dfac471567c15fffaf09d10c576fe74cacaf9a58c037a716cf",
-    "reviewer_verdict_refs": [
-      "../docs_tmp/north_star_recovery/planning_reviews/round45/Round45AuthorityReview.json",
-      "../docs_tmp/north_star_recovery/planning_reviews/round45/Round45ExecutionReview.json"
-    ],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round45/refreshed_state_handoff.json",
-    "current_state_sha256_in_manifest": true
+    "status": "pending_round_46_exact_hash_reviews_after_round_45_execution_preflight_abort",
+    "reviewed_pre_refresh_state_sha256": null,
+    "reviewer_verdict_refs": [],
+    "refreshed_state_handoff_manifest": null,
+    "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
     {
