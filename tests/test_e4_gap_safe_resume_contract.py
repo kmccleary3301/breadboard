@@ -505,6 +505,7 @@ async def test_restart_rehydrates_terminal_cursor_for_exact_head_resume(tmp_path
         session_id="exact-head-resume",
         status=SessionStatus.COMPLETED,
         event_seq=1,
+        metadata={"model": "cli_mock/reference"},
     )
     turn = TurnRecord(
         input_id="input-1",
@@ -533,6 +534,7 @@ async def test_restart_rehydrates_terminal_cursor_for_exact_head_resume(tmp_path
     rehydrated = await restarted_service.ensure_session(record.session_id)
     snapshot = rehydrated.to_summary()
 
+    assert snapshot.model == "cli_mock/reference"
     assert snapshot.head_sequence == 1
     assert snapshot.head_event_id == terminal.event_id
     assert snapshot.retained_history == "partial"

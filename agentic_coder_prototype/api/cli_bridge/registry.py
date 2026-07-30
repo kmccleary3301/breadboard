@@ -60,6 +60,17 @@ def _digest_payload(payload: Any) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+def _retained_model_id(value: Any) -> str | None:
+    if not isinstance(value, str) or not 3 <= len(value) <= 256:
+        return None
+    if value.startswith("/") or value.endswith("/") or "/" not in value or "://" in value:
+        return None
+    allowed = frozenset(
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._/-:"
+    )
+    return value if all(character in allowed for character in value) else None
+
+
 def identity_digest(value: str) -> str:
     return _digest_payload({"identity": str(value)})
 
@@ -1751,6 +1762,7 @@ class SessionRegistry:
                 "created_at": record.created_at.isoformat(),
                 "last_activity_at": record.last_activity_at.isoformat(),
                 "event_seq": record.event_seq,
+                "model": _retained_model_id(record.metadata.get("model")),
             },
             "turns": turns,
             "submissions": submissions,
@@ -1873,6 +1885,7 @@ class SessionRegistry:
         if payload.get("schema_version") != _STATE_SCHEMA_VERSION:
             raise ValueError("unsupported session-state schema")
         session = payload["session"]
+        model = _retained_model_id(session.get("model"))
         record = SessionRecord(
             session_id=str(session["session_id"]),
             status=SessionStatus(str(session["status"])),
@@ -1880,6 +1893,7 @@ class SessionRegistry:
             last_activity_at=datetime.fromisoformat(str(session["last_activity_at"])),
             event_seq=int(session.get("event_seq") or 0),
             replay_history_partial=bool(session.get("event_seq")),
+            metadata={"model": model} if model is not None else {},
         )
         for item in payload.get("turns") or []:
             turn = TurnRecord(
