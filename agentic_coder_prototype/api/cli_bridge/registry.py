@@ -1809,6 +1809,56 @@ class SessionRegistry:
             "payload": payload,
         }
 
+    @staticmethod
+    def _rehydrate_terminal_event(
+        envelope: Dict[str, Any],
+        *,
+        session_id: str,
+        head_sequence: int,
+    ) -> SessionEvent:
+        event_type = EventType(str(envelope["type"]))
+        if event_type not in _TERMINAL_EVENT_TYPES:
+            raise ValueError("retained event is not terminal")
+        if envelope.get("stable_cursor") is not True:
+            raise ValueError("retained terminal event is not cursor-stable")
+        if str(envelope.get("session_id") or "") != session_id:
+            raise ValueError("retained terminal event has the wrong session")
+        event_id = str(envelope.get("id") or "")
+        if not event_id:
+            raise ValueError("retained terminal event has no identity")
+        sequence = envelope.get("seq")
+        if (
+            isinstance(sequence, bool)
+            or not isinstance(sequence, int)
+            or sequence < 1
+            or sequence > head_sequence
+        ):
+            raise ValueError("retained terminal event has an invalid sequence")
+        timestamp_ms = envelope.get("timestamp_ms")
+        if isinstance(timestamp_ms, bool) or not isinstance(timestamp_ms, int):
+            raise ValueError("retained terminal event has an invalid timestamp")
+        payload = envelope.get("payload")
+        if not isinstance(payload, dict):
+            raise ValueError("retained terminal event has an invalid payload")
+        input_id = envelope.get("input_id")
+        turn_id = envelope.get("turn_id")
+        if input_id is not None and not isinstance(input_id, str):
+            raise ValueError("retained terminal event has an invalid input identity")
+        if turn_id is not None and not isinstance(turn_id, str):
+            raise ValueError("retained terminal event has an invalid turn identity")
+        return SessionEvent(
+            event_type,
+            session_id,
+            dict(payload),
+            created_at=timestamp_ms,
+            event_id=event_id,
+            seq=sequence,
+            stable_cursor=True,
+            input_id=input_id,
+            turn_id=turn_id,
+        )
+
+
     def _load_retained_records(self) -> None:
         assert self._state_root is not None
         for path in sorted(self._state_root.glob("*.json")):
@@ -1866,9 +1916,27 @@ class SessionRegistry:
             record.cancellations_by_key_digest[str(item["key_digest"])] = cancellation
         terminal_events = payload.get("terminal_event_envelopes")
         if isinstance(terminal_events, list):
-            record.terminal_event_envelopes = [
-                dict(item) for item in terminal_events if isinstance(item, dict)
-            ]
+            retained_ids: set[str] = set()
+            retained_sequences: set[int] = set()
+            rehydrated_events: list[SessionEvent] = []
+            for item in terminal_events:
+                if not isinstance(item, dict):
+                    continue
+                envelope = dict(item)
+                event = self._rehydrate_terminal_event(
+                    envelope,
+                    session_id=record.session_id,
+                    head_sequence=record.event_seq,
+                )
+                if event.event_id in retained_ids or event.seq in retained_sequences:
+                    raise ValueError("retained terminal event identity is duplicated")
+                retained_ids.add(event.event_id)
+                retained_sequences.add(event.seq)
+                record.terminal_event_envelopes.append(envelope)
+                rehydrated_events.append(event)
+            record.event_log.extend(
+                sorted(rehydrated_events, key=lambda event: int(event.seq or 0))
+            )
         committed_turn_ids = {
             str(item.get("turn_id"))
             for item in record.terminal_event_envelopes

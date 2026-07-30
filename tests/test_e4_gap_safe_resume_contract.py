@@ -498,6 +498,61 @@ def test_replay_retention_exact_count_age_edges_and_configuration_digest(
 
 
 @pytest.mark.asyncio
+async def test_restart_rehydrates_terminal_cursor_for_exact_head_resume(tmp_path: Path) -> None:
+    state_root = tmp_path / "runtime_records" / "session_state"
+    registry = SessionRegistry(state_root)
+    record = SessionRecord(
+        session_id="exact-head-resume",
+        status=SessionStatus.COMPLETED,
+        event_seq=1,
+    )
+    turn = TurnRecord(
+        input_id="input-1",
+        turn_id="turn-1",
+        client_message_id="submit-1",
+        content="completed task",
+        attachments=(),
+        original_disposition="started",
+        state="completed",
+        terminal_outcome="completed",
+    )
+    record.turns_by_id[turn.turn_id] = turn
+    await registry.create(record)
+    terminal = _logged_event(
+        record.session_id,
+        1,
+        event_type=EventType.TURN_COMPLETED,
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+        payload={},
+    )
+    await registry.persist(record, terminal_event=terminal)
+
+    restarted_registry = SessionRegistry(state_root)
+    restarted_service = SessionService(restarted_registry)
+    rehydrated = await restarted_service.ensure_session(record.session_id)
+    snapshot = rehydrated.to_summary()
+
+    assert snapshot.head_sequence == 1
+    assert snapshot.head_event_id == terminal.event_id
+    assert snapshot.retained_history == "partial"
+    assert [(event.seq, event.event_id) for event in rehydrated.event_log] == [
+        (1, terminal.event_id)
+    ]
+
+    stream = restarted_service.event_stream(
+        record.session_id,
+        from_id=terminal.event_id,
+        include_open_ack=True,
+    )
+    opened = await stream.__anext__()
+    assert opened.type is EventType.STREAM_OPEN
+    assert opened.payload["headEventId"] == terminal.event_id
+    await stream.aclose()
+    await _stop_dispatcher(rehydrated)
+
+
+@pytest.mark.asyncio
 async def test_terminal_and_idempotency_state_survives_restart_and_replay_expiry_without_secrets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -591,13 +646,14 @@ async def test_terminal_and_idempotency_state_survives_restart_and_replay_expiry
     }
     assert snapshot.retained_history == "partial"
     assert rehydrated.event_seq == 3
-    assert list(rehydrated.event_log) == []
+    assert [event.seq for event in rehydrated.event_log] == [1, 2, 3]
 
     with pytest.raises(HTTPException) as partial_replay:
         await restarted_service.prepare_event_stream(record.session_id, replay=True)
     assert partial_replay.value.status_code == 409
     assert partial_replay.value.detail["code"] == "resume_window_exceeded"
     assert partial_replay.value.detail["last_event_id"] is None
+    assert list(rehydrated.event_log) == []
 
     replayed_submit = await restarted_service.send_input(
         record.session_id,
