@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-30T06:21:56Z",
+  "generated_at_utc": "2026-07-30T06:48:00Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "pending_round_40_boundary_execution_correction_reviews",
+    "status": "pending_round_42_exact_hash_reviews",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -37,17 +37,17 @@
     },
     "independent_review": {
       "status": "pending",
-      "round": 40,
+      "round": 42,
       "reviewed_artifact_hashes": {
         "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
-        "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3a57b8cd73bde961c4e38dd9ce6f6dd45f03665898820e846facbaf5dc26aa2",
+        "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
         "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
-        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:89ed580056510c3e78ca96762356e1ef294e71aac41e054e858e072b85dc119d",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:0547a001e59a1c991e8d0901a6988b3da39e6ed125b907e63b4fb1156af9bbcb",
         "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
         "docs/plans/north_star_recovery/STATE.json": null
       },
       "reviewers": [],
-      "corrections_status": "execution-discovered validator-wrapper no-op repaired; fresh exact-head approvals required",
+      "corrections_status": "round 41 approval binding, closure/recovery dispatch, and canonical cardinality findings repaired; fresh exact-head reviews required",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -795,14 +795,40 @@
         "blocking_findings": 0,
         "resolution": "Two independent terminal exact-head reviews approved the corrected candidate with no P0-P2 findings."
       },
+      "round_41": {
+        "status": "request_changes_resolved_pending_round_42",
+        "reviewed_state_input_sha256": "sha256:4ee2b8eabaaa4b40bf0d283e652583d987cfe1ed6e1122ed639833506ca5c9bc",
+        "reviewed_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3a57b8cd73bde961c4e38dd9ce6f6dd45f03665898820e846facbaf5dc26aa2",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:89ed580056510c3e78ca96762356e1ef294e71aac41e054e858e072b85dc119d",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:4ee2b8eabaaa4b40bf0d283e652583d987cfe1ed6e1122ed639833506ca5c9bc",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round41/Round41StateReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round41/Round41ExecutionReview.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:929a8b370d120c41425832a5ca26e8931ffdcf44e5f9dc4e0592852e829c03ab",
+          "sha256:f477b52cab9a0e1d0b4f29b3de3897b2ec175594e847b5a6774a28929ac0d3df"
+        ],
+        "blocking_findings": 4,
+        "resolution": "Bound every direct G0 approval to current planning head/tree, wired closure status production and recovery freshness into explicit command order, corrected the canonical dependency count to 31, and asserted the 54-action cardinality across sequence and receipt validators."
+      },
       "round_40_boundary_execution_correction": {
-        "status": "pending_exact_hash_reviews",
+        "status": "request_changes_resolved_pending_round_42_exact_hash_reviews",
         "trigger": "G0 preflight failed closed before mutation because four workflow bodies were indented inside helper functions and therefore no-op wrappers.",
         "corrections": [
           "dedented per_mutation_action_boundary_validation_command workflow",
           "dedented closure_worktree_status_record_command workflow",
           "dedented initial_recovery_freshness_validation_command workflow",
-          "dedented partial_governance_recovery.validation_command workflow"
+          "dedented partial_governance_recovery.validation_command workflow",
+          "bound both direct G0 approvals to current planning head and tree in every consumer",
+          "wired closure_worktree_status_record_command before closure validation and mutation",
+          "wired initial recovery freshness before recovery validation and result publication",
+          "corrected the dependency-edge count to 31 and enforced 54 total canonical actions"
         ],
         "aborted_evidence_ref": "../docs_tmp/north_star_recovery/bootstrap/aborted_g0_preflight_20260730T054210Z/incident.json",
         "protected_mutations_applied": false
@@ -817,14 +843,14 @@
       },
       {
         "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
-        "bytes": 44290,
-        "sha256": "sha256:d3a57b8cd73bde961c4e38dd9ce6f6dd45f03665898820e846facbaf5dc26aa2",
+        "bytes": 44374,
+        "sha256": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
         "owner": "packet DAG, scopes, budgets, acceptance, approvals"
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 1140411,
-        "sha256": "sha256:89ed580056510c3e78ca96762356e1ef294e71aac41e054e858e072b85dc119d",
+        "bytes": 1161517,
+        "sha256": "sha256:0547a001e59a1c991e8d0901a6988b3da39e6ed125b907e63b4fb1156af9bbcb",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
@@ -849,7 +875,7 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_fresh_exact_hash_reviews_after_boundary_execution_fix",
+    "status": "pending_round_42_exact_hash_reviews_after_round_41_corrections",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
     "refreshed_state_handoff_manifest": null,
