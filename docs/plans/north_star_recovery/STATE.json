@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-30T02:58:53Z",
+  "generated_at_utc": "2026-07-30T04:05:18Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "round_39_final_exact_hash_review_pending_after_round_38_findings_resolved",
+    "status": "round_40_final_exact_hash_review_pending_after_corrected_findings_resolved",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,11 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "pending_round_40_corrected_exact_hash_review",
+      "status": "pending_round_40_final_exact_hash_review",
       "round": 40,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_40_request_changes_resolved_corrected_exact_hash_review_pending",
+      "corrections_status": "round_40_corrected_request_changes_resolved_pending_final",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -749,20 +749,18 @@
         "resolution": "Replaced the undefined shp digest predicate with the defined sha_pattern predicate in both embedded and standalone closure failure validators; round 40 must exercise each validator with nonempty preclose_validation_results before exact-head approval."
       },
       "round_40": {
-        "status": "request_changes_resolved_corrected_exact_hash_review_pending",
-        "reviewed_state_input_sha256": "sha256:d05da177e8e406dfeeea134e3b1d40b40f10e0eb98dd1e5ef1241ec222fc69c6",
+        "status": "request_changes_resolved_pending_final_review",
+        "reviewed_state_input_sha256": "sha256:75edb3d4ed41545c31f3ee0c2653c33818975866907b3ff6917fdfb699aaeac2",
         "reviewer_verdict_refs": [
-          "../docs_tmp/north_star_recovery/planning_reviews/round40/Round40StateReview.raw.json",
-          "../docs_tmp/north_star_recovery/planning_reviews/round40/Round40BoundaryReview.raw.json"
+          "../docs_tmp/north_star_recovery/planning_reviews/round40/Round40StateReview.corrected.raw.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round40/Round40BoundaryReview.corrected.raw.json"
         ],
         "reviewer_verdict_sha256": [
-          "sha256:dae7ed6566678948309f28e317ed83c114e6828d2a14a6a6d5f8283d39639960",
-          "sha256:a54e97ea798104bd31a327994f6b2fac8d438a362f0c2b80815b647d296b5ec7"
+          "sha256:e56ee19a04250dbc52da7ef374af89f8ccb96e8dfdf523952d231ee065b0bcff",
+          "sha256:f3e279da36bb31852964dbde7c7ffa4bee997de70ce5552bcfd00ddc15a4e666"
         ],
-        "verdict_correction_ref": "../docs_tmp/north_star_recovery/planning_reviews/round40/verdict_corrections.json",
-        "verdict_correction_sha256": "sha256:19fee006e3b4d93f27e1645ff3315a8092168d05d03a17173bd6050b52ef5e4c",
-        "blocking_findings": 1,
-        "resolution": "Accepted R40-BOUNDARY-P1-STATE-HANDOFF-ROUND39-FIXED-PATH. The top-level validator derives the exact refreshed handoff path from validated planning_review_round; the embedded copy is bound to current Round 40. The refreshed manifest has a distinct filename from immutable candidate-review handoffs."
+        "blocking_findings": 6,
+        "resolution": "Removed stale Round39 predicates and embedded payload; regenerated the closed-preflight literal digest; hardened exact-review UTC and global identity uniqueness checks; repaired capture-command shell quoting; persisted executable nonempty nested-result receipts before the final review."
       }
     },
     "artifacts": [
@@ -780,8 +778,8 @@
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 1138521,
-        "sha256": "sha256:d53486e0cddac3cc0c48e4ba1aa5c3cf07c16f26c908a07fd5abb1e57c686941",
+        "bytes": 1140391,
+        "sha256": "sha256:8f4d8b3251f9e66e23717070d37dfd4de43dceeb27baaa74d80a341a077cd7b1",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
@@ -806,7 +804,7 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_round_40_corrected_exact_hash_review",
+    "status": "pending_round_40_final_exact_hash_review_after_corrected_findings_resolved",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [],
     "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round40/refreshed_state_handoff.json",
@@ -1690,9 +1688,9 @@
   ],
   "next_frontier": [
     {
-      "gate": "planning_package_round_40_corrected_exact_hash_review",
+      "gate": "planning_package_round_40_final_exact_hash_review",
       "state": "blocked_review",
-      "reason": "The stale Round 39 top-level G0 handoff path is corrected; the top-level validator derives the current manifest from validated planning_review_round and the embedded preflight copy is bound to Round 40. Two fresh exact-head approvals remain required."
+      "reason": "Corrected-final Round 40 request changes are resolved. Two fresh exact-head approvals and the post-review refreshed STATE handoff remain required before G0."
     }
   ],
   "approvals": {
@@ -1743,7 +1741,7 @@
     "planning_package_round_37_review": "request_changes_resolved_pending_round_38",
     "planning_package_round_38_review": "request_changes_resolved_pending_round_39_final",
     "planning_package_round_39_review": "request_changes_resolved_pending_round_40_final",
-    "planning_package_round_40_review": "corrected_exact_hash_review_pending"
+    "planning_package_round_40_review": "request_changes_resolved_pending_final_review"
   },
   "completion": {
     "status": "not_started",
