@@ -36,11 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "pending_round_39_final_exact_hash_review",
-      "round": 39,
+      "status": "pending_round_40_final_exact_hash_review",
+      "round": 40,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_38_request_changes_resolved_round_39_final_pending",
+      "corrections_status": "round_39_request_changes_resolved_round_40_final_pending",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -733,6 +733,22 @@
         "resolution": "Propagated fresh push/fetch exception classes into failure metadata while retaining unobserved empty-stream sentinels; persisted digest-bound nested pre-close results in closure failure v4; designated authenticated writer-failure ledger actions as the last-resort exception channel when record publication itself fails. Rejected the cross-branch claim that existing-receipt handling can discard fresh push results."
       },
       "round_39": {
+        "status": "request_changes",
+        "reviewed_state_input_sha256": "sha256:b6478857cdab00a447523789f2a668d12d363f7cc931f054091a09bc9690aba2",
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round39/Round39StateReview.raw.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round39/Round39BoundaryReview.raw.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:271e425177b90cf90ffdac1d78fa55457a2f1afc19849ab087ca94f70a937780",
+          "sha256:5a6ff4cf105f33fb92dfa39667e2a2b62776b2ac05f422118ac0e1fc1f42ceb0"
+        ],
+        "verdict_correction_ref": "../docs_tmp/north_star_recovery/planning_reviews/round39/verdict_corrections.json",
+        "verdict_correction_sha256": "sha256:c3b769c4c0311fa2aaf4ec7635a76d0788a87d6b7fbf0fdbf12b06db5ff51733",
+        "blocking_findings": 1,
+        "resolution": "Replaced the undefined shp digest predicate with the defined sha_pattern predicate in both embedded and standalone closure failure validators; round 40 must exercise each validator with nonempty preclose_validation_results before exact-head approval."
+      },
+      "round_40": {
         "status": "pending_final_exact_hash_review",
         "reviewed_state_input_sha256": null,
         "reviewer_verdict_refs": [],
@@ -754,8 +770,8 @@
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 1138404,
-        "sha256": "sha256:7f697c866c7f90b9b7d101205c73191dc0f06149644ccd2fa2030586ef543725",
+        "bytes": 1138452,
+        "sha256": "sha256:8173033d59fe7ecc3d9e16be0222e77a36ba33b0ceb82e8672301ead99cf05bf",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
@@ -1664,9 +1680,9 @@
   ],
   "next_frontier": [
     {
-      "gate": "planning_package_round_39_final_exact_hash_review",
+      "gate": "planning_package_round_40_final_exact_hash_review",
       "state": "blocked_review",
-      "reason": "Round 38 found lost push/fetch exception identity, non-persisted nested pre-close results, and an over-narrow fallback metadata contract. Round 39 fixes those exact evidence seams. This is the bounded final review gate: two fresh exact-head approvals end planning; unrelated new assurance ideas do not extend this tranche."
+      "reason": "Round 39 found one runtime-only undefined digest predicate in both closure failure validators. Round 40 corrects and dynamically exercises those exact nonempty nested-result paths. Two fresh exact-head approvals end planning; unrelated assurance ideas remain deferred."
     }
   ],
   "approvals": {
@@ -1716,7 +1732,8 @@
     "planning_package_round_36_review": "request_changes_resolved_pending_round_37",
     "planning_package_round_37_review": "request_changes_resolved_pending_round_38",
     "planning_package_round_38_review": "request_changes_resolved_pending_round_39_final",
-    "planning_package_round_39_review": "pending_final"
+    "planning_package_round_39_review": "request_changes_resolved_pending_round_40_final",
+    "planning_package_round_40_review": "pending_final"
   },
   "completion": {
     "status": "not_started",
