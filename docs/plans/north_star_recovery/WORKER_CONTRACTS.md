@@ -157,7 +157,7 @@ G0's supervisor assignment may authorize one terminal bootstrap commit only afte
 
 After either closure or terminal start, every external mutation boundary catches `BaseException`. Protected ledger writers complete the whole row or truncate and fsync to the locked pre-append length. Validation and intent rows use deterministic IDs, exact matching-row recovery, and conflict rejection. A writer result is not self-authenticating: the supervisor requires full failure validation after success or bounded publication validation after writer failure.
 
-Bind the pre-push Dolt head in the terminal manifest. Admit only exact receipt-bound same-run rows before reconciliation. A malformed config must still seal failure evidence. Select failure artifacts by current runner plus ledger reference, never by primary/retry existence; stale or ambiguous candidates fail before success append.
+Require typed path-safe Dolt config and bind manifest/receipt pre-push heads in recovery, terminal validation, and G2. Inventory both primary/retry failure and writer artifacts. Admit a noncurrent primary only as the recovery-approved, fully validated predecessor; reject stale-opposite, duplicate, ambiguous, or ledger-unbound artifacts before success.
 3. Reproduce the existing behavior or failure on the base when applicable.
 4. Use existing patterns and owners. Do not create a second convention.
 5. Apply one bounded logical change.
