@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-31T03:32:30Z",
+  "generated_at_utc": "2026-07-31T04:25:19Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "approved_round_56_exact_hash_review_g0_pending",
+    "status": "pending_round_57_concurrency_fix_exact_hash_review",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,35 +36,18 @@
       ]
     },
     "independent_review": {
-      "status": "approved",
-      "round": 56,
+      "status": "pending_round_57_exact_hash_review",
+      "round": 57,
       "reviewed_artifact_hashes": {
         "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
         "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
         "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:914630d5ac93191dda9429e489685377d05abac2c44b19352e5e374ec3e65c30",
         "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
         "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
-        "docs/plans/north_star_recovery/STATE.json": "sha256:f2c57edfeabb981dfc0f0ea38fbc8083ee87bb32bd53c772d5b366f79e612026"
+        "docs/plans/north_star_recovery/STATE.json": null
       },
-      "reviewers": [
-        {
-          "reviewer_id": "Round56AuthorityReview",
-          "review_run_id": "Round56AuthorityReview-20260731T000000Z-authority-lens",
-          "author_identity": "openai-codex/gpt-5.6-luna:Round56AuthorityReview",
-          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round56/Round56AuthorityReview.json",
-          "verdict_sha256": "sha256:c56eb075b5745be3588463bfe53378c8f1810be15ead9c943c81e9205f02c61a",
-          "completed_at_utc": "2026-07-31T00:00:00Z"
-        },
-        {
-          "reviewer_id": "Round56ExecutionReview",
-          "review_run_id": "round56-execution-review-c77cead0-20260731T033124Z",
-          "author_identity": "openai-codex/gpt-5.6-luna:Round56ExecutionReview",
-          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round56/Round56ExecutionReview.json",
-          "verdict_sha256": "sha256:a01d654211532347ded1a1604a4714af9191681e54ecd727bbc112a602222fa1",
-          "completed_at_utc": "2026-07-31T03:31:24Z"
-        }
-      ],
-      "corrections_status": "round_55_placeholder_capture_operands_resolved_and_round_56_approved",
+      "reviewers": [],
+      "corrections_status": "round_56_concurrent_tracker_drift_rejected_and_rolled_back_round_57_projection_stability_fix_pending_review",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -1210,6 +1193,19 @@
         ],
         "blocking_findings": 0,
         "resolution": "Approved Round56 concrete captured argv, canonical digest, active review bindings, fail-closed projection, and safe subprocess execution."
+      },
+      "round_57": {
+        "status": "pending_exact_hash_review",
+        "reviewed_state_input_sha256": null,
+        "reviewed_authored_artifact_hashes": {},
+        "reviewer_verdict_refs": [],
+        "blocking_findings": null,
+        "change_scope": [
+          "allow unrelated tracker campaigns to advance between G0 boundary capture and runner recapture",
+          "retain exact G0-specific preconditions at every boundary",
+          "retain strict unrelated semantic equality across each actual protected command interval",
+          "record before/after unrelated semantic hashes in every action outcome"
+        ]
       }
     },
     "artifacts": [
@@ -1253,14 +1249,11 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "fresh_exact_hash_reviews_approved",
-    "reviewed_pre_refresh_state_sha256": "sha256:f2c57edfeabb981dfc0f0ea38fbc8083ee87bb32bd53c772d5b366f79e612026",
-    "reviewer_verdict_refs": [
-      "../docs_tmp/north_star_recovery/planning_reviews/round56/Round56AuthorityReview.json",
-      "../docs_tmp/north_star_recovery/planning_reviews/round56/Round56ExecutionReview.json"
-    ],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round56/refreshed_state_handoff.json",
-    "current_state_sha256_in_manifest": true
+    "status": "pending_round_57_exact_hash_reviews",
+    "reviewed_pre_refresh_state_sha256": null,
+    "reviewer_verdict_refs": [],
+    "refreshed_state_handoff_manifest": null,
+    "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
     {
