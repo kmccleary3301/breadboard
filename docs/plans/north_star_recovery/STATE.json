@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-30T23:55:31Z",
+  "generated_at_utc": "2026-07-31T00:09:30Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "pending_round_51_exact_hash_reviews_after_strict_verdict_schema_correction",
+    "status": "pending_round_52_exact_hash_reviews_after_RECORD_PATH_restoration",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -37,10 +37,10 @@
     },
     "independent_review": {
       "status": "pending",
-      "round": 51,
+      "round": 52,
       "reviewed_artifact_hashes": {},
       "reviewers": [],
-      "corrections_status": "round_50_strict_verdict_blocking_field_consumer_finding_resolved_for_round_51",
+      "corrections_status": "round_51_exact_review_RECORD_PATH_operand_finding_resolved_for_round_52",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -1066,6 +1066,23 @@
         "evidence_note": "Execution reviewer returned a malformed STATE hash despite claiming hash verification; authority verdict carried the exact hash and both independently identified the same schema blocker."
       },
       "round_51": {
+        "status": "changes_requested_resolved_pending_round_52",
+        "reviewed_state_input_sha256": "sha256:ea703058208e4269c01d40e7d538522d7fce5b852740b3fb6ae8b9dde6aecbbf",
+        "reviewed_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:bc631a78e5513a1a122774a6a01026435bf866cb69f4ec5f200bc45b02b74a60",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:ea703058208e4269c01d40e7d538522d7fce5b852740b3fb6ae8b9dde6aecbbf"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round51/Round51AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round51/Round51ExecutionReview.json"
+        ],
+        "blocking_findings": 2
+      },
+      "round_52": {
         "status": "pending_exact_hash_review",
         "reviewed_state_input_sha256": null,
         "reviewer_verdict_refs": [],
@@ -1087,8 +1104,8 @@
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 1253404,
-        "sha256": "sha256:bc631a78e5513a1a122774a6a01026435bf866cb69f4ec5f200bc45b02b74a60",
+        "bytes": 1253495,
+        "sha256": "sha256:dc29e84841a4f09628c62583741cc3bc8eb58a3773f8394c9937f7bac99641ec",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
@@ -1116,8 +1133,8 @@
     "status": "pending_fresh_exact_hash_reviews",
     "reviewed_pre_refresh_state_sha256": null,
     "reviewer_verdict_refs": [
-      "../docs_tmp/north_star_recovery/planning_reviews/round51/Round51AuthorityReview.json",
-      "../docs_tmp/north_star_recovery/planning_reviews/round51/Round51ExecutionReview.json"
+      "../docs_tmp/north_star_recovery/planning_reviews/round52/Round52AuthorityReview.json",
+      "../docs_tmp/north_star_recovery/planning_reviews/round52/Round52ExecutionReview.json"
     ],
     "refreshed_state_handoff_manifest": null,
     "current_state_sha256_in_manifest": false
