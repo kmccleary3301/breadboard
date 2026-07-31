@@ -2148,7 +2148,7 @@ bootstrap_policy:
       source_pr_number: 44
       blocked_bead_id: bb-06u.11
       blocked_bead_title: 'NS09A: Executable replay plan and runtime core'
-      planning_review_round: 61
+      planning_review_round: 62
       allowed_paths:
       - docs/plans/north_star_recovery/g0_replay_salvage_record.v1.json
       generated_terminal_handoff_paths:
