@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-31T01:34:02Z",
+  "generated_at_utc": "2026-07-31T01:42:38Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -49,19 +49,19 @@
       "reviewers": [
         {
           "reviewer_id": "Round54AuthorityReview",
-          "review_run_id": "Round54AuthorityReview-20260731T012141Z-authority-lens",
-          "author_identity": "openai-codex/gpt-5.6-luna:Round54AuthorityReview:authority-lens",
+          "review_run_id": "Round54AuthorityReview-20260731T013947Z-Round54AuthorityCanonical",
+          "author_identity": "openai-codex/gpt-5.6-luna:Round54AuthorityCanonical:canonical-rerun-20260731T013947Z",
           "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54AuthorityReview.json",
-          "verdict_sha256": "sha256:cc91f3c4d3c8ac8f362d988991ebd8f7531764d90303efaaeee8dcea5711721e",
-          "completed_at_utc": "2026-07-31T01:21:41Z"
+          "verdict_sha256": "sha256:f3d3533faaad971194fc0c08956d0f41954654fcb1ef9a8871f4aa54dcc6ae77",
+          "completed_at_utc": "2026-07-31T01:39:47Z"
         },
         {
           "reviewer_id": "Round54ExecutionReview",
-          "review_run_id": "round54-execution-20260731T013243Z-37a3d826",
-          "author_identity": "Round54ExecutionReview independent read-only reviewer",
+          "review_run_id": "round54-execution-canonical-20260731T014036Z-37a3d8267",
+          "author_identity": "openai-codex/gpt-5.6-luna:Round54ExecutionCanonical:exact-hash-rerun",
           "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54ExecutionReview.json",
-          "verdict_sha256": "sha256:14787abf853192dbd3b2b3d42c0c73cfe9ba6abc406ced8ed74a6e4fb95df450",
-          "completed_at_utc": "2026-07-31T01:32:43Z"
+          "verdict_sha256": "sha256:69fb55c94bc0554a2133b4eb5d7b549efd02f95012c8c21ace8e4f0534c11916",
+          "completed_at_utc": "2026-07-31T01:40:36Z"
         }
       ],
       "corrections_status": "round_53_stale_selectors_resolved_and_round_54_approved",
@@ -1161,8 +1161,8 @@
           "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54ExecutionReview.json"
         ],
         "reviewer_verdict_sha256": [
-          "sha256:cc91f3c4d3c8ac8f362d988991ebd8f7531764d90303efaaeee8dcea5711721e",
-          "sha256:14787abf853192dbd3b2b3d42c0c73cfe9ba6abc406ced8ed74a6e4fb95df450"
+          "sha256:f3d3533faaad971194fc0c08956d0f41954654fcb1ef9a8871f4aa54dcc6ae77",
+          "sha256:69fb55c94bc0554a2133b4eb5d7b549efd02f95012c8c21ace8e4f0534c11916"
         ],
         "blocking_findings": 0,
         "resolution": "Approved projection-safe G0 preservation, current Round54 selectors and allowlists, exact 14-command capture parity, same-action semantic preservation, and rollback-restored prerequisites."
@@ -1210,7 +1210,7 @@
   },
   "planning_review_lineage": {
     "status": "fresh_exact_hash_reviews_approved",
-    "reviewed_pre_refresh_state_sha256": "sha256:1ea99866153f4b610cabb8f38940095ebaf79db2e105186735bdf2142fe98261",
+    "reviewed_pre_refresh_state_sha256": "sha256:12103a010cef9933ec32639a150612a70f4416b1791244a9f8a9b7abc3e621bf",
     "reviewer_verdict_refs": [
       "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54AuthorityReview.json",
       "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54ExecutionReview.json"
