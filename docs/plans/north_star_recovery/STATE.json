@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-31T00:25:57Z",
+  "generated_at_utc": "2026-07-31T01:17:01Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "approved_round_52_exact_hash_review_g0_pending",
+    "status": "pending_round_53_exact_hash_reviews_after_g0_dependency_projection_correction",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,35 +36,11 @@
       ]
     },
     "independent_review": {
-      "status": "approved",
-      "round": 52,
-      "reviewed_artifact_hashes": {
-        "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
-        "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
-        "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
-        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:dc29e84841a4f09628c62583741cc3bc8eb58a3773f8394c9937f7bac99641ec",
-        "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
-        "docs/plans/north_star_recovery/STATE.json": "sha256:30b64b7adc85bbc8499353fbed4df1ecf8423e2340e1ffc3c06a43d40c47b362"
-      },
-      "reviewers": [
-        {
-          "reviewer_id": "Round52AuthorityReview",
-          "review_run_id": "Round52AuthorityReview-20260731T001837Z-authority-lens",
-          "author_identity": "openai-codex/gpt-5.6-luna:Round52AuthorityReview:authority-lens-20260731T001837Z",
-          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round52/Round52AuthorityReview.json",
-          "verdict_sha256": "sha256:6cb26af33c120ed5e77a7e1ed20f4e257632c8432fa797cfd1505ea139f4717a",
-          "completed_at_utc": "2026-07-31T00:18:37Z"
-        },
-        {
-          "reviewer_id": "Round52ExecutionReview",
-          "review_run_id": "round52-execution-review-3c2392f5-argv-audit",
-          "author_identity": "openai-codex/gpt-5.6-luna:Round52ExecutionReview",
-          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round52/Round52ExecutionReview.json",
-          "verdict_sha256": "sha256:8a9a4139ae3f5e751447b1f8c7f19bbb2fcfa03509e558b83dd6784878d16a09",
-          "completed_at_utc": "2026-07-31T00:09:30Z"
-        }
-      ],
-      "corrections_status": "round_51_RECORD_PATH_finding_resolved_and_round_52_approved",
+      "status": "pending",
+      "round": 53,
+      "reviewed_artifact_hashes": {},
+      "reviewers": [],
+      "corrections_status": "round_52_approved_then_g0_attempt_compensatingly_rolled_back_after_dependency_projection_false_positive; round_53_reviews_projection_safe_correction",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -1122,6 +1098,15 @@
           "../docs_tmp/north_star_recovery/planning_reviews/round52/Round52ExecutionReview.json"
         ],
         "blocking_findings": 0
+      },
+      "round_53": {
+        "status": "pending_exact_hash_reviews",
+        "reviewed_state_input_sha256": null,
+        "reviewed_authored_artifact_hashes": {},
+        "reviewer_verdict_refs": [],
+        "reviewer_verdict_sha256": [],
+        "blocking_findings": null,
+        "resolution": "Normalize denormalized Beads dependency target snapshots to exact (id, dependency_type) edge tuples for G0 preservation checks, retain every other top-level issue field, and require same-action pre/post equality in the protected mutation runner."
       }
     },
     "artifacts": [
@@ -1139,8 +1124,8 @@
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 1253495,
-        "sha256": "sha256:dc29e84841a4f09628c62583741cc3bc8eb58a3773f8394c9937f7bac99641ec",
+        "bytes": 1240234,
+        "sha256": "sha256:bb86f65d42362be095fc6da2041d61b0713e68dea9d7d171fd124a9d2dd89a64",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
@@ -1165,14 +1150,11 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "fresh_exact_hash_reviews_approved",
-    "reviewed_pre_refresh_state_sha256": "sha256:30b64b7adc85bbc8499353fbed4df1ecf8423e2340e1ffc3c06a43d40c47b362",
-    "reviewer_verdict_refs": [
-      "../docs_tmp/north_star_recovery/planning_reviews/round52/Round52AuthorityReview.json",
-      "../docs_tmp/north_star_recovery/planning_reviews/round52/Round52ExecutionReview.json"
-    ],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round52/refreshed_state_handoff.json",
-    "current_state_sha256_in_manifest": true
+    "status": "pending_fresh_exact_hash_reviews",
+    "reviewed_pre_refresh_state_sha256": "sha256:ce980b8f8102eb4fa91132f2a799d8eaa400284f107b65f2b7c4fe55a028e3b3",
+    "reviewer_verdict_refs": [],
+    "refreshed_state_handoff_manifest": null,
+    "current_state_sha256_in_manifest": false
   },
   "authority_matrix": [
     {
