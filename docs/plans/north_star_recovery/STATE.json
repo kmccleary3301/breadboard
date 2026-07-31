@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-31T01:21:41Z",
+  "generated_at_utc": "2026-07-31T01:34:02Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "pending_round_54_exact_hash_reviews_after_projection_and_selector_corrections",
+    "status": "approved_round_54_exact_hash_review_g0_pending",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -36,11 +36,35 @@
       ]
     },
     "independent_review": {
-      "status": "pending",
+      "status": "approved",
       "round": 54,
-      "reviewed_artifact_hashes": {},
-      "reviewers": [],
-      "corrections_status": "round_53_stale_selector_findings_resolved_pending_round_54_exact_hash_reviews",
+      "reviewed_artifact_hashes": {
+        "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+        "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:ff5b6fcd195413df3c6cc75f5de816d715cafcf39e55b53739a85d9a4a236cc4",
+        "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+        "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+        "docs/plans/north_star_recovery/STATE.json": "sha256:12103a010cef9933ec32639a150612a70f4416b1791244a9f8a9b7abc3e621bf"
+      },
+      "reviewers": [
+        {
+          "reviewer_id": "Round54AuthorityReview",
+          "review_run_id": "Round54AuthorityReview-20260731T012141Z-authority-lens",
+          "author_identity": "openai-codex/gpt-5.6-luna:Round54AuthorityReview:authority-lens",
+          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54AuthorityReview.json",
+          "verdict_sha256": "sha256:cc91f3c4d3c8ac8f362d988991ebd8f7531764d90303efaaeee8dcea5711721e",
+          "completed_at_utc": "2026-07-31T01:21:41Z"
+        },
+        {
+          "reviewer_id": "Round54ExecutionReview",
+          "review_run_id": "round54-execution-20260731T013243Z-37a3d826",
+          "author_identity": "Round54ExecutionReview independent read-only reviewer",
+          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54ExecutionReview.json",
+          "verdict_sha256": "sha256:14787abf853192dbd3b2b3d42c0c73cfe9ba6abc406ced8ed74a6e4fb95df450",
+          "completed_at_utc": "2026-07-31T01:32:43Z"
+        }
+      ],
+      "corrections_status": "round_53_stale_selectors_resolved_and_round_54_approved",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -1122,13 +1146,26 @@
         "resolution": "Advanced every active G0 review selector, exact-review allowlist, captured validator argv, and planning_review_round to Round54 after Round53 identified stale Round52 bindings."
       },
       "round_54": {
-        "status": "pending_exact_hash_reviews",
-        "reviewed_state_input_sha256": null,
-        "reviewed_authored_artifact_hashes": {},
-        "reviewer_verdict_refs": [],
-        "reviewer_verdict_sha256": [],
-        "blocking_findings": null,
-        "resolution": "Projection-safe G0 correction plus current Round54 selector/allowlist/capture parity."
+        "status": "approved",
+        "reviewed_state_input_sha256": "sha256:12103a010cef9933ec32639a150612a70f4416b1791244a9f8a9b7abc3e621bf",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:d3305ac73574f64442639c9d5231b4904dac2c4fa1184b08adc8df35dea0b34f",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:ff5b6fcd195413df3c6cc75f5de816d715cafcf39e55b53739a85d9a4a236cc4",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:12103a010cef9933ec32639a150612a70f4416b1791244a9f8a9b7abc3e621bf"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54ExecutionReview.json"
+        ],
+        "reviewer_verdict_sha256": [
+          "sha256:cc91f3c4d3c8ac8f362d988991ebd8f7531764d90303efaaeee8dcea5711721e",
+          "sha256:14787abf853192dbd3b2b3d42c0c73cfe9ba6abc406ced8ed74a6e4fb95df450"
+        ],
+        "blocking_findings": 0,
+        "resolution": "Approved projection-safe G0 preservation, current Round54 selectors and allowlists, exact 14-command capture parity, same-action semantic preservation, and rollback-restored prerequisites."
       }
     },
     "artifacts": [
@@ -1172,11 +1209,14 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "pending_fresh_exact_hash_reviews",
+    "status": "fresh_exact_hash_reviews_approved",
     "reviewed_pre_refresh_state_sha256": "sha256:1ea99866153f4b610cabb8f38940095ebaf79db2e105186735bdf2142fe98261",
-    "reviewer_verdict_refs": [],
-    "refreshed_state_handoff_manifest": null,
-    "current_state_sha256_in_manifest": false
+    "reviewer_verdict_refs": [
+      "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54AuthorityReview.json",
+      "../docs_tmp/north_star_recovery/planning_reviews/round54/Round54ExecutionReview.json"
+    ],
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round54/refreshed_state_handoff.json",
+    "current_state_sha256_in_manifest": true
   },
   "authority_matrix": [
     {
