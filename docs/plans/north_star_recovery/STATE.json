@@ -1542,7 +1542,7 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "approved",
+    "status": "fresh_exact_hash_reviews_approved",
     "reviewed_pre_refresh_state_sha256": "sha256:4967b3fa555fb62b4bc8dd1a984345b4e6d82a81bd1b0500263a5a1c6fd4785e",
     "reviewer_verdict_refs": [
       "../docs_tmp/north_star_recovery/planning_reviews/round66/Round66AuthorityReview.json",
