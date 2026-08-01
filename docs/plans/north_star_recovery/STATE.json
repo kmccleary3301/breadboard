@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-08-01T06:17:34Z",
+  "generated_at_utc": "2026-08-01T07:38:35Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "approved_for_fresh_G0_preflight",
+    "status": "approved_round_83_exact_hash_review",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -37,20 +37,34 @@
     },
     "independent_review": {
       "status": "approved",
-      "round": 80,
+      "round": 83,
       "reviewed_artifact_hashes": {
         "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
         "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
-        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:07c0033a1fc7a58f6c9e873eef0e68d547a41061fa1a659f744e3115f6c4c7da",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:a6f9ab8a30c72882c943515b47e9cce1aa4ff08ca6f0669d3f633ed4a2720a24",
         "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
         "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
-        "docs/plans/north_star_recovery/STATE.json": "sha256:8dda0894a98490266aebfc6ab8b5c9b900ec84823088dbd1e134ac5d5c24a441"
+        "docs/plans/north_star_recovery/STATE.json": "sha256:f339cd28d3de045c529d92386716a04915d7986941567565641d10d3df81d1e9"
       },
       "reviewers": [
-        "Round80AuthorityReview",
-        "Round80ExecutionReview"
+        {
+          "reviewer_id": "Round83AuthorityReview",
+          "review_run_id": "round83-authority-review-20260801",
+          "author_identity": "openai-codex/gpt-5.6-luna@agent/Round83AuthorityReview",
+          "verdict": "approve",
+          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round83/Round83AuthorityReview.json",
+          "verdict_sha256": "sha256:b394732860554365459a3309eff74906428aa269709678398ea417a29cdae358"
+        },
+        {
+          "reviewer_id": "Round83ExecutionReview",
+          "review_run_id": "round83-execution-review-20260801",
+          "author_identity": "openai-codex/gpt-5.6-luna@agent/Round83ExecutionReview",
+          "verdict": "approve",
+          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round83/Round83ExecutionReview.json",
+          "verdict_sha256": "sha256:2606b7bfb1df8f85df59c0cf8d987c1303c6b0665474ef749cad9636e3b18855"
+        }
       ],
-      "corrections_status": "all_round_79_request_changes_resolved_round_80_approved",
+      "corrections_status": "all_round_82_request_changes_resolved_round_83_approved",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -1763,7 +1777,7 @@
         "resolution": "Regenerated initial_preflight_anchor_validation_command expected_argv_sha256 from the same canonical 14 normalized argv list used by the top-level declaration and capture command. Advanced every review selector to Round80, then regenerated all dependent command identities. Verified current argv, declared map, captured literal map, and anchor-validator embedded map are equal for all 14 names."
       },
       "round_80": {
-        "status": "approved",
+        "status": "approved_but_preflight_aborted_pending_round_81",
         "reviewed_state_input_sha256": "sha256:8dda0894a98490266aebfc6ab8b5c9b900ec84823088dbd1e134ac5d5c24a441",
         "reviewed_authored_artifact_hashes": {
           "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
@@ -1782,7 +1796,76 @@
           "sha256:00c16efdfddf36f2f3b4835b987ebed7e988298ccf37f357c2cedc3963bfaaa6",
           "sha256:0c2ed8012b28d19170f3c66caed7e8e66e06b505845821f02f75edd93969e740"
         ],
-        "resolution": "Two independent exact-hash reviewers approved the Round80 current/declared/captured/anchor validator identity graph, direct 9+3 consumer proofs, corpus, archive/root/rollback controls, selectors, and state lineage with no findings."
+        "resolution": "Two independent exact-hash reviewers approved the Round80 current/declared/captured/anchor validator identity graph, direct 9+3 consumer proofs, corpus, archive/root/rollback controls, selectors, and state lineage with no findings.",
+        "execution_incident_ref": "../docs_tmp/north_star_recovery/bootstrap/aborted_g0_preflight_20260801T064552Z_round80_closed_literal_digest/incident.json",
+        "execution_incident_sha256": "sha256:4e717e567000577497999c58bef097fa62e892539703a77173965d61f4c76e6c",
+        "execution_resolution": "No protected mutation was attempted. Archived the four fresh G0 inputs after the first closed-policy validator failed. Round81 regenerates the literal digest from current pre_literal_requirements and every dependent argv identity."
+      },
+      "round_81": {
+        "status": "request_changes_resolved_pending_round_82",
+        "reviewed_state_input_sha256": "sha256:9678387641ec357e6fc770d3206a7885b84c98f911d90ee956598164474b62fb",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:91fca63a1f16e7376b3d06cdd6d486b31008edda4c8a78a29d13a165aa9394bf",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:9678387641ec357e6fc770d3206a7885b84c98f911d90ee956598164474b62fb"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round81/Round81AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round81/Round81ExecutionReview.json"
+        ],
+        "blocking_findings": 1,
+        "reviewer_verdict_sha256": [
+          "sha256:c8cd596ce2716b77e03d626a3d9c2b42efb56740ee1bc3da3f9d9ba2606a12fb",
+          "sha256:1982ea509f65c89fb85905fd5e859816ee307f47c3f782f3600b74592c39cd80"
+        ],
+        "resolution": "Regenerated the actual pre_validation_command argv literal JSON operand from current Round82 pre_literal_requirements (planning_review_round 82), not merely its hash maps. Regenerated closed literal digest, captured argv, declared map, and anchor expected map. Exact pre_validation and closed-policy logic both execute successfully against a safe current payload."
+      },
+      "round_82": {
+        "status": "request_changes_resolved_pending_round_83",
+        "reviewed_state_input_sha256": "sha256:b6a66d373009e3940e3e0c99c6f75312cc23d0f1bc3f0faf6a4e60e5eb2953a3",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:b1f3395c7d26155940a1100538c8af2564247c6e614d9962cfd553fb86ebd2bd",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:b6a66d373009e3940e3e0c99c6f75312cc23d0f1bc3f0faf6a4e60e5eb2953a3"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round82/Round82AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round82/Round82ExecutionReview.json"
+        ],
+        "blocking_findings": 2,
+        "reviewer_verdict_sha256": [
+          "sha256:170af7639196e4452ebd1e59636dc596ca0c718d764d431ecfa6eb136296a4e2",
+          "sha256:cfd8b12f8a61903401fe2f00f63996577e9d380c2486f594324860f5199e0d53"
+        ],
+        "resolution": "Embedded the exact 13-key literal set and canonical recursive literal digest in pre_validation source before payload value comparison. Regenerated the Round83 argv operand and all dependent identities. Positive payload passes; missing/extra key, nested title mutation, and successor ordering mutation all fail; closed validator passes."
+      },
+      "round_83": {
+        "status": "approved",
+        "reviewed_state_input_sha256": "sha256:f339cd28d3de045c529d92386716a04915d7986941567565641d10d3df81d1e9",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:a6f9ab8a30c72882c943515b47e9cce1aa4ff08ca6f0669d3f633ed4a2720a24",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:f339cd28d3de045c529d92386716a04915d7986941567565641d10d3df81d1e9"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round83/Round83AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round83/Round83ExecutionReview.json"
+        ],
+        "blocking_findings": 0,
+        "reviewer_verdict_sha256": [
+          "sha256:b394732860554365459a3309eff74906428aa269709678398ea417a29cdae358",
+          "sha256:2606b7bfb1df8f85df59c0cf8d987c1303c6b0665474ef749cad9636e3b18855"
+        ],
+        "resolution": "Two independent exact-hash reviewers approved exact recursive literal key/value/order self-binding, positive and adversarial execution, all 14 current/declared/captured/anchor identities, Round83 selectors, scanner/corpus, archive/root/rollback controls, and state lineage with no findings."
       }
     },
     "artifacts": [
@@ -1800,8 +1883,8 @@
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 1432509,
-        "sha256": "sha256:07c0033a1fc7a58f6c9e873eef0e68d547a41061fa1a659f744e3115f6c4c7da",
+        "bytes": 1434044,
+        "sha256": "sha256:a6f9ab8a30c72882c943515b47e9cce1aa4ff08ca6f0669d3f633ed4a2720a24",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
@@ -1818,18 +1901,18 @@
       }
     ],
     "authored_anchor": {
-      "head_sha": "a246fff3265f83e40a7a52c73bad83cde0ebdca7",
-      "tree_sha": "18865781bd8b7cf7d8f7dd618b3ed73f4ad3bc82",
+      "head_sha": "0e8560462e824cdf314fcb08aec4515586cab6f9",
+      "tree_sha": "1701c510ae110d9f93e119faa42355ced1d3dfed",
       "committed": true,
-      "commit_message": "docs: unify preflight validator hashes",
+      "commit_message": "docs: enforce exact preflight literals",
       "artifact_sha256": {
         "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
         "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
-        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:07c0033a1fc7a58f6c9e873eef0e68d547a41061fa1a659f744e3115f6c4c7da",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:a6f9ab8a30c72882c943515b47e9cce1aa4ff08ca6f0669d3f633ed4a2720a24",
         "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
         "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161"
       },
-      "established_by": "committed Round80 candidate resolves Round79 stale anchor-validator map"
+      "established_by": "committed Round83 candidate resolves Round82 literal omission bypass"
     },
     "change_scope": [
       "established committed authored anchor 21b0440a5a89c24c43e071f7f5923a286184480e and refreshed STATE as the sole exact-review candidate before G0",
@@ -1846,17 +1929,20 @@
       "Round77 replaces open-ended reachability analysis with immediate unconditional execution proofs for all 12 exact bindings, direct-only nested execution, recursive body rejection, and recursive module rebind rejection.",
       "Round78 rejects recursive stable lambda definitions, requires the exact stable assignment form, and embeds the bounded recursive-lambda negative fixture.",
       "Round79 proves only exact direct binding calls and immediate subprocess calls, rejects deferred/short-circuited forms, and aligns external review selector to 79.",
-      "Round80 derives current, declared, captured, and post-capture expected validator argv identities from one exact 14-command authority."
+      "Round80 derives current, declared, captured, and post-capture expected validator argv identities from one exact 14-command authority.",
+      "Round81 derives the closed-preflight literal digest from current Round81 pre_literal_requirements and rebuilds all four validator identity surfaces.",
+      "Round82 regenerates executable pre_validation literals from current requirements, then derives all dependent command identities.",
+      "Round83 enforces exact literal key-set and canonical recursive value digest inside executable pre-validation."
     ]
   },
   "planning_review_lineage": {
     "status": "fresh_exact_hash_reviews_approved",
-    "reviewed_pre_refresh_state_sha256": "sha256:8dda0894a98490266aebfc6ab8b5c9b900ec84823088dbd1e134ac5d5c24a441",
+    "reviewed_pre_refresh_state_sha256": "sha256:f339cd28d3de045c529d92386716a04915d7986941567565641d10d3df81d1e9",
     "reviewer_verdict_refs": [
-      "../docs_tmp/north_star_recovery/planning_reviews/round80/Round80AuthorityReview.json",
-      "../docs_tmp/north_star_recovery/planning_reviews/round80/Round80ExecutionReview.json"
+      "../docs_tmp/north_star_recovery/planning_reviews/round83/Round83AuthorityReview.json",
+      "../docs_tmp/north_star_recovery/planning_reviews/round83/Round83ExecutionReview.json"
     ],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round80/refreshed_state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round83/refreshed_state_handoff.json",
     "current_state_sha256_in_manifest": true
   },
   "authority_matrix": [
@@ -1938,12 +2024,12 @@
     "planning_checkout": {
       "path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
       "branch": "north-star/recovery-execution",
-      "head_sha": "a246fff3265f83e40a7a52c73bad83cde0ebdca7",
-      "tree_sha": "18865781bd8b7cf7d8f7dd618b3ed73f4ad3bc82",
+      "head_sha": "0e8560462e824cdf314fcb08aec4515586cab6f9",
+      "tree_sha": "1701c510ae110d9f93e119faa42355ced1d3dfed",
       "local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
       "merge_base_with_local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "working_tree_state": "generated_round_80_candidate_STATE_only_dirty",
-      "role": "clean committed Round80 authored planning anchor; generated predecessor STATE is sole exact-review candidate before fresh G0 retry"
+      "working_tree_state": "generated_round_83_candidate_STATE_only_dirty",
+      "role": "clean committed Round83 authored planning anchor; generated predecessor STATE is sole exact-review candidate before fresh G0 retry"
     },
     "current_remote_main": {
       "repository": "kmccleary3301/breadboard",
@@ -2814,7 +2900,10 @@
     "planning_package_round_77_review": "request_changes_resolved_pending_round_78",
     "planning_package_round_78_review": "request_changes_resolved_pending_round_79",
     "planning_package_round_79_review": "request_changes_resolved_pending_round_80",
-    "planning_package_round_80_review": "approved"
+    "planning_package_round_80_review": "approved_but_preflight_aborted_pending_round_81",
+    "planning_package_round_81_review": "request_changes_resolved_pending_round_82",
+    "planning_package_round_82_review": "request_changes_resolved_pending_round_83",
+    "planning_package_round_83_review": "approved"
   },
   "completion": {
     "status": "not_started",
