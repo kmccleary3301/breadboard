@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-07-31T07:03:39Z",
+  "generated_at_utc": "2026-08-01T06:17:34Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -10,7 +10,7 @@
     "self_hash_policy": "Hash STATE.json in the run or handoff manifest after rendering; the file cannot contain its own stable hash."
   },
   "planning_package": {
-    "status": "approved",
+    "status": "approved_for_fresh_G0_preflight",
     "authorization": {
       "decision": "approved",
       "granted_by": "user",
@@ -37,34 +37,20 @@
     },
     "independent_review": {
       "status": "approved",
-      "round": 66,
+      "round": 80,
       "reviewed_artifact_hashes": {
         "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
         "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
-        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:d38d33e9456db2e3808ca778815131475f422265789a6a5a321d91261968c1cc",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:07c0033a1fc7a58f6c9e873eef0e68d547a41061fa1a659f744e3115f6c4c7da",
         "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
         "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
-        "docs/plans/north_star_recovery/STATE.json": "sha256:4967b3fa555fb62b4bc8dd1a984345b4e6d82a81bd1b0500263a5a1c6fd4785e"
+        "docs/plans/north_star_recovery/STATE.json": "sha256:8dda0894a98490266aebfc6ab8b5c9b900ec84823088dbd1e134ac5d5c24a441"
       },
       "reviewers": [
-        {
-          "reviewer_id": "Round66AuthorityReview",
-          "review_run_id": "round66-authority-review-20260731T091853Z",
-          "author_identity": "openai-codex/gpt-5.6-luna:Round66AuthorityReview",
-          "verdict": "approve",
-          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round66/Round66AuthorityReview.json",
-          "verdict_sha256": "sha256:5e3d9ad22bac184a5e824c97563021242f2e3a5e90e37c647a83fe6b95404288"
-        },
-        {
-          "reviewer_id": "Round66ExecutionReview",
-          "review_run_id": "Round66ExecutionReview-20260731T092225Z",
-          "author_identity": "openai-codex/gpt-5.6-luna:Round66ExecutionReview",
-          "verdict": "approve",
-          "verdict_ref": "../docs_tmp/north_star_recovery/planning_reviews/round66/Round66ExecutionReview.json",
-          "verdict_sha256": "sha256:c66922c22a8825b54ededcb9d9e3eee712d0d94b84789cf1a11b175107f678fe"
-        }
+        "Round80AuthorityReview",
+        "Round80ExecutionReview"
       ],
-      "corrections_status": "all_round_65_request_changes_resolved_and_round_66_approved",
+      "corrections_status": "all_round_79_request_changes_resolved_round_80_approved",
       "round_4": {
         "status": "request_changes",
         "reviewed_state_input_sha256": "sha256:49848c5ca98c8da501548d703aad025151c975b06bbc766565b545d616517580",
@@ -1489,6 +1475,314 @@
           "sha256:c66922c22a8825b54ededcb9d9e3eee712d0d94b84789cf1a11b175107f678fe"
         ],
         "resolution": "Approved Round66 exact selector alignment, byte-exact preflight evidence, canonical validator parity, authority/freshness/disjointness, rollback, and no-replay controls."
+      },
+      "round_67": {
+        "status": "request_changes_resolved_pending_round_68",
+        "reviewed_state_input_sha256": "sha256:9a5eaf85063834492469034e0f7c5eb1096f2b55fa9d3c37b2aad2394d0fc47d",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:22ca6b151af404f7916a7218a599acf61fb81d12e1816eac9653b441dc98830a",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:9a5eaf85063834492469034e0f7c5eb1096f2b55fa9d3c37b2aad2394d0fc47d"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round67/Round67AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round67/Round67ExecutionReview.json"
+        ],
+        "blocking_findings": 3,
+        "reviewer_verdict_sha256": [
+          "sha256:bc24db3dba5912e0f1b72683328d412e6800317aa2f362379400b197d09c063f",
+          "sha256:5cac86e379f62b99413761f70a6f3b1eb6d870e52b240ffc4e05a6c5a1cf08a7"
+        ],
+        "resolution": "Restored created_at/schema_version/comment_count semantic checks with explicit create/list normalization and byte-equivalent defaults across all ten G0/G2 canonicalizers; rebound G0 to Round68 exact reviews; sealed and hash-bound the authenticated rollback archive; added live rollback prevalidation and a fresh attempt-1 route that prohibits archived suffix replay."
+      },
+      "round_68": {
+        "status": "request_changes_resolved_pending_round_69",
+        "reviewed_state_input_sha256": "sha256:893041da9d651ab8aaf83ff1bdb89aaa492f9187577ee1ab6cdbb282c9751eaa",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:3ade26e1cfd530cb12d9617f493d661bfd9920780c077e5f3a9b02bc6a547d8c",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:893041da9d651ab8aaf83ff1bdb89aaa492f9187577ee1ab6cdbb282c9751eaa"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round68/Round68AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round68/Round68ExecutionReview.json"
+        ],
+        "blocking_findings": 2,
+        "reviewer_verdict_sha256": [
+          "sha256:15a98d8e137f0658000f56e8d00be328f0ff5f2e65d1dda3ea3867dc7587da35",
+          "sha256:7ab3d2a0da57cc0306419d2d18c016d9ab6103d470243647043bbe2f0cf6b6ca"
+        ],
+        "resolution": "Added schema_version=1 and comment_count=0 defaults to both partial_governance_recovery protected_issue and unrelated stable projections; verified all eleven G0/G2/recovery issue canonicalizers retain identical defaults; refreshed Round69 review selectors and all three command-hash maps plus declared metadata."
+      },
+      "round_69": {
+        "status": "request_changes_resolved_pending_round_70",
+        "reviewed_state_input_sha256": "sha256:355350808aaaf7dc0b2720a52f0e59fd834769772a41368f71738df1d50e230c",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:c08ba96808516f4c5d934b2be1e98ad9068310abbf7dfe6c933174b0427e7db0",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:355350808aaaf7dc0b2720a52f0e59fd834769772a41368f71738df1d50e230c"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round69/Round69AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round69/Round69ExecutionReview.json"
+        ],
+        "blocking_findings": 2,
+        "reviewer_verdict_sha256": [
+          "sha256:04735b37268cb94ad8d9431d13d4d932180ec0207ed76962f0f7b4caf005865c",
+          "sha256:859ff8084de8ef474882a523997899b59d56bf48799ffb016fd2b7f241f47314"
+        ],
+        "resolution": "Aligned every one of four stable tracker projections with schema_version=1, comment_count=0, closed_at presence, and normalized dependencies; added an executable pre-mutation conformance gate that parses the exact LOOP_SPEC, enumerates 11 issue and 4 stable projections, runs the archived incident convergence fixture, and proves schema/comment/created_at/title drift remains detectable; refreshed Round70 selectors and all hash maps."
+      },
+      "round_70": {
+        "status": "request_changes_resolved_pending_round_71",
+        "reviewed_state_input_sha256": "sha256:85800dfa3b52a48b49e85370d1be2b6e951d70ea30544c26098c5bc94fb74ccd",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:dc853dfb89e6572ec1b0d482c9850f73b6b7df324e8ef94a18f0ca410b18bd0d",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:85800dfa3b52a48b49e85370d1be2b6e951d70ea30544c26098c5bc94fb74ccd"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round70/Round70AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round70/Round70ExecutionReview.json"
+        ],
+        "blocking_findings": 2,
+        "reviewer_verdict_sha256": [
+          "sha256:c3af870b331e444635844aefa69db094c7684cddf51a86eeb2f2e68dd44e9fad",
+          "sha256:25f0eecb50ca9abaf9599c25f7aab19adc872de4713775cb2f224c2c57713c63"
+        ],
+        "resolution": "Unified every issue and stable dependency edge as JSON-native [id, dependency_type] lists, including newly-created expected rows. Extended the authenticated gate to compile and execute all 15 exact-plan projections against one fixture, assert direct output equality/default/created_at/closure/dependency semantics and drift detection, and emit a 15-entry source/output digest map captured in the preflight validation receipt."
+      },
+      "round_71": {
+        "status": "request_changes_resolved_pending_round_72",
+        "reviewed_state_input_sha256": "sha256:9dece72a437d3b23a3e6fc269729eb2311bc3124a0d00ea30b6498bc7be6d505",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:1cf1c63b7bf0b8d48804dd1e6c9d77c37eb3edb47edc59a09d44cf9d82773016",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:9dece72a437d3b23a3e6fc269729eb2311bc3124a0d00ea30b6498bc7be6d505"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round71/Round71AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round71/Round71ExecutionReview.json"
+        ],
+        "blocking_findings": 4,
+        "reviewer_verdict_sha256": [
+          "sha256:dab8d3d8de324a42330314fe7e51496301baa001abb65c985b3d545dee351562",
+          "sha256:99c7b3103fca1c7c15ee5ce5fc8a33c34ed0c7fd188e8c8505d410138a8be1f3"
+        ],
+        "resolution": "Replaced arbitrary positional scanning with an exact nine-command consumer-count map, source origins, and a reviewed 15-entry source-digest allowlist. Added three explicit open/closed/default/dependency/volatile corpus cases, per-case direct equality and expected semantics, drift cases, per-consumer source/output/corpus digests, and strict current fixed-root G0 preflight/four-input/head/tree/Round72/fresh-attempt route assertions."
+      },
+      "round_72": {
+        "status": "request_changes_resolved_pending_round_73",
+        "reviewed_state_input_sha256": "sha256:c0e7655e35f976084fdaa89dff514b86b3fb998661ea2c2ef4b8861fa61435e3",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:4e2c323441438ff92dcb39f36c784ca4fa2a5e9c27551909f6639ed219464efb",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:c0e7655e35f976084fdaa89dff514b86b3fb998661ea2c2ef4b8861fa61435e3"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round72/Round72AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round72/Round72ExecutionReview.json"
+        ],
+        "blocking_findings": 2,
+        "reviewer_verdict_sha256": [
+          "sha256:b72caac32a086f304f817341dabbc8b04d2fce5255b34c5d518c221e780d4c3c",
+          "sha256:ab9725dff3066c9e8b179343a6148bd453fa55fc7f2471a3475195ff39ca7e1a"
+        ],
+        "resolution": "Restricted extraction to nine fixed command paths; each projection definition must be invoked in its containing executable source; each path has an exact count; any missing, duplicate, or extra definition fails. Removed the one unused boundary stable lambda rather than treating it as evidence, yielding 14 bound consumers. Recomputed the exact ast.unparse source allowlist, command maps, and capture lineage, then executed all 14 over the three-case corpus successfully."
+      },
+      "round_73": {
+        "status": "request_changes_resolved_pending_round_74",
+        "reviewed_state_input_sha256": "sha256:dcb8ad10f7be62c16feeaf75365fab6d885822e3c6f1fe47e01e8b84f4228411",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:2711df43b786c75f8b8a78f474fe0c6bc4d6cbca06209dda6da6dd33e6bd4513",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:dcb8ad10f7be62c16feeaf75365fab6d885822e3c6f1fe47e01e8b84f4228411"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round73/Round73AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round73/Round73ExecutionReview.json"
+        ],
+        "blocking_findings": 3,
+        "reviewer_verdict_sha256": [
+          "sha256:3a6c2aceb8f767bde93c02da4987432848e00175356dd9e67db51b684fc45fb5",
+          "sha256:20137c712b3d00abbea50c08ec8142ba3bd0c52d5e8b13d288c322dcc66a9f4e"
+        ],
+        "resolution": "Replaced name-global/arbitrary-constant scanning with fixed path execution reachability: sequential binding intervals, transitive called-function reachability, direct exec literals, and subprocess.run-bound python3 -c argv. Removed shadowed receipt definitions from both direct and G2-embedded sources, reducing to 12 reachable definitions. Added missing/extra/unused-constant/self-recursive adversarial fixtures. Anchored the absolute bootstrap root and all ancestors as real non-symlink directories. Recomputed source/capture/argv maps and executed the complete 12-way corpus under exact /usr/bin/python3 successfully."
+      },
+      "round_74": {
+        "status": "request_changes_resolved_pending_round_75",
+        "reviewed_state_input_sha256": "sha256:7c82eabff7e03d09eec65d401607340b2946756e6d4bc64455b18291c5d59cdb",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:dc0b16d19c1b81f3e390f03de8083359838d9117f4d25d43efa7ba5c2dc3b055",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:7c82eabff7e03d09eec65d401607340b2946756e6d4bc64455b18291c5d59cdb"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round74/Round74AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round74/Round74ExecutionReview.json"
+        ],
+        "blocking_findings": 3,
+        "reviewer_verdict_sha256": [
+          "sha256:3a37830a1ef215521d9d377d353c4e1ea195bab6586f5b19044de228854ab842",
+          "sha256:636d547e12eb0dc3533a9e741c4d0979820d794ca8fc764f77d153e96cc083f1"
+        ],
+        "resolution": "Added executable top-level/call-graph reachability with nested scope exclusion and constant-dead control-flow pruning; direct exec and subprocess argv are followed only from reachable statements/functions. Added dead-call/dead-exec/uninvoked-exec/uninvoked-subprocess adversarial fixtures. Anchored the bootstrap via component-wise O_DIRECTORY|O_NOFOLLOW descriptors; all four fresh inputs and all 24 archive entries are read relative to the retained root FD with regular-file checks, while root device/inode identity is verified before and after. Exact /usr/bin/python3 relaxed-input execution passed the complete corpus and archive checks."
+      },
+      "round_75": {
+        "status": "request_changes_resolved_pending_round_76",
+        "reviewed_state_input_sha256": "sha256:98659ea21f735b3c38dcb5156759b17727dd7fdcfdc5bf4e7587ded64c62295f",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:07a91694eb2f487d44e6d89757551cead7c8b8b5a85f460848c12b23bf3de2a8",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:98659ea21f735b3c38dcb5156759b17727dd7fdcfdc5bf4e7587ded64c62295f"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round75/Round75AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round75/Round75ExecutionReview.json"
+        ],
+        "blocking_findings": 3,
+        "reviewer_verdict_sha256": [
+          "sha256:e2eddcc21bed4c046b9fdd90bc812aaf07ba32c112efe4af4397827acac09f7a",
+          "sha256:d405adec5e757f297997e952c59fa1e444f74c32d5d17d52fa96c5264d41545a"
+        ],
+        "resolution": "Added safe literal/unary/comparison constant evaluation and conservative branch/short-circuit reachability; unknown conditional branches no longer establish a binding. Added unconditional real-state projection checks to all four consumers that previously relied on conditional/short-circuit calls. Added folded-dead direct/exec/short-circuit and conditional function/argv shadow fixtures. Detect possible nested control-flow rebindings before accepting a call. Rebuilt the 14-entry capture argv literal from final current commands, recomputed all maps, and asserted post-update byte parity. Exact /usr/bin/python3 relaxed-input execution passed."
+      },
+      "round_76": {
+        "status": "request_changes_resolved_pending_round_77",
+        "reviewed_state_input_sha256": "sha256:e539470f60719a59f66b2343617f6563d45bf0a5cbba98ac2df82cde31f6c849",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:fd0ad09b3a9aa5c128b9adc18a70609b10d3b63e953d4b71bcb8e0cb7dfca331",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:e539470f60719a59f66b2343617f6563d45bf0a5cbba98ac2df82cde31f6c849"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round76/Round76AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round76/Round76ExecutionReview.json"
+        ],
+        "blocking_findings": 4,
+        "reviewer_verdict_sha256": [
+          "sha256:0500d4f61a45874913a35a89890d36fdf052c79cae9aba86e47e5d3defd7e0e1",
+          "sha256:3fdd3f61414a280fb661d13f6a724b42d82e241ee12e37e87e54da1acae95903"
+        ],
+        "resolution": "Deleted generic control-flow reachability inference. Every one of 12 projection definitions/lambdas is now followed immediately by an unconditional assert that executes that exact binding on an empty dictionary; recursive bodies are rejected; any later module/control-flow/destructuring/loop/import rebind is rejected recursively. Nested sources are followed only from a direct top-level exec literal or an immediately consumed subprocess.run python3 -c argv. Added recursive, terminal, loop, exception, and destructuring/loop-target negative fixtures. Rebuilt exact source/capture/maps and executed the full gate successfully."
+      },
+      "round_77": {
+        "status": "request_changes_resolved_pending_round_78",
+        "reviewed_state_input_sha256": "sha256:aa5ae80d403705b8cfd438043a829e59229a3c52505d7bcaf9d97e133c12218d",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:eed7c494a32c51efd42aa9152c765649d4c90b2dadc0ad13083771bce3ae4c6e",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:aa5ae80d403705b8cfd438043a829e59229a3c52505d7bcaf9d97e133c12218d"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round77/Round77AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round77/Round77ExecutionReview.json"
+        ],
+        "blocking_findings": 1,
+        "reviewer_verdict_sha256": [
+          "sha256:b7c795c752fdab7357eec43e64fbb6e835a6437ee7ae292a45371628ea7177c9",
+          "sha256:5ca145b532b40b80da70be7952d16bc3396488dc8777cd39e9c1c3cf5cf55aff"
+        ],
+        "resolution": "Extended immediate_binding_proof to require stable bindings be lambda assignments and reject direct self-calls across the exact lambda AST. Added a recursive-stable-lambda negative fixture. Re-extracted and passed all 9 function plus 3 stable exact definitions/source hashes and rebuilt the 14-command capture/current/hash surface byte-identically after declared RECORD_PATH substitution."
+      },
+      "round_78": {
+        "status": "request_changes_resolved_pending_round_79",
+        "reviewed_state_input_sha256": "sha256:e920e4bc17d13cc9d1409d85d86d584c8abe3175adbd9d7db50af99ed1fa16fa",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:fa1d4e5724b2b1bb6d7fb2669b7452a3973452f1ffb1c95bd32f4249b98d8355",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:e920e4bc17d13cc9d1409d85d86d584c8abe3175adbd9d7db50af99ed1fa16fa"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round78/Round78AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round78/Round78ExecutionReview.json"
+        ],
+        "blocking_findings": 2,
+        "reviewer_verdict_sha256": [
+          "sha256:8c17e2b055caff3228c6d0fbeb118044ee92575ebd142353cd7066f8db46d6ac",
+          "sha256:6ba8b5e41b0baee1c41fb88aee6877ee4ea9ef1d03d562cb0b60d44b08d9afd5"
+        ],
+        "resolution": "Replaced AST-wide Assert/subprocess searches with exact direct executable-expression shapes: assert isinstance(binding({}), dict) and immediate direct subprocess.run(argv). Added short-circuit Assert, deferred lambda Assert, and deferred subprocess lambda negatives. Advanced the stale embedded external planning-review literal from 77 to current Round79. Rebuilt and validated the exact 9+3 source map and 14 normalized capture/current/hash surface."
+      },
+      "round_79": {
+        "status": "request_changes_resolved_pending_round_80",
+        "reviewed_state_input_sha256": "sha256:475a421566a81fc8a2118a0c6a77cded3292750e47869b4fb84e1f2cf140ac38",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:e78865125dfff576f4e884c744415761133afa44db5a66f567e927c6993b2937",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:475a421566a81fc8a2118a0c6a77cded3292750e47869b4fb84e1f2cf140ac38"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round79/Round79AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round79/Round79ExecutionReview.json"
+        ],
+        "blocking_findings": 1,
+        "reviewer_verdict_sha256": [
+          "sha256:6f31e6020d29cb1f34d865eaa9b4fc99cf4c3598d725ce6699b90dd620b68c4a",
+          "sha256:8bdd7f851d9b0e1eefee186f0e9074f3ad88e5e56c246fec866382285433a169"
+        ],
+        "resolution": "Regenerated initial_preflight_anchor_validation_command expected_argv_sha256 from the same canonical 14 normalized argv list used by the top-level declaration and capture command. Advanced every review selector to Round80, then regenerated all dependent command identities. Verified current argv, declared map, captured literal map, and anchor-validator embedded map are equal for all 14 names."
+      },
+      "round_80": {
+        "status": "approved",
+        "reviewed_state_input_sha256": "sha256:8dda0894a98490266aebfc6ab8b5c9b900ec84823088dbd1e134ac5d5c24a441",
+        "reviewed_authored_artifact_hashes": {
+          "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
+          "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
+          "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:07c0033a1fc7a58f6c9e873eef0e68d547a41061fa1a659f744e3115f6c4c7da",
+          "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
+          "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161",
+          "docs/plans/north_star_recovery/STATE.json": "sha256:8dda0894a98490266aebfc6ab8b5c9b900ec84823088dbd1e134ac5d5c24a441"
+        },
+        "reviewer_verdict_refs": [
+          "../docs_tmp/north_star_recovery/planning_reviews/round80/Round80AuthorityReview.json",
+          "../docs_tmp/north_star_recovery/planning_reviews/round80/Round80ExecutionReview.json"
+        ],
+        "blocking_findings": 0,
+        "reviewer_verdict_sha256": [
+          "sha256:00c16efdfddf36f2f3b4835b987ebed7e988298ccf37f357c2cedc3963bfaaa6",
+          "sha256:0c2ed8012b28d19170f3c66caed7e8e66e06b505845821f02f75edd93969e740"
+        ],
+        "resolution": "Two independent exact-hash reviewers approved the Round80 current/declared/captured/anchor validator identity graph, direct 9+3 consumer proofs, corpus, archive/root/rollback controls, selectors, and state lineage with no findings."
       }
     },
     "artifacts": [
@@ -1506,8 +1800,8 @@
       },
       {
         "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-        "bytes": 1368825,
-        "sha256": "sha256:d38d33e9456db2e3808ca778815131475f422265789a6a5a321d91261968c1cc",
+        "bytes": 1432509,
+        "sha256": "sha256:07c0033a1fc7a58f6c9e873eef0e68d547a41061fa1a659f744e3115f6c4c7da",
         "owner": "OMP state machine, invalidation, evidence and autonomy policy"
       },
       {
@@ -1524,31 +1818,45 @@
       }
     ],
     "authored_anchor": {
-      "head_sha": "21b0440a5a89c24c43e071f7f5923a286184480e",
-      "tree_sha": "dc999363b41f24690b47ea6044a85adc848a3a17",
+      "head_sha": "a246fff3265f83e40a7a52c73bad83cde0ebdca7",
+      "tree_sha": "18865781bd8b7cf7d8f7dd618b3ed73f4ad3bc82",
       "committed": true,
-      "commit_message": "docs: align round66 review selectors",
+      "commit_message": "docs: unify preflight validator hashes",
       "artifact_sha256": {
         "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:5fbfa4834d54f66504cd66d68b2fec96a9c9f5c8f5efc8c6758185829561b3fa",
         "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:96b6de33c3604db1fcc5d7b436a6880585aebdbc30a13f39e0b1ebee1123c1a9",
-        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:d38d33e9456db2e3808ca778815131475f422265789a6a5a321d91261968c1cc",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:07c0033a1fc7a58f6c9e873eef0e68d547a41061fa1a659f744e3115f6c4c7da",
         "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:628a38a79c2c1bdc55f1498a8ba4a174419b7973b8b0f080dc4e82004a4170fc",
         "docs/plans/north_star_recovery/GOAL_PROMPT.txt": "sha256:b889713c81deac64aa4feb7107be48af9e9725daf1eb821876d115584ace9161"
       },
-      "established_by": "established committed authored anchor 21b0440a5a89c24c43e071f7f5923a286184480e and refreshed STATE as the sole exact-review candidate before G0"
+      "established_by": "committed Round80 candidate resolves Round79 stale anchor-validator map"
     },
     "change_scope": [
-      "established committed authored anchor 21b0440a5a89c24c43e071f7f5923a286184480e and refreshed STATE as the sole exact-review candidate before G0"
+      "established committed authored anchor 21b0440a5a89c24c43e071f7f5923a286184480e and refreshed STATE as the sole exact-review candidate before G0",
+      "Round67 excludes Beads representation-only schema_version, comment_count, created_at, updated_at, dependency-count/dependency-list, and closed_at fields from canonical issue payloads while retaining explicit closed_at_present and normalized dependency edges; all G0/G2 consumers use the same canonicalizer.",
+      "Round68 binds a sealed 24-file authenticated rollback archive and exact live restored-state check into external_state_prevalidation_command, restarts G0 with completed_actions=[]/attempt=1/close_pr_44_without_merge, and prohibits partial suffix replay of archived bb-5h3.",
+      "Round69 aligns the final partial-governance recovery protected and unrelated projections with the same schema_version/comment_count defaults used by every G0/G2 canonicalizer, and updates declared/embedded validator hashes.",
+      "Round70 makes all 15 issue/stable projection definitions byte-policy-equivalent and adds an executable exact-plan census plus archived create/show incident fixture to the authenticated rollback prevalidation command.",
+      "Round71 standardizes JSON-native dependency edge lists across all 15 projections and executes every discovered projection on a common closure/dependency/default/drift corpus, emitting authenticated per-source and per-output digests.",
+      "Round72 binds each projection to its exact consuming command and source SHA, runs a multi-case corpus with authenticated origin-keyed per-case digests, and requires the exact current four-file G0 root plus Round72/head/tree/fresh-attempt route before any mutation.",
+      "Round73 extracts only nine declared executable consumer paths, rejects missing/duplicate/decoy definitions and uninvoked bindings, removes the unused boundary lambda, hashes only 14 actually bound definitions, and executes the exact three-case corpus successfully.",
+      "Round74 follows sequential and transitive executable bindings, subprocess-bound nested validators, rejects shadow/decoy/missing/self-recursive definitions, removes two unused duplicates, authenticates 12 reachable definitions, and rejects symlinked bootstrap roots.",
+      "Round75 excludes dead/uninvoked direct, exec, and subprocess bindings; proves adversarial negatives; and performs every fresh/archive read through a retained no-follow root descriptor with before/after inode identity checks.",
+      "Round76 folds safe constant expressions, rejects ambiguous unknown control-flow consumers, detects nested conditional rebindings, adds unconditional actual-state consumer calls, expands adversarial fixtures, and rebuilds the capture literal/map from final current commands with byte parity.",
+      "Round77 replaces open-ended reachability analysis with immediate unconditional execution proofs for all 12 exact bindings, direct-only nested execution, recursive body rejection, and recursive module rebind rejection.",
+      "Round78 rejects recursive stable lambda definitions, requires the exact stable assignment form, and embeds the bounded recursive-lambda negative fixture.",
+      "Round79 proves only exact direct binding calls and immediate subprocess calls, rejects deferred/short-circuited forms, and aligns external review selector to 79.",
+      "Round80 derives current, declared, captured, and post-capture expected validator argv identities from one exact 14-command authority."
     ]
   },
   "planning_review_lineage": {
     "status": "fresh_exact_hash_reviews_approved",
-    "reviewed_pre_refresh_state_sha256": "sha256:4967b3fa555fb62b4bc8dd1a984345b4e6d82a81bd1b0500263a5a1c6fd4785e",
+    "reviewed_pre_refresh_state_sha256": "sha256:8dda0894a98490266aebfc6ab8b5c9b900ec84823088dbd1e134ac5d5c24a441",
     "reviewer_verdict_refs": [
-      "../docs_tmp/north_star_recovery/planning_reviews/round66/Round66AuthorityReview.json",
-      "../docs_tmp/north_star_recovery/planning_reviews/round66/Round66ExecutionReview.json"
+      "../docs_tmp/north_star_recovery/planning_reviews/round80/Round80AuthorityReview.json",
+      "../docs_tmp/north_star_recovery/planning_reviews/round80/Round80ExecutionReview.json"
     ],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round66/refreshed_state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round80/refreshed_state_handoff.json",
     "current_state_sha256_in_manifest": true
   },
   "authority_matrix": [
@@ -1630,12 +1938,12 @@
     "planning_checkout": {
       "path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
       "branch": "north-star/recovery-execution",
-      "head_sha": "21b0440a5a89c24c43e071f7f5923a286184480e",
-      "tree_sha": "dc999363b41f24690b47ea6044a85adc848a3a17",
+      "head_sha": "a246fff3265f83e40a7a52c73bad83cde0ebdca7",
+      "tree_sha": "18865781bd8b7cf7d8f7dd618b3ed73f4ad3bc82",
       "local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
       "merge_base_with_local_origin_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "working_tree_state": "generated_round_66_approved_STATE_only_dirty",
-      "role": "clean committed Round66 authored planning anchor; generated predecessor STATE is the sole exact-review candidate change before G0"
+      "working_tree_state": "generated_round_80_candidate_STATE_only_dirty",
+      "role": "clean committed Round80 authored planning anchor; generated predecessor STATE is sole exact-review candidate before fresh G0 retry"
     },
     "current_remote_main": {
       "repository": "kmccleary3301/breadboard",
@@ -2492,7 +2800,21 @@
     "planning_package_round_63_review": "request_changes_resolved_pending_round_64",
     "planning_package_round_64_review": "request_changes_resolved_pending_round_65",
     "planning_package_round_65_review": "request_changes_resolved_pending_round_66",
-    "planning_package_round_66_review": "approved"
+    "planning_package_round_66_review": "approved",
+    "planning_package_round_67_review": "request_changes_resolved_pending_round_68",
+    "planning_package_round_68_review": "request_changes_resolved_pending_round_69",
+    "planning_package_round_69_review": "request_changes_resolved_pending_round_70",
+    "planning_package_round_70_review": "request_changes_resolved_pending_round_71",
+    "planning_package_round_71_review": "request_changes_resolved_pending_round_72",
+    "planning_package_round_72_review": "request_changes_resolved_pending_round_73",
+    "planning_package_round_73_review": "request_changes_resolved_pending_round_74",
+    "planning_package_round_74_review": "request_changes_resolved_pending_round_75",
+    "planning_package_round_75_review": "request_changes_resolved_pending_round_76",
+    "planning_package_round_76_review": "request_changes_resolved_pending_round_77",
+    "planning_package_round_77_review": "request_changes_resolved_pending_round_78",
+    "planning_package_round_78_review": "request_changes_resolved_pending_round_79",
+    "planning_package_round_79_review": "request_changes_resolved_pending_round_80",
+    "planning_package_round_80_review": "approved"
   },
   "completion": {
     "status": "not_started",
