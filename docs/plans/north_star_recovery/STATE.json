@@ -1937,12 +1937,12 @@
   },
   "planning_review_lineage": {
     "status": "fresh_exact_hash_reviews_approved",
-    "reviewed_pre_refresh_state_sha256": "sha256:74370adf9e42e5750fdbe2e05d9e5d73b5521958c017bec2f2de814086752cd6",
+    "reviewed_pre_refresh_state_sha256": "sha256:ba2537ba8e5f58e7c61cc2e60a1ea032d98faab3324677d893db0cd7a520a033",
     "reviewer_verdict_refs": [
-      "../docs_tmp/north_star_recovery/planning_reviews/round88/Round88AuthorityReview.json",
-      "../docs_tmp/north_star_recovery/planning_reviews/round88/Round88ExecutionReview.json"
+      "../docs_tmp/north_star_recovery/planning_reviews/round89/Round89AuthorityReview.json",
+      "../docs_tmp/north_star_recovery/planning_reviews/round89/Round89ExecutionReview.json"
     ],
-    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round88/refreshed_state_handoff.json",
+    "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round89/refreshed_state_handoff.json",
     "current_state_sha256_in_manifest": true
   },
   "authority_matrix": [
