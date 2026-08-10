@@ -40,6 +40,7 @@ Universal rules:
 15. Before every spawn, inspect the effective `task.agentModelOverrides` route; `modelRoles` alone is insufficient. Record the resolved agent and model. Never spawn if the resolved model name contains `fable` or the route cannot be verified. Treat task effort as relative to the resolved model.
 16. Run the Phase 20 freeze guard at preflight and local gates. Missing guard coverage, missing exception evidence, or failure blocks the packet.
 17. Before any external-spend action, validate the approval's exact numeric limit, unit/currency, request cap, token-or-runtime cap, and consumed/remaining balance. Emit the typed consumption receipt from `LOOP_SPEC.yaml#external_spend_limit_contract` after every attempted request or launch, including failures and zero-cost routes.
+18. Treat Beads as local-only campaign state. Keep `.beads/` and `.beads_local/` ignored and untracked, reject every source-repository Dolt remote, never run `bd dolt push`, and seal exact local Dolt identities plus authority snapshots after tracker mutations. A dedicated non-source remote requires a new human-approved policy.
 
 ## 2. Role matrix
 
@@ -157,7 +158,7 @@ G0's supervisor assignment may authorize one terminal bootstrap commit only afte
 
 After either closure or terminal start, every external mutation boundary catches `BaseException`. Protected ledger writers complete the whole row or truncate and fsync to the locked pre-append length. Validation and intent rows use deterministic IDs, exact matching-row recovery, and conflict rejection. A writer result is not self-authenticating: the supervisor requires full failure validation after success or bounded publication validation after writer failure.
 
-Preserve every returned command result; encode unobserved closure/push commands only as exit `-1` with empty streams. Persist push/fetch exception classes in failure metadata and nested pre-close results in closure failure v4. Use the authenticated writer-failure ledger action as exception metadata only when the failure record itself cannot be published.
+The historical G0 terminal attempt preserves every returned push/fetch command result and its authenticated failure record. The current local-only disposition forbids replaying that push or manufacturing a success receipt; G2 and later packets validate the local store identity, absent remotes, ignored/untracked paths, and exact authority snapshot instead.
 3. Reproduce the existing behavior or failure on the base when applicable.
 4. Use existing patterns and owners. Do not create a second convention.
 5. Apply one bounded logical change.
@@ -540,7 +541,7 @@ The supervisor owns packet selection, preflight, worker dispatch, synthesis, rev
 - stop at hard budgets;
 - ask one precise question at a human gate;
 - record the exact approval scope and artifact/head identities;
-- update external authorities before rendering state;
+- update external authorities, seal the exact local Beads store identity and snapshot without remote synchronization, then render state;
 - never call the program complete from packet scores.
 
 ### Escalation payload

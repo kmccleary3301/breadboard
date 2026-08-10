@@ -119,6 +119,8 @@ Campaign tooling owns:
 - tracker synchronization;
 - bulk evidence regeneration.
 
+Beads is a local-only campaign tracker. Every source checkout must ignore `.beads/` and `.beads_local/`; neither path may be tracked, packaged, or published. A BreadBoard source repository may not be configured as a Beads Dolt remote, and `bd dolt push` is forbidden unless a later human-approved policy names a dedicated non-source remote. Local tracker mutations remain valid authority when their exact local Dolt database identity and immutable snapshots are recorded.
+
 Runtime and evidence libraries may emit evidence consumed by campaign tooling. They may not import campaign code.
 
 ### 4.4 Compatibility surface
