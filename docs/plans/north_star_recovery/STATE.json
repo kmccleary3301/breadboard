@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-08-10T01:07:49Z",
+  "generated_at_utc": "2026-08-10T22:22:23Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -2546,7 +2546,9 @@
         "key": "G0",
         "bead_id": "bb-6ge",
         "depends_on": [],
-        "state": "closed"
+        "state": "closed",
+        "post_record_ref": "../docs_tmp/north_star_recovery/bootstrap/G0_postcheck.json",
+        "post_record_sha256": "sha256:e18f66b5010488cc0ed4cdcb330a308fe849971030e70cdbef55b7e6854eaf39"
       },
       {
         "key": "G1",
