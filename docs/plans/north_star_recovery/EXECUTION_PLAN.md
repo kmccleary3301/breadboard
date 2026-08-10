@@ -227,7 +227,7 @@ scripts/packet/test_ownership.v1.json
 focused tests
 ```
 
-Reuse `bb.work_item.v2`, `bb.signal.v1`, `bb.review_verdict.v1`, and existing coordination validators where their semantics match. Do not create parallel task, signal, or review nouns.
+Reuse the existing `bb.work_item.v1`, `bb.signal.v1`, `bb.review_verdict.v1`, and coordination validators where their semantics match. No `bb.work_item.v2` contract exists at the G2 base, so G2 must not invent or imply one. Do not create parallel task, signal, or review nouns.
 G0 and G2 are the only bounded pre-checker exceptions. `LOOP_SPEC.yaml#bootstrap_policy.G2` owns G2's exact preflight/postcheck schemas and commands. Before any G2 edit, the supervisor runs closed-record validation, nonfuture-grant validation with at least 900 seconds of future-expiry margin, a digest-bound Phase 20 freeze report rerun under `uv`, a dereferenced one-review exact-base verdict bound to base/merge/scope and the canonical preflight payload, and a digest/content/live-authority validation of the completed G0 post-record and closed G0 STATE row. The exact-base reviewer ID, review-run ID, and author identity are pairwise distinct and disjoint from both the one-time approval ID and grantor identity.
 The one-time `governance_schema` approval is bound to the exact G2 action, base, merge base, scope, and future UTC expiry. The installed checker must then self-host: G2's own negative and positive acceptance records, report digests, current base/merge/head/scope/environment identities, and Phase 20 result all pass through the installed checker before review.
 
