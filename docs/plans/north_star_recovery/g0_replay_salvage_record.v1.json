@@ -1,0 +1,110 @@
+{
+  "action_result_refs": [
+    {
+      "path": "../docs_tmp/north_star_recovery/bootstrap/G0_close_pr_44_receipt.json",
+      "sha256": "sha256:cca24cd249cc92a8375306b6820ca4d70aaa30d2ebeb15b793de4dc5cc1328c5"
+    },
+    {
+      "path": "../docs_tmp/north_star_recovery/bootstrap/G0_supersede_legacy_bead_receipt.json",
+      "sha256": "sha256:6eb261a6dec8fd3e4d2375b28281166b5e64fad80ddf612111dd689796cb4362"
+    },
+    {
+      "path": "../docs_tmp/north_star_recovery/bootstrap/G0_amended_packet_graph_receipt.json",
+      "sha256": "sha256:db19e7f02e554337234ea84c4e82e5b49eeb8c812f93cdc459e49c37d9a89cd8"
+    },
+    {
+      "path": "../docs_tmp/north_star_recovery/bootstrap/G0_campaign_graph_approval_binding_receipt.json",
+      "sha256": "sha256:de0f78181c14835611e43bf932b94d4f720da5a8f2e43f41b42081ad95725b30"
+    }
+  ],
+  "actor": "kylemccleary",
+  "beads_action": {
+    "bead_id": "bb-06u.11",
+    "type": "supersede"
+  },
+  "completed_at_utc": "2026-08-09T11:32:12Z",
+  "discarded_implementation_paths": [
+    {
+      "path": "agentic_coder_prototype/provider/runtime.py",
+      "sha256": "sha256:db0f990a8432564bb8d20ba43f8aecba29b7a76fd43165de664a745b8312d7e8"
+    },
+    {
+      "path": "breadboard/product/evidence/replay_runner.py",
+      "sha256": "sha256:74a0a903c344aa78389a1a3255c141c5e2469eda1ec9d09986dd14ded89a3acd"
+    }
+  ],
+  "github_action": {
+    "pr_number": 44,
+    "type": "close_without_merge"
+  },
+  "human_approval_ids": [
+    "g0-tracker-supersession-aug8-isolated-20260808T153203Z",
+    "g0-pr44-close-unmerged-isolated-closure-g0isolatedclosuregrant-20260808T154108Z"
+  ],
+  "old_base_sha": "8c7788e7b51883eebc99faff05f4422c1168a693",
+  "old_head_sha": "b4e9907adf9922a57c30a37c282aa8077cb10d08",
+  "old_pr_number": 44,
+  "old_pr_url": "https://github.com/kmccleary3301/breadboard/pull/44",
+  "old_tree_sha": "b716b6ce462516a91c6926257190c9ff1b53d6d4",
+  "packet_key": "G0",
+  "retained_contract_refs": [
+    {
+      "path": "agentic_coder_prototype/state/session_state.py",
+      "sha256": "sha256:6ca842a539e3ff4dba72930eea22ea1fb1e18f8b32fd1f251f303ad527f20bb7"
+    },
+    {
+      "path": "breadboard/product/evidence/__init__.py",
+      "sha256": "sha256:3c299a7a8ab1e32b7ad447c72295c08b49cdb5a035f92e17f79a706bacde1fe3"
+    },
+    {
+      "path": "breadboard/product/evidence/replay_execution.py",
+      "sha256": "sha256:83f0a703c94d2d357e59e83d05ccccf8272619695d1ad126f7e6563f3508898a"
+    },
+    {
+      "path": "breadboard/product/evidence/replay_plan.py",
+      "sha256": "sha256:c769743ef7f8d0d1398a6d0b113754b14c3ca2e641aebe69ed64d07b290fe26b"
+    },
+    {
+      "path": "breadboard/product/integrations/host.py",
+      "sha256": "sha256:d33a3e0f2368ef57f8d2fb0e518625e050f647df0b51a4e6c0f1a771339b6b8b"
+    },
+    {
+      "path": "breadboard/product/integrations/provider.py",
+      "sha256": "sha256:04ea5d4a28c86f65411516350257416ec2ec5de74d21ed7ea6a44549449fd0a8"
+    },
+    {
+      "path": "breadboard/product/runtime/artifacts.py",
+      "sha256": "sha256:596c0cfaa232e14e2864c7e3a0952d71687b6467fb64261bb2c9fc93d7c0bc1f"
+    }
+  ],
+  "retained_test_vector_refs": [
+    {
+      "path": "tests/product/evidence/test_replay_core.py",
+      "sha256": "sha256:a2ea2b3191bb73c83e79b1eb56740c10812f0a0edd50228ce3383f0ba2e4cad1"
+    },
+    {
+      "path": "tests/product/integrations/test_catalog.py",
+      "sha256": "sha256:aba62ff5fba4095833f928c750e49a617ab93e42f0dcdb5c0eea6ef7c92cb74f"
+    },
+    {
+      "path": "tests/providers/test_provider_message_contracts.py",
+      "sha256": "sha256:bda2343e12ae42c03b0dcf68e9a460cd9f9f5d824cc755d048e31244e8e62202"
+    },
+    {
+      "path": "tests/providers/test_provider_runtime_anthropic.py",
+      "sha256": "sha256:197a89f9609d1063a2e26f095ca8c557d31208dd1270b370a68e8cac939abc87"
+    }
+  ],
+  "schema_version": "bb.north_star_recovery.g0_replay_salvage.v1",
+  "started_at_utc": "2026-08-08T16:05:29Z",
+  "successor_packet_keys": [
+    "R0",
+    "R1",
+    "R2",
+    "R3A",
+    "R3B",
+    "R3C",
+    "R4",
+    "N9B"
+  ]
+}

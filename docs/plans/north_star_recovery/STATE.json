@@ -1,6 +1,6 @@
 {
   "schema_version": "bb.north_star_recovery.state.v1",
-  "generated_at_utc": "2026-08-01T07:38:35Z",
+  "generated_at_utc": "2026-08-10T01:07:49Z",
   "generator": {
     "id": "north_star_recovery_manual_renderer",
     "version": "1",
@@ -1936,14 +1936,24 @@
     ]
   },
   "planning_review_lineage": {
-    "status": "fresh_exact_hash_reviews_approved",
+    "status": "g0_closed_terminal_handoff_committed",
     "reviewed_pre_refresh_state_sha256": "sha256:ba2537ba8e5f58e7c61cc2e60a1ea032d98faab3324677d893db0cd7a520a033",
     "reviewer_verdict_refs": [
       "../docs_tmp/north_star_recovery/planning_reviews/round89/Round89AuthorityReview.json",
       "../docs_tmp/north_star_recovery/planning_reviews/round89/Round89ExecutionReview.json"
     ],
     "refreshed_state_handoff_manifest": "../docs_tmp/north_star_recovery/planning_reviews/round89/refreshed_state_handoff.json",
-    "current_state_sha256_in_manifest": true
+    "current_state_sha256_in_manifest": true,
+    "g0_terminal_handoff_manifest": "../docs_tmp/north_star_recovery/bootstrap/G0_terminal_handoff.json",
+    "g0_terminal_commit_recovery": {
+      "binding_record_path": "../docs_tmp/north_star_recovery/bootstrap/G0_terminal_commit_recovery_binding.json",
+      "binding_record_sha256": "sha256:ade89dbedff2d0c6b7aec5114afd6cc2b3773d058d3fc343876e24c50af94d6a",
+      "approval_record_path": "../docs_tmp/north_star_recovery/bootstrap/G0_terminal_commit_recovery_approval.json",
+      "approval_record_sha256": "sha256:b8ca2a80c9d8dda13008c5dff9cc2abc7392d1a56ab5e3fad6d5a69ca6cb811a",
+      "invalid_committed_head_sha": "98a2688b157988babe7479c8b178af5341a6c8dd",
+      "invalid_manifest_archive_path": "../docs_tmp/north_star_recovery/bootstrap/G0_terminal_handoff.invalid-98a2688b1579.json",
+      "invalid_manifest_sha256": "sha256:9b87b6f11b09ceb8263398caee81a0b56234a5e7d9c3b111ea2f89a60cbbe494"
+    }
   },
   "authority_matrix": [
     {
@@ -2453,12 +2463,12 @@
       "number": 44,
       "title": "NS09A: executable replay plan and runtime core",
       "url": "https://github.com/kmccleary3301/breadboard/pull/44",
-      "state": "OPEN",
+      "state": "CLOSED",
       "draft": true,
       "mergeable": "CONFLICTING",
       "base_sha": "e1f5d84e48029ad1854a1ea766b0100bb8cb63b9",
       "head_sha": "b4e9907adf9922a57c30a37c282aa8077cb10d08",
-      "disposition": "blocked_budget_never_merge_candidate",
+      "disposition": "closed_without_merge_salvaged_to_G0_packet_graph",
       "accepted_implementation": false
     },
     {
@@ -2492,7 +2502,7 @@
     "blocked_replay_packet": {
       "id": "bb-06u.11",
       "title": "NS09A: Executable replay plan and runtime core",
-      "status": "blocked",
+      "status": "closed",
       "label": "governance:blocked-budget",
       "successor_keys": [
         "R0",
@@ -2503,7 +2513,8 @@
         "R3C",
         "R4",
         "N9B"
-      ]
+      ],
+      "disposition": "superseded_by_validated_G0_packet_graph"
     },
     "merged_core_api_packet": {
       "id": "bb-06u.14",
@@ -2525,188 +2536,188 @@
     }
   },
   "packets": {
-    "scope_version": "north-star-recovery-v1-proposed",
-    "tracker_materialization": "pending_exact_G0_campaign_graph_rewrite_approval_and_live_postcheck",
-    "pre_G0_materialization_exception": "No packet is selectable. G0 uses legacy blocked bead bb-06u.11 only as the bootstrap control object; its approved action atomically materializes all 21 new packet issues.",
+    "scope_version": "bb.north_star_recovery.g0.scope.v1",
+    "tracker_materialization": "materialized_exact_G0_packet_graph",
+    "pre_G0_materialization_exception": "resolved_by_validated_G0_execution",
     "planned_issue_contract": "docs/plans/north_star_recovery/LOOP_SPEC.yaml#bootstrap_policy.G0.pre_literal_requirements",
     "postcheck_issue_map_field": "packet_issue_map",
     "items": [
       {
         "key": "G0",
-        "bead_id": null,
+        "bead_id": "bb-6ge",
         "depends_on": [],
-        "state": "awaiting_G0_preflight_and_human_gates"
+        "state": "closed"
       },
       {
         "key": "G1",
-        "bead_id": null,
+        "bead_id": "bb-q5l",
         "depends_on": [
           "G0",
           "G2"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "G2",
-        "bead_id": null,
+        "bead_id": "bb-zjd",
         "depends_on": [
           "G0"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "R0",
-        "bead_id": null,
+        "bead_id": "bb-lxu",
         "depends_on": [
           "G2"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "R1",
-        "bead_id": null,
+        "bead_id": "bb-6s8",
         "depends_on": [
           "R0"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "R2",
-        "bead_id": null,
+        "bead_id": "bb-dgw",
         "depends_on": [
           "R1"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "V1",
-        "bead_id": null,
+        "bead_id": "bb-alg",
         "depends_on": [
           "G2"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "P0",
-        "bead_id": null,
+        "bead_id": "bb-76u",
         "depends_on": [
           "G2"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "P1",
-        "bead_id": null,
+        "bead_id": "bb-6np",
         "depends_on": [
           "P0",
           "R1"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "R3A",
-        "bead_id": null,
+        "bead_id": "bb-95r",
         "depends_on": [
           "R2",
           "P1",
           "V1"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "R3B",
-        "bead_id": null,
+        "bead_id": "bb-7p5",
         "depends_on": [
           "R2"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "R3C",
-        "bead_id": null,
+        "bead_id": "bb-sef",
         "depends_on": [
           "R2"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "R4",
-        "bead_id": null,
+        "bead_id": "bb-4o4",
         "depends_on": [
           "R3A",
           "R3B",
           "R3C",
           "V1"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "N9B",
-        "bead_id": null,
+        "bead_id": "bb-ayd",
         "depends_on": [
           "R4",
           "P1"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "N10",
-        "bead_id": null,
+        "bead_id": "bb-kp4",
         "depends_on": [
           "N9B"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "S1",
-        "bead_id": null,
+        "bead_id": "bb-3fj",
         "depends_on": [
           "G1",
           "N10"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "A1",
-        "bead_id": null,
+        "bead_id": "bb-jpl",
         "depends_on": [
           "S1"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "C1",
-        "bead_id": null,
+        "bead_id": "bb-8xc",
         "depends_on": [
           "A1"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "O1",
-        "bead_id": null,
+        "bead_id": "bb-cw5",
         "depends_on": [
           "C1"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "O2",
-        "bead_id": null,
+        "bead_id": "bb-cz1",
         "depends_on": [
           "N10",
           "C1"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       },
       {
         "key": "F1",
-        "bead_id": null,
+        "bead_id": "bb-w6l",
         "depends_on": [
           "O1",
           "O2"
         ],
-        "state": "proposed_blocked_dependency"
+        "state": "open"
       }
     ]
   },
@@ -2777,20 +2788,6 @@
   ],
   "blockers": [
     {
-      "id": "blocked_replay_pr_open",
-      "blocks": [
-        "R0",
-        "R1",
-        "R2",
-        "R3A",
-        "R3B",
-        "R3C",
-        "R4",
-        "N9B"
-      ],
-      "unblock": "Human approves G0 PR/tracker retirement and successor amendment."
-    },
-    {
       "id": "packet_control_missing",
       "blocks": [
         "R0",
@@ -2812,29 +2809,22 @@
         "N9B"
       ],
       "unblock": "Named credentials, routes/models, runtime, redaction, and spend are approved and preflighted."
-    },
-    {
-      "id": "tracker_graph_not_amended",
-      "blocks": [
-        "campaign_closure"
-      ],
-      "unblock": "Human approves the exact Beads dependency and disposition update."
     }
   ],
   "next_frontier": [
     {
-      "gate": "G0_disposition_and_human_tracker_authority",
-      "state": "blocked_external",
-      "reason": "Planning gate passed. G0 remains prohibited until the exact disposition packet is prepared and the human grants the predeclared tracker/graph authority."
+      "gate": "G2_packet_control_enforcement",
+      "state": "ready_unblocked",
+      "reason": "G0 closed with validated terminal receipt; G2 is the next dependency-ready packet."
     }
   ],
   "approvals": {
     "planning_package_creation": "approved",
     "managed_pr_preparation": "approved",
     "planning_package_round_7_review": "approved",
-    "tracker_supersession": "pending_for_G0_exact_actions",
-    "campaign_graph_rewrite": "pending_for_exact_G0_titles_dependencies_and_planning_head_tree",
-    "packet_closure": "pending_per_packet",
+    "tracker_supersession": "approved_and_executed_G0",
+    "campaign_graph_rewrite": "approved_and_executed_G0",
+    "packet_closure": "G0_approved_closed_and_validated",
     "governance_schema": "pending_for_exact_diff",
     "architecture_change": "pending_for_exact_diff",
     "public_boundary": "pending_for_exact_diff",
@@ -2906,7 +2896,7 @@
     "planning_package_round_83_review": "approved"
   },
   "completion": {
-    "status": "not_started",
+    "status": "in_progress",
     "product_readiness": "not_ready",
     "inventory_accepted_target_support_rows": 12,
     "inventory_accepted_non_target_accounting_rows": 9,
@@ -2923,7 +2913,9 @@
       "support_claim_sha256": null,
       "reverification_sha256": null
     },
-    "recovery_packets_closed": [],
+    "recovery_packets_closed": [
+      "G0"
+    ],
     "terminal_reviews": [],
     "outsider_product_falsifier": "not_run",
     "outsider_evidence_falsifier": "not_run"
