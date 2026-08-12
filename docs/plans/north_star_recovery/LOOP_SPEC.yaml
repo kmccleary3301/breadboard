@@ -5622,6 +5622,27 @@ bootstrap_policy:
         uv:
           path: /opt/homebrew/bin/uv
           sha256: sha256:6afcaf88751166864b6e5b77e7a7e4e7c608d20ce02fcfd43ba679ab3311d98d
+      candidate_command_sandbox:
+        executable:
+          path: /usr/bin/sandbox-exec
+          sha256: sha256:8290e4be7387a0df83cd1559e86afd880464f269450573d012795761fe298f16
+        profile_source: supervisor_private_capability_store
+        profile_sha256_bound_in_manifest: true
+        default_policy: deny
+        permitted_processes: exact_command_profile_executable_and_pinned_child_runtime_only
+        network_syscalls: deny_all
+        filesystem_read_allowlist:
+        - exact_read_only_candidate_checkout
+        - exact_read_only_uv_runtime_and_package_artifacts
+        - required_system_runtime_files
+        filesystem_write_allowlist:
+        - inherited_write_only_result_FIFO
+        - exact_private_renderer_output_temp_only_for_renderer
+        repository_common_Git_directory_capability_store_credentials_home_tmp_and_other_paths: deny
+        run_as_same_UID_without_kernel_enforced_sandbox: forbidden
+        manifest_bindings: [sandbox_executable_sha256, profile_sha256, exact_read_paths, exact_write_paths, network_denied, candidate_commit, candidate_tree, environment_fingerprint_sha256]
+        postexecution_evidence: broker_records_exact_profile_result_descriptor_and_network_denial_status
+        missing_unverified_or_mismatched_sandbox: block_before_exec
       uv_runtime:
         environment:
         - UV_OFFLINE=1
@@ -6179,11 +6200,15 @@ bootstrap_policy:
           ]
           for search_payload in search_payloads:
               exact(search_payload, {
-                  "search_id", "search_method", "query", "result",
-                  "activation_run_id", "capability_store_instance_sha256",
+                  "schema_version", "search_id", "search_method", "query",
+                  "result", "activation_run_id",
+                  "capability_store_instance_sha256",
                   "environment_fingerprint_sha256", "planning_core_sha256",
                   "genesis_sha256", "broker_invocation_id", "completed_at_utc",
               }, "durable ledger search")
+              assert search_payload["schema_version"] == (
+                  "bb.north_star_recovery.g2_predecessor_search_result.v1"
+              )
               assert search_payload["query"] == "bb-zjd:G2/reset-1:durable_operation_ledger"
               assert search_payload["result"] == "not_found"
               assert search_payload["activation_run_id"] == planning["activation_run_id"]
@@ -6510,12 +6535,12 @@ bootstrap_policy:
           }
           assert planning["fixed_g0_root"] == fixed_g0
           exact(planning["capability_probe"], {
-              "schema_version", "probe_run_id", "supervisor_agent_id",
-              "worker_agent_id", "worker_class", "broker_profile_sha256",
-              "raw_probe_output_sha256", "activation_run_id",
-              "capability_store_instance_sha256", "environment_fingerprint_sha256",
-              "broker_invocation_id", "launched_at_utc", "completed_at_utc",
-              "result_sha256", "passed",
+              "schema_version", "probe_run_id", "reservation_id",
+              "supervisor_agent_id", "worker_agent_id", "worker_class",
+              "broker_profile_sha256", "raw_probe_output_sha256",
+              "activation_run_id", "capability_store_instance_sha256",
+              "environment_fingerprint_sha256", "broker_invocation_id",
+              "launched_at_utc", "completed_at_utc", "result_sha256", "passed",
           }, "capability_probe")
           capability_profile = {
               "capability_store_transport": "supervisor_inherited_read_only_fd_only",
@@ -6529,9 +6554,10 @@ bootstrap_policy:
               "worker_fabrication_attempt": "must_fail",
           }
           probe_keys = {
-              "schema_version", "probe_run_id", "supervisor_agent_id",
-              "worker_agent_id", "worker_class", "broker_profile",
-              "activation_run_id", "capability_store_instance_sha256",
+              "schema_version", "probe_run_id", "reservation_id",
+              "supervisor_agent_id", "worker_agent_id", "worker_class",
+              "broker_profile", "activation_run_id",
+              "capability_store_instance_sha256",
               "environment_fingerprint_sha256", "broker_invocation_id",
               "genesis_sha256", "attempts", "launched_at_utc",
               "completed_at_utc", "result_sha256",
@@ -6551,6 +6577,7 @@ bootstrap_policy:
           assert raw_probe["environment_fingerprint_sha256"] == planning["environment_fingerprint_sha256"]
           assert raw_probe["broker_invocation_id"] == planning["broker_invocation_id"]
           assert raw_probe["genesis_sha256"] == planning["genesis_sha256"]
+          assert re.fullmatch(r"[0-9A-Za-z._:-]+", raw_probe["probe_run_id"])
           assert set(raw_probe["attempts"]) == {"read", "write", "delete", "fabricate"}
           probe_attempts = list(raw_probe["attempts"].values())
           assert len({row["challenge_event_handle"] for row in probe_attempts}) == 4
@@ -6565,9 +6592,9 @@ bootstrap_policy:
               assert challenge_envelope["event_type"] == "capability_probe_challenge" and challenge_envelope["actor"] == "Main"
               assert request_envelope["event_type"] == "capability_probe_request" and request_envelope["actor"] == raw_probe["worker_agent_id"]
               assert denial_envelope["event_type"] == "capability_probe_denial" and denial_envelope["actor"] == "Main"
-              exact(challenge_envelope["payload"], {"challenge", "operation", "activation_run_id", "capability_store_instance_sha256", "environment_fingerprint_sha256", "broker_invocation_id", "genesis_sha256"}, "capability probe challenge")
-              exact(request_envelope["payload"], {"challenge_event_handle", "challenge", "operation", "activation_run_id", "capability_store_instance_sha256", "environment_fingerprint_sha256", "broker_invocation_id", "genesis_sha256"}, "capability probe request")
-              exact(denial_envelope["payload"], {"request_handle", "challenge_event_handle", "challenge", "operation", "error_code", "activation_run_id", "capability_store_instance_sha256", "environment_fingerprint_sha256", "broker_invocation_id", "genesis_sha256"}, "capability probe denial")
+              exact(challenge_envelope["payload"], {"challenge", "operation", "probe_run_id", "reservation_id", "issued_at_utc", "activation_run_id", "capability_store_instance_sha256", "environment_fingerprint_sha256", "broker_invocation_id", "genesis_sha256"}, "capability probe challenge")
+              exact(request_envelope["payload"], {"challenge_event_handle", "challenge", "operation", "probe_run_id", "reservation_id", "issued_at_utc", "activation_run_id", "capability_store_instance_sha256", "environment_fingerprint_sha256", "broker_invocation_id", "genesis_sha256"}, "capability probe request")
+              exact(denial_envelope["payload"], {"request_handle", "challenge_event_handle", "challenge", "operation", "error_code", "probe_run_id", "reservation_id", "issued_at_utc", "activation_run_id", "capability_store_instance_sha256", "environment_fingerprint_sha256", "broker_invocation_id", "genesis_sha256"}, "capability probe denial")
               challenge_payload = challenge_envelope["payload"]
               request_payload = request_envelope["payload"]
               denial_payload = denial_envelope["payload"]
@@ -6577,6 +6604,8 @@ bootstrap_policy:
                   assert context_payload["environment_fingerprint_sha256"] == planning["environment_fingerprint_sha256"]
                   assert context_payload["broker_invocation_id"] == planning["broker_invocation_id"]
                   assert context_payload["genesis_sha256"] == planning["genesis_sha256"]
+                  assert context_payload["probe_run_id"] == raw_probe["probe_run_id"]
+                  assert context_payload["reservation_id"] == raw_probe["reservation_id"]
               assert isinstance(challenge_payload["challenge"], str)
               assert challenge_payload["challenge"]
               challenge_values.append(challenge_payload["challenge"])
@@ -6589,13 +6618,27 @@ bootstrap_policy:
               assert denial_envelope["payload"]["challenge"] == challenge_envelope["payload"]["challenge"]
               assert denial_envelope["payload"]["operation"] == operation
               assert denial_envelope["payload"]["error_code"] == "capability_store_unreachable"
+              challenge_issued = parse_time(challenge_payload["issued_at_utc"])
+              request_issued = parse_time(request_payload["issued_at_utc"])
+              denial_issued = parse_time(denial_payload["issued_at_utc"])
+              assert challenge_issued < request_issued < denial_issued
+              assert denial_issued <= parse_time(raw_probe["completed_at_utc"])
           assert len(set(challenge_values)) == 4
           assert parse_time(raw_probe["launched_at_utc"]) < parse_time(raw_probe["completed_at_utc"])
           assert raw_probe["result_sha256"] == digest({key: value for key, value in raw_probe.items() if key != "result_sha256"})
           assert all(broker_envelope_by_handle[result["denial_event_handle"]]["payload"]["error_code"] == "capability_store_unreachable" for result in raw_probe["attempts"].values())
+          assert max(
+              parse_time(
+                  broker_envelope_by_handle[result["denial_event_handle"]][
+                      "payload"
+                  ]["issued_at_utc"]
+              )
+              for result in raw_probe["attempts"].values()
+          ) <= parse_time(raw_probe["completed_at_utc"])
           probe_summary = planning["capability_probe"]
           assert probe_summary["schema_version"] == "bb.north_star_recovery.g2_capability_probe.v1"
           assert probe_summary["probe_run_id"] == raw_probe["probe_run_id"]
+          assert probe_summary["reservation_id"] == raw_probe["reservation_id"]
           assert probe_summary["supervisor_agent_id"] == raw_probe["supervisor_agent_id"]
           assert probe_summary["worker_agent_id"] == raw_probe["worker_agent_id"]
           assert probe_summary["worker_class"] == raw_probe["worker_class"]
@@ -7225,15 +7268,20 @@ bootstrap_policy:
               and event["operation_class"] == "planning_core_review"
           ]
           assert {event["result_object_sha256_or_null"] for event in review_completions} == {
-              raw_spec_review_sha, raw_security_review_sha,
+              digest(row) for row in reviews
           }
-          review_by_raw_sha = {row["raw_agent_output_sha256"]: row for row in reviews}
+          review_by_result_sha = {digest(row): row for row in reviews}
           route_event_by_agent = {
               event["agent_id"]: event for event in route_history["events"]
           }
           for event in review_completions:
-              review = review_by_raw_sha[event["result_object_sha256_or_null"]]
+              review = review_by_result_sha[event["result_object_sha256_or_null"]]
               route_event = route_event_by_agent[review["agent_id"]]
+              reservation = reservations[event["reservation_id"]]
+              assert reservation["review_round_id_or_null"] == review["review_run_id"]
+              assert parse_time(reservation["reserved_at_utc"]) < parse_time(
+                  route_event["preflighted_at_utc"]
+              )
               assert event["source_identity_sha256"] == planning_core_sha
               assert event["actor_identity_sha256"] == route_event["event_sha256"]
               assert event["route_or_capability_identity_sha256_or_null"] == review[
@@ -7296,6 +7344,16 @@ bootstrap_policy:
           ]
           assert len(probe_completions) == 1
           probe_completion = probe_completions[0]
+          probe_reservation = reservations[probe_completion["reservation_id"]]
+          assert raw_probe["reservation_id"] == probe_reservation["reservation_id"]
+          assert parse_time(probe_reservation["reserved_at_utc"]) < min(
+              parse_time(
+                  broker_envelope_by_handle[result["challenge_event_handle"]][
+                      "payload"
+                  ]["issued_at_utc"]
+              )
+              for result in raw_probe["attempts"].values()
+          )
           probe_challenge_identity = digest(sorted(
               (
                   result["challenge_event_handle"],
@@ -7311,7 +7369,7 @@ bootstrap_policy:
           assert probe_completion[
               "route_or_capability_identity_sha256_or_null"
           ] == probe_challenge_identity
-          assert probe_completion["result_object_sha256_or_null"] == raw_probe_sha
+          assert probe_completion["result_object_sha256_or_null"] == digest(probe_summary)
           assert probe_completion["completed_at_utc_or_null"] == raw_probe["completed_at_utc"]
           assert max(event["sequence"] for event in search_completions) < (
               reservations[probe_completion["reservation_id"]]["sequence"]
@@ -7798,8 +7856,6 @@ bootstrap_policy:
           broker_postexecution:
             parse_result_with_duplicate_keys_nonfinite_and_extra_fields_rejected: true
             recompute_embedded_result_sha256: true
-            require_exit_zero_and_passed_true: true
-            close_and_revoke_all_descriptor_capabilities: true
             immutable_receipt_required_fields:
             - schema_version
             - invocation_manifest_sha256
@@ -7836,9 +7892,11 @@ bootstrap_policy:
           - "{canonical_absolute_common_git_dir}"
         installed_checker:
           argv:
+          - /usr/bin/sandbox-exec
+          - -f
+          - "{supervisor_private_candidate_sandbox_profile}"
           - /opt/homebrew/bin/uv
           - run
-          - --no-project
           - --with
           - PyYAML
           - --with
@@ -7864,6 +7922,9 @@ bootstrap_policy:
           - "{seed_checkout}/scripts/check_phase20_freeze.py"
         candidate_phase20:
           argv:
+          - /usr/bin/sandbox-exec
+          - -f
+          - "{supervisor_private_candidate_sandbox_profile}"
           - /opt/homebrew/bin/uv
           - run
           - --no-project
@@ -7875,6 +7936,9 @@ bootstrap_policy:
           - "{candidate_checkout}/scripts/check_phase20_freeze.py"
         renderer:
           argv:
+          - /usr/bin/sandbox-exec
+          - -f
+          - "{supervisor_private_candidate_sandbox_profile}"
           - /opt/homebrew/bin/uv
           - run
           - --no-project
@@ -8002,6 +8066,10 @@ bootstrap_policy:
       provider_target_participant_paid_API_or_credentialed_launches: forbidden
       provider_credentials_exposed_to_workers: false
       candidate_execution_network: disabled
+      enforcement: broker_invokes_every_candidate_controlled_command_through_pinned_sandbox_exec_and_exact_default_deny_profile
+      network_denial_and_filesystem_allowlist_evidence_bound_to_operation_result_ledger_and_attestation: true
+      UV_OFFLINE_is_package_resolution_only_not_security_boundary: true
+      same_UID_unsandboxed_execution: forbidden
       permitted_supervisor_control_plane_adapters:
       - exact_Git_repository_transport
       - authenticated_GitHub_API_observation
@@ -8467,8 +8535,6 @@ bootstrap_policy:
         additions_plus_deletions_max: 1000
         changed_file_count_max: 11
         candidate_manifest_recomputed_from_actual_tree_and_diff: true
-        budget_validator_must_be_invoked_by_candidate_admission_not_only_defined: true
-        over_line_over_file_binary_malformed_or_uninvoked_budget_fixture_required: true
         any_over_cap_or_manifest_mismatch: blocked_budget
     reset_2_seed:
       phase_id: G2/reset-2/seed
@@ -8506,8 +8572,9 @@ bootstrap_policy:
       worker_supplied_manifest_or_denylist: forbidden
       sources:
       - exact_G2_round_3_candidate_tree_diff_reports_and_reviews
-      - exact_reset_1_S1_commit_tree_diff_reports_reviews_actions_and_ledger
-      - exact_reset_1_S2_commit_tree_diff_reports_reviews_actions_and_ledger
+      - exact_reset_1_S1_commit_tree_diff_changed_blobs_and_reviews
+      - exact_reset_1_S2_commit_tree_diff_changed_blobs_and_reviews
+      - exact_reset_1_counter_snapshot_blocked_tracker_and_authenticated_discontinuity_disposition
       manifest_schema: bb.north_star_recovery.g2_abandoned_round3_manifest.v1
       manifest_required_fields: [schema_version, manifest_id, activation_run_id, planning_core_sha256, entries, denied_blob_oids, denylist_sha256, manifest_sha256]
       entry_fields: [path, blob_oid, sha256, mode, size, physical_line_count, provenance_class, disposition]
@@ -8706,6 +8773,9 @@ bootstrap_policy:
       result_schema_keys_exactly_equal_operation_classes: true
       protected_result_payload_contract:
         exact_keys_by_operation_class:
+          planning_core_review: [schema_version, lens, reviewer_id, review_run_id, agent_id, history_uri, resolved_model, route_preflight_sha256, route_preflight_event_handle, route_preflight_event_sha256, route_event_id, planning_head_sha, source_base_sha, source_merge_base_sha, execution_plan_sha256, loop_spec_sha256, verdict, findings, raw_agent_output_sha256, completed_at_utc]
+          predecessor_ledger_search: [schema_version, search_id, search_method, query, result, activation_run_id, capability_store_instance_sha256, environment_fingerprint_sha256, planning_core_sha256, genesis_sha256, broker_invocation_id, completed_at_utc]
+          capability_probe: [schema_version, probe_run_id, reservation_id, supervisor_agent_id, worker_agent_id, worker_class, broker_profile_sha256, raw_probe_output_sha256, activation_run_id, capability_store_instance_sha256, environment_fingerprint_sha256, broker_invocation_id, launched_at_utc, completed_at_utc, result_sha256, passed]
           actual_seed_merge: [source_commit, source_tree, merged_commit, merged_tree, parent_commit, merged]
           actual_candidate_merge: [source_commit, source_tree, merged_commit, merged_tree, parent_commit, merged]
           evidence_seal: [candidate_commit, candidate_tree, evidence_commit, evidence_tree, report_object_ids, authority_snapshot_sha256s, no_spend_attestation_sha256, sealed]
