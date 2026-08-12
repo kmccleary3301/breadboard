@@ -5163,7 +5163,27 @@ bootstrap_policy:
     bead_id: bb-zjd
     authority_role: historical_context_only
     active_authority: false
+    dispatchable: false
+    state_tables_non_dispatch: true
+    nested_reset_2_tables_are_evidence_only: true
+    forbidden_consumers: [transition_dispatch, admission, reservation, launch, promotion, closure]
     active_authority_ref: bootstrap_policy.G2_reset_3_amendment
+    historical_reset_2_table_registry:
+      status: immutable_failed_history_non_authoritative
+      dispatchable: false
+      tables:
+      - reset_seed
+      - candidate
+      - approvals
+      - operation_ledger
+      - operation_classes
+      - result_schemas
+      - phase_map
+      - g2_state_machine
+      - transition_amendment
+      - command_profiles
+      - amendment_validation
+      consumer_policy: negative_evidence_query_or_audit_display_only
     execution_epoch: G2/reset-1
     scope_version: bb.north_star_recovery.g2.scope.v2
     current_state: blocked_review
@@ -5171,6 +5191,9 @@ bootstrap_policy:
     only_proposed_reentry: bootstrap_policy.G2_reset_3_amendment
     phase_model: one_packet_one_issue_two_machine_gated_write_phases
     generic_state_machine_override:
+      status: historical_evidence_only_non_dispatch
+      active_transition_table: null
+      transition_execution: forbidden
       applies_when_selected_packet: G2
       rule: only_g2_state_machine_transitions_may_enter_implement_review_merge_anchor_verify_or_close_states
       generic_implementing_local_gates_approved_verified_and_closed_transitions_forbidden: true
@@ -8488,87 +8511,33 @@ bootstrap_policy:
       - invalidate_verifier_and_installed_checker_results
       - require_new_downstream_objects_and_closure_action
     g2_state_machine:
-      status: reset_2_authoritative_no_legacy_routes
+      status: historical_evidence_only_non_dispatch
+      active_authority: false
+      dispatchable: false
+      consumer_policy:
+        allowed: [negative_evidence_query, audit_display]
+        forbidden: [transition_dispatch, admission, reservation, launch, promotion, closure]
       initial: blocked_review
-      legacy_entry_and_transitions: reject
-      legacy_states_are_negative_evidence_only: true
-      blocked_states: [blocked_scope, blocked_budget, blocked_review, blocked_environment, blocked_external]
-      transitions:
-      - {from: blocked_review, event: exact_reset_2_planning_reviews_searches_probe_and_activation_record_ready, to: g2_reset_2_seed_preflight}
-      - {from: g2_reset_2_seed_preflight, event: exact_reset_2_preflight_and_seed_admission_passed, to: g2_reset_2_seed_implementing}
-      - {from: g2_reset_2_seed_implementing, event: exact_seed_local_gates_and_phase20_passed, to: g2_reset_2_seed_review}
-      - {from: g2_reset_2_seed_review, event: exact_four_seed_reviews_in_two_rounds_approved, to: g2_reset_2_seed_selection}
-      - {from: g2_reset_2_seed_selection, event: exact_seed_selection_action_consumed_and_ledgered, to: g2_reset_2_seed_merge}
-      - {from: g2_reset_2_seed_merge, event: exact_S_merged_and_seed_merge_action_consumed_and_ledgered, to: g2_reset_2_candidate_preflight}
-      - {from: g2_reset_2_candidate_preflight, event: candidate_admission_phase20_ownership_test_plan_ledger_and_no_spend_passed, to: g2_reset_2_candidate_implementing}
-      - {from: g2_reset_2_candidate_implementing, event: candidate_local_gates_and_candidate_merge_action_consumed_and_ledgered, to: g2_reset_2_candidate_merge}
-      - {from: g2_reset_2_candidate_merge, event: unreferenced_exact_C_budget_stage_ref_promotion_actual_merge_receipts_and_g2_no_spend_attestation_passed, to: g2_reset_2_evidence_seal}
-      - {from: g2_reset_2_evidence_seal, event: exact_E_and_non_authorizing_self_host_passed, to: g2_reset_2_final_review}
-      - {from: g2_reset_2_final_review, event: exact_four_candidate_reviews_in_two_rounds_approved, to: g2_reset_2_review_seal}
-      - {from: g2_reset_2_review_seal, event: exact_R_and_A_created_with_required_topology_and_schema, to: g2_reset_2_anchor_selection}
-      - {from: g2_reset_2_anchor_selection, event: exact_A_selection_action_consumed_and_ledgered, to: g2_reset_2_closure_validation}
-      - {from: g2_reset_2_closure_validation, event: validators_renderer_and_packet_closure_action_passed, to: closed}
-      transition_guards_by_event:
-        exact_reset_2_planning_reviews_searches_probe_and_activation_record_ready:
-        - activation_contract_passed
-        - two_plan_reviews_bound_to_immutable_planning_core
-        - two_fresh_predecessor_searches_and_one_capability_probe_passed_after_reviews
-        - activation_run_store_environment_and_broker_event_bindings_match
-        - all_three_human_actions_and_consumptions_pass_only_after_activation_record
-        - source_G0_and_discontinuity_identity_contract_passed
-        exact_reset_2_preflight_and_seed_admission_passed:
-        - one_fresh_preexecution_ledger_recheck_is_terminal_and_immediately_precedes_seed_admission_reservation
-        - seed_admission_validator_and_broker_postexecution_receipt_pass
-        - preexecution_and_extended_ledger_tips_are_distinct_and_bound
-        unreferenced_exact_C_budget_stage_ref_promotion_actual_merge_receipts_and_g2_no_spend_attestation_passed:
-        - actual_candidate_merge_operation_materializes_unreferenced_exact_C_from_exact_selected_and_merged_S_without_ref_update
-        - candidate_budget_validation_is_final_pre_ref_update_stage_of_same_reserved_broker_invocation
-        - validator_source_manifest_result_stage_receipt_and_common_receipt_exact_equalities_all_pass
-        - canonical_source_ref_promotes_from_exact_S_to_exact_C_only_after_budget_stage_passes
-        - actual_candidate_merge_common_result_completion_and_receipt_bind_C_stage_objects_and_extended_ledger_tip
-        - canonical_g2_no_spend_v1_is_emitted_after_common_receipt_and_terminal_ledger_event_with_passed_true_before_evidence_seal
-        - g2_no_spend_schema_owner_preimage_empty_set_fixed_unit_denial_pre_attestation_stage_common_result_completion_common_receipt_and_terminal_ledger_equalities_all_pass
-        - g2_no_spend_attestation_sha256_is_the_required_nonrecursive_input_bound_by_evidence_seal
-        - any_pre_ref_over_cap_manifest_mismatch_uninvoked_source_substituted_source_mutated_nonzero_failed_swapped_or_unreceipted_budget_stage_leaves_ref_at_S_and_blocks
-        - any_missing_failed_cyclic_or_noncanonical_post_g2_no_spend_attestation_preserves_ref_at_C_and_blocks_every_evidence_review_anchor_and_closure_transition
-      interrupt_transition_expansion:
-        semantics: every_listed_rule_is_a_required_real_transition
-        all_nonclosed_G2_states:
-        - g2_reset_2_seed_preflight
-        - g2_reset_2_seed_implementing
-        - g2_reset_2_seed_review
-        - g2_reset_2_seed_selection
-        - g2_reset_2_seed_merge
-        - g2_reset_2_candidate_preflight
-        - g2_reset_2_candidate_implementing
-        - g2_reset_2_candidate_merge
-        - g2_reset_2_evidence_seal
-        - g2_reset_2_final_review
-        - g2_reset_2_review_seal
-        - g2_reset_2_anchor_selection
-        - g2_reset_2_closure_validation
-        event_rules:
-        - {event: reset_2_planning_core_activation_manifest_ledger_or_environment_changed, from: all_nonclosed_G2_states, to: g2_reset_2_seed_preflight, actions: invalidate_all_reset_2_downstream}
-        - {event: reset_2_candidate_source_ownership_test_plan_phase20_review_ledger_or_no_spend_changed, from: [g2_reset_2_candidate_preflight, g2_reset_2_candidate_implementing, g2_reset_2_candidate_merge, g2_reset_2_evidence_seal, g2_reset_2_final_review, g2_reset_2_review_seal, g2_reset_2_anchor_selection, g2_reset_2_closure_validation], to: g2_reset_2_candidate_preflight, actions: invalidate_C_E_R_A_and_downstream}
-        - {event: reset_2_source_changed_before_seed_merge, from: [g2_reset_2_seed_preflight, g2_reset_2_seed_implementing, g2_reset_2_seed_review, g2_reset_2_seed_selection, g2_reset_2_seed_merge], to: g2_reset_2_seed_preflight, actions: invalidate_seed_attempt_reviews_selection_merge}
-        - {event: reset_2_scope_or_path_invalid, from: all_nonclosed_G2_states, to: blocked_scope}
-        - {event: reset_2_phase_or_aggregate_budget_exhausted, from: all_nonclosed_G2_states, to: blocked_budget}
-        - {event: reset_2_review_budget_exhausted, from: [g2_reset_2_seed_review, g2_reset_2_final_review], to: blocked_review}
-        - {event: reset_2_runtime_capability_store_or_typed_failure, from: all_nonclosed_G2_states, to: blocked_environment}
-        - {event: reset_2_human_action_missing_expired_replayed_or_wrong_scope, from: all_nonclosed_G2_states, to: blocked_external}
-        - {event: reset_2_seed_review_changes_requested_and_attempt_available, from: [g2_reset_2_seed_review], to: g2_reset_2_seed_preflight, actions: invalidate_seed_review_selection_merge}
-        - {event: reset_2_candidate_review_changes_requested_and_attempt_available, from: [g2_reset_2_final_review], to: g2_reset_2_candidate_preflight, actions: invalidate_C_E_R_A_and_downstream}
-        - {event: reset_2_interrupt_or_cancellation, from: all_nonclosed_G2_states, to: blocked_review, actions: terminalize_open_reservation_with_typed_failure}
-        missing_local_interrupt_transition_action: schema_invalid_and_block
-      universal_guards:
-      - every_launch_has_supervisor_reservation_and_terminal_event
-      - every_validator_or_broker_failure_terminalizes_its_reservation
-      - phase_and_aggregate_budgets_below_or_at_cap
-      - exact_source_and_object_identities_unchanged
-      - no_abandoned_scope_record_satisfies_any_gate
-      - no_worker_reviewer_or_candidate_self_finalization
-      - generic_verified_to_closed_transition_is_inapplicable
-      any_guard_failure: appropriate_blocked_state_or_fresh_preflight_after_invalidation
+      historical_states:
+      - g2_reset_2_seed_preflight
+      - g2_reset_2_seed_implementing
+      - g2_reset_2_seed_review
+      - g2_reset_2_seed_selection
+      - g2_reset_2_seed_merge
+      - g2_reset_2_candidate_preflight
+      - g2_reset_2_candidate_implementing
+      - g2_reset_2_candidate_merge
+      - g2_reset_2_evidence_seal
+      - g2_reset_2_final_review
+      - g2_reset_2_review_seal
+      - g2_reset_2_anchor_selection
+      - g2_reset_2_closure_validation
+      transitions: []
+      transition_guards_by_event: {}
+      failure_routes: []
+      completion: {historical_record_only: true, may_authorize_active_G2: false}
+      any_reset_2_event: reject_as_historical_non_dispatch
+      active_dispatch_ref: bootstrap_policy.G2_reset_3_amendment.state_machine
     completion:
       requires:
       - exact_G0_root_validation_passed
@@ -8590,6 +8559,12 @@ bootstrap_policy:
   historical_reset_2:
     status: immutable_failed_history_non_authoritative
     active_authority: false
+    dispatchable: false
+    active_authority_ref: bootstrap_policy.G2_reset_3_amendment
+    nested_operation_tables_non_dispatch: true
+    consumer_policy:
+      allowed: [negative_evidence_query, audit_display]
+      forbidden: [transition_dispatch, admission, reservation, launch, promotion, closure]
     logical_packet_key: G2
     bead_id: bb-zjd
     predecessor:
@@ -9356,11 +9331,13 @@ bootstrap_policy:
       - terminal_tip_equals_last_event
       any_missing_extra_duplicate_replayed_out_of_order_forged_failed_or_over_cap_event: block
     transition_amendment:
+      status: historical_evidence_only_non_dispatch
       generic_G2_entry_remains_forbidden: true
-      exact_frontier_state: blocked_review
-      authoritative_state_machine_path: bootstrap_policy.G2.g2_state_machine
+      authoritative_state_machine_path: null
+      active_dispatch_ref: bootstrap_policy.G2_reset_3_amendment.state_machine
       duplicate_transition_table: forbidden
-      reset_1_transition_reentry: forbidden
+      reset_2_transition_reentry: forbidden
+      transition_names_are_evidence_only_not_reachable: true
     amendment_validation:
       required_before_plan_review:
       - YAML_parses_with_duplicate_keys_rejected
@@ -9379,6 +9356,13 @@ bootstrap_policy:
       - fresh_reset_2_null_tip_genesis_and_disposition_digest_validate
       any_missing_validator_or_nonzero_result: remain_blocked_review
     reset_2_contract_overrides:
+      status: historical_evidence_only_non_dispatch
+      active_authority: false
+      dispatchable: false
+      consumer_policy:
+        allowed: [negative_evidence_query, audit_display]
+        forbidden: [transition_dispatch, admission, reservation, launch, promotion, closure]
+      all_nested_reset_2_operation_ledger_action_result_profile_and_phase_tables_non_dispatch: true
       predecessor_input:
         accepted_mode: human_authorized_reset_discontinuity_disposition
         complete_terminal_bundle_mode_in_this_amendment: forbidden
@@ -9512,6 +9496,32 @@ bootstrap_policy:
       - object_mode_full_oid_and_no_follow_git_rules
       - no_spend_and_no_worker_authority_rules
       - typed_reservation_completion_failure_and_receipt_rules
+      immutable_semantics_allowlist:
+        exact_fields:
+        - packet_key
+        - bead_id
+        - fixed_G0_root_and_local_only_authority_boundary
+        - supervisor_exclusive_launcher_and_human_gate_boundary
+        - object_mode_full_oid_and_no_follow_git_rules
+        - no_spend_and_no_worker_authority_rules
+        - typed_reservation_completion_failure_and_receipt_rules
+        field_values_are_copied_not_referenced: true
+        source_record_must_be_dispatchable_false: true
+        source_fields_not_in_allowlist: reject
+      reset_3_owned_overrides:
+      - execution_epoch
+      - scope_version
+      - planning_parent_and_planning_commit
+      - state_and_transition_dispatch
+      - phase_ids_and_phase_state_map
+      - all_budgets_and_review_counters
+      - all_paths_and_candidate_scope
+      - predecessor_disposition_and_null_tip_chronology
+      - negative_evidence_inventory_manifest_and_digest
+      - reviews_actions_consumptions_and_operation_classes
+      - preseed_validator_scalar_and_input_descriptors
+      - runtime_profiles_results_receipts_and_generated_projection
+      reset_2_operational_records_are_never_inherited: true
       override_denylist:
       - execution_epoch
       - scope_version
@@ -9538,6 +9548,18 @@ bootstrap_policy:
       forbidden_paths: all_other_repository_paths
       changed_files_max: 2
       changed_additions_plus_deletions_max: 4500
+      required_changed_paths_exact:
+      - docs/plans/north_star_recovery/EXECUTION_PLAN.md
+      - docs/plans/north_star_recovery/LOOP_SPEC.yaml
+      changed_paths_must_equal_exact_set: true
+      observed_reviewed_head_diff_from_parent:
+        reviewed_head: 1f1ac5ded879057583ba3d12d1a682c6632fba83
+        additions: 406
+        deletions: 24
+        changed_lines: 430
+        files: 2
+      repair_commit_must_retain_exact_paths_and_parent: true
+      repair_diff_additions_plus_deletions_max: 4500
       self_reference_to_post_commit_identity: forbidden
       yaml_duplicate_keys: forbidden
     authority_facts:
@@ -9573,25 +9595,114 @@ bootstrap_policy:
         fresh_exact_head_required: true
         reviewers_distinct_from_writer_supervisor_and_human: true
         approval: approve_with_zero_P0_P1_P2
-      seed_and_candidate:
-        exact_rounds_per_phase: 3
+      seed:
+        exact_rounds: 3
+        exact_operations: 6
         exact_lenses: [specification_correctness, security_standards_generated_drift]
-        exact_operations_per_phase: 6
-        every_record_binds_epoch_scope_paths_budgets_source_objects_and_ledger_tip: true
+        operation_matrix: [[round_1, specification_correctness], [round_1, security_standards_generated_drift], [round_2, specification_correctness], [round_2, security_standards_generated_drift], [round_3, specification_correctness], [round_3, security_standards_generated_drift]]
+        fresh_exact_head_required: true
+      candidate:
+        exact_rounds: 2
+        exact_operations: 4
+        exact_lenses: [specification_correctness, security_standards_generated_drift]
+        operation_matrix: [[round_1, specification_correctness], [round_1, security_standards_generated_drift], [round_2, specification_correctness], [round_2, security_standards_generated_drift]]
+        fresh_exact_head_required: true
+      aggregate:
+        exact_rounds: 5
+        exact_operations: 10
+        source_phases: [seed, candidate]
+        planning_reviews_excluded_from_implementation_aggregate: true
+      every_record_binds_epoch_scope_paths_budgets_source_objects_and_ledger_tip: true
+      candidate_final_review:
+        exact_rounds: 2
+        exact_operations: 4
+        source: candidate
+        no_additional_implementation_review_budget: true
     fresh_actions:
-      action_schema: bb.north_star_recovery.g2_human_action.v3
+      action_schema:
+        version: bb.north_star_recovery.g2_human_action.v3
+        exact_fields: [schema_version, instance_id, action_id, response_id, response_event_handle, authorized_principal, authenticated_channel, packet_key, execution_epoch, scope_version, gate_id, protected_action, phase_id, activation_record_sha256, planning_core_sha256, exact_object_bindings, binding_payload_sha256, nonce, granted_at_utc, expires_at_utc, decision]
+        unknown_missing_extra_or_replayed_field: reject
+      consumption_schema:
+        version: bb.north_star_recovery.g2_action_consumption.v3
+        exact_fields: [schema_version, instance_id, action_id, action_sha256, nonce, consumption_event_handle, authorized_principal, execution_epoch, scope_version, phase_id, consumed_once, consumed_at_utc, protected_action_result, protected_action_result_sha256, operation_ledger_event_sha256]
+        consumed_once_must_be_true: true
+        unknown_missing_extra_or_replayed_field: reject
+      authorized_principal: Kyle_McCleary
+      authenticated_channel: primary_OMP_session_interactive_action
       separate_single_use_consumption_required: true
+      exact_instance_count: 8
       instances:
-      - {instance_id: G2_reset_3_scope_budget, gate_id: scope_budget_amendment, operation_class: human_scope_budget_action}
-      - {instance_id: G2_reset_3_governance, gate_id: governance_schema, operation_class: human_governance_action}
-      - {instance_id: G2_reset_3_security, gate_id: security_boundary, operation_class: human_security_boundary_action}
-      - {instance_id: G2_reset_3_seed_selection, gate_id: closure_anchor_selection, operation_class: human_seed_selection_action}
-      - {instance_id: G2_reset_3_seed_merge, gate_id: merge, operation_class: human_seed_merge_action}
-      - {instance_id: G2_reset_3_candidate_merge, gate_id: merge, operation_class: human_candidate_merge_action}
-      - {instance_id: G2_reset_3_anchor_selection, gate_id: closure_anchor_selection, operation_class: human_closure_anchor_selection_action}
-      - {instance_id: G2_reset_3_packet_closure, gate_id: packet_closure, operation_class: human_packet_closure_action}
+      - instance_id: G2_reset_3_scope_budget
+        gate_id: scope_budget_amendment
+        protected_action: authorize_G2_reset_3_scope_and_budget
+        operation_class: human_scope_budget_action
+        phase_id: G2/reset-3/preseed
+        timing: [after_activation_record, before_live_recheck]
+        exact_binding_payload_keys: [planning_core_sha256, activation_record_sha256, predecessor_disposition_sha256, execution_epoch, scope_version, aggregate_budgets, seed_budget, candidate_budget]
+      - instance_id: G2_reset_3_governance
+        gate_id: governance_schema
+        protected_action: approve_G2_reset_3_closed_governance_and_generated_projection
+        operation_class: human_governance_action
+        phase_id: G2/reset-3/preseed
+        timing: [after_activation_record, before_live_recheck]
+        exact_binding_payload_keys: [planning_core_sha256, activation_record_sha256, execution_epoch, scope_version, seed_allowed_paths, candidate_allowed_paths, schema_source_digests, generated_projection_digest]
+      - instance_id: G2_reset_3_security
+        gate_id: security_boundary
+        protected_action: approve_G2_reset_3_capability_Git_filesystem_network_credential_and_authority_boundaries
+        operation_class: human_security_boundary_action
+        phase_id: G2/reset-3/preseed
+        timing: [after_activation_record, before_live_recheck]
+        exact_binding_payload_keys: [planning_core_sha256, activation_record_sha256, predecessor_disposition_sha256, invocation_manifest_sha256, descriptor_set_sha256, profile_digests, no_spend_policy_sha256]
+      - instance_id: G2_reset_3_seed_selection
+        gate_id: closure_anchor_selection
+        protected_action: select_exact_seed_S_commit_and_tree
+        operation_class: human_seed_selection_action
+        phase_id: G2/reset-3/seed
+        timing: [after_seed_reviews_approved, before_seed_merge]
+        exact_binding_payload_keys: [seed_commit, seed_tree, seed_review_seal_sha256, seed_attempt_result_sha256, ownership_manifest_sha256, test_plan_sha256, operation_ledger_tip_sha256]
+      - instance_id: G2_reset_3_seed_merge
+        gate_id: merge
+        protected_action: merge_exact_reviewed_seed_S
+        operation_class: human_seed_merge_action
+        phase_id: G2/reset-3/seed
+        timing: [after_seed_selection_consumed, before_actual_seed_merge]
+        exact_binding_payload_keys: [selected_seed_commit, selected_seed_tree, seed_selection_action_sha256, seed_selection_consumption_sha256, merge_parent_commit, merge_parent_tree, operation_ledger_tip_sha256]
+      - instance_id: G2_reset_3_candidate_merge
+        gate_id: merge
+        protected_action: merge_exact_reviewed_candidate_C
+        operation_class: human_candidate_merge_action
+        phase_id: G2/reset-3/candidate
+        timing: [after_candidate_reviews_approved, before_actual_candidate_merge]
+        exact_binding_payload_keys: [candidate_commit, candidate_tree, seed_commit, seed_tree, candidate_review_seal_sha256, ownership_manifest_sha256, test_plan_sha256, operation_ledger_tip_sha256]
+      - instance_id: G2_reset_3_anchor_selection
+        gate_id: closure_anchor_selection
+        protected_action: select_exact_anchor_A_commit_and_tree
+        operation_class: human_closure_anchor_selection_action
+        phase_id: G2/reset-3/closure
+        timing: [after_review_seal, before_closure_validation]
+        exact_binding_payload_keys: [anchor_commit, anchor_tree, candidate_commit, candidate_tree, evidence_commit, evidence_tree, review_commit, review_tree, report_object_ids, review_object_ids, operation_ledger_tip_sha256]
+      - instance_id: G2_reset_3_packet_closure
+        gate_id: packet_closure
+        protected_action: close_G2_reset_3_after_exact_post_anchor_validation
+        operation_class: human_packet_closure_action
+        phase_id: G2/reset-3/closure
+        timing: [after_private_installed_renderer_validation, before_packet_closure]
+        exact_binding_payload_keys: [anchor_commit, anchor_tree, private_validation_result_sha256, installed_validation_result_sha256, renderer_result_sha256, state_artifact_sha256, anchor_selection_action_sha256, anchor_selection_consumption_sha256, preclosure_operation_ledger_tip_sha256]
+      preseed_instance_ids: [G2_reset_3_scope_budget, G2_reset_3_governance, G2_reset_3_security]
+      preseed_consumption_instance_ids: [G2_reset_3_scope_budget, G2_reset_3_governance, G2_reset_3_security]
+      preseed_consumption_count: 3
+      later_instance_ids: [G2_reset_3_seed_selection, G2_reset_3_seed_merge, G2_reset_3_candidate_merge, G2_reset_3_anchor_selection, G2_reset_3_packet_closure]
+      actual_object_boundaries:
+        G2_reset_3_seed_selection: {object: S, boundary: select_actual_seed_commit_and_tree_after_seed_review_seal}
+        G2_reset_3_seed_merge: {object: S, boundary: actual_seed_merge_commit_and_tree_after_selection_consumption}
+        G2_reset_3_candidate_merge: {object: C, boundary: actual_candidate_merge_commit_and_tree_descendant_of_S_after_candidate_review}
+        G2_reset_3_anchor_selection: {object: A, boundary: select_actual_anchor_commit_and_tree_with_parents_C_then_R}
+        G2_reset_3_packet_closure: {object: closure, boundary: bind_post_anchor_validation_receipts_and_final_tip}
+      later_action_consumption_before_preseed_admission: forbidden
       action_id_nonce_and_consumption_must_be_distinct: true
       every_action_binds_activation_disposition_epoch_scope_and_exact_objects: true
+      unknown_instance_gate_operation_or_binding_key: reject
     budgets:
       aggregate: {files_max: 19, non_generated_lines_max: 6000, implementation_attempts_max: 5, review_rounds_max: 5, ci_reruns_max: 5}
       seed: {files_max: 8, non_generated_lines_max: 5000, implementation_attempts_max: 3, review_rounds_max: 3, ci_reruns_max: 3}
@@ -9621,7 +9732,17 @@ bootstrap_policy:
       seed_admission_requires_all_eight_paths_and_exact_manifest: true
     candidate:
       phase_id: G2/reset-3/candidate
-      unchanged_from_reset_2: true
+      scope_semantics:
+        copied_immutable_fields_from_historical_reset_2:
+        - allowed_paths
+        - forbidden_paths
+        - files_max
+        - non_generated_lines_max
+        - implementation_attempts_max
+        - review_rounds_max
+        - ci_reruns_max
+        source_digest_recomputed_and_bound: true
+        all_other_reset_2_candidate_fields: forbidden
       allowed_paths:
       - contracts/governance/schemas/bb.work_packet.v2.schema.json
       - contracts/governance/schemas/bb.north_star_recovery.state.v1.schema.json
@@ -9641,6 +9762,8 @@ bootstrap_policy:
       - scripts/packet/g2_git_objects.py
       - tests/packet/test_g2_contract.py
       budgets: {files_max: 11, non_generated_lines_max: 1000, implementation_attempts_max: 2, review_rounds_max: 2, ci_reruns_max: 2}
+      reset_3_owned_command_profile: g2_reset_3_candidate_budget_v1
+      reset_2_profile_reference_or_result_reuse: forbidden
     negative_evidence:
       reset_1_denied_blob_oids:
       - 03739cc4dfdf3435f84031b925ce63afde1e02e1
@@ -9715,6 +9838,46 @@ bootstrap_policy:
       reset_2_failed_disjoint_from_reset_1: true
       candidate_blob_reuse: forbidden_for_all_26
       manifest_v2_fields: [round3_entries, reset_1_denied_blob_oids, reset_2_failed_seed_blob_oids, all_denied_blob_oids, manifest_sha256]
+      manifest_schema:
+        schema_version: bb.north_star_recovery.g2_negative_manifest.v2
+        exact_fields: [schema_version, execution_epoch, scope_version, source_objects, entries, round3_entry_ids, reset_1_denied_blob_oids, reset_2_failed_seed_blob_oids, all_denied_blob_oids, manifest_sha256]
+        unknown_missing_extra_or_duplicate_field: reject
+        entry_schema:
+          exact_fields: [entry_id, source_epoch, source_role, path, commit_oid, tree_oid, blob_oid, blob_sha256, mode, size_bytes, line_count]
+          entry_id: canonical_nonempty_string
+          source_epoch: [G2/reset-1, G2/reset-2]
+          source_role: [round3_entry, reset_1_denied, reset_2_failed_seed]
+          path: canonical_relative_repository_path
+          commit_oid_tree_oid_blob_oid: full_lowercase_git_oid
+          blob_sha256: lowercase_sha256
+          mode: "100644"
+          size_bytes_line_count: nonnegative_integers
+      authenticated_git_derivation:
+        owner: supervisor
+        repository_identity_and_common_gitdir_authenticated: true
+        source_objects:
+          reset_1: [authenticated_S1_commit_tree, authenticated_S2_commit_tree, round3_blocked_record_and_reviews]
+          reset_2: [authenticated_failed_seed_commit_tree_objects]
+        commands_config_free_full_oid_nofollow: [cat_file_batch_check, cat_file_batch, ls_tree_recursive, diff_tree_raw_nul]
+        recompute_entry_blob_sha256_mode_size_and_line_count: true
+        supplied_oid_tree_walk_or_worker_manifest_is_not_authority: true
+        missing_unreachable_type_length_mode_or_digest: block
+      cardinality_and_set_rules:
+        reset_1_denied_count: 20
+        reset_2_failed_seed_count: 6
+        all_denied_union_count: 26
+        round3_entry_count: 11
+        round3_entries_strict_subset_of_reset_1_denied: true
+        reset_2_failed_seed_disjoint_from_reset_1_denied: true
+        all_denied_equals_sorted_unique_union_of_reset_1_and_reset_2: true
+        candidate_blob_reuse_forbidden_for_all_26: true
+        entry_ids_and_oids_sorted_unique: true
+      digest_binding:
+        manifest_sha256: recompute_sha256_of_canonical_manifest_without_manifest_sha256
+        source_objects_digest: recompute_from_authenticated_commit_tree_and_entry_bytes
+        bind_to_planning_core_genesis_activation_and_preseed_admission: true
+        candidate_tree_denial_recomputes_manifest_before_candidate_admission: true
+        digest_or_cardinality_mismatch: block
     module_ownership:
       declarative_source_of_truth: bootstrap_policy.G2_reset_3_amendment
       generated_projection:
@@ -9735,106 +9898,541 @@ bootstrap_policy:
       compare_positive_preseed_fixture: true
       compare_all_nine_negative_families: true
       any_projection_or_differential_drift: block
+    operation_ledger:
+      active_authority: true
+      schema_version: bb.north_star_recovery.g2_operation_ledger.v3
+      genesis:
+        schema_version: bb.north_star_recovery.g2_operation_genesis.v3
+        exact_fields: [schema_version, packet_key, execution_epoch, scope_version, predecessor_ledger_tip_sha256, predecessor_disposition_sha256, planning_core_sha256, genesis_sha256, created_at_utc]
+        predecessor_ledger_tip_sha256: null
+        source_identity_and_digest_recomputed: true
+      event:
+        schema_version: bb.north_star_recovery.g2_operation_event.v3
+        exact_fields: [schema_version, packet_key, execution_epoch, phase_id, sequence, previous_event_sha256, event_kind, operation_class, reservation_id, actor_identity, source_identity, result_sha256, completion_event_sha256, receipt_sha256, event_sha256]
+        event_kinds: [reservation, completion, failure]
+        sequence_contiguous_and_previous_digest_bound: true
+        operation_class_must_be_active_result_class: true
+        result_completion_receipt_cross_bind: true
+      active_epoch_scope: [G2/reset-3, bb.north_star_recovery.g2.scope.v4]
+      owner: supervisor
+      every_operation_requires_reservation_then_one_terminal_event: true
+      reset_2_ledger_reference_or_tip_reuse: forbidden
     preseed_admission_validator:
-      schema_version: bb.north_star_recovery.g2_reset_3_preseed_admission.v1
+      schema_version: bb.north_star_recovery.g2_reset_3_preseed_admission.v2
       source_scalar_name: reset_3_active_authority_preseed_scalar
       source_scalar_exact_bytes_committed_in_LOOP_SPEC: true
       source_scalar_sha256_bound_after_planning_commit: true
+      authority_input_schema:
+        exact_fields: [schema_version, packet_key, execution_epoch, scope_version, dispatch, planning_core, planning_reviews, genesis, predecessor_searches, capability_probe, activation_record, preseed_actions, preseed_consumptions, live_recheck, invocation_manifest, descriptors, source_scalar_identity, required_seed_budget, required_candidate_budget, negative_manifest, negative_manifest_sha256, later_action_consumptions, event_sequence]
+        unknown_missing_extra_duplicate_or_noncanonical_field: reject
+        packet_key_execution_epoch_scope_version_dispatch: [G2, G2/reset-3, bb.north_star_recovery.g2.scope.v4, bootstrap_policy.G2_reset_3_amendment]
+        predecessor_ledger_tip: null
+        later_action_consumptions_exactly: []
+      descriptor_schema:
+        exact_fields: [descriptor_id, role, origin, immutable_object_id, object_sha256, device, inode, mode, access_direction, opened_nofollow, capability_token]
+        roles: [source_scalar, planning_core, planning_review, genesis, predecessor_search, capability_probe, activation_record, human_action, consumption, live_recheck, invocation_manifest, result_fifo]
+        access_direction: [read_only, write_only]
+        object_and_capability_identity_recomputed_by_broker: true
+        duplicate_role_id_object_or_capability_token: reject
+      invocation_manifest_schema:
+        exact_fields: [schema_version, invocation_id, source_scalar_sha256, executable, executable_sha256, argv, argv_sha256, environment, environment_sha256, descriptor_ids, descriptor_set_sha256, broker_clock_utc, reservation_id, preexecution_ledger_tip_sha256, result_fifo_descriptor_id]
+        caller_supplied_argv_environment_descriptors: reject
+        canonical_digest_recomputed_before_launch: true
+      required_records:
+        planning_core: {schema_version: bb.north_star_recovery.g2_planning_core.v3, fresh: true, binds_current_parent_head_tree_and_two_plan_blob_digests: true}
+        planning_reviews: {count: 2, schema_version: bb.north_star_recovery.g2_plan_review.v3, lenses: [specification_correctness, security_standards_generated_drift], fresh_exact_head: true, distinct_reviewers_and_runs: true, passed: true}
+        genesis: {schema_version: bb.north_star_recovery.g2_operation_genesis.v3, predecessor_tip: null, planning_core_sha256_bound: true, disposition_sha256_bound: true}
+        predecessor_searches: {count: 2, schema_version: bb.north_star_recovery.g2_predecessor_search.v1, fresh_after_reviews: true, independent_stores: true, complete_and_empty: true}
+        capability_probe: {count: 1, schema_version: bb.north_star_recovery.g2_capability_probe.v1, fresh_after_searches: true, broker_denial_receipt_required: true, passed: true}
+        activation_record: {schema_version: bb.north_star_recovery.g2_activation_record.v3, created_after_reviews_searches_probe: true, binds_all_prior_digests: true, passed: true}
+        preseed_actions: {count: 3, instance_ids: [G2_reset_3_scope_budget, G2_reset_3_governance, G2_reset_3_security], fresh: true, granted_and_unexpired: true}
+        preseed_consumptions: {count: 3, one_per_preseed_action: true, separate_single_use: true, completed_before_admission_reservation: true}
+        live_recheck: {count: 1, schema_version: bb.north_star_recovery.g2_live_recheck.v1, after_all_three_consumptions: true, freshness_seconds_max: 60, predecessor_tip_null: true, passed: true}
+      required_sequence:
+      - planning_core
+      - genesis
+      - planning_reviews
+      - predecessor_search_1
+      - predecessor_search_2
+      - capability_probe
+      - activation_record
+      - preseed_action_and_consumption_1
+      - preseed_action_and_consumption_2
+      - preseed_action_and_consumption_3
+      - live_recheck
+      - admission_reservation
+      - validator_invocation
+      - stored_passed_result
+      - terminal_completion
+      - post_exec_receipt
+      order_is_strict_and_timestamps_broker_clock_validated: true
+      no_later_seed_candidate_anchor_or_packet_closure_consumption_in_preseed: true
+      validation_order:
+      - parse_duplicate_free_canonical_input
+      - validate_descriptor_origins_identity_modes_and_access_direction
+      - recompute_source_argv_environment_invocation_and_descriptor_digests
+      - validate_fresh_reviews_searches_probe_activation_actions_consumptions_and_order
+      - validate_null_tip_genesis_live_recheck_and_negative_manifest_digest
+      - validate_reservation_matches_invocation_and_open_ledger_tip
+      - publish_canonical_passed_admission_result
+      - append_one_terminal_completion_and_issue_receipt
+      - admit_only_if_stored_result_completion_and_receipt_cross_bind
+      output_schema:
+        validator_result_exact_fields: [schema_version, packet_key, execution_epoch, scope_version, dispatch, planning_core_sha256, planning_reviews_sha256, genesis_sha256, predecessor_searches_sha256, capability_probe_sha256, activation_record_sha256, preseed_actions_sha256, preseed_consumptions_sha256, live_recheck_sha256, invocation_manifest_sha256, descriptor_set_sha256, negative_manifest_sha256, preexecution_ledger_tip_sha256, reservation_id, result_sha256, passed]
+        passed: true
+        result_sha256_excludes_completion_event_sha256_and_receipt_sha256: true
+        stored_canonical_result_required_before_completion: true
+        broker_completion_receipt_exact_fields: [completion_event_sha256, receipt_sha256, extended_ledger_tip_sha256]
+        broker_completion_receipt_added_after_result_storage: true
+        missing_mismatch_failed_or_future_digest: block
       source: |-
-        import json,sys
-        def pairs(items):
-            out={}
-            for key,value in items:
-                if key in out: raise ValueError("duplicate key")
-                out[key]=value
-            return out
-        d=json.load(sys.stdin,object_pairs_hook=pairs)
-        assert d["packet_key"]=="G2" and d["execution_epoch"]=="G2/reset-3"
-        assert d["scope_version"]=="bb.north_star_recovery.g2.scope.v4"
-        assert d["dispatch"]=="bootstrap_policy.G2_reset_3_amendment"
-        assert d["predecessor_ledger_tip"] is None and d["seed_files"]==8
-        assert d["candidate_files"]==11 and d["all_denied_blob_count"]==26
-      checks_active_authority_facts_only: true
+        import hashlib,json,sys
+        def canon(x): return json.dumps(x,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
+        def sha(x): return hashlib.sha256(canon(x)).hexdigest()
+        def keys(x,expected):
+            if set(x)!=set(expected): raise ValueError("closed key set")
+        def rec(x):
+            if isinstance(x,dict) and x.get("sha256"):
+                body={k:v for k,v in x.items() if k!="sha256"}
+                if x["sha256"]!=sha(body): raise ValueError("record digest mismatch")
+                return x["sha256"]
+            return sha(x)
+        expected=["schema_version","packet_key","execution_epoch","scope_version","dispatch","planning_core","planning_reviews","genesis","predecessor_searches","capability_probe","activation_record","preseed_actions","preseed_consumptions","live_recheck","invocation_manifest","descriptors","source_scalar_identity","required_seed_budget","required_candidate_budget","negative_manifest","negative_manifest_sha256","later_action_consumptions","event_sequence"]
+        d=json.load(sys.stdin,object_pairs_hook=lambda p: {k:v for k,v in p} if len({k for k,v in p})==len(p) else (_ for _ in ()).throw(ValueError("duplicate key")))
+        keys(d,expected)
+        assert (d["packet_key"],d["execution_epoch"],d["scope_version"],d["dispatch"])==("G2","G2/reset-3","bb.north_star_recovery.g2.scope.v4","bootstrap_policy.G2_reset_3_amendment")
+        assert d["genesis"]["predecessor_tip"] is None and len(d["planning_reviews"])==2 and len(d["predecessor_searches"])==2
+        assert len(d["preseed_actions"])==3 and len(d["preseed_consumptions"])==3 and d["later_action_consumptions"]==[]
+        assert d["planning_core"]["schema_version"]=="bb.north_star_recovery.g2_planning_core.v3" and d["planning_core"]["fresh"] is True
+        assert all(x["schema_version"]=="bb.north_star_recovery.g2_plan_review.v3" and x["lens"] in ("specification_correctness","security_standards_generated_drift") and x["reviewed_head"]==d["planning_core"]["head_commit"] and x["passed"] is True for x in d["planning_reviews"])
+        assert len({x["review_run_id"] for x in d["planning_reviews"]})==2 and len({x["reviewer_id"] for x in d["planning_reviews"]})==2
+        assert all(x["schema_version"]=="bb.north_star_recovery.g2_predecessor_search.v1" and x["store_identity"] for x in d["predecessor_searches"])
+        assert d["capability_probe"]["schema_version"]=="bb.north_star_recovery.g2_capability_probe.v1" and d["capability_probe"]["denial_receipt_sha256"]
+        assert d["activation_record"]["schema_version"]=="bb.north_star_recovery.g2_activation_record.v3" and d["activation_record"]["binds_all_prior_digests"] is True
+        ids=["G2_reset_3_scope_budget","G2_reset_3_governance","G2_reset_3_security"]
+        assert [x["instance_id"] for x in d["preseed_actions"]]==ids and all(x["granted_at_utc"]<x["expires_at_utc"] and x["activation_record_sha256"]==rec(d["activation_record"]) for x in d["preseed_actions"])
+        assert [x["action_id"] for x in d["preseed_consumptions"]]==[x["action_id"] for x in d["preseed_actions"]] and all(x["action_sha256"] for x in d["preseed_consumptions"])
+        assert d["event_sequence"]==["planning_core","genesis","planning_reviews","predecessor_search_1","predecessor_search_2","capability_probe","activation_record","preseed_action_and_consumption_1","preseed_action_and_consumption_2","preseed_action_and_consumption_3","live_recheck","admission_reservation","validator_invocation"]
+        assert sha(d["negative_manifest"])==d["negative_manifest_sha256"]
+        assert d["invocation_manifest"]["argv_sha256"]==sha(d["invocation_manifest"]["argv"]) and d["invocation_manifest"]["environment_sha256"]==sha(d["invocation_manifest"]["environment"])
+        assert d["source_scalar_identity"]["sha256"]==d["invocation_manifest"]["source_scalar_sha256"]
+        assert d["invocation_manifest"]["reservation_id"] and d["invocation_manifest"]["preexecution_ledger_tip_sha256"]==d["genesis"].get("predecessor_tip_sha256")
+        assert d["invocation_manifest"]["broker_clock_utc"] and d["source_scalar_identity"]["execution_epoch"]=="G2/reset-3"
+        assert all(d["preseed_consumptions"][i]["action_id"]==d["preseed_actions"][i]["action_id"] and d["preseed_consumptions"][i]["action_sha256"]==rec(d["preseed_actions"][i]) for i in range(3))
+        assert all(x.get("fresh") is True and x.get("passed") is True for x in d["planning_reviews"]+d["predecessor_searches"]+[d["capability_probe"],d["activation_record"]])
+        assert all(x.get("consumed_once") is True for x in d["preseed_consumptions"])
+        assert d["live_recheck"]["passed"] is True and d["live_recheck"]["predecessor_tip"] is None
+        for x in d["descriptors"]: keys(x,["descriptor_id","role","origin","immutable_object_id","object_sha256","device","inode","mode","access_direction","opened_nofollow","capability_token"])
+        assert d["invocation_manifest"]["descriptor_set_sha256"]==sha(d["descriptors"])
+        assert d["required_seed_budget"]=={"files_max":8,"non_generated_lines_max":5000,"implementation_attempts_max":3,"review_rounds_max":3,"ci_reruns_max":3}
+        assert d["required_candidate_budget"]=={"files_max":11,"non_generated_lines_max":1000,"implementation_attempts_max":2,"review_rounds_max":2,"ci_reruns_max":2}
+        result={"schema_version":"bb.north_star_recovery.g2_seed_admission.v3","packet_key":d["packet_key"],"execution_epoch":d["execution_epoch"],"scope_version":d["scope_version"],"dispatch":d["dispatch"],"planning_core_sha256":rec(d["planning_core"]),"planning_reviews_sha256":rec(d["planning_reviews"]),"genesis_sha256":rec(d["genesis"]),"predecessor_searches_sha256":rec(d["predecessor_searches"]),"capability_probe_sha256":rec(d["capability_probe"]),"activation_record_sha256":rec(d["activation_record"]),"preseed_actions_sha256":rec(d["preseed_actions"]),"preseed_consumptions_sha256":rec(d["preseed_consumptions"]),"live_recheck_sha256":rec(d["live_recheck"]),"invocation_manifest_sha256":rec(d["invocation_manifest"]),"descriptor_set_sha256":sha(d["descriptors"]),"negative_manifest_sha256":d["negative_manifest_sha256"],"preexecution_ledger_tip_sha256":d["genesis"].get("predecessor_tip_sha256"),"reservation_id":d["invocation_manifest"]["reservation_id"],"passed":True}
+        result["result_sha256"]=sha(result)
+        sys.stdout.write(json.dumps(result,sort_keys=True,separators=(",",":")))
       full_runtime_verifier_is_seed_work: true
       input_transport: supervisor_broker_authenticated_read_only_descriptors
       source_or_input_drift: block
     command_profiles:
+      profile_contract:
+        exact_fields: [profile_id, execution_epoch, scope_version, subject, executable, executable_sha256, argv, environment, network, credentials, filesystem, git, descriptors, source_identity, reservation_binding, result_fifo, receipt_binding]
+        unknown_missing_extra_or_caller_override: reject
+        network_must_be_denied: true
+        credentials_must_equal_empty_list: true
+        canonical_environment_and_argv_digest_recomputed: true
       preseed_admission:
+        profile_id: g2_reset_3_preseed_admission_v2
+        execution_epoch: G2/reset-3
+        scope_version: bb.north_star_recovery.g2.scope.v4
+        subject: supervisor_preseed_authority_validator
         executable: /usr/bin/python3
+        executable_sha256: broker_pinned
         argv: [-I, -S, -c, reset_3_active_authority_preseed_scalar]
-        profile: supervisor_private_preseed_default_deny
+        environment: {PYTHONHASHSEED: "0", LC_ALL: C, TZ: UTC, UV_OFFLINE: "1"}
         network: denied
-        reads: [planning_core, activation, null_tip_genesis, fresh_reviews, fresh_actions, consumptions, capability_probe, invocation_manifest]
-        writes: [inherited_write_only_result_fifo]
+        credentials: []
+        filesystem: {read: [authenticated_descriptor_objects], write: [inherited_write_only_result_fifo], all_other_paths: denied}
+        git: {config: disabled, refs: denied, hooks: denied}
+        descriptors: authenticated_input_descriptor_set_only
+        source_identity: reviewed_LOOP_SPEC_source_scalar
+        reservation_binding: seed_admission_open_reservation_and_preexecution_tip
+        result_fifo: inherited_write_only_result_fifo
+        receipt_binding: broker_post_exec_receipt_v1
       seed_runtime_verifier:
+        profile_id: g2_reset_3_seed_runtime_v2
+        execution_epoch: G2/reset-3
+        scope_version: bb.north_star_recovery.g2.scope.v4
+        subject: reset_3_seed
         executable: /usr/bin/python3
+        executable_sha256: broker_pinned
         argv: [-I, -S, g2_contract.py, g2_git_objects.py, verify_g2_anchor.py]
-        profile: supervisor_private_seed_default_deny
+        environment: {PYTHONHASHSEED: "0", LC_ALL: C, TZ: UTC, UV_OFFLINE: "1"}
         network: denied
-        reads: [selected_seed_objects, exact_G0_root, planning_and_activation_records, negative_manifest_v2]
-        writes: [inherited_write_only_result_fifo]
+        credentials: []
+        filesystem: {read: [selected_seed_objects, exact_G0_root, planning_and_activation_records, negative_manifest_v2], write: [inherited_write_only_result_fifo], all_other_paths: denied}
+        git: {config: disabled, refs: denied, hooks: denied}
+        descriptors: broker_materialized_seed_descriptor_set
+        source_identity: seed_source_commit_and_tree
+        reservation_binding: operation_ledger_reservation
+        result_fifo: inherited_write_only_result_fifo
+        receipt_binding: broker_post_exec_receipt_v1
       candidate_budget:
+        profile_id: g2_reset_3_candidate_budget_v1
+        execution_epoch: G2/reset-3
+        scope_version: bb.north_star_recovery.g2.scope.v4
+        subject: reset_3_candidate_budget
         executable: /usr/bin/python3
-        profile: historical_reset_2_candidate_budget_profile_immutable
+        executable_sha256: broker_pinned
+        argv: [-I, -S, candidate_budget_validator.py]
+        environment: {PYTHONHASHSEED: "0", LC_ALL: C, TZ: UTC, UV_OFFLINE: "1"}
         network: denied
-        unchanged: true
+        credentials: []
+        filesystem: {read: [exact_S_and_C_git_objects, candidate_manifest, source_scalar], write: [inherited_write_only_result_fifo], all_other_paths: denied}
+        git: {config: disabled, refs: denied, hooks: denied, credentials: denied}
+        descriptors: broker_materialized_candidate_descriptor_set
+        source_identity: reset_3_candidate_source_event
+        reservation_binding: candidate_budget_reservation_before_ref_update
+        result_fifo: inherited_write_only_result_fifo
+        receipt_binding: broker_post_exec_receipt_v1
       installed_checker_and_renderer:
+        profile_id: g2_reset_3_installed_checker_renderer_v1
+        execution_epoch: G2/reset-3
+        scope_version: bb.north_star_recovery.g2.scope.v4
+        subject: reset_3_installed_checker_and_renderer
         executable: /usr/bin/python3
-        profile: historical_reset_2_installed_checker_renderer_profiles_immutable
+        executable_sha256: broker_pinned
+        argv: [-I, -S, check_packet.py, render_state.py]
+        environment: {PYTHONHASHSEED: "0", LC_ALL: C, TZ: UTC, UV_OFFLINE: "1"}
         network: denied
-        unchanged: true
+        credentials: []
+        filesystem: {read: [selected_anchor_A, authenticated_evidence_snapshot, exact_checker_inputs], write: [new_private_renderer_output, inherited_write_only_result_fifo], all_other_paths: denied}
+        git: {config: disabled, refs: denied, hooks: denied}
+        descriptors: broker_materialized_anchor_evidence_descriptor_set
+        source_identity: reset_3_candidate_source_event
+        reservation_binding: closure_operation_reservation
+        result_fifo: inherited_write_only_result_fifo
+        receipt_binding: broker_post_exec_receipt_v1
+      operation_profiles:
+        g2_reset_3_supervisor_records:
+          operation_classes: [planning_core_seal, planning_review, predecessor_search, capability_probe, activation_record_seal, human_scope_budget_action, human_governance_action, human_security_boundary_action, human_planning_action_consumption, live_recheck, seed_admission]
+          executable: /usr/bin/python3
+          network: denied
+          credentials: []
+          filesystem: {read: [authenticated_descriptor_objects], write: [inherited_write_only_result_fifo], all_other_paths: denied}
+          source_identity: reset_3_supervisor_record_source
+          reservation_binding: operation_ledger_reservation
+          receipt_binding: broker_post_exec_receipt_v1
+        g2_reset_3_seed_operations:
+          operation_classes: [seed_implementation_attempt, seed_review_round, seed_ci_rerun, human_seed_selection_action, human_seed_action_consumption, human_seed_merge_action, seed_merge]
+          executable: /usr/bin/python3
+          network: denied
+          credentials: []
+          filesystem: {read: [selected_seed_objects, seed_source, review_inputs], write: [inherited_write_only_result_fifo], all_other_paths: denied}
+          source_identity: reset_3_seed_source_event
+          reservation_binding: operation_ledger_reservation
+          receipt_binding: broker_post_exec_receipt_v1
+        g2_reset_3_candidate_operations:
+          operation_classes: [candidate_preflight, candidate_implementation_attempt, candidate_review_round, candidate_ci_rerun, human_candidate_merge_action, human_candidate_action_consumption, candidate_merge]
+          executable: /usr/bin/python3
+          network: denied
+          credentials: []
+          filesystem: {read: [exact_S_and_C_objects, candidate_source, review_inputs], write: [inherited_write_only_result_fifo], all_other_paths: denied}
+          source_identity: reset_3_candidate_source_event
+          reservation_binding: operation_ledger_reservation
+          receipt_binding: broker_post_exec_receipt_v1
+        g2_reset_3_evidence_operations:
+          operation_classes: [evidence_seal, final_review, review_seal]
+          executable: /usr/bin/python3
+          network: denied
+          credentials: []
+          filesystem: {read: [C_E_R_objects, review_inputs, no_spend_attestation], write: [inherited_write_only_result_fifo], all_other_paths: denied}
+          source_identity: reset_3_evidence_source_event
+          reservation_binding: operation_ledger_reservation
+          receipt_binding: broker_post_exec_receipt_v1
+        g2_reset_3_closure_operations:
+          operation_classes: [human_closure_anchor_selection_action, human_closure_action_consumption, anchor_selection, private_validation, installed_validation, renderer, human_packet_closure_action, packet_closure]
+          executable: /usr/bin/python3
+          network: denied
+          credentials: []
+          filesystem: {read: [A_anchor_evidence_and_validator_inputs], write: [new_private_renderer_output, inherited_write_only_result_fifo], all_other_paths: denied}
+          source_identity: reset_3_closure_source_event
+          reservation_binding: operation_ledger_reservation
+          receipt_binding: broker_post_exec_receipt_v1
+      every_operation_class_has_one_reset_3_owned_profile: true
       caller_environment_or_path_override: reject
+      historical_reset_2_profile_reference_or_unchanged_claim: reject
     result_contract:
-      schema_version: bb.north_star_recovery.g2_reset_3_result.v1
-      exact_fields: [schema_version, operation_class, reservation_id, phase_id, execution_epoch, scope_version, source_identity, result_object, result_sha256, status]
-      statuses: [completed, failed, canceled, timed_out, integrity_failed]
+      schema_version: bb.north_star_recovery.g2_reset_3_result.v2
+      operation_classes:
+      - planning_core_seal
+      - planning_review
+      - predecessor_search
+      - capability_probe
+      - activation_record_seal
+      - human_scope_budget_action
+      - human_governance_action
+      - human_security_boundary_action
+      - human_planning_action_consumption
+      - live_recheck
+      - seed_admission
+      - seed_implementation_attempt
+      - seed_review_round
+      - seed_ci_rerun
+      - human_seed_selection_action
+      - human_seed_action_consumption
+      - human_seed_merge_action
+      - seed_merge
+      - candidate_preflight
+      - candidate_implementation_attempt
+      - candidate_review_round
+      - candidate_ci_rerun
+      - human_candidate_merge_action
+      - human_candidate_action_consumption
+      - candidate_merge
+      - evidence_seal
+      - final_review
+      - review_seal
+      - human_closure_anchor_selection_action
+      - human_closure_action_consumption
+      - anchor_selection
+      - private_validation
+      - installed_validation
+      - renderer
+      - human_packet_closure_action
+      - packet_closure
+      operation_class_enum_is_closed: true
+      common_envelope_exact_fields: [schema_version, operation_instance_id, operation_class, reservation_id, phase_id, execution_epoch, scope_version, source_identity, started_at_utc, completed_at_utc, status, result_object, result_sha256]
+      result_object_exact_fields_by_operation_class:
+        planning_core_seal: [planning_core_sha256, parent_commit, head_commit, head_tree, plan_blob_oids, source_base_sha, source_merge_base_sha]
+        planning_review: [review_round_id, lens, reviewer_id, review_run_id, reviewed_head, verdict, finding_counts, review_sha256]
+        predecessor_search: [search_id, store_identity, query_digest, searched_at_utc, tip_found, result_count, receipt_sha256]
+        capability_probe: [probe_id, challenge_sha256, requested_capability, denial_observed, denial_receipt_sha256, passed]
+        activation_record_seal: [activation_record_sha256, planning_core_sha256, planning_reviews_sha256, predecessor_searches_sha256, capability_probe_sha256, genesis_sha256]
+        human_scope_budget_action: [instance_id, gate_id, protected_action, authorized_principal, old_budgets, new_budgets, action_sha256]
+        human_governance_action: [instance_id, gate_id, protected_action, authorized_principal, schema_source_digests, generated_projection_digest, action_sha256]
+        human_security_boundary_action: [instance_id, gate_id, protected_action, authorized_principal, profile_digests, descriptor_set_sha256, no_spend_policy_sha256, action_sha256]
+        human_planning_action_consumption: [instance_id, action_sha256, nonce, consumed_once, protected_action_result_sha256, operation_ledger_event_sha256]
+        live_recheck: [recheck_sha256, predecessor_tip, ledger_search_receipts, checked_at_utc, freshness_seconds, passed]
+        seed_admission: [admission_sha256, planning_core_sha256, activation_record_sha256, negative_manifest_sha256, preseed_action_consumptions_sha256, live_recheck_sha256, passed]
+        seed_implementation_attempt: [attempt_no, selected_paths, source_commit, result_commit, result_tree, line_count, attempt_result_sha256]
+        seed_review_round: [round_id, review_operation_ids, lenses, reviewer_ids, reviewed_commit, verdict, round_sha256]
+        seed_ci_rerun: [rerun_no, command_digest, source_commit, exit_code, stdout_sha256, stderr_sha256, passed]
+        human_seed_selection_action: [instance_id, selected_seed_commit, selected_seed_tree, review_seal_sha256, action_sha256]
+        human_seed_action_consumption: [instance_id, action_sha256, nonce, consumed_once, protected_action_result_sha256, operation_ledger_event_sha256]
+        human_seed_merge_action: [instance_id, selected_seed_commit, merge_parent_commit, action_sha256]
+        seed_merge: [seed_commit, seed_tree, parent_commit, topology_sha256, ownership_manifest_sha256, result_sha256]
+        candidate_preflight: [seed_commit, seed_tree, candidate_scope_sha256, budget_sha256, no_spend_pre_attestation_sha256, passed]
+        candidate_implementation_attempt: [attempt_no, selected_paths, source_commit, result_commit, result_tree, line_count, attempt_result_sha256]
+        candidate_review_round: [round_id, review_operation_ids, lenses, reviewer_ids, reviewed_commit, verdict, round_sha256]
+        candidate_ci_rerun: [rerun_no, command_digest, source_commit, exit_code, stdout_sha256, stderr_sha256, passed]
+        human_candidate_merge_action: [instance_id, candidate_commit, candidate_tree, seed_commit, action_sha256]
+        human_candidate_action_consumption: [instance_id, action_sha256, nonce, consumed_once, protected_action_result_sha256, operation_ledger_event_sha256]
+        candidate_merge: [candidate_commit, candidate_tree, seed_commit, topology_sha256, budget_result_sha256, no_spend_attestation_sha256, result_sha256]
+        evidence_seal: [evidence_commit, evidence_tree, candidate_merge_result_sha256, no_spend_attestation_sha256, ledger_tip_sha256, seal_sha256]
+        final_review: [candidate_review_round_ids, evidence_seal_sha256, final_review_verdict, final_review_sha256]
+        review_seal: [seed_review_seal_sha256, candidate_review_seal_sha256, final_review_sha256, review_commit, review_tree, seal_sha256]
+        human_closure_anchor_selection_action: [instance_id, anchor_commit, anchor_tree, review_commit, action_sha256]
+        human_closure_action_consumption: [instance_id, action_sha256, nonce, consumed_once, protected_action_result_sha256, operation_ledger_event_sha256]
+        anchor_selection: [anchor_commit, anchor_tree, ordered_parents, receipt_blob_oid, topology_sha256, result_sha256]
+        private_validation: [anchor_commit, anchor_tree, checker_source_sha256, validation_digest, passed]
+        installed_validation: [anchor_commit, anchor_tree, object_mode_checks_sha256, validation_digest, passed]
+        renderer: [anchor_commit, anchor_tree, output_path, output_sha256, provenance_sha256, passed]
+        human_packet_closure_action: [instance_id, anchor_commit, anchor_tree, validation_result_sha256s, action_sha256]
+        packet_closure: [closure_commit, closure_tree, anchor_commit, private_validation_sha256, installed_validation_sha256, renderer_sha256, closure_sha256]
+      result_object_fields_are_closed_and_operation_specific: true
+      exact_reset_3_value_constraints:
+        execution_epoch: G2/reset-3
+        scope_version: bb.north_star_recovery.g2.scope.v4
+        statuses: [passed, failed, canceled, timed_out, integrity_failed]
+        success_status_only_when_payload_passed: true
+        result_sha256_recomputed_from_canonical_result_object: true
+        failed_or_future_digest_never_satisfies_guard: true
       one_terminal_result_per_reservation: true
-      result_object_digest_recomputed_from_bytes: true
-      receipt_binds_preexecution_tip_result_completion_and_extended_tip: true
-      result_must_not_predict_completion_or_receipt_digest: true
-      missing_mismatch_or_future_digest: block
+      receipt:
+        schema_version: bb.omp.command_broker_post_exec_receipt.v1
+        exact_fields: [schema_version, reservation_id, invocation_manifest_sha256, stored_result_sha256, completion_event_sha256, extended_ledger_tip_sha256, issued_at_utc, receipt_sha256]
+        result_must_not_predict_completion_or_receipt_digest: true
+        digest_domains_disjoint_and_nonrecursive: true
+      operation_class_set_equals_result_schema_key_set_and_phase_map_key_set: true
+      unknown_missing_extra_duplicate_or_historical_operation_class: block
     phase_map:
-      planning: {phase_id: G2/reset-3/planning, states: [g2_reset_3_planning], operations: [planning_core, planning_review]}
-      preseed: {phase_id: G2/reset-3/preseed, states: [g2_reset_3_preseed], operations: [predecessor_search, capability_probe, activation, human_action_consumption, live_recheck, seed_admission]}
-      seed: {phase_id: G2/reset-3/seed, states: [g2_reset_3_seed_preflight, g2_reset_3_seed_implementing, g2_reset_3_seed_review, g2_reset_3_seed_selection, g2_reset_3_seed_merge], operations: [seed_implementation_attempt, seed_review_round, seed_ci_rerun, seed_merge]}
-      candidate: {phase_id: G2/reset-3/candidate, states: [g2_reset_3_candidate_preflight, g2_reset_3_candidate_implementing, g2_reset_3_candidate_merge], operations: [candidate_implementation_attempt, candidate_review_round, candidate_ci_rerun, candidate_merge]}
-      evidence: {phase_id: G2/reset-3/evidence, states: [g2_reset_3_evidence_seal, g2_reset_3_final_review, g2_reset_3_review_seal], operations: [evidence_seal, final_review, review_seal]}
-      closure: {phase_id: G2/reset-3/closure, states: [g2_reset_3_anchor_selection, g2_reset_3_closure_validation, closed], operations: [anchor_selection, private_validation, installed_validation, renderer, packet_closure]}
+      planning:
+        phase_id: G2/reset-3/planning
+        states: [g2_reset_3_planning]
+        operation_classes: [planning_core_seal, planning_review]
+      preseed:
+        phase_id: G2/reset-3/preseed
+        states: [g2_reset_3_preseed]
+        operation_classes: [predecessor_search, capability_probe, activation_record_seal, human_scope_budget_action, human_governance_action, human_security_boundary_action, human_planning_action_consumption, live_recheck, seed_admission]
+      seed:
+        phase_id: G2/reset-3/seed
+        states: [g2_reset_3_seed_preflight, g2_reset_3_seed_implementing, g2_reset_3_seed_review, g2_reset_3_seed_selection, g2_reset_3_seed_merge]
+        operation_classes: [seed_implementation_attempt, seed_review_round, seed_ci_rerun, human_seed_selection_action, human_seed_action_consumption, human_seed_merge_action, seed_merge]
+      candidate:
+        phase_id: G2/reset-3/candidate
+        states: [g2_reset_3_candidate_preflight, g2_reset_3_candidate_implementing, g2_reset_3_candidate_merge]
+        operation_classes: [candidate_preflight, candidate_implementation_attempt, candidate_review_round, candidate_ci_rerun, human_candidate_merge_action, human_candidate_action_consumption, candidate_merge]
+      evidence:
+        phase_id: G2/reset-3/evidence
+        states: [g2_reset_3_evidence_seal, g2_reset_3_final_review, g2_reset_3_review_seal]
+        operation_classes: [evidence_seal, final_review, review_seal]
+      closure:
+        phase_id: G2/reset-3/closure
+        states: [g2_reset_3_anchor_selection, g2_reset_3_closure_validation, closed]
+        operation_classes: [human_closure_anchor_selection_action, human_closure_action_consumption, anchor_selection, private_validation, installed_validation, renderer, human_packet_closure_action, packet_closure]
+      operation_class_key_set_exact: true
+      operation_classes_each_have_exactly_one_phase: true
+      historical_reset_2_phase_or_operation_class: reject
     state_machine:
       entry: [select_frontier, g2_reset_selected, blocked_review]
+      active_dispatch_only: bootstrap_policy.G2_reset_3_amendment
       generic_G2_transition_bypass: forbidden
+      missing_guard_or_unbound_event: block
       transitions:
-      - {from: blocked_review, event: reset_3_planning_core_and_genesis_ready, to: g2_reset_3_planning}
-      - {from: g2_reset_3_planning, event: fresh_reviews_searches_probe_and_activation_ready, to: g2_reset_3_preseed}
-      - {from: g2_reset_3_preseed, event: fresh_actions_consumed_and_live_recheck_passed, to: g2_reset_3_seed_preflight}
-      - {from: g2_reset_3_seed_preflight, event: seed_preflight_passed, to: g2_reset_3_seed_implementing}
-      - {from: g2_reset_3_seed_implementing, event: seed_attempt_completed, to: g2_reset_3_seed_review}
-      - {from: g2_reset_3_seed_review, event: seed_reviews_approved, to: g2_reset_3_seed_selection}
-      - {from: g2_reset_3_seed_selection, event: fresh_seed_selection_consumed, to: g2_reset_3_seed_merge}
-      - {from: g2_reset_3_seed_merge, event: fresh_seed_merge_consumed, to: g2_reset_3_candidate_preflight}
-      - {from: g2_reset_3_candidate_preflight, event: candidate_preflight_passed, to: g2_reset_3_candidate_implementing}
-      - {from: g2_reset_3_candidate_implementing, event: candidate_attempt_and_reviews_passed, to: g2_reset_3_candidate_merge}
-      - {from: g2_reset_3_candidate_merge, event: candidate_merge_consumed, to: g2_reset_3_evidence_seal}
-      - {from: g2_reset_3_evidence_seal, event: evidence_sealed, to: g2_reset_3_final_review}
-      - {from: g2_reset_3_final_review, event: final_reviews_approved, to: g2_reset_3_review_seal}
-      - {from: g2_reset_3_review_seal, event: review_sealed, to: g2_reset_3_anchor_selection}
-      - {from: g2_reset_3_anchor_selection, event: fresh_anchor_selection_consumed, to: g2_reset_3_closure_validation}
-      - {from: g2_reset_3_closure_validation, event: private_installed_renderer_and_closure_passed, to: closed}
+      - from: blocked_review
+        event: reset_3_planning_core_and_genesis_ready
+        to: g2_reset_3_planning
+        guards: [planning_contract_exact_two_paths_one_commit_parent_bound, planning_core_sealed_without_future_reviews, null_tip_genesis_created, active_dispatch_matches]
+      - from: g2_reset_3_planning
+        event: fresh_reviews_searches_probe_and_activation_ready
+        to: g2_reset_3_preseed
+        guards: [exact_two_planning_reviews_approved, exact_two_predecessor_searches_complete_and_empty, capability_probe_fresh_and_passed, activation_record_created_after_all_prior_records, all_digests_and_order_valid]
+      - from: g2_reset_3_preseed
+        event: preseed_admission_passed
+        to: g2_reset_3_seed_preflight
+        guards: [exact_three_preseed_actions_and_consumptions, later_five_action_consumptions_absent, live_recheck_passed_within_60_seconds, stored_canonical_passed_admission_result, terminal_completion_binds_stored_result, post_exec_receipt_binds_result_completion_and_extended_tip]
+      - from: g2_reset_3_seed_preflight
+        event: seed_preflight_passed
+        to: g2_reset_3_seed_implementing
+        guards: [seed_eight_path_scope_exact, seed_budget_remaining, negative_manifest_v2_digest_and_26_oid_denial_passed, reset_3_seed_profile_and_descriptors_passed, no_spend_attestation_passed]
+      - from: g2_reset_3_seed_implementing
+        event: seed_attempt_completed
+        to: g2_reset_3_seed_review
+        guards: [seed_attempt_result_terminal_and_receipted, seed_attempt_counter_within_three, seed_ci_success_at_least_one, seed_ci_results_passed_and_receipted, selected_seed_source_identity_unchanged, result_object_and_digest_recomputed]
+      - from: g2_reset_3_seed_review
+        event: seed_reviews_approved
+        to: g2_reset_3_seed_selection
+        guards: [exact_three_seed_rounds, exact_six_seed_review_operations, both_lenses_each_round, distinct_reviewers, seed_ci_success_at_least_one, zero_P0_P1_P2, review_results_receipted]
+      - from: g2_reset_3_seed_selection
+        event: fresh_seed_selection_consumed
+        to: g2_reset_3_seed_merge
+        guards: [seed_selection_action_exact_binding, seed_selection_consumption_exactly_once, selected_S_commit_tree_equal_actual_objects, ledger_completion_and_receipt_valid]
+      - from: g2_reset_3_seed_merge
+        event: actual_seed_merge_passed
+        to: g2_reset_3_candidate_preflight
+        guards: [seed_merge_result_stored_and_passed, actual_S_commit_tree_topology_valid, seed_merge_receipt_and_terminal_ledger_event_valid, seed_merge_consumption_precedes_reservation, seed_budget_and_aggregate_counters_valid]
+      - from: g2_reset_3_candidate_preflight
+        event: candidate_preflight_passed
+        to: g2_reset_3_candidate_implementing
+        guards: [candidate_scope_exact_eleven_paths, candidate_budget_remaining, source_is_actual_S, reset_3_candidate_profile_and_descriptors_passed, candidate_no_spend_pre_attestation_passed, denied_union_digest_recomputed]
+      - from: g2_reset_3_candidate_implementing
+        event: candidate_attempt_and_reviews_passed
+        to: g2_reset_3_candidate_merge
+        guards: [candidate_attempt_counter_within_two, exact_two_candidate_review_rounds, exact_four_candidate_review_operations, candidate_ci_success_at_least_one, candidate_ci_results_passed_and_receipted, candidate_results_receipted, zero_P0_P1_P2]
+      - from: g2_reset_3_candidate_merge
+        event: actual_candidate_merge_passed
+        to: g2_reset_3_evidence_seal
+        guards: [candidate_merge_action_and_consumption_precede_reservation, stored_candidate_merge_result_passed, actual_C_parent_is_S, candidate_budget_result_and_no_spend_attestation_passed, common_receipt_and_terminal_ledger_valid, canonical_ref_promoted_only_after_pass]
+      - from: g2_reset_3_evidence_seal
+        event: evidence_sealed
+        to: g2_reset_3_final_review
+        guards: [E_commit_tree_actual_and_descendant_of_C, evidence_seal_binds_C_result_no_spend_receipt_and_ledger_tip, no_future_digest_in_attestation, evidence_result_stored_and_receipted]
+      - from: g2_reset_3_final_review
+        event: final_review_passed
+        to: g2_reset_3_review_seal
+        guards: [candidate_final_review_reuses_exact_two_rounds, exact_four_candidate_review_operations, final_review_result_stored_and_passed, no_new_review_budget_consumed]
+      - from: g2_reset_3_review_seal
+        event: review_sealed
+        to: g2_reset_3_anchor_selection
+        guards: [R_commit_tree_actual_and_single_parent_is_E, review_seal_binds_seed_candidate_and_final_reviews, review_result_receipted]
+      - from: g2_reset_3_anchor_selection
+        event: fresh_anchor_selection_consumed
+        to: g2_reset_3_closure_validation
+        guards: [anchor_action_and_consumption_exactly_once, A_commit_tree_actual_ordered_parents_C_then_R, A_tree_contains_only_mode_100644_receipt, receipt_blob_reachable_and_all_digests_match]
+      - from: g2_reset_3_closure_validation
+        event: closure_gates_passed
+        to: closed
+        guards: [private_validation_passed, installed_validation_passed, renderer_passed_with_new_private_output, packet_closure_action_and_consumption_passed, closure_receipt_and_tip_valid, no_spend_and_all_counters_valid]
+      transition_guards_by_event:
+        reset_3_planning_core_and_genesis_ready: [planning_contract_exact_two_paths_one_commit_parent_bound, planning_core_sealed_without_future_reviews, null_tip_genesis_created, active_dispatch_matches]
+        fresh_reviews_searches_probe_and_activation_ready: [exact_two_planning_reviews_approved, exact_two_predecessor_searches_complete_and_empty, capability_probe_fresh_and_passed, activation_record_created_after_all_prior_records, all_digests_and_order_valid]
+        preseed_admission_passed: [exact_three_preseed_actions_and_consumptions, later_five_action_consumptions_absent, live_recheck_passed_within_60_seconds, stored_canonical_passed_admission_result, terminal_completion_binds_stored_result, post_exec_receipt_binds_result_completion_and_extended_tip]
+        seed_preflight_passed: [seed_eight_path_scope_exact, seed_budget_remaining, negative_manifest_v2_digest_and_26_oid_denial_passed, reset_3_seed_profile_and_descriptors_passed, no_spend_attestation_passed]
+        seed_attempt_completed: [seed_attempt_result_terminal_and_receipted, seed_attempt_counter_within_three, seed_ci_success_at_least_one, seed_ci_results_passed_and_receipted, selected_seed_source_identity_unchanged, result_object_and_digest_recomputed]
+        seed_reviews_approved: [exact_three_seed_rounds, exact_six_seed_review_operations, both_lenses_each_round, distinct_reviewers, seed_ci_success_at_least_one, zero_P0_P1_P2, review_results_receipted]
+        fresh_seed_selection_consumed: [seed_selection_action_exact_binding, seed_selection_consumption_exactly_once, selected_S_commit_tree_equal_actual_objects, ledger_completion_and_receipt_valid]
+        actual_seed_merge_passed: [seed_merge_result_stored_and_passed, actual_S_commit_tree_topology_valid, seed_merge_receipt_and_terminal_ledger_event_valid, seed_merge_consumption_precedes_reservation, seed_budget_and_aggregate_counters_valid]
+        candidate_preflight_passed: [candidate_scope_exact_eleven_paths, candidate_budget_remaining, source_is_actual_S, reset_3_candidate_profile_and_descriptors_passed, candidate_no_spend_pre_attestation_passed, denied_union_digest_recomputed]
+        candidate_attempt_and_reviews_passed: [candidate_attempt_counter_within_two, exact_two_candidate_review_rounds, exact_four_candidate_review_operations, candidate_ci_success_at_least_one, candidate_ci_results_passed_and_receipted, candidate_results_receipted, zero_P0_P1_P2]
+        actual_candidate_merge_passed: [candidate_merge_action_and_consumption_precede_reservation, stored_candidate_merge_result_passed, actual_C_parent_is_S, candidate_budget_result_and_no_spend_attestation_passed, common_receipt_and_terminal_ledger_valid, canonical_ref_promoted_only_after_pass]
+        evidence_sealed: [E_commit_tree_actual_and_descendant_of_C, evidence_seal_binds_C_result_no_spend_receipt_and_ledger_tip, no_future_digest_in_attestation, evidence_result_stored_and_receipted]
+        final_review_passed: [candidate_final_review_reuses_exact_two_rounds, exact_four_candidate_review_operations, final_review_result_stored_and_passed, no_new_review_budget_consumed]
+        review_sealed: [R_commit_tree_actual_and_single_parent_is_E, review_seal_binds_seed_candidate_and_final_reviews, review_result_receipted]
+        fresh_anchor_selection_consumed: [anchor_action_and_consumption_exactly_once, A_commit_tree_actual_ordered_parents_C_then_R, A_tree_contains_only_mode_100644_receipt, receipt_blob_reachable_and_all_digests_match]
+        closure_gates_passed: [private_validation_passed, installed_validation_passed, renderer_passed_with_new_private_output, packet_closure_action_and_consumption_passed, closure_receipt_and_tip_valid, no_spend_and_all_counters_valid]
+      blocked_states:
+      - {state: blocked_review, reason: missing_or_stale_review_action_consumption_or_receipt, reentry: fresh_reset_3_planning_core_and_genesis}
+      - {state: blocked_budget, reason: phase_or_aggregate_cap_exhausted, reentry: new_reviewed_scope_budget_action_only}
+      - {state: blocked_environment, reason: capability_profile_descriptor_or_typed_runtime_failure, reentry: fresh_preflight_after_environment_remediation}
+      - {state: blocked_external, reason: missing_expired_replayed_or_wrong_scope_human_action, reentry: fresh_activation_and_actions}
+      - {state: blocked_scope, reason: path_epoch_scope_or_source_identity_drift, reentry: reset_3_planning_core}
+      failure_routes:
+      - {event: any_typed_operation_failure, from: all_nonterminal_states, to: blocked_environment, action: terminalize_reservation_with_failure_and_invalidate_downstream}
+      - {event: review_changes_requested_with_attempt_remaining, from: [g2_reset_3_seed_review], to: g2_reset_3_seed_preflight, action: invalidate_seed_selection_merge}
+      - {event: review_changes_requested_with_attempt_remaining, from: [g2_reset_3_final_review], to: g2_reset_3_candidate_preflight, action: invalidate_C_E_R_A}
+      - {event: budget_or_review_cap_exhausted, from: all_nonterminal_states, to: blocked_budget, action: forbid_new_reservation}
+      - {event: scope_source_identity_or_bound_digest_changed, from: all_nonterminal_states, to: blocked_review, action: invalidate_all_downstream_and_refresh}
+      - {event: missing_expired_replayed_or_wrong_action, from: all_nonterminal_states, to: blocked_external, action: terminalize_open_reservation}
+      - {event: interrupt_or_cancellation, from: all_nonterminal_states, to: blocked_review, action: terminalize_open_reservation_with_typed_failure}
+      failure_routes_are_guarded_and_fail_closed: true
       invalidation:
         any_bound_identity_change: invalidate_all_downstream_and_refresh_state
         seed_scope_or_source_change: g2_reset_3_seed_preflight
         candidate_scope_or_source_change: g2_reset_3_candidate_preflight
-        budget_or_review_exhaustion: blocked_budget_or_blocked_review
+        budget_or_review_exhaustion: blocked_budget
         runtime_capability_or_typed_failure: blocked_environment
         missing_expired_replayed_action: blocked_external
-        interrupt_or_cancellation: blocked_review_with_typed_failure
+        interrupt_or_cancellation: blocked_review
       universal_guards:
-      - supervisor_reservation_and_terminal_event_for_every_operation
-      - phase_and_aggregate_caps_below_or_at_cap
-      - exact_source_object_and_authority_identities_unchanged
+      - supervisor_reservation_and_exactly_one_terminal_event_for_every_operation
+      - phase_and_aggregate_caps_below_or_at_exact_reset_3_caps
+      - exact_source_object_authority_profile_descriptor_and_receipt_identities_unchanged
       - no_historical_reset_2_record_satisfies_an_active_guard
       - no_worker_reviewer_or_candidate_self_finalization
       - generic_verified_to_closed_transition_inapplicable
+      completion_requirements:
+        S:
+        - seed_selection_action_and_consumption_passed
+        - actual_seed_merge_commit_and_tree_recomputed
+        - seed_review_seal_and_receipt_passed
+        C:
+        - candidate_is_actual_merged_descendant_of_S
+        - candidate_scope_budget_and_four_review_operations_passed
+        - candidate_merge_result_receipt_and_ref_promotion_passed
+        E:
+        - evidence_commit_tree_actual_and_binds_C_no_spend_receipt_and_ledger
+        - evidence_seal_stored_result_completion_and_receipt_passed
+        R:
+        - review_commit_tree_actual_and_single_parent_is_E
+        - exact_candidate_final_review_two_rounds_and_review_seal_passed
+        A:
+        - anchor_commit_tree_actual_parents_are_C_then_R
+        - anchor_tree_receipt_blob_mode_and_digest_exact
+        no_spend:
+        - pre_attestation_empty_credentials_external_launch_sets_and_network_denial
+        - candidate_budget_no_spend_and_g2_no_spend_attestations_recomputed
+        receipts:
+        - every_result_stored_before_completion_and_post_exec_receipt
+        - receipt_binds_invocation_result_completion_and_extended_ledger_tip
+        render:
+        - renderer_profile_reset_3_owned_and_output_new_private_exact
+        - rendered_state_and_provenance_digest_match_selected_A
+        closure:
+        - private_validation_passed
+        - installed_validation_passed
+        - renderer_passed
+        - packet_closure_action_consumption_and_closure_result_passed
+        - final_ledger_tip_and_all_counters_recomputed
+      completion_requires_all_S_C_E_R_A_no_spend_receipts_render_and_closure: true
     negative_fixture_requirement:
       exact_family_count: 9
       families:
