@@ -385,15 +385,16 @@ The candidate lifecycle is object-mode and one-way:
    schema, and abandoned denylist values are derived from selected `S`, not
    copied from preflight.
 2. The candidate PR is based on `S` and may change only the exact eleven paths.
-   A fresh exact candidate-merge action must be consumed and ledgered before
-   merge. The protected `actual_candidate_merge` operation first materializes
-   exact candidate commit `C` as an unreferenced Git object whose sole parent
-   is exact `S`; the canonical source ref remains `S`. Candidate implementation
-   completion is the only prerequisite for this merge; candidate CI and the
-   four candidate review operations are intentionally post-`E` operations.
-   against immutable `S..C` objects. A closed operation-specific outer manifest
-   binds the reservation, `S`, unreferenced `C`, consumed action, exact stage
-   order, descriptors, result capability, and command. The broker recomputes
+   A fresh exact candidate-merge action is consumed and ledgered before `C` is
+   materialized. The protected `actual_candidate_merge` operation first creates
+   exact candidate commit `C` as an unreferenced Git object whose sole parent is
+   exact `S`; the canonical source ref remains `S`. Candidate implementation
+   completion is the only prerequisite for this action and merge: candidate
+   review, review seal `R`, and post-`E` CI are never prerequisites. Candidate
+   CI and the four candidate review operations are intentionally post-`E`
+   operations.
+   The operation manifest binds the reservation, `S`, unreferenced `C`, consumed
+   action, exact stage order, descriptors, result capability, and command. The broker recomputes
    the verifier blob selected from `S`; its source event proves the exact
    UTF-8 bytes, length, raw SHA-256, and blob OID, and those bytes become
    Python's single `-c` source scalar. No source file, inode, or reopen exists.
@@ -610,14 +611,15 @@ paths, while superseding reset-2 with scope
 `bb.north_star_recovery.g2.scope.v4`. The historical reset-2 record above
 cannot satisfy any active guard.
 
-The planning proposal is evaluated from the exact current reviewed planning
-head `b365fa82c7a597f88146c51298bd1f9913dc9ecc` (tree
-`1166ac1ef87a28529f01b83175da5aa07a19951b`), not from the historical commit
-chain that produced it. The repair is exactly one new commit with that head as
-its parent, changing exactly the two planning paths below and no other path;
-the cumulative two-file tree/diff is the authority, and an earlier multi-commit
-planning history is not a violation.
-
+The planning proposal is evaluated from the broker-supplied authenticated current
+planning `HEAD`, tree, and the two exact planning-file blob OIDs. The four fresh
+planning review records bind those same runtime identities; the embedded source
+contains no current-head literal and cannot become stale when this amendment
+changes the planning files. The reviewed-base parent/tree are separate
+authenticated fields in the planning-core record. The repair is exactly one new
+commit with the reviewed base as its parent, changing exactly the two planning
+paths below and no other path; the cumulative two-file tree/diff is the
+authority, and an earlier multi-commit planning history is not a violation.
 Reset-3 seals planning core, null-tip genesis, two fresh planning review
 rounds, two fresh predecessor searches, a capability probe, activation, fresh
 human actions with separate consumptions, and a live recheck immediately
