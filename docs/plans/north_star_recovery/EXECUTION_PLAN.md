@@ -283,7 +283,7 @@ plan reviews and the three distinct fresh human scope/budget, governance, and
 security actions bind its source digest, the exact planning commit/tree, and
 both planning blob OIDs and SHA-256 digests. The supervisor materializes an
 isolated clean worktree at that one reviewed planning commit, whose sole parent
-is `6a31143dfd0255bebb1a26130d96d95eb53e4ca3` and whose exact two-file diff is
+is `d79ba04e28329b2d8b625fdc37276afb18c7bafb` and whose exact two-file diff is
 within the 4500-line proposal cap. Source base and merge-base remain the
 distinct original `3fe342b...` identity. The validator receives planning,
 fresh-ledger, three-action, reset-1 discontinuity disposition, raw
@@ -531,15 +531,13 @@ scope version can satisfy a `G2/reset-1` gate.
 
 #### Reset-2 planning amendment after exhausted reset-1
 
-`G2/reset-1` is immutable negative evidence after two rejected seed attempts and
-two exhausted seed review rounds. Proposed seed `S1`
-`8494eb8317b3e9bc9826989109a530fa6fdc9c40` (tree
-`69cacf0846c265f0e99b12442ec20a61c9599545`) and proposed seed `S2`
-`42dec2d6e3ff31ef76976c54abc7afe08b65eef2` (tree
-`982cef3f803d3f1410f81b6756eeef1452d25798`) are never selectable,
-mergeable, or reusable as authority. Their source, trees, blobs, reports,
-reviews, actions, ledger events, and private state remain preserved as
-negative evidence.
+Every rejected reset-1 seed commit, tree, changed blob, and raw review is
+preserved as immutable negative evidence. The retained historical action and
+ledger state is represented by the exact counter snapshot, blocked tracker
+authority record, and broker-authenticated reset-discontinuity disposition;
+missing durable ledger authority remains an explicit gap, never inferred
+success. None of these objects may become source, evidence, or completion
+authority for reset-2.
 
 This planning amendment proposes `G2/reset-2` without changing the logical
 packet key, Beads issue, dependency graph, candidate product scope, or mission
@@ -547,7 +545,7 @@ completion criteria.
 
 The amendment proposal itself is capped at the two planning files above and
 4500 changed non-generated lines relative to planning parent
-`6a31143dfd0255bebb1a26130d96d95eb53e4ca3`; every other repository path is
+`d79ba04e28329b2d8b625fdc37276afb18c7bafb`; every other repository path is
 forbidden. That proposal budget does not create G2 implementation capacity.
 
 It is inert until the supervisor executes this fail-closed chronology:
@@ -680,6 +678,16 @@ ordering; it cannot store its own success. Forged-but-consistent JSON, regular
 files, duplicate descriptors, wrong access modes, missing events,
 source/argv/environment drift, circular result fields, and unreceipted results
 all block.
+
+Worker-controlled seed Phase-20 and candidate-controlled installed-checker,
+candidate Phase-20, and renderer commands run only through the pinned
+`/usr/bin/sandbox-exec` digest and supervisor-owned, checkout-specific
+default-deny profiles. Each profile denies all network syscalls and every
+filesystem path except its exact immutable checkout and inputs, pinned runtime
+artifacts, the inherited result FIFO, and the renderer's designated output.
+Its digest, allowlists, denial status, exact subject identity, and result bind
+into the broker manifest, ledger, receipt, and no-spend attestation;
+`UV_OFFLINE` alone is never isolation.
 
 The Git profile is config-free and closed. Executable config/includes,
 aliases, hooks, filters, text conversion, pagers, prompts, replacement objects,
