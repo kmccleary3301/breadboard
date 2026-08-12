@@ -387,9 +387,10 @@ The candidate lifecycle is object-mode and one-way:
 2. The candidate PR is based on `S` and may change only the exact eleven paths.
    A fresh exact candidate-merge action must be consumed and ledgered before
    merge. The protected `actual_candidate_merge` operation first materializes
-   exact candidate commit `C` as an unreferenced Git object whose parent is
-   exact `S`; the canonical source ref remains `S`. The broker then runs
-   candidate budget validation as the operation's final pre-ref-update stage
+   exact candidate commit `C` as an unreferenced Git object whose sole parent
+   is exact `S`; the canonical source ref remains `S`. Candidate implementation
+   completion is the only prerequisite for this merge; candidate CI and the
+   four candidate review operations are intentionally post-`E` operations.
    against immutable `S..C` objects. A closed operation-specific outer manifest
    binds the reservation, `S`, unreferenced `C`, consumed action, exact stage
    order, descriptors, result capability, and command. The broker recomputes
