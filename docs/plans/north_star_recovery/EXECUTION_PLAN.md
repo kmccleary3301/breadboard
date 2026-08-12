@@ -276,28 +276,37 @@ the genesis. A missing completion consumes the reservation and blocks the
 phase. Workers cannot spawn reviewers, push, start CI, access authority records,
 or create ledger events.
 
-Before `S` exists, reset-2 seed admission uses the full standard-library
-validator source embedded in the exact reviewed `LOOP_SPEC.yaml`; the terminal
-reset-1 validator and hidden capability-store code are not executable. Both
+Before `S` exists, reset-3 seed admission uses the full standard-library
+validator source embedded in the exact reviewed `LOOP_SPEC.yaml`; historical
+reset validators and hidden capability-store code are not executable. Both
 plan reviews and the three distinct fresh human scope/budget, governance, and
 security actions bind its source digest, the exact planning commit/tree, and
 both planning blob OIDs and SHA-256 digests. The supervisor materializes an
-isolated clean worktree at that one reviewed planning commit, whose sole parent
-is `d79ba04e28329b2d8b625fdc37276afb18c7bafb` and whose exact two-file diff is
-within the 4500-line proposal cap. Source base and merge-base remain the
-distinct original `3fe342b...` identity. The validator receives planning,
-fresh-ledger, three-action, reset-1 discontinuity disposition, raw
-capability-probe, two raw reviewer, route/history, and broker invocation
-objects through distinct inherited read-only FIFO descriptors; its only output
-is one inherited write-only FIFO. It recomputes every byte digest; checks
-current-time expiry, fixed G0 evidence bytes and ancestry, repository and
-registered-worktree identities, config-free Git execution, dynamic reviewer
-routes and actors, exact action grants and separate consumption ordering,
-phase/aggregate/historical budgets and counters, contiguous
-genesis/events/tip, capability-store isolation, and committed planning blobs.
-The outer broker authenticates all event/object origins and stores an immutable
-receipt binding the exact source, command, descriptors, result, and ledger
-completion. The not-yet-created seed verifier is never invoked.
+isolated clean worktree at that one reviewed planning commit; its exact
+two-file diff is within the 4500-line proposal cap, and source base and
+merge-base are the authenticated reviewed parent.
+The broker authenticates one canonical authority envelope on fixed FD 3 with
+stdlib HMAC over the envelope and a sealed key on fixed FD 21. Object inputs
+are broker-owned fixed role FDs 4--19; the write-only result FIFO is fixed FD
+20. The validator never reads stdin and never accepts caller-selected
+descriptor metadata, descriptors, capability tokens, or paths. It fstats each
+actual FD, verifies the broker direct-child/capability contract, reads exact
+bytes, and binds invocation to the authority descriptor set excluding the
+invocation descriptor and result FIFO. Canonical digest domains sort keys:
+authority descriptors, source bytes, argv bytes, and environment are
+nonrecursive; action payloads bind only already-final predecessor digests.
+The preseed argv is constructed with `argv[3]` equal to the actual UTF-8 bytes
+extracted from the reviewed `LOOP_SPEC.yaml` scalar, not a scalar name. The
+source writes exactly one canonical passed result to fixed FD 20; it writes no
+stdout and has no future result/completion/receipt input.
+The validator parses authenticated raw Git commit/tree/blob objects, proves
+the current commit parent/tree and exact two plan paths/blob OIDs, extracts
+and binds the reviewed source scalar, derives the exact 20+6 denied union and
+11-entry mapping, authenticates grants and distinct consumption events, and
+enforces one authoritative 36-class phase/event table, strict ledger chains,
+counters/caps, and a final open admission reservation. The outer broker stores
+the canonical result before appending terminal completion and the one full
+eight-field post-exec receipt.
 After seed implementation is committed, Phase 20 runs from a fresh read-only
 exact proposed-`S` checkout before seed review.
 
@@ -394,10 +403,14 @@ The candidate lifecycle is object-mode and one-way:
    CI and the four candidate review operations are intentionally post-`E`
    operations.
    The operation manifest binds the reservation, `S`, unreferenced `C`, consumed
-   action, exact stage order, descriptors, result capability, and command. The broker recomputes
-   the verifier blob selected from `S`; its source event proves the exact
-   UTF-8 bytes, length, raw SHA-256, and blob OID, and those bytes become
-   Python's single `-c` source scalar. No source file, inode, or reopen exists.
+   action, exact stage order, fixed broker-owned descriptor FDs, actual
+   executable inode/path/mode and digest, result capability, and command. The
+   broker recomputes the verifier blob selected from `S`; its source event
+   proves the exact UTF-8 bytes, length, raw SHA-256, and blob OID. A
+   preseed admission alone uses the reviewed scalar as Python's `-c` source;
+   every later profile names its concrete script and execution kind
+   (`broker_builtin`, `delegated_agent`, or `verified_script`) and receives
+   only inputs existing at its phase boundary.
    The selected-source verifier is untrusted and runs only through pinned
    `sandbox-exec` with a supervisor-owned default-deny profile: network,
    credentials, mutable Git surfaces, and all filesystem paths except exact
