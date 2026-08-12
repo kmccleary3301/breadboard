@@ -6029,9 +6029,10 @@ bootstrap_policy:
           })
           exact(route_history, {
               "schema_version", "configuration_event_handle",
-              "effective_agent_model_overrides", "events", "sha256",
+              "effective_agent_model_overrides", "authoritative_resolved_models",
+              "activation_run_id", "broker_invocation_id", "events", "sha256",
           }, "route history")
-          assert route_history["schema_version"] == "bb.north_star_recovery.g2_route_history.v2"
+          assert route_history["schema_version"] == "bb.north_star_recovery.g2_route_history.v3"
           assert route_history["configuration_event_handle"] in broker_envelope_by_handle
           configuration_envelope = broker_envelope_by_handle[
               route_history["configuration_event_handle"]
@@ -6039,17 +6040,29 @@ bootstrap_policy:
           assert configuration_envelope["event_type"] == "route_configuration"
           assert configuration_envelope["actor"] == "Main"
           overrides = route_history["effective_agent_model_overrides"]
+          resolved_models = route_history["authoritative_resolved_models"]
           exact(
               configuration_envelope["payload"],
-              {"effective_agent_model_overrides"},
+              {
+                  "effective_agent_model_overrides",
+                  "authoritative_resolved_models",
+                  "activation_run_id",
+                  "broker_invocation_id",
+              },
               "route configuration payload",
           )
-          assert configuration_envelope["payload"][
-              "effective_agent_model_overrides"
-          ] == overrides
+          assert configuration_envelope["payload"] == {
+              "effective_agent_model_overrides": overrides,
+              "authoritative_resolved_models": resolved_models,
+              "activation_run_id": route_history["activation_run_id"],
+              "broker_invocation_id": route_history["broker_invocation_id"],
+          }
+          assert route_history["activation_run_id"] == planning["activation_run_id"]
+          assert route_history["broker_invocation_id"] == planning["broker_invocation_id"]
           exact(overrides, {"loop-reviewer", "security-reviewer"}, "effective model overrides")
+          exact(resolved_models, {"loop-reviewer", "security-reviewer"}, "resolved models")
           assert all(isinstance(value, str) and value and "fable" not in value.lower()
-                     for value in overrides.values())
+                     for value in (*overrides.values(), *resolved_models.values()))
           assert route_history["sha256"] == digest({
               key: value for key, value in route_history.items() if key != "sha256"
           })
@@ -6058,6 +6071,7 @@ bootstrap_policy:
               route_history["configuration_event_handle"],
               *(event["event_id"] for event in route_history["events"]),
               *(event["route_preflight_event_handle"] for event in route_history["events"]),
+              *(event["response_event_handle"] for event in route_history["events"]),
           }
           assert len({event["event_id"] for event in route_history["events"]}) == 2
           assert len({event["response_event_handle"] for event in route_history["events"]}) == 2
@@ -6087,13 +6101,15 @@ bootstrap_policy:
               assert response_envelope["payload"] == expected_response
               assert event["response_event_handle"] in broker_envelope_by_handle
               assert event["requested_model"] == overrides[event["agent_role"]]
-              assert event["resolved_model"] == overrides[event["agent_role"]]
+              assert event["resolved_model"] == resolved_models[event["agent_role"]]
               assert "fable" not in event["resolved_model"].lower()
               assert event["effective_override_sha256"] == digest({
                   "configuration_event_handle": route_history["configuration_event_handle"],
                   "agent_role": event["agent_role"],
                   "requested_model": event["requested_model"],
                   "resolved_model": event["resolved_model"],
+                  "activation_run_id": route_history["activation_run_id"],
+                  "broker_invocation_id": route_history["broker_invocation_id"],
               })
               assert event["event_sha256"] == digest({
                   key: value for key, value in event.items() if key != "event_sha256"
@@ -6706,9 +6722,10 @@ bootstrap_policy:
           }
           route_keys = {
               "schema_version", "event_handle", "route_body_sha256",
-              "activation_run_id", "broker_invocation_id", "agent_id",
-              "agent_role", "requested_model", "resolved_model",
-              "preflighted_at_utc", "passed",
+              "review_run_id", "agent_id", "agent_role", "lens",
+              "requested_model", "resolved_model", "planning_head_sha",
+              "planning_tree_sha", "planning_parent_sha", "source_base_sha",
+              "source_merge_base_sha", "preflighted_at_utc", "passed",
           }
           raw_reviews = {
               "specification_correctness": (raw_spec_review, raw_spec_review_sha),
@@ -6745,8 +6762,13 @@ bootstrap_policy:
               assert preflight_envelope["actor"] == route["agent_id"]
               assert preflight_envelope["payload"] == route
               assert raw_review["route_preflight_event_sha256"] == preflight_envelope["payload_sha256"]
-              assert route["activation_run_id"] == planning["activation_run_id"]
-              assert route["broker_invocation_id"] == planning["broker_invocation_id"]
+              assert route["planning_head_sha"] == planning["planning_head_sha"]
+              assert route["planning_tree_sha"] == planning["planning_head_tree_sha"]
+              assert route["planning_parent_sha"] == planning["planning_parent_sha"]
+              assert route["source_base_sha"] == planning["source_base_sha"]
+              assert route["source_merge_base_sha"] == planning["source_merge_base_sha"]
+              assert route["review_run_id"] == row["review_run_id"]
+              assert route["lens"] == row["lens"]
               assert route["agent_role"] in {"loop-reviewer", "security-reviewer"}
               assert isinstance(route["requested_model"], str) and route["requested_model"]
               assert isinstance(route["resolved_model"], str) and route["resolved_model"]
@@ -6765,8 +6787,12 @@ bootstrap_policy:
               assert route_event["agent_id"] == row["agent_id"]
               assert route_event["review_run_id"] == row["review_run_id"]
               assert route_event["history_uri"] == row["history_uri"]
-              assert route_event["requested_model"] == route["requested_model"]
-              assert route_event["resolved_model"] == route["resolved_model"] == overrides[route["agent_role"]]
+              assert route_event["requested_model"] == route["requested_model"] == overrides[
+                  route["agent_role"]
+              ]
+              assert route_event["resolved_model"] == route["resolved_model"] == resolved_models[
+                  route["agent_role"]
+              ]
               assert route_event["agent_role"] == route["agent_role"]
               assert route_event["preflighted_at_utc"] == route["preflighted_at_utc"]
               assert parse_time(route_event["preflighted_at_utc"]) <= parse_time(
@@ -7889,6 +7915,7 @@ bootstrap_policy:
             receipt_owner: supervisor_private_capability_store
             transition_guard: exact_receipt_result_manifest_input_exit_passed_descriptor_revocation_and_ledger_digests_all_match
         candidate_budget_validation:
+          lifecycle: required_final_stage_of_actual_candidate_merge_protected_operation_after_exact_C_exists
           argv:
           - /usr/bin/python3
           - -I
@@ -7897,24 +7924,35 @@ bootstrap_policy:
           - candidate-budget
           - --selection-record
           - "{capability_store_seed_selection_record}"
-          - --candidate-preflight
-          - "{capability_store_candidate_preflight_record}"
           - --candidate-manifest
           - "{capability_store_candidate_manifest}"
           - --repository-git-dir
           - "{canonical_absolute_common_git_dir}"
+          - --source-commit
+          - "{exact_selected_and_merged_seed_commit}"
+          - --target-commit
+          - "{exact_candidate_commit_created_by_actual_candidate_merge}"
           - --result-fd
           - "{inherited_write_only_candidate_budget_result_pipe_fd}"
           result_schema: bb.north_star_recovery.g2_candidate_budget_result.v1
-          exact_result_keys: [schema_version, source_commit, source_tree, target_commit, target_tree, diff_mode, changed_paths, additions, deletions, changed_file_count, candidate_manifest_sha256, allowed_paths_sha256, forbidden_paths_sha256, executable_sha256, argv_sha256, environment_sha256, validated_at_utc, passed]
+          exact_result_keys: [schema_version, source_commit, source_tree, target_commit, target_tree, diff_mode, changed_paths, additions, deletions, changed_file_count, candidate_manifest_sha256, allowed_paths_sha256, forbidden_paths_sha256, executable_sha256, argv_sha256, environment_sha256, validated_at_utc, passed, result_sha256]
+          result_sha256_preimage: exact_result_keys_except_result_sha256
+          stage_receipt:
+            schema_version: bb.omp.command_broker_stage_receipt.v1
+            exact_keys: [schema_version, operation_class, reservation_id, invocation_manifest_sha256, stage_index, stage_argv_sha256, stage_executable_sha256, stage_environment_sha256, stored_stage_result_sha256, exit_code, passed, descriptor_capabilities_closed_and_revoked, issued_at_utc, receipt_sha256]
+            operation_class: actual_candidate_merge
+            receipt_sha256_preimage: exact_keys_except_receipt_sha256
           broker_preexecution:
-            source_executable_argv_closed_environment_selection_preflight_manifest_and_descriptor_digests_verified: true
-            source_is_exact_selected_and_merged_seed_private_verifier: true
-            target_is_exact_candidate_subject: true
+            actual_candidate_merge_reservation_and_invocation_manifest_already_bound: true
+            source_executable_argv_closed_environment_selection_manifest_and_descriptor_digests_verified: true
+            source_is_exact_selected_and_merged_S: true
+            target_is_exact_C_created_by_prior_stage_of_same_actual_candidate_merge_invocation: true
           broker_postexecution:
-            exit_zero_passed_true_and_exact_result_schema_required: true
-            result_sha256_stored_in_candidate_preflight_and_bound_to_candidate_admission_invocation_manifest: true
-            failure_nonzero_malformed_missing_or_unreceipted_result: blocked_budget
+            exit_zero_passed_true_exact_result_and_stage_receipt_required: true
+            descriptor_capabilities_closed_and_revoked_before_stage_receipt: true
+            stage_result_and_receipt_sha256s_bound_into_actual_candidate_merge_result_payload: true
+            actual_candidate_merge_common_receipt_then_binds_final_result_completion_and_extended_tip: true
+            failure_nonzero_malformed_missing_swapped_or_unreceipted_result: blocked_budget
         candidate_admission:
           argv:
           - /usr/bin/python3
@@ -7928,12 +7966,7 @@ bootstrap_policy:
           - "{capability_store_candidate_preflight_record}"
           - --repository-git-dir
           - "{canonical_absolute_common_git_dir}"
-          requires_candidate_budget_validation_result:
-            schema_version: bb.north_star_recovery.g2_candidate_budget_result.v1
-            passed: true
-            source_commit: exact_selected_and_merged_S
-            target_commit: exact_C
-            result_sha256_matches_candidate_preflight_and_broker_receipt: true
+          scope: preimplementation_seed_candidate_allowed_paths_ownership_test_plan_ledger_and_no_spend_only
         closure:
           argv:
           - /usr/bin/python3
@@ -8038,7 +8071,6 @@ bootstrap_policy:
       - selected_seed_derived_allowed_forbidden_paths_and_budgets
       - selected_seed_derived_ownership_manifest_and_test_plan
       - seed_and_candidate_phase20_result_objects
-      - candidate_budget_validation_result_and_receipt_sha256
       - exact_governance_security_scope_budget_and_seed_selection_actions
       - selected_seed_derived_abandoned_manifest_blob_count_and_denylist
       - environment_uv_cache_and_package_artifact_fingerprint_sha256
@@ -8216,7 +8248,7 @@ bootstrap_policy:
       - {from: g2_reset_2_seed_merge, event: exact_S_merged_and_seed_merge_action_consumed_and_ledgered, to: g2_reset_2_candidate_preflight}
       - {from: g2_reset_2_candidate_preflight, event: candidate_admission_phase20_ownership_test_plan_ledger_and_no_spend_passed, to: g2_reset_2_candidate_implementing}
       - {from: g2_reset_2_candidate_implementing, event: candidate_local_gates_and_candidate_merge_action_consumed_and_ledgered, to: g2_reset_2_candidate_merge}
-      - {from: g2_reset_2_candidate_merge, event: exact_C_descends_from_S_and_scope_budget_passed, to: g2_reset_2_evidence_seal}
+      - {from: g2_reset_2_candidate_merge, event: exact_C_created_then_S_to_C_budget_stage_and_actual_candidate_merge_result_receipts_passed, to: g2_reset_2_evidence_seal}
       - {from: g2_reset_2_evidence_seal, event: exact_E_and_non_authorizing_self_host_passed, to: g2_reset_2_final_review}
       - {from: g2_reset_2_final_review, event: exact_four_candidate_reviews_in_two_rounds_approved, to: g2_reset_2_review_seal}
       - {from: g2_reset_2_review_seal, event: exact_R_and_A_created_with_required_topology_and_schema, to: g2_reset_2_anchor_selection}
@@ -8234,6 +8266,12 @@ bootstrap_policy:
         - one_fresh_preexecution_ledger_recheck_is_terminal_and_immediately_precedes_seed_admission_reservation
         - seed_admission_validator_and_broker_postexecution_receipt_pass
         - preexecution_and_extended_ledger_tips_are_distinct_and_bound
+        exact_C_created_then_S_to_C_budget_stage_and_actual_candidate_merge_result_receipts_passed:
+        - actual_candidate_merge_operation_creates_exact_C_from_exact_selected_and_merged_S
+        - candidate_budget_validation_is_final_stage_of_same_reserved_broker_invocation
+        - candidate_budget_result_and_stage_receipt_exact_digests_bind_actual_candidate_merge_result_payload
+        - actual_candidate_merge_common_receipt_binds_final_result_completion_and_extended_ledger_tip
+        - any_over_cap_manifest_mismatch_uninvoked_nonzero_failed_swapped_or_unreceipted_budget_stage_blocks
       interrupt_transition_expansion:
         semantics: every_listed_rule_is_a_required_real_transition
         all_nonclosed_G2_states:
@@ -8586,7 +8624,8 @@ bootstrap_policy:
       per_epoch_phase_and_historical_counters_are_distinct_and_recomputed: true
       candidate_budget_enforcement:
         source_commit: exact_selected_and_merged_S
-        target_commit: exact_C
+        target_commit: exact_C_created_by_actual_candidate_merge
+        execution_point: final_stage_of_actual_candidate_merge_before_result_seal_completion_receipt_or_evidence_transition
         source_and_target_trees_read_from_commit_objects: true
         diff_mode: raw_NUL_delimited_no_renames_no_ext_diff_no_textconv
         changed_paths_must_equal_candidate_manifest_paths: true
@@ -8595,10 +8634,11 @@ bootstrap_policy:
         changed_file_count_max: 11
         candidate_manifest_recomputed_from_actual_tree_and_diff: true
         candidate_budget_validation_command_profile: bootstrap_policy.G2.command_broker.command_profiles.candidate_budget_validation
-        budget_validator_must_be_invoked_and_pass_before_candidate_admission_not_only_defined: true
-        result_sha256_bound_to_candidate_preflight_admission_invocation_manifest_operation_result_and_receipt: true
-        over_line_over_file_binary_numstat_malformed_manifest_or_uninvoked_budget_negative_fixtures_required: true
-        any_over_cap_manifest_mismatch_uninvoked_nonzero_failed_or_unreceipted_result: blocked_budget
+        folded_protected_operation_class: actual_candidate_merge
+        budget_validator_must_be_invoked_and_pass_after_C_exists_before_actual_candidate_merge_result_seal: true
+        stage_result_and_receipt_sha256s_bound_to_actual_candidate_merge_result_payload_and_common_receipt: true
+        over_line_over_file_binary_numstat_malformed_manifest_uninvoked_substituted_command_swapped_result_or_receipt_negative_fixtures_required: true
+        any_over_cap_manifest_mismatch_uninvoked_nonzero_failed_swapped_or_unreceipted_result: blocked_budget
     reset_2_seed:
       phase_id: G2/reset-2/seed
       planning_files_are_immutable_inputs_not_worker_paths: true
@@ -8764,7 +8804,7 @@ bootstrap_policy:
       - actual_seed_merge
       - candidate_attempt_and_CI_operations
       - candidate_merge_action_then_consumption
-      - actual_candidate_merge
+      - actual_candidate_merge_creates_C_then_budget_validation_final_stage
       - evidence_seal
       - candidate_review_operations
       - candidate_review_seal
@@ -8858,7 +8898,7 @@ bootstrap_policy:
           human_governance_action: *human_action_exact_keys
           human_security_boundary_action: *human_action_exact_keys
           human_planning_action_consumption: *human_action_consumption_exact_keys
-          seed_admission: [schema_version, packet_key, execution_epoch, scope_version, planning_parent_sha, planning_head_sha, planning_head_tree_sha, source_base_sha, source_merge_base_sha, predecessor_ledger_tip_sha256, predecessor_input_sha256, predecessor_disposition_sha256, seed_admission_reservation_id, preexecution_ledger_tip_sha256, environment_fingerprint_sha256, activation_record_sha256, ledger_sha256, actions_sha256, policy_sha256, invocation_manifest_sha256, invocation_manifest_canonical_sha256, route_history_sha256, validator_source_sha256, executable_sha256, git_executable_sha256, argv_sha256, environment_sha256, broker_clock_utc, validated_at_utc, passed]
+          seed_admission: [schema_version, packet_key, execution_epoch, scope_version, planning_parent_sha, planning_head_sha, planning_head_tree_sha, source_base_sha, source_merge_base_sha, predecessor_ledger_tip_sha256, predecessor_input_sha256, predecessor_disposition_sha256, seed_admission_reservation_id, preexecution_ledger_tip_sha256, environment_fingerprint_sha256, activation_record_sha256, ledger_sha256, actions_sha256, policy_sha256, invocation_manifest_sha256, invocation_manifest_canonical_sha256, route_history_sha256, validator_source_sha256, executable_sha256, git_executable_sha256, argv_sha256, environment_sha256, broker_clock_utc, validated_at_utc, passed, result_sha256]
           reset_2_seed_attempt: *implementation_result_exact_keys
           reset_2_seed_review: *packet_review_exact_keys
           reset_2_seed_CI_rerun: *ci_result_exact_keys
@@ -8872,7 +8912,7 @@ bootstrap_policy:
           candidate_CI_rerun: *ci_result_exact_keys
           human_candidate_merge_action: *human_action_exact_keys
           human_candidate_action_consumption: *human_action_consumption_exact_keys
-          actual_candidate_merge: [source_commit, source_tree, merged_commit, merged_tree, parent_commit, merged]
+          actual_candidate_merge: [source_commit, source_tree, merged_commit, merged_tree, parent_commit, candidate_budget_result_sha256, candidate_budget_stage_receipt_sha256, candidate_budget_invocation_manifest_sha256, budget_checked, merged]
           evidence_seal: [candidate_commit, candidate_tree, evidence_commit, evidence_tree, report_object_ids, authority_snapshot_sha256s, no_spend_attestation_sha256, sealed]
           candidate_review_seal: [phase_id, round_ids, review_operation_event_sha256s, approved]
           review_anchor_creation: [anchor_commit, anchor_tree, source_commit, source_tree, created]
@@ -8906,7 +8946,7 @@ bootstrap_policy:
           candidate_CI_rerun: exact_candidate_subject_workflow_job_exit_conclusion_reports_evidence_counters_and_failure_semantics_validate
           human_candidate_merge_action: authenticated_unexpired_allow_decision_binds_exact_candidate_and_seed
           human_candidate_action_consumption: exact_candidate_merge_action_consumed_once_before_actual_merge
-          actual_candidate_merge: merged_candidate_commit_tree_parent_and_seed_ancestry_are_authenticated_and_exact
+          actual_candidate_merge: merged_candidate_commit_tree_parent_seed_ancestry_and_post_C_budget_stage_result_stage_receipt_and_common_receipt_are_authenticated_exact_and_passed
           evidence_seal: evidence_commit_tree_reports_authority_snapshots_and_no_spend_attestation_are_exact
           candidate_review_seal: exact_two_round_four_operation_candidate_review_cartesian_product_approved
           review_anchor_creation: anchor_topology_commit_tree_parents_and_bound_receipts_are_exact
@@ -9147,6 +9187,9 @@ bootstrap_policy:
         - anchor_selection_action_bound_to_one_A_then_different_valid_A_substituted
         - actual_candidate_merge_reservation_precedes_candidate_merge_action_consumption
         - result_descriptor_payload_sha256_differs_from_broker_envelope_payload
+        - route_preflight_requested_alias_or_authoritative_resolved_runtime_substituted_or_forced_equal
+        - route_preflight_shape_missing_or_extra_planning_review_provenance_field
+        - candidate_budget_stage_command_substituted_result_or_receipt_swapped_or_common_receipt_missing
         - capability_probe_request_or_denial_replayed_from_other_store_environment_or_genesis
         - route_preflight_body_digest_is_self_referential_or_envelope_digest_mismatched
         - positive_route_preflight_body_and_envelope_digest_domains_validate

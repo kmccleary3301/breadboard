@@ -386,11 +386,17 @@ The candidate lifecycle is object-mode and one-way:
    copied from preflight.
 2. The candidate PR is based on `S` and may change only the exact eleven paths.
    A fresh exact candidate-merge action must be consumed and ledgered before
-   merge. After merge, the exact merged source head
-   becomes candidate `C`; `S` must be an ancestor of `C`. The canonical
-   path/mode/blob/SHA-256/size/physical-line/addition/deletion manifest is
-   derived from the `S..C` object diff and complete tree walks, never the live
-   worktree.
+   merge. The protected `actual_candidate_merge` operation first creates the
+   exact merged source head candidate `C`; `S` must be an ancestor of `C`.
+   Before that operation can seal its result, complete its ledger event, issue
+   its common receipt, or enter evidence sealing, the broker runs candidate
+   budget validation as its final stage against immutable `S..C` Git objects.
+   The stage emits a closed result and broker stage receipt; both digests bind
+   the actual-merge result and common receipt. The canonical path/mode/blob/
+   SHA-256/size/physical-line/addition/deletion manifest is derived from raw
+   NUL-delimited no-rename `S..C` object diffs and complete tree walks, never
+   the live worktree. An uninvoked, over-cap, substituted, malformed, failed,
+   swapped, or unreceipted budget stage blocks before any downstream evidence.
 3. Focused reports, installed-checker output, Phase 20, authority snapshots,
    no-spend attestation, and operation-ledger snapshots are sealed by the
    supervisor in pre-review evidence commit `E`, whose sole parent is `C`.
@@ -497,7 +503,9 @@ Acceptance tests must fail on:
 - any extra, missing, forbidden, wrong-mode, case-colliding, Unicode-colliding,
   symlink, submodule, or unhashed candidate path;
 - physical-line, additions/deletions, phase or aggregate file/line,
-  implementation, review, or CI cap overflow;
+  implementation, review, or CI cap overflow; candidate `S..C` budget validation
+  omitted, run before `C` exists, command-substituted, failed, swapped, or lacking
+  its stage receipt and actual-merge common-receipt binding;
 - stale or changed G0, seed, base, merge-base, candidate, evidence, review,
   anchor, report, approval, authority, environment, or ledger identity;
 - a ref lookup, abbreviated OID, replace/graft/shallow history, alternate object
@@ -513,6 +521,9 @@ Acceptance tests must fail on:
   planning, governance, scope/budget, merge, seed-selection, or closure action;
 - a ledger gap, duplicate/replayed sequence, wrong previous digest, launch
   without reservation, omitted failure/completion, worker launch, or cap drift;
+- route preflight/history that conflates configured alias with authoritative
+  runtime model, omits exact planning provenance, substitutes either identity,
+  or is not bound to the activation run and broker invocation;
 - any provider credential, paid/target/participant launch, nonempty spend
   receipt set, or nonzero/unknown spend;
 - missing or failing Phase 20 enforcement;
@@ -568,6 +579,14 @@ It is inert until the supervisor executes this fail-closed chronology:
    and predecessor-disposition digest. Consumption is required before the
    protected seed-admission reservation or worker launch (not before the
    planning-review reservations).
+
+   Each plan-review route preflight preserves two distinct identities: the
+   configured reviewer alias requested by the operation and the authoritative
+   runtime model resolved by OMP. The broker-authenticated route body includes
+   the exact planning commit/tree/parent and source base/merge-base; the route
+   history configuration event also binds the activation and broker invocation.
+   Seed admission rejects a forced equality, a substituted resolved model, or
+   any omitted or extra route field.
 5. Reserve and complete one fresh broker-authenticated durable-ledger recheck.
    Its completion must be the ledger event immediately preceding seed admission.
 6. Open the exact seed-admission reservation, execute the validator, then
