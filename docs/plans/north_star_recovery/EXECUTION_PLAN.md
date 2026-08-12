@@ -283,7 +283,7 @@ plan reviews and the three distinct fresh human scope/budget, governance, and
 security actions bind its source digest, the exact planning commit/tree, and
 both planning blob OIDs and SHA-256 digests. The supervisor materializes an
 isolated clean worktree at that one reviewed planning commit, whose sole parent
-is `6a31143dfd0255bebb1a26130d96d95eb53e4ca3` and whose exact two-file diff is
+is `d79ba04e28329b2d8b625fdc37276afb18c7bafb` and whose exact two-file diff is
 within the 4500-line proposal cap. Source base and merge-base remain the
 distinct original `3fe342b...` identity. The validator receives planning,
 fresh-ledger, three-action, reset-1 discontinuity disposition, raw
@@ -386,11 +386,50 @@ The candidate lifecycle is object-mode and one-way:
    copied from preflight.
 2. The candidate PR is based on `S` and may change only the exact eleven paths.
    A fresh exact candidate-merge action must be consumed and ledgered before
-   merge. After merge, the exact merged source head
-   becomes candidate `C`; `S` must be an ancestor of `C`. The canonical
-   path/mode/blob/SHA-256/size/physical-line/addition/deletion manifest is
-   derived from the `S..C` object diff and complete tree walks, never the live
-   worktree.
+   merge. The protected `actual_candidate_merge` operation first materializes
+   exact candidate commit `C` as an unreferenced Git object whose parent is
+   exact `S`; the canonical source ref remains `S`. The broker then runs
+   candidate budget validation as the operation's final pre-ref-update stage
+   against immutable `S..C` objects. A closed operation-specific outer manifest
+   binds the reservation, `S`, unreferenced `C`, consumed action, exact stage
+   order, descriptors, result capability, and command. The broker recomputes
+   the verifier blob selected from `S`; its source event proves the exact
+   UTF-8 bytes, length, raw SHA-256, and blob OID, and those bytes become
+   Python's single `-c` source scalar. No source file, inode, or reopen exists.
+   The selected-source verifier is untrusted and runs only through pinned
+   `sandbox-exec` with a supervisor-owned default-deny profile: network,
+   credentials, mutable Git surfaces, and all filesystem paths except exact
+   object inputs and its result FIFO are denied. Independently of that code,
+   the broker recomputes the canonical raw NUL-delimited no-rename `S..C`
+   path/mode/blob/SHA-256/size/physical-line/addition/deletion manifest, totals,
+   caps, and pass bit. Every verifier fact and pass bit must equal this trusted
+   result. Before execution, a closed no-spend pre-attestation binds empty
+   credential/launch sets, network denial, sandbox profile, source, manifest,
+   recomputation, command, environment, reservation, and preexecution tip. An
+   empty set is exactly the two UTF-8 bytes `[]` (no BOM, whitespace, or
+   newline), whose required digest is
+   `sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`;
+   alternate empty encodings are rejected. The pre-attestation object contains
+   only those preexecution fields; outer/stage/result/receipt and future-event
+   digests are forbidden from its preimage. Its completed digest is then
+   copied as a non-predictive field into the outer/stage manifests and stage
+   result/receipt. Only after the source, sandbox, candidate-manifest, broker-
+   recomputation, stage-result, and stage-receipt equalities pass may the
+   canonical ref advance from `S` to `C`. After the ref matches exact `C`, the
+   broker seals the merge payload and common result, terminal completion, and
+   common receipt. After that receipt and ledger event, the closed
+   `g2_no_spend.v1` object binds the pre-attestation and all actual stage/common
+   chain digests, denial evidence, the same
+   canonical empty credential/launch/spend-receipt sets, and the exact
+   lexicographically serialized integer-zero map over `credentialed_launches`,
+   `paid_api_calls`, `participant_launches`, `provider_launches`, and
+   `target_launches`. Unknown units and alternate encodings are rejected. The
+   post-attestation must pass before the candidate-merge state may enter
+   evidence seal, and its digest is the required nonrecursive input to `E`;
+   neither attestation predicts a future digest. Pre-ref failure leaves `S`
+   unchanged and unreferenced `C` negative only. Missing or failed post-
+   attestation leaves `C` but blocks every evidence, review, anchor, and closure
+   transition.
 3. Focused reports, installed-checker output, Phase 20, authority snapshots,
    no-spend attestation, and operation-ledger snapshots are sealed by the
    supervisor in pre-review evidence commit `E`, whose sole parent is `C`.
@@ -497,7 +536,9 @@ Acceptance tests must fail on:
 - any extra, missing, forbidden, wrong-mode, case-colliding, Unicode-colliding,
   symlink, submodule, or unhashed candidate path;
 - physical-line, additions/deletions, phase or aggregate file/line,
-  implementation, review, or CI cap overflow;
+  implementation, review, or CI cap overflow; candidate `S..C` budget validation
+  omitted, run before `C` exists, command-substituted, failed, swapped, or lacking
+  its stage receipt and actual-merge common-receipt binding;
 - stale or changed G0, seed, base, merge-base, candidate, evidence, review,
   anchor, report, approval, authority, environment, or ledger identity;
 - a ref lookup, abbreviated OID, replace/graft/shallow history, alternate object
@@ -513,6 +554,9 @@ Acceptance tests must fail on:
   planning, governance, scope/budget, merge, seed-selection, or closure action;
 - a ledger gap, duplicate/replayed sequence, wrong previous digest, launch
   without reservation, omitted failure/completion, worker launch, or cap drift;
+- route preflight/history that conflates configured alias with authoritative
+  runtime model, omits exact planning provenance, substitutes either identity,
+  or is not bound to the activation run and broker invocation;
 - any provider credential, paid/target/participant launch, nonempty spend
   receipt set, or nonzero/unknown spend;
 - missing or failing Phase 20 enforcement;
@@ -531,15 +575,13 @@ scope version can satisfy a `G2/reset-1` gate.
 
 #### Reset-2 planning amendment after exhausted reset-1
 
-`G2/reset-1` is immutable negative evidence after two rejected seed attempts and
-two exhausted seed review rounds. Proposed seed `S1`
-`8494eb8317b3e9bc9826989109a530fa6fdc9c40` (tree
-`69cacf0846c265f0e99b12442ec20a61c9599545`) and proposed seed `S2`
-`42dec2d6e3ff31ef76976c54abc7afe08b65eef2` (tree
-`982cef3f803d3f1410f81b6756eeef1452d25798`) are never selectable,
-mergeable, or reusable as authority. Their source, trees, blobs, reports,
-reviews, actions, ledger events, and private state remain preserved as
-negative evidence.
+Every rejected reset-1 seed commit, tree, changed blob, and raw review is
+preserved as immutable negative evidence. The retained historical action and
+ledger state is represented by the exact counter snapshot, blocked tracker
+authority record, and broker-authenticated reset-discontinuity disposition;
+missing durable ledger authority remains an explicit gap, never inferred
+success. None of these objects may become source, evidence, or completion
+authority for reset-2.
 
 This planning amendment proposes `G2/reset-2` without changing the logical
 packet key, Beads issue, dependency graph, candidate product scope, or mission
@@ -547,7 +589,7 @@ completion criteria.
 
 The amendment proposal itself is capped at the two planning files above and
 4500 changed non-generated lines relative to planning parent
-`6a31143dfd0255bebb1a26130d96d95eb53e4ca3`; every other repository path is
+`d79ba04e28329b2d8b625fdc37276afb18c7bafb`; every other repository path is
 forbidden. That proposal budget does not create G2 implementation capacity.
 
 It is inert until the supervisor executes this fail-closed chronology:
@@ -570,6 +612,14 @@ It is inert until the supervisor executes this fail-closed chronology:
    and predecessor-disposition digest. Consumption is required before the
    protected seed-admission reservation or worker launch (not before the
    planning-review reservations).
+
+   Each plan-review route preflight preserves two distinct identities: the
+   configured reviewer alias requested by the operation and the authoritative
+   runtime model resolved by OMP. The broker-authenticated route body includes
+   the exact planning commit/tree/parent and source base/merge-base; the route
+   history configuration event also binds the activation and broker invocation.
+   Seed admission rejects a forced equality, a substituted resolved model, or
+   any omitted or extra route field.
 5. Reserve and complete one fresh broker-authenticated durable-ledger recheck.
    Its completion must be the ledger event immediately preceding seed admission.
 6. Open the exact seed-admission reservation, execute the validator, then
@@ -681,6 +731,23 @@ files, duplicate descriptors, wrong access modes, missing events,
 source/argv/environment drift, circular result fields, and unreceipted results
 all block.
 
+Worker-controlled seed Phase-20, candidate-budget validation, and
+candidate-controlled installed-checker, candidate Phase-20, and renderer
+commands run only through the pinned `/usr/bin/sandbox-exec` digest and
+supervisor-owned, subject-specific default-deny profiles. Each profile denies
+all network syscalls and every filesystem path except exact immutable inputs,
+pinned runtimes, and inherited result FIFOs; candidate-budget execution may
+read only the exact `S..C` Git objects and cannot access refs, config, hooks,
+credentials, worktrees, home, or temporary paths. A closed pre-attestation
+binds the profile, capability, allowlists, canonical `[]` credential/launch
+sets, network denial, exact `S`/`C` subject, command, environment, reservation,
+and preexecution ledger tip through the stage and merge receipts. A separate
+closed post-attestation must pass before evidence-seal entry and binds the
+actual denial/result/common-receipt/terminal-ledger chain, three independently
+recomputed canonical empty-set digests, and the exact five-key integer-zero
+aggregate into evidence seal. The two canonical digest domains are ordered
+and nonrecursive. `UV_OFFLINE` alone is never isolation.
+
 The Git profile is config-free and closed. Executable config/includes,
 aliases, hooks, filters, text conversion, pagers, prompts, replacement objects,
 grafts, shallow history, alternates, credentials, and external diffs are
@@ -711,7 +778,7 @@ The only review lenses are `specification_correctness` and `security_standards_g
 The exact phases are `G2/reset-2/planning`, `G2/reset-2/preseed`, `G2/reset-2/seed`, and `G2/reset-2/candidate`; reset-1 phase labels are rejected.
 
 Every nested search, history, tracker, review, route, human response, consumption, capability-probe, and configuration handle is supplied in a broker-materialized envelope binding exact origin, immutable object ID, raw-byte digest, event type, actor, payload digest, and payload.
-Descriptor fields must equal that envelope; handles are unique and disjoint by role. Route validation requires the broker-resolved model to equal the raw route preflight and recomputed effective override.
+Descriptor fields must equal that envelope; handles are unique and disjoint by role. Route validation binds the raw requested model to the recomputed effective override and independently binds the raw resolved model to the broker's authoritative runtime resolution; forced equality or substitution is rejected.
 
 The supervisor-derived reset-1 negative inventory binds actual S1/S2 commit/tree objects, fixed round-3 blocked/candidate/report/review digests, one authenticated review for each `S1/S2 × specification_correctness/security_standards_generated_drift` pair, the current tracker snapshot, two independent durable-ledger absence searches, and the complete abandoned-blob denylist.
 It never invents the missing durable ledger; omission, substitution, or reuse blocks.
