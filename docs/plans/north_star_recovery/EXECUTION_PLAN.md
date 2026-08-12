@@ -94,7 +94,7 @@ Budgets apply to non-generated additions plus deletions. Mechanical moves still 
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
 | G0 | Retire blocked replay implementation | none | 4 | 200 | 1 | 1 | T0, tracker/PR audit | tracker_supersession + packet_closure + campaign_graph_rewrite |
 | G1 | Split product and evidence surfaces | G0, G2 | 12 | 750 | 2 | 2 | T0-T2, generated diff | public_boundary + architecture_change |
-| G2 | Install packet-control enforcement | G0 | 15 | 3500 | 4 | 4 | reset-2 seed, object-mode self-host, T0-T2, positive admission/closure fixtures, negative gates, two rounds/four exact review operations per phase | governance_schema + security_boundary + scope_budget_amendment + merge + closure_anchor_selection + packet_closure |
+| G2 | Install packet-control enforcement | G0 | 19 | 6000 | 5 | 5 | reset-3 seed, object-mode self-host, generated projection/differential parity, T0-T2, positive preseed/seed/candidate/closure fixtures, nine negative families, fresh actions and exact reviews | governance_schema + security_boundary + scope_budget_amendment + merge + closure_anchor_selection + packet_closure |
 | R0 | Replay records and admission | G2 | 8 | 650 | 2 | 2 | T0-T2 | governance_schema |
 | R1 | Worker protocol and minimal isolation | R0 | 12 | 800 | 2 | 2 | T0-T2, security lens | security_boundary |
 | R2 | Workspace, publication, and redaction | R1 | 12 | 900 | 2 | 2 | T0-T2, fault matrix | security_boundary + artifact_publication |
@@ -757,9 +757,9 @@ backlink, `HEAD`, and index are nofollow-validated and device/inode-bound.
 Worktree operations use the per-worktree gitdir; object reads use the canonical
 common gitdir and recompute object IDs. Any identity or config drift blocks.
 
-#### Reset-2 authoritative closed contract
+#### Historical reset-2 closed contract (non-authoritative)
 
-The reset-2 amendment is the sole active G2 contract. It supersedes every reset-1 entry, phase, schema, lens, event, counter, and generic blocked-review re-entry; historical reset-1 records remain negative evidence only.
+The reset-2 amendment is immutable failed history, not an active G2 contract. Its records, phases, schemas, identities, budgets, and generic re-entry routes remain queryable negative evidence only; `bootstrap_policy.G2_reset_3_amendment` is the sole active authority.
 The sole pre-activation frontier is `blocked_review`. An exact activation event
 enters `g2_reset_2_seed_preflight` only after the planning-core reviews,
 post-review searches, capability probe, and activation record pass. Three fresh
@@ -795,6 +795,24 @@ fifteen/3500. The separate two-file planning cap is 4500 lines and never grants
 implementation capacity.
 
 Absent the exact reviewed amendment, predecessor input/disposition, broker receipt/result, and consumed fresh human actions, the only lawful state remains `blocked_review`; no reset-2 worktree, reservation, review, merge, candidate, or downstream packet may start.
+
+#### Reset-3 supersession amendment
+
+`G2/reset-3` is the sole active G2 epoch. It keeps logical packet `G2`, Beads issue `bb-zjd`, the dependency graph, and the candidate's exact eleven paths, while superseding reset-2 with scope `bb.north_star_recovery.g2.scope.v4`. The reset-2 section above is historical and cannot satisfy any active guard.
+
+The planning amendment is a two-file, one-commit change from exact parent `b816fe34a345d6fd5f3c2002ec4f93700e541060`; all other paths are forbidden and the planning diff is capped at 4500 additions plus deletions. The active dispatch enters `blocked_review` and may leave it only through the reset-3 table after fresh exact-head planning reviews.
+
+Reset-3 seals planning core, null-tip genesis, two fresh planning review rounds, two fresh predecessor searches, a capability probe, activation, fresh human actions with separate consumptions, and a live recheck immediately before bounded preseed admission. The embedded preseed scalar checks only those active authority facts; the complete runtime verifier is seed work in the eight-file seed scope.
+
+| Phase | Files | Non-generated lines | Attempts | Review rounds | CI reruns |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| reset-3 seed | 8 | 5000 | 3 | 3 | 3 |
+| candidate (unchanged) | 11 | 1000 | 2 | 2 | 2 |
+| active reset-3 aggregate | 19 | 6000 | 5 | 5 | 5 |
+
+The seed source of truth is the reviewed declarative contract and its generated projection; canonical Git object inspection, the thin anchor CLI, and exact differential parity are required. The seed denies the exact 26-OID union (20 reset-1 identities plus six reset-2 failures), with the 11 round-3 entries a strict subset, and rejects every candidate blob in that union. Nine negative families, fail-closed command profiles, typed result receipts, phase transitions, and supervisor-only promotion remain mandatory.
+
+Reset-3 inherits only immutable reset-2 semantics that are explicitly listed by the YAML overlay. Epoch, scope, budgets, paths, identities, actions, reviews, negative inventory, validator scalar, command profiles, phase/state maps, generated projection, and dispatch are reset-3 overrides; no reset-2 result or capacity transfers into this epoch.
 
 ### R0: Replay records and admission
 

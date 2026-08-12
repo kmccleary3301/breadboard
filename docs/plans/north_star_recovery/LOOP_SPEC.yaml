@@ -271,19 +271,21 @@ states:
 - g2_seed_preflight
 - g2_seed_implementing
 - g2_seed_review
-- g2_reset_2_seed_preflight
-- g2_reset_2_seed_implementing
-- g2_reset_2_seed_review
-- g2_reset_2_seed_selection
-- g2_reset_2_seed_merge
-- g2_reset_2_candidate_preflight
-- g2_reset_2_candidate_implementing
-- g2_reset_2_candidate_merge
-- g2_reset_2_evidence_seal
-- g2_reset_2_final_review
-- g2_reset_2_review_seal
-- g2_reset_2_anchor_selection
-- g2_reset_2_closure_validation
+- g2_reset_3_planning
+- g2_reset_3_preseed
+- g2_reset_3_seed_preflight
+- g2_reset_3_seed_implementing
+- g2_reset_3_seed_review
+- g2_reset_3_seed_selection
+- g2_reset_3_seed_merge
+- g2_reset_3_candidate_preflight
+- g2_reset_3_candidate_implementing
+- g2_reset_3_candidate_merge
+- g2_reset_3_evidence_seal
+- g2_reset_3_final_review
+- g2_reset_3_review_seal
+- g2_reset_3_anchor_selection
+- g2_reset_3_closure_validation
 - closed
 - blocked_scope
 - blocked_budget
@@ -299,7 +301,7 @@ terminal_states:
 - superseded
 - complete
 transition_dispatch:
-  selected_packet_G2: {entry_transition: [select_frontier, g2_reset_selected, blocked_review], after_entry_authoritative_transition_table: bootstrap_policy.G2.g2_state_machine.transitions, top_level_generic_transitions_from_blocked_review_or_any_generic_blocked_state: ineligible, generic_scope_budget_abandonment_supersession_refresh_and_evidence_identity_routes: ineligible, local_event_or_guard_match_cannot_override_dispatch: true, missing_ambiguous_or_dual_table_transition: block}
+  selected_packet_G2: {entry_transition: [select_frontier, g2_reset_selected, blocked_review], after_entry_authoritative_transition_table: bootstrap_policy.G2_reset_3_amendment.state_machine.transitions, top_level_generic_transitions_from_blocked_review_or_any_generic_blocked_state: ineligible, generic_scope_budget_abandonment_supersession_refresh_and_evidence_identity_routes: ineligible, local_event_or_guard_match_cannot_override_dispatch: true, missing_ambiguous_or_dual_table_transition: block}
 transitions:
 - from: bootstrap
   event: run_started
@@ -337,14 +339,14 @@ transitions:
   to: blocked_review
   guards:
   - selected_packet_is_exact_registered_open_nonterminal_G2_bead_bb_zjd
-  - rendered_next_frontier_is_blocked_review_for_G2_reset_2
+  - rendered_next_frontier_is_blocked_review_for_G2_reset_3
   - G0_is_logically_closed_and_fixed_G0_root_matches
   - no_overlapping_writer_scope
-  - exact_reset_2_planning_proposal_is_the_only_permitted_reentry
-  - G2_reset_2_state_machine_and_gate_map_match_authoritative_contract
+  - exact_reset_3_planning_proposal_is_the_only_permitted_reentry
+  - G2_reset_3_state_machine_and_gate_map_match_authoritative_contract
   - no_abandoned_scope_record_is_reused
   actions:
-  - enter_G2_reset_2_specific_state_machine_at_blocked_review
+  - enter_G2_reset_3_specific_state_machine_at_blocked_review
   - reject_legacy_g2_seed_preflight_and_generic_blocked_review_reentry
   - forbid_generic_G2_preflight_implementing_review_verified_and_closed_routes
 - from: select_frontier
@@ -5159,11 +5161,14 @@ bootstrap_policy:
   G2:
     packet_key: G2
     bead_id: bb-zjd
+    authority_role: historical_context_only
+    active_authority: false
+    active_authority_ref: bootstrap_policy.G2_reset_3_amendment
     execution_epoch: G2/reset-1
     scope_version: bb.north_star_recovery.g2.scope.v2
     current_state: blocked_review
     reset_1_launch_review_selection_merge_or_promotion: forbidden
-    only_proposed_reentry: bootstrap_policy.G2_reset_2_amendment
+    only_proposed_reentry: bootstrap_policy.G2_reset_3_amendment
     phase_model: one_packet_one_issue_two_machine_gated_write_phases
     generic_state_machine_override:
       applies_when_selected_packet: G2
@@ -8582,8 +8587,9 @@ bootstrap_policy:
       - renderer_schema_and_provenance_passed
       - supervisor_only_promotion_and_single_use_closure_action
       postcondition: logical_G2_closed_and_downstream_frontier_refresh_allowed
-  G2_reset_2_amendment:
-    status: proposed_inert_until_exact_review_and_human_action
+  historical_reset_2:
+    status: immutable_failed_history_non_authoritative
+    active_authority: false
     logical_packet_key: G2
     bead_id: bb-zjd
     predecessor:
@@ -9485,6 +9491,364 @@ bootstrap_policy:
         - validator_source_scalar_differs_from_reviewed_loop_spec_blob
         - renderer_profile_missing_wrong_replayed_or_mutable_beads_github_git_or_anchor_evidence_snapshot_descriptor_or_output_path_not_private_new_and_exact
       no_reset_1_active_literal_or_model_hardcode_in_embedded_source: true
+  G2_reset_3_amendment:
+    status: authoritative_closed_contract
+    authority_role: active_G2_only
+    packet_key: G2
+    bead_id: bb-zjd
+    execution_epoch: G2/reset-3
+    scope_version: bb.north_star_recovery.g2.scope.v4
+    current_state: blocked_review
+    active_dispatch: transition_dispatch.selected_packet_G2
+    active_transition_table: bootstrap_policy.G2_reset_3_amendment.state_machine.transitions
+    historical_reset_2_ref: bootstrap_policy.historical_reset_2
+    inheritance:
+      source: bootstrap_policy.historical_reset_2
+      rule: inherit_only_explicitly_listed_immutable_semantics
+      immutable_semantics:
+      - logical_packet_key_and_bead_id
+      - fixed_G0_root_and_local_only_authority_boundary
+      - supervisor_exclusive_launcher_and_human_gate_boundary
+      - object_mode_full_oid_and_no_follow_git_rules
+      - no_spend_and_no_worker_authority_rules
+      - typed_reservation_completion_failure_and_receipt_rules
+      override_denylist:
+      - execution_epoch
+      - scope_version
+      - planning_parent_and_planning_commit
+      - state_and_transition_dispatch
+      - phase_ids_and_phase_state_map
+      - aggregate_seed_and_candidate_budgets
+      - seed_and_candidate_allowed_and_forbidden_paths
+      - predecessor_disposition_and_null_tip_chronology
+      - negative_evidence_inventory_and_manifest
+      - planning_reviews_and_fresh_action_instances
+      - embedded_preseed_validator_scalar
+      - runtime_seed_verifier_and_generated_projection
+      - command_profiles_and_result_schema
+      - candidate_phase_contract
+      - module_ownership_and_differential_parity
+      - negative_fixture_families
+    planning_contract:
+      parent_commit: b816fe34a345d6fd5f3c2002ec4f93700e541060
+      required_commit_count: 1
+      allowed_paths:
+      - docs/plans/north_star_recovery/EXECUTION_PLAN.md
+      - docs/plans/north_star_recovery/LOOP_SPEC.yaml
+      forbidden_paths: all_other_repository_paths
+      changed_files_max: 2
+      changed_additions_plus_deletions_max: 4500
+      self_reference_to_post_commit_identity: forbidden
+      yaml_duplicate_keys: forbidden
+    authority_facts:
+      dispatch_ref: bootstrap_policy.G2_reset_3_amendment
+      generic_G2_routes: forbidden
+      historical_reset_2_is_queryable_only: true
+      logical_packet_key: G2
+      bead_id: bb-zjd
+      predecessor_ledger_tip: null
+      source_base_and_merge_base_must_be_current_and_authenticated: true
+    null_tip_chronology:
+      predecessor_mode: authenticated_reset_discontinuity
+      required_order:
+      - seal_reset_3_planning_core_without_future_reviews
+      - create_reset_3_genesis_with_previous_tip_null
+      - complete_two_fresh_exact_head_planning_reviews
+      - complete_two_fresh_predecessor_searches
+      - complete_fresh_capability_probe
+      - create_activation_record_after_reviews_searches_and_probe
+      - grant_and_consume_fresh_reset_3_human_actions
+      - complete_fresh_live_no_ledger_recheck
+      - reserve_preseed_admission_immediately_after_live_recheck
+      - execute_preseed_validator_and_append_one_terminal_result
+      terminal_search_freshness_seconds_max: 900
+      live_recheck_freshness_seconds_max: 60
+      durable_reset_2_ledger_found: stop_and_replan
+      invented_tip_counter_capacity_or_success_authority: forbidden
+    reviews:
+      planning:
+        exact_rounds: 2
+        exact_lenses: [specification_correctness, security_standards_generated_drift]
+        exact_operations: 4
+        fresh_exact_head_required: true
+        reviewers_distinct_from_writer_supervisor_and_human: true
+        approval: approve_with_zero_P0_P1_P2
+      seed_and_candidate:
+        exact_rounds_per_phase: 3
+        exact_lenses: [specification_correctness, security_standards_generated_drift]
+        exact_operations_per_phase: 6
+        every_record_binds_epoch_scope_paths_budgets_source_objects_and_ledger_tip: true
+    fresh_actions:
+      action_schema: bb.north_star_recovery.g2_human_action.v3
+      separate_single_use_consumption_required: true
+      instances:
+      - {instance_id: G2_reset_3_scope_budget, gate_id: scope_budget_amendment, operation_class: human_scope_budget_action}
+      - {instance_id: G2_reset_3_governance, gate_id: governance_schema, operation_class: human_governance_action}
+      - {instance_id: G2_reset_3_security, gate_id: security_boundary, operation_class: human_security_boundary_action}
+      - {instance_id: G2_reset_3_seed_selection, gate_id: closure_anchor_selection, operation_class: human_seed_selection_action}
+      - {instance_id: G2_reset_3_seed_merge, gate_id: merge, operation_class: human_seed_merge_action}
+      - {instance_id: G2_reset_3_candidate_merge, gate_id: merge, operation_class: human_candidate_merge_action}
+      - {instance_id: G2_reset_3_anchor_selection, gate_id: closure_anchor_selection, operation_class: human_closure_anchor_selection_action}
+      - {instance_id: G2_reset_3_packet_closure, gate_id: packet_closure, operation_class: human_packet_closure_action}
+      action_id_nonce_and_consumption_must_be_distinct: true
+      every_action_binds_activation_disposition_epoch_scope_and_exact_objects: true
+    budgets:
+      aggregate: {files_max: 19, non_generated_lines_max: 6000, implementation_attempts_max: 5, review_rounds_max: 5, ci_reruns_max: 5}
+      seed: {files_max: 8, non_generated_lines_max: 5000, implementation_attempts_max: 3, review_rounds_max: 3, ci_reruns_max: 3}
+      candidate: {files_max: 11, non_generated_lines_max: 1000, implementation_attempts_max: 2, review_rounds_max: 2, ci_reruns_max: 2}
+      unused_capacity_transfer_between_phases_or_epochs: false
+      counts_include_generated_files: true
+    seed:
+      phase_id: G2/reset-3/seed
+      preseed_phase_id: G2/reset-3/preseed
+      allowed_paths:
+      - contracts/governance/schemas/bb.g2_closure_anchor.v1.schema.json
+      - contracts/governance/g2_abandoned_evidence_manifest.v2.json
+      - contracts/governance/g2_reset_3_contract.v1.json
+      - scripts/packet/g2_contract.py
+      - scripts/packet/g2_git_objects.py
+      - scripts/packet/verify_g2_anchor.py
+      - tests/packet/test_g2_contract.py
+      - tests/packet/test_verify_g2_anchor.py
+      forbidden_paths:
+      - docs/plans/north_star_recovery/STATE.json
+      - breadboard/**
+      - agentic_coder_prototype/**
+      - sdk/**
+      - tui_skeleton/**
+      - contracts/kernel/**
+      runtime_verifier_is_seed_work_not_embedded_preseed_scope: true
+      seed_admission_requires_all_eight_paths_and_exact_manifest: true
+    candidate:
+      phase_id: G2/reset-3/candidate
+      unchanged_from_reset_2: true
+      allowed_paths:
+      - contracts/governance/schemas/bb.work_packet.v2.schema.json
+      - contracts/governance/schemas/bb.north_star_recovery.state.v1.schema.json
+      - scripts/packet/check_packet.py
+      - scripts/packet/derive_test_plan.py
+      - scripts/packet/render_state.py
+      - scripts/packet/test_ownership.v1.json
+      - tests/packet/test_governance_schemas.py
+      - tests/packet/test_check_packet.py
+      - tests/packet/test_packet_negatives.py
+      - tests/packet/test_derive_test_plan.py
+      - tests/packet/test_render_state.py
+      forbidden_paths:
+      - docs/plans/north_star_recovery/**
+      - contracts/governance/g2_abandoned_evidence_manifest.v2.json
+      - scripts/packet/g2_contract.py
+      - scripts/packet/g2_git_objects.py
+      - tests/packet/test_g2_contract.py
+      budgets: {files_max: 11, non_generated_lines_max: 1000, implementation_attempts_max: 2, review_rounds_max: 2, ci_reruns_max: 2}
+    negative_evidence:
+      reset_1_denied_blob_oids:
+      - 03739cc4dfdf3435f84031b925ce63afde1e02e1
+      - 03858929f70f33233bbb119a5d5ea942e31e3620
+      - 04cd41efc54542db1f34dd77980db7a2680b694f
+      - 14507de133dec5ee9bb8d38618102b0aee3f5fbc
+      - 2df7ec98b2d5cf70715f6e034d92458c0f0d5ca6
+      - 5b450a7137ace5145f281c7dd25c1221243c375c
+      - 5e92e88a1f84e4ffcd47f6a0ed18191a6b0fb66d
+      - 62c5d4f63ca2f306c9d95526e838a60dad66974a
+      - 63963441c636d98b503338fbf8a63d2dcd81bc93
+      - 63c5bdc6a3c124b5369c163ad298ff7d747f5d41
+      - 7e572bbf6c5c5f32bf8e0efd487525df5e3279e9
+      - 824752715c15f8a6de73d547adae7ad9b1cb6788
+      - 8ac36d6746ad7d06868b61c638360728069f63b2
+      - 8b00c4237d7178abd58cbe85f64c15f0ec678add
+      - 996f689476f51168502fd430a05e7c329e40076f
+      - cc3529b701e26d8a0a6b2ec387ef21d11d6f3019
+      - cd365883aa05bdcd5ac9a70049da3731297b653a
+      - d623d6ea53798723514767c52aed7257ee9ccd55
+      - d8f84bab793c1cd6d5ebf1397c4f7f181d308a59
+      - fd8637301d31caa2a8f8b32b3530a7169881842a
+      reset_2_failed_seed_blob_oids:
+      - 2061d197bdd512d755e54e9d5da2e15e215cadc1
+      - 5c99b9a3d1d103dc8bd135547de3f4925aa99ac9
+      - 764e8e56ef2853ae91719c937b783945d2ec4630
+      - c538a33136168ec17ddc23964d336d1068a1a232
+      - cbb5b7e4b0cc4ad190e397f8955b218eb7db82c8
+      - dbce0ce722034ff735e90fe17448004bb4e555df
+      round3_entry_blob_oids:
+      - 03739cc4dfdf3435f84031b925ce63afde1e02e1
+      - 03858929f70f33233bbb119a5d5ea942e31e3620
+      - 5e92e88a1f84e4ffcd47f6a0ed18191a6b0fb66d
+      - 62c5d4f63ca2f306c9d95526e838a60dad66974a
+      - 63c5bdc6a3c124b5369c163ad298ff7d747f5d41
+      - 824752715c15f8a6de73d547adae7ad9b1cb6788
+      - 8ac36d6746ad7d06868b61c638360728069f63b2
+      - 8b00c4237d7178abd58cbe85f64c15f0ec678add
+      - cc3529b701e26d8a0a6b2ec387ef21d11d6f3019
+      - cd365883aa05bdcd5ac9a70049da3731297b653a
+      - d623d6ea53798723514767c52aed7257ee9ccd55
+      all_denied_blob_oids:
+      - 03739cc4dfdf3435f84031b925ce63afde1e02e1
+      - 03858929f70f33233bbb119a5d5ea942e31e3620
+      - 04cd41efc54542db1f34dd77980db7a2680b694f
+      - 14507de133dec5ee9bb8d38618102b0aee3f5fbc
+      - 2061d197bdd512d755e54e9d5da2e15e215cadc1
+      - 2df7ec98b2d5cf70715f6e034d92458c0f0d5ca6
+      - 5b450a7137ace5145f281c7dd25c1221243c375c
+      - 5c99b9a3d1d103dc8bd135547de3f4925aa99ac9
+      - 5e92e88a1f84e4ffcd47f6a0ed18191a6b0fb66d
+      - 62c5d4f63ca2f306c9d95526e838a60dad66974a
+      - 63963441c636d98b503338fbf8a63d2dcd81bc93
+      - 63c5bdc6a3c124b5369c163ad298ff7d747f5d41
+      - 764e8e56ef2853ae91719c937b783945d2ec4630
+      - 7e572bbf6c5c5f32bf8e0efd487525df5e3279e9
+      - 824752715c15f8a6de73d547adae7ad9b1cb6788
+      - 8ac36d6746ad7d06868b61c638360728069f63b2
+      - 8b00c4237d7178abd58cbe85f64c15f0ec678add
+      - 996f689476f51168502fd430a05e7c329e40076f
+      - c538a33136168ec17ddc23964d336d1068a1a232
+      - cbb5b7e4b0cc4ad190e397f8955b218eb7db82c8
+      - cc3529b701e26d8a0a6b2ec387ef21d11d6f3019
+      - cd365883aa05bdcd5ac9a70049da3731297b653a
+      - d623d6ea53798723514767c52aed7257ee9ccd55
+      - d8f84bab793c1cd6d5ebf1397c4f7f181d308a59
+      - dbce0ce722034ff735e90fe17448004bb4e555df
+      - fd8637301d31caa2a8f8b32b3530a7169881842a
+      all_denied_blob_oids_sorted_union_count: 26
+      round3_manifest_entry_count: 11
+      round3_entries_strict_subset_of_reset_1_denied: true
+      reset_2_failed_disjoint_from_reset_1: true
+      candidate_blob_reuse: forbidden_for_all_26
+      manifest_v2_fields: [round3_entries, reset_1_denied_blob_oids, reset_2_failed_seed_blob_oids, all_denied_blob_oids, manifest_sha256]
+    module_ownership:
+      declarative_source_of_truth: bootstrap_policy.G2_reset_3_amendment
+      generated_projection:
+        path: contracts/governance/g2_reset_3_contract.v1.json
+        generator: scripts/packet/g2_contract.py
+        generator_inputs: reviewed_LOOP_SPEC_subtree_and_exact_plan_blob
+        generator_command: /usr/bin/python3 -I -S scripts/packet/g2_contract.py --emit-contract
+        projection_digest_and_source_identity_bound: true
+      g2_contract.py: exact_closed_record_action_ledger_review_invocation_and_no_spend_semantic_validators
+      g2_git_objects.py: config_free_full_oid_type_length_sha256_diff_budget_ancestry_and_topology_validator
+      verify_g2_anchor.py: thin_fail_closed_cli_and_validator_dispatch_only
+      tests_packet: positive_and_negative_contract_object_mode_and_projection_fixtures
+      planning_files: immutable_reviewed_inputs_not_worker_owned
+    generated_projection_and_differential_parity:
+      canonical_projection_must_equal_generated_bytes: true
+      canonical_source_digest_recomputed_before_generation: true
+      differential_runtime_and_embedded_overlap_required: true
+      compare_positive_preseed_fixture: true
+      compare_all_nine_negative_families: true
+      any_projection_or_differential_drift: block
+    preseed_admission_validator:
+      schema_version: bb.north_star_recovery.g2_reset_3_preseed_admission.v1
+      source_scalar_name: reset_3_active_authority_preseed_scalar
+      source_scalar_exact_bytes_committed_in_LOOP_SPEC: true
+      source_scalar_sha256_bound_after_planning_commit: true
+      source: |-
+        import json,sys
+        def pairs(items):
+            out={}
+            for key,value in items:
+                if key in out: raise ValueError("duplicate key")
+                out[key]=value
+            return out
+        d=json.load(sys.stdin,object_pairs_hook=pairs)
+        assert d["packet_key"]=="G2" and d["execution_epoch"]=="G2/reset-3"
+        assert d["scope_version"]=="bb.north_star_recovery.g2.scope.v4"
+        assert d["dispatch"]=="bootstrap_policy.G2_reset_3_amendment"
+        assert d["predecessor_ledger_tip"] is None and d["seed_files"]==8
+        assert d["candidate_files"]==11 and d["all_denied_blob_count"]==26
+      checks_active_authority_facts_only: true
+      full_runtime_verifier_is_seed_work: true
+      input_transport: supervisor_broker_authenticated_read_only_descriptors
+      source_or_input_drift: block
+    command_profiles:
+      preseed_admission:
+        executable: /usr/bin/python3
+        argv: [-I, -S, -c, reset_3_active_authority_preseed_scalar]
+        profile: supervisor_private_preseed_default_deny
+        network: denied
+        reads: [planning_core, activation, null_tip_genesis, fresh_reviews, fresh_actions, consumptions, capability_probe, invocation_manifest]
+        writes: [inherited_write_only_result_fifo]
+      seed_runtime_verifier:
+        executable: /usr/bin/python3
+        argv: [-I, -S, g2_contract.py, g2_git_objects.py, verify_g2_anchor.py]
+        profile: supervisor_private_seed_default_deny
+        network: denied
+        reads: [selected_seed_objects, exact_G0_root, planning_and_activation_records, negative_manifest_v2]
+        writes: [inherited_write_only_result_fifo]
+      candidate_budget:
+        executable: /usr/bin/python3
+        profile: historical_reset_2_candidate_budget_profile_immutable
+        network: denied
+        unchanged: true
+      installed_checker_and_renderer:
+        executable: /usr/bin/python3
+        profile: historical_reset_2_installed_checker_renderer_profiles_immutable
+        network: denied
+        unchanged: true
+      caller_environment_or_path_override: reject
+    result_contract:
+      schema_version: bb.north_star_recovery.g2_reset_3_result.v1
+      exact_fields: [schema_version, operation_class, reservation_id, phase_id, execution_epoch, scope_version, source_identity, result_object, result_sha256, status]
+      statuses: [completed, failed, canceled, timed_out, integrity_failed]
+      one_terminal_result_per_reservation: true
+      result_object_digest_recomputed_from_bytes: true
+      receipt_binds_preexecution_tip_result_completion_and_extended_tip: true
+      result_must_not_predict_completion_or_receipt_digest: true
+      missing_mismatch_or_future_digest: block
+    phase_map:
+      planning: {phase_id: G2/reset-3/planning, states: [g2_reset_3_planning], operations: [planning_core, planning_review]}
+      preseed: {phase_id: G2/reset-3/preseed, states: [g2_reset_3_preseed], operations: [predecessor_search, capability_probe, activation, human_action_consumption, live_recheck, seed_admission]}
+      seed: {phase_id: G2/reset-3/seed, states: [g2_reset_3_seed_preflight, g2_reset_3_seed_implementing, g2_reset_3_seed_review, g2_reset_3_seed_selection, g2_reset_3_seed_merge], operations: [seed_implementation_attempt, seed_review_round, seed_ci_rerun, seed_merge]}
+      candidate: {phase_id: G2/reset-3/candidate, states: [g2_reset_3_candidate_preflight, g2_reset_3_candidate_implementing, g2_reset_3_candidate_merge], operations: [candidate_implementation_attempt, candidate_review_round, candidate_ci_rerun, candidate_merge]}
+      evidence: {phase_id: G2/reset-3/evidence, states: [g2_reset_3_evidence_seal, g2_reset_3_final_review, g2_reset_3_review_seal], operations: [evidence_seal, final_review, review_seal]}
+      closure: {phase_id: G2/reset-3/closure, states: [g2_reset_3_anchor_selection, g2_reset_3_closure_validation, closed], operations: [anchor_selection, private_validation, installed_validation, renderer, packet_closure]}
+    state_machine:
+      entry: [select_frontier, g2_reset_selected, blocked_review]
+      generic_G2_transition_bypass: forbidden
+      transitions:
+      - {from: blocked_review, event: reset_3_planning_core_and_genesis_ready, to: g2_reset_3_planning}
+      - {from: g2_reset_3_planning, event: fresh_reviews_searches_probe_and_activation_ready, to: g2_reset_3_preseed}
+      - {from: g2_reset_3_preseed, event: fresh_actions_consumed_and_live_recheck_passed, to: g2_reset_3_seed_preflight}
+      - {from: g2_reset_3_seed_preflight, event: seed_preflight_passed, to: g2_reset_3_seed_implementing}
+      - {from: g2_reset_3_seed_implementing, event: seed_attempt_completed, to: g2_reset_3_seed_review}
+      - {from: g2_reset_3_seed_review, event: seed_reviews_approved, to: g2_reset_3_seed_selection}
+      - {from: g2_reset_3_seed_selection, event: fresh_seed_selection_consumed, to: g2_reset_3_seed_merge}
+      - {from: g2_reset_3_seed_merge, event: fresh_seed_merge_consumed, to: g2_reset_3_candidate_preflight}
+      - {from: g2_reset_3_candidate_preflight, event: candidate_preflight_passed, to: g2_reset_3_candidate_implementing}
+      - {from: g2_reset_3_candidate_implementing, event: candidate_attempt_and_reviews_passed, to: g2_reset_3_candidate_merge}
+      - {from: g2_reset_3_candidate_merge, event: candidate_merge_consumed, to: g2_reset_3_evidence_seal}
+      - {from: g2_reset_3_evidence_seal, event: evidence_sealed, to: g2_reset_3_final_review}
+      - {from: g2_reset_3_final_review, event: final_reviews_approved, to: g2_reset_3_review_seal}
+      - {from: g2_reset_3_review_seal, event: review_sealed, to: g2_reset_3_anchor_selection}
+      - {from: g2_reset_3_anchor_selection, event: fresh_anchor_selection_consumed, to: g2_reset_3_closure_validation}
+      - {from: g2_reset_3_closure_validation, event: private_installed_renderer_and_closure_passed, to: closed}
+      invalidation:
+        any_bound_identity_change: invalidate_all_downstream_and_refresh_state
+        seed_scope_or_source_change: g2_reset_3_seed_preflight
+        candidate_scope_or_source_change: g2_reset_3_candidate_preflight
+        budget_or_review_exhaustion: blocked_budget_or_blocked_review
+        runtime_capability_or_typed_failure: blocked_environment
+        missing_expired_replayed_action: blocked_external
+        interrupt_or_cancellation: blocked_review_with_typed_failure
+      universal_guards:
+      - supervisor_reservation_and_terminal_event_for_every_operation
+      - phase_and_aggregate_caps_below_or_at_cap
+      - exact_source_object_and_authority_identities_unchanged
+      - no_historical_reset_2_record_satisfies_an_active_guard
+      - no_worker_reviewer_or_candidate_self_finalization
+      - generic_verified_to_closed_transition_inapplicable
+    negative_fixture_requirement:
+      exact_family_count: 9
+      families:
+      - stale_reset_2_dispatch_or_historical_record_used_as_active_authority
+      - null_tip_or_genesis_predecessor_digest_cycle_or_wrong_chronology
+      - stale_missing_substituted_or_replayed_reviews_actions_consumptions_or_admission
+      - reset_1_reset_2_or_round3_denied_blob_union_omission_overlap_or_candidate_reuse
+      - seed_eight_path_scope_budget_manifest_or_module_ownership_drift
+      - unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift
+      - generated_projection_differential_parity_or_source_scalar_drift
+      - command_profile_sandbox_descriptor_environment_result_or_receipt_drift
+      - phase_state_ledger_counter_transition_closure_or_future_digest_violation
+      each_family_requires_named_negative_fixture: true
+      every_negative_is_fail_closed: true
 managed_pr_autonomy:
   supervisor_may:
   - create_isolated_worktree
