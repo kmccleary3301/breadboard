@@ -9540,8 +9540,14 @@ bootstrap_policy:
       - module_ownership_and_differential_parity
       - negative_fixture_families
     planning_contract:
-      parent_commit: b816fe34a345d6fd5f3c2002ec4f93700e541060
+      parent_commit: b365fa82c7a597f88146c51298bd1f9913dc9ecc
       required_commit_count: 1
+      commit_count_scope: one_repair_commit_after_reviewed_base
+      reviewed_base_head: b365fa82c7a597f88146c51298bd1f9913dc9ecc
+      reviewed_base_tree: 1166ac1ef87a28529f01b83175da5aa07a19951b
+      repair_parent_must_equal_reviewed_base_head: true
+      cumulative_tree_is_authority_not_historical_commit_count: true
+      historical_multiple_commits_before_reviewed_base_allowed: true
       allowed_paths:
       - docs/plans/north_star_recovery/EXECUTION_PLAN.md
       - docs/plans/north_star_recovery/LOOP_SPEC.yaml
@@ -9552,14 +9558,8 @@ bootstrap_policy:
       - docs/plans/north_star_recovery/EXECUTION_PLAN.md
       - docs/plans/north_star_recovery/LOOP_SPEC.yaml
       changed_paths_must_equal_exact_set: true
-      observed_reviewed_head_diff_from_parent:
-        reviewed_head: 1f1ac5ded879057583ba3d12d1a682c6632fba83
-        additions: 406
-        deletions: 24
-        changed_lines: 430
-        files: 2
-      repair_commit_must_retain_exact_paths_and_parent: true
-      repair_diff_additions_plus_deletions_max: 4500
+      repair_diff_is_measured_cumulatively_against_reviewed_base: true
+      post_repair_head_and_tree_recorded_after_commit_not_self_referenced: true
       self_reference_to_post_commit_identity: forbidden
       yaml_duplicate_keys: forbidden
     authority_facts:
@@ -9618,14 +9618,41 @@ bootstrap_policy:
         exact_operations: 4
         source: candidate
         no_additional_implementation_review_budget: true
+    artifact_chronology:
+      exact_order:
+      - seed_implementation_attempts
+      - seed_successful_exact_head_ci
+      - seed_reviews_and_review_seal
+      - seed_selection_and_merge_S
+      - candidate_implementation_and_merge_C
+      - evidence_seal_E
+      - candidate_successful_exact_head_ci_after_E
+      - candidate_review_round_1
+      - candidate_review_round_2
+      - review_seal_R
+      - anchor_selection_A
+      seed_successful_exact_head_ci_required_before_selection: true
+      candidate_ci_after_E_required_before_any_candidate_review: true
+      candidate_ci_exact_head_binds_C_and_E: true
+      candidate_reviews_exactly_two_rounds_and_four_operations: true
+      candidate_reviews_bind_E_reports_and_no_spend: true
+      review_seal_requires_candidate_ci_and_reviews_after_E: true
+      anchor_requires_review_seal_R: true
+      stale_pre_E_ci_or_review_or_pre_R_anchor: reject
+    no_spend_cross_bind_required_for_E_reviews_R_and_A: true
     fresh_actions:
       action_schema:
         version: bb.north_star_recovery.g2_human_action.v3
-        exact_fields: [schema_version, instance_id, action_id, response_id, response_event_handle, authorized_principal, authenticated_channel, packet_key, execution_epoch, scope_version, gate_id, protected_action, phase_id, activation_record_sha256, planning_core_sha256, exact_object_bindings, binding_payload_sha256, nonce, granted_at_utc, expires_at_utc, decision]
+        exact_fields: [schema_version, instance_id, action_id, response_id, response_event_handle, authorized_principal, authenticated_channel, packet_key, execution_epoch, scope_version, gate_id, protected_action, phase_id, activation_record_sha256, planning_core_sha256, exact_object_bindings, binding_payload, binding_payload_sha256, nonce, granted_at_utc, expires_at_utc, decision]
+        decision: granted
+        grant_must_be_unexpired_against_broker_clock: true
+        nonce_must_be_unique_and_single_use: true
         unknown_missing_extra_or_replayed_field: reject
       consumption_schema:
         version: bb.north_star_recovery.g2_action_consumption.v3
         exact_fields: [schema_version, instance_id, action_id, action_sha256, nonce, consumption_event_handle, authorized_principal, execution_epoch, scope_version, phase_id, consumed_once, consumed_at_utc, protected_action_result, protected_action_result_sha256, operation_ledger_event_sha256]
+        action_sha256_recomputed_from_exact_grant: true
+        consumption_must_follow_grant_and_precede_bound_operation: true
         consumed_once_must_be_true: true
         unknown_missing_extra_or_replayed_field: reject
       authorized_principal: Kyle_McCleary
@@ -9908,22 +9935,56 @@ bootstrap_policy:
         source_identity_and_digest_recomputed: true
       event:
         schema_version: bb.north_star_recovery.g2_operation_event.v3
-        exact_fields: [schema_version, packet_key, execution_epoch, phase_id, sequence, previous_event_sha256, event_kind, operation_class, reservation_id, actor_identity, source_identity, result_sha256, completion_event_sha256, receipt_sha256, event_sha256]
+        exact_fields: [schema_version, packet_key, execution_epoch, phase_id, sequence, previous_event_sha256, event_kind, operation_class, reservation_id, actor_identity, source_identity, result_sha256, completion_event_sha256, receipt_sha256, timestamp_utc, event_sha256]
         event_kinds: [reservation, completion, failure]
+        timestamp_must_be_at_or_before_broker_clock: true
+        sequence_starts_after_genesis_and_is_contiguous: true
         sequence_contiguous_and_previous_digest_bound: true
-        operation_class_must_be_active_result_class: true
+        reservation_precedes_matching_terminal_event: true
+        exactly_one_terminal_event_per_reservation: true
         result_completion_receipt_cross_bind: true
       active_epoch_scope: [G2/reset-3, bb.north_star_recovery.g2.scope.v4]
       owner: supervisor
       every_operation_requires_reservation_then_one_terminal_event: true
       reset_2_ledger_reference_or_tip_reuse: forbidden
+    no_spend_attestations:
+      owner: supervisor
+      canonical_empty_set:
+        bytes: "[]"
+        sha256: sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945
+        alternate_encoding: reject
+      zero_units_keys: [credentialed_launches, paid_api_calls, participant_launches, provider_launches, target_launches]
+      pre_execution:
+        schema_version: bb.north_star_recovery.g2_reset_3_no_spend_pre.v1
+        exact_fields: [schema_version, operation_class, operation_instance_id, reservation_id, phase_id, execution_epoch, scope_version, source_commit, source_tree, target_commit, target_tree, preexecution_ledger_tip_sha256, executable_sha256, argv_sha256, environment_sha256, sandbox_profile_sha256, descriptor_set_sha256, network_denied, credential_input_set_sha256, external_launch_route_set_sha256, spend_receipts_sha256, aggregate_spend_units, candidate_manifest_sha256, broker_budget_recomputation_sha256, pre_attestation_sha256]
+        emission: after_reservation_and_before_any_execution_or_outer_manifest
+        future_completion_receipt_and_post_attestation_digests_forbidden: true
+        empty_credentials_launches_and_spend_receipts_required: true
+        zero_units_exact_integer_map_required: true
+        digest_preimage_excludes_pre_attestation_sha256: true
+      post_execution:
+        schema_version: bb.north_star_recovery.g2_reset_3_no_spend_post.v1
+        exact_fields: [schema_version, operation_class, operation_instance_id, reservation_id, phase_id, execution_epoch, scope_version, source_commit, source_tree, target_commit, target_tree, pre_attestation_sha256, invocation_manifest_sha256, stage_result_sha256, stage_receipt_sha256, common_result_sha256, completion_event_sha256, common_receipt_sha256, extended_ledger_tip_sha256, network_denied, credential_input_set_sha256, external_launch_route_set_sha256, spend_receipts_sha256, aggregate_spend_units, post_attestation_sha256]
+        emission: after_stored_result_completion_and_receipt_and_before_E_or_downstream_transition
+        pre_attestation_and_all_actual_chain_digests_cross_bound: true
+        result_completion_receipt_and_extended_tip_recomputed: true
+        empty_credentials_launches_and_spend_receipts_required: true
+        zero_units_exact_integer_map_required: true
+        digest_preimage_excludes_post_attestation_sha256: true
+      cross_bind:
+        candidate_preflight_pre_attestation_to_candidate_merge: true
+        candidate_merge_post_attestation_to_E_and_review_records: true
+        E_to_candidate_C_and_operation_ledger_tip: true
+        candidate_reviews_to_E_reports_and_both_attestations: true
+        R_and_A_must_bind_no_spend_digests_without_predicting_future_values: true
+        any_unknown_missing_future_or_nonzero_spend_field: reject
     preseed_admission_validator:
       schema_version: bb.north_star_recovery.g2_reset_3_preseed_admission.v2
       source_scalar_name: reset_3_active_authority_preseed_scalar
       source_scalar_exact_bytes_committed_in_LOOP_SPEC: true
       source_scalar_sha256_bound_after_planning_commit: true
       authority_input_schema:
-        exact_fields: [schema_version, packet_key, execution_epoch, scope_version, dispatch, planning_core, planning_reviews, genesis, predecessor_searches, capability_probe, activation_record, preseed_actions, preseed_consumptions, live_recheck, invocation_manifest, descriptors, source_scalar_identity, required_seed_budget, required_candidate_budget, negative_manifest, negative_manifest_sha256, later_action_consumptions, event_sequence]
+        exact_fields: [schema_version, packet_key, execution_epoch, scope_version, dispatch, planning_core, planning_reviews, genesis, predecessor_searches, capability_probe, activation_record, preseed_actions, preseed_consumptions, live_recheck, invocation_manifest, descriptors, source_scalar_identity, required_seed_budget, required_candidate_budget, negative_manifest, negative_manifest_sha256, later_action_consumptions, event_sequence, ledger_events, stored_result, terminal_completion, post_exec_receipt]
         unknown_missing_extra_duplicate_or_noncanonical_field: reject
         packet_key_execution_epoch_scope_version_dispatch: [G2, G2/reset-3, bb.north_star_recovery.g2.scope.v4, bootstrap_policy.G2_reset_3_amendment]
         predecessor_ledger_tip: null
@@ -9931,23 +9992,100 @@ bootstrap_policy:
       descriptor_schema:
         exact_fields: [descriptor_id, role, origin, immutable_object_id, object_sha256, device, inode, mode, access_direction, opened_nofollow, capability_token]
         roles: [source_scalar, planning_core, planning_review, genesis, predecessor_search, capability_probe, activation_record, human_action, consumption, live_recheck, invocation_manifest, result_fifo]
+        origins: [supervisor_capability_store, broker_inherited_fd]
         access_direction: [read_only, write_only]
+        mode_by_direction: {read_only: ["0400", "0440"], write_only: ["0200", "0220"]}
+        result_fifo_role_is_write_only_and_broker_inherited: true
+        all_non_result_roles_are_read_only_and_supervisor_owned: true
+        device_inode_positive_integers_and_object_digest_recomputed: true
+        capability_token_nonempty_and_unique: true
+        opened_nofollow_must_be_true: true
         object_and_capability_identity_recomputed_by_broker: true
         duplicate_role_id_object_or_capability_token: reject
       invocation_manifest_schema:
         exact_fields: [schema_version, invocation_id, source_scalar_sha256, executable, executable_sha256, argv, argv_sha256, environment, environment_sha256, descriptor_ids, descriptor_set_sha256, broker_clock_utc, reservation_id, preexecution_ledger_tip_sha256, result_fifo_descriptor_id]
+        executable: /usr/bin/python3
+        executable_digest_recomputed_from_broker_pinned_bytes: true
+        argv_mode: [single_script, selected_source_scalar]
+        argv_must_be_one_script_or_dash_c_scalar: true
+        multiple_script_arguments: reject
+        selected_source_scalar_must_be_exact_reviewed_S_or_preseed_scalar: true
+        environment_closed_and_digest_recomputed: true
         caller_supplied_argv_environment_descriptors: reject
         canonical_digest_recomputed_before_launch: true
       required_records:
-        planning_core: {schema_version: bb.north_star_recovery.g2_planning_core.v3, fresh: true, binds_current_parent_head_tree_and_two_plan_blob_digests: true}
-        planning_reviews: {count: 2, schema_version: bb.north_star_recovery.g2_plan_review.v3, lenses: [specification_correctness, security_standards_generated_drift], fresh_exact_head: true, distinct_reviewers_and_runs: true, passed: true}
-        genesis: {schema_version: bb.north_star_recovery.g2_operation_genesis.v3, predecessor_tip: null, planning_core_sha256_bound: true, disposition_sha256_bound: true}
-        predecessor_searches: {count: 2, schema_version: bb.north_star_recovery.g2_predecessor_search.v1, fresh_after_reviews: true, independent_stores: true, complete_and_empty: true}
-        capability_probe: {count: 1, schema_version: bb.north_star_recovery.g2_capability_probe.v1, fresh_after_searches: true, broker_denial_receipt_required: true, passed: true}
-        activation_record: {schema_version: bb.north_star_recovery.g2_activation_record.v3, created_after_reviews_searches_probe: true, binds_all_prior_digests: true, passed: true}
-        preseed_actions: {count: 3, instance_ids: [G2_reset_3_scope_budget, G2_reset_3_governance, G2_reset_3_security], fresh: true, granted_and_unexpired: true}
-        preseed_consumptions: {count: 3, one_per_preseed_action: true, separate_single_use: true, completed_before_admission_reservation: true}
-        live_recheck: {count: 1, schema_version: bb.north_star_recovery.g2_live_recheck.v1, after_all_three_consumptions: true, freshness_seconds_max: 60, predecessor_tip_null: true, passed: true}
+        planning_core:
+          schema_version: bb.north_star_recovery.g2_planning_core.v3
+          exact_fields: [schema_version, parent_commit, head_commit, head_tree, execution_epoch, scope_version, plan_blob_oids, source_base_sha, source_merge_base_sha, fresh, reviewed_base_head, reviewed_base_tree, planning_core_sha256]
+          fresh: true
+          binds_current_parent_head_tree_and_two_plan_blob_digests: true
+          parent_and_head_identity_must_match_planning_contract: true
+        planning_reviews:
+          count: 2
+          schema_version: bb.north_star_recovery.g2_plan_review.v3
+          exact_fields: [schema_version, lens, reviewer_id, review_run_id, reviewed_head, reviewed_tree, source_base_sha, source_merge_base_sha, planning_core_sha256, fresh, passed, findings, completed_at_utc, review_sha256]
+          lenses: [specification_correctness, security_standards_generated_drift]
+          exact_lens_set_and_one_record_per_lens: true
+          fresh_exact_head: true
+          distinct_reviewers_and_runs: true
+          passed: true
+          findings_must_have_closed_severity_schema_and_zero_P0_P1_P2: true
+        genesis:
+          schema_version: bb.north_star_recovery.g2_operation_genesis.v3
+          exact_fields: [schema_version, packet_key, execution_epoch, scope_version, predecessor_ledger_tip_sha256, predecessor_disposition_sha256, planning_core_sha256, genesis_sha256, created_at_utc]
+          predecessor_tip: null
+          planning_core_sha256_bound: true
+          disposition_sha256_bound: true
+          genesis_digest_recomputed: true
+        predecessor_searches:
+          count: 2
+          schema_version: bb.north_star_recovery.g2_predecessor_search.v1
+          exact_fields: [schema_version, search_id, store_identity, query, query_digest, result, result_digest, activation_run_id, capability_store_instance_sha256, environment_fingerprint_sha256, planning_core_sha256, genesis_sha256, completed_at_utc, fresh, passed, receipt_sha256]
+          fresh_after_reviews: true
+          independent_stores: true
+          independent_query_and_result_digests: true
+          complete_and_empty: true
+          freshness_seconds_max: 900
+        capability_probe:
+          count: 1
+          schema_version: bb.north_star_recovery.g2_capability_probe.v1
+          exact_fields: [schema_version, probe_id, worker_id, challenge_sha256, denial_receipt_sha256, activation_run_id, planning_core_sha256, genesis_sha256, completed_at_utc, fresh, passed, result_sha256]
+          fresh_after_searches: true
+          broker_denial_receipt_required: true
+          passed: true
+        activation_record:
+          schema_version: bb.north_star_recovery.g2_activation_record.v3
+          exact_fields: [schema_version, activation_run_id, planning_core_sha256, planning_reviews_sha256, predecessor_searches_sha256, capability_probe_sha256, genesis_sha256, created_at_utc, fresh, binds_all_prior_digests, passed, activation_record_sha256]
+          created_after_reviews_searches_probe: true
+          binds_all_prior_digests: true
+          passed: true
+        preseed_actions:
+          count: 3
+          exact_instance_ids: [G2_reset_3_scope_budget, G2_reset_3_governance, G2_reset_3_security]
+          schema_version: bb.north_star_recovery.g2_human_action.v3
+          exact_fields: [schema_version, instance_id, action_id, response_id, response_event_handle, authorized_principal, authenticated_channel, packet_key, execution_epoch, scope_version, gate_id, protected_action, phase_id, activation_record_sha256, planning_core_sha256, exact_object_bindings, binding_payload, binding_payload_sha256, nonce, granted_at_utc, expires_at_utc, decision]
+          fresh: true
+          granted_and_unexpired_against_broker_clock: true
+        preseed_consumptions:
+          count: 3
+          schema_version: bb.north_star_recovery.g2_action_consumption.v3
+          exact_fields: [schema_version, instance_id, action_id, action_sha256, nonce, consumption_event_handle, authorized_principal, execution_epoch, scope_version, phase_id, consumed_once, consumed_at_utc, protected_action_result, protected_action_result_sha256, operation_ledger_event_sha256]
+          one_per_preseed_action: true
+          separate_single_use: true
+          action_digest_and_nonce_recomputed: true
+          completed_before_admission_reservation: true
+        live_recheck:
+          count: 1
+          schema_version: bb.north_star_recovery.g2_live_recheck.v1
+          exact_fields: [schema_version, recheck_id, query, result, activation_record_sha256, planning_core_sha256, genesis_sha256, preseed_consumptions_sha256, predecessor_tip, checked_at_utc, freshness_seconds, fresh, passed, recheck_sha256]
+          after_all_three_consumptions: true
+          freshness_seconds_max: 60
+          predecessor_tip_null: true
+          passed: true
+        ledger_events:
+          schema_version: bb.north_star_recovery.g2_operation_event.v3
+          exact_fields: [schema_version, packet_key, execution_epoch, phase_id, sequence, previous_event_sha256, event_kind, operation_class, reservation_id, actor_identity, source_identity, result_sha256, completion_event_sha256, receipt_sha256, timestamp_utc, event_sha256]
+          full_sequence_timestamps_previous_digest_and_reservation_binding: true
       required_sequence:
       - planning_core
       - genesis
@@ -9986,49 +10124,72 @@ bootstrap_policy:
         broker_completion_receipt_added_after_result_storage: true
         missing_mismatch_failed_or_future_digest: block
       source: |-
-        import hashlib,json,sys
-        def canon(x): return json.dumps(x,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode()
+        import datetime,hashlib,json,sys
+        def canon(x): return json.dumps(x,sort_keys=True,separators=(",",":"),ensure_ascii=False).encode("utf-8")
         def sha(x): return hashlib.sha256(canon(x)).hexdigest()
-        def keys(x,expected):
-            if set(x)!=set(expected): raise ValueError("closed key set")
-        def rec(x):
-            if isinstance(x,dict) and x.get("sha256"):
-                body={k:v for k,v in x.items() if k!="sha256"}
-                if x["sha256"]!=sha(body): raise ValueError("record digest mismatch")
-                return x["sha256"]
-            return sha(x)
-        expected=["schema_version","packet_key","execution_epoch","scope_version","dispatch","planning_core","planning_reviews","genesis","predecessor_searches","capability_probe","activation_record","preseed_actions","preseed_consumptions","live_recheck","invocation_manifest","descriptors","source_scalar_identity","required_seed_budget","required_candidate_budget","negative_manifest","negative_manifest_sha256","later_action_consumptions","event_sequence"]
-        d=json.load(sys.stdin,object_pairs_hook=lambda p: {k:v for k,v in p} if len({k for k,v in p})==len(p) else (_ for _ in ()).throw(ValueError("duplicate key")))
-        keys(d,expected)
+        def exact(x,fields):
+            if not isinstance(x,dict) or set(x)!=set(fields): raise ValueError("closed schema")
+        def time(s):
+            if not isinstance(s,str): raise ValueError("timestamp")
+            return datetime.datetime.fromisoformat(s.replace("Z","+00:00"))
+        def fresh(s,clock,seconds):
+            t=time(s); return clock-datetime.timedelta(seconds=seconds)<=t<=clock
+        def nonempty(x): return isinstance(x,str) and bool(x)
+        def oid(x): return isinstance(x,str) and len(x)==40 and all(c in "0123456789abcdef" for c in x)
+        def digest(x): return isinstance(x,str) and len(x)==64 and all(c in "0123456789abcdef" for c in x)
+        def reject_duplicate(pairs):
+            out={}
+            for k,v in pairs:
+                if k in out: raise ValueError("duplicate key")
+                out[k]=v
+            return out
+        top=["schema_version","packet_key","execution_epoch","scope_version","dispatch","planning_core","planning_reviews","genesis","predecessor_searches","capability_probe","activation_record","preseed_actions","preseed_consumptions","live_recheck","invocation_manifest","descriptors","source_scalar_identity","required_seed_budget","required_candidate_budget","negative_manifest","negative_manifest_sha256","later_action_consumptions","event_sequence","ledger_events","stored_result","terminal_completion","post_exec_receipt"]
+        d=json.load(sys.stdin,object_pairs_hook=reject_duplicate); exact(d,top)
         assert (d["packet_key"],d["execution_epoch"],d["scope_version"],d["dispatch"])==("G2","G2/reset-3","bb.north_star_recovery.g2.scope.v4","bootstrap_policy.G2_reset_3_amendment")
-        assert d["genesis"]["predecessor_tip"] is None and len(d["planning_reviews"])==2 and len(d["predecessor_searches"])==2
-        assert len(d["preseed_actions"])==3 and len(d["preseed_consumptions"])==3 and d["later_action_consumptions"]==[]
-        assert d["planning_core"]["schema_version"]=="bb.north_star_recovery.g2_planning_core.v3" and d["planning_core"]["fresh"] is True
-        assert all(x["schema_version"]=="bb.north_star_recovery.g2_plan_review.v3" and x["lens"] in ("specification_correctness","security_standards_generated_drift") and x["reviewed_head"]==d["planning_core"]["head_commit"] and x["passed"] is True for x in d["planning_reviews"])
-        assert len({x["review_run_id"] for x in d["planning_reviews"]})==2 and len({x["reviewer_id"] for x in d["planning_reviews"]})==2
-        assert all(x["schema_version"]=="bb.north_star_recovery.g2_predecessor_search.v1" and x["store_identity"] for x in d["predecessor_searches"])
-        assert d["capability_probe"]["schema_version"]=="bb.north_star_recovery.g2_capability_probe.v1" and d["capability_probe"]["denial_receipt_sha256"]
-        assert d["activation_record"]["schema_version"]=="bb.north_star_recovery.g2_activation_record.v3" and d["activation_record"]["binds_all_prior_digests"] is True
-        ids=["G2_reset_3_scope_budget","G2_reset_3_governance","G2_reset_3_security"]
-        assert [x["instance_id"] for x in d["preseed_actions"]]==ids and all(x["granted_at_utc"]<x["expires_at_utc"] and x["activation_record_sha256"]==rec(d["activation_record"]) for x in d["preseed_actions"])
-        assert [x["action_id"] for x in d["preseed_consumptions"]]==[x["action_id"] for x in d["preseed_actions"]] and all(x["action_sha256"] for x in d["preseed_consumptions"])
-        assert d["event_sequence"]==["planning_core","genesis","planning_reviews","predecessor_search_1","predecessor_search_2","capability_probe","activation_record","preseed_action_and_consumption_1","preseed_action_and_consumption_2","preseed_action_and_consumption_3","live_recheck","admission_reservation","validator_invocation"]
-        assert sha(d["negative_manifest"])==d["negative_manifest_sha256"]
-        assert d["invocation_manifest"]["argv_sha256"]==sha(d["invocation_manifest"]["argv"]) and d["invocation_manifest"]["environment_sha256"]==sha(d["invocation_manifest"]["environment"])
-        assert d["source_scalar_identity"]["sha256"]==d["invocation_manifest"]["source_scalar_sha256"]
-        assert d["invocation_manifest"]["reservation_id"] and d["invocation_manifest"]["preexecution_ledger_tip_sha256"]==d["genesis"].get("predecessor_tip_sha256")
-        assert d["invocation_manifest"]["broker_clock_utc"] and d["source_scalar_identity"]["execution_epoch"]=="G2/reset-3"
-        assert all(d["preseed_consumptions"][i]["action_id"]==d["preseed_actions"][i]["action_id"] and d["preseed_consumptions"][i]["action_sha256"]==rec(d["preseed_actions"][i]) for i in range(3))
-        assert all(x.get("fresh") is True and x.get("passed") is True for x in d["planning_reviews"]+d["predecessor_searches"]+[d["capability_probe"],d["activation_record"]])
-        assert all(x.get("consumed_once") is True for x in d["preseed_consumptions"])
-        assert d["live_recheck"]["passed"] is True and d["live_recheck"]["predecessor_tip"] is None
-        for x in d["descriptors"]: keys(x,["descriptor_id","role","origin","immutable_object_id","object_sha256","device","inode","mode","access_direction","opened_nofollow","capability_token"])
-        assert d["invocation_manifest"]["descriptor_set_sha256"]==sha(d["descriptors"])
-        assert d["required_seed_budget"]=={"files_max":8,"non_generated_lines_max":5000,"implementation_attempts_max":3,"review_rounds_max":3,"ci_reruns_max":3}
-        assert d["required_candidate_budget"]=={"files_max":11,"non_generated_lines_max":1000,"implementation_attempts_max":2,"review_rounds_max":2,"ci_reruns_max":2}
-        result={"schema_version":"bb.north_star_recovery.g2_seed_admission.v3","packet_key":d["packet_key"],"execution_epoch":d["execution_epoch"],"scope_version":d["scope_version"],"dispatch":d["dispatch"],"planning_core_sha256":rec(d["planning_core"]),"planning_reviews_sha256":rec(d["planning_reviews"]),"genesis_sha256":rec(d["genesis"]),"predecessor_searches_sha256":rec(d["predecessor_searches"]),"capability_probe_sha256":rec(d["capability_probe"]),"activation_record_sha256":rec(d["activation_record"]),"preseed_actions_sha256":rec(d["preseed_actions"]),"preseed_consumptions_sha256":rec(d["preseed_consumptions"]),"live_recheck_sha256":rec(d["live_recheck"]),"invocation_manifest_sha256":rec(d["invocation_manifest"]),"descriptor_set_sha256":sha(d["descriptors"]),"negative_manifest_sha256":d["negative_manifest_sha256"],"preexecution_ledger_tip_sha256":d["genesis"].get("predecessor_tip_sha256"),"reservation_id":d["invocation_manifest"]["reservation_id"],"passed":True}
-        result["result_sha256"]=sha(result)
-        sys.stdout.write(json.dumps(result,sort_keys=True,separators=(",",":")))
+        inv=d["invocation_manifest"]; invf=["schema_version","invocation_id","source_scalar_sha256","executable","executable_sha256","argv","argv_sha256","environment","environment_sha256","descriptor_ids","descriptor_set_sha256","broker_clock_utc","reservation_id","preexecution_ledger_tip_sha256","result_fifo_descriptor_id"]; exact(inv,invf); clock=time(inv["broker_clock_utc"])
+        assert inv["executable"]=="/usr/bin/python3" and inv["argv_sha256"]==sha(inv["argv"]) and isinstance(inv["argv"],list) and len(inv["argv"]) in (3,4) and inv["argv"][:2]==["-I","-S"] and ((len(inv["argv"])==4 and inv["argv"][2]=="-c" and nonempty(inv["argv"][3])) or (len(inv["argv"])==3 and inv["argv"][2].endswith(".py"))) and sum(isinstance(a,str) and a.endswith(".py") for a in inv["argv"])<=1
+        assert inv["environment_sha256"]==sha(inv["environment"]) and inv["environment"]=={"PYTHONHASHSEED":"0","LC_ALL":"C","TZ":"UTC","UV_OFFLINE":"1"}
+        sid=d["source_scalar_identity"]; exact(sid,["name","sha256","byte_length","execution_epoch","source_commit","source_tree"]); assert digest(sid["sha256"]) and sid["sha256"]==inv["source_scalar_sha256"] and sid["execution_epoch"]=="G2/reset-3"
+        core=d["planning_core"]; exact(core,["schema_version","parent_commit","head_commit","head_tree","execution_epoch","scope_version","plan_blob_oids","source_base_sha","source_merge_base_sha","fresh","reviewed_base_head","reviewed_base_tree","planning_core_sha256"]); assert core["schema_version"]=="bb.north_star_recovery.g2_planning_core.v3" and core["fresh"] is True and core["parent_commit"]=="b365fa82c7a597f88146c51298bd1f9913dc9ecc" and core["reviewed_base_head"]==core["parent_commit"] and core["reviewed_base_tree"]=="1166ac1ef87a28529f01b83175da5aa07a19951b" and core["head_commit"]!=core["parent_commit"] and oid(core["head_commit"]) and oid(core["head_tree"]) and len(core["plan_blob_oids"])==2
+        assert core["planning_core_sha256"]==sha({k:v for k,v in core.items() if k!="planning_core_sha256"}) and all(oid(x) for x in core["plan_blob_oids"])
+        reviews=d["planning_reviews"]; assert len(reviews)==2 and {x["lens"] for x in reviews}=={"specification_correctness","security_standards_generated_drift"} and len({x["reviewer_id"] for x in reviews})==2 and len({x["review_run_id"] for x in reviews})==2
+        rf=["schema_version","lens","reviewer_id","review_run_id","reviewed_head","reviewed_tree","source_base_sha","source_merge_base_sha","planning_core_sha256","fresh","passed","findings","completed_at_utc","review_sha256"]
+        assert all(x["review_sha256"]==sha({k:v for k,v in x.items() if k!="review_sha256"}) for x in reviews)
+        for x in reviews:
+            exact(x,rf); assert x["schema_version"]=="bb.north_star_recovery.g2_plan_review.v3" and x["reviewed_head"]==core["head_commit"] and x["reviewed_tree"]==core["head_tree"] and x["planning_core_sha256"]==core["planning_core_sha256"] and x["fresh"] is True and x["passed"] is True and fresh(x["completed_at_utc"],clock,900) and isinstance(x["findings"],list) and all(isinstance(f,dict) and set(f)=={"severity","finding_id","status"} and f["severity"] in {"P0","P1","P2","P3"} for f in x["findings"]) and not any(f["severity"] in {"P0","P1","P2"} for f in x["findings"])
+        gen=d["genesis"]; gf=["schema_version","packet_key","execution_epoch","scope_version","predecessor_ledger_tip_sha256","predecessor_disposition_sha256","planning_core_sha256","genesis_sha256","created_at_utc"]; exact(gen,gf); assert gen["schema_version"]=="bb.north_star_recovery.g2_operation_genesis.v3" and gen["predecessor_ledger_tip_sha256"] is None and gen["planning_core_sha256"]==core["planning_core_sha256"] and time(gen["created_at_utc"])<=clock
+        assert gen["genesis_sha256"]==sha({k:v for k,v in gen.items() if k!="genesis_sha256"}) and digest(gen["predecessor_disposition_sha256"])
+        searches=d["predecessor_searches"]; sf=["schema_version","search_id","store_identity","query","query_digest","result","result_digest","activation_run_id","capability_store_instance_sha256","environment_fingerprint_sha256","planning_core_sha256","genesis_sha256","completed_at_utc","fresh","passed","receipt_sha256"]; assert len(searches)==2 and len({x["store_identity"] for x in searches})==2 and len({x["query_digest"] for x in searches})==2
+        for x in searches:
+            exact(x,sf); assert x["schema_version"]=="bb.north_star_recovery.g2_predecessor_search.v1" and x["query_digest"]==sha(x["query"]) and x["result"]=="not_found" and x["result_digest"]==sha(x["result"]) and x["fresh"] is True and x["passed"] is True and fresh(x["completed_at_utc"],clock,900) and x["planning_core_sha256"]==core["planning_core_sha256"] and x["genesis_sha256"]==gen["genesis_sha256"]
+        assert all(x["receipt_sha256"]==sha({k:v for k,v in x.items() if k!="receipt_sha256"}) for x in searches)
+        probe=d["capability_probe"]; exact(probe,["schema_version","probe_id","worker_id","challenge_sha256","denial_receipt_sha256","activation_run_id","planning_core_sha256","genesis_sha256","completed_at_utc","fresh","passed","result_sha256"]); assert probe["schema_version"]=="bb.north_star_recovery.g2_capability_probe.v1" and probe["fresh"] is True and probe["passed"] is True and fresh(probe["completed_at_utc"],clock,900)
+        assert probe["result_sha256"]==sha({k:v for k,v in probe.items() if k!="result_sha256"}) and digest(probe["denial_receipt_sha256"])
+        act=d["activation_record"]; exact(act,["schema_version","activation_run_id","planning_core_sha256","planning_reviews_sha256","predecessor_searches_sha256","capability_probe_sha256","genesis_sha256","created_at_utc","fresh","binds_all_prior_digests","passed","activation_record_sha256"]); assert act["schema_version"]=="bb.north_star_recovery.g2_activation_record.v3" and act["fresh"] is True and act["binds_all_prior_digests"] is True and act["passed"] is True and time(act["created_at_utc"])>max(time(x["completed_at_utc"]) for x in reviews+searches+[probe])
+        assert act["activation_record_sha256"]==sha({k:v for k,v in act.items() if k!="activation_record_sha256"}) and act["planning_reviews_sha256"]==sha(reviews) and act["predecessor_searches_sha256"]==sha(searches) and act["capability_probe_sha256"]==sha(probe)
+        ids=["G2_reset_3_scope_budget","G2_reset_3_governance","G2_reset_3_security"]; actions=d["preseed_actions"]; af=["schema_version","instance_id","action_id","response_id","response_event_handle","authorized_principal","authenticated_channel","packet_key","execution_epoch","scope_version","gate_id","protected_action","phase_id","activation_record_sha256","planning_core_sha256","exact_object_bindings","binding_payload","binding_payload_sha256","nonce","granted_at_utc","expires_at_utc","decision"]; assert [x["instance_id"] for x in actions]==ids and len({x["nonce"] for x in actions})==3
+        for x in actions:
+            exact(x,af); assert x["schema_version"]=="bb.north_star_recovery.g2_human_action.v3" and x["authorized_principal"]=="Kyle_McCleary" and x["execution_epoch"]=="G2/reset-3" and x["scope_version"]=="bb.north_star_recovery.g2.scope.v4" and x["decision"]=="granted" and x["binding_payload_sha256"]==sha(x["binding_payload"]) and time(x["granted_at_utc"])<=clock<time(x["expires_at_utc"]) and x["activation_record_sha256"]==act["activation_record_sha256"]
+        cons=d["preseed_consumptions"]; cf=["schema_version","instance_id","action_id","action_sha256","nonce","consumption_event_handle","authorized_principal","execution_epoch","scope_version","phase_id","consumed_once","consumed_at_utc","protected_action_result","protected_action_result_sha256","operation_ledger_event_sha256"]; assert len(cons)==3
+        for a,c in zip(actions,cons):
+            exact(c,cf); assert c["schema_version"]=="bb.north_star_recovery.g2_action_consumption.v3" and c["instance_id"]==a["instance_id"] and c["action_id"]==a["action_id"] and c["action_sha256"]==sha(a) and c["nonce"]==a["nonce"] and c["consumed_once"] is True and time(a["granted_at_utc"])<=time(c["consumed_at_utc"])<=clock and c["protected_action_result_sha256"]==sha(c["protected_action_result"])
+        live=d["live_recheck"]; exact(live,["schema_version","recheck_id","query","result","activation_record_sha256","planning_core_sha256","genesis_sha256","preseed_consumptions_sha256","predecessor_tip","checked_at_utc","freshness_seconds","fresh","passed","recheck_sha256"]); assert live["schema_version"]=="bb.north_star_recovery.g2_live_recheck.v1" and live["result"]=="not_found" and live["predecessor_tip"] is None and live["passed"] is True and time(live["checked_at_utc"])>=max(time(x["consumed_at_utc"]) for x in cons) and 0<=live["freshness_seconds"]<=60 and fresh(live["checked_at_utc"],clock,60)
+        desc=d["descriptors"]; df=["descriptor_id","role","origin","immutable_object_id","object_sha256","device","inode","mode","access_direction","opened_nofollow","capability_token"]; assert len({x["descriptor_id"] for x in desc})==len(desc) and len({x["capability_token"] for x in desc})==len(desc) and len({x["immutable_object_id"] for x in desc})==len(desc)
+        for x in desc:
+            exact(x,df); assert x["origin"] in {"supervisor_capability_store","broker_inherited_fd"} and x["access_direction"] in {"read_only","write_only"} and x["opened_nofollow"] is True and isinstance(x["device"],int) and x["device"]>0 and isinstance(x["inode"],int) and x["inode"]>0 and nonempty(x["capability_token"]) and digest(x["object_sha256"]) and (x["role"]=="result_fifo")==(x["access_direction"]=="write_only")
+        assert inv["descriptor_set_sha256"]==sha(desc)
+        nm=d["negative_manifest"]; exact(nm,["schema_version","execution_epoch","scope_version","source_objects","entries","round3_entry_ids","reset_1_denied_blob_oids","reset_2_failed_seed_blob_oids","all_denied_blob_oids","manifest_sha256"]); assert nm["schema_version"]=="bb.north_star_recovery.g2_negative_manifest.v2" and len(nm["entries"])==11 and len(nm["reset_1_denied_blob_oids"])==20 and len(nm["reset_2_failed_seed_blob_oids"])==6 and len(set(nm["all_denied_blob_oids"]))==26 and sorted(nm["all_denied_blob_oids"])==sorted(set(nm["reset_1_denied_blob_oids"]+nm["reset_2_failed_seed_blob_oids"])) and set(nm["round3_entry_ids"])<set(nm["reset_1_denied_blob_oids"]) and set(nm["reset_2_failed_seed_blob_oids"]).isdisjoint(nm["reset_1_denied_blob_oids"]) and nm["manifest_sha256"]==sha({k:v for k,v in nm.items() if k!="manifest_sha256"}) and d["negative_manifest_sha256"]==nm["manifest_sha256"]
+        for x in nm["entries"]:
+            exact(x,["entry_id","source_epoch","source_role","path","commit_oid","tree_oid","blob_oid","blob_sha256","mode","size_bytes","line_count"]); assert x["source_role"] in {"round3_entry","reset_1_denied","reset_2_failed_seed"} and oid(x["commit_oid"]) and oid(x["tree_oid"]) and oid(x["blob_oid"]) and digest(x["blob_sha256"]) and x["mode"]=="100644" and isinstance(x["size_bytes"],int) and isinstance(x["line_count"],int)
+        events=d["ledger_events"]; ef=["schema_version","packet_key","execution_epoch","phase_id","sequence","previous_event_sha256","event_kind","operation_class","reservation_id","actor_identity","source_identity","result_sha256","completion_event_sha256","receipt_sha256","timestamp_utc","event_sha256"]; assert events and [x["sequence"] for x in events]==list(range(1,len(events)+1)); previous=gen["genesis_sha256"]; reservations={}
+        for e in events:
+            exact(e,ef); assert e["schema_version"]=="bb.north_star_recovery.g2_operation_event.v3" and e["packet_key"]=="G2" and e["execution_epoch"]=="G2/reset-3" and e["previous_event_sha256"]==previous and time(e["timestamp_utc"])<=clock and e["event_sha256"]==sha({k:v for k,v in e.items() if k!="event_sha256"}); previous=e["event_sha256"]; reservations.setdefault(e["reservation_id"],[]).append(e)
+        assert all(sum(e["event_kind"] in {"completion","failure"} for e in rows)==1 for rows in reservations.values()) and inv["reservation_id"] in reservations
+        seq=["planning_core","genesis","planning_reviews","predecessor_search_1","predecessor_search_2","capability_probe","activation_record","preseed_action_and_consumption_1","preseed_action_and_consumption_2","preseed_action_and_consumption_3","live_recheck","admission_reservation","validator_invocation","stored_passed_result","terminal_completion","post_exec_receipt"]; assert d["event_sequence"]==seq and d["later_action_consumptions"]==[]
+        result=d["stored_result"]; result_fields=["schema_version","packet_key","execution_epoch","scope_version","dispatch","planning_core_sha256","planning_reviews_sha256","genesis_sha256","predecessor_searches_sha256","capability_probe_sha256","activation_record_sha256","preseed_actions_sha256","preseed_consumptions_sha256","live_recheck_sha256","invocation_manifest_sha256","descriptor_set_sha256","negative_manifest_sha256","preexecution_ledger_tip_sha256","reservation_id","passed","result_sha256"]; exact(result,result_fields); assert result["passed"] is True and result["result_sha256"]==sha({k:v for k,v in result.items() if k!="result_sha256"}) and not any("completion" in k or "receipt" in k for k in result)
+        exact(d["terminal_completion"],["completion_event_sha256","reservation_id","stored_result_sha256","extended_ledger_tip_sha256"]); assert d["terminal_completion"]["stored_result_sha256"]==result["result_sha256"]
+        exact(d["post_exec_receipt"],["completion_event_sha256","receipt_sha256","extended_ledger_tip_sha256"]); assert d["post_exec_receipt"]["completion_event_sha256"]==d["terminal_completion"]["completion_event_sha256"] and d["post_exec_receipt"]["extended_ledger_tip_sha256"]==d["terminal_completion"]["extended_ledger_tip_sha256"]
+        out={k:result[k] for k in result_fields if k!="result_sha256"}; out["result_sha256"]=sha(out); assert result["result_sha256"]==out["result_sha256"]; sys.stdout.write(json.dumps(out,sort_keys=True,separators=(",",":")))
       full_runtime_verifier_is_seed_work: true
       input_transport: supervisor_broker_authenticated_read_only_descriptors
       source_or_input_drift: block
@@ -10038,6 +10199,9 @@ bootstrap_policy:
         unknown_missing_extra_or_caller_override: reject
         network_must_be_denied: true
         credentials_must_equal_empty_list: true
+        executable_must_be_absolute_usr_bin_python3: true
+        argv_must_be_single_script_or_dash_c_scalar: true
+        multiple_script_arguments: reject
         canonical_environment_and_argv_digest_recomputed: true
       preseed_admission:
         profile_id: g2_reset_3_preseed_admission_v2
@@ -10064,7 +10228,7 @@ bootstrap_policy:
         subject: reset_3_seed
         executable: /usr/bin/python3
         executable_sha256: broker_pinned
-        argv: [-I, -S, g2_contract.py, g2_git_objects.py, verify_g2_anchor.py]
+        argv: [-I, -S, -c, selected_S_seed_runtime_scalar]
         environment: {PYTHONHASHSEED: "0", LC_ALL: C, TZ: UTC, UV_OFFLINE: "1"}
         network: denied
         credentials: []
@@ -10082,7 +10246,7 @@ bootstrap_policy:
         subject: reset_3_candidate_budget
         executable: /usr/bin/python3
         executable_sha256: broker_pinned
-        argv: [-I, -S, candidate_budget_validator.py]
+        argv: [-I, -S, -c, selected_S_candidate_budget_scalar]
         environment: {PYTHONHASHSEED: "0", LC_ALL: C, TZ: UTC, UV_OFFLINE: "1"}
         network: denied
         credentials: []
@@ -10100,7 +10264,7 @@ bootstrap_policy:
         subject: reset_3_installed_checker_and_renderer
         executable: /usr/bin/python3
         executable_sha256: broker_pinned
-        argv: [-I, -S, check_packet.py, render_state.py]
+        argv: [-I, -S, check_packet.py]
         environment: {PYTHONHASHSEED: "0", LC_ALL: C, TZ: UTC, UV_OFFLINE: "1"}
         network: denied
         credentials: []
@@ -10108,6 +10272,24 @@ bootstrap_policy:
         git: {config: disabled, refs: denied, hooks: denied}
         descriptors: broker_materialized_anchor_evidence_descriptor_set
         source_identity: reset_3_candidate_source_event
+        reservation_binding: closure_operation_reservation
+        result_fifo: inherited_write_only_result_fifo
+        receipt_binding: broker_post_exec_receipt_v1
+      renderer:
+        profile_id: g2_reset_3_renderer_v1
+        execution_epoch: G2/reset-3
+        scope_version: bb.north_star_recovery.g2.scope.v4
+        subject: reset_3_renderer
+        executable: /usr/bin/python3
+        executable_sha256: broker_pinned
+        argv: [-I, -S, render_state.py]
+        environment: {PYTHONHASHSEED: "0", LC_ALL: C, TZ: UTC, UV_OFFLINE: "1"}
+        network: denied
+        credentials: []
+        filesystem: {read: [selected_anchor_A, authenticated_evidence_snapshot], write: [new_private_renderer_output, inherited_write_only_result_fifo], all_other_paths: denied}
+        git: {config: disabled, refs: denied, hooks: denied}
+        descriptors: broker_materialized_anchor_evidence_descriptor_set
+        source_identity: reset_3_closure_source_event
         reservation_binding: closure_operation_reservation
         result_fifo: inherited_write_only_result_fifo
         receipt_binding: broker_post_exec_receipt_v1
@@ -10157,6 +10339,44 @@ bootstrap_policy:
           source_identity: reset_3_closure_source_event
           reservation_binding: operation_ledger_reservation
           receipt_binding: broker_post_exec_receipt_v1
+        dispatch:
+          planning_core_seal: g2_reset_3_supervisor_records
+          planning_review: g2_reset_3_supervisor_records
+          predecessor_search: g2_reset_3_supervisor_records
+          capability_probe: g2_reset_3_supervisor_records
+          activation_record_seal: g2_reset_3_supervisor_records
+          human_scope_budget_action: g2_reset_3_supervisor_records
+          human_governance_action: g2_reset_3_supervisor_records
+          human_security_boundary_action: g2_reset_3_supervisor_records
+          human_planning_action_consumption: g2_reset_3_supervisor_records
+          live_recheck: g2_reset_3_supervisor_records
+          seed_admission: g2_reset_3_supervisor_records
+          seed_implementation_attempt: g2_reset_3_seed_operations
+          seed_review_round: g2_reset_3_seed_operations
+          seed_ci_rerun: g2_reset_3_seed_operations
+          human_seed_selection_action: g2_reset_3_seed_operations
+          human_seed_action_consumption: g2_reset_3_seed_operations
+          human_seed_merge_action: g2_reset_3_seed_operations
+          seed_merge: g2_reset_3_seed_operations
+          candidate_preflight: g2_reset_3_candidate_operations
+          candidate_implementation_attempt: g2_reset_3_candidate_operations
+          candidate_review_round: g2_reset_3_candidate_operations
+          candidate_ci_rerun: g2_reset_3_candidate_operations
+          human_candidate_merge_action: g2_reset_3_candidate_operations
+          human_candidate_action_consumption: g2_reset_3_candidate_operations
+          candidate_merge: g2_reset_3_candidate_operations
+          evidence_seal: g2_reset_3_evidence_operations
+          final_review: g2_reset_3_evidence_operations
+          review_seal: g2_reset_3_evidence_operations
+          human_closure_anchor_selection_action: g2_reset_3_closure_operations
+          human_closure_action_consumption: g2_reset_3_closure_operations
+          anchor_selection: g2_reset_3_closure_operations
+          private_validation: g2_reset_3_closure_operations
+          installed_validation: g2_reset_3_closure_operations
+          renderer: renderer
+          human_packet_closure_action: g2_reset_3_closure_operations
+          packet_closure: g2_reset_3_closure_operations
+        dispatch_key_set_exactly_equals_result_operation_class_set: true
       every_operation_class_has_one_reset_3_owned_profile: true
       caller_environment_or_path_override: reject
       historical_reset_2_profile_reference_or_unchanged_claim: reject
@@ -10215,15 +10435,15 @@ bootstrap_policy:
         seed_admission: [admission_sha256, planning_core_sha256, activation_record_sha256, negative_manifest_sha256, preseed_action_consumptions_sha256, live_recheck_sha256, passed]
         seed_implementation_attempt: [attempt_no, selected_paths, source_commit, result_commit, result_tree, line_count, attempt_result_sha256]
         seed_review_round: [round_id, review_operation_ids, lenses, reviewer_ids, reviewed_commit, verdict, round_sha256]
-        seed_ci_rerun: [rerun_no, command_digest, source_commit, exit_code, stdout_sha256, stderr_sha256, passed]
+        seed_ci_rerun: [rerun_no, command_digest, source_commit, source_tree, exact_head_commit, exact_head_tree, exit_code, stdout_sha256, stderr_sha256, passed, completed_at_utc]
         human_seed_selection_action: [instance_id, selected_seed_commit, selected_seed_tree, review_seal_sha256, action_sha256]
         human_seed_action_consumption: [instance_id, action_sha256, nonce, consumed_once, protected_action_result_sha256, operation_ledger_event_sha256]
         human_seed_merge_action: [instance_id, selected_seed_commit, merge_parent_commit, action_sha256]
         seed_merge: [seed_commit, seed_tree, parent_commit, topology_sha256, ownership_manifest_sha256, result_sha256]
         candidate_preflight: [seed_commit, seed_tree, candidate_scope_sha256, budget_sha256, no_spend_pre_attestation_sha256, passed]
         candidate_implementation_attempt: [attempt_no, selected_paths, source_commit, result_commit, result_tree, line_count, attempt_result_sha256]
-        candidate_review_round: [round_id, review_operation_ids, lenses, reviewer_ids, reviewed_commit, verdict, round_sha256]
-        candidate_ci_rerun: [rerun_no, command_digest, source_commit, exit_code, stdout_sha256, stderr_sha256, passed]
+        candidate_review_round: [round_id, review_operation_ids, lenses, reviewer_ids, reviewed_commit, reviewed_tree, evidence_commit, evidence_tree, evidence_seal_sha256, report_object_ids, no_spend_attestation_sha256, verdict, round_sha256]
+        candidate_ci_rerun: [rerun_no, command_digest, source_commit, source_tree, exact_head_commit, exact_head_tree, evidence_commit, evidence_tree, evidence_seal_sha256, exit_code, stdout_sha256, stderr_sha256, passed, completed_at_utc]
         human_candidate_merge_action: [instance_id, candidate_commit, candidate_tree, seed_commit, action_sha256]
         human_candidate_action_consumption: [instance_id, action_sha256, nonce, consumed_once, protected_action_result_sha256, operation_ledger_event_sha256]
         candidate_merge: [candidate_commit, candidate_tree, seed_commit, topology_sha256, budget_result_sha256, no_spend_attestation_sha256, result_sha256]
@@ -10357,15 +10577,15 @@ bootstrap_policy:
         fresh_reviews_searches_probe_and_activation_ready: [exact_two_planning_reviews_approved, exact_two_predecessor_searches_complete_and_empty, capability_probe_fresh_and_passed, activation_record_created_after_all_prior_records, all_digests_and_order_valid]
         preseed_admission_passed: [exact_three_preseed_actions_and_consumptions, later_five_action_consumptions_absent, live_recheck_passed_within_60_seconds, stored_canonical_passed_admission_result, terminal_completion_binds_stored_result, post_exec_receipt_binds_result_completion_and_extended_tip]
         seed_preflight_passed: [seed_eight_path_scope_exact, seed_budget_remaining, negative_manifest_v2_digest_and_26_oid_denial_passed, reset_3_seed_profile_and_descriptors_passed, no_spend_attestation_passed]
-        seed_attempt_completed: [seed_attempt_result_terminal_and_receipted, seed_attempt_counter_within_three, seed_ci_success_at_least_one, seed_ci_results_passed_and_receipted, selected_seed_source_identity_unchanged, result_object_and_digest_recomputed]
-        seed_reviews_approved: [exact_three_seed_rounds, exact_six_seed_review_operations, both_lenses_each_round, distinct_reviewers, seed_ci_success_at_least_one, zero_P0_P1_P2, review_results_receipted]
+        seed_attempt_completed: [seed_attempt_result_terminal_and_receipted, seed_attempt_counter_within_three, seed_ci_successful_exact_head_before_selection, seed_ci_results_passed_and_receipted, selected_seed_source_identity_unchanged, result_object_and_digest_recomputed]
+        seed_reviews_approved: [exact_three_seed_rounds, exact_six_seed_review_operations, both_lenses_each_round, distinct_reviewers, seed_ci_successful_exact_head_before_selection, zero_P0_P1_P2, review_results_receipted]
         fresh_seed_selection_consumed: [seed_selection_action_exact_binding, seed_selection_consumption_exactly_once, selected_S_commit_tree_equal_actual_objects, ledger_completion_and_receipt_valid]
         actual_seed_merge_passed: [seed_merge_result_stored_and_passed, actual_S_commit_tree_topology_valid, seed_merge_receipt_and_terminal_ledger_event_valid, seed_merge_consumption_precedes_reservation, seed_budget_and_aggregate_counters_valid]
         candidate_preflight_passed: [candidate_scope_exact_eleven_paths, candidate_budget_remaining, source_is_actual_S, reset_3_candidate_profile_and_descriptors_passed, candidate_no_spend_pre_attestation_passed, denied_union_digest_recomputed]
-        candidate_attempt_and_reviews_passed: [candidate_attempt_counter_within_two, exact_two_candidate_review_rounds, exact_four_candidate_review_operations, candidate_ci_success_at_least_one, candidate_ci_results_passed_and_receipted, candidate_results_receipted, zero_P0_P1_P2]
+        candidate_attempt_and_reviews_passed: [candidate_attempt_counter_within_two, exact_two_candidate_review_rounds, exact_four_candidate_review_operations, candidate_ci_successful_exact_head_after_E, candidate_ci_results_passed_and_receipted, candidate_reviews_bind_E_reports_and_no_spend, candidate_results_receipted, zero_P0_P1_P2]
         actual_candidate_merge_passed: [candidate_merge_action_and_consumption_precede_reservation, stored_candidate_merge_result_passed, actual_C_parent_is_S, candidate_budget_result_and_no_spend_attestation_passed, common_receipt_and_terminal_ledger_valid, canonical_ref_promoted_only_after_pass]
         evidence_sealed: [E_commit_tree_actual_and_descendant_of_C, evidence_seal_binds_C_result_no_spend_receipt_and_ledger_tip, no_future_digest_in_attestation, evidence_result_stored_and_receipted]
-        final_review_passed: [candidate_final_review_reuses_exact_two_rounds, exact_four_candidate_review_operations, final_review_result_stored_and_passed, no_new_review_budget_consumed]
+        final_review_passed: [candidate_final_review_reuses_exact_two_rounds, exact_four_candidate_review_operations, candidate_CI_after_E_binds_exact_C_and_E, final_review_records_bind_E_reports_and_no_spend, final_review_result_stored_and_passed, no_new_implementation_review_budget_consumed]
         review_sealed: [R_commit_tree_actual_and_single_parent_is_E, review_seal_binds_seed_candidate_and_final_reviews, review_result_receipted]
         fresh_anchor_selection_consumed: [anchor_action_and_consumption_exactly_once, A_commit_tree_actual_ordered_parents_C_then_R, A_tree_contains_only_mode_100644_receipt, receipt_blob_reachable_and_all_digests_match]
         closure_gates_passed: [private_validation_passed, installed_validation_passed, renderer_passed_with_new_private_output, packet_closure_action_and_consumption_passed, closure_receipt_and_tip_valid, no_spend_and_all_counters_valid]

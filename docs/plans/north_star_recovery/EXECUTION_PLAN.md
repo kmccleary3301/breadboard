@@ -609,11 +609,13 @@ paths, while superseding reset-2 with scope
 `bb.north_star_recovery.g2.scope.v4`. The historical reset-2 record above
 cannot satisfy any active guard.
 
-The planning amendment is a two-file, one-commit change from exact parent
-`b816fe34a345d6fd5f3c2002ec4f93700e541060`; all other paths are forbidden and
-the planning diff is capped at 4500 additions plus deletions. Active dispatch
-enters `blocked_review` and may leave it only through the reset-3 table after
-fresh exact-head planning reviews.
+The planning proposal is evaluated from the exact current reviewed planning
+head `b365fa82c7a597f88146c51298bd1f9913dc9ecc` (tree
+`1166ac1ef87a28529f01b83175da5aa07a19951b`), not from the historical commit
+chain that produced it. The repair is exactly one new commit with that head as
+its parent, changing exactly the two planning paths below and no other path;
+the cumulative two-file tree/diff is the authority, and an earlier multi-commit
+planning history is not a violation.
 
 Reset-3 seals planning core, null-tip genesis, two fresh planning review
 rounds, two fresh predecessor searches, a capability probe, activation, fresh
@@ -638,6 +640,17 @@ reset-2 failures), with the 11 round-3 entries a strict subset, and rejects
 every candidate blob in that union. Nine negative families, fail-closed
 command profiles, typed result receipts, guarded phase transitions, and
 supervisor-only promotion remain mandatory.
+
+The active artifact chronology is strict: candidate implementation attempts and
+the exact candidate merge produce `C`; the supervisor then seals pre-review
+evidence `E`; after `E` exists, candidate CI runs against the exact `C` head
+and tree and must include at least one successful exact-head run; the same
+post-`E` CI identity, reports, no-spend attestations, and `E` digest bind both
+candidate review rounds (four review operations total); only those reviews may
+form review seal `R`, and only `R` may authorize anchor `A`. Seed selection
+has the analogous prerequisite of at least one successful exact-head CI before
+selection. A CI result from before `E`, a review omitting `E`/reports/no-spend,
+or any anchor selected before `R` is stale and blocks the transition.
 
 Reset-3 inherits only immutable semantics explicitly copied by the YAML
 overlay. Epoch, scope, budgets, paths, identities, actions, reviews, negative
