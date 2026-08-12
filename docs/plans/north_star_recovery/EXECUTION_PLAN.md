@@ -611,15 +611,13 @@ tests/packet/test_verify_g2_anchor.py
 
 The reviewed planning files are immutable seed inputs, not worker-owned seed
 paths. The reset-2 abandoned manifest is supervisor-derived from the exact G2
-round-3 candidate plus both rejected reset-1 seed commits, trees, diffs,
-reports, and reviews. It records exactly eleven round-3 candidate entries,
-each with path, blob OID, content SHA-256, mode, size, physical-line count,
-provenance, and disposition metadata. The broker binds the complete manifest
-bytes and digest to the planning core, activation run, ledger, and admission.
-Seed and candidate admission reject any missing manifest entry, omitted
-round-3 entry, or reuse of a denied blob. The denylist is recomputed from the
-authenticated S1/S2 Git trees; a caller-supplied or worker-supplied denylist
-never has authority.
+round-3 candidate and both rejected reset-1 seeds. Before activation review,
+the supervisor verifies every reported path, SHA-256, and line count, overlays
+the exact eleven files on base tree `68cb673806bbbafd95d1684b2371992bc0778255`,
+and writes candidate tree `ae3ec6e022af1b1f838c7bf8d7d7ccf1fc6c7a14` to the
+canonical object store. The broker requires that exact tree delta to equal all
+manifest entries and binds their metadata and manifest digest to activation.
+Admission rejects omissions and every S1, S2, or round-3 changed-blob reuse; the broker recomputes the denylist, which callers and workers cannot supply.
 
 Reset-2 predecessor admission never guesses or reconstructs a lost ledger tip.
 This amendment accepts only a supervisor-authenticated
@@ -654,7 +652,7 @@ closed result schema, counter rule, and result/transition guard. In addition
 to attempt, review, CI, human-action, and phase-specific consumption classes,
 the reset-2 ledger covers actual seed and candidate merges, evidence sealing,
 seed and candidate review seals, review-anchor creation, private and installed
-validation, rendering, and closure execution. The class set must equal both
+validation, rendering, and closure-action consumption. The class set must equal both
 the result-schema and phase-map key sets. Each class requires a reservation,
 exactly one terminal completion or typed failure, an immutable result digest,
 and an exact transition guard. Failed, canceled, timed-out, or

@@ -5176,6 +5176,9 @@ bootstrap_policy:
       blocked_record_sha256: sha256:001cca367cb3cc662ea96cd12cc5baf9f062969a0588b17c021fccd709aa2e31
       candidate_sha256: sha256:900138ed0986544da9b5ad0bb42332b44f652d97497bc561ec6e167fe503a322
       installed_report_sha256: sha256:5efc745da28332d9a7dc6a38798f2f9d2038c11a434ab3e3414f97be8d364bab
+      preserved_worktree_base_tree_sha: 68cb673806bbbafd95d1684b2371992bc0778255
+      supervisor_materialized_candidate_tree_sha: ae3ec6e022af1b1f838c7bf8d7d7ccf1fc6c7a14
+      materialized_tree_derivation: exact_eleven_reported_paths_over_preserved_worktree_base_tree_with_every_reported_sha256_and_physical_line_count_recomputed_before_git_write_tree
       disposition: immutable_negative_evidence_never_authority
       selected_seed_manifest_path: contracts/governance/g2_abandoned_round3_manifest.v1.json
       completeness_source: exact_preserved_round3_worktree_plus_blocked_record_four_frozen_reports_and_two_frozen_reviews
@@ -7542,6 +7545,7 @@ bootstrap_policy:
               predecessor["S2_objects"]["commit"]: "commit",
               predecessor["S2_objects"]["tree"]: "tree",
               "68cb673806bbbafd95d1684b2371992bc0778255": "tree",
+              "ae3ec6e022af1b1f838c7bf8d7d7ccf1fc6c7a14": "tree",
           }.items():
               verified_object(object_id, object_type)
           for key in {"S1_objects", "S2_objects"}:
@@ -7584,8 +7588,12 @@ bootstrap_policy:
           denied_tree_blob_oids = {
               object_id for _, object_id in denied_tree_blob_oids
           }
-          round3_tree = "68cb673806bbbafd95d1684b2371992bc0778255"
+          round3_parent_tree = "68cb673806bbbafd95d1684b2371992bc0778255"
+          round3_tree = "ae3ec6e022af1b1f838c7bf8d7d7ccf1fc6c7a14"
           round3_blobs = tree_blob_map(round3_tree)
+          round3_parent_blobs = tree_blob_map(round3_parent_tree)
+          round3_changed_paths = {path for path in set(round3_blobs) | set(round3_parent_blobs) if round3_blobs.get(path) != round3_parent_blobs.get(path)}
+          assert round3_changed_paths == {entry["path"] for entry in manifest_entries}
           assert {entry["path"] for entry in manifest_entries} == candidate_allowed
           for entry in manifest_entries:
               assert entry["path"] in round3_blobs
@@ -7685,6 +7693,11 @@ bootstrap_policy:
           assert genesis["loop_spec_blob_oid"] == planning["loop_spec_blob_oid"]
 
           assert len(manifest["argv"]) >= 5
+          loop_spec_blob = verified_object(planning["loop_spec_blob_oid"], "blob")
+          source_marker = b"        source: |-\n"
+          assert loop_spec_blob.count(source_marker) == 1
+          reviewed_source = loop_spec_blob.split(source_marker, 1)[1].split(b"\n        exact_checks:", 1)[0]
+          assert b"\n".join(line[10:] for line in reviewed_source.splitlines()) == manifest["argv"][4].encode("utf-8")
           assert "sha256:" + hashlib.sha256(
               manifest["argv"][4].encode("utf-8")
           ).hexdigest() == manifest["source_scalar_sha256"]
@@ -8601,7 +8614,7 @@ bootstrap_policy:
         planning_core_review, predecessor_ledger_search, predecessor_ledger_recheck, capability_probe, human_scope_budget_action, human_governance_action, human_security_boundary_action, human_planning_action_consumption, seed_admission,
         reset_2_seed_attempt, reset_2_seed_review, reset_2_seed_CI_rerun, human_seed_selection_action, human_seed_merge_action, human_seed_action_consumption, actual_seed_merge, seed_review_seal,
         candidate_attempt, candidate_review, candidate_CI_rerun, human_candidate_merge_action, human_candidate_action_consumption, actual_candidate_merge, evidence_seal, candidate_review_seal,
-        review_anchor_creation, human_closure_anchor_selection_action, human_packet_closure_action, human_closure_action_consumption, private_validation, installed_validation, render, closure_execution,
+        review_anchor_creation, human_closure_anchor_selection_action, human_packet_closure_action, human_closure_action_consumption, private_validation, installed_validation, render,
       ]
       action_order:
       - planning_core_seal_and_genesis
@@ -8690,7 +8703,6 @@ bootstrap_policy:
         private_validation: bb.north_star_recovery.g2_private_validation_result.v2
         installed_validation: bb.north_star_recovery.g2_installed_validation_result.v2
         render: bb.north_star_recovery.g2_render_result.v2
-        closure_execution: bb.north_star_recovery.g2_closure_execution_result.v2
       result_schema_keys_exactly_equal_operation_classes: true
       protected_result_payload_contract:
         exact_keys_by_operation_class:
@@ -8703,11 +8715,10 @@ bootstrap_policy:
           private_validation: [validated_commit, validated_tree, checks, passed]
           installed_validation: [validated_commit, validated_tree, checks, passed]
           render: [rendered_commit, rendered_tree, artifact_sha256, passed]
-          closure_execution: [anchor_commit, anchor_tree, receipt_commit, receipt_tree, closed]
         unknown_payload_keys: reject
         class_postcondition_validator_required: true
         seed_admission_uses_specialized_broker_boundary_not_common_result_envelope: true
-      common_result_envelope_operation_classes: [actual_seed_merge, actual_candidate_merge, evidence_seal, seed_review_seal, candidate_review_seal, review_anchor_creation, private_validation, installed_validation, render, closure_execution]
+      common_result_envelope_operation_classes: [actual_seed_merge, actual_candidate_merge, evidence_seal, seed_review_seal, candidate_review_seal, review_anchor_creation, private_validation, installed_validation, render]
       protected_result_required_fields:
       - schema_version
       - operation_instance_id
@@ -8741,7 +8752,7 @@ bootstrap_policy:
       every_completed_operation_requires_reservation_then_exactly_one_completion_or_typed_failure: true
       every_human_action_requires_separate_exactly_once_consumption_operation: true
       reset_1_event_as_reset_2_gate: forbidden
-      operation_phase_ids: [G2/reset-2/planning, G2/reset-2/preseed, G2/reset-2/seed, G2/reset-2/candidate, G2/reset-2/closure]
+      operation_phase_ids: [G2/reset-2/planning, G2/reset-2/preseed, G2/reset-2/seed, G2/reset-2/candidate]
       exact_phase_id_by_operation_class:
         planning_core_review: G2/reset-2/planning
         predecessor_ledger_search: G2/reset-2/planning
@@ -8768,14 +8779,13 @@ bootstrap_policy:
         actual_candidate_merge: G2/reset-2/candidate
         evidence_seal: G2/reset-2/candidate
         candidate_review_seal: G2/reset-2/candidate
-        review_anchor_creation: G2/reset-2/closure
-        human_closure_anchor_selection_action: G2/reset-2/closure
-        human_packet_closure_action: G2/reset-2/closure
-        human_closure_action_consumption: G2/reset-2/closure
-        private_validation: G2/reset-2/closure
-        installed_validation: G2/reset-2/closure
-        render: G2/reset-2/closure
-        closure_execution: G2/reset-2/closure
+        review_anchor_creation: G2/reset-2/candidate
+        human_closure_anchor_selection_action: G2/reset-2/candidate
+        human_packet_closure_action: G2/reset-2/candidate
+        human_closure_action_consumption: G2/reset-2/candidate
+        private_validation: G2/reset-2/candidate
+        installed_validation: G2/reset-2/candidate
+        render: G2/reset-2/candidate
       phase_map_keys_exactly_equal_operation_classes: true
       counters:
         failed_canceled_timed_out_and_integrity_failed_launches_count_against_attempt_or_CI_caps: true
@@ -8795,7 +8805,7 @@ bootstrap_policy:
         capability_probe_operations_exact: 1
         preseed_human_action_operations_exact: 3
         all_action_consumption_count_recomputed_from_distinct_granted_actions: true
-        exact_once_promotion_operations: [human_seed_selection_action, human_seed_merge_action, actual_seed_merge, seed_review_seal, human_candidate_merge_action, actual_candidate_merge, evidence_seal, candidate_review_seal, review_anchor_creation, human_closure_anchor_selection_action, human_packet_closure_action, private_validation, installed_validation, render, closure_execution]
+        exact_once_promotion_operations: [human_seed_selection_action, human_seed_merge_action, actual_seed_merge, seed_review_seal, human_candidate_merge_action, actual_candidate_merge, evidence_seal, candidate_review_seal, review_anchor_creation, human_closure_anchor_selection_action, human_packet_closure_action, private_validation, installed_validation, render]
         human_seed_action_consumption_exact: 2
         human_candidate_action_consumption_exact: 1
         human_closure_action_consumption_exact: 2
@@ -8922,7 +8932,6 @@ bootstrap_policy:
       - private_validation
       - installed_validation
       - render
-      - closure_execution
       each_has_typed_result_and_transition_guard: true
       negative_fixture_requirement:
         every_finding_has_named_negative_fixture: true
@@ -8945,6 +8954,10 @@ bootstrap_policy:
         - positive_route_preflight_body_and_envelope_digest_domains_validate
         - selected_G2_uses_generic_blocked_review_exit_despite_reset_2_dispatch
         - raw_plan_review_source_or_route_identity_differs_from_activation_summary
+        - reset_2_closure_operation_uses_unbudgeted_phase
+        - round3_changed_blob_omitted_from_abandoned_denylist
+        - unreachable_redundant_closure_execution_operation_required
+        - validator_source_scalar_differs_from_reviewed_loop_spec_blob
       no_reset_1_active_literal_or_model_hardcode_in_embedded_source: true
 managed_pr_autonomy:
   supervisor_may:
