@@ -94,7 +94,7 @@ Budgets apply to non-generated additions plus deletions. Mechanical moves still 
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
 | G0 | Retire blocked replay implementation | none | 4 | 200 | 1 | 1 | T0, tracker/PR audit | tracker_supersession + packet_closure + campaign_graph_rewrite |
 | G1 | Split product and evidence surfaces | G0, G2 | 12 | 750 | 2 | 2 | T0-T2, generated diff | public_boundary + architecture_change |
-| G2 | Install packet-control enforcement | G0 | 15 | 3500 | 4 | 4 | reset-2 seed, object-mode self-host, T0-T2, positive admission/closure fixtures, negative gates, two rounds/four exact review operations per phase | governance_schema + security_boundary + scope_budget_amendment + merge + closure_anchor_selection + packet_closure |
+| G2 | Install packet-control enforcement | G0 | 19 | 6000 | 5 | 5 | reset-3 seed, object-mode self-host, generated projection/differential parity, T0-T2, positive preseed/seed/candidate/closure fixtures, nine negative families, fresh actions and exact reviews | governance_schema + security_boundary + scope_budget_amendment + merge + closure_anchor_selection + packet_closure |
 | R0 | Replay records and admission | G2 | 8 | 650 | 2 | 2 | T0-T2 | governance_schema |
 | R1 | Worker protocol and minimal isolation | R0 | 12 | 800 | 2 | 2 | T0-T2, security lens | security_boundary |
 | R2 | Workspace, publication, and redaction | R1 | 12 | 900 | 2 | 2 | T0-T2, fault matrix | security_boundary + artifact_publication |
@@ -269,35 +269,137 @@ supersedes stale `STATE.json#planning_package.independent_review` only for this
 reset phase; `STATE.json` is not read as authority.
 
 Each seed attempt, review round, CI rerun, merge, human action, and action
-consumption is appended to that capability-store ledger. Attempt/review/CI
-launches require a reservation first and a completion or typed failure after.
-Sequence numbers are contiguous and previous-event digests form one chain from
-the genesis. A missing completion consumes the reservation and blocks the
-phase. Workers cannot spawn reviewers, push, start CI, access authority records,
+consumption is appended to that capability-store ledger. Every launched
+operation requires a reservation, invocation, exactly one typed success or
+failure result, a broker completion bound to that result, and one terminal
+receipt. Sequence numbers are contiguous and previous-event digests form one
+chain from the genesis. A missing completion or receipt consumes the
+reservation and blocks the phase. Workers cannot spawn reviewers, push, start
+CI, access authority records,
 or create ledger events.
 
-Before `S` exists, reset-2 seed admission uses the full standard-library
-validator source embedded in the exact reviewed `LOOP_SPEC.yaml`; the terminal
-reset-1 validator and hidden capability-store code are not executable. Both
+Before `S` exists, reset-3 seed admission uses the full standard-library
+validator source embedded in the exact reviewed `LOOP_SPEC.yaml`; historical
+reset validators and hidden capability-store code are not executable. Both
 plan reviews and the three distinct fresh human scope/budget, governance, and
 security actions bind its source digest, the exact planning commit/tree, and
 both planning blob OIDs and SHA-256 digests. The supervisor materializes an
-isolated clean worktree at that one reviewed planning commit, whose sole parent
-is `6a31143dfd0255bebb1a26130d96d95eb53e4ca3` and whose exact two-file diff is
-within the 4500-line proposal cap. Source base and merge-base remain the
-distinct original `3fe342b...` identity. The validator receives planning,
-fresh-ledger, three-action, reset-1 discontinuity disposition, raw
-capability-probe, two raw reviewer, route/history, and broker invocation
-objects through distinct inherited read-only FIFO descriptors; its only output
-is one inherited write-only FIFO. It recomputes every byte digest; checks
-current-time expiry, fixed G0 evidence bytes and ancestry, repository and
-registered-worktree identities, config-free Git execution, dynamic reviewer
-routes and actors, exact action grants and separate consumption ordering,
-phase/aggregate/historical budgets and counters, contiguous
-genesis/events/tip, capability-store isolation, and committed planning blobs.
-The outer broker authenticates all event/object origins and stores an immutable
-receipt binding the exact source, command, descriptors, result, and ledger
-completion. The not-yet-created seed verifier is never invoked.
+isolated clean worktree at that one reviewed planning commit; its exact
+two-file diff is within the 4500-line proposal cap, and source base and
+merge-base are the authenticated reviewed parent.
+The broker is the authority at the pre-exec boundary. It authenticates one
+canonical active event envelope on fixed FD 3 with exactly
+`[handle, origin, immutable_object_id, raw_sha256, event_type, actor,
+payload_sha256, payload]`, verifies every payload hash/handle/type, and then
+launches the validator as its direct child with fixed broker-owned descriptor
+snapshots. The source cannot mint, reauthorize, or choose an envelope, key,
+descriptor, capability token, or metadata. On Darwin, FD 3 and data FDs 4 and
+6--19 are broker-created regular files that are fully written and synced,
+reopened read-only with `O_NOFOLLOW`, unlinked, and inherited only after every
+writable handle is closed; each must have link count zero. FD 5 is a
+broker-opened `O_NOFOLLOW` read-only handle to the root-owned system Python
+executable and must match `sys.executable` by device/inode/mode and digest.
+The broker binds every input FD's role-specific device/inode/mode/size/digest
+identity before launch and rechecks the same identities and bytes after
+`waitpid`. FD 20 is the broker-owned write-only result FIFO. FDs 0--2 are
+closed before exec; the child has exactly FDs 3--20. Linux sealed-memfd
+semantics are neither asserted nor substituted for this Darwin transport.
+Before parsing FD 3, the source checks its read-only access mode, regular-file
+type, owner, zero link count, mode, and size. It uses positioned reads so it can
+compare the complete bytes and physical identity again after parsing. It
+applies the same role-specific pre/post checks to fixed input FDs 4--19, then
+verifies their roles, broker event identities, exact bytes, and hashes.
+It independently inspects `sys.orig_argv`, `sys.argv`, `sys.flags`, `sys.executable`,
+`os.uname()`, `os.getpid()`, `os.getppid()`, the running executable's stat
+identity, `os.environ`, the exact open-FD set, and sandboxed network and
+forbidden-write negative probes. The command-line `-I -S -c` scalar bytes must
+equal the reviewed extracted source, the running executable must be exactly
+`/usr/bin/python3` and match FD 5 by device/inode/mode, the observed Darwin
+kernel/machine must equal the broker-pinned platform identity, and the
+environment is exactly the closed four-variable map. The broker's immutable
+sandbox profile contains a digest-bound system-runtime read allowlist sufficient
+for the root-owned Python executable and imported standard-library modules.
+Every entry is a broker-opened `O_NOFOLLOW`, root-owned regular file whose
+path/device/inode/mode/type/owner/size/digest record is recomputed before launch
+and after `waitpid`; every other path remains denied. The child emits a canonical runtime attestation
+containing only independently observed runtime identity, descriptor,
+environment, and denial-probe facts. Broker-only sandbox profile and
+capability-manifest claims remain in separately authenticated launch records;
+they are never represented as child observations.
+After `waitpid`, the broker recomputes the executable and `/usr/bin/sandbox-exec`
+from broker-opened no-follow FDs, proves the launched sandbox profile, network,
+credentials, workspace, Git/object-store, write allowlist, input handles, PID,
+and observation interval, and binds that child attestation into acceptance and
+receipt. Host-only, parent-only, stale, or child-only platform claims block.
+Invocation descriptor digests cover only immutable predecessor authority
+descriptors; action/grant/consumption records are excluded and each action
+binds the already-completed invocation digest. The source writes one canonical
+result to FD 20 and has no future result, completion, receipt, or
+post-attestation input.
+The validator recursively authenticates every Git tree object component by
+component for head, reviewed parent, and the five exact reviewed historical
+roots: reset-1 S1, reset-1 S2, the reset-1 round-3 tree snapshot, and both
+reset-2 failed seed attempts. It binds the head commit, sole parent, tree,
+exact two-path recursive diff, source scalar blob, and the 4500-line
+additions/deletions cap. Historical negative provenance binds each denied blob
+to its exact root, path, mode, bytes, digest, size, and line count; authenticates
+the root plus the exact minimal intermediate-tree inclusion proof for each
+denied path without transporting unrelated repository blobs; enforces
+cardinalities 20/6/11 and the denied union; and excludes all 26 blobs from
+candidate reuse.
+The broker supplies one null-tip disposition record, four active 2x2 review
+events with route-preflight/history/model/reviewer/run identities, and one
+canonical grant/consumption envelope vocabulary. Every grant has a distinct
+nonempty action, nonce, response/event handle (`response_id` equals its grant
+event handle), and a separate consumption event; later actions use the same
+schemas and phase-available result bindings.
+The broker constructs the active projection from the exact authenticated
+current `LOOP_SPEC.yaml` blob after the planning commit. Its closed canonical
+object contains the full result contract, phase map, 36 operation profiles,
+eight fresh action instances, budgets, state machine, operation ledger,
+no-spend attestations, required-record table, and the recomputed digest map of
+those nine sources. The projection object, canonical-byte digest, source-path
+map, source digests, guard/event registry digests, current LOOP_SPEC and
+EXECUTION_PLAN blob identities, generation timestamp, and private broker event
+cross-bind. Generation is after the planning core and before invocation intent;
+caller-supplied or stale projections are rejected. The source reconstructs the
+same object from authenticated current inputs and demands exact byte and digest
+parity before checking each materialized 23-field operation profile.
+The broker then materializes every named exact-scope capability: commits/trees, review and CI
+records, action/ledger records, runtime artifacts, and the phase-specific
+checkout or object view. Seed and candidate implementation receive distinct
+isolated-worktree capabilities whose write surfaces are exactly the eight and
+eleven authorized paths. Review profiles are read-only. `broker_builtin` has
+no OS command (`executable: null`, `argv: []`, exact broker opcode);
+`delegated_agent` uses an authenticated route and exact task/workspace context,
+never a future repository script; `embedded_validator` is
+`/usr/bin/python3 -I -S -c` with the reviewed scalar; and `verified_script`
+requires its creator commit, exact source FD, checkout/object/runtime inputs,
+and network-denied local reproducibility command manifest. Operation-time
+roles are broker-issued separately from preseed fixed FDs. Builtins consume
+only typed private-store operands and have no filesystem/input FDs; delegated
+agents receive authenticated harness context and isolated-worktree
+capabilities with no raw FDs; only embedded/verified subprocess read roles
+equal `input_fds`. Seed ref advance is one broker CAS
+transaction after its child receipt. Candidate and anchor creation are
+broker-owned unreferenced-object transactions; no child script can mutate refs
+or the object database.
+Each protected mutation is internally staged under a broker write barrier:
+authenticate the exact invocation, capability manifest, input handles,
+operands, repository identity, ref/object destinations, and write sets;
+persist a prepare record; lock the authenticated repository/ref targets; run
+the read-only validator with writes denied; durably store its result,
+completion, and receipt; then atomically recheck the same precondition,
+operands, locks, and write sets. Only then may the broker perform one CAS-ref
+or unreferenced-object transaction. Prepare, validation, transaction, and
+receipt records bind the same operation instance, operand-set digest,
+precondition digest, object/ref write-set digests, validation receipt,
+postcondition, fsync evidence, and mutation result. Mutation completion occurs
+only after the durable transaction receipt. Restart reconciliation reopens the
+same authenticated repository, locks, and write barrier and classifies applied
+versus unapplied without replay; partial or ambiguous state blocks.
+The renderer alone receives a private-state temporary
+write capability in addition to its result FIFO.
 After seed implementation is committed, Phase 20 runs from a fresh read-only
 exact proposed-`S` checkout before seed review.
 
@@ -311,6 +413,11 @@ planning-record digest, source identity, scope, budgets, findings, and output
 digest. Reviewers differ from the worker, supervisor, human, every other
 reviewer, and every prior review run. Missing or malformed `P0`-`P3` severity,
 duplicate lenses, a skipped round, or any unresolved `P0`-`P2` blocks selection.
+Every review is also an active broker event envelope with the exact eight
+top-level fields; its route-preflight payload binds reviewer ID, review-run
+ID, agent/history URI, resolved model, lens, planning head/tree and source
+base/merge-base. A review cannot be accepted from a caller-supplied route,
+history, model, or identity.
 
 The human promotion owner then selects the full seed commit `S` and tree through
 the authenticated primary OMP session. The immutable parent-session action
@@ -377,20 +484,64 @@ invent or imply one. Do not create parallel task, signal, or review nouns.
 The candidate lifecycle is object-mode and one-way:
 
 1. Admission runs the verifier materialized from `S`. It validates the exact
-   G0 terminal-handoff commit `1f71cb43995249a710a7b34a273d720e0eaa2806`,
-   tree `8ef5a7107ef3d282b4003043d51df9b0b894c8ea`, terminal manifest and
-   validation digests, G0 postcheck, the planning amendment, governance,
-   security-boundary and scope/budget actions, ownership/test-plan inputs,
-   Phase 20, and the capability-store ledger. All scope, budget, ownership,
-   schema, and abandoned denylist values are derived from selected `S`, not
-   copied from preflight.
+   source/target objects, scope, schema, ownership, test plan, and abandoned
+   denylist values derived from selected `S`, not copied from preflight. The
+   operation manifest binds the reservation, exact stage order, broker-issued
+   operation-time descriptor roles, executable identity, result capability,
+   and command. Broker recomputation is authoritative.
 2. The candidate PR is based on `S` and may change only the exact eleven paths.
-   A fresh exact candidate-merge action must be consumed and ledgered before
-   merge. After merge, the exact merged source head
-   becomes candidate `C`; `S` must be an ancestor of `C`. The canonical
-   path/mode/blob/SHA-256/size/physical-line/addition/deletion manifest is
-   derived from the `S..C` object diff and complete tree walks, never the live
-   worktree.
+   A fresh exact candidate-merge action is consumed and ledgered before `C` is
+   materialized. The protected `actual_candidate_merge` operation first creates
+   exact candidate commit `C` as an unreferenced Git object whose sole parent is
+   exact `S`; the canonical source ref remains `S`. Candidate implementation
+   completion is the only prerequisite for this action and merge: candidate
+   review, review seal `R`, and post-`E` CI are never prerequisites. Candidate
+   CI and the four candidate review operations are intentionally post-`E`
+   operations.
+   The operation manifest binds the reservation, `S`, unreferenced `C`, consumed
+   action, exact stage order, fixed broker-owned descriptor FDs, actual
+   executable inode/path/mode and digest, result capability, and command. The
+   broker recomputes the verifier blob selected from `S`; its source event
+   proves the exact UTF-8 bytes, length, raw SHA-256, and blob OID. A
+   preseed admission alone uses the reviewed scalar as Python's `-c` source;
+   every later profile names its concrete script and execution kind
+   (`broker_builtin`, `delegated_agent`, or `verified_script`) and receives
+   only inputs existing at its phase boundary.
+   The selected-source verifier is untrusted and runs only through pinned
+   `sandbox-exec` with a supervisor-owned default-deny profile: network,
+   credentials, mutable Git surfaces, and all filesystem paths except exact
+   object inputs and its result FIFO are denied. Independently of that code,
+   the broker recomputes the canonical raw NUL-delimited no-rename `S..C`
+   path/mode/blob/SHA-256/size/physical-line/addition/deletion manifest, totals,
+   caps, and pass bit. Every verifier fact and pass bit must equal this trusted
+   result. Before execution, a closed no-spend pre-attestation binds empty
+   credential/launch sets, network denial, sandbox profile, source, manifest,
+   recomputation, command, environment, reservation, and preexecution tip. An
+   empty set is exactly the two UTF-8 bytes `[]` (no BOM, whitespace, or
+   newline), whose required digest is
+   `sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945`;
+   alternate empty encodings are rejected. The pre-attestation object contains
+   only those preexecution fields; outer/stage/result/receipt and future-event
+   digests are forbidden from its preimage. Its completed digest is then
+   copied as a non-predictive field into the outer/stage manifests and stage
+   result/receipt. Only after the source, sandbox, candidate-manifest, broker-
+   recomputation, stage-result, and stage-receipt equalities pass may the
+   broker seal unreferenced `C`'s object-only transaction, merge payload, common
+   result, terminal completion, and common receipt. The canonical source ref
+   must still equal exact `S`; the candidate transaction has an empty ref write
+   set and cannot promote `C`. After that receipt and ledger event, the closed
+   `g2_no_spend.v1` object binds the pre-attestation and all actual stage/common
+   chain digests, denial evidence, the same
+   canonical empty credential/launch/spend-receipt sets, and the exact
+   lexicographically serialized integer-zero map over `credentialed_launches`,
+   `paid_api_calls`, `participant_launches`, `provider_launches`, and
+   `target_launches`. Unknown units and alternate encodings are rejected. The
+   post-attestation must pass before the candidate-merge state may enter
+   evidence seal, and its digest is the required nonrecursive input to `E`;
+   neither attestation predicts a future digest. Any candidate-merge failure
+   leaves `S` unchanged and records unreferenced `C` as negative evidence.
+Missing or failed post-attestation leaves `S` unchanged and `C` unreferenced
+but blocks every evidence, review, anchor, and closure transition.
 3. Focused reports, installed-checker output, Phase 20, authority snapshots,
    no-spend attestation, and operation-ledger snapshots are sealed by the
    supervisor in pre-review evidence commit `E`, whose sole parent is `C`.
@@ -443,14 +594,29 @@ and the preclosure tip for packet closure. Every consumption is a separate
 single-use record. Missing, extra, mutable-ref, self-referential, unreachable,
 stale, replayed, future-result-predicting, or out-of-order bindings fail closed.
 
-The operation ledger has one capability-store genesis before the first reset
-launch. Events cover implementation, review, CI, merge, human scope/budget,
-governance/security, seed selection, candidate merge, anchor selection, packet
-closure, and every action consumption. Each binds a contiguous sequence and
-previous digest, phase, class, source identities, actor/route, timestamps,
-status and result. Attempt/review/CI entries additionally bind both phase and
-aggregate counter/cap snapshots. Only the supervisor can launch or append;
-reservations count immediately and cannot be deleted or reused.
+The operation ledger has one authoritative table shared by phase, result, and
+profile declarations. Every class has the one phase-fixed lifecycle and exact
+`operation_class + "_" + event_kind` labels generated from that table. Every
+event binds phase, actor/route, source, strict broker timestamp, typed status,
+contiguous sequence, previous digest, and exact counter/cap snapshots. An event
+preimage excludes only its own `event_sha256`; null or prior-event fields remain
+inside that digest. Completion binds the typed result event. The broker issues
+the v2 receipt over the private acceptance record, stored result, completion,
+and completion ledger tip, then appends a receipt event that binds that receipt;
+the receipt never predicts the receipt event's digest. Each reservation is
+exactly `reservation -> invocation -> result_stored -> completion -> receipt`
+or `reservation -> invocation -> failure -> completion -> receipt`, with one
+`action_consumption` event only for the phase's dedicated consumption operation
+class. The receipt is the sole terminal ledger event. Operation maxima and
+aggregate caps are checked before admission; the open admission reservation is
+the final input event. For `failed`, `canceled`, `timed_out`, or
+`integrity_failed`, the broker derives the typed failure from authenticated
+launch/wait/timeout/cancellation/integrity and no-mutation facts. A child result
+and nested child-runtime attestation may be absent, but the launch record,
+broker runtime attestation, stored failed result, completion, and terminal
+receipt remain mandatory.
+Only the supervisor can launch or append; reservations count immediately and
+cannot be deleted or reused.
 
 G2 permits no provider, target, participant, paid API, or credential-bearing
 launch. Workers receive no provider credentials and candidate execution runs
@@ -458,7 +624,7 @@ with network disabled except supervisor-owned GitHub/Beads control-plane
 adapters. A strict no-spend record binds the ledger range, empty spend-receipt
 set, zero aggregate in fixed units, environment, and supervisor broker
 configuration. Any requested spend requires a new reviewed human amendment
-outside `G2/reset-2`.
+outside `G2/reset-3`.
 
 The broker pins absolute `/opt/homebrew/bin/uv` and its SHA-256, a verified
 read-only offline cache, and exact `PyYAML`/`jsonschema` package artifact
@@ -497,7 +663,9 @@ Acceptance tests must fail on:
 - any extra, missing, forbidden, wrong-mode, case-colliding, Unicode-colliding,
   symlink, submodule, or unhashed candidate path;
 - physical-line, additions/deletions, phase or aggregate file/line,
-  implementation, review, or CI cap overflow;
+  implementation, review, or CI cap overflow; candidate `S..C` budget validation
+  omitted, run before `C` exists, command-substituted, failed, swapped, or lacking
+  its stage receipt and actual-merge common-receipt binding;
 - stale or changed G0, seed, base, merge-base, candidate, evidence, review,
   anchor, report, approval, authority, environment, or ledger identity;
 - a ref lookup, abbreviated OID, replace/graft/shallow history, alternate object
@@ -513,6 +681,9 @@ Acceptance tests must fail on:
   planning, governance, scope/budget, merge, seed-selection, or closure action;
 - a ledger gap, duplicate/replayed sequence, wrong previous digest, launch
   without reservation, omitted failure/completion, worker launch, or cap drift;
+- route preflight/history that conflates configured alias with authoritative
+  runtime model, omits exact planning provenance, substitutes either identity,
+  or is not bound to the activation run and broker invocation;
 - any provider credential, paid/target/participant launch, nonempty spend
   receipt set, or nonzero/unknown spend;
 - missing or failing Phase 20 enforcement;
@@ -529,207 +700,137 @@ authoritative for this packet. The generic packet transitions apply only where
 the G2 override explicitly delegates to them. No record from an abandoned
 scope version can satisfy a `G2/reset-1` gate.
 
-#### Reset-2 planning amendment after exhausted reset-1
+#### Historical reset-2 planning amendment record (non-dispatch)
 
-`G2/reset-1` is immutable negative evidence after two rejected seed attempts and
-two exhausted seed review rounds. Proposed seed `S1`
-`8494eb8317b3e9bc9826989109a530fa6fdc9c40` (tree
-`69cacf0846c265f0e99b12442ec20a61c9599545`) and proposed seed `S2`
-`42dec2d6e3ff31ef76976c54abc7afe08b65eef2` (tree
-`982cef3f803d3f1410f81b6756eeef1452d25798`) are never selectable,
-mergeable, or reusable as authority. Their source, trees, blobs, reports,
-reviews, actions, ledger events, and private state remain preserved as
-negative evidence.
+The reset-2 proposal, its predecessor disposition, operation ledger,
+profiles, actions, results, phases, budgets, Git evidence, and transition
+names are immutable failed history and negative evidence only. This record is
+queryable for audit and denial derivation; it is not an executable plan.
 
-This planning amendment proposes `G2/reset-2` without changing the logical
-packet key, Beads issue, dependency graph, candidate product scope, or mission
-completion criteria.
+- status: `immutable_failed_history_non_authoritative`
+- active_authority: `false`
+- dispatchable: `false`
+- active_dispatch_ref: `bootstrap_policy.G2_reset_3_amendment`
+- consumer_policy: `negative_evidence_query_or_audit_display_only`
+- forbidden_consumers: `transition_dispatch`, `state_machine`, `admission`,
+  `reservation`, `launch`, `review`, `merge`, `promotion`, `closure`
+- reset-2 operational state table: removed; legacy state/phase/action/schema
+  tables are evidence records and cannot leave `blocked_review`.
+- reset-2 profiles, result schemas, operation classes, counters, capacities,
+  human actions, consumptions, receipts, tips, and transitions cannot satisfy
+  an active reset-3 guard or transfer authority/capacity.
 
-The amendment proposal itself is capped at the two planning files above and
-4500 changed non-generated lines relative to planning parent
-`6a31143dfd0255bebb1a26130d96d95eb53e4ca3`; every other repository path is
-forbidden. That proposal budget does not create G2 implementation capacity.
+The historical record retains the authenticated reset-1 discontinuity facts,
+rejected seed identities, round-3 negative evidence, and old reset-2 scope
+and budget values solely to explain why reset-3 starts with a null
+predecessor tip. It never supplies a reset-3 source, result, receipt,
+profile, descriptor, action, consumption, or state transition. Any consumer
+that encounters a reset-2 operation table must treat it as
+`historical_evidence_only_non_dispatch` and reject execution.
 
-It is inert until the supervisor executes this fail-closed chronology:
+#### Reset-3 supersession amendment
 
-1. Seal an immutable pre-review planning core and operation-ledger genesis;
-   the core excludes future review records and is identified by
-   `planning_core_sha256`.
-2. Reserve and complete exactly two plan-review operations, each bound to that
-   core and its genesis. After both reviews complete, perform two protected
-   fresh `predecessor_ledger_search` operations and one protected
-   `capability_probe`, each bound to one `activation_run_id`, the current
-   capability-store instance, environment fingerprint, broker challenge/event
-   envelopes, receipts, and a maximum 900-second freshness window.
-3. Materialize one immutable post-review activation record containing the
-   approved review objects, search/probe completions, complete abandoned
-   manifest digest, predecessor disposition, planning core digest, genesis,
-   and current broker/store/environment identities.
-4. Reserve, grant, and consume the three human actions against that activation
-   record. Each protected action result binds both the activation-record digest
-   and predecessor-disposition digest. Consumption is required before the
-   protected seed-admission reservation or worker launch (not before the
-   planning-review reservations).
-5. Reserve and complete one fresh broker-authenticated durable-ledger recheck.
-   Its completion must be the ledger event immediately preceding seed admission.
-6. Open the exact seed-admission reservation, execute the validator, then
-   append exactly one successful or typed-failure completion and one canonical
-   post-exec receipt. No result predicts its future completion or receipt.
+`G2/reset-3` is the sole active G2 epoch. It keeps logical packet `G2`,
+Beads issue `bb-zjd`, the dependency graph, and the candidate's exact eleven
+paths, while superseding reset-2 with scope
+`bb.north_star_recovery.g2.scope.v4`. The historical reset-2 record above
+cannot satisfy any active guard.
 
-Any store/environment/run change, stale search/probe, durable reset-1 ledger,
-missing envelope, omitted manifest entry, or out-of-order operation leaves the
-packet in `blocked_review` and invalidates the activation and all downstream
-objects.
+The planning proposal is evaluated from the broker-supplied authenticated current
+planning `HEAD`, tree, and the two exact planning-file blob OIDs. The four fresh
+planning review records bind those same runtime identities; the embedded source
+contains no current-head literal and cannot become stale when this amendment
+changes the planning files. The reviewed-base parent/tree are separate
+authenticated fields in the planning-core record. The repair is exactly one new
+commit with the reviewed base as its parent, changing exactly the two planning
+paths below and no other path; the cumulative two-file tree/diff is the
+authority, and an earlier multi-commit planning history is not a violation.
+Reset-3 seals planning core, null-tip genesis, two fresh planning review
+rounds, two fresh predecessor searches, a capability probe, activation, fresh
+human actions with separate consumptions, and a live recheck immediately
+before bounded preseed admission. The preseed authority validator is
+descriptor-bound and checks those facts; the complete runtime verifier is
+seed work in the eight-file seed scope.
 
-The planning commit never embeds or predicts its own commit or tree hash.
-Those identities are materialized after commit and bound by the exact reviews
-and human action. The admission validator reads the approved commit through
-the canonical common Git directory, recomputes both planning-file digests from
-that tree, and rejects refs, abbreviations, caller-supplied trees, replace
-objects, grafts, shallow history, alternates, hooks, config overrides,
-filters, text conversion, external diffs, and writable filesystem substitutes.
+Preseed launch uses an acyclic broker contract. After activation, the broker
+seals an `invocation_intent` over the immutable source, executable, closed
+environment, predecessor descriptor set, planning core, and activation record.
+The three human grants bind that completed intent—not the future invocation
+manifest—and are consumed once before the live recheck. Only then does the
+broker open the admission reservation and issue invocation-manifest v4, which
+must reproduce every immutable intent field and additionally bind the exact
+three consumptions, live recheck, open-reservation ledger bytes, result FIFO,
+and broker runtime attestation. The validator rejects a future-result digest,
+an action bound to invocation-manifest v4, any reordered timestamp, or any
+intent/manifest field drift.
 
-`G2/reset-2` uses scope `bb.north_star_recovery.g2.scope.v3`. Historical
-reset-1 counters never disappear or become available capacity. The new epoch
-receives exactly one bounded seed phase and the unchanged candidate phase:
+The child is a semantic checker, not the authority root. A passed JSON value or
+a look-alike FD 3/20 launch has no transition power. The OMP broker accepts one
+result only when its non-caller-writable capability store matches the retained
+launch record and child PID, exact immutable input handles, invocation, open
+reservation, retained FIFO read-end identity, and the child/runtime capability
+attestations. The broker consumes that FIFO once and `waitpid` proves exit code
+zero with no terminating signal. Its post-exec verifier parses the stored
+result, recomputes every digest and physical binding, emits a private v2
+acceptance record, appends completion, issues the v2 receipt binding
+acceptance/result/completion and the completion ledger tip, then appends the
+receipt event. Preseed transition guards for acceptance, child status,
+completion, receipt, and ledger extension are owned only by that broker
+post-exec verifier; the embedded child cannot self-validate them. Direct scalar
+execution, forged FD values, a forged parent, or child-authored post-exec
+records produce only inert bytes.
 
 | Phase | Files | Non-generated lines | Attempts | Review rounds | CI reruns |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| reset-2 seed | 4 | 2500 | 2 | 2 | 2 |
-| candidate | 11 | 1000 | 2 | 2 | 2 |
-| active reset-2 aggregate | 15 | 3500 | 4 | 4 | 4 |
+| reset-3 seed | 8 | 5000 | 3 | 3 | 3 |
+| candidate (unchanged scope, reset-3-owned profiles) | 11 | 1000 | 2 | 2 | 2 |
+| active reset-3 aggregate | 19 | 6000 | 5 | 5 | 5 |
 
-Unused capacity never transfers between phases or epochs. Reset-2 seed attempts
-may touch only:
+Candidate final review remains exactly two rounds/four operations; it is
+sealed from the candidate review records and does not create a sixth
+implementation-review round. The seed source of truth is the reviewed
+declarative contract and its generated projection; canonical Git object
+inspection, the thin anchor CLI, and exact differential parity are required.
+The seed denies the exact 26-OID union (20 reset-1 identities plus six
+reset-2 failures), with the 11 round-3 entries a strict subset, and rejects
+every candidate blob in that union. Nine negative families, fail-closed
+command profiles, typed result receipts, guarded phase transitions, and
+supervisor-only promotion remain mandatory.
+Every active event is present in the closed event registry with exact source
+state(s), destination, ordered guard IDs, and result binding. The registry key
+set equals the happy-transition and failure-route event union; every guard is
+present in the closed guard registry with one validator source and exact
+required fields. Retry routes require a stored and receipted typed failure,
+no protected mutation, a monotonic counter increment, remaining capacity, and
+explicit downstream invalidation. Budget, environment, external-action,
+identity-drift, and cancellation routes are likewise guarded and fail closed.
+`all_nonterminal_states_exact` is a closed concrete list, not ambient
+executor behavior. Closure reaches only `g2_reset_3_packet_closed`; it cannot
+reach the program's global `complete` state.
 
-```text
-contracts/governance/schemas/bb.g2_closure_anchor.v1.schema.json
-contracts/governance/g2_abandoned_round3_manifest.v1.json
-scripts/packet/verify_g2_anchor.py
-tests/packet/test_verify_g2_anchor.py
-```
+The active artifact chronology is strict: candidate implementation attempts and
+the exact candidate merge produce `C`; the supervisor then seals pre-review
+evidence `E`; after `E` exists, candidate CI runs against the exact `C` head
+and tree and must include at least one successful exact-head run; the same
+post-`E` CI identity, reports, no-spend attestations, and `E` digest bind both
+candidate review rounds (four review operations total); only those reviews may
+form review seal `R`, and only `R` may authorize anchor `A`. Seed selection
+has the analogous prerequisite of at least one successful exact-head CI before
+selection. A CI result from before `E`, a review omitting `E`/reports/no-spend,
+or any anchor selected before `R` is stale and blocks the transition.
+Each seed-selection, seed-merge, candidate-merge, anchor-selection, and packet-
+closure human action result contains every key of that instance's exact
+binding payload plus `instance_id` and `action_sha256`. The consumption digest
+covers the full canonical action result, and transition validators recompute
+all current commit/tree, preflight, attempt, CI/review, ownership, test-plan,
+validation, state-artifact, and ledger-tip bindings. A shortened action result
+or stale prerequisite cannot authorize mutation or closure.
 
-The reviewed planning files are immutable seed inputs, not worker-owned seed
-paths. The reset-2 abandoned manifest is supervisor-derived from the exact G2
-round-3 candidate plus both rejected reset-1 seed commits, trees, diffs,
-reports, and reviews. It records exactly eleven round-3 candidate entries,
-each with path, blob OID, content SHA-256, mode, size, physical-line count,
-provenance, and disposition metadata. The broker binds the complete manifest
-bytes and digest to the planning core, activation run, ledger, and admission.
-Seed and candidate admission reject any missing manifest entry, omitted
-round-3 entry, or reuse of a denied blob. The denylist is recomputed from the
-authenticated S1/S2 Git trees; a caller-supplied or worker-supplied denylist
-never has authority.
-
-Reset-2 predecessor admission never guesses or reconstructs a lost ledger tip.
-This amendment accepts only a supervisor-authenticated
-`reset_discontinuity_disposition`. Before action grant, the broker performs
-two protected fresh predecessor-ledger searches and one protected capability
-probe for the current activation run. Each operation has a broker-issued
-challenge, a reservation/completion (or typed failure), the current
-capability-store instance and environment fingerprints, planning-core/genesis
-bindings, authenticated request/denial envelopes, and a completion no older
-than 900 seconds. The two predecessor searches must complete after both
-plan-review completions and before the capability probe, activation record, and
-action frontier. After all three action consumptions, a distinct live no-ledger
-recheck must complete within 60 seconds and immediately precede the seed-
-admission reservation. Search and recheck results derive only from authenticated
-broker envelopes. The probe derives only from broker challenge/request/denial
-envelopes, never worker-authored outcome fields.
-
-The disposition records exactly two immutable predecessor-search events, sets
-`old_ledger_tip_sha256` to `null`, `authority_gap` to `true`, and
-`may_satisfy_success` to `false`, and gives an explicit gap reason. It binds
-the known S1/S2 commits and trees, four raw rejected-review histories, the
-blocked `bb-zjd` tracker snapshot, exact historical attempt/review counters,
-and every negative-evidence inventory object. The immutable disposition itself
-contains no future action identifiers. After activation-record creation, all
-three fresh human actions bind and explicitly authorize both that activation
-record and its predecessor disposition. If a durable terminal reset-1 ledger
-is later found, activation stops and this plan must be amended and reviewed
-again; the validator never silently switches predecessor modes.
-
-Every protected step has its own typed operation class, exact phase identity,
-closed result schema, counter rule, and result/transition guard. In addition
-to attempt, review, CI, human-action, and phase-specific consumption classes,
-the reset-2 ledger covers actual seed and candidate merges, evidence sealing,
-seed and candidate review seals, review-anchor creation, private and installed
-validation, rendering, and closure execution. The class set must equal both
-the result-schema and phase-map key sets. Each class requires a reservation,
-exactly one terminal completion or typed failure, an immutable result digest,
-and an exact transition guard. Failed, canceled, timed-out, or
-integrity-failed results never satisfy success. Seed and candidate phases each
-require two review rounds; each round has distinct correctness and external
-security review operations, for four fresh review sessions per phase.
-
-The supervisor invokes every protected command through an immutable
-OMP/runtime-event command-broker manifest. The manifest is not caller JSON:
-it names immutable event handles for the exact committed YAML source scalar,
-pinned executable and SHA-256, complete argv and closed environment, every
-descriptor capability (origin, immutable object ID, SHA-256, device, inode,
-and access direction), route/history/human-response/consumption events, broker
-clock/environment, and the inherited write-only result FIFO. The broker
-validates origins and descriptor identities. For the common protected-result
-protocol, the validator emits and the broker stores a canonical result that
-binds only the pre-exec reservation/invocation authority; it cannot predict a
-completion-event or post-exec-receipt digest. The broker then appends exactly
-one terminal ledger event binding that stored-result digest and finally issues
-an immutable post-exec receipt binding invocation, result, completion, and
-extended ledger tip. These digest domains are disjoint and nonrecursive. The
-standard-library validator separately fstats all FIFOs, recomputes every
-manifest/input/result/receipt digest, and validates event identities and
-ordering; it cannot store its own success. Forged-but-consistent JSON, regular
-files, duplicate descriptors, wrong access modes, missing events,
-source/argv/environment drift, circular result fields, and unreceipted results
-all block.
-
-The Git profile is config-free and closed. Executable config/includes,
-aliases, hooks, filters, text conversion, pagers, prompts, replacement objects,
-grafts, shallow history, alternates, credentials, and external diffs are
-rejected or explicitly disabled before repository-sensitive commands. The
-registered linked-worktree `.git` file, per-worktree gitdir, commondir,
-backlink, `HEAD`, and index are nofollow-validated and device/inode-bound.
-Worktree operations use the per-worktree gitdir; object reads use the canonical
-common gitdir and recompute object IDs. Any identity or config drift blocks.
-
-#### Reset-2 authoritative closed contract
-
-The reset-2 amendment is the sole active G2 contract. It supersedes every reset-1 entry, phase, schema, lens, event, counter, and generic blocked-review re-entry; historical reset-1 records remain negative evidence only.
-The sole pre-activation frontier is `blocked_review`. An exact activation event
-enters `g2_reset_2_seed_preflight` only after the planning-core reviews,
-post-review searches, capability probe, and activation record pass. Three fresh
-human actions and consumptions then authorize that activation and predecessor
-disposition; a live recheck must immediately precede seed admission.
-
-Canonical closed schemas are: manifest `bb.omp.command_broker_invocation.v1`;
-planning core `bb.north_star_recovery.g2_planning_core.v2`; activation
-`bb.north_star_recovery.g2_activation_record.v2`; human action
-`bb.north_star_recovery.g2_human_action.v2`; and consumption
-`bb.north_star_recovery.g2_action_consumption.v2`.
-The ledger/genesis/event schemas are `bb.north_star_recovery.g2_operation_ledger.v2`, `bb.north_star_recovery.g2_operation_genesis.v2`, and `bb.north_star_recovery.g2_operation_event.v2`.
-Plan review/raw review use `bb.north_star_recovery.g2_plan_review.v2` and `bb.north_star_recovery.g2_plan_review_raw.v2`; seed admission uses `bb.north_star_recovery.g2_seed_admission.v2`.
-
-The only review lenses are `specification_correctness` and `security_standards_generated_drift`. Seed and candidate each require two distinct round IDs and four operations, one for each round/lens Cartesian pair.
-The exact phases are `G2/reset-2/planning`, `G2/reset-2/preseed`, `G2/reset-2/seed`, and `G2/reset-2/candidate`; reset-1 phase labels are rejected.
-
-Every nested search, history, tracker, review, route, human response, consumption, capability-probe, and configuration handle is supplied in a broker-materialized envelope binding exact origin, immutable object ID, raw-byte digest, event type, actor, payload digest, and payload.
-Descriptor fields must equal that envelope; handles are unique and disjoint by role. Route validation requires the broker-resolved model to equal the raw route preflight and recomputed effective override.
-
-The supervisor-derived reset-1 negative inventory binds actual S1/S2 commit/tree objects, fixed round-3 blocked/candidate/report/review digests, one authenticated review for each `S1/S2 × specification_correctness/security_standards_generated_drift` pair, the current tracker snapshot, two independent durable-ledger absence searches, and the complete abandoned-blob denylist.
-It never invents the missing durable ledger; omission, substitution, or reuse blocks.
-
-Each human action binds old/new epoch, scope, phase and aggregate budgets, allowed/forbidden paths, repository identity, planning commit/tree and blob OIDs/digests, reason, discontinuity and negative-evidence digests, and exact action and grant-result identities.
-Consumption carries one closed typed grant result whose digest is recomputed and cross-linked through its ledger completion. `seed_admission` has one pre-execution reservation read as the input ledger tip.
-Only after result publication may the broker append one terminal completion and issue a receipt binding pre-execution tip, result, extended tip, and completion event; no result predicts its future event or receipt digest.
-
-The broker publishes one exact closed environment, rejects caller overrides, and binds argv, environment, executable, source scalar, descriptor capabilities, result bytes, and receipt.
-Capability probes use broker-issued unpredictable challenges and broker-observed denial receipts; worker-authored `passed` or `outcome` claims are never authority.
-The reset-2 implementation budget remains exactly four seed files/2500
-non-generated lines and eleven candidate files/1000 lines, aggregate
-fifteen/3500. The separate two-file planning cap is 4500 lines and never grants
-implementation capacity.
-
-Absent the exact reviewed amendment, predecessor input/disposition, broker receipt/result, and consumed fresh human actions, the only lawful state remains `blocked_review`; no reset-2 worktree, reservation, review, merge, candidate, or downstream packet may start.
+Reset-3 inherits only immutable semantics explicitly copied by the YAML
+overlay. Epoch, scope, budgets, paths, identities, actions, reviews, negative
+inventory, validator, command profiles, phase/state maps, generated
+projection, and dispatch are reset-3 overrides; no reset-2 result or
+capacity transfers into this epoch.
 
 ### R0: Replay records and admission
 
