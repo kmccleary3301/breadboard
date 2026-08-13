@@ -330,15 +330,24 @@ environment. Darwin `sandbox-exec` deterministically adds
 `__CF_USER_TEXT_ENCODING=0x1F6:0:0` for broker UID 502; the child must observe
 exactly that five-variable normalized environment, while the broker separately
 attests both values. The broker's immutable sandbox profile is rendered
-deterministically from a digest-bound system-runtime access manifest: Darwin
-`(version 1)`, deny-default, exact process-exec, process-info, `sysctl-read`,
-mach-lookup, explicit network denial, then sorted literal metadata, read-data,
-and map-executable clauses derived only from each entry's access set. Every
-entry has an exact literal path, device, inode, mode, type, root UID/GID, file
-flags, canonical ACL digest, effective child-UID write-denial result, allowed
-access set, and type-specific size/digest, `rdev`, or `readlink` identity.
-Allowed access values are only metadata, read-data, and map-executable. Every
-listed path and ancestor must be nonwritable and nonreplaceable by child UID
+deterministically from a digest-bound system-runtime access manifest and an
+exact empty Mach-service allowlist whose canonical digest and denial receipt
+are bound into the capability manifest and direct-child attestation. Darwin
+`(version 1)` is deny-default with exact process-exec, process-info, and
+`sysctl-read`, explicit `(deny mach-lookup)` and network denial, then sorted
+literal metadata, read-data, and map-executable clauses derived only from each
+entry's access set. Before the operation launch, the broker starts a separate
+sacrificial child, drops it to the exact child UID/GID/supplementary groups,
+and runs it under the exact rendered sandbox profile to probe
+`com.apple.securityd`, `com.apple.trustd.agent`, and
+`com.apple.pasteboard.1`; each lookup must fail with the sandbox denial result,
+not merely an unknown-service result. The broker waits for that child and binds
+its PID, wait status, profile digest, identity, services, results, and receipt
+before launching the operation. Every runtime entry has an exact literal path,
+device, inode, mode, type, root UID/GID, file flags, canonical ACL digest,
+effective child-UID write-denial result, allowed access set, and type-specific
+size/digest, `rdev`, or `readlink` identity.
+Every listed path and ancestor must be nonwritable and nonreplaceable by child UID
 502 under mode, flags, and ACL; the sole exception is typed `/dev/urandom`.
 The ACL digest covers `acl_copy_ext` bytes. A no-sandbox broker helper drops to
 the exact child UID/GID/supplementary groups and requires effective
@@ -870,10 +879,20 @@ Every active event is present in the closed event registry with exact source
 state(s), destination, ordered guard IDs, and result binding. The registry key
 set equals the happy-transition and failure-route event union; every guard is
 present in the closed guard registry with one validator source and exact
-required fields. Retry routes require a stored and receipted typed failure,
+Retryable implementation routes require a stored and receipted typed failure,
 no protected mutation, a monotonic counter increment, remaining capacity, and
-explicit downstream invalidation. Budget, environment, external-action,
-identity-drift, and cancellation routes are likewise guarded and fail closed.
+null downstream invalidation fields. A post-`E` CI failure with remaining CI
+capacity is different: the authenticated failed-result envelope must name
+`candidate_ci_rerun`, `G2/reset-3/evidence`, and the broker-owned final-review
+state, and bind the unchanged active `C`/`E` handle set. It stays in final
+review and may rerun only CI; candidate implementation, merge-action reuse,
+and `C`/`E` mutation are forbidden. A failed envelope naming
+`candidate_review_round` is mutually exclusive and terminal regardless of
+remaining review capacity: its cross-bound invalidation record revokes `C`,
+`E`, and downstream review state, extends the ledger tip, and routes to
+`blocked_budget`; it never returns to candidate preflight. Budget,
+environment, external-action, identity-drift, and cancellation routes are
+likewise guarded and fail closed.
 `all_nonterminal_states_exact` is a closed concrete list, not ambient
 executor behavior. Closure reaches only `g2_reset_3_packet_closed`; it cannot
 reach the program's global `complete` state.
@@ -881,13 +900,19 @@ reach the program's global `complete` state.
 The active artifact chronology is strict: candidate implementation attempts and
 the exact candidate merge produce `C`; the supervisor then seals pre-review
 evidence `E`; after `E` exists, candidate CI runs against the exact `C` head
-and tree and must include at least one successful exact-head run; the same
-post-`E` CI identity, reports, no-spend attestations, and `E` digest bind both
-candidate review rounds (four review operations total); only those reviews may
-form review seal `R`, and only `R` may authorize anchor `A`. Seed selection
-has the analogous prerequisite of at least one successful exact-head CI before
-selection. A CI result from before `E`, a review omitting `E`/reports/no-spend,
-or any anchor selected before `R` is stale and blocks the transition.
+and tree and must include at least one successful exact-head run. A retryable
+CI failure remains in final review and reissues only that CI operation with the
+same authenticated `C`, `E`, no-spend, and candidate-merge-action identities.
+The same successful post-`E` CI identity, reports, no-spend attestations, and
+`E` digest bind both candidate review rounds (four review operations total);
+only those reviews may form review seal `R`, and only `R` may authorize anchor
+`A`. A candidate review failure is terminal for the candidate review budget,
+durably invalidates `C`/`E` and downstream review handles, and blocks a new
+candidate path pending a new reviewed planning epoch. Seed selection has the
+analogous prerequisite of at least one successful exact-head CI before
+selection. A CI result from before `E`, a review omitting
+`E`/reports/no-spend, or any anchor selected before `R` is stale and blocks the
+transition.
 Each seed-selection, seed-merge, candidate-merge, anchor-selection, and packet-
 closure human action result contains every key of that instance's exact
 binding payload plus `instance_id` and `action_sha256`. The consumption digest
