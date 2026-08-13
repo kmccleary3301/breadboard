@@ -775,12 +775,20 @@ profile declarations. Every class has the one phase-fixed lifecycle and exact
 event binds phase, actor/route, source, strict broker timestamp, typed status,
 contiguous sequence, previous digest, and exact counter/cap snapshots. An event
 preimage excludes only its own `event_sha256`; null or prior-event fields remain
-inside that digest. Completion binds the typed result event. The broker issues
-the v2 receipt over the private acceptance record, stored result, completion,
-completion ledger tip, and expected child principal plus child-observed
-UID/GID/canonical supplementary-groups digest whenever a process was launched,
-then appends a receipt event that binds that receipt; the receipt never predicts
-the receipt event's digest. Each reservation is exactly `reservation ->
+Completion binds the typed result event. For every operation, the broker stores
+one authenticated `operation_capability_manifest` event whose exact payload is
+the complete capability-manifest schema; the invocation references that event.
+The verifier recomputes its digest and binds its operation class, instance,
+execution kind, platform, sandbox and network identities to the current ledger
+operation and to launch, runtime-attestation, acceptance, and receipt records.
+For a process operation, expected and child-observed UID/GID/canonical
+supplementary-groups values are strictly typed and all equal that per-operation
+manifest principal. For a nonprocess operation, the manifest and every chain
+principal field are null. The broker issues the v2 receipt over the private
+acceptance record, stored result, completion, completion ledger tip, and that
+principal chain, then appends a receipt event that binds that receipt; the
+receipt never predicts the receipt event's digest.
+Each reservation is exactly `reservation ->
 invocation -> result_stored -> completion -> receipt`
 or `reservation -> invocation -> failure -> completion -> receipt`, with one
 `action_consumption` event only for the phase's dedicated consumption operation
