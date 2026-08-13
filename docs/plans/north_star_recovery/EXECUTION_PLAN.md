@@ -336,15 +336,25 @@ are bound into the capability manifest and direct-child attestation. Darwin
 `(version 1)` is deny-default with exact process-exec, process-info, and
 `sysctl-read`, explicit `(deny mach-lookup)` and network denial, then sorted
 literal metadata, read-data, and map-executable clauses derived only from each
-entry's access set. Before the operation launch, the broker starts a separate
-sacrificial child, drops it to the exact child UID/GID/supplementary groups,
-and runs it under the exact rendered sandbox profile to probe
-`com.apple.securityd`, `com.apple.trustd.agent`, and
-`com.apple.pasteboard.1`; each lookup must fail with the sandbox denial result,
-not merely an unknown-service result. The broker waits for that child and binds
-its PID, wait status, profile digest, identity, services, results, and receipt
-before launching the operation. Every runtime entry has an exact literal path,
-device, inode, mode, type, root UID/GID, file flags, canonical ACL digest,
+entry's access set. Before the operation launch, the broker creates an
+immutable private probe-launch record for the same pinned Python executable
+and reviewed source scalar, exact `[-I, -S, -c, --,
+darwin_bootstrap_look_up_v1]` launch arguments, closed environment, rendered
+sandbox executable/profile identities, and broker-selected expected child
+UID/GID/supplementary groups. That exact extra argument selects the source
+scalar's closed Mach-probe branch; no role, opcode, source, or input is
+child-selectable. The broker starts that launch as a separate sacrificial
+direct child, drops it to the recorded identity, and invokes
+`darwin_bootstrap_look_up_v1` for `com.apple.securityd`,
+`com.apple.trustd.agent`, and `com.apple.pasteboard.1`. Each raw
+`kern_return_t` must be integer `1100` / `BOOTSTRAP_NOT_PRIVILEGED`, never
+integer `1102` / `BOOTSTRAP_UNKNOWN_SERVICE`. The broker waits for the child
+and the receipt cross-binds the broker ID, launch-record digest, direct parent
+and child PIDs, broker-confirmed identity-drop handshake, observed child
+UID/GID, executable/source/argv/environment/profile identity, services, raw
+results, and wait status before the operation may launch.
+Every runtime entry has an exact literal path, device, inode, mode, type, root
+UID/GID, file flags, and canonical ACL digest,
 effective child-UID write-denial result, allowed access set, and type-specific
 size/digest, `rdev`, or `readlink` identity.
 Every listed path and ancestor must be nonwritable and nonreplaceable by child UID
@@ -878,21 +888,28 @@ supervisor-only promotion remain mandatory.
 Every active event is present in the closed event registry with exact source
 state(s), destination, ordered guard IDs, and result binding. The registry key
 set equals the happy-transition and failure-route event union; every guard is
-present in the closed guard registry with one validator source and exact
-Retryable implementation routes require a stored and receipted typed failure,
-no protected mutation, a monotonic counter increment, remaining capacity, and
-null downstream invalidation fields. A post-`E` CI failure with remaining CI
-capacity is different: the authenticated failed-result envelope must name
+present in the closed guard registry with one validator source and exact required fields.
+Every failed-result object is acyclic: it binds only the authenticated
+pre-invalidation downstream-handle index and the current monotonic
+capability-store tip. The broker stores that failure, appends the operation
+ledger completion and sole terminal receipt, and only then may construct a
+separate broker-private downstream-invalidation record binding the failure,
+stored result, completion, receipt, revoked handles, downstream phases, prior
+capability-store tip, and newly extended capability-store tip. Invalidation is
+not another operation-ledger event. Retryable implementation routes require no
+invalidation record, no protected mutation, a monotonic counter increment, and
+remaining capacity. A post-`E` CI failure with remaining CI capacity is
+different: its authenticated failed-result envelope must name
 `candidate_ci_rerun`, `G2/reset-3/evidence`, and the broker-owned final-review
-state, and bind the unchanged active `C`/`E` handle set. It stays in final
+state and bind the unchanged active `C`/`E` handle set. It stays in final
 review and may rerun only CI; candidate implementation, merge-action reuse,
 and `C`/`E` mutation are forbidden. A failed envelope naming
 `candidate_review_round` is mutually exclusive and terminal regardless of
-remaining review capacity: its cross-bound invalidation record revokes `C`,
-`E`, and downstream review state, extends the ledger tip, and routes to
-`blocked_budget`; it never returns to candidate preflight. Budget,
-environment, external-action, identity-drift, and cancellation routes are
-likewise guarded and fail closed.
+remaining review capacity: after its receipt, the cross-bound invalidation
+record revokes exact `C`, `E`, and downstream review handles, extends the
+capability-store tip, and routes to `blocked_budget`. Budget, environment,
+external-action, identity-drift, and cancellation terminal routes use the same
+receipt-before-invalidation chronology and fail closed.
 `all_nonterminal_states_exact` is a closed concrete list, not ambient
 executor behavior. Closure reaches only `g2_reset_3_packet_closed`; it cannot
 reach the program's global `complete` state.
