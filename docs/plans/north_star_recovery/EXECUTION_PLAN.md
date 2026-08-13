@@ -296,40 +296,70 @@ snapshots. The source cannot mint, reauthorize, or choose an envelope, key,
 descriptor, capability token, or metadata. On Darwin, FD 3 and data FDs 4 and
 6--19 are broker-created regular files that are fully written and synced,
 reopened read-only with `O_NOFOLLOW`, unlinked, and inherited only after every
-writable handle is closed; each must have link count zero. FD 5 is the
+write handle is closed; each must have link count zero. FD 5 is the
 broker-opened `O_NOFOLLOW` read-only handle to the root-owned
-`/usr/bin/python3` launcher and must match the broker launch/platform
-attestations by device/inode/mode and digest. It is never required to equal
-`sys.executable` or the post-shim runtime realpath.
+`/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/Resources/Python.app/Contents/MacOS/Python`
+binary and must match the broker launch/platform attestations and
+`sys.executable` by exact path plus no-follow device/inode/mode/digest identity.
 The broker binds every input FD's role-specific device/inode/mode/size/digest
 identity before launch and rechecks the same identities and bytes after
 `waitpid`. FD 20 is the broker-owned write-only result FIFO. FDs 0--2 are
-closed before exec; the child has exactly FDs 3--20. Linux sealed-memfd
+closed and Darwin `closefrom(21)` or `posix_spawn` close-from is required before
+exec; failure blocks. The broker authenticates the pre-close soft limit as
+1,048,576, reenumerates through that ceiling before exec, then sets the child
+soft limit to 64. The child independently audits FD numbers 0--1,048,575 and
+must observe exactly FDs 3--20. Linux sealed-memfd
 semantics are neither asserted nor substituted for this Darwin transport.
 Before parsing FD 3, the source checks its read-only access mode, regular-file
 type, owner, zero link count, mode, and size. It uses positioned reads so it can
 compare the complete bytes and physical identity again after parsing. It
 applies the same role-specific pre/post checks to fixed input FDs 4--19, then
 verifies their roles, broker event identities, exact bytes, and hashes.
-It independently inspects `sys.argv`, `sys.flags`, `os.uname()`, `os.getpid()`,
-`os.getppid()`, FD 5's launcher identity, `os.environ`, the exact open-FD set,
-and sandboxed network and forbidden-write negative probes. The broker launch
-record and FD 4 digest bind the exact `-I -S -c` reviewed source scalar. The
-broker-launched executable must be
-exactly `/usr/bin/python3` and FD 5 must match that launcher by
-device/inode/mode, and the observed Darwin kernel/machine must equal the
-broker-pinned platform identity. The
-environment is exactly the closed four-variable map. The broker's immutable
-sandbox profile contains a digest-bound system-runtime read allowlist sufficient
-for the root-owned Python executable and imported standard-library modules.
-Every entry is a broker-opened `O_NOFOLLOW`, root-owned regular file whose
-path/device/inode/mode/type/owner/size/digest record is recomputed before launch
-and after `waitpid`; every other path remains denied. The child emits a canonical runtime attestation
-containing only independently observed runtime identity, descriptor,
-environment, and denial-probe facts. Broker-only sandbox profile and
-capability-manifest claims remain in separately authenticated launch records;
-they are never represented as child observations.
-After `waitpid`, the broker recomputes the executable and `/usr/bin/sandbox-exec`
+It independently inspects `sys.argv`, `sys.flags`, `sys.executable`,
+`os.uname()`, `os.getpid()`, `os.getppid()`, the actual child `os.environ`, the
+full descriptor audit range, a denied loopback-connect probe, and a denied
+forbidden-write probe. It opens `sys.executable` with `O_NOFOLLOW` and binds its
+path/device/inode/mode/digest to FD 5, the runtime-manifest entry, and the
+broker launch/platform records. The broker launch record and FD 4 digest bind
+the exact `-I -S -c` reviewed source scalar. The broker-launched executable
+must be exactly the root-owned Python application binary above; the observed
+Darwin kernel/machine must equal the broker-pinned platform identity.
+
+The operation profile and invocation bind the exact four-variable launch
+environment. Darwin `sandbox-exec` deterministically adds
+`__CF_USER_TEXT_ENCODING=0x1F6:0:0` for broker UID 502; the child must observe
+exactly that five-variable normalized environment, while the broker separately
+attests both values. The broker's immutable sandbox profile is rendered
+deterministically from a digest-bound system-runtime access manifest: Darwin
+`(version 1)`, deny-default, exact process-exec, process-info, `sysctl-read`,
+mach-lookup, explicit network denial, then sorted literal metadata, read-data,
+and map-executable clauses derived only from each entry's access set. Every
+entry has an exact literal path, device, inode, mode, type, root UID/GID, file
+flags, canonical ACL digest, effective child-UID write-denial result, allowed
+access set, and type-specific size/digest, `rdev`, or `readlink` identity.
+Allowed access values are only metadata, read-data, and map-executable. Every
+listed path and ancestor must be nonwritable and nonreplaceable by child UID
+502 under mode, flags, and ACL; the sole exception is typed `/dev/urandom`.
+The ACL digest covers `acl_copy_ext` bytes. A no-sandbox broker helper drops to
+the exact child UID/GID/supplementary groups and requires effective
+`faccessat(..., W_OK, AT_EACCESS)` denial for every path, resolved symlink
+target, and containing ancestor before launch and after `waitpid`; any probe,
+credential-drop, ACL-read, or serialization failure blocks.
+Regular read-data files are opened `O_NOFOLLOW` and digest-bound;
+metadata-only regular files and directories are `lstat`/inode-bound; symlinks
+are `lstat`/`readlink`-bound; and `/dev/urandom`, required by isolated Python
+startup, is bound by device/inode/mode/UID/GID/flags/ACL/size/`rdev`. The
+reviewed scalar hardcodes the exact sorted path-to-access map; a missing,
+extra, reordered, writable, replaceable, or differently permissioned entry
+blocks. That map covers the exact Python application, framework image,
+imported standard-library closure, and required Darwin traversal metadata. The
+broker recomputes every entry and child-UID write denial before launch and
+after `waitpid`; every unlisted path access remains denied. The child emits a
+canonical runtime attestation containing only independently observed runtime
+identity, descriptor, environment, and denial-probe facts. Broker-only sandbox
+profile and capability-manifest claims remain in separately authenticated
+launch records; they are never represented as child observations. After
+`waitpid`, the broker recomputes the executable and `/usr/bin/sandbox-exec`
 from broker-opened no-follow FDs, proves the launched sandbox profile, network,
 credentials, workspace, Git/object-store, write allowlist, input handles, PID,
 and observation interval, and binds that child attestation into acceptance and
@@ -380,10 +410,11 @@ isolated-worktree capabilities whose write surfaces are exactly the eight and
 eleven authorized paths. Review profiles are read-only. `broker_builtin` has
 no OS command (`executable: null`, `argv: []`, exact broker opcode);
 `delegated_agent` uses an authenticated route and exact task/workspace context,
-never a future repository script; `embedded_validator` is
-`/usr/bin/python3 -I -S -c` with the reviewed scalar; and `verified_script`
-requires its creator commit, exact source FD, checkout/object/runtime inputs,
-and network-denied local reproducibility command manifest. Operation-time
+never a future repository script; `embedded_validator` uses the exact
+root-owned Python application binary with `-I -S -c` and the reviewed scalar;
+and `verified_script` uses that same binary, requires its creator commit, exact
+source FD, checkout/object/runtime inputs, and network-denied local
+reproducibility command manifest. Operation-time
 roles are broker-issued separately from preseed fixed FDs. Builtins consume
 only typed private-store operands and have no filesystem/input FDs; delegated
 agents receive authenticated harness context and isolated-worktree
@@ -445,9 +476,10 @@ schema, and the abandoned manifest from selected `S` blob OIDs into a transient
 private directory after every delegated agent has terminated. The directory is
 not authority. Immediately before execution the supervisor reopens every file
 without symlink following and revalidates declared Git type/length, full OID,
-and SHA-256 against the capability-store identities. It invokes absolute
-`/usr/bin/python3` with an argv array and closed environment, then deletes the
-transient materialization after terminal validation. Trusted selections come
+and SHA-256 against the capability-store identities. It invokes the exact
+root-owned Python application binary named above with an argv array and closed
+launch environment, then deletes the transient materialization after terminal
+validation. Trusted selections come
 only from immutable parent-session actions, never environment variables,
 filesystem JSON, or worker output.
 
@@ -518,7 +550,7 @@ The candidate lifecycle is object-mode and one-way:
    every later profile names its concrete script and execution kind
    (`broker_builtin`, `delegated_agent`, or `verified_script`) and receives
    only inputs existing at its phase boundary. `candidate_budget_validation`
-   uses the projected `g2_reset_3_candidate_budget_v1` profile;
+   uses the projected `g2_reset_3_candidate_budget_v2` profile;
    `candidate_budget_validation`, `seed_ci_rerun`, `candidate_ci_rerun`,
    `private_validation`, and `installed_validation` execute
    `scripts/packet/verify_g2_anchor.py`; `renderer` executes
