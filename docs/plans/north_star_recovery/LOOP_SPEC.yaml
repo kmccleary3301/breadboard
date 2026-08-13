@@ -10613,6 +10613,8 @@ bootstrap_policy:
             return {"tree":fields[b"tree"],"parents":parents}
         def parse_tree(raw):
             entries=[]
+            exact_names=set()
+            canonical_names=set()
             offset=0
             while offset<len(raw):
                 mode_end=raw.find(b" ",offset)
@@ -10621,7 +10623,10 @@ bootstrap_policy:
                 mode=raw[offset:mode_end].decode("ascii")
                 path=raw[mode_end+1:nul].decode("utf-8")
                 object_id=raw[nul+1:nul+21].hex()
-                expect(mode in {"100644","100755","40000"} and path and "/" not in path and path not in {".",".."},"tree component")
+                canonical_name=path.casefold()
+                expect(mode in {"100644","100755","40000"} and path and path.isascii() and "/" not in path and path not in {".",".."} and path not in exact_names and canonical_name not in canonical_names,"tree component")
+                exact_names.add(path)
+                canonical_names.add(canonical_name)
                 entries.append({"mode":mode,"path":path,"oid":object_id})
                 offset=nul+21
             return entries
@@ -11157,8 +11162,9 @@ bootstrap_policy:
             if chain[0] is admission[0]:
                 continue
             kinds=[event["event_kind"] for event in chain]
-            expected=["reservation","invocation","result_stored"]+(["action_consumption"] if chain[0]["operation_class"] in consumption_classes else [])+["completion","receipt"]
-            expect(kinds==expected,"successful prerequisite lifecycle")
+            terminal_kind="failure" if any(event["event_kind"]=="failure" for event in chain) else "result_stored"
+            expected=["reservation","invocation",terminal_kind]+(["action_consumption"] if terminal_kind=="result_stored" and chain[0]["operation_class"] in consumption_classes else [])+["completion","receipt"]
+            expect(kinds==expected,"terminal prerequisite lifecycle")
             expect(len({event["result_sha256"] for event in chain[2:]})==1 and chain[-1]["receipt_event_handle"] is not None,"result receipt chain")
         expected_reservation_classes=["planning_core_seal"]+["planning_review"]*4+["predecessor_search"]*2+["capability_probe","activation_record_seal","human_scope_budget_action","human_planning_action_consumption","human_governance_action","human_planning_action_consumption","human_security_boundary_action","human_planning_action_consumption","live_recheck","seed_admission"]
         expect([event["operation_class"] for event in events if event["event_kind"]=="reservation"]==expected_reservation_classes,"exact successful preseed reservation sequence")
