@@ -269,11 +269,13 @@ supersedes stale `STATE.json#planning_package.independent_review` only for this
 reset phase; `STATE.json` is not read as authority.
 
 Each seed attempt, review round, CI rerun, merge, human action, and action
-consumption is appended to that capability-store ledger. Attempt/review/CI
-launches require a reservation first and a completion or typed failure after.
-Sequence numbers are contiguous and previous-event digests form one chain from
-the genesis. A missing completion consumes the reservation and blocks the
-phase. Workers cannot spawn reviewers, push, start CI, access authority records,
+consumption is appended to that capability-store ledger. Every launched
+operation requires a reservation, invocation, exactly one typed success or
+failure result, a broker completion bound to that result, and one terminal
+receipt. Sequence numbers are contiguous and previous-event digests form one
+chain from the genesis. A missing completion or receipt consumes the
+reservation and blocks the phase. Workers cannot spawn reviewers, push, start
+CI, access authority records,
 or create ledger events.
 
 Before `S` exists, reset-3 seed admission uses the full standard-library
@@ -289,45 +291,115 @@ The broker is the authority at the pre-exec boundary. It authenticates one
 canonical active event envelope on fixed FD 3 with exactly
 `[handle, origin, immutable_object_id, raw_sha256, event_type, actor,
 payload_sha256, payload]`, verifies every payload hash/handle/type, and then
-launches the validator as its direct child with fixed broker-owned sealed
-memfds. The source cannot mint, reauthorize, or choose an envelope, key,
-descriptor, capability token, or metadata. FD 3 and object FDs 4--19 must
-report `F_GET_SEALS` containing `F_SEAL_SEAL`, `F_SEAL_SHRINK`, `F_SEAL_GROW`,
-and `F_SEAL_WRITE`; FD 20 is the broker-owned write-only result FIFO.
-The source verifies fixed descriptor roles, broker event identities,
-`getppid()`/child and runtime attestations, exact bytes, inode/device/mode,
-and all descriptor hashes before reading records.
-It independently inspects `/proc/self/cmdline`, `/proc/self/exe`, `sys.argv`,
-`sys.executable`, and `os.environ`. The command-line `-I -S -c` scalar bytes
-must equal the reviewed extracted source, `/proc/self/exe` must be exactly
-`/usr/bin/python3`, its stat must equal FD 5, and the environment is exactly
-the closed four-variable map. Invocation descriptor digests cover only
-immutable predecessor authority descriptors; action/grant/consumption records
-are excluded and each action binds the already-completed invocation digest.
-The source writes one canonical result to FD 20 and has no future result,
-completion, receipt, or post-attestation input.
+launches the validator as its direct child with fixed broker-owned descriptor
+snapshots. The source cannot mint, reauthorize, or choose an envelope, key,
+descriptor, capability token, or metadata. On Darwin, FD 3 and data FDs 4 and
+6--19 are broker-created regular files that are fully written and synced,
+reopened read-only with `O_NOFOLLOW`, unlinked, and inherited only after every
+writable handle is closed; each must have link count zero. FD 5 is a
+broker-opened `O_NOFOLLOW` read-only handle to the root-owned system Python
+executable and must match `sys.executable` by device/inode/mode and digest.
+The broker binds every input FD's role-specific device/inode/mode/size/digest
+identity before launch and rechecks the same identities and bytes after
+`waitpid`. FD 20 is the broker-owned write-only result FIFO. FDs 0--2 are
+closed before exec; the child has exactly FDs 3--20. Linux sealed-memfd
+semantics are neither asserted nor substituted for this Darwin transport.
+Before parsing FD 3, the source checks its read-only access mode, regular-file
+type, owner, zero link count, mode, and size. It uses positioned reads so it can
+compare the complete bytes and physical identity again after parsing. It
+applies the same role-specific pre/post checks to fixed input FDs 4--19, then
+verifies their roles, broker event identities, exact bytes, and hashes.
+It independently inspects `sys.orig_argv`, `sys.argv`, `sys.flags`, `sys.executable`,
+`os.uname()`, `os.getpid()`, `os.getppid()`, the running executable's stat
+identity, `os.environ`, the exact open-FD set, and sandboxed network and
+forbidden-write negative probes. The command-line `-I -S -c` scalar bytes must
+equal the reviewed extracted source, the running executable must be exactly
+`/usr/bin/python3` and match FD 5 by device/inode/mode, the observed Darwin
+kernel/machine must equal the broker-pinned platform identity, and the
+environment is exactly the closed four-variable map. The broker's immutable
+sandbox profile contains a digest-bound system-runtime read allowlist sufficient
+for the root-owned Python executable and imported standard-library modules.
+Every entry is a broker-opened `O_NOFOLLOW`, root-owned regular file whose
+path/device/inode/mode/type/owner/size/digest record is recomputed before launch
+and after `waitpid`; every other path remains denied. The child emits a canonical runtime attestation
+containing only independently observed runtime identity, descriptor,
+environment, and denial-probe facts. Broker-only sandbox profile and
+capability-manifest claims remain in separately authenticated launch records;
+they are never represented as child observations.
+After `waitpid`, the broker recomputes the executable and `/usr/bin/sandbox-exec`
+from broker-opened no-follow FDs, proves the launched sandbox profile, network,
+credentials, workspace, Git/object-store, write allowlist, input handles, PID,
+and observation interval, and binds that child attestation into acceptance and
+receipt. Host-only, parent-only, stale, or child-only platform claims block.
+Invocation descriptor digests cover only immutable predecessor authority
+descriptors; action/grant/consumption records are excluded and each action
+binds the already-completed invocation digest. The source writes one canonical
+result to FD 20 and has no future result, completion, receipt, or
+post-attestation input.
 The validator recursively authenticates every Git tree object component by
-component for head, reviewed parent, and both historical reset roots. It
-binds the head commit, sole parent, tree, exact two-path recursive diff,
-source scalar blob, and the 4500-line additions/deletions cap. Historical
-negative provenance binds exact active source commit/tree identities, every
-intermediate tree, path/mode/blob/bytes/line mapping, cardinalities 20/6/11,
-the denied union, and candidate exclusion.
+component for head, reviewed parent, and the five exact reviewed historical
+roots: reset-1 S1, reset-1 S2, the reset-1 round-3 tree snapshot, and both
+reset-2 failed seed attempts. It binds the head commit, sole parent, tree,
+exact two-path recursive diff, source scalar blob, and the 4500-line
+additions/deletions cap. Historical negative provenance binds each denied blob
+to its exact root, path, mode, bytes, digest, size, and line count; authenticates
+the root plus the exact minimal intermediate-tree inclusion proof for each
+denied path without transporting unrelated repository blobs; enforces
+cardinalities 20/6/11 and the denied union; and excludes all 26 blobs from
+candidate reuse.
 The broker supplies one null-tip disposition record, four active 2x2 review
 events with route-preflight/history/model/reviewer/run identities, and one
 canonical grant/consumption envelope vocabulary. Every grant has a distinct
 nonempty action, nonce, response/event handle (`response_id` equals its grant
 event handle), and a separate consumption event; later actions use the same
 schemas and phase-available result bindings.
-The source constructs the exact canonical contract facts/projection and each
-materialized 23-field profile from hardcoded active operation tables/templates,
-then hashes the full closed record. `broker_builtin` has no OS command
-(`executable: null`, `argv: []`, exact broker opcode); `delegated_agent` uses
-only an authenticated route event and no future repository script;
-`embedded_validator` is `/usr/bin/python3 -I -S -c` with the reviewed scalar;
-`verified_script` is allowed only after its creator commit and exact source FD
-exist. Operation-time descriptor roles are broker-issued separately from the
-preseed fixed FDs, and each filesystem read role equals `input_fds`.
+The broker constructs the active projection from the exact authenticated
+current `LOOP_SPEC.yaml` blob after the planning commit. Its closed canonical
+object contains the full result contract, phase map, 36 operation profiles,
+eight fresh action instances, budgets, state machine, operation ledger,
+no-spend attestations, required-record table, and the recomputed digest map of
+those nine sources. The projection object, canonical-byte digest, source-path
+map, source digests, guard/event registry digests, current LOOP_SPEC and
+EXECUTION_PLAN blob identities, generation timestamp, and private broker event
+cross-bind. Generation is after the planning core and before invocation intent;
+caller-supplied or stale projections are rejected. The source reconstructs the
+same object from authenticated current inputs and demands exact byte and digest
+parity before checking each materialized 23-field operation profile.
+The broker then materializes every named exact-scope capability: commits/trees, review and CI
+records, action/ledger records, runtime artifacts, and the phase-specific
+checkout or object view. Seed and candidate implementation receive distinct
+isolated-worktree capabilities whose write surfaces are exactly the eight and
+eleven authorized paths. Review profiles are read-only. `broker_builtin` has
+no OS command (`executable: null`, `argv: []`, exact broker opcode);
+`delegated_agent` uses an authenticated route and exact task/workspace context,
+never a future repository script; `embedded_validator` is
+`/usr/bin/python3 -I -S -c` with the reviewed scalar; and `verified_script`
+requires its creator commit, exact source FD, checkout/object/runtime inputs,
+and network-denied local reproducibility command manifest. Operation-time
+roles are broker-issued separately from preseed fixed FDs. Builtins consume
+only typed private-store operands and have no filesystem/input FDs; delegated
+agents receive authenticated harness context and isolated-worktree
+capabilities with no raw FDs; only embedded/verified subprocess read roles
+equal `input_fds`. Seed ref advance is one broker CAS
+transaction after its child receipt. Candidate and anchor creation are
+broker-owned unreferenced-object transactions; no child script can mutate refs
+or the object database.
+Each protected mutation is internally staged under a broker write barrier:
+authenticate the exact invocation, capability manifest, input handles,
+operands, repository identity, ref/object destinations, and write sets;
+persist a prepare record; lock the authenticated repository/ref targets; run
+the read-only validator with writes denied; durably store its result,
+completion, and receipt; then atomically recheck the same precondition,
+operands, locks, and write sets. Only then may the broker perform one CAS-ref
+or unreferenced-object transaction. Prepare, validation, transaction, and
+receipt records bind the same operation instance, operand-set digest,
+precondition digest, object/ref write-set digests, validation receipt,
+postcondition, fsync evidence, and mutation result. Mutation completion occurs
+only after the durable transaction receipt. Restart reconciliation reopens the
+same authenticated repository, locks, and write barrier and classifies applied
+versus unapplied without replay; partial or ambiguous state blocks.
+The renderer alone receives a private-state temporary
+write capability in addition to its result FIFO.
 After seed implementation is committed, Phase 20 runs from a fresh read-only
 exact proposed-`S` checkout before seed review.
 
@@ -454,9 +526,10 @@ The candidate lifecycle is object-mode and one-way:
    copied as a non-predictive field into the outer/stage manifests and stage
    result/receipt. Only after the source, sandbox, candidate-manifest, broker-
    recomputation, stage-result, and stage-receipt equalities pass may the
-   canonical ref advance from `S` to `C`. After the ref matches exact `C`, the
-   broker seals the merge payload and common result, terminal completion, and
-   common receipt. After that receipt and ledger event, the closed
+   broker seal unreferenced `C`'s object-only transaction, merge payload, common
+   result, terminal completion, and common receipt. The canonical source ref
+   must still equal exact `S`; the candidate transaction has an empty ref write
+   set and cannot promote `C`. After that receipt and ledger event, the closed
    `g2_no_spend.v1` object binds the pre-attestation and all actual stage/common
    chain digests, denial evidence, the same
    canonical empty credential/launch/spend-receipt sets, and the exact
@@ -465,10 +538,10 @@ The candidate lifecycle is object-mode and one-way:
    `target_launches`. Unknown units and alternate encodings are rejected. The
    post-attestation must pass before the candidate-merge state may enter
    evidence seal, and its digest is the required nonrecursive input to `E`;
-   neither attestation predicts a future digest. Pre-ref failure leaves `S`
-   unchanged and unreferenced `C` negative only. Missing or failed post-
-   attestation leaves `C` but blocks every evidence, review, anchor, and closure
-   transition.
+   neither attestation predicts a future digest. Any candidate-merge failure
+   leaves `S` unchanged and records unreferenced `C` as negative evidence.
+Missing or failed post-attestation leaves `S` unchanged and `C` unreferenced
+but blocks every evidence, review, anchor, and closure transition.
 3. Focused reports, installed-checker output, Phase 20, authority snapshots,
    no-spend attestation, and operation-ledger snapshots are sealed by the
    supervisor in pre-review evidence commit `E`, whose sole parent is `C`.
@@ -522,16 +595,26 @@ single-use record. Missing, extra, mutable-ref, self-referential, unreachable,
 stale, replayed, future-result-predicting, or out-of-order bindings fail closed.
 
 The operation ledger has one authoritative table shared by phase, result, and
-profile declarations. Every event binds exact operation class/sequence label,
-phase, actor/route, source, strict broker timestamp, typed status, contiguous
-sequence, and previous digest. An event preimage excludes its own
-`event_sha256`, `completion_event_sha256`, and `receipt_sha256`; completion
-references the prior stored-result digest and receipt references the prior
-completion digest. Each reservation is exactly
-`reservation -> invocation -> result_stored -> completion -> receipt` or
-`reservation -> failure` (with one distinct action-consumption event where
-required), with no extras. Operation maxima and aggregate caps are checked
-before admission; the open admission reservation is the final input event.
+profile declarations. Every class has the one phase-fixed lifecycle and exact
+`operation_class + "_" + event_kind` labels generated from that table. Every
+event binds phase, actor/route, source, strict broker timestamp, typed status,
+contiguous sequence, previous digest, and exact counter/cap snapshots. An event
+preimage excludes only its own `event_sha256`; null or prior-event fields remain
+inside that digest. Completion binds the typed result event. The broker issues
+the v2 receipt over the private acceptance record, stored result, completion,
+and completion ledger tip, then appends a receipt event that binds that receipt;
+the receipt never predicts the receipt event's digest. Each reservation is
+exactly `reservation -> invocation -> result_stored -> completion -> receipt`
+or `reservation -> invocation -> failure -> completion -> receipt`, with one
+`action_consumption` event only for the phase's dedicated consumption operation
+class. The receipt is the sole terminal ledger event. Operation maxima and
+aggregate caps are checked before admission; the open admission reservation is
+the final input event. For `failed`, `canceled`, `timed_out`, or
+`integrity_failed`, the broker derives the typed failure from authenticated
+launch/wait/timeout/cancellation/integrity and no-mutation facts. A child result
+and nested child-runtime attestation may be absent, but the launch record,
+broker runtime attestation, stored failed result, completion, and terminal
+receipt remain mandatory.
 Only the supervisor can launch or append; reservations count immediately and
 cannot be deleted or reused.
 
@@ -541,7 +624,7 @@ with network disabled except supervisor-owned GitHub/Beads control-plane
 adapters. A strict no-spend record binds the ledger range, empty spend-receipt
 set, zero aggregate in fixed units, environment, and supervisor broker
 configuration. Any requested spend requires a new reviewed human amendment
-outside `G2/reset-2`.
+outside `G2/reset-3`.
 
 The broker pins absolute `/opt/homebrew/bin/uv` and its SHA-256, a verified
 read-only offline cache, and exact `PyYAML`/`jsonschema` package artifact
@@ -669,6 +752,34 @@ before bounded preseed admission. The preseed authority validator is
 descriptor-bound and checks those facts; the complete runtime verifier is
 seed work in the eight-file seed scope.
 
+Preseed launch uses an acyclic broker contract. After activation, the broker
+seals an `invocation_intent` over the immutable source, executable, closed
+environment, predecessor descriptor set, planning core, and activation record.
+The three human grants bind that completed intent—not the future invocation
+manifest—and are consumed once before the live recheck. Only then does the
+broker open the admission reservation and issue invocation-manifest v4, which
+must reproduce every immutable intent field and additionally bind the exact
+three consumptions, live recheck, open-reservation ledger bytes, result FIFO,
+and broker runtime attestation. The validator rejects a future-result digest,
+an action bound to invocation-manifest v4, any reordered timestamp, or any
+intent/manifest field drift.
+
+The child is a semantic checker, not the authority root. A passed JSON value or
+a look-alike FD 3/20 launch has no transition power. The OMP broker accepts one
+result only when its non-caller-writable capability store matches the retained
+launch record and child PID, exact immutable input handles, invocation, open
+reservation, retained FIFO read-end identity, and the child/runtime capability
+attestations. The broker consumes that FIFO once and `waitpid` proves exit code
+zero with no terminating signal. Its post-exec verifier parses the stored
+result, recomputes every digest and physical binding, emits a private v2
+acceptance record, appends completion, issues the v2 receipt binding
+acceptance/result/completion and the completion ledger tip, then appends the
+receipt event. Preseed transition guards for acceptance, child status,
+completion, receipt, and ledger extension are owned only by that broker
+post-exec verifier; the embedded child cannot self-validate them. Direct scalar
+execution, forged FD values, a forged parent, or child-authored post-exec
+records produce only inert bytes.
+
 | Phase | Files | Non-generated lines | Attempts | Review rounds | CI reruns |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | reset-3 seed | 8 | 5000 | 3 | 3 | 3 |
@@ -685,6 +796,17 @@ reset-2 failures), with the 11 round-3 entries a strict subset, and rejects
 every candidate blob in that union. Nine negative families, fail-closed
 command profiles, typed result receipts, guarded phase transitions, and
 supervisor-only promotion remain mandatory.
+Every active event is present in the closed event registry with exact source
+state(s), destination, ordered guard IDs, and result binding. The registry key
+set equals the happy-transition and failure-route event union; every guard is
+present in the closed guard registry with one validator source and exact
+required fields. Retry routes require a stored and receipted typed failure,
+no protected mutation, a monotonic counter increment, remaining capacity, and
+explicit downstream invalidation. Budget, environment, external-action,
+identity-drift, and cancellation routes are likewise guarded and fail closed.
+`all_nonterminal_states_exact` is a closed concrete list, not ambient
+executor behavior. Closure reaches only `g2_reset_3_packet_closed`; it cannot
+reach the program's global `complete` state.
 
 The active artifact chronology is strict: candidate implementation attempts and
 the exact candidate merge produce `C`; the supervisor then seals pre-review
@@ -696,6 +818,13 @@ form review seal `R`, and only `R` may authorize anchor `A`. Seed selection
 has the analogous prerequisite of at least one successful exact-head CI before
 selection. A CI result from before `E`, a review omitting `E`/reports/no-spend,
 or any anchor selected before `R` is stale and blocks the transition.
+Each seed-selection, seed-merge, candidate-merge, anchor-selection, and packet-
+closure human action result contains every key of that instance's exact
+binding payload plus `instance_id` and `action_sha256`. The consumption digest
+covers the full canonical action result, and transition validators recompute
+all current commit/tree, preflight, attempt, CI/review, ownership, test-plan,
+validation, state-artifact, and ledger-tip bindings. A shortened action result
+or stale prerequisite cannot authorize mutation or closure.
 
 Reset-3 inherits only immutable semantics explicitly copied by the YAML
 overlay. Epoch, scope, budgets, paths, identities, actions, reviews, negative
