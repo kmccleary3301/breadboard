@@ -296,9 +296,11 @@ snapshots. The source cannot mint, reauthorize, or choose an envelope, key,
 descriptor, capability token, or metadata. On Darwin, FD 3 and data FDs 4 and
 6--19 are broker-created regular files that are fully written and synced,
 reopened read-only with `O_NOFOLLOW`, unlinked, and inherited only after every
-writable handle is closed; each must have link count zero. FD 5 is a
-broker-opened `O_NOFOLLOW` read-only handle to the root-owned system Python
-executable and must match `sys.executable` by device/inode/mode and digest.
+writable handle is closed; each must have link count zero. FD 5 is the
+broker-opened `O_NOFOLLOW` read-only handle to the root-owned
+`/usr/bin/python3` launcher and must match the broker launch/platform
+attestations by device/inode/mode and digest. It is never required to equal
+`sys.executable` or the post-shim runtime realpath.
 The broker binds every input FD's role-specific device/inode/mode/size/digest
 identity before launch and rechecks the same identities and bytes after
 `waitpid`. FD 20 is the broker-owned write-only result FIFO. FDs 0--2 are
@@ -309,13 +311,14 @@ type, owner, zero link count, mode, and size. It uses positioned reads so it can
 compare the complete bytes and physical identity again after parsing. It
 applies the same role-specific pre/post checks to fixed input FDs 4--19, then
 verifies their roles, broker event identities, exact bytes, and hashes.
-It independently inspects `sys.orig_argv`, `sys.argv`, `sys.flags`, `sys.executable`,
-`os.uname()`, `os.getpid()`, `os.getppid()`, the running executable's stat
-identity, `os.environ`, the exact open-FD set, and sandboxed network and
-forbidden-write negative probes. The command-line `-I -S -c` scalar bytes must
-equal the reviewed extracted source, the running executable must be exactly
-`/usr/bin/python3` and match FD 5 by device/inode/mode, the observed Darwin
-kernel/machine must equal the broker-pinned platform identity, and the
+It independently inspects `sys.argv`, `sys.flags`, `os.uname()`, `os.getpid()`,
+`os.getppid()`, FD 5's launcher identity, `os.environ`, the exact open-FD set,
+and sandboxed network and forbidden-write negative probes. The broker launch
+record and FD 4 digest bind the exact `-I -S -c` reviewed source scalar. The
+broker-launched executable must be
+exactly `/usr/bin/python3` and FD 5 must match that launcher by
+device/inode/mode, and the observed Darwin kernel/machine must equal the
+broker-pinned platform identity. The
 environment is exactly the closed four-variable map. The broker's immutable
 sandbox profile contains a digest-bound system-runtime read allowlist sufficient
 for the root-owned Python executable and imported standard-library modules.
@@ -336,6 +339,11 @@ descriptors; action/grant/consumption records are excluded and each action
 binds the already-completed invocation digest. The source writes one canonical
 result to FD 20 and has no future result, completion, receipt, or
 post-attestation input.
+The launch-time read-handle digest covers the authority handle plus every
+fixed read descriptor except `invocation_manifest`; that manifest instead
+binds its own canonical digest after the capability and launch records exist.
+This exclusion prevents the capability/launch digest from recursively
+depending on the manifest that carries those digests.
 The validator recursively authenticates every Git tree object component by
 component for head, reviewed parent, and the five exact reviewed historical
 roots: reset-1 S1, reset-1 S2, the reset-1 round-3 tree snapshot, and both
@@ -355,7 +363,7 @@ event handle), and a separate consumption event; later actions use the same
 schemas and phase-available result bindings.
 The broker constructs the active projection from the exact authenticated
 current `LOOP_SPEC.yaml` blob after the planning commit. Its closed canonical
-object contains the full result contract, phase map, 36 operation profiles,
+object contains the full result contract, phase map, 37 operation profiles,
 eight fresh action instances, budgets, state machine, operation ledger,
 no-spend attestations, required-record table, and the recomputed digest map of
 those nine sources. The projection object, canonical-byte digest, source-path
@@ -392,10 +400,13 @@ the read-only validator with writes denied; durably store its result,
 completion, and receipt; then atomically recheck the same precondition,
 operands, locks, and write sets. Only then may the broker perform one CAS-ref
 or unreferenced-object transaction. Prepare, validation, transaction, and
-receipt records bind the same operation instance, operand-set digest,
-precondition digest, object/ref write-set digests, validation receipt,
-postcondition, fsync evidence, and mutation result. Mutation completion occurs
-only after the durable transaction receipt. Restart reconciliation reopens the
+durable transaction-receipt records bind the same operation instance,
+reservation, operand-set digest, precondition digest, object/ref write-set
+digests, validation receipt, postcondition, and fsync evidence without any
+future result or completion digest. The mutation result binds that durable
+transaction receipt; mutation completion follows the stored result; and only
+then does the broker construct the mutation-operation receipt binding both.
+Restart reconciliation reopens the
 same authenticated repository, locks, and write barrier and classifies applied
 versus unapplied without replay; partial or ambiguous state blocks.
 The renderer alone receives a private-state temporary
@@ -506,7 +517,16 @@ The candidate lifecycle is object-mode and one-way:
    preseed admission alone uses the reviewed scalar as Python's `-c` source;
    every later profile names its concrete script and execution kind
    (`broker_builtin`, `delegated_agent`, or `verified_script`) and receives
-   only inputs existing at its phase boundary.
+   only inputs existing at its phase boundary. `candidate_budget_validation`
+   uses the projected `g2_reset_3_candidate_budget_v1` profile;
+   `candidate_budget_validation`, `seed_ci_rerun`, `candidate_ci_rerun`,
+   `private_validation`, and `installed_validation` execute
+   `scripts/packet/verify_g2_anchor.py`; `renderer` executes
+   `scripts/packet/render_state.py`.
+   It is an independent reset-3 operation with its own reservation, invocation,
+   stored result, completion, and terminal receipt. That terminal receipt is
+   the candidate-merge validation receipt and precedes the object transaction;
+   the historical reset-2 folded lifecycle is non-dispatch and forbidden.
    The selected-source verifier is untrusted and runs only through pinned
    `sandbox-exec` with a supervisor-owned default-deny profile: network,
    credentials, mutable Git surfaces, and all filesystem paths except exact
@@ -514,7 +534,15 @@ The candidate lifecycle is object-mode and one-way:
    the broker recomputes the canonical raw NUL-delimited no-rename `S..C`
    path/mode/blob/SHA-256/size/physical-line/addition/deletion manifest, totals,
    caps, and pass bit. Every verifier fact and pass bit must equal this trusted
-   result. Before execution, a closed no-spend pre-attestation binds empty
+   result. Candidate preflight binds the canonical no-spend policy digest, not
+   a future execution attestation. The policy digest is
+   `sha256:9779520c0416fa8cd5933401237e60247135cf98aab852204bd95f296cbe2ef6`,
+   recomputed from the exact canonical policy object: denied network, three
+   empty credential/launch/spend-receipt arrays, and the exact five-key
+   integer-zero spend map. It is not the empty-array digest below. After `C`
+   and the candidate manifest exist,
+   the broker reserves `candidate_budget_validation`; after that reservation
+   and before invocation, a closed no-spend pre-attestation binds empty
    credential/launch sets, network denial, sandbox profile, source, manifest,
    recomputation, command, environment, reservation, and preexecution tip. An
    empty set is exactly the two UTF-8 bytes `[]` (no BOM, whitespace, or
@@ -745,6 +773,16 @@ authenticated fields in the planning-core record. The repair is exactly one new
 commit with the reviewed base as its parent, changing exactly the two planning
 paths below and no other path; the cumulative two-file tree/diff is the
 authority, and an earlier multi-commit planning history is not a violation.
+The planning-core Git proof contains the two commits, every intermediate tree
+reachable from the current and reviewed-base roots, and only the old and new
+blobs for the two planning paths. Tree entry OIDs and modes prove unchanged
+leaves without copying every unchanged repository blob into the bounded
+descriptor; the validator rejects a missing or extra commit, tree, or planning
+blob and still recomputes the complete recursive path map and exact diff.
+Fresh predecessor searches and the live recheck query every G2 epoch, including
+reset-3, but exclude exactly the current chain by its authenticated genesis
+SHA-256. Any tip from another reset-3 activation remains visible and blocks;
+the current chain cannot contradict its own required empty predecessor result.
 Reset-3 seals planning core, null-tip genesis, two fresh planning review
 rounds, two fresh predecessor searches, a capability probe, activation, fresh
 human actions with separate consumptions, and a live recheck immediately
@@ -821,10 +859,12 @@ or any anchor selected before `R` is stale and blocks the transition.
 Each seed-selection, seed-merge, candidate-merge, anchor-selection, and packet-
 closure human action result contains every key of that instance's exact
 binding payload plus `instance_id` and `action_sha256`. The consumption digest
-covers the full canonical action result, and transition validators recompute
-all current commit/tree, preflight, attempt, CI/review, ownership, test-plan,
-validation, state-artifact, and ledger-tip bindings. A shortened action result
-or stale prerequisite cannot authorize mutation or closure.
+covers the full canonical action result. The external consumption record, not
+that protected result object, binds `operation_ledger_event_sha256`; transition
+validators locate and verify the separate action-consumption event before
+recomputing all current commit/tree, preflight, attempt, CI/review, ownership,
+test-plan, validation, state-artifact, and ledger-tip bindings. A shortened
+action result or stale prerequisite cannot authorize mutation or closure.
 
 Reset-3 inherits only immutable semantics explicitly copied by the YAML
 overlay. Epoch, scope, budgets, paths, identities, actions, reviews, negative
