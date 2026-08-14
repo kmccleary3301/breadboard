@@ -94,7 +94,7 @@ Budgets apply to non-generated additions plus deletions. Mechanical moves still 
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
 | G0 | Retire blocked replay implementation | none | 4 | 200 | 1 | 1 | T0, tracker/PR audit | tracker_supersession + packet_closure + campaign_graph_rewrite |
 | G1 | Split product and evidence surfaces | G0, G2 | 12 | 750 | 2 | 2 | T0-T2, generated diff | public_boundary + architecture_change |
-| G2 | Install packet-control enforcement | G0 | 19 | 6000 | 5 | 5 | reset-3 seed, object-mode self-host, generated projection/differential parity, T0-T2, positive preseed/seed/candidate/closure fixtures, eleven negative families, fresh actions and exact reviews | governance_schema + security_boundary + scope_budget_amendment + merge + closure_anchor_selection + packet_closure |
+| G2 | Install packet-control enforcement | G0 | 19 | 6000 | 5 | 5 | reset-3 seed, object-mode self-host, generated projection/selected-`S` checker conformance, T0-T2, positive preseed/seed/candidate/closure fixtures, eleven negative families, fresh actions and exact reviews | governance_schema + security_boundary + scope_budget_amendment + merge + closure_anchor_selection + packet_closure |
 | R0 | Replay records and admission | G2 | 8 | 650 | 2 | 2 | T0-T2 | governance_schema |
 | R1 | Worker protocol and minimal isolation | R0 | 12 | 800 | 2 | 2 | T0-T2, security lens | security_boundary |
 | R2 | Workspace, publication, and redaction | R1 | 12 | 900 | 2 | 2 | T0-T2, fault matrix | security_boundary + artifact_publication |
@@ -471,12 +471,13 @@ Every runtime entry has an exact literal path, an ordered root-anchored
 component chain, a component-chain digest, and for each component the
 descriptor-backed device, inode, mode, type, UID/GID, flags, canonical ACL
 digest, descriptor identity, effective child-UID write-denial result, and
-type-specific size/digest, `rdev`, or `readlink` identity. The chain is opened
-from one broker-authenticated root directory with `openat`/`dir_fd` and
-`O_NOFOLLOW` for every traversable component; the root descriptor and every
-component descriptor are retained long enough to compare pre-open, post-open,
-and reopened-parent-dirent `fstat` identities. Regular-file bytes and ACL bytes
-are read from that descriptor and revalidated for stable content/ACL identity;
+type-specific size/digest, `rdev`, or `readlink` identity. The record also
+contains post-walk device, inode, mode, type, UID/GID, flags, ACL/content/
+readlink digests, descriptor identity, and no-follow state for every component.
+The chain is opened from one broker-authenticated root directory with
+`openat`/`dir_fd` and `O_NOFOLLOW` for every traversable component; the root
+descriptor and every component descriptor are retained long enough to compare
+Regular-file bytes are read from that descriptor and revalidated for stable content/ACL identity;
 a component that is missing, replaced, symlinked during traversal, unsupported,
 or cannot provide a stable descriptor/readlink/content identity fails closed.
 Every listed literal path, its broker-resolved target when present, and every
@@ -486,9 +487,13 @@ descriptor-observed mode, flags, and ACL; the sole exception is typed
 `/dev/urandom` itself. Symlinks are handled only through their parent
 `dir_fd` with no-follow metadata and authenticated `readlink` identity; a
 symlink target that cannot be walked and revalidated from the authenticated
-root is rejected. The ACL digest is SHA-256 over an unsigned big-endian
-64-bit byte-length prefix followed by the exact `acl_copy_ext` bytes obtained
-from the authenticated descriptor.
+root is rejected. The ACL digest is SHA-256 over an unsigned big-endian 64-bit byte-length
+prefix followed by the exact `acl_copy_ext` bytes obtained from the authenticated
+descriptor; ACL evaluation is descriptor-based and principal-aware for the
+expected child UID/GID and supplementary groups, and treats `write`, `append`,
+`add_file`, `add_subdirectory`, `delete`, `delete_child`, `writeattr`,
+`writeextattr`, `chown`, and `change_owner` grants or ambiguous ACL rows as
+write authorization unless an exact matching deny is proven.
 The broker's privileged no-sandbox helper alone performs the authenticated
 `setgroups(expected_groups)`, `setgid(expected_gid)`, and `setuid(expected_uid)`
 handshake and records one authenticated `bb.omp.runtime_write_denial_record.v1`
@@ -613,7 +618,7 @@ The broker constructs the active projection from the exact authenticated
 current `LOOP_SPEC.yaml` blob after the planning commit. Its closed canonical
 object contains the full result contract, phase map, 37 operation profiles,
 eight fresh action instances, budgets, complete seed and candidate scopes,
-the exact negative-fixture requirement and differential-parity contract, state
+the exact negative-fixture requirement and selected-checker-conformance contract, state
 machine, operation ledger, no-spend attestations, required-record table, and
 the recomputed digest map of those seventeen sources. The projection object,
 canonical-byte digest, source-path map, source digests, guard/event registry
@@ -1246,19 +1251,34 @@ Candidate final review remains exactly two rounds/four operations; it is
 sealed from the candidate review records and does not create a sixth
 implementation-review round. The seed source of truth is the reviewed
 declarative contract and its generated projection; canonical Git object
-inspection, the thin anchor CLI, and exact differential parity are required.
+inspection and the thin anchor CLI are required. Selected-`S`
+checker conformance is deferred until selected `S` exists and is consumed by the
+mandatory selection gate; preseed performs no checker execution.
 The seed denies the exact 26-OID union (20 reset-1 identities plus six
 reset-2 failures), with the 11 round-3 entries a strict subset, and rejects
 every candidate blob in that union. Eleven negative families, fail-closed
 command profiles, typed result receipts, guarded phase transitions, and
 supervisor-only promotion remain mandatory.
-The embedded negative fixture matrix executes one concrete mutated minimal
-fixture for each named verifier case and requires the expected rejection code,
-fail-closed result, input digest, and outcome digest. Generated projection
-parity compares the positive preseed fixture and each of all eleven negative
-case outcomes against the embedded validator-derived results; configuration
-self-equality is insufficient and any overlap, identity, or digest drift
-blocks.
+The generated negative fixture matrix defines the concrete mutated minimal
+fixture for each named verifier case and binds its canonical fixture-contract
+digest, exact case/fixture/family identifiers, expected status and rejection
+code, canonical input payload (bytes or object) plus input SHA-256, observed
+status/rejection code, outcome SHA-256, and pass bit. Projection/selected-checker
+conformance, selected-`S` identity, and fixture-contract drift block;
+self-equality alone is insufficient. The selected-`S` checker gate is the only
+place that executes this conformance: it performs one broker-authenticated
+selected-`S` checker execution over exactly one positive and eleven negative
+cases, binding `selected_S_commit`, `selected_S_tree`, checker source path/blob
+OID/SHA-256 resolved from that tree, argv containing that exact path, closed
+environment, fixture-contract digest, and raw input/output digests.
+Its broker verifier independently authenticates the child launch and resolves
+the checker source bytes at the selected-`S` tree, recomputes every input SHA,
+joins each observed output to the same input SHA and named fixture, and checks
+zero exit plus exact expected/observed status, rejection code, outcome digest,
+and pass bit. Evidence records closed per-case fields plus execution handle and
+result digest. Missing, extra, mismatched, stale, caller-supplied, or
+nonzero-result evidence blocks `fresh_seed_selection_consumed` and seed merge;
+preseed self-simulated checker execution is forbidden.
 Every active event is present in the closed event registry with exact source
 state(s), destination, ordered guard IDs, and result binding. The registry key
 set equals the happy-transition and failure-route event union; every guard is
