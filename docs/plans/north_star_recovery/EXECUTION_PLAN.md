@@ -474,10 +474,11 @@ digest, descriptor identity, effective child-UID write-denial result, and
 type-specific size/digest, `rdev`, or `readlink` identity. The chain is opened
 from one broker-authenticated root directory with `openat`/`dir_fd` and
 `O_NOFOLLOW` for every traversable component; the root descriptor and every
-component descriptor are retained long enough to compare pre/post
-`fstat` identities. A component that is missing, replaced, symlinked during
-traversal, unsupported, or cannot provide a stable descriptor/readlink
-identity fails closed.
+component descriptor are retained long enough to compare pre-open, post-open,
+and reopened-parent-dirent `fstat` identities. Regular-file bytes and ACL bytes
+are read from that descriptor and revalidated for stable content/ACL identity;
+a component that is missing, replaced, symlinked during traversal, unsupported,
+or cannot provide a stable descriptor/readlink/content identity fails closed.
 Every listed literal path, its broker-resolved target when present, and every
 containing ancestor must be nonwritable and nonreplaceable by the expected
 child principal (UID/GID and canonical supplementary groups) under the
@@ -1251,6 +1252,13 @@ reset-2 failures), with the 11 round-3 entries a strict subset, and rejects
 every candidate blob in that union. Eleven negative families, fail-closed
 command profiles, typed result receipts, guarded phase transitions, and
 supervisor-only promotion remain mandatory.
+The embedded negative fixture matrix executes one concrete mutated minimal
+fixture for each named verifier case and requires the expected rejection code,
+fail-closed result, input digest, and outcome digest. Generated projection
+parity compares the positive preseed fixture and each of all eleven negative
+case outcomes against the embedded validator-derived results; configuration
+self-equality is insufficient and any overlap, identity, or digest drift
+blocks.
 Every active event is present in the closed event registry with exact source
 state(s), destination, ordered guard IDs, and result binding. The registry key
 set equals the happy-transition and failure-route event union; every guard is

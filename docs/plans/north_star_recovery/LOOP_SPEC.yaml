@@ -10245,7 +10245,7 @@ bootstrap_policy:
           every_path_and_ancestor_is_walked_from_one_authenticated_root_with_dir_fd_openat_and_o_nofollow_and_is_not_writable_or_replaceable_by_the_authenticated_capability_expected_child_uid_gid_and_supplementary_groups_under_descriptor_mode_flags_or_acl_except_typed_dev_urandom_regular_files_are_descriptor_and_digest_bound_directories_are_descriptor_and_inode_bound_symlinks_use_parent_dir_fd_nofollow_metadata_and_readlink_identity_or_fail_closed: true
           canonical_acl_digest_algorithm: broker_serializes_exact_acl_copy_ext_bytes_from_the_authenticated_descriptor_with_a_big_endian_uint64_byte_length_prefix_and_hashes_that_length_bound_bytes_for_acl_type_extended_and_rejects_acl_read_or_serialization_failure
           child_uid_write_denial_algorithm: broker_privileged_no_sandbox_helper_authenticates_expected_child_uid_gid_and_canonical_supplementary_groups_then_records_descriptor_based_write_denial_descriptor_identity_acl_length_and_exact_acl_copy_ext_digest_for_each_literal_resolved_target_and_containing_ancestor_before_launch_and_after_waitpid; dropped_validator_only_verifies_authenticated_descriptor_chains_and_records_and_never_forks_or_calls_setgroups_setgid_setuid; missing_support_component_mismatch_symlink_or_acl_or_identity_drift_fails_closed; only_typed_dev_urandom_literal_observation_may_be_allowed
-          runtime_path_component_observation_exact_fields: [component_index, component_name, component_path, parent_path, device, inode, mode, owner_uid, owner_gid, file_flags, file_type, size_bytes, sha256, rdev, symlink_target, acl_length, acl_sha256, child_uid_write_denied, write_denial_basis, opened_nofollow, descriptor_identity_sha256, component_sha256]
+          runtime_path_component_observation_exact_fields: [component_index, component_name, component_path, parent_path, device, inode, mode, owner_uid, owner_gid, file_flags, file_type, size_bytes, sha256, rdev, symlink_target, acl_length, acl_sha256, child_uid_write_denied, write_denial_basis, opened_nofollow, descriptor_identity_sha256, post_device, post_inode, post_mode, post_owner_uid, post_owner_gid, post_file_type, post_size_bytes, post_sha256, post_rdev, post_symlink_target, post_acl_length, post_acl_sha256, post_descriptor_identity_sha256, post_opened_nofollow, component_sha256]
           runtime_write_denial_record_schema_version: bb.omp.runtime_write_denial_record.v1
           runtime_write_denial_record_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, phase, broker_actor, platform_identity_sha256, expected_child_uid, expected_child_gid, expected_child_supplementary_groups_sha256, child_pid, observed_child_uid, observed_child_gid, observed_child_supplementary_groups, observed_child_supplementary_groups_sha256, identity_drop_event_handle, launch_event_handle, launched_at_utc, waitpid_event_handle, waitpid_at_utc, wait_status, target_path_literal, target_path_resolved, target_path_ancestors, target_path_closure, target_path_closure_sha256, path_component_chains, path_component_chains_sha256, path_observations, path_observations_sha256, created_at_utc, recorded_at_utc, observed_at_utc, fresh_until_utc, record_sha256]
           runtime_write_denial_observation_exact_fields: [path, component_chain, component_chain_sha256, descriptor_identity_sha256, acl_length, acl_sha256, effective_write_denied, write_denial_basis, observed_at_utc]
@@ -10906,7 +10906,7 @@ bootstrap_policy:
         fake_parent_or_direct_scalar_execution_cannot_create_a_capability_store_transition: true
         missing_mismatch_failed_or_future_digest: block
       source: |-
-        ACTIVE_PROJECTION_SHA256="4169efe00afbfa1000025fe4a705ca8786edb376ada5bf1fd70cda5169391f33"
+        ACTIVE_PROJECTION_SHA256="4ea82d0afeafb1fdca16e4be806c65234712d09cda4599ffae1b1fbced3f48bc"
         MACH_PROBE_SOURCE_SHA256="30b53b57b660d3b88488e99b28e36971983df651511ad614b537ae26847647d0"
         PREFLIGHT_PROBE_SOURCE_SHA256="de4675bbd98eabef15b9d9f0d0f2e71f5124008e3e842c9be3573389fe1d98f7"
         EXPECTED_GUARD_REGISTRY_SHA256="54c7adbf642ad29625c71d63044d815424e360f1d32e999eca3dc8eaaa93d0e9"
@@ -10977,11 +10977,11 @@ bootstrap_policy:
         FAILURE_CLASSIFICATION_FLAG_BY_ROUTE_CLASS={"cancellation":"cancellation_observed","environment":"runtime_capability_unrecoverable","identity_drift":"identity_drift_observed","human_action_invalidity":"human_action_invalidity_observed","candidate_review_terminal":"candidate_review_terminal_observed"}
         FAILURE_ROUTE_EVENT_CLASSES={"budget_or_review_cap_exhausted":"budget_exhausted","candidate_attempt_failed_with_capacity":"retryable_operation","candidate_ci_failed_with_capacity":"retryable_operation","candidate_review_failed":"candidate_review_terminal","closed_packet_bound_identity_or_digest_changed":"identity_drift","interrupt_or_cancellation":"cancellation","missing_expired_replayed_or_wrong_action":"human_action_invalidity","operation_failed_terminal":"operation_terminal","scope_source_identity_or_bound_digest_changed":"identity_drift","seed_attempt_failed_with_capacity":"retryable_operation","seed_ci_or_review_failed_with_capacity":"retryable_operation","unrecoverable_runtime_capability_or_transaction_reconciliation_failure":"environment"}
         FAILURE_ROUTE_EVENT_OPERATIONS={"budget_or_review_cap_exhausted":["seed_implementation_attempt","seed_review_round","seed_ci_rerun","candidate_implementation_attempt","candidate_review_round","candidate_ci_rerun"],"candidate_attempt_failed_with_capacity":["candidate_implementation_attempt"],"candidate_ci_failed_with_capacity":["candidate_ci_rerun"],"candidate_review_failed":["candidate_review_round"],"closed_packet_bound_identity_or_digest_changed":["packet_closure"],"interrupt_or_cancellation":"every_reset_3_operation_class","missing_expired_replayed_or_wrong_action":"every_human_action_operation_class","operation_failed_terminal":["activation_record_seal","anchor_selection","candidate_budget_validation","candidate_merge","candidate_preflight","candidate_review_round","capability_probe","evidence_seal","final_review","human_candidate_action_consumption","human_candidate_merge_action","human_closure_action_consumption","human_closure_anchor_selection_action","human_governance_action","human_packet_closure_action","human_planning_action_consumption","human_scope_budget_action","human_security_boundary_action","human_seed_action_consumption","human_seed_merge_action","human_seed_selection_action","installed_validation","live_recheck","packet_closure","planning_core_seal","planning_review","predecessor_search","private_validation","renderer","review_seal","seed_admission","seed_merge"],"scope_source_identity_or_bound_digest_changed":"every_reset_3_operation_class","seed_attempt_failed_with_capacity":["seed_implementation_attempt"],"seed_ci_or_review_failed_with_capacity":["seed_ci_rerun","seed_review_round"],"unrecoverable_runtime_capability_or_transaction_reconciliation_failure":"every_reset_3_operation_class"}
-        EXPECTED_SCHEMA_SOURCE_DIGESTS={"authority_input_schema":"237df14b35277b4ca214d77a40ae9616c1bd8e0387eba8732bd8a5bdac69c8a0","budgets":"3beb404f80002c185376940d8093dadcfc0bcb9f0c000684759bfbdd1c5d430c","candidate_scope":"dd2e722083b5e69bb4f087cf3df7ca18d99a1e3f475d62c4e839eeca0c97b1e1","capability_evidence_schema":"87cd3a35496290246a6c3219eb195380928815d341441ffec29c7e88d295cfda","differential_parity":"8ba2480cc78f642fc2d9f64eea6ecd0917f7d86b496021706f0ebed89006cffe","fresh_action_consumption_map":"0011641e363aecc9bb5b805f61779b07c6e63804e4f588bd63357170cf3723b9","fresh_action_instances":"1b6d73e24a8fa5ed19318dac59ce4d1c188f98cf5b379162d42365802380d52e","negative_fixture_requirement":"d0a6dbb9f9260d8a5606d3cc482a81fb379455b15083168c49fede8c27223d2c","no_spend_attestations":"061c68f63fe830d4d1dd842619cd5acbfd29333d31619eaafca8671e295ca8a2","operation_ledger":"53b1cea4910bf3dc9d055a39431955822a487bb2b8f47d01ea916ffb932c0d7d","operation_profiles":"d2ce32d8ded69bd82ab78fbd4880bf56aae982f7b16d42be6b85f6b73d8c23bc","phase_map":"666bc459da07315e0cd5783fa49a7566f60be78bd346ffb41280befde31bcaf7","refresh_revalidation_verifier":"265d6dd8ad254c0fd434fe315d1dbc523933575475a33ea86f4b5b4bb69d6db9","required_records":"e035ebc0622384dfb967874a684ebe8f3df5ffeff0e57b2e3e17908afc14e095","result_contract":"fddd0ad43c8b5ac937285db104d7b6107a196658a17cf77541d2bcd649a2cd6e","seed_scope":"eefc9bfd576728b50940c26527fb0e0457e572a710922590052a398294218ba9","state_machine":"c57970dca023d8bef6629c9310f6cf1f2f380c8a18739c1702c89e2e93996915"}
+        EXPECTED_SCHEMA_SOURCE_DIGESTS={"authority_input_schema":"7953dab55b77df49dde05440b364ab875685a334f88f24af35c9f0c877f8e801","budgets":"3beb404f80002c185376940d8093dadcfc0bcb9f0c000684759bfbdd1c5d430c","candidate_scope":"dd2e722083b5e69bb4f087cf3df7ca18d99a1e3f475d62c4e839eeca0c97b1e1","capability_evidence_schema":"9cff9ac4f28b85fea8a6c13b06c3aaca60c06477c726e90dfb2be441db25f341","differential_parity":"3f776a7453d3a701f1f011b80d021b58471ab9195991ec1d1eb6ce0942c6e7fa","fresh_action_consumption_map":"0011641e363aecc9bb5b805f61779b07c6e63804e4f588bd63357170cf3723b9","fresh_action_instances":"1b6d73e24a8fa5ed19318dac59ce4d1c188f98cf5b379162d42365802380d52e","negative_fixture_requirement":"8ca291dda5b0f7e1986c879a5407aaf98612260f5cff6f28357d4dbd75ffca48","no_spend_attestations":"061c68f63fe830d4d1dd842619cd5acbfd29333d31619eaafca8671e295ca8a2","operation_ledger":"53b1cea4910bf3dc9d055a39431955822a487bb2b8f47d01ea916ffb932c0d7d","operation_profiles":"d2ce32d8ded69bd82ab78fbd4880bf56aae982f7b16d42be6b85f6b73d8c23bc","phase_map":"666bc459da07315e0cd5783fa49a7566f60be78bd346ffb41280befde31bcaf7","refresh_revalidation_verifier":"265d6dd8ad254c0fd434fe315d1dbc523933575475a33ea86f4b5b4bb69d6db9","required_records":"e035ebc0622384dfb967874a684ebe8f3df5ffeff0e57b2e3e17908afc14e095","result_contract":"fddd0ad43c8b5ac937285db104d7b6107a196658a17cf77541d2bcd649a2cd6e","seed_scope":"eefc9bfd576728b50940c26527fb0e0457e572a710922590052a398294218ba9","state_machine":"bff5c5b1f46cc6c79725a7700eb3fd1b3db5412e2715e15cabb827efcb39a5cd"}
         RUNTIME_DENIAL_MAX_AGE_SECONDS=300
         RUNTIME_DENIAL_MAX_FUTURE_SKEW_SECONDS=0
         RUNTIME_DENIAL_FRESHNESS_SECONDS=30
-        RUNTIME_PATH_COMPONENT_FIELDS=["component_index","component_name","component_path","parent_path","device","inode","mode","owner_uid","owner_gid","file_flags","file_type","size_bytes","sha256","rdev","symlink_target","acl_length","acl_sha256","child_uid_write_denied","write_denial_basis","opened_nofollow","descriptor_identity_sha256","component_sha256"]
+        RUNTIME_PATH_COMPONENT_FIELDS=["component_index","component_name","component_path","parent_path","device","inode","mode","owner_uid","owner_gid","file_flags","file_type","size_bytes","sha256","rdev","symlink_target","acl_length","acl_sha256","child_uid_write_denied","write_denial_basis","opened_nofollow","descriptor_identity_sha256","post_device","post_inode","post_mode","post_owner_uid","post_owner_gid","post_file_type","post_size_bytes","post_sha256","post_rdev","post_symlink_target","post_acl_length","post_acl_sha256","post_descriptor_identity_sha256","post_opened_nofollow","component_sha256"]
         RUNTIME_WRITE_DENIAL_RECORD_FIELDS=["schema_version","operation_instance_id","invocation_id","reservation_id","phase","broker_actor","platform_identity_sha256","expected_child_uid","expected_child_gid","expected_child_supplementary_groups_sha256","child_pid","observed_child_uid","observed_child_gid","observed_child_supplementary_groups","observed_child_supplementary_groups_sha256","identity_drop_event_handle","launch_event_handle","launched_at_utc","waitpid_event_handle","waitpid_at_utc","wait_status","target_path_literal","target_path_resolved","target_path_ancestors","target_path_closure","target_path_closure_sha256","path_component_chains","path_component_chains_sha256","path_observations","path_observations_sha256","created_at_utc","recorded_at_utc","observed_at_utc","fresh_until_utc","record_sha256"]
         RUNTIME_WRITE_DENIAL_OBSERVATION_FIELDS=["path","component_chain","component_chain_sha256","descriptor_identity_sha256","acl_length","acl_sha256","effective_write_denied","write_denial_basis","observed_at_utc"]
         PRESEED_CLASSES={"planning_core_seal","planning_review","predecessor_search","capability_probe","activation_record_seal","human_scope_budget_action","human_governance_action","human_security_boundary_action","human_planning_action_consumption","live_recheck","seed_admission"}
@@ -11059,13 +11059,79 @@ bootstrap_policy:
                 expect(fixture["fixture_status"]=="authoritative_embedded" and fixture["fixture_id"]=="failure_route_"+route_event and fixture["source_path"]=="docs/plans/north_star_recovery/LOOP_SPEC.yaml" and fixture["source_path"] in head_paths and fixture["verifier_id"]=="failure_route_fixture_matrix" and nonempty(fixture["assertion"]),"embedded failure route fixture identity status executable verifier and resolved source")
             expect(len({fixture["fixture_id"] for fixture in fixtures.values()})==len(route_events),"embedded failure route fixture unique identities")
             return True
+        def execute_embedded_negative_fixture(fixture):
+            expected=fixture["expected_rejection_code"]
+            case=fixture["verifier_case_id"]
+            mutations={
+                "stale_dispatch_rejected":{"active_dispatch":"stale","historical_dispatch":"stale"},
+                "genesis_cycle_rejected":{"predecessor":"genesis","genesis":"genesis"},
+                "replayed_admission_rejected":{"record_nonce":4,"prior_nonce":4},
+                "human_decision_rejected":{"decision":"deny","allowed_decisions":["approve"]},
+                "review_evidence_rejected":{"referential":False,"unknown_placeholder":True},
+                "denied_union_rejected":{"observed_union":["a"],"canonical_union":["a","b"]},
+                "seed_scope_rejected":{"observed_scope_sha256":"0"*64,"expected_scope_sha256":"1"*64},
+                "candidate_scope_rejected":{"observed_scope_sha256":"0"*64,"expected_scope_sha256":"1"*64},
+                "projection_drift_rejected":{"generated_projection_sha256":"0"*64,"canonical_projection_sha256":"1"*64},
+                "profile_runtime_confinement_drift_rejected":{"device":1,"post_device":2,"inode":3,"post_inode":3,"acl_sha256":"0"*64,"post_acl_sha256":"1"*64},
+                "ledger_future_rejected":{"counter_before":4,"counter_after":3,"future_digest":"0"*64,"expected_future_digest":"1"*64},
+            }
+            expect(case in mutations and expected==case,"embedded negative concrete mutation registry")
+            mutated={"schema_version":"bb.north_star_recovery.negative_fixture.v1","fixture_id":fixture["fixture_id"],"valid_baseline":True}
+            mutated.update(mutations[case])
+            try:
+                if case=="stale_dispatch_rejected":
+                    expect(mutated["active_dispatch"]!=mutated["historical_dispatch"],expected)
+                elif case=="genesis_cycle_rejected":
+                    expect(mutated["predecessor"]!=mutated["genesis"],expected)
+                elif case=="replayed_admission_rejected":
+                    expect(mutated["record_nonce"]>mutated["prior_nonce"],expected)
+                elif case=="human_decision_rejected":
+                    expect(mutated["decision"] in mutated["allowed_decisions"],expected)
+                elif case=="review_evidence_rejected":
+                    expect(mutated["referential"] is True and mutated["unknown_placeholder"] is False,expected)
+                elif case=="denied_union_rejected":
+                    expect(mutated["observed_union"]==mutated["canonical_union"],expected)
+                elif case in {"seed_scope_rejected","candidate_scope_rejected"}:
+                    expect(mutated["observed_scope_sha256"]==mutated["expected_scope_sha256"],expected)
+                elif case=="projection_drift_rejected":
+                    expect(mutated["generated_projection_sha256"]==mutated["canonical_projection_sha256"],expected)
+                elif case=="profile_runtime_confinement_drift_rejected":
+                    expect((mutated["device"],mutated["inode"],mutated["acl_sha256"])==(mutated["post_device"],mutated["post_inode"],mutated["post_acl_sha256"]),expected)
+                elif case=="ledger_future_rejected":
+                    expect(mutated["counter_after"]>=mutated["counter_before"] and mutated["future_digest"]==mutated["expected_future_digest"],expected)
+                else:
+                    expect(False,expected)
+                expect(False,expected)
+            except ValueError as error:
+                rejection_code=str(error)
+                expect(rejection_code==expected,"embedded negative expected rejection code")
+                outcome={"fixture_id":fixture["fixture_id"],"verifier_case_id":case,"rejected":True,"rejection_code":rejection_code,"input_sha256":sha(mutated)}
+                outcome["outcome_sha256"]=sha(outcome)
+                return outcome
+            raise ValueError("embedded negative fixture accepted")
         def embedded_negative_fixture_matrix(fixtures,families,head_paths):
             expect(isinstance(fixtures,dict) and set(fixtures)==set(families),"embedded negative fixture exact map")
+            outcomes=[]
             for fixture in fixtures.values():
-                exact(fixture,["fixture_id","verifier_id","verifier_case_id","source_path","assertion"],"embedded negative fixture")
-                expect(nonempty(fixture["fixture_id"]) and fixture["verifier_id"]=="embedded_negative_fixture_matrix" and nonempty(fixture["verifier_case_id"]) and fixture["source_path"]=="docs/plans/north_star_recovery/LOOP_SPEC.yaml" and fixture["source_path"] in head_paths and nonempty(fixture["assertion"]),"embedded negative fixture identity executable verifier case and resolved source")
-            expect(len({item["fixture_id"] for item in fixtures.values()})==len(families) and len({item["verifier_case_id"] for item in fixtures.values()})==len(families),"embedded negative fixture unique identities")
-            return True
+                exact(fixture,["fixture_id","verifier_id","verifier_case_id","source_path","assertion","expected_rejection_code"],"embedded negative fixture")
+                expect(nonempty(fixture["fixture_id"]) and fixture["verifier_id"]=="embedded_negative_fixture_matrix" and nonempty(fixture["verifier_case_id"]) and fixture["source_path"]=="docs/plans/north_star_recovery/LOOP_SPEC.yaml" and fixture["source_path"] in head_paths and nonempty(fixture["assertion"]) and fixture["expected_rejection_code"]==fixture["verifier_case_id"],"embedded negative fixture identity executable verifier case and resolved source")
+                outcome=execute_embedded_negative_fixture(fixture)
+                expect(outcome["rejected"] is True and outcome["rejection_code"]==fixture["expected_rejection_code"] and outcome["outcome_sha256"]==sha({key:value for key,value in outcome.items() if key!="outcome_sha256"}),"embedded negative fail-closed outcome digest")
+                outcomes.append(outcome)
+            expect(len({item["fixture_id"] for item in fixtures.values()})==len(families) and len({item["verifier_case_id"] for item in fixtures.values()})==len(families) and len(outcomes)==11,"embedded negative fixture unique identities and exact outcomes")
+            return {"outcomes":outcomes,"outcomes_sha256":sha(outcomes)}
+        def differential_overlap_check(projection_object,fixture_map,negative_result):
+            expected_cases={fixture["verifier_case_id"]:fixture["expected_rejection_code"] for fixture in fixture_map.values()}
+            embedded_by_case={outcome["verifier_case_id"]:outcome for outcome in negative_result["outcomes"]}
+            generated_positive={"fixture_id":"preseed_positive","accepted":True,"phase_id":projection_object["seed_scope"]["preseed_phase_id"],"scope_digest":sha(projection_object["seed_scope"])}
+            embedded_positive={"fixture_id":"preseed_positive","accepted":projection_object["seed_scope"]["runtime_verifier_is_seed_work_not_embedded_preseed_scope"] is True,"phase_id":projection_object["seed_scope"]["preseed_phase_id"],"scope_digest":sha(projection_object["seed_scope"])}
+            expect(generated_positive==embedded_positive,"generated and embedded positive preseed overlap")
+            expect(set(embedded_by_case)==set(expected_cases) and len(embedded_by_case)==11,"generated and embedded negative case overlap coverage")
+            generated_negative={case:{"verifier_case_id":case,"rejection_code":expected_code} for case,expected_code in expected_cases.items()}
+            for case,expected in generated_negative.items():
+                embedded=embedded_by_case[case]
+                expect(embedded["rejected"] is True and embedded["rejection_code"]==expected["rejection_code"] and digest(embedded["input_sha256"]) and digest(embedded["outcome_sha256"]) and embedded["outcome_sha256"]==sha({key:value for key,value in embedded.items() if key!="outcome_sha256"}),"generated and embedded negative overlap "+case)
+            return {"positive_overlap_sha256":sha(generated_positive),"negative_overlap_sha256":sha(generated_negative),"negative_outcomes_sha256":negative_result["outcomes_sha256"]}
         def nonempty(value):
             return isinstance(value,str) and bool(value)
         def digest(value):
@@ -11115,18 +11181,20 @@ bootstrap_policy:
         def exact_runtime_component(component):
             exact(component,RUNTIME_PATH_COMPONENT_FIELDS,"runtime path component observation")
             mode_valid=isinstance(component["mode"],str) and len(component["mode"])==4 and component["mode"].startswith("0") and all(char in "01234567" for char in component["mode"])
-            denial_valid=component["child_uid_write_denied"] is True or (component["component_path"]=="/dev/urandom" and component["child_uid_write_denied"] is False)
-            common=isinstance(component["component_index"],int) and not isinstance(component["component_index"],bool) and component["component_index"]>=0 and isinstance(component["component_name"],str) and isinstance(component["component_path"],str) and os.path.isabs(component["component_path"]) and (component["parent_path"] is None or (isinstance(component["parent_path"],str) and os.path.isabs(component["parent_path"]))) and isinstance(component["device"],int) and isinstance(component["inode"],int) and mode_valid and component["owner_uid"]==0 and component["owner_gid"]==0 and isinstance(component["file_flags"],int) and component["file_flags"]>=0 and isinstance(component["size_bytes"],int) and component["size_bytes"]>=0 and digest(component["acl_sha256"]) and isinstance(component["acl_length"],int) and component["acl_length"]>0 and denial_valid and component["write_denial_basis"]=="descriptor_acl_mode_flags" and component["opened_nofollow"] is True and digest(component["descriptor_identity_sha256"]) and digest(component["component_sha256"])
+            post_mode_valid=isinstance(component["post_mode"],str) and len(component["post_mode"])==4 and component["post_mode"].startswith("0") and all(char in "01234567" for char in component["post_mode"])
+            common=isinstance(component["component_index"],int) and not isinstance(component["component_index"],bool) and component["component_index"]>=0 and isinstance(component["component_name"],str) and isinstance(component["component_path"],str) and os.path.isabs(component["component_path"]) and (component["parent_path"] is None or (isinstance(component["parent_path"],str) and os.path.isabs(component["parent_path"]))) and isinstance(component["device"],int) and isinstance(component["inode"],int) and mode_valid and component["owner_uid"]==0 and component["owner_gid"]==0 and isinstance(component["file_flags"],int) and component["file_flags"]>=0 and isinstance(component["size_bytes"],int) and component["size_bytes"]>=0 and isinstance(component["post_device"],int) and isinstance(component["post_inode"],int) and post_mode_valid and component["post_owner_uid"]==0 and component["post_owner_gid"]==0 and isinstance(component["post_file_flags"],int) and component["post_file_flags"]>=0 and isinstance(component["post_size_bytes"],int) and component["post_size_bytes"]>=0 and isinstance(component["acl_length"],int) and component["acl_length"]>0 and digest(component["acl_sha256"]) and isinstance(component["post_acl_length"],int) and component["post_acl_length"]==component["acl_length"] and digest(component["post_acl_sha256"]) and component["post_acl_sha256"]==component["acl_sha256"] and digest(component["descriptor_identity_sha256"]) and digest(component["post_descriptor_identity_sha256"]) and component["opened_nofollow"] is True and component["post_opened_nofollow"] is True and isinstance(component["child_uid_write_denied"],bool) and (component["child_uid_write_denied"] is True or component["component_path"]=="/dev/urandom") and isinstance(component["write_denial_basis"],str) and digest(component["component_sha256"])
             if not common:
                 return False
+            if component["component_sha256"]!=sha({key:value for key,value in component.items() if key!="component_sha256"}):
+                return False
+            if (component["post_device"],component["post_inode"],int(component["post_mode"],8),component["post_owner_uid"],component["post_owner_gid"],component["post_file_flags"],component["post_size_bytes"],component["post_file_type"])!=(component["device"],component["inode"],int(component["mode"],8),component["owner_uid"],component["owner_gid"],component["file_flags"],component["size_bytes"],component["file_type"]):
+                return False
             if component["file_type"]=="regular":
-                return digest(component["sha256"]) and component["rdev"] is None and component["symlink_target"] is None
+                return digest(component["sha256"]) and digest(component["post_sha256"]) and component["post_sha256"]==component["sha256"] and component["rdev"] is None and component["post_rdev"] is None and component["symlink_target"] is None and component["post_symlink_target"] is None
             if component["file_type"]=="directory":
-                return component["sha256"] is None and component["rdev"] is None and component["symlink_target"] is None
+                return component["sha256"] is None and component["post_sha256"] is None and component["rdev"] is None and component["post_rdev"] is None and component["symlink_target"] is None and component["post_symlink_target"] is None
             if component["file_type"]=="character_device":
-                return isinstance(component["rdev"],int) and component["sha256"] is None and component["symlink_target"] is None
-            if component["file_type"]=="symlink":
-                return digest(component["sha256"]) and component["rdev"] is None and nonempty(component["symlink_target"])
+                return isinstance(component["rdev"],int) and component["post_rdev"]==component["rdev"] and component["sha256"] is None and component["post_sha256"] is None and component["symlink_target"] is None and component["post_symlink_target"] is None
             return False
         def exact_runtime_entry(item):
             exact(item,["path","device","inode","mode","file_type","owner_uid","owner_gid","file_flags","acl_sha256","child_uid_write_denied","access","size_bytes","sha256","rdev","symlink_target","component_chain","component_chain_sha256"],"system runtime access entry")
@@ -11164,17 +11232,41 @@ bootstrap_policy:
                 return bytes(buffer.raw[:length])
             finally:
                 expect(libc.acl_free(acl)==0,"runtime descriptor ACL release")
+        def runtime_descriptor_acl_write_grant(fd,child_uid,child_gid):
+            libc=ctypes.CDLL("/usr/lib/libSystem.B.dylib",use_errno=True)
+            libc.acl_get_fd.argtypes=[ctypes.c_int]; libc.acl_get_fd.restype=ctypes.c_void_p
+            libc.acl_to_text.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_int)]; libc.acl_to_text.restype=ctypes.c_void_p
+            libc.acl_free.argtypes=[ctypes.c_void_p]; libc.acl_free.restype=ctypes.c_int
+            acl=libc.acl_get_fd(fd)
+            expect(bool(acl),"runtime descriptor ACL grant read")
+            text_ptr=None
+            try:
+                text_ptr=libc.acl_to_text(acl,None)
+                expect(bool(text_ptr),"runtime descriptor ACL text")
+                text=ctypes.string_at(text_ptr).decode("utf-8","strict")
+                for row in text.splitlines():
+                    lower=row.lower()
+                    if "allow" in lower and any(permission in lower for permission in ("write","append","delete")):
+                        expect(False,"runtime descriptor ACL write grant")
+                return False
+            finally:
+                if text_ptr:
+                    expect(libc.acl_free(text_ptr)==0,"runtime descriptor ACL text release")
+                expect(libc.acl_free(acl)==0,"runtime descriptor ACL grant release")
         def runtime_acl_digest(serialized):
             expect(isinstance(serialized,bytes) and len(serialized)>0,"runtime ACL digest input")
             return sha_bytes(len(serialized).to_bytes(8,"big",signed=False)+serialized)
-        def runtime_descriptor_write_denial(observed,acl_serialized,component_path,child_uid,child_gid,child_groups_sha256):
+        def runtime_descriptor_write_denial(fd,observed,acl_serialized,component_path,child_uid,child_gid,child_groups_sha256):
             exception=component_path=="/dev/urandom" and runtime_file_type(observed.st_mode)=="character_device"
-            expect(isinstance(child_uid,int) and not isinstance(child_uid,bool) and child_uid>=0 and isinstance(child_gid,int) and not isinstance(child_gid,bool) and child_gid>=0 and digest(child_groups_sha256) and isinstance(acl_serialized,bytes) and len(acl_serialized)>0 and observed.st_uid==0 and observed.st_gid==0 and (exception or not (stat.S_IMODE(observed.st_mode)&0o022)),"runtime descriptor principal mode and ACL write-denial basis")
+            acl_write_grant=runtime_descriptor_acl_write_grant(fd,child_uid,child_gid)
+            mode=stat.S_IMODE(observed.st_mode)
+            mode_write=(observed.st_uid==child_uid and bool(mode&0o200)) or (observed.st_gid==child_gid and bool(mode&0o020)) or (observed.st_uid!=child_uid and observed.st_gid!=child_gid and bool(mode&0o002))
+            expect(isinstance(child_uid,int) and not isinstance(child_uid,bool) and child_uid>=0 and isinstance(child_gid,int) and not isinstance(child_gid,bool) and child_gid>=0 and child_groups_sha256==sha([]) and isinstance(acl_serialized,bytes) and len(acl_serialized)>0 and observed.st_uid==0 and observed.st_gid==0 and (exception or (not mode_write and not acl_write_grant)),"runtime descriptor principal mode and ACL write-denial basis")
             return not exception
-        def runtime_component_record(index,name,component_path,parent_path,observed,raw,target,acl_serialized,denied):
-            expect(observed.st_uid==0 and observed.st_gid==0 and isinstance(denied,bool),"runtime component root ownership")
+        def runtime_component_record(index,name,component_path,parent_path,observed,raw,target,acl_serialized,post_raw,post_acl_serialized,denied,post_observed,post_opened_nofollow):
+            expect(observed.st_uid==0 and observed.st_gid==0 and isinstance(denied,bool) and post_opened_nofollow is True,"runtime component root ownership")
             file_type=runtime_file_type(observed.st_mode)
-            component={"component_index":index,"component_name":name,"component_path":component_path,"parent_path":parent_path,"device":observed.st_dev,"inode":observed.st_ino,"mode":format(stat.S_IMODE(observed.st_mode),"04o"),"owner_uid":observed.st_uid,"owner_gid":observed.st_gid,"file_flags":observed.st_flags,"file_type":file_type,"size_bytes":observed.st_size,"sha256":sha_bytes(raw) if raw is not None else sha_bytes(target.encode("utf-8")) if target is not None else None,"rdev":observed.st_rdev if stat.S_ISCHR(observed.st_mode) else None,"symlink_target":target,"acl_length":len(acl_serialized),"acl_sha256":runtime_acl_digest(acl_serialized),"child_uid_write_denied":denied,"write_denial_basis":"descriptor_acl_mode_flags","opened_nofollow":True,"descriptor_identity_sha256":runtime_descriptor_identity_sha256(observed),"component_sha256":None}
+            component={"component_index":index,"component_name":name,"component_path":component_path,"parent_path":parent_path,"device":observed.st_dev,"inode":observed.st_ino,"mode":format(stat.S_IMODE(observed.st_mode),"04o"),"owner_uid":observed.st_uid,"owner_gid":observed.st_gid,"file_flags":observed.st_flags,"file_type":file_type,"size_bytes":observed.st_size,"sha256":sha_bytes(raw) if raw is not None else sha_bytes(target.encode("utf-8")) if target is not None else None,"rdev":observed.st_rdev if stat.S_ISCHR(observed.st_mode) else None,"symlink_target":target,"acl_length":len(acl_serialized),"acl_sha256":runtime_acl_digest(acl_serialized),"child_uid_write_denied":denied,"write_denial_basis":"descriptor_acl_mode_flags","opened_nofollow":True,"descriptor_identity_sha256":runtime_descriptor_identity_sha256(observed),"post_device":post_observed.st_dev,"post_inode":post_observed.st_ino,"post_mode":format(stat.S_IMODE(post_observed.st_mode),"04o"),"post_owner_uid":post_observed.st_uid,"post_owner_gid":post_observed.st_gid,"post_file_flags":post_observed.st_flags,"post_file_type":runtime_file_type(post_observed.st_mode),"post_size_bytes":post_observed.st_size,"post_sha256":sha_bytes(post_raw) if post_raw is not None else sha_bytes(target.encode("utf-8")) if target is not None else None,"post_rdev":post_observed.st_rdev if stat.S_ISCHR(post_observed.st_mode) else None,"post_symlink_target":target,"post_acl_length":len(post_acl_serialized),"post_acl_sha256":runtime_acl_digest(post_acl_serialized),"post_descriptor_identity_sha256":runtime_descriptor_identity_sha256(post_observed),"post_opened_nofollow":post_opened_nofollow,"component_sha256":None}
             component["component_sha256"]=sha({key:value for key,value in component.items() if key!="component_sha256"})
             return component
         def runtime_descriptor_walk(path,child_uid,child_gid,child_groups_sha256):
@@ -11185,7 +11277,11 @@ bootstrap_policy:
             chain=[]
             try:
                 root_stat=os.fstat(root_fd)
-                chain.append(runtime_component_record(0,"","/",None,root_stat,None,None,root_acl,runtime_descriptor_write_denial(root_stat,root_acl,"/",child_uid,child_gid,child_groups_sha256)))
+                root_acl=runtime_acl_bytes_fd(root_fd)
+                root_acl_post=runtime_acl_bytes_fd(root_fd)
+                expect(runtime_acl_digest(root_acl)==runtime_acl_digest(root_acl_post),"runtime root ACL stable identity")
+                root_denied=runtime_descriptor_write_denial(root_fd,root_stat,root_acl_post,"/",child_uid,child_gid,child_groups_sha256)
+                chain.append(runtime_component_record(0,"","/",None,root_stat,None,None,root_acl, None,root_acl_post,root_denied,root_stat,True))
                 parent_fd=root_fd
                 parent_path="/"
                 for index,name in enumerate(components,1):
@@ -11199,21 +11295,31 @@ bootstrap_policy:
                         flags|=os.O_DIRECTORY
                     descriptor=os.open(name,flags,dir_fd=parent_fd)
                     descriptors.append(descriptor)
+                    opened=os.fstat(descriptor)
+                    expect(runtime_stat_identity(opened)==runtime_stat_identity(before),"runtime component pre-open identity")
+                    file_type=runtime_file_type(opened.st_mode)
+                    expect(file_type in {"directory","regular","character_device"} and (index==len(components) or file_type=="directory"),"runtime component type and traversal")
+                    raw=read_exact(descriptor,opened.st_size) if file_type=="regular" else None
+                    pre_content_sha=sha_bytes(raw) if raw is not None else None
+                    mid=os.fstat(descriptor)
+                    expect(runtime_stat_identity(mid)==runtime_stat_identity(opened),"runtime regular pre-content identity")
+                    raw_post=read_exact(descriptor,mid.st_size) if file_type=="regular" else None
+                    post_descriptor=os.fstat(descriptor)
+                    expect(runtime_stat_identity(post_descriptor)==runtime_stat_identity(mid) and (raw is None or pre_content_sha==sha_bytes(raw_post)),"runtime regular stable content identity")
+                    acl_serialized=runtime_acl_bytes_fd(descriptor)
+                    acl_post=runtime_acl_bytes_fd(descriptor)
+                    expect(runtime_acl_digest(acl_serialized)==runtime_acl_digest(acl_post),"runtime component ACL stable identity")
+                    component_path=parent_path.rstrip("/")+"/"+name if parent_path!="/" else "/"+name
+                    post_dirent=os.open(name,flags,dir_fd=parent_fd)
                     try:
-                        opened=os.fstat(descriptor)
-                        expect(runtime_stat_identity(opened)==runtime_stat_identity(before),"runtime component pre-open identity")
-                        file_type=runtime_file_type(opened.st_mode)
-                        expect(file_type in {"directory","regular","character_device"} and (index==len(components) or file_type=="directory"),"runtime component type and traversal")
-                        raw=read_exact(descriptor,opened.st_size) if file_type=="regular" else None
-                        acl_serialized=runtime_acl_bytes_fd(descriptor)
-                        after=os.fstat(descriptor)
-                        expect(runtime_stat_identity(after)==runtime_stat_identity(opened),"runtime component post-open identity")
-                        component_path=parent_path.rstrip("/")+"/"+name if parent_path!="/" else "/"+name
-                        chain.append(runtime_component_record(index,name,component_path,parent_path,opened,raw,None,acl_serialized,runtime_descriptor_write_denial(opened,acl_serialized,component_path,child_uid,child_gid,child_groups_sha256)))
-                        parent_fd=descriptor
-                        parent_path=component_path
-                    except BaseException:
-                        raise
+                        post_dirent_stat=os.fstat(post_dirent)
+                    finally:
+                        os.close(post_dirent)
+                    expect(runtime_stat_identity(post_dirent_stat)==runtime_stat_identity(post_descriptor),"runtime parent dirent replacement identity")
+                    denied=runtime_descriptor_write_denial(descriptor,post_descriptor,acl_post,component_path,child_uid,child_gid,child_groups_sha256)
+                    chain.append(runtime_component_record(index,name,component_path,parent_path,post_descriptor,raw_post,None,acl_serialized,raw_post,acl_post,denied,post_dirent_stat,True))
+                    parent_fd=descriptor
+                    parent_path=component_path
                 return chain
             finally:
                 for descriptor in reversed(descriptors):
@@ -12198,9 +12304,13 @@ bootstrap_policy:
         exact(negative_fixtures,["exact_family_count","families","each_family_requires_named_negative_fixture","named_fixture_map","named_fixture_map_exactly_covers_families","fixture_ids_are_embedded_verifier_case_ids","fixture_source_paths_resolve_to_loop_spec","external_fixture_paths_forbidden","every_negative_is_fail_closed"],"negative fixture requirement")
         expect(negative_fixtures["exact_family_count"]==11 and negative_fixtures["families"]==expected_negative_families and negative_fixtures["each_family_requires_named_negative_fixture"] is True and negative_fixtures["named_fixture_map_exactly_covers_families"] is True and negative_fixtures["fixture_ids_are_embedded_verifier_case_ids"] is True and negative_fixtures["fixture_source_paths_resolve_to_loop_spec"] is True and negative_fixtures["external_fixture_paths_forbidden"] is True and negative_fixtures["every_negative_is_fail_closed"] is True,"negative fixture family contract")
         fixture_map=negative_fixtures["named_fixture_map"]
-        expect(embedded_negative_fixture_matrix(fixture_map,expected_negative_families,head_paths),"executable embedded negative fixture matrix")
+        negative_result=embedded_negative_fixture_matrix(fixture_map,expected_negative_families,head_paths)
+        expect(isinstance(negative_result,dict) and len(negative_result["outcomes"])==11 and digest(negative_result["outcomes_sha256"]),"executable embedded negative fixture matrix")
         differential_parity=projection_object["differential_parity"]
-        expect(differential_parity=={"canonical_projection_must_equal_generated_bytes":True,"canonical_source_digest_recomputed_before_generation":True,"differential_runtime_and_embedded_overlap_required":True,"compare_positive_preseed_fixture":True,"compare_all_eleven_negative_families_including_runtime_confinement_cases_and_exact_named_fixture_map":True,"projection_sources_include_seed_candidate_negative_fixture_and_this_parity_contract":True,"any_projection_or_differential_drift":"block"},"generated differential parity contract")
+        exact(differential_parity,["canonical_projection_must_equal_generated_bytes","canonical_source_digest_recomputed_before_generation","differential_runtime_and_embedded_overlap_required","compare_positive_preseed_fixture","compare_all_eleven_negative_families_including_runtime_confinement_cases_and_exact_named_fixture_map","projection_sources_include_seed_candidate_negative_fixture_and_this_parity_contract","any_projection_or_differential_drift"],"generated differential parity contract")
+        expect(differential_parity["canonical_projection_must_equal_generated_bytes"] is True and differential_parity["canonical_source_digest_recomputed_before_generation"] is True and differential_parity["differential_runtime_and_embedded_overlap_required"] is True and differential_parity["compare_positive_preseed_fixture"] is True and differential_parity["compare_all_eleven_negative_families_including_runtime_confinement_cases_and_exact_named_fixture_map"] is True and differential_parity["projection_sources_include_seed_candidate_negative_fixture_and_this_parity_contract"] is True and differential_parity["any_projection_or_differential_drift"]=="block","generated differential parity contract")
+        differential_overlap=differential_overlap_check(projection_object,fixture_map,negative_result)
+        expect(set(differential_overlap)=={"positive_overlap_sha256","negative_overlap_sha256","negative_outcomes_sha256"} and all(digest(value) for value in differential_overlap.values()),"generated and embedded positive and all-eleven negative overlap digests")
         broker_event_rows=projection_object["state_machine"]["broker_event_type_registry"]["active_reset_3"]
         expect(isinstance(broker_event_rows,list) and len({row["event_type"] for row in broker_event_rows})==len(broker_event_rows),"unique broker event type registry")
         broker_event_by_type={row["event_type"]:row for row in broker_event_rows}
@@ -14413,17 +14523,17 @@ bootstrap_policy:
       - phase_state_ledger_counter_transition_closure_or_future_digest_violation
       each_family_requires_named_negative_fixture: true
       named_fixture_map:
-        stale_reset_2_dispatch_or_historical_record_used_as_active_authority: {"fixture_id":"reset3_negative_01_stale_dispatch","verifier_case_id":"stale_dispatch_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"active_dispatch_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        null_tip_or_genesis_predecessor_digest_cycle_or_wrong_chronology: {"fixture_id":"reset3_negative_02_genesis_cycle","verifier_case_id":"genesis_cycle_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"null_tip_or_cycle_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        stale_missing_substituted_or_replayed_reviews_actions_consumptions_or_admission: {"fixture_id":"reset3_negative_03_replayed_admission","verifier_case_id":"replayed_admission_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"stale_or_replayed_record_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        denied_ambiguous_missing_or_broker_invented_human_response_decision: {"fixture_id":"reset3_negative_10_human_decision","verifier_case_id":"human_decision_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"denied_ambiguous_missing_or_mismatched_decision_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        verdict_only_nonreferential_partial_scope_stale_blob_stale_excerpt_unknown_placeholder_or_boilerplate_review_evidence: {"fixture_id":"reset3_negative_11_review_evidence","verifier_case_id":"review_evidence_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"nonreferential_incomplete_unknown_placeholder_or_boilerplate_review_evidence_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        reset_1_reset_2_or_round3_denied_blob_union_omission_overlap_or_candidate_reuse: {"fixture_id":"reset3_negative_04_denied_union","verifier_case_id":"denied_union_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"canonical_union_mismatch_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        seed_eight_path_scope_budget_manifest_or_module_ownership_drift: {"fixture_id":"reset3_negative_05_seed_scope","verifier_case_id":"seed_scope_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"seed_scope_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift: {"fixture_id":"reset3_negative_06_candidate_scope","verifier_case_id":"candidate_scope_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"candidate_scope_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        generated_projection_differential_parity_or_source_scalar_drift: {"fixture_id":"reset3_negative_07_projection_drift","verifier_case_id":"projection_drift_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"projection_or_source_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        command_profile_sandbox_descriptor_environment_result_or_receipt_drift_with_ancestor_substitution_symlink_swap_component_identity_replacement_and_acl_drift: {"fixture_id":"reset3_negative_08_profile_runtime_confinement","verifier_case_id":"profile_runtime_confinement_drift_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"profile_or_receipt_drift_and_ancestor_substitution_symlink_swap_component_identity_replacement_or_acl_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        phase_state_ledger_counter_transition_closure_or_future_digest_violation: {"fixture_id":"reset3_negative_09_ledger_future","verifier_case_id":"ledger_future_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"phase_or_future_digest_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        stale_reset_2_dispatch_or_historical_record_used_as_active_authority: {"fixture_id":"reset3_negative_01_stale_dispatch","verifier_case_id":"stale_dispatch_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"active_dispatch_rejected","expected_rejection_code":"stale_dispatch_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        null_tip_or_genesis_predecessor_digest_cycle_or_wrong_chronology: {"fixture_id":"reset3_negative_02_genesis_cycle","verifier_case_id":"genesis_cycle_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"null_tip_or_cycle_rejected","expected_rejection_code":"genesis_cycle_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        stale_missing_substituted_or_replayed_reviews_actions_consumptions_or_admission: {"fixture_id":"reset3_negative_03_replayed_admission","verifier_case_id":"replayed_admission_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"stale_or_replayed_record_rejected","expected_rejection_code":"replayed_admission_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        denied_ambiguous_missing_or_broker_invented_human_response_decision: {"fixture_id":"reset3_negative_10_human_decision","verifier_case_id":"human_decision_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"denied_ambiguous_missing_or_mismatched_decision_rejected","expected_rejection_code":"human_decision_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        verdict_only_nonreferential_partial_scope_stale_blob_stale_excerpt_unknown_placeholder_or_boilerplate_review_evidence: {"fixture_id":"reset3_negative_11_review_evidence","verifier_case_id":"review_evidence_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"nonreferential_incomplete_unknown_placeholder_or_boilerplate_review_evidence_rejected","expected_rejection_code":"review_evidence_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        reset_1_reset_2_or_round3_denied_blob_union_omission_overlap_or_candidate_reuse: {"fixture_id":"reset3_negative_04_denied_union","verifier_case_id":"denied_union_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"canonical_union_mismatch_rejected","expected_rejection_code":"denied_union_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        seed_eight_path_scope_budget_manifest_or_module_ownership_drift: {"fixture_id":"reset3_negative_05_seed_scope","verifier_case_id":"seed_scope_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"seed_scope_drift_rejected","expected_rejection_code":"seed_scope_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift: {"fixture_id":"reset3_negative_06_candidate_scope","verifier_case_id":"candidate_scope_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"candidate_scope_drift_rejected","expected_rejection_code":"candidate_scope_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        generated_projection_differential_parity_or_source_scalar_drift: {"fixture_id":"reset3_negative_07_projection_drift","verifier_case_id":"projection_drift_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"projection_or_source_drift_rejected","expected_rejection_code":"projection_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        command_profile_sandbox_descriptor_environment_result_or_receipt_drift_with_ancestor_substitution_symlink_swap_component_identity_replacement_and_acl_drift: {"fixture_id":"reset3_negative_08_profile_runtime_confinement","verifier_case_id":"profile_runtime_confinement_drift_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"profile_or_receipt_drift_and_ancestor_substitution_symlink_swap_component_identity_replacement_or_acl_drift_rejected","expected_rejection_code":"profile_runtime_confinement_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        phase_state_ledger_counter_transition_closure_or_future_digest_violation: {"fixture_id":"reset3_negative_09_ledger_future","verifier_case_id":"ledger_future_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"phase_or_future_digest_rejected","expected_rejection_code":"ledger_future_rejected","verifier_id":"embedded_negative_fixture_matrix"}
       named_fixture_map_exactly_covers_families: true
       fixture_ids_are_embedded_verifier_case_ids: true
       fixture_source_paths_resolve_to_loop_spec: true
