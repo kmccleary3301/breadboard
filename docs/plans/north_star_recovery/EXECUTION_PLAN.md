@@ -543,23 +543,29 @@ closure and ACL bytes/digests, and verifies phase-bound records; it never forks
 or calls setgroups/setgid/setuid and never accepts caller labels. Any credential
 drift, probe, credential-drop, ACL-read, serialization, record, or freshness
 failure blocks, with no exception beyond typed `/dev/urandom` itself.
-Regular read-data files in the closure are opened `O_NOFOLLOW` and
-digest-bound; metadata-only regular files and directories are
-`lstat`/inode-bound; symlinks are `lstat`/readlink-bound; and `/dev/urandom`,
-required by isolated Python startup, is bound by device/inode/mode/UID/GID/
-flags/ACL/size/`rdev`. The probe closure is a separate exact literal
-path/type/access map whose required entries include the regular read-data
-and map-executable `/Library/Developer/CommandLineTools/Library/Frameworks/
-Python3.framework/Versions/3.9/lib/python3.9/ctypes/__init__.py` and
-`lib-dynload/_ctypes.cpython-39-darwin.so`, regular read-data and
-map-executable `/usr/lib/libffi.dylib`, `/usr/lib/libSystem.B.dylib`, and
-`/usr/lib/dyld`, plus every literal ancestor (`/`, `/usr`, `/usr/lib`, and
-each Python/framework/lib-dynload directory) with its exact directory
-metadata/read-data access. The broker resolves and records every entry and
-binds the canonical closure digest into the probe profile, sandbox rendering,
-launch record, and receipt. The reviewed scalar hardcodes the exact sorted
-path-to-access map; a missing, extra, reordered, wrong-type, writable,
-replaceable, or differently permissioned entry blocks.
+Every regular file and directory in the authenticated filesystem closure is
+opened component-by-component with parent-descriptor-relative `O_NOFOLLOW`,
+then descriptor/inode/flags/ACL/content-bound before and after use. Symlink
+aliases are not runtime-manifest entries: `/var` is represented by canonical
+`/private` and `/private/var`, and the metadata-only
+`/System/Cryptexes/OS` alias is excluded. `/dev/urandom`, required by isolated
+Python startup, is bound by device/inode/mode/UID/GID/flags/ACL/size/`rdev`.
+The probe closure is a separate exact literal path/type/access map whose
+filesystem entries include the regular read-data and map-executable
+`/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/
+Versions/3.9/lib/python3.9/ctypes/__init__.py`,
+`lib-dynload/_ctypes.cpython-39-darwin.so`,
+`lib-dynload/_struct.cpython-39-darwin.so`, and `/usr/lib/dyld`, plus every
+literal ancestor (`/`, `/usr`, `/usr/lib`, and each
+Python/framework/lib-dynload directory) with exact directory
+metadata/read-data access. Darwin shared-cache images
+`/usr/lib/libffi.dylib` and `/usr/lib/libSystem.B.dylib` remain exact
+authenticated `ctypes` load identities but are not falsely claimed as
+filesystem manifest entries on this host. The broker resolves and records
+every manifest entry and binds the canonical closure digest into the probe
+profile, sandbox rendering, launch record, and receipt. The reviewed scalar
+hardcodes the exact sorted path-to-access map; a missing, extra, reordered,
+wrong-type, writable, replaceable, or differently permissioned entry blocks.
 That map covers the exact Python application, framework image, imported
 standard-library closure, ctypes probe dependencies, and required Darwin
 traversal metadata. The broker recomputes every entry and child-principal
