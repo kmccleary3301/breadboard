@@ -484,16 +484,19 @@ Every listed literal path, its broker-resolved target when present, and every
 containing ancestor must be nonwritable and nonreplaceable by the expected
 child principal (UID/GID and canonical supplementary groups) under the
 descriptor-observed mode, flags, and ACL; the sole exception is typed
-`/dev/urandom` itself. Symlinks are handled only through their parent
-`dir_fd` with no-follow metadata and authenticated `readlink` identity; a
-symlink target that cannot be walked and revalidated from the authenticated
-root is rejected. The ACL digest is SHA-256 over an unsigned big-endian 64-bit byte-length
-prefix followed by the exact `acl_copy_ext` bytes obtained from the authenticated
-descriptor; ACL evaluation is descriptor-based and principal-aware for the
-expected child UID/GID and supplementary groups, and treats `write`, `append`,
-`add_file`, `add_subdirectory`, `delete`, `delete_child`, `writeattr`,
-`writeextattr`, `chown`, and `change_owner` grants or ambiguous ACL rows as
-write authorization unless an exact matching deny is proven.
+`/dev/urandom` itself. Runtime-manifest symlinks are forbidden rather than
+followed: canonical literal paths are selected before execution, and any
+symlink encountered by the authenticated descriptor walk rejects admission.
+The ACL digest is SHA-256 over an unsigned big-endian 64-bit byte-length
+prefix followed by the exact `acl_copy_ext` bytes obtained from the
+authenticated descriptor. Mode evaluation is principal-aware for the expected
+child UID/GID and empty canonical supplementary-group set. ACL evaluation is
+deliberately stricter: the parser accepts only exact Darwin `!#acl 1` rows,
+rejects unknown or ambiguous syntax, and treats any `allow` row containing
+`write`, `append`, `add_file`, `add_subdirectory`, `delete`, `delete_child`,
+`writeattr`, `writeextattr`, `writesecurity`, or `chown` as write
+authorization regardless of named principal. Absent extended ACLs use a typed
+nonempty sentinel; deny-only and read-only ACLs do not create write authority.
 The broker's privileged no-sandbox helper alone performs the authenticated
 `setgroups(expected_groups)`, `setgid(expected_gid)`, and `setuid(expected_uid)`
 handshake and records one authenticated `bb.omp.runtime_write_denial_record.v1`
@@ -1257,19 +1260,23 @@ Candidate final review remains exactly two rounds/four operations; it is
 sealed from the candidate review records and does not create a sixth
 implementation-review round. The seed source of truth is the reviewed
 declarative contract and its generated projection; canonical Git object
-inspection and the thin anchor CLI are required. Selected-`S`
-checker conformance is deferred until selected `S` exists and is consumed by the
-mandatory selection gate; preseed performs no checker execution.
+inspection and the thin anchor CLI are required. Selected-`S` checker
+conformance is deferred until selected `S` exists and the fresh selection
+action has one stored consumption; preseed performs no checker execution.
 The seed denies the exact 26-OID union (20 reset-1 identities plus six
 reset-2 failures), with the 11 round-3 entries a strict subset, and rejects
 every candidate blob in that union. Eleven negative families, fail-closed
 command profiles, typed result receipts, guarded phase transitions, and
 supervisor-only promotion remain mandatory.
-The generated negative fixture matrix defines the concrete mutated minimal
-fixture for each named verifier case and binds its canonical fixture-contract
-digest, exact case/fixture/family identifiers, expected status and rejection
-code, canonical input payload (bytes or object) plus input SHA-256, observed
-status/rejection code, outcome SHA-256, and pass bit. Projection/selected-checker
+The generated fixture matrix binds one positive canonical recipe and one exact
+deterministic mutation recipe for each named negative verifier case. Each
+recipe names the current generated projection plus authenticated context as
+its baseline, a concrete JSON-pointer target, one closed mutation operation
+and value, canonical JSON bytes, and SHA-256. The selected checker resolves
+that baseline only after fresh selection consumption and applies each recipe
+exactly once. The fixture contract also binds exact case/fixture/family IDs,
+expected status and rejection code, observed status/rejection code, outcome
+SHA-256, and pass bit. Projection/selected-checker
 conformance, selected-`S` identity, and fixture-contract drift block;
 self-equality alone is insufficient. The selected-`S` checker gate is the only
 place that executes this conformance: it performs one broker-authenticated
@@ -1277,12 +1284,24 @@ selected-`S` checker execution over exactly one positive and eleven negative
 cases, binding `selected_S_commit`, `selected_S_tree`, checker source path/blob
 OID/SHA-256 resolved from that tree, argv containing that exact path, closed
 environment, fixture-contract digest, and raw input/output digests.
-Its broker verifier independently authenticates the child launch and resolves
-the checker source bytes at the selected-`S` tree, recomputes every input SHA,
-joins each observed output to the same input SHA and named fixture, and checks
-zero exit plus exact expected/observed status, rejection code, outcome digest,
-and pass bit. Evidence records closed per-case fields plus execution handle and
-result digest. Missing, extra, mismatched, stale, caller-supplied, or
+The selection consumption precedes checker execution so the execution,
+conformance result, and receipt can bind its authenticated handle and digest.
+The broker first verifies the execution, then stores the conformance result
+and receipt. The `fresh_seed_selection_consumed` transition gate subsequently
+resolves and revalidates that stored execution/result/receipt bundle before
+the state transition or seed-merge ledger completion; the transition gate
+does not authorize its own result creation.
+The authoritative broker verifier is
+`preseed_admission_validator.source:verify_selected_seed_checker_parity`,
+selected by the guard registry through
+`selected_seed_checker_parity_verifier.source_ref`. It independently
+authenticates the child launch and resolves the checker source bytes at the
+selected-`S` tree, enforces the exact argv and closed environment, validates
+the closed positive/negative recipe map, recomputes every input SHA, joins each
+observed output to the same input SHA and named fixture, and checks zero exit
+plus exact expected/observed status, rejection code, outcome digest, and pass
+bit. Evidence records closed per-case fields plus execution handle and result
+digest. Missing, extra, mismatched, stale, caller-supplied, or
 nonzero-result evidence blocks `fresh_seed_selection_consumed` and seed merge;
 preseed self-simulated checker execution is forbidden.
 Every active event is present in the closed event registry with exact source
