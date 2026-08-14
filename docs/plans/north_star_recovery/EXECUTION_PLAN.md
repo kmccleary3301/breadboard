@@ -440,10 +440,13 @@ emits immutable identity-drop evidence covering the handshake and observed
 UID/GID/groups. The exact `darwin_bootstrap_look_up_v2` opcode and all four
 authenticated IDs select the source scalar's closed Mach-probe branch; no role,
 service, environment, descriptor, or input is child-selectable.
-The combined preflight source receives operation, invocation, reservation, and
-challenge IDs from `sys.argv[2:6]` and canary paths from `sys.argv[6:]`; `sys.argv[1]`
-is the broker-fixed `--` sentinel exposed by the exact `python -c` launch. These
-positions are fixed by the broker and are not caller selectable.
+The combined preflight source validates `sys.argv[1:3] == ["--",
+"darwin_bootstrap_look_up_v2"]`, then receives operation, invocation,
+reservation, and challenge IDs from `sys.argv[3:7]` and canary paths from
+`sys.argv[7:]`. These positions are fixed by the broker's exact
+`python -I -S -c SOURCE -- darwin_bootstrap_look_up_v2 <operation_instance_id>
+<invocation_id> <reservation_id> <challenge_nonce> ...` launch and are not
+caller selectable.
 The child invokes `darwin_bootstrap_look_up_v2` for `com.apple.securityd`,
 `com.apple.trustd.agent`, and `com.apple.pasteboard.1`. It emits exactly one
 canonical `bb.omp.mach_lookup_probe_output.v2` result containing the operation
@@ -464,16 +467,27 @@ closure/profile identities, services, raw output bytes/output event, raw
 results, wait status, and strictly increasing launch/drop/child-output/wait/
 consume/output-event/receipt chronology before the capability probe is accepted
 and any successor operation may launch.
-Every runtime entry has an exact literal path, device, inode, mode, type, root
-UID/GID, file flags, and canonical ACL digest,
-effective child-UID write-denial result, allowed access set, and type-specific
-size/digest, `rdev`, or `readlink` identity.
-Every listed literal path, its resolved symlink target when present, and every
+Every runtime entry has an exact literal path, an ordered root-anchored
+component chain, a component-chain digest, and for each component the
+descriptor-backed device, inode, mode, type, UID/GID, flags, canonical ACL
+digest, descriptor identity, effective child-UID write-denial result, and
+type-specific size/digest, `rdev`, or `readlink` identity. The chain is opened
+from one broker-authenticated root directory with `openat`/`dir_fd` and
+`O_NOFOLLOW` for every traversable component; the root descriptor and every
+component descriptor are retained long enough to compare pre/post
+`fstat` identities. A component that is missing, replaced, symlinked during
+traversal, unsupported, or cannot provide a stable descriptor/readlink
+identity fails closed.
+Every listed literal path, its broker-resolved target when present, and every
 containing ancestor must be nonwritable and nonreplaceable by the expected
-child principal (UID/GID and canonical supplementary groups) under mode,
-flags, and ACL; the sole exception is typed `/dev/urandom` itself. The ACL
-digest is SHA-256 over an unsigned big-endian 64-bit byte-length prefix
-followed by the exact `acl_copy_ext` bytes.
+child principal (UID/GID and canonical supplementary groups) under the
+descriptor-observed mode, flags, and ACL; the sole exception is typed
+`/dev/urandom` itself. Symlinks are handled only through their parent
+`dir_fd` with no-follow metadata and authenticated `readlink` identity; a
+symlink target that cannot be walked and revalidated from the authenticated
+root is rejected. The ACL digest is SHA-256 over an unsigned big-endian
+64-bit byte-length prefix followed by the exact `acl_copy_ext` bytes obtained
+from the authenticated descriptor.
 The broker's privileged no-sandbox helper alone performs the authenticated
 `setgroups(expected_groups)`, `setgid(expected_gid)`, and `setuid(expected_uid)`
 handshake and records one authenticated `bb.omp.runtime_write_denial_record.v1`
@@ -482,19 +496,24 @@ event per manifest literal. Each record binds phase (`prelaunch` or
 authenticated child PID, expected and observed UID/GID, sorted observed
 supplementary-group list plus digest, identity-drop event handle, launch event
 handle/timestamp, and (post phase only) waitpid event handle/timestamp/status.
-The linked identity-drop, launch, and waitpid envelopes must all be broker
-authenticated and carry the same PID, operation, invocation, reservation, and
-principal; every successful child receipt must prove
-`WIFEXITED(wait_status)` and `WEXITSTATUS(wait_status) == 0` for that exact
-raw wait status. A signaled or nonzero-exit child cannot satisfy a successful
-receipt.
-The path fields bind literal/resolved/ancestor closure, exact ACL serialized
-lengths and digests, and `faccessat(..., W_OK, AT_EACCESS)` result/errno.
+It also carries the ordered component chain and digest for every literal,
+resolved-target, and ancestor closure path. The linked identity-drop, launch,
+and waitpid envelopes must all be broker authenticated and carry the same PID,
+operation, invocation, reservation, and principal; every successful child
+receipt must prove `WIFEXITED(wait_status)` and `WEXITSTATUS(wait_status) == 0`
+for that exact raw wait status. A signaled or nonzero-exit child cannot satisfy
+a successful receipt.
+The path fields bind the literal/resolved/ancestor closure, ordered
+descriptor-walk component chains and their digests, descriptor ACL lengths
+and digests, descriptor identities, and descriptor-derived write-denial
+results. No ambient `realpath`, path-only ACL lookup, or path-only access
+check can authorize a record.
 The broker emits prelaunch records only after identity drop and before the
 authenticated launch/exec boundary, with typed-null waitpid fields; it emits
 post-waitpid records only after the authenticated successful waitpid for that
 same child and current operation. Both exact sorted handle sets and their
-digests are bound into the capability manifest and operation evidence.
+digests, runtime manifest component chains, and closure-chain digests are
+bound into the capability manifest and operation evidence.
 Every `broker_builtin` operation requires one broker-authenticated authority
 envelope with the exact `broker_builtin_authority` schema (including operation/
 invocation/reservation/profile/capability-store identity, broker opcode and

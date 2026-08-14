@@ -10022,7 +10022,7 @@ bootstrap_policy:
       canonical_source_digest_recomputed_before_generation: true
       differential_runtime_and_embedded_overlap_required: true
       compare_positive_preseed_fixture: true
-      compare_all_eleven_negative_families_and_exact_named_fixture_map: true
+      compare_all_eleven_negative_families_including_runtime_confinement_cases_and_exact_named_fixture_map: true
       projection_sources_include_seed_candidate_negative_fixture_and_this_parity_contract: true
       any_projection_or_differential_drift: block
     operation_ledger:
@@ -10241,18 +10241,21 @@ bootstrap_policy:
           child_runtime_attestation_must_bind_invocation_pid_and_only_observed_values_while_broker_only_profile_and_capability_claims_remain_in_separate_launch_attestation: true
           unknown_missing_extra_symbolic_or_caller_supplied_capability: "reject"
           closed_environment_credentials_network_system_runtime_access_manifest_workspace_git_object_store_and_path_identity: true
-          system_runtime_access_manifest_is_broker_resolved_exact_literal_metadata_read_data_and_map_executable_grants_with_closed_regular_directory_character_device_and_symlink_records_including_uid_gid_mode_flags_canonical_acl_digest_and_child_uid_write_denial: true
-          every_path_and_ancestor_is_root_uid_gid_owned_and_not_writable_or_replaceable_by_the_authenticated_capability_expected_child_uid_gid_and_supplementary_groups_under_mode_flags_or_acl_except_typed_dev_urandom_regular_files_are_nofollow_and_digest_bound_directories_are_inode_bound_symlinks_are_lstat_and_readlink_bound_and_resolved_symlink_targets_are_checked: true
-          canonical_acl_digest_algorithm: broker_serializes_exact_acl_copy_ext_bytes_with_a_big_endian_uint64_byte_length_prefix_and_hashes_that_length_bound_bytes_for_acl_type_extended_and_rejects_acl_read_or_serialization_failure
-          child_uid_write_denial_algorithm: broker_privileged_no_sandbox_helper_authenticates_expected_child_uid_gid_and_canonical_supplementary_groups_then_records_effective_faccessat_W_OK_AT_EACCESS_result_acl_length_and_exact_acl_copy_ext_digest_for_each_literal_resolved_target_and_containing_ancestor_before_launch_and_after_waitpid; dropped_validator_only_verifies_broker_records_and_never_forks_or_calls_setgroups_setgid_setuid; only_typed_dev_urandom_literal_observation_may_be_allowed
+          system_runtime_access_manifest_is_broker_resolved_exact_literal_metadata_read_data_and_map_executable_grants_with_closed_regular_directory_character_device_and_symlink_records_including_root_anchored_component_chains_descriptor_device_inode_mode_uid_gid_flags_type_canonical_acl_digest_and_child_uid_write_denial: true
+          every_path_and_ancestor_is_walked_from_one_authenticated_root_with_dir_fd_openat_and_o_nofollow_and_is_not_writable_or_replaceable_by_the_authenticated_capability_expected_child_uid_gid_and_supplementary_groups_under_descriptor_mode_flags_or_acl_except_typed_dev_urandom_regular_files_are_descriptor_and_digest_bound_directories_are_descriptor_and_inode_bound_symlinks_use_parent_dir_fd_nofollow_metadata_and_readlink_identity_or_fail_closed: true
+          canonical_acl_digest_algorithm: broker_serializes_exact_acl_copy_ext_bytes_from_the_authenticated_descriptor_with_a_big_endian_uint64_byte_length_prefix_and_hashes_that_length_bound_bytes_for_acl_type_extended_and_rejects_acl_read_or_serialization_failure
+          child_uid_write_denial_algorithm: broker_privileged_no_sandbox_helper_authenticates_expected_child_uid_gid_and_canonical_supplementary_groups_then_records_descriptor_based_write_denial_descriptor_identity_acl_length_and_exact_acl_copy_ext_digest_for_each_literal_resolved_target_and_containing_ancestor_before_launch_and_after_waitpid; dropped_validator_only_verifies_authenticated_descriptor_chains_and_records_and_never_forks_or_calls_setgroups_setgid_setuid; missing_support_component_mismatch_symlink_or_acl_or_identity_drift_fails_closed; only_typed_dev_urandom_literal_observation_may_be_allowed
+          runtime_path_component_observation_exact_fields: [component_index, component_name, component_path, parent_path, device, inode, mode, owner_uid, owner_gid, file_flags, file_type, size_bytes, sha256, rdev, symlink_target, acl_length, acl_sha256, child_uid_write_denied, write_denial_basis, opened_nofollow, descriptor_identity_sha256, component_sha256]
           runtime_write_denial_record_schema_version: bb.omp.runtime_write_denial_record.v1
-          runtime_write_denial_record_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, phase, broker_actor, platform_identity_sha256, expected_child_uid, expected_child_gid, expected_child_supplementary_groups_sha256, child_pid, observed_child_uid, observed_child_gid, observed_child_supplementary_groups, observed_child_supplementary_groups_sha256, identity_drop_event_handle, launch_event_handle, launched_at_utc, waitpid_event_handle, waitpid_at_utc, wait_status, target_path_literal, target_path_resolved, target_path_ancestors, target_path_closure, target_path_closure_sha256, path_observations, path_observations_sha256, created_at_utc, recorded_at_utc, observed_at_utc, fresh_until_utc, record_sha256]
-          runtime_write_denial_observation_exact_fields: [path, faccessat_result, faccessat_errno, effective_write_denied, acl_length, acl_sha256, observed_at_utc]
+          runtime_write_denial_record_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, phase, broker_actor, platform_identity_sha256, expected_child_uid, expected_child_gid, expected_child_supplementary_groups_sha256, child_pid, observed_child_uid, observed_child_gid, observed_child_supplementary_groups, observed_child_supplementary_groups_sha256, identity_drop_event_handle, launch_event_handle, launched_at_utc, waitpid_event_handle, waitpid_at_utc, wait_status, target_path_literal, target_path_resolved, target_path_ancestors, target_path_closure, target_path_closure_sha256, path_component_chains, path_component_chains_sha256, path_observations, path_observations_sha256, created_at_utc, recorded_at_utc, observed_at_utc, fresh_until_utc, record_sha256]
+          runtime_write_denial_observation_exact_fields: [path, component_chain, component_chain_sha256, descriptor_identity_sha256, acl_length, acl_sha256, effective_write_denied, write_denial_basis, observed_at_utc]
           runtime_write_denial_record_broker_actor: omp_broker
           runtime_write_denial_record_phases: [prelaunch, post_waitpid]
-          runtime_write_denial_record_requires_exact_manifest_literal_resolved_ancestor_set_and_no_caller_labels: true
+          runtime_write_denial_record_requires_exact_manifest_literal_resolved_ancestor_set_ordered_component_chains_and_chain_digests_and_no_caller_labels: true
           runtime_write_denial_record_requires_broker_authenticated_invocation_reservation_platform_principal_and_freshness_bindings: true
           runtime_write_denial_record_principal_observation_requires_exact_uid_gid_sorted_supplementary_group_list_and_digest: true
+          runtime_write_denial_record_component_observation_requires_root_anchored_dir_fd_openat_nofollow_descriptor_identity_and_descriptor_acl_or_readlink_content_revalidation: true
+          runtime_write_denial_record_component_observation_missing_support_symlink_or_replacement_component_mismatch_acl_drift_or_identity_drift_fails_closed: true
           runtime_write_denial_record_identity_drop_launch_and_waitpid_handles_resolve_to_current_authenticated_broker_events: true
           runtime_write_denial_record_prelaunch_requires_identity_drop_before_observation_before_authenticated_launch_and_null_waitpid_fields: true
           runtime_write_denial_record_post_waitpid_requires_authenticated_waitpid_success_for_same_pid_operation_invocation_reservation_and_observation_after_waitpid: true
@@ -10402,8 +10405,10 @@ bootstrap_policy:
             import ctypes,datetime,errno,hashlib,json,os,socket,sys
             canon=lambda v:json.dumps(v,sort_keys=True,separators=(",",":"),ensure_ascii=False,allow_nan=False).encode("utf-8")
             now=lambda:datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00","Z")
-            operation_instance_id,invocation_id,reservation_id,challenge_nonce=sys.argv[2:6]
-            canary_paths=sys.argv[6:]
+            if len(sys.argv)<7 or sys.argv[1:3]!=["--","darwin_bootstrap_look_up_v2"]:
+                raise ValueError("closed preflight probe argv")
+            operation_instance_id,invocation_id,reservation_id,challenge_nonce=sys.argv[3:7]
+            canary_paths=sys.argv[7:]
             if len(canary_paths)<4:
                 raise ValueError("canonical Git canary cardinality")
             def denied(probe_class,target,operation,fn):
@@ -10445,8 +10450,9 @@ bootstrap_policy:
             os.write(20,canon(result)+b"\n")
             os.close(20)
           preflight_probe_source_is_executable_only_for_mach_v2_child_proof: true
+          preflight_probe_source_argv_contract: exact_launch_argv_is_python_I_S_c_SOURCE_--_darwin_bootstrap_look_up_v2_operation_instance_id_invocation_id_reservation_id_challenge_nonce_canaries_and_source_requires_sys_argv_1_to_3_equal_["--","darwin_bootstrap_look_up_v2"]_then_unpacks_sys_argv_3_to_7_and_canaries_sys_argv_7_to_end
           broker_builtin_no_child_and_delegated_agent_attestation_have_no_preflight_probe_source_or_probe_argv: true
-          preflight_probe_source_sha256: ce5ddc70190f3c3735ec002edc1b8f2359ecb72e92f6b75a5b5b53424e64d9da
+          preflight_probe_source_sha256: de4675bbd98eabef15b9d9f0d0f2e71f5124008e3e842c9be3573389fe1d98f7
           preflight_probe_identity_drop_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, challenge_nonce, probe_child_pid, parent_pid, expected_child_uid, expected_child_gid, expected_child_supplementary_groups_sha256, observed_child_uid, observed_child_gid, observed_child_supplementary_groups_sha256, setgroups_succeeded, setgid_succeeded, setuid_succeeded, close_on_exec_handshake_succeeded, observed_at_utc, identity_drop_sha256]
           preflight_probe_output_event_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, challenge_nonce, probe_child_pid, probe_child_parent_pid, raw_output, raw_output_sha256, result_sha256, result_fifo_descriptor_id, observed_at_utc, output_event_sha256]
           network_denial_receipt_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, challenge_nonce, probe_launch_record_sha256, probe_child_pid, probe_child_parent_pid, child_uid, child_gid, child_supplementary_groups_sha256, identity_drop_event_handle, identity_drop_sha256, raw_probe_bytes_hex, raw_probe_sha256, probe_result, result_fifo_descriptor_id, result_fifo_child_write_device, result_fifo_child_write_inode, result_fifo_child_write_mode, result_fifo_child_write_access_direction, result_fifo_broker_read_fd, result_fifo_broker_read_device, result_fifo_broker_read_inode, result_fifo_broker_read_mode, result_fifo_broker_read_access_direction, output_event_handle, child_exit_code, child_term_signal, wait_status, launched_at_utc, identity_observed_at_utc, child_observed_at_utc, waited_at_utc, consumed_at_utc, output_observed_at_utc, checked_at_utc, consumed_once, receipt_sha256]
@@ -10883,13 +10889,10 @@ bootstrap_policy:
             - child_sys_argv_and_isolated_no_site_flags_plus_sys_executable_equal_exact_pinned_python_app_path_and_fd5_identity_equal_broker_launch_and_platform_records
             - exact_open_fds_3_through_20_roles_identity_modes_and_access_equal_broker_launch_descriptor_records_after_child_audits_every_fd_number_0_through_1048575
             - observed_input_handle_digest_network_denial_and_forbidden_write_denial_equal_independently_recomputed_launch_facts
-            - observed_at_after_launch_and_before_waitpid_completion
-          broker_only_postexecution_checks:
-            - independently_recompute_sandbox_executable_profile_credentials_system_runtime_access_manifest_uid_gid_mode_flags_acl_child_uid_write_denial_workspace_git_object_store_writable_paths_and_input_handles_from_broker_applied_launch_state
-            - recompute_exact_python_app_path_fd5_platform_and_runtime_manifest_identity_and_every_runtime_access_entry_before_launch_and_after_waitpid_with_type_specific_nofollow_or_lstat_identity_digest_rdev_readlink_and_nonwritability_checks
+            - recompute_exact_python_app_path_fd5_platform_and_runtime_manifest_identity_and_every_runtime_access_entry_before_launch_and_after_waitpid_with_root_anchored_component_walk_dir_fd_openat_o_nofollow_descriptor_identity_acl_content_digest_readlink_identity_rdev_and_nonwritability_checks
             - broker_prelaunch_writes_exact_runtime_write_denial_prelaunch_events_before_validator_exec_and_broker_post_exec_writes_exact_runtime_write_denial_post_waitpid_events_after_waitpid
-            - each_runtime_write_denial_event_recomputed_from_broker_opened_path_state_and_authenticated_principal_with_exact_literal_resolved_ancestor_set_acl_length_digest_faccessat_result_and_fresh_timestamps
-            - validator_consumes_event_handles_only_recomputes_path_identity_and_acl_bytes_and_rejects_missing_extra_stale_replayed_wrong_phase_wrong_principal_or_caller_labeled_records
+            - each_runtime_write_denial_event_recomputed_from_authenticated_root_descriptor_walk_and_broker_opened_component_descriptors_with_exact_literal_resolved_ancestor_set_ordered_component_chains_chain_digests_descriptor_acl_lengths_digests_descriptor_identities_write_denial_basis_and_fresh_timestamps
+            - validator_consumes_event_handles_only_revalidates_authenticated_descriptor_component_chains_and_descriptor_acl_or_content_identity_and_rejects_missing_extra_stale_replayed_wrong_phase_wrong_principal_or_caller_labeled_records; ambient_realpath_path_only_acl_and_path_only_access_checks_cannot_authorize
             - never_require_or_accept_child_echoes_of_broker_only_capability_claims
           stale_host_only_parent_only_or_child_only_attestation: reject
           output_schema: exact_acceptance_v2_completion_event_receipt_v2_and_receipt_event
@@ -10905,7 +10908,7 @@ bootstrap_policy:
       source: |-
         ACTIVE_PROJECTION_SHA256="4169efe00afbfa1000025fe4a705ca8786edb376ada5bf1fd70cda5169391f33"
         MACH_PROBE_SOURCE_SHA256="30b53b57b660d3b88488e99b28e36971983df651511ad614b537ae26847647d0"
-        PREFLIGHT_PROBE_SOURCE_SHA256="ce5ddc70190f3c3735ec002edc1b8f2359ecb72e92f6b75a5b5b53424e64d9da"
+        PREFLIGHT_PROBE_SOURCE_SHA256="de4675bbd98eabef15b9d9f0d0f2e71f5124008e3e842c9be3573389fe1d98f7"
         EXPECTED_GUARD_REGISTRY_SHA256="54c7adbf642ad29625c71d63044d815424e360f1d32e999eca3dc8eaaa93d0e9"
         EXPECTED_EVENT_REGISTRY_SHA256="997f50ad47493fa3cefa47a71f9765e976202dbf21d65c3d3a2cd155b9612368"
         import datetime
@@ -10978,8 +10981,9 @@ bootstrap_policy:
         RUNTIME_DENIAL_MAX_AGE_SECONDS=300
         RUNTIME_DENIAL_MAX_FUTURE_SKEW_SECONDS=0
         RUNTIME_DENIAL_FRESHNESS_SECONDS=30
-        RUNTIME_WRITE_DENIAL_RECORD_FIELDS=["schema_version","operation_instance_id","invocation_id","reservation_id","phase","broker_actor","platform_identity_sha256","expected_child_uid","expected_child_gid","expected_child_supplementary_groups_sha256","child_pid","observed_child_uid","observed_child_gid","observed_child_supplementary_groups","observed_child_supplementary_groups_sha256","identity_drop_event_handle","launch_event_handle","launched_at_utc","waitpid_event_handle","waitpid_at_utc","wait_status","target_path_literal","target_path_resolved","target_path_ancestors","target_path_closure","target_path_closure_sha256","path_observations","path_observations_sha256","created_at_utc","recorded_at_utc","observed_at_utc","fresh_until_utc","record_sha256"]
-        RUNTIME_WRITE_DENIAL_OBSERVATION_FIELDS=["path","faccessat_result","faccessat_errno","effective_write_denied","acl_length","acl_sha256","observed_at_utc"]
+        RUNTIME_PATH_COMPONENT_FIELDS=["component_index","component_name","component_path","parent_path","device","inode","mode","owner_uid","owner_gid","file_flags","file_type","size_bytes","sha256","rdev","symlink_target","acl_length","acl_sha256","child_uid_write_denied","write_denial_basis","opened_nofollow","descriptor_identity_sha256","component_sha256"]
+        RUNTIME_WRITE_DENIAL_RECORD_FIELDS=["schema_version","operation_instance_id","invocation_id","reservation_id","phase","broker_actor","platform_identity_sha256","expected_child_uid","expected_child_gid","expected_child_supplementary_groups_sha256","child_pid","observed_child_uid","observed_child_gid","observed_child_supplementary_groups","observed_child_supplementary_groups_sha256","identity_drop_event_handle","launch_event_handle","launched_at_utc","waitpid_event_handle","waitpid_at_utc","wait_status","target_path_literal","target_path_resolved","target_path_ancestors","target_path_closure","target_path_closure_sha256","path_component_chains","path_component_chains_sha256","path_observations","path_observations_sha256","created_at_utc","recorded_at_utc","observed_at_utc","fresh_until_utc","record_sha256"]
+        RUNTIME_WRITE_DENIAL_OBSERVATION_FIELDS=["path","component_chain","component_chain_sha256","descriptor_identity_sha256","acl_length","acl_sha256","effective_write_denied","write_denial_basis","observed_at_utc"]
         PRESEED_CLASSES={"planning_core_seal","planning_review","predecessor_search","capability_probe","activation_record_seal","human_scope_budget_action","human_governance_action","human_security_boundary_action","human_planning_action_consumption","live_recheck","seed_admission"}
         PHASE_CLASSES={"G2/reset-3/candidate":{"candidate_budget_validation","candidate_implementation_attempt","candidate_merge","candidate_preflight","human_candidate_action_consumption","human_candidate_merge_action"},"G2/reset-3/closure":{"anchor_selection","human_closure_action_consumption","human_closure_anchor_selection_action","human_packet_closure_action","installed_validation","packet_closure","private_validation","renderer"},"G2/reset-3/evidence":{"candidate_ci_rerun","candidate_review_round","evidence_seal","final_review","review_seal"},"G2/reset-3/planning":{"planning_core_seal","planning_review"},"G2/reset-3/preseed":{"activation_record_seal","capability_probe","human_governance_action","human_planning_action_consumption","human_scope_budget_action","human_security_boundary_action","live_recheck","predecessor_search","seed_admission"},"G2/reset-3/seed":{"human_seed_action_consumption","human_seed_merge_action","human_seed_selection_action","seed_ci_rerun","seed_implementation_attempt","seed_merge","seed_review_round"}}
         CANDIDATE_OPERATION_CLASSES=PHASE_CLASSES["G2/reset-3/candidate"]|PHASE_CLASSES["G2/reset-3/evidence"]|PHASE_CLASSES["G2/reset-3/closure"]
@@ -11104,12 +11108,33 @@ bootstrap_policy:
             if stat.S_ISLNK(mode):
                 return "symlink"
             return "unsupported"
+        def runtime_stat_identity(observed):
+            return (observed.st_dev,observed.st_ino,stat.S_IMODE(observed.st_mode),observed.st_uid,observed.st_gid,observed.st_flags,observed.st_size,runtime_file_type(observed.st_mode))
+        def runtime_descriptor_identity_sha256(observed):
+            return sha({"device":observed.st_dev,"inode":observed.st_ino,"mode":format(stat.S_IMODE(observed.st_mode),"04o"),"owner_uid":observed.st_uid,"owner_gid":observed.st_gid,"file_flags":observed.st_flags,"size_bytes":observed.st_size,"file_type":runtime_file_type(observed.st_mode)})
+        def exact_runtime_component(component):
+            exact(component,RUNTIME_PATH_COMPONENT_FIELDS,"runtime path component observation")
+            mode_valid=isinstance(component["mode"],str) and len(component["mode"])==4 and component["mode"].startswith("0") and all(char in "01234567" for char in component["mode"])
+            denial_valid=component["child_uid_write_denied"] is True or (component["component_path"]=="/dev/urandom" and component["child_uid_write_denied"] is False)
+            common=isinstance(component["component_index"],int) and not isinstance(component["component_index"],bool) and component["component_index"]>=0 and isinstance(component["component_name"],str) and isinstance(component["component_path"],str) and os.path.isabs(component["component_path"]) and (component["parent_path"] is None or (isinstance(component["parent_path"],str) and os.path.isabs(component["parent_path"]))) and isinstance(component["device"],int) and isinstance(component["inode"],int) and mode_valid and component["owner_uid"]==0 and component["owner_gid"]==0 and isinstance(component["file_flags"],int) and component["file_flags"]>=0 and isinstance(component["size_bytes"],int) and component["size_bytes"]>=0 and digest(component["acl_sha256"]) and isinstance(component["acl_length"],int) and component["acl_length"]>0 and denial_valid and component["write_denial_basis"]=="descriptor_acl_mode_flags" and component["opened_nofollow"] is True and digest(component["descriptor_identity_sha256"]) and digest(component["component_sha256"])
+            if not common:
+                return False
+            if component["file_type"]=="regular":
+                return digest(component["sha256"]) and component["rdev"] is None and component["symlink_target"] is None
+            if component["file_type"]=="directory":
+                return component["sha256"] is None and component["rdev"] is None and component["symlink_target"] is None
+            if component["file_type"]=="character_device":
+                return isinstance(component["rdev"],int) and component["sha256"] is None and component["symlink_target"] is None
+            if component["file_type"]=="symlink":
+                return digest(component["sha256"]) and component["rdev"] is None and nonempty(component["symlink_target"])
+            return False
         def exact_runtime_entry(item):
-            exact(item,["path","device","inode","mode","file_type","owner_uid","owner_gid","file_flags","acl_sha256","child_uid_write_denied","access","size_bytes","sha256","rdev","symlink_target"],"system runtime access entry")
+            exact(item,["path","device","inode","mode","file_type","owner_uid","owner_gid","file_flags","acl_sha256","child_uid_write_denied","access","size_bytes","sha256","rdev","symlink_target","component_chain","component_chain_sha256"],"system runtime access entry")
             access=item["access"]
             mode_valid=isinstance(item["mode"],str) and len(item["mode"])==4 and item["mode"].startswith("0") and all(char in "01234567" for char in item["mode"])
             write_denial_valid=item["child_uid_write_denied"] is True or (item["path"]=="/dev/urandom" and item["child_uid_write_denied"] is False)
-            common=nonempty(item["path"]) and os.path.isabs(item["path"]) and isinstance(item["device"],int) and isinstance(item["inode"],int) and mode_valid and item["owner_uid"]==0 and item["owner_gid"]==0 and isinstance(item["file_flags"],int) and item["file_flags"]>=0 and digest(item["acl_sha256"]) and write_denial_valid and isinstance(item["size_bytes"],int) and item["size_bytes"]>=0 and isinstance(access,list) and access==[value for value in ("metadata","read_data","map_executable") if value in set(access)]
+            chain=item["component_chain"]
+            common=nonempty(item["path"]) and os.path.isabs(item["path"]) and item["path"]==os.path.normpath(item["path"]) and isinstance(item["device"],int) and isinstance(item["inode"],int) and mode_valid and item["owner_uid"]==0 and item["owner_gid"]==0 and isinstance(item["file_flags"],int) and item["file_flags"]>=0 and digest(item["acl_sha256"]) and write_denial_valid and isinstance(item["size_bytes"],int) and item["size_bytes"]>=0 and isinstance(access,list) and access==[value for value in ("metadata","read_data","map_executable") if value in set(access)] and isinstance(chain,list) and len(chain)>0 and all(exact_runtime_component(component) for component in chain) and item["component_chain_sha256"]==sha(chain)
             if not common or "metadata" not in access or ("map_executable" in access and "read_data" not in access) or (item["path"]!="/dev/urandom" and int(item["mode"],8)&0o022):
                 return False
             if item["file_type"]=="regular":
@@ -11121,42 +11146,94 @@ bootstrap_policy:
             if item["file_type"]=="symlink":
                 return access==["metadata"] and digest(item["sha256"]) and item["rdev"] is None and nonempty(item["symlink_target"])
             return False
-        def runtime_acl_bytes(path):
+        def runtime_acl_bytes_fd(fd):
+            expect(isinstance(fd,int) and fd>=0,"runtime ACL descriptor")
             libc=ctypes.CDLL("/usr/lib/libSystem.B.dylib",use_errno=True)
-            libc.acl_get_file.argtypes=[ctypes.c_char_p,ctypes.c_int]; libc.acl_get_file.restype=ctypes.c_void_p
+            libc.acl_get_fd.argtypes=[ctypes.c_int]; libc.acl_get_fd.restype=ctypes.c_void_p
             libc.acl_copy_ext.argtypes=[ctypes.c_void_p,ctypes.c_void_p,ctypes.c_ssize_t]; libc.acl_copy_ext.restype=ctypes.c_ssize_t
             libc.acl_size.argtypes=[ctypes.c_void_p]; libc.acl_size.restype=ctypes.c_ssize_t
             libc.acl_free.argtypes=[ctypes.c_void_p]; libc.acl_free.restype=ctypes.c_int
-            acl=libc.acl_get_file(os.fsencode(path),0x00000100)
-            expect(bool(acl),"runtime ACL read")
+            acl=libc.acl_get_fd(fd)
+            expect(bool(acl),"runtime descriptor ACL read")
             try:
                 length=libc.acl_size(acl)
-                expect(isinstance(length,int) and length>0,"runtime ACL serialized length")
+                expect(isinstance(length,int) and length>0,"runtime descriptor ACL serialized length")
                 buffer=ctypes.create_string_buffer(length)
                 copied=libc.acl_copy_ext(buffer,acl,length)
-                expect(copied==length,"runtime ACL serialized bytes")
+                expect(copied==length,"runtime descriptor ACL serialized bytes")
                 return bytes(buffer.raw[:length])
             finally:
-                expect(libc.acl_free(acl)==0,"runtime ACL release")
+                expect(libc.acl_free(acl)==0,"runtime descriptor ACL release")
         def runtime_acl_digest(serialized):
             expect(isinstance(serialized,bytes) and len(serialized)>0,"runtime ACL digest input")
             return sha_bytes(len(serialized).to_bytes(8,"big",signed=False)+serialized)
-        def runtime_write_check_paths(item):
+        def runtime_descriptor_write_denial(observed,acl_serialized,component_path,child_uid,child_gid,child_groups_sha256):
+            exception=component_path=="/dev/urandom" and runtime_file_type(observed.st_mode)=="character_device"
+            expect(isinstance(child_uid,int) and not isinstance(child_uid,bool) and child_uid>=0 and isinstance(child_gid,int) and not isinstance(child_gid,bool) and child_gid>=0 and digest(child_groups_sha256) and isinstance(acl_serialized,bytes) and len(acl_serialized)>0 and observed.st_uid==0 and observed.st_gid==0 and (exception or not (stat.S_IMODE(observed.st_mode)&0o022)),"runtime descriptor principal mode and ACL write-denial basis")
+            return not exception
+        def runtime_component_record(index,name,component_path,parent_path,observed,raw,target,acl_serialized,denied):
+            expect(observed.st_uid==0 and observed.st_gid==0 and isinstance(denied,bool),"runtime component root ownership")
+            file_type=runtime_file_type(observed.st_mode)
+            component={"component_index":index,"component_name":name,"component_path":component_path,"parent_path":parent_path,"device":observed.st_dev,"inode":observed.st_ino,"mode":format(stat.S_IMODE(observed.st_mode),"04o"),"owner_uid":observed.st_uid,"owner_gid":observed.st_gid,"file_flags":observed.st_flags,"file_type":file_type,"size_bytes":observed.st_size,"sha256":sha_bytes(raw) if raw is not None else sha_bytes(target.encode("utf-8")) if target is not None else None,"rdev":observed.st_rdev if stat.S_ISCHR(observed.st_mode) else None,"symlink_target":target,"acl_length":len(acl_serialized),"acl_sha256":runtime_acl_digest(acl_serialized),"child_uid_write_denied":denied,"write_denial_basis":"descriptor_acl_mode_flags","opened_nofollow":True,"descriptor_identity_sha256":runtime_descriptor_identity_sha256(observed),"component_sha256":None}
+            component["component_sha256"]=sha({key:value for key,value in component.items() if key!="component_sha256"})
+            return component
+        def runtime_descriptor_walk(path,child_uid,child_gid,child_groups_sha256):
+            expect(isinstance(path,str) and os.path.isabs(path) and path==os.path.normpath(path) and not any(part in {".",".."} for part in path.split("/")),"runtime absolute normalized descriptor path")
+            components=[part for part in path.split("/") if part]
+            root_fd=os.open("/",os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
+            descriptors=[root_fd]
+            chain=[]
+            try:
+                root_stat=os.fstat(root_fd)
+                chain.append(runtime_component_record(0,"","/",None,root_stat,None,None,root_acl,runtime_descriptor_write_denial(root_stat,root_acl,"/",child_uid,child_gid,child_groups_sha256)))
+                parent_fd=root_fd
+                parent_path="/"
+                for index,name in enumerate(components,1):
+                    before=os.stat(name,dir_fd=parent_fd,follow_symlinks=False)
+                    if stat.S_ISLNK(before.st_mode):
+                        target=os.readlink(name,dir_fd=parent_fd)
+                        expect(isinstance(target,str) and target and sha_bytes(target.encode("utf-8")),"runtime symlink readlink identity")
+                        expect(False,"runtime symlink lacks stable descriptor and fails closed")
+                    flags=os.O_RDONLY|os.O_NOFOLLOW
+                    if stat.S_ISDIR(before.st_mode):
+                        flags|=os.O_DIRECTORY
+                    descriptor=os.open(name,flags,dir_fd=parent_fd)
+                    descriptors.append(descriptor)
+                    try:
+                        opened=os.fstat(descriptor)
+                        expect(runtime_stat_identity(opened)==runtime_stat_identity(before),"runtime component pre-open identity")
+                        file_type=runtime_file_type(opened.st_mode)
+                        expect(file_type in {"directory","regular","character_device"} and (index==len(components) or file_type=="directory"),"runtime component type and traversal")
+                        raw=read_exact(descriptor,opened.st_size) if file_type=="regular" else None
+                        acl_serialized=runtime_acl_bytes_fd(descriptor)
+                        after=os.fstat(descriptor)
+                        expect(runtime_stat_identity(after)==runtime_stat_identity(opened),"runtime component post-open identity")
+                        component_path=parent_path.rstrip("/")+"/"+name if parent_path!="/" else "/"+name
+                        chain.append(runtime_component_record(index,name,component_path,parent_path,opened,raw,None,acl_serialized,runtime_descriptor_write_denial(opened,acl_serialized,component_path,child_uid,child_gid,child_groups_sha256)))
+                        parent_fd=descriptor
+                        parent_path=component_path
+                    except BaseException:
+                        raise
+                return chain
+            finally:
+                for descriptor in reversed(descriptors):
+                    try:
+                        os.close(descriptor)
+                    except OSError:
+                        pass
+        def runtime_write_check_paths(item,child_uid,child_gid,child_groups_sha256):
             literal=item["path"]
-            resolved=os.path.realpath(literal)
-            expect(os.path.isabs(resolved),"runtime resolved symlink target")
-            candidates=[]
-            for candidate in (literal,resolved):
-                if candidate not in candidates:
-                    candidates.append(candidate)
-                parent=os.path.dirname(candidate) or "/"
-                while True:
-                    if parent not in candidates:
-                        candidates.append(parent)
-                    if parent=="/":
-                        break
-                    parent=os.path.dirname(parent) or "/"
-            return candidates
+            chain=runtime_descriptor_walk(literal,child_uid,child_gid,child_groups_sha256)
+            expect(chain==item["component_chain"] and sha(chain)==item["component_chain_sha256"],"runtime manifest descriptor component chain")
+            closure=[literal]
+            parent=os.path.dirname(literal) or "/"
+            while True:
+                if parent not in closure:
+                    closure.append(parent)
+                if parent=="/":
+                    break
+                parent=os.path.dirname(parent) or "/"
+            return closure
         def verify_runtime_write_denial_records(records,runtime_manifest,child_uid,child_gid,child_groups_sha256,phase,operation_instance_id,invocation_id,reservation_id,platform_identity_sha256,broker_events,launch_event_handle,launch_event_type):
             expect(phase in {"prelaunch","post_waitpid"} and child_groups_sha256==sha([]) and isinstance(records,list) and len(records)==len(runtime_manifest),"runtime write-denial record cardinality")
             expected_items={item["path"]:item for item in runtime_manifest}
@@ -11207,10 +11284,10 @@ bootstrap_policy:
                 literal=record["target_path_literal"]
                 expect(literal in expected_items and literal not in seen and os.path.isabs(literal),"runtime write-denial exact literal path set")
                 seen.add(literal)
-                closure=runtime_write_check_paths(expected_items[literal])
-                resolved=os.path.realpath(literal)
-                ancestors=[path for path in closure if path not in {literal,resolved}]
-                expect(record["target_path_resolved"]==resolved and record["target_path_ancestors"]==ancestors and record["target_path_closure"]==closure and record["target_path_closure_sha256"]==sha(closure),"runtime write-denial path closure binding")
+                closure=runtime_write_check_paths(expected_items[literal],child_uid,child_gid,child_groups_sha256)
+                resolved=literal
+                ancestors=[path for path in closure if path!=literal]
+                expect(record["target_path_resolved"]==resolved and record["target_path_ancestors"]==ancestors and record["target_path_closure"]==closure and record["target_path_closure_sha256"]==sha(closure),"runtime write-denial root-anchored path closure binding")
                 observed_at=timestamp(record["observed_at_utc"])
                 created_at=timestamp(record["created_at_utc"])
                 recorded_at=timestamp(record["recorded_at_utc"])
@@ -11219,45 +11296,33 @@ bootstrap_policy:
                 expect(created_at<=observed_at<=recorded_at<=now_utc<=fresh_until and (now_utc-created_at).total_seconds()<=RUNTIME_DENIAL_MAX_AGE_SECONDS and (recorded_at-now_utc).total_seconds()<=RUNTIME_DENIAL_MAX_FUTURE_SKEW_SECONDS and (fresh_until-recorded_at).total_seconds()<=RUNTIME_DENIAL_FRESHNESS_SECONDS,"runtime write-denial bounded freshness")
                 observations=record["path_observations"]
                 expect(isinstance(observations,list) and len(observations)==len(closure) and [observation["path"] for observation in observations]==closure and record["path_observations_sha256"]==sha(observations),"runtime write-denial observation set")
+                component_chains=[observation["component_chain"] for observation in observations]
+                expect(record["path_component_chains"]==component_chains and record["path_component_chains_sha256"]==sha(component_chains),"runtime write-denial component chain set")
                 for observation,path in zip(observations,closure):
                     exact(observation,RUNTIME_WRITE_DENIAL_OBSERVATION_FIELDS,"runtime write-denial observation")
-                    serialized=runtime_acl_bytes(path)
+                    chain=runtime_descriptor_walk(path,child_uid,child_gid,child_groups_sha256)
+                    terminal=chain[-1]
                     expected_denied=not (literal=="/dev/urandom" and path==literal)
-                    expect(observation["path"]==path and observation["observed_at_utc"]==record["observed_at_utc"] and observation["acl_length"]==len(serialized) and observation["acl_sha256"]==runtime_acl_digest(serialized) and observation["effective_write_denied"] is expected_denied and observation["faccessat_result"]==(-1 if expected_denied else 0) and observation["faccessat_errno"] in ({"EACCES","EPERM"} if expected_denied else {"NONE"}),"runtime write-denial ACL and faccessat observation")
-                expect(expected_items[literal]["child_uid_write_denied"] is (literal!="/dev/urandom") and record["record_sha256"]==sha({key:value for key,value in record.items() if key!="record_sha256"}),"runtime write-denial record digest and exception")
+                    expect(observation["path"]==path and observation["component_chain"]==chain and observation["component_chain_sha256"]==sha(chain) and observation["descriptor_identity_sha256"]==terminal["descriptor_identity_sha256"] and observation["observed_at_utc"]==record["observed_at_utc"] and observation["acl_length"]==terminal["acl_length"] and observation["acl_sha256"]==terminal["acl_sha256"] and observation["effective_write_denied"] is expected_denied and terminal["child_uid_write_denied"] is expected_denied and observation["write_denial_basis"]=="descriptor_acl_mode_flags" and terminal["write_denial_basis"]==observation["write_denial_basis"],"runtime write-denial descriptor ACL and identity observation")
+                expect(expected_items[literal]["child_uid_write_denied"] is (literal!="/dev/urandom") and record["record_sha256"]==sha({key:value for key,value in record.items() if key!="record_sha256"}),"runtime write-denial record digest and descriptor component binding")
             expect(seen==set(expected_items),"runtime write-denial exact record set")
         def verify_runtime_manifest(runtime_manifest,expected_access,child_uid,child_gid,child_groups_sha256,phase,denial_records,operation_instance_id,invocation_id,reservation_id,platform_identity_sha256,broker_events,launch_event_handle,launch_event_type):
             expect(phase in {"prelaunch","post_waitpid"} and child_groups_sha256==sha([]) and isinstance(runtime_manifest,list) and len(runtime_manifest)==len(expected_access) and len({item["path"] for item in runtime_manifest})==len(runtime_manifest) and all(exact_runtime_entry(item) for item in runtime_manifest),"system runtime access manifest shape and empty dropped-child supplementary groups")
             expect([item["path"] for item in runtime_manifest]==sorted(expected_access) and {item["path"]:item["access"] for item in runtime_manifest}==expected_access,"exact system runtime path and access closure")
             verify_runtime_write_denial_records(denial_records,runtime_manifest,child_uid,child_gid,child_groups_sha256,phase,operation_instance_id,invocation_id,reservation_id,platform_identity_sha256,broker_events,launch_event_handle,launch_event_type)
             for item in runtime_manifest:
-                metadata_only=item["access"]==["metadata"]
-                if item["file_type"]=="symlink" or (metadata_only and item["file_type"]!="regular"):
-                    runtime_pre=os.lstat(item["path"])
-                    runtime_target=os.readlink(item["path"]) if item["file_type"]=="symlink" else None
-                    runtime_post=os.lstat(item["path"])
-                    runtime_raw=None
-                else:
-                    runtime_flags=os.O_RDONLY|os.O_NOFOLLOW
-                    if item["file_type"]=="directory" and hasattr(os,"O_DIRECTORY"):
-                        runtime_flags|=os.O_DIRECTORY
-                    runtime_fd=os.open(item["path"],runtime_flags)
-                    try:
-                        runtime_pre=os.fstat(runtime_fd)
-                        runtime_raw=read_exact(runtime_fd,runtime_pre.st_size) if item["file_type"]=="regular" else None
-                        runtime_post=os.fstat(runtime_fd)
-                    finally:
-                        os.close(runtime_fd)
-                    runtime_target=None
-                runtime_identity=(runtime_pre.st_dev,runtime_pre.st_ino,stat.S_IMODE(runtime_pre.st_mode),runtime_pre.st_uid,runtime_pre.st_gid,runtime_pre.st_flags,runtime_pre.st_size,runtime_file_type(runtime_pre.st_mode))
-                expect(runtime_identity==(item["device"],item["inode"],int(item["mode"],8),item["owner_uid"],item["owner_gid"],item["file_flags"],item["size_bytes"],item["file_type"]) and (runtime_post.st_dev,runtime_post.st_ino,stat.S_IMODE(runtime_post.st_mode),runtime_post.st_uid,runtime_post.st_gid,runtime_post.st_flags,runtime_post.st_size,runtime_file_type(runtime_post.st_mode))==runtime_identity,"system runtime access manifest observed identity")
-                expect(runtime_acl_digest(runtime_acl_bytes(item["path"]))==item["acl_sha256"],"system runtime ACL digest and exact serialization")
+                chain=runtime_descriptor_walk(item["path"],child_uid,child_gid,child_groups_sha256)
+                expect(chain==item["component_chain"] and item["component_chain_sha256"]==sha(chain),"system runtime root-anchored component chain identity")
+                runtime_terminal=chain[-1]
+                runtime_identity=(runtime_terminal["device"],runtime_terminal["inode"],int(runtime_terminal["mode"],8),runtime_terminal["owner_uid"],runtime_terminal["owner_gid"],runtime_terminal["file_flags"],runtime_terminal["size_bytes"],runtime_terminal["file_type"])
+                expect(runtime_identity==(item["device"],item["inode"],int(item["mode"],8),item["owner_uid"],item["owner_gid"],item["file_flags"],item["size_bytes"],item["file_type"]) and runtime_terminal["descriptor_identity_sha256"]==item["component_chain"][-1]["descriptor_identity_sha256"],"system runtime access manifest observed descriptor identity")
+                expect(runtime_terminal["acl_sha256"]==item["acl_sha256"] and runtime_terminal["child_uid_write_denied"] is item["child_uid_write_denied"] and runtime_terminal["write_denial_basis"]=="descriptor_acl_mode_flags","system runtime descriptor ACL and write-denial identity")
                 if item["file_type"]=="regular":
-                    expect(sha_bytes(runtime_raw)==item["sha256"],"system runtime regular digest")
+                    expect(runtime_terminal["sha256"]==item["sha256"],"system runtime regular descriptor digest")
                 elif item["file_type"]=="character_device":
-                    expect(runtime_pre.st_rdev==item["rdev"],"system runtime character device identity")
+                    expect(runtime_terminal["rdev"]==item["rdev"],"system runtime character device descriptor identity")
                 elif item["file_type"]=="symlink":
-                    expect(runtime_target==item["symlink_target"] and sha_bytes(runtime_target.encode("utf-8"))==item["sha256"],"system runtime symlink identity")
+                    expect(False,"system runtime symlink cannot obtain stable descriptor")
             return True
         def timestamp(value):
             expect(isinstance(value,str),"timestamp type")
@@ -12128,14 +12193,14 @@ bootstrap_policy:
         exact(candidate_scope,["phase_id","scope_semantics","allowed_paths","forbidden_paths","budgets","reset_3_owned_command_profile_ref","reset_3_owned_command_profile_id","reset_2_profile_reference_or_result_reuse"],"projected candidate scope")
         expect(seed_scope["phase_id"]=="G2/reset-3/seed" and seed_scope["preseed_phase_id"]=="G2/reset-3/preseed" and seed_scope["allowed_paths"]==seed_paths and seed_scope["forbidden_paths"]==seed_forbidden_paths and seed_scope["runtime_verifier_is_seed_work_not_embedded_preseed_scope"] is True and seed_scope["seed_admission_requires_all_eight_paths_and_exact_manifest"] is True,"projected seed scope exact")
         expect(candidate_scope["phase_id"]=="G2/reset-3/candidate" and candidate_scope["allowed_paths"]==candidate_paths and candidate_scope["forbidden_paths"]==candidate_forbidden_paths and candidate_scope["budgets"]==expected_caps["candidate"] and candidate_scope["reset_3_owned_command_profile_ref"]=="bootstrap_policy.G2_reset_3_amendment.command_profiles.operation_profiles.candidate_budget_validation" and candidate_scope["reset_3_owned_command_profile_id"]=="g2_reset_3_candidate_budget_v2" and candidate_scope["reset_2_profile_reference_or_result_reuse"]=="forbidden","projected candidate scope exact")
-        expected_negative_families=["stale_reset_2_dispatch_or_historical_record_used_as_active_authority","null_tip_or_genesis_predecessor_digest_cycle_or_wrong_chronology","stale_missing_substituted_or_replayed_reviews_actions_consumptions_or_admission","denied_ambiguous_missing_or_broker_invented_human_response_decision","verdict_only_nonreferential_partial_scope_stale_blob_stale_excerpt_unknown_placeholder_or_boilerplate_review_evidence","reset_1_reset_2_or_round3_denied_blob_union_omission_overlap_or_candidate_reuse","seed_eight_path_scope_budget_manifest_or_module_ownership_drift","unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift","generated_projection_differential_parity_or_source_scalar_drift","command_profile_sandbox_descriptor_environment_result_or_receipt_drift","phase_state_ledger_counter_transition_closure_or_future_digest_violation"]
+        expected_negative_families=["stale_reset_2_dispatch_or_historical_record_used_as_active_authority","null_tip_or_genesis_predecessor_digest_cycle_or_wrong_chronology","stale_missing_substituted_or_replayed_reviews_actions_consumptions_or_admission","denied_ambiguous_missing_or_broker_invented_human_response_decision","verdict_only_nonreferential_partial_scope_stale_blob_stale_excerpt_unknown_placeholder_or_boilerplate_review_evidence","reset_1_reset_2_or_round3_denied_blob_union_omission_overlap_or_candidate_reuse","seed_eight_path_scope_budget_manifest_or_module_ownership_drift","unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift","generated_projection_differential_parity_or_source_scalar_drift","command_profile_sandbox_descriptor_environment_result_or_receipt_drift_with_ancestor_substitution_symlink_swap_component_identity_replacement_and_acl_drift","phase_state_ledger_counter_transition_closure_or_future_digest_violation"]
         negative_fixtures=projection_object["negative_fixture_requirement"]
         exact(negative_fixtures,["exact_family_count","families","each_family_requires_named_negative_fixture","named_fixture_map","named_fixture_map_exactly_covers_families","fixture_ids_are_embedded_verifier_case_ids","fixture_source_paths_resolve_to_loop_spec","external_fixture_paths_forbidden","every_negative_is_fail_closed"],"negative fixture requirement")
         expect(negative_fixtures["exact_family_count"]==11 and negative_fixtures["families"]==expected_negative_families and negative_fixtures["each_family_requires_named_negative_fixture"] is True and negative_fixtures["named_fixture_map_exactly_covers_families"] is True and negative_fixtures["fixture_ids_are_embedded_verifier_case_ids"] is True and negative_fixtures["fixture_source_paths_resolve_to_loop_spec"] is True and negative_fixtures["external_fixture_paths_forbidden"] is True and negative_fixtures["every_negative_is_fail_closed"] is True,"negative fixture family contract")
         fixture_map=negative_fixtures["named_fixture_map"]
         expect(embedded_negative_fixture_matrix(fixture_map,expected_negative_families,head_paths),"executable embedded negative fixture matrix")
         differential_parity=projection_object["differential_parity"]
-        expect(differential_parity=={"canonical_projection_must_equal_generated_bytes":True,"canonical_source_digest_recomputed_before_generation":True,"differential_runtime_and_embedded_overlap_required":True,"compare_positive_preseed_fixture":True,"compare_all_eleven_negative_families_and_exact_named_fixture_map":True,"projection_sources_include_seed_candidate_negative_fixture_and_this_parity_contract":True,"any_projection_or_differential_drift":"block"},"generated differential parity contract")
+        expect(differential_parity=={"canonical_projection_must_equal_generated_bytes":True,"canonical_source_digest_recomputed_before_generation":True,"differential_runtime_and_embedded_overlap_required":True,"compare_positive_preseed_fixture":True,"compare_all_eleven_negative_families_including_runtime_confinement_cases_and_exact_named_fixture_map":True,"projection_sources_include_seed_candidate_negative_fixture_and_this_parity_contract":True,"any_projection_or_differential_drift":"block"},"generated differential parity contract")
         broker_event_rows=projection_object["state_machine"]["broker_event_type_registry"]["active_reset_3"]
         expect(isinstance(broker_event_rows,list) and len({row["event_type"] for row in broker_event_rows})==len(broker_event_rows),"unique broker event type registry")
         broker_event_by_type={row["event_type"]:row for row in broker_event_rows}
@@ -14146,8 +14211,8 @@ bootstrap_policy:
         - {event_type: preflight_probe_output, operation_class: seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, challenge_nonce, probe_child_pid, probe_child_parent_pid, raw_output, raw_output_sha256, result_sha256, result_fifo_descriptor_id, observed_at_utc, output_event_sha256]}
         - {event_type: preflight_canary_cleanup, operation_class: every_reset_3_operation_class, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, challenge_nonce, name, path, device, inode, pre_observation_sha256, post_observation_sha256, cleanup_succeeded, cleaned_at_utc, receipt_sha256]}
         - {event_type: writable_path_grant, operation_class: every_reset_3_operation_class, actor_class: omp_broker, payload_exact_fields: [role, path, device, inode, mode, owner_uid, owner_gid, file_type, access, root_path, root_device, root_inode, created_by_broker, opened_nofollow, event_handle, operation_instance_id, invocation_id, reservation_id, grant_sha256]}
-        - {event_type: runtime_write_denial_prelaunch, operation_class: seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, phase, broker_actor, platform_identity_sha256, expected_child_uid, expected_child_gid, expected_child_supplementary_groups_sha256, child_pid, observed_child_uid, observed_child_gid, observed_child_supplementary_groups, observed_child_supplementary_groups_sha256, identity_drop_event_handle, launch_event_handle, launched_at_utc, waitpid_event_handle, waitpid_at_utc, wait_status, target_path_literal, target_path_resolved, target_path_ancestors, target_path_closure, target_path_closure_sha256, path_observations, path_observations_sha256, created_at_utc, recorded_at_utc, observed_at_utc, fresh_until_utc, record_sha256]}
-        - {event_type: runtime_write_denial_post_waitpid, operation_class: seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, phase, broker_actor, platform_identity_sha256, expected_child_uid, expected_child_gid, expected_child_supplementary_groups_sha256, child_pid, observed_child_uid, observed_child_gid, observed_child_supplementary_groups, observed_child_supplementary_groups_sha256, identity_drop_event_handle, launch_event_handle, launched_at_utc, waitpid_event_handle, waitpid_at_utc, wait_status, target_path_literal, target_path_resolved, target_path_ancestors, target_path_closure, target_path_closure_sha256, path_observations, path_observations_sha256, created_at_utc, recorded_at_utc, observed_at_utc, fresh_until_utc, record_sha256]}
+        - {event_type: runtime_write_denial_prelaunch, operation_class: seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, phase, broker_actor, platform_identity_sha256, expected_child_uid, expected_child_gid, expected_child_supplementary_groups_sha256, child_pid, observed_child_uid, observed_child_gid, observed_child_supplementary_groups, observed_child_supplementary_groups_sha256, identity_drop_event_handle, launch_event_handle, launched_at_utc, waitpid_event_handle, waitpid_at_utc, wait_status, target_path_literal, target_path_resolved, target_path_ancestors, target_path_closure, target_path_closure_sha256, path_component_chains, path_component_chains_sha256, path_observations, path_observations_sha256, created_at_utc, recorded_at_utc, observed_at_utc, fresh_until_utc, record_sha256]}
+        - {event_type: runtime_write_denial_post_waitpid, operation_class: seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, phase, broker_actor, platform_identity_sha256, expected_child_uid, expected_child_gid, expected_child_supplementary_groups_sha256, child_pid, observed_child_uid, observed_child_gid, observed_child_supplementary_groups, observed_child_supplementary_groups_sha256, identity_drop_event_handle, launch_event_handle, launched_at_utc, waitpid_event_handle, waitpid_at_utc, wait_status, target_path_literal, target_path_resolved, target_path_ancestors, target_path_closure, target_path_closure_sha256, path_component_chains, path_component_chains_sha256, path_observations, path_observations_sha256, created_at_utc, recorded_at_utc, observed_at_utc, fresh_until_utc, record_sha256]}
         registry_is_closed_for_external_input_and_probe_event_types_and_unknown_type_or_actor_in_that_domain_rejects: true
       event_registry:
         reset_3_refresh_authority_revalidated:
@@ -14344,7 +14409,7 @@ bootstrap_policy:
       - seed_eight_path_scope_budget_manifest_or_module_ownership_drift
       - unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift
       - generated_projection_differential_parity_or_source_scalar_drift
-      - command_profile_sandbox_descriptor_environment_result_or_receipt_drift
+      - command_profile_sandbox_descriptor_environment_result_or_receipt_drift_with_ancestor_substitution_symlink_swap_component_identity_replacement_and_acl_drift
       - phase_state_ledger_counter_transition_closure_or_future_digest_violation
       each_family_requires_named_negative_fixture: true
       named_fixture_map:
@@ -14357,7 +14422,7 @@ bootstrap_policy:
         seed_eight_path_scope_budget_manifest_or_module_ownership_drift: {"fixture_id":"reset3_negative_05_seed_scope","verifier_case_id":"seed_scope_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"seed_scope_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
         unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift: {"fixture_id":"reset3_negative_06_candidate_scope","verifier_case_id":"candidate_scope_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"candidate_scope_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
         generated_projection_differential_parity_or_source_scalar_drift: {"fixture_id":"reset3_negative_07_projection_drift","verifier_case_id":"projection_drift_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"projection_or_source_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
-        command_profile_sandbox_descriptor_environment_result_or_receipt_drift: {"fixture_id":"reset3_negative_08_profile_drift","verifier_case_id":"profile_drift_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"profile_or_receipt_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
+        command_profile_sandbox_descriptor_environment_result_or_receipt_drift_with_ancestor_substitution_symlink_swap_component_identity_replacement_and_acl_drift: {"fixture_id":"reset3_negative_08_profile_runtime_confinement","verifier_case_id":"profile_runtime_confinement_drift_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"profile_or_receipt_drift_and_ancestor_substitution_symlink_swap_component_identity_replacement_or_acl_drift_rejected","verifier_id":"embedded_negative_fixture_matrix"}
         phase_state_ledger_counter_transition_closure_or_future_digest_violation: {"fixture_id":"reset3_negative_09_ledger_future","verifier_case_id":"ledger_future_rejected","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"phase_or_future_digest_rejected","verifier_id":"embedded_negative_fixture_matrix"}
       named_fixture_map_exactly_covers_families: true
       fixture_ids_are_embedded_verifier_case_ids: true
