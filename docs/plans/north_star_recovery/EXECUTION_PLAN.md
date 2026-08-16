@@ -322,6 +322,14 @@ authenticated action instance and protected action. Seed exact-head CI runs in
 `g2_reset_3_seed_implementing` before `seed_attempt_completed`; a retryable
 failure returns directly to `g2_reset_3_seed_implementing`, where the next
 seed operation reruns the atomic seed-admission preconditions before execution.
+For a failed candidate implementation with remaining capacity, the broker
+reserves the next `candidate_implementation_attempt` directly in
+`g2_reset_3_candidate_implementing` (never `candidate_preflight`); that retry
+atomically revalidates the immutable stored `candidate_preflight` result with
+`candidate_scope_exact_eleven_paths`, `candidate_budget_remaining`,
+`source_is_actual_S`, `reset_3_candidate_profile_and_descriptors_passed`,
+`candidate_no_spend_policy_bound`, and `denied_union_digest_recomputed` against
+the current exact-head facts before execution.
 
 
 Before `S` exists, reset-3 seed admission uses the full standard-library
