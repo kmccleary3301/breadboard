@@ -319,8 +319,9 @@ The shared seed action-consumption class is admitted only from
 action-consumption class only from `g2_reset_3_anchor_selection` or
 `g2_reset_3_closure_validation`; each consumption still binds its distinct
 authenticated action instance and protected action. Seed exact-head CI runs in
-`g2_reset_3_seed_implementing` before `seed_attempt_completed`; its retryable
-failure returns through the seed preflight route.
+`g2_reset_3_seed_implementing` before `seed_attempt_completed`; a retryable
+failure returns directly to `g2_reset_3_seed_implementing`, where the next
+seed operation reruns the atomic seed-admission preconditions before execution.
 
 
 Before `S` exists, reset-3 seed admission uses the full standard-library
@@ -377,13 +378,16 @@ the exact `-I -S -c` reviewed source scalar. The broker-launched executable
 must be exactly the root-owned Python application binary above; the observed
 Darwin kernel/machine must equal the broker-pinned platform identity.
 
-The operation profile and invocation bind the exact four-variable launch
-environment. Empirical Darwin `sandbox-exec` preflight must prove it preserves
-that map exactly; any injected `__CF_USER_TEXT_ENCODING` or other variable is
-a launch-context mismatch and blocks. The broker records both the pre-sandbox
-launch map and observed normalized `CLOSED_CHILD_ENV`; the child must
-independently observe that same four-variable map, with its digest bound to the
-probe launch record and receipt.
+The operation profile and invocation bind the exact four-variable pre-exec
+launch environment. Darwin injects `__CF_USER_TEXT_ENCODING` when the Python
+child starts, so the exact observed `CLOSED_CHILD_ENV` is that launch map plus
+only `0x<uppercase child UID hex>:0x0:0x0`; its value is recomputed from the
+kernel-observed child UID. Empirical `sandbox-exec` preflight must prove this
+five-variable normalized map exactly. Any other variable or value is a
+launch-context mismatch and blocks. The broker records both the pre-sandbox
+launch map and observed normalized child map; the child independently observes
+the same normalized map, whose digest is bound to the probe launch record and
+receipt.
 Capability proof dispatch is closed and derived from the authenticated
 materialized `execution_kind`: `embedded_validator` and `verified_script`
 use `mach_v2_child`; `broker_builtin` uses `broker_builtin_no_child`; and
@@ -403,6 +407,34 @@ deny-default with exact process-exec, process-info, and `sysctl-read`, explicit
 `(deny mach-lookup)` and network denial, then sorted literal metadata,
 read-data, and map-executable clauses derived from every authenticated
 runtime-manifest entry's declared type and access set.
+Path-only `process-exec` is not the execution boundary because the reviewed
+Python image could re-exec itself with different `-c` bytes. Every
+`mach_v2_child` therefore enters `PT_TRACE_ME` before its first exec. The parent
+waits for and authenticates exactly two kernel exec stops, each before any
+instruction of the new image: first the broker-pinned `sandbox-exec`
+device/inode/mode/digest identity, then the broker-pinned Python identity.
+The audit-token pidversion must be positive and strictly increase across those
+two stops. The broker releases the result transport and continues the Python
+image only after the second match; it traces that PID through terminal
+`waitpid`. A third exec or any mismatched image is killed and reaped before the
+new image executes, and all output is discarded without acceptance, append, or
+spend. Default-deny continues to block child fork. The broker records the exact
+two observations in the `mach_v2_child` proof and compares their private launch
+capability digest to unexported parent state before it may accept bytes.
+This private launch capability is an authority object, not an attestation
+payload. At broker startup, after `PT_DENY_ATTACH`, the broker samples a
+nonexported HMAC key with `getentropy`. Before fork it creates a fresh 256-bit
+nonce and MAC preimage binding the operation/invocation/reservation identities,
+expected child identity, both FD 3/20 endpoint identities, retained FIFO read
+identity, executable/source/argv/profile digests, and the two authorized exec
+identities. In the parent branch it adds the exact child PID and kernel
+audit-token pidversion before releasing the close-on-exec handshake. The child
+receives no nonce, key, MAC, or serialized capability. Acceptance addresses the
+private map only by exact PID, pidversion, and retained FIFO identity, then
+constant-time recomputes the MAC after exec-guard completion, terminal waitpid,
+and FIFO EOF. A standalone same-UID parent with same-shape FDs cannot create
+that lookup or append authority. The broker consumes and erases the capability
+exactly once before append; evidence exposes only its digest after success.
 For `broker_builtin_no_child`, the broker records an authenticated no-child
 capability proof with the exact broker opcode, authority event, capability-store
 principal, and `executable: null`, `argv: []`; it proves that no executable,
@@ -451,11 +483,12 @@ reservation, and challenge IDs from `sys.argv[3:7]` and canary paths from
 caller selectable.
 The child invokes `darwin_bootstrap_look_up_v2` for `com.apple.securityd`,
 `com.apple.trustd.agent`, and `com.apple.pasteboard.1`. It emits exactly one
-canonical `bb.omp.mach_lookup_probe_output.v2` result containing the operation
-instance, invocation, reservation, and challenge IDs; independently observed
-child PID/parent PID, UID/GID, supplementary-groups digest, result-pipe
-device/inode/mode/access identity, service names, raw `kern_return_t` results,
-observation time, and its output digest. Each raw `kern_return_t` must be
+canonical `bb.omp.untrusted_mach_lookup_probe_observation.v1` result containing
+the operation instance, invocation, reservation, and challenge IDs;
+independently observed child PID/parent PID, UID/GID, supplementary-groups
+digest, result-pipe device/inode/mode/access identity, service names, raw
+`kern_return_t` results, observation time, and its output digest. Each raw
+`kern_return_t` must be
 integer `1100` / `BOOTSTRAP_NOT_PRIVILEGED`, never integer `1102` /
 `BOOTSTRAP_UNKNOWN_SERVICE`. Both the Mach probe and combined preflight source
 write exactly one canonical result with `os.write` to `RESULT_FIFO_FD=20`, then
@@ -1087,8 +1120,9 @@ planning/governance/security/merge/selection/closure action, verifier/schema/
 abandoned manifest, ownership/test-plan, Phase 20, reports/reviews, any ledger
 event, authority snapshot, no-spend record, runtime/cache/package identity,
 environment, or source head triggers an explicit interrupt transition from
-every applicable `g2_*` state. Seed-root changes return to seed preflight;
-candidate/downstream changes return to candidate preflight; cap, scope,
+every applicable `g2_*` state. Seed-root changes enter `refresh_state` and can
+resume only after reset-3-owned revalidation and the next atomic seed-admission
+preflight; candidate/downstream changes return to candidate preflight; cap, scope,
 environment, review, or external-action failures enter their exact blocked
 state. All downstream objects, self-host, reviews, selections, results, and
 render output are invalidated.
@@ -1285,6 +1319,17 @@ contract-check recipe for each named negative verifier family. These public
 recipes prove declarative fixture closure only. Neither the selected checker
 nor the runtime challenge generator may use them as a runtime mutation oracle.
 
+Before any challenge generation or selected-checker launch, the verifier
+resolves the selection consumption, its inbound human response, and its broker
+grant as three distinct events in the complete tip-bound broker store. The
+response must be the exact `Kyle_McCleary` authenticated-session event; the
+grant must be the exact broker event for `human_seed_selection_action`; and
+response, grant, and consumption must agree on action, nonce, protected action,
+object bindings, request/response identities and digests, principal, channel,
+and chronology. The consumption's action digest and protected action result
+recompute from that grant. A self-consistent consumption without this
+authenticated response/grant chain is not selection authority.
+
 After the selected commit/tree/path/blob is fixed and the fresh selection
 action consumption is stored, the broker invokes a separately reviewed private
 challenge generator. Its inputs are the authenticated current projection,
@@ -1337,6 +1382,11 @@ manifest, runtime attestation, and capability-evidence envelope; all must bind
 the exact `selected_seed_checker_execution` profile digest, canonical rendered
 sandbox bytes, empty credential inputs, result-FIFO-only writable binding, and
 complete child runtime attestation.
+For every case, the authenticated staged-store list order is authoritative:
+the invocation envelope must precede launch, which must precede waitpid, which
+must precede acceptance. The case verifier also validates the complete
+`mach_v2_child` proof and its two-stop Darwin exec guard; proof-kind or outer
+digest assertions alone are insufficient.
 
 The case verifier independently requires the exact canonical
 `EXPECTED_RUNTIME_ACCESS` manifest, resolves every broker-private prelaunch and
@@ -1361,6 +1411,20 @@ selected_seed_checker_verifier_v3` selects
 `run_selected_seed_checker_verifier_mode`. The verifier receives one canonical
 broker-private staged-view request on read-only unlinked FD 3 and writes only
 to FD 20. Its launch uses the same bounded FIFO and exact wait/EOF algorithm.
+FD 3 and FD 20 must be kernel-observed broker-owned inherited transports:
+their owner UID is identical and differs from the child UID, FD 3 is an
+unlinked read-only regular file, and FD 20 is a write-only FIFO. These
+child-local checks are untrusted observations, not provenance or transition
+authority. Before fork, the broker creates an unexported private launch
+capability binding the verification operation, invocation, reservation, FD 3
+device/inode, and the single retained FIFO read-end device/inode. In the parent
+branch it finalizes that capability with the exact child PID before releasing
+the child through the close-on-exec handshake. The broker accepts bytes only
+from that retained read end after
+the exact child waitpid and FIFO EOF, then matches its private staged-store
+tip, snapshot nonce, and reservation before assigning `actor_class=omp_broker`
+or appending any event. A standalone verifier or caller-owned same-shape FDs
+can produce only unauthoritative bytes and cannot satisfy broker acceptance.
 The argv branch is not transition authority: before parity evaluation or any
 FD 20 output, the child resolves exactly one prelaunch `operation_invocation`
 for its verification operation from the complete tip-bound broker event store
@@ -1368,11 +1432,30 @@ and binds its execution kind, source identity, invocation, reservation, active
 projection profile digest, exact verifier argv, and referenced capability
 manifest. Missing, duplicate, caller-selected, or mismatched mode authority
 blocks before output.
+The authenticated store's list order is authoritative: the verifier computes
+both envelope positions and requires the unique invocation handle to precede
+the unique bound launch-record handle.
+The child validates the internal consistency of an eight-field staged snapshot,
+not its external broker provenance. Its creation/freshness window and nonzero
+256-bit nonce are bound into `current`; the child rejects mismatch, reuse, or
+more than 60 seconds of lag against its live UTC clock. The broker separately
+compares the output's store tip and nonce to its unexported private staged
+transaction view and consumes the nonce with the unique verification
+reservation. Historical or attacker-created self-consistent stores therefore
+cannot authorize an append.
 The verifier child closes FDs 0–2, 4–19, and 21+ before reading its request;
-its complete runtime attestation therefore contains exactly the authenticated
+its complete runtime attestation therefore contains exactly the observed
 authority descriptor on FD 3 and write-only result FIFO on FD 20. The
 capability manifest and launch record retain the pre-exec source provenance
-while the observed child descriptor set proves post-exec closure.
+while the observed child descriptor set proves post-exec closure; broker
+acceptance supplies the private transport provenance.
+Before output, the child also binds the pinned executable, exact normalized
+environment, UID/GID/groups, and one-million-FD audit, then performs live
+loopback-connect and forbidden-write denial probes. Its canonical
+`child_runtime_attestation.v3` and raw evidence are fields of the untrusted
+verifier observation. The broker must bind that evidence digest into both the
+`selected_seed_checker_verification` result and operation-capability evidence
+before it can record complete child attestation or accept the operation.
 A direct broker function call is not transition evidence.
 
 The verifier independently resolves the selected source object closure,
@@ -1462,11 +1545,13 @@ review retry or impersonate a review verdict. Budget, environment,
 external-action, identity-drift, and cancellation terminal routes use the same
 authenticated receipt-before-body, body-before-tip chronology and fail closed.
 `all_nonterminal_states_exact` is the closed concrete active reset-3
-vocabulary, not ambient executor behavior: it includes the dispatch entry
-identities `select_frontier`, `g2_reset_selected`, and `blocked_review`, the
+vocabulary, not ambient executor behavior. It includes the external dispatch
+source `select_frontier`, the nested entry target `blocked_review`, the
 fail-closed revalidation state `refresh_state`, and every state named by the
-reset-3 phase map. `blocked_budget`, `blocked_environment`, and
-`blocked_external` are separately declared terminal failure states.
+reset-3 phase map. `g2_reset_selected` is the exact external entry event from
+`select_frontier` to `blocked_review`, not a state. `blocked_budget`,
+`blocked_environment`, and `blocked_external` are separately declared terminal
+failure states.
 Closure reaches only `g2_reset_3_packet_closed`; it cannot reach the
 program's global `complete` state. A later bound-identity or digest drift is an
 exact broker-builtin `packet_closure` revalidation reservation from
@@ -1481,6 +1566,13 @@ recomputes scope/source/bound digests, verifies the current invalidation receipt
 and proves active-projection parity. The recovery bundle is instance-specific,
 fresh, and non-replayed; stale, expired, mismatched, or replayed refresh input
 fails closed.
+The refresh verifier accepts only the complete eight-field
+`bb.omp.refresh_revalidation_event_store_snapshot.v1` private-store
+snapshot. It recomputes the store tip, snapshot digest, and nonzero nonce,
+requires the snapshot freshness interval to contain its live UTC observation,
+and requires the result's authenticated broker clock to lag that observation
+by at most 60 seconds. Historical self-consistent clocks or four-field event
+stores cannot refresh authority.
 The sole refresh result class is
 `reset_3_refresh_authority_revalidation_result`, and its sole transition event
 type is `reset_3_refresh_authority_revalidated` under schema
@@ -1833,7 +1925,7 @@ Every packet receives one exact-head read-only reviewer. G1, G2, R0-R4, V1, P1, 
 - specification, correctness, behavior, and completeness;
 - security, public boundary, standards, and generated/dispatch drift.
 
-Findings use P0-P3 and Q severity. P0-P2 block promotion. The implementer returns a finding-resolution table; the reviewer reruns on the new head. Exhausted review rounds enter `blocked_review`; exhausted implementation attempts or CI reruns enter `blocked_budget`.
+Findings use P0-P3 and Q severity. P0-P2 block promotion. The implementer returns a finding-resolution table; the reviewer reruns on the new head. At the supervisor/global-packet level, exhausted review rounds enter `blocked_review`. Within reset-3, phase or aggregate review-cap exhaustion follows the exact `budget_or_review_cap_exhausted` guard to `blocked_budget`; exhausted implementation attempts or CI reruns also enter `blocked_budget`.
 
 One CI watcher classifies failures as product defect, specification gap, flaky check, environmental hold, or gate defect. Only product defects return directly to implementation. The CI watcher never changes code.
 An environment change from any environment-bound work, review, CI, promotion, merge, evidence, verified, blocked, or closed state invalidates environment-bound results, reviews, CI, and promotion eligibility and routes through `refresh_state`.
