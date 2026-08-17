@@ -10126,7 +10126,7 @@ bootstrap_policy:
       active_projection_contract:
         digest_domain: canonical_json_object_with_exact_keys_result_contract_phase_map_operation_profiles_non_ledger_transition_registry_fresh_action_instances_fresh_action_consumption_map_budgets_seed_scope_candidate_scope_negative_fixture_requirement_selected_checker_conformance_state_machine_operation_ledger_no_spend_attestations_required_records_authority_input_schema_capability_evidence_schema_refresh_revalidation_verifier_and_schema_source_digests
         projection_sources: {result_contract: bootstrap_policy.G2_reset_3_amendment.result_contract, phase_map: bootstrap_policy.G2_reset_3_amendment.phase_map, operation_profiles: bootstrap_policy.G2_reset_3_amendment.command_profiles.operation_profiles, non_ledger_transition_registry: bootstrap_policy.G2_reset_3_amendment.command_profiles.non_ledger_transition_registry, fresh_action_instances: bootstrap_policy.G2_reset_3_amendment.fresh_actions.instances, fresh_action_consumption_map: bootstrap_policy.G2_reset_3_amendment.fresh_actions.action_to_consumption.entries, budgets: bootstrap_policy.G2_reset_3_amendment.budgets, seed_scope: bootstrap_policy.G2_reset_3_amendment.seed, candidate_scope: bootstrap_policy.G2_reset_3_amendment.candidate, negative_fixture_requirement: bootstrap_policy.G2_reset_3_amendment.negative_fixture_requirement, selected_checker_conformance: bootstrap_policy.G2_reset_3_amendment.generated_projection_and_selected_checker_conformance, state_machine: bootstrap_policy.G2_reset_3_amendment.state_machine, operation_ledger: bootstrap_policy.G2_reset_3_amendment.operation_ledger, no_spend_attestations: bootstrap_policy.G2_reset_3_amendment.no_spend_attestations, required_records: bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.required_records, authority_input_schema: bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.authority_input_schema, capability_evidence_schema: bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.authority_input_schema.operation_capability_evidence_schema, refresh_revalidation_verifier: bootstrap_policy.G2_reset_3_amendment.refresh_revalidation_result_event_verifier.source}
-        sha256: f43d7d23fcc5020e9ada7a41908f0ec92561450fbe75ea66abee5412a5d4f7ab
+        sha256: 449485f7d580e5f3d3fd9108f5d7c559870eb4126a726e33ab624853f4d64e67
         source: exact_authenticated_current_LOOP_SPEC_blob
         broker_recomputation:
           authority: broker_builtin_active_projection_generator
@@ -10306,6 +10306,8 @@ bootstrap_policy:
           runtime_write_denial_record_component_observation_requires_root_anchored_dir_fd_openat_nofollow_descriptor_identity_and_descriptor_acl_or_readlink_content_revalidation: true
           runtime_write_denial_record_component_observation_missing_support_symlink_or_replacement_component_mismatch_acl_drift_or_identity_drift_fails_closed: true
           runtime_write_denial_record_identity_drop_launch_and_waitpid_handles_resolve_to_current_authenticated_broker_events: true
+          runtime_write_denial_record_launch_event_handle_must_equal_acceptance_bound_launch_event_handle_before_resolution: true
+          runtime_write_denial_negative_fixture_rejects_acceptance_bound_runtime_launch_event_handle_substitution: true
           runtime_write_denial_record_prelaunch_requires_identity_drop_before_observation_before_authenticated_launch_and_null_waitpid_fields: true
           runtime_write_denial_record_post_waitpid_requires_authenticated_waitpid_success_for_same_pid_operation_invocation_reservation_and_observation_after_waitpid: true
           runtime_write_denial_record_freshness_window_is_created_le_observed_le_recorded_le_now_le_fresh_until_with_bounded_max_age_and_future_skew: true
@@ -11018,8 +11020,9 @@ bootstrap_policy:
         result_bytes_are_semantic_evidence_only_until_broker_stores_and_cross_binds_them: true
         fake_parent_or_direct_scalar_execution_cannot_create_a_capability_store_transition: true
         missing_mismatch_failed_or_future_digest: block
+      source_sha256: 5c35bf041a77b3b6c9adcb496a111689b0ad6ea94618e142b2ff246a4465d4b1
       source: |-
-        ACTIVE_PROJECTION_SHA256="f43d7d23fcc5020e9ada7a41908f0ec92561450fbe75ea66abee5412a5d4f7ab"
+        ACTIVE_PROJECTION_SHA256="449485f7d580e5f3d3fd9108f5d7c559870eb4126a726e33ab624853f4d64e67"
         MACH_PROBE_SOURCE_SHA256="a3ccdf5fb5889a9b58641ae267666b63dee4db84e1c95598373d2d710d72137d"
         PREFLIGHT_PROBE_SOURCE_SHA256="de4675bbd98eabef15b9d9f0d0f2e71f5124008e3e842c9be3573389fe1d98f7"
         EXPECTED_GUARD_REGISTRY_SHA256="a8753cb3b70441e8b664fc37e73bfe11f4d7ef3e3fcee0d7570dfb6ec1d6ef45"
@@ -11096,7 +11099,7 @@ bootstrap_policy:
         FAILURE_CLASSIFICATION_FLAG_BY_ROUTE_CLASS={"cancellation":"cancellation_observed","environment":"runtime_capability_unrecoverable","identity_drift":"identity_drift_observed","human_action_invalidity":"human_action_invalidity_observed","candidate_review_terminal":"candidate_review_terminal_observed"}
         FAILURE_ROUTE_EVENT_CLASSES={"budget_or_review_cap_exhausted":"budget_exhausted","candidate_attempt_failed_with_capacity":"retryable_operation","candidate_ci_failed_with_capacity":"retryable_operation","candidate_review_failed":"candidate_review_terminal","closed_packet_bound_identity_or_digest_changed":"identity_drift","interrupt_or_cancellation":"cancellation","missing_expired_replayed_or_wrong_action":"human_action_invalidity","operation_failed_terminal":"operation_terminal","scope_source_identity_or_bound_digest_changed":"identity_drift","seed_attempt_failed_with_capacity":"retryable_operation","seed_ci_or_review_failed_with_capacity":"retryable_operation","unrecoverable_runtime_capability_or_transaction_reconciliation_failure":"environment"}
         FAILURE_ROUTE_EVENT_OPERATIONS={"budget_or_review_cap_exhausted":["seed_implementation_attempt","seed_review_round","seed_ci_rerun","candidate_implementation_attempt","candidate_review_round","candidate_ci_rerun"],"candidate_attempt_failed_with_capacity":["candidate_implementation_attempt"],"candidate_ci_failed_with_capacity":["candidate_ci_rerun"],"candidate_review_failed":["candidate_review_round"],"closed_packet_bound_identity_or_digest_changed":["packet_closure"],"interrupt_or_cancellation":"every_reset_3_operation_class","missing_expired_replayed_or_wrong_action":"every_human_action_operation_class","operation_failed_terminal":["activation_record_seal","anchor_selection","candidate_budget_validation","candidate_merge","candidate_preflight","candidate_review_round","capability_probe","evidence_seal","final_review","human_candidate_action_consumption","human_candidate_merge_action","human_closure_action_consumption","human_closure_anchor_selection_action","human_governance_action","human_packet_closure_action","human_planning_action_consumption","human_scope_budget_action","human_security_boundary_action","human_seed_action_consumption","human_seed_merge_action","human_seed_selection_action","installed_validation","live_recheck","packet_closure","planning_core_seal","planning_review","predecessor_search","private_validation","renderer","review_seal","seed_admission","seed_merge","selected_seed_checker_execution","selected_seed_checker_verification"],"scope_source_identity_or_bound_digest_changed":"every_reset_3_operation_class","seed_attempt_failed_with_capacity":["seed_implementation_attempt"],"seed_ci_or_review_failed_with_capacity":["seed_ci_rerun","seed_review_round"],"unrecoverable_runtime_capability_or_transaction_reconciliation_failure":"every_reset_3_operation_class"}
-        EXPECTED_SCHEMA_SOURCE_DIGESTS={"authority_input_schema":"31fe19f347f62921ae7eb21d3f119e1e2f17ee7f4e41ba9338ae425a8b9bff60","budgets":"6a9224fe01a9107492a294a23c334ebf765d4466430c4b7a185ded728c3e80f3","candidate_scope":"c7fa7b606629d87c813a6f5462a77ea4d85f473f7dd3b950c6f49c234832d9a2","capability_evidence_schema":"92871cc73607b499e35327a0c5e9b760a7f8bf02b9126539e9ea2674e00df8d2","fresh_action_consumption_map":"0011641e363aecc9bb5b805f61779b07c6e63804e4f588bd63357170cf3723b9","fresh_action_instances":"ce7829758b0b323bad70afa2163ac8812b2884389c460154d7dcc5e29e612565","negative_fixture_requirement":"d83bbc06d2637ed4090b32a113122ddd199762249bd981409ad8592248470096","no_spend_attestations":"061c68f63fe830d4d1dd842619cd5acbfd29333d31619eaafca8671e295ca8a2","non_ledger_transition_registry":"61cfea1d87216cc5b1dafdf96562eed249c68fb3e998a201129285c0d30b0d99","operation_ledger":"53b1cea4910bf3dc9d055a39431955822a487bb2b8f47d01ea916ffb932c0d7d","operation_profiles":"584a2a5410f41b65b844c2c56b99a0606eb2892a76b57560b8c7dc283c385521","phase_map":"92e8111320ed44aadcad60a47c1d06874b33affdbad634f7ee2cca2fbc192ef6","refresh_revalidation_verifier":"a49c2b738f1f81194961fadb29db299a99cbb1ceed10f620e3aa2cb9bbf7d77d","required_records":"51cc2c12cb0c7738c503745ac639d83e6a6e866848e2f233af32a51e9e51e311","result_contract":"682e7dc6deb5fca2bb99e90714b87d7ec10fc94c585da88b2c9963567bc17240","seed_scope":"779c756b3a05bea33ce91c88ccec38c8b31951924fd0a59999a7006eb3e84ba0","selected_checker_conformance":"21a053b7b64ad55a2287ecf7b6bf20e78259013bdb8bac4c375cb35d2c2b5644","state_machine":"0f2febac57172e57e3c57075963224f6563c3e699ced57fa899c884fab34bd1c"}
+        EXPECTED_SCHEMA_SOURCE_DIGESTS={"authority_input_schema":"5d39f1de6f2f7f903fe6f3c86f975d6cef5cecb3d28b6539c9429c0eeb3d2698","budgets":"6a9224fe01a9107492a294a23c334ebf765d4466430c4b7a185ded728c3e80f3","candidate_scope":"c7fa7b606629d87c813a6f5462a77ea4d85f473f7dd3b950c6f49c234832d9a2","capability_evidence_schema":"92871cc73607b499e35327a0c5e9b760a7f8bf02b9126539e9ea2674e00df8d2","fresh_action_consumption_map":"0011641e363aecc9bb5b805f61779b07c6e63804e4f588bd63357170cf3723b9","fresh_action_instances":"ce7829758b0b323bad70afa2163ac8812b2884389c460154d7dcc5e29e612565","negative_fixture_requirement":"d83bbc06d2637ed4090b32a113122ddd199762249bd981409ad8592248470096","no_spend_attestations":"061c68f63fe830d4d1dd842619cd5acbfd29333d31619eaafca8671e295ca8a2","non_ledger_transition_registry":"61cfea1d87216cc5b1dafdf96562eed249c68fb3e998a201129285c0d30b0d99","operation_ledger":"53b1cea4910bf3dc9d055a39431955822a487bb2b8f47d01ea916ffb932c0d7d","operation_profiles":"584a2a5410f41b65b844c2c56b99a0606eb2892a76b57560b8c7dc283c385521","phase_map":"69169a53cf1d864ab47591348f4baf25f9c79397edb132a6de4288d024b5daeb","refresh_revalidation_verifier":"a49c2b738f1f81194961fadb29db299a99cbb1ceed10f620e3aa2cb9bbf7d77d","required_records":"51cc2c12cb0c7738c503745ac639d83e6a6e866848e2f233af32a51e9e51e311","result_contract":"682e7dc6deb5fca2bb99e90714b87d7ec10fc94c585da88b2c9963567bc17240","seed_scope":"779c756b3a05bea33ce91c88ccec38c8b31951924fd0a59999a7006eb3e84ba0","selected_checker_conformance":"21a053b7b64ad55a2287ecf7b6bf20e78259013bdb8bac4c375cb35d2c2b5644","state_machine":"0f2febac57172e57e3c57075963224f6563c3e699ced57fa899c884fab34bd1c"}
         RUNTIME_PATH_COMPONENT_FIELDS=["component_index","component_name","component_path","parent_path","device","inode","mode","owner_uid","owner_gid","file_flags","file_type","size_bytes","sha256","rdev","symlink_target","acl_length","acl_sha256","child_uid_write_denied","write_denial_basis","opened_nofollow","descriptor_identity_sha256","post_device","post_inode","post_mode","post_owner_uid","post_owner_gid","post_file_flags","post_file_type","post_size_bytes","post_sha256","post_rdev","post_symlink_target","post_acl_length","post_acl_sha256","post_descriptor_identity_sha256","post_opened_nofollow","component_sha256"]
         RUNTIME_DENIAL_MAX_AGE_SECONDS=300
         SELECTED_CHECKER_SNAPSHOT_MAX_LIVE_LAG_SECONDS=60
@@ -11140,12 +11143,20 @@ bootstrap_policy:
         SELECTED_SEED_CHECKER_VERIFIER_TRANSPORT_IDENTITY_FIELDS=["authority_descriptor_id","authority_device","authority_inode","authority_mode","authority_owner_uid","authority_nlink","authority_byte_length","authority_object_sha256","result_fifo_descriptor_id","result_fifo_device","result_fifo_inode","result_fifo_mode","result_fifo_owner_uid","child_pid","child_uid","child_gid","child_supplementary_groups_sha256"]
         SELECTED_SEED_CHECKER_PRIVATE_FAMILY_ROOTS={"command_profile_sandbox_descriptor_environment_result_or_receipt_drift_with_ancestor_substitution_symlink_swap_component_identity_replacement_and_acl_drift":["operation_profiles","non_ledger_transition_registry"],"denied_ambiguous_missing_or_broker_invented_human_response_decision":["fresh_action_instances"],"generated_projection_selected_checker_conformance_or_source_scalar_drift":["selected_checker_conformance"],"null_tip_or_genesis_predecessor_digest_cycle_or_wrong_chronology":["operation_ledger"],"phase_state_ledger_counter_transition_closure_or_future_digest_violation":["phase_map","state_machine","operation_ledger"],"reset_1_reset_2_or_round3_denied_blob_union_omission_overlap_or_candidate_reuse":["required_records"],"seed_eight_path_scope_budget_manifest_or_module_ownership_drift":["seed_scope"],"stale_missing_substituted_or_replayed_reviews_actions_consumptions_or_admission":["fresh_action_instances","fresh_action_consumption_map","required_records"],"stale_reset_2_dispatch_or_historical_record_used_as_active_authority":["state_machine","required_records"],"unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift":["candidate_scope"],"verdict_only_nonreferential_partial_scope_stale_blob_stale_excerpt_unknown_placeholder_or_boilerplate_review_evidence":["required_records"]}
         PRESEED_CLASSES={"planning_core_seal","planning_review","predecessor_search","capability_probe","activation_record_seal","human_scope_budget_action","human_governance_action","human_security_boundary_action","human_planning_action_consumption","live_recheck","seed_admission"}
-        PHASE_CLASSES={"G2/reset-3/candidate":{"candidate_budget_validation","candidate_implementation_attempt","candidate_merge","candidate_preflight","human_candidate_action_consumption","human_candidate_merge_action"},"G2/reset-3/closure":{"anchor_selection","human_closure_action_consumption","human_closure_anchor_selection_action","human_packet_closure_action","installed_validation","packet_closure","private_validation","renderer"},"G2/reset-3/evidence":{"candidate_ci_rerun","candidate_review_round","evidence_seal","final_review","review_seal"},"G2/reset-3/planning":{"planning_core_seal","planning_review"},"G2/reset-3/preseed":{"activation_record_seal","capability_probe","human_governance_action","human_planning_action_consumption","human_scope_budget_action","human_security_boundary_action","live_recheck","predecessor_search","seed_admission"},"G2/reset-3/seed":{"human_seed_action_consumption","human_seed_merge_action","human_seed_selection_action","seed_ci_rerun","seed_implementation_attempt","seed_merge","seed_review_round","selected_seed_checker_execution","selected_seed_checker_verification"}}
+        PHASE_CLASSES={"G2/reset-3/candidate":{"candidate_budget_validation","candidate_implementation_attempt","candidate_merge","candidate_preflight","human_candidate_action_consumption","human_candidate_merge_action"},"G2/reset-3/closure":{"anchor_selection","human_closure_action_consumption","human_closure_anchor_selection_action","human_packet_closure_action","installed_validation","packet_closure","private_validation","renderer"},"G2/reset-3/evidence":{"candidate_ci_rerun","candidate_review_round","evidence_seal","final_review","review_seal"},"G2/reset-3/planning":{"planning_core_seal","planning_review","predecessor_search","capability_probe","activation_record_seal"},"G2/reset-3/preseed":{"human_governance_action","human_planning_action_consumption","human_scope_budget_action","human_security_boundary_action","live_recheck","seed_admission"},"G2/reset-3/seed":{"human_seed_action_consumption","human_seed_merge_action","human_seed_selection_action","seed_ci_rerun","seed_implementation_attempt","seed_merge","seed_review_round","selected_seed_checker_execution","selected_seed_checker_verification"}}
+        PHASE_STATES={"G2/reset-3/planning":{"blocked_review","g2_reset_3_planning"},"G2/reset-3/preseed":{"g2_reset_3_preseed"},"G2/reset-3/seed":{"g2_reset_3_seed_implementing","g2_reset_3_seed_review","g2_reset_3_seed_selection","g2_reset_3_seed_merge"},"G2/reset-3/candidate":{"g2_reset_3_candidate_preflight","g2_reset_3_candidate_implementing","g2_reset_3_candidate_merge"},"G2/reset-3/evidence":{"g2_reset_3_evidence_seal","g2_reset_3_final_review","g2_reset_3_review_seal"},"G2/reset-3/closure":{"g2_reset_3_anchor_selection","g2_reset_3_closure_validation","g2_reset_3_packet_closed"}}
+        PHASE_MAP_RECORD_KEYS=["planning","preseed","seed","candidate","evidence","closure"]
+        PHASE_MAP_RECORD_FIELDS=["phase_id","states","operation_classes"]
+        PHASE_MAP_CONTROL_VALUES={"operation_class_key_set_exact":True,"operation_classes_each_have_exactly_one_phase":True,"operation_allowed_from_states_contained_by_phase_map_states":True,"historical_reset_2_phase_or_operation_class":"reject"}
         CANDIDATE_OPERATION_CLASSES=PHASE_CLASSES["G2/reset-3/candidate"]|PHASE_CLASSES["G2/reset-3/evidence"]|PHASE_CLASSES["G2/reset-3/closure"]
         CANDIDATE_OPERATION_LEDGER_MAX=25
         KIND_CLASSES={"broker_builtin":{"activation_record_seal","anchor_selection","candidate_merge","candidate_preflight","evidence_seal","human_candidate_action_consumption","human_candidate_merge_action","human_closure_action_consumption","human_closure_anchor_selection_action","human_governance_action","human_packet_closure_action","human_planning_action_consumption","human_scope_budget_action","human_security_boundary_action","human_seed_action_consumption","human_seed_merge_action","human_seed_selection_action","live_recheck","packet_closure","planning_core_seal","predecessor_search","review_seal","seed_merge"},"delegated_agent":{"candidate_implementation_attempt","candidate_review_round","capability_probe","final_review","planning_review","seed_implementation_attempt","seed_review_round"},"embedded_validator":{"seed_admission","selected_seed_checker_verification"},"verified_script":{"candidate_budget_validation","candidate_ci_rerun","installed_validation","private_validation","renderer","seed_ci_rerun","selected_seed_checker_execution"}}
         EXPECTED_SCRIPT_PATHS={"candidate_budget_validation":"scripts/packet/verify_g2_anchor.py","candidate_ci_rerun":"scripts/packet/verify_g2_anchor.py","installed_validation":"scripts/packet/verify_g2_anchor.py","private_validation":"scripts/packet/verify_g2_anchor.py","renderer":"scripts/packet/render_state.py","seed_ci_rerun":"scripts/packet/verify_g2_anchor.py"}
         ALL_CLASSES=set().union(*PHASE_CLASSES.values())
+        def expect(condition,message):
+            if not condition:
+                raise ValueError(message)
+        expect(set(PHASE_CLASSES)==set(PHASE_STATES) and set().union(*PHASE_CLASSES.values())==ALL_CLASSES and all(set(OPERATION_FROM_STATES[operation_class])<=PHASE_STATES[phase] for phase,classes in PHASE_CLASSES.items() for operation_class in classes),"phase map states and operation class containment")
         BROKER_BUILTIN_OR_DELEGATED_CLASSES=KIND_CLASSES["broker_builtin"]|KIND_CLASSES["delegated_agent"]
         def registered_operation_class_allowed(domain,operation_class):
             if domain=="every_reset_3_operation_class":
@@ -11162,11 +11173,22 @@ bootstrap_policy:
         def result_object_sha(value):
             expect(isinstance(value,dict),"result object mapping")
             return sha({key:item for key,item in value.items() if key!="result_sha256"}) if "result_sha256" in value else sha(value)
-        def expect(condition,message):
-            if not condition:
-                raise ValueError(message)
         def exact(value,fields,label):
             expect(isinstance(value,dict) and set(value)==set(fields) and len(value)==len(fields),label+" closed schema")
+        def verify_projected_phase_map(phase_map):
+            exact(phase_map,PHASE_MAP_RECORD_KEYS+list(PHASE_MAP_CONTROL_VALUES),"projected phase map")
+            projected_classes={}
+            projected_states={}
+            for phase_name in PHASE_MAP_RECORD_KEYS:
+                record=phase_map[phase_name]
+                exact(record,PHASE_MAP_RECORD_FIELDS,"projected phase map record")
+                phase_id="G2/reset-3/"+phase_name
+                expect(record["phase_id"]==phase_id and isinstance(record["states"],list) and len(record["states"])==len(set(record["states"])) and all(isinstance(state,str) and state for state in record["states"]) and isinstance(record["operation_classes"],list) and len(record["operation_classes"])==len(set(record["operation_classes"])) and all(isinstance(operation_class,str) and operation_class for operation_class in record["operation_classes"]),"projected phase map record values")
+                projected_classes[phase_id]=set(record["operation_classes"])
+                projected_states[phase_id]=set(record["states"])
+            expect(all(phase_map[key]==value for key,value in PHASE_MAP_CONTROL_VALUES.items()),"projected phase map control fields")
+            expect(projected_classes==PHASE_CLASSES and projected_states==PHASE_STATES,"authenticated projected phase map matches embedded phase map")
+            return projected_classes,projected_states
         EXPECTED_GUARD_VALIDATOR_SOURCE={"embedded_preseed_validator":"bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.source","verified_selected_S_guard_validator":"scripts/packet/g2_contract.py:validate_transition_guard"}
         def failure_route_fixture_matrix(fixtures,event_classes,head_paths):
             expect(isinstance(fixtures,dict) and set(fixtures)==set(event_classes),"failure route fixture exact event coverage")
@@ -11623,6 +11645,10 @@ bootstrap_policy:
                     break
                 parent=os.path.dirname(parent) or "/"
             return closure
+        RUNTIME_WRITE_DENIAL_LAUNCH_BINDING_ERROR="runtime write-denial launch handle equals acceptance-bound launch event handle before resolution"
+        def verify_runtime_write_denial_launch_binding(record_launch_event_handle,acceptance_launch_event_handle):
+            expect(record_launch_event_handle==acceptance_launch_event_handle,RUNTIME_WRITE_DENIAL_LAUNCH_BINDING_ERROR)
+            return True
         def verify_runtime_write_denial_records(records,runtime_manifest,child_uid,child_gid,child_groups_sha256,phase,operation_instance_id,invocation_id,reservation_id,platform_identity_sha256,broker_events,launch_event_handle,launch_event_type):
             expect(phase in {"prelaunch","post_waitpid"} and child_groups_sha256==sha([]) and isinstance(records,list) and len(records)==len(runtime_manifest),"runtime write-denial record cardinality")
             expected_items={item["path"]:item for item in runtime_manifest}
@@ -11641,6 +11667,7 @@ bootstrap_policy:
                 identity=resolve_registered_event(broker_events,identity_handle,"operation_identity_drop","omp_broker",["schema_version","operation_instance_id","invocation_id","reservation_id","child_pid","expected_child_uid","expected_child_gid","expected_child_supplementary_groups_sha256","observed_child_uid","observed_child_gid","observed_child_supplementary_groups","observed_child_supplementary_groups_sha256","observed_at_utc","identity_drop_sha256"],"bb.omp.operation_identity_drop.v1","runtime identity-drop event")
                 expect(identity["schema_version"]=="bb.omp.operation_identity_drop.v1" and (identity["operation_instance_id"],identity["invocation_id"],identity["reservation_id"])==(operation_instance_id,invocation_id,reservation_id) and identity["child_pid"]==record["child_pid"] and identity["expected_child_uid"]==child_uid and identity["expected_child_gid"]==child_gid and identity["expected_child_supplementary_groups_sha256"]==child_groups_sha256 and identity["observed_child_uid"]==record["observed_child_uid"]==child_uid and identity["observed_child_gid"]==record["observed_child_gid"]==child_gid and identity["observed_child_supplementary_groups"]==record["observed_child_supplementary_groups"] and identity["observed_child_supplementary_groups_sha256"]==record["observed_child_supplementary_groups_sha256"]==sha(identity["observed_child_supplementary_groups"]) and identity["identity_drop_sha256"]==sha({key:value for key,value in identity.items() if key!="identity_drop_sha256"}),"runtime identity-drop event binding")
                 launch_handle=record["launch_event_handle"]
+                verify_runtime_write_denial_launch_binding(record["launch_event_handle"],launch_event_handle)
                 launch=resolve_registered_event(broker_events,launch_handle,launch_event_type,"omp_broker",None,{"operation_launch_record":"bb.omp.operation_launch_record.v2","command_broker_launch_record":"bb.omp.command_broker_launch_record.v1"}[launch_event_type],"runtime write-denial launch event")
                 launch_required={"operation_instance_id":operation_instance_id,"invocation_id":invocation_id,"reservation_id":reservation_id,"child_pid":record["child_pid"],"expected_child_uid":child_uid,"expected_child_gid":child_gid,"expected_child_supplementary_groups_sha256":child_groups_sha256}
                 expect(all(launch.get(key)==value for key,value in launch_required.items()) and launch.get("launched_at_utc")==record["launched_at_utc"],"runtime write-denial launch event binding")
@@ -12348,6 +12375,7 @@ bootstrap_policy:
             projection_object=projection["projection_object"]
             expected_projection_source_paths={"authority_input_schema":"bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.authority_input_schema","budgets":"bootstrap_policy.G2_reset_3_amendment.budgets","candidate_scope":"bootstrap_policy.G2_reset_3_amendment.candidate","capability_evidence_schema":"bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.authority_input_schema.operation_capability_evidence_schema","fresh_action_consumption_map":"bootstrap_policy.G2_reset_3_amendment.fresh_actions.action_to_consumption.entries","fresh_action_instances":"bootstrap_policy.G2_reset_3_amendment.fresh_actions.instances","negative_fixture_requirement":"bootstrap_policy.G2_reset_3_amendment.negative_fixture_requirement","no_spend_attestations":"bootstrap_policy.G2_reset_3_amendment.no_spend_attestations","non_ledger_transition_registry":"bootstrap_policy.G2_reset_3_amendment.command_profiles.non_ledger_transition_registry","operation_ledger":"bootstrap_policy.G2_reset_3_amendment.operation_ledger","operation_profiles":"bootstrap_policy.G2_reset_3_amendment.command_profiles.operation_profiles","phase_map":"bootstrap_policy.G2_reset_3_amendment.phase_map","refresh_revalidation_verifier":"bootstrap_policy.G2_reset_3_amendment.refresh_revalidation_result_event_verifier.source","required_records":"bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.required_records","result_contract":"bootstrap_policy.G2_reset_3_amendment.result_contract","seed_scope":"bootstrap_policy.G2_reset_3_amendment.seed","selected_checker_conformance":"bootstrap_policy.G2_reset_3_amendment.generated_projection_and_selected_checker_conformance","state_machine":"bootstrap_policy.G2_reset_3_amendment.state_machine"}
             expect(isinstance(projection_object,dict) and set(projection_object)==set(expected_projection_source_paths)|{"schema_source_digests"} and projection["source_paths"]==expected_projection_source_paths and projection["source_digests"]=={key:sha(projection_object[key]) for key in expected_projection_source_paths}==EXPECTED_SCHEMA_SOURCE_DIGESTS and projection_object["schema_source_digests"]==projection["source_digests"],"selected checker independently recomputed projection sources")
+            verify_projected_phase_map(projection_object["phase_map"])
             expect(oid(projection["loop_spec_blob_oid"]) and digest(projection["loop_spec_blob_sha256"]) and oid(projection["execution_plan_blob_oid"]) and digest(projection["execution_plan_blob_sha256"]) and projection["guard_registry_sha256"]==EXPECTED_GUARD_REGISTRY_SHA256 and projection["event_registry_sha256"]==EXPECTED_EVENT_REGISTRY_SHA256,"selected checker projection source and registry authority")
             expect(projection["broker_projection_event_handle"]==current["active_projection_event_handle"] and projection["projection_sha256"]==current["active_projection_sha256"]==sha(projection_object) and projection["projection_bytes_sha256"]==sha_bytes(canon(projection_object)) and projection["projection_record_sha256"]==sha({key:value for key,value in projection.items() if key!="projection_record_sha256"}),"selected checker current active projection")
             verification_invocation_envelopes=[envelope for envelope in broker_event_store["events"] if envelope["event_type"]=="operation_invocation" and isinstance(envelope["payload"],dict) and envelope["payload"].get("operation_instance_id")==current["verification_operation_instance_id"]]
@@ -12526,6 +12554,27 @@ bootstrap_policy:
             os.close(AUTHORITY_FD)
             os.close(RESULT_FIFO_FD)
             raise SystemExit(0)
+        def self_test_runtime_write_denial_launch_binding_mismatch():
+            try:
+                verify_runtime_write_denial_launch_binding("runtime-launch-record","runtime-launch-acceptance")
+            except ValueError as error:
+                expect(str(error)==RUNTIME_WRITE_DENIAL_LAUNCH_BINDING_ERROR,"runtime write-denial mismatch self-test exact ValueError")
+            else:
+                raise ValueError("runtime write-denial mismatch self-test accepted")
+            return True
+        def self_test_projected_phase_map_stale_rejection():
+            stale_phase_map={phase_name:{"phase_id":"G2/reset-3/"+phase_name,"states":sorted(PHASE_STATES["G2/reset-3/"+phase_name]),"operation_classes":sorted(PHASE_CLASSES["G2/reset-3/"+phase_name])} for phase_name in PHASE_MAP_RECORD_KEYS}
+            stale_phase_map.update(PHASE_MAP_CONTROL_VALUES)
+            stale_phase_map["planning"]["states"].append("stale_phase_state")
+            try:
+                verify_projected_phase_map(stale_phase_map)
+            except ValueError as error:
+                expect(str(error)=="authenticated projected phase map matches embedded phase map","stale phase-map self-test exact rejection")
+            else:
+                raise ValueError("stale phase-map self-test accepted")
+            return True
+        self_test_runtime_write_denial_launch_binding_mismatch()
+        self_test_projected_phase_map_stale_rejection()
         run_selected_seed_checker_verifier_mode()
         run_fixed_mach_probe_mode()
         authority_pre=os.fstat(AUTHORITY_FD)
@@ -13042,6 +13091,7 @@ bootstrap_policy:
         expected_mach_probe_source=capability_evidence_schema["mach_lookup_probe_source"].encode("utf-8")
         expect(sha_bytes(expected_preflight_probe_source)==capability_evidence_schema["preflight_probe_source_sha256"]==PREFLIGHT_PROBE_SOURCE_SHA256 and sha_bytes(expected_mach_probe_source)==capability_evidence_schema["mach_lookup_probe_source_sha256"]==MACH_PROBE_SOURCE_SHA256,"projected preflight probe source bytes")
         expect(isinstance(projection_object,dict) and set(projection_object)==set(expected_source_paths)|{"schema_source_digests"} and projection["source_paths"]==expected_source_paths and projection["source_digests"]=={key:sha(projection_object[key]) for key in expected_source_paths}==EXPECTED_SCHEMA_SOURCE_DIGESTS and projection_object["schema_source_digests"]==projection["source_digests"],"active projection source recomputation")
+        verify_projected_phase_map(projection_object["phase_map"])
         fresh_action_instances=projection_object["fresh_action_instances"]
         fresh_action_fields=["instance_id","gate_id","protected_action","operation_class","phase_id","timing","exact_binding_payload_keys"]
         expect(isinstance(fresh_action_instances,list) and len(fresh_action_instances)==8,"exact projected fresh action instance count")
@@ -15063,12 +15113,12 @@ bootstrap_policy:
     phase_map:
       planning:
         phase_id: G2/reset-3/planning
-        states: [g2_reset_3_planning]
-        operation_classes: [planning_core_seal, planning_review]
+        states: [blocked_review, g2_reset_3_planning]
+        operation_classes: [planning_core_seal, planning_review, predecessor_search, capability_probe, activation_record_seal]
       preseed:
         phase_id: G2/reset-3/preseed
         states: [g2_reset_3_preseed]
-        operation_classes: [predecessor_search, capability_probe, activation_record_seal, human_scope_budget_action, human_governance_action, human_security_boundary_action, human_planning_action_consumption, live_recheck, seed_admission]
+        operation_classes: [human_scope_budget_action, human_governance_action, human_security_boundary_action, human_planning_action_consumption, live_recheck, seed_admission]
       seed:
         phase_id: G2/reset-3/seed
         states: [g2_reset_3_seed_implementing, g2_reset_3_seed_review, g2_reset_3_seed_selection, g2_reset_3_seed_merge]
@@ -15087,6 +15137,7 @@ bootstrap_policy:
         operation_classes: [human_closure_anchor_selection_action, human_closure_action_consumption, anchor_selection, private_validation, installed_validation, renderer, human_packet_closure_action, packet_closure]
       operation_class_key_set_exact: true
       operation_classes_each_have_exactly_one_phase: true
+      operation_allowed_from_states_contained_by_phase_map_states: true
       historical_reset_2_phase_or_operation_class: reject
     state_machine:
       entry: [select_frontier, g2_reset_selected, blocked_review]

@@ -277,6 +277,20 @@ specification, the G2 issue, source base and merge base, reset epoch, old and
 new scope and budgets, and two independent plan-review objects. It supersedes
 stale `STATE.json#planning_package.independent_review` only for this reset
 phase; `STATE.json` is not read as authority.
+The authoritative phase map places predecessor searches, capability probing, and
+activation-record sealing in planning; preseed retains only the human actions,
+their consumption, live recheck, and seed admission. Every operation class's
+allowed source states must remain contained by its phase-map state set.
+The embedded preseed validator runs two named executable negative self-tests at
+startup after their helpers are defined. `self_test_runtime_write_denial_launch_binding_mismatch`
+calls the same `verify_runtime_write_denial_launch_binding` helper used by
+runtime-denial verification with different record and acceptance launch
+handles, and passes only when the helper raises `ValueError` with exact
+message `runtime write-denial launch handle equals acceptance-bound launch event handle before resolution`; no rejection is a fail-closed error.
+`self_test_projected_phase_map_stale_rejection` calls the same
+`verify_projected_phase_map` helper used by active-projection verification with
+one stale state and passes only when the exact authenticated phase-map mismatch
+`ValueError` is raised.
 
 Each seed attempt, review round, CI rerun, merge, human action, and action
 consumption is appended to that capability-store ledger. Every launched
@@ -570,6 +584,9 @@ post-waitpid records only after the authenticated successful waitpid for that
 same child and current operation. Both exact sorted handle sets and their
 digests, runtime manifest component chains, and closure-chain digests are
 bound into the capability manifest and operation evidence.
+Every runtime-denial verification call uses that shared launch-binding helper
+before resolving the launch event, so the acceptance-bound launch handle cannot
+be substituted by a record handle that was not compared.
 Every `broker_builtin` operation requires one broker-authenticated authority
 envelope with the exact `broker_builtin_authority` schema (including operation/
 invocation/reservation/profile/capability-store identity, broker opcode and
@@ -687,6 +704,14 @@ child does not run a second YAML parser. It authenticates the broker-private
 projection event and recomputes the record, projection, source-value, and
 guard/event registry digests before checking each materialized 23-field
 operation profile.
+Before any downstream projection acceptance, the validator calls the shared
+`verify_projected_phase_map` conversion helper on the authenticated
+`projection_object["phase_map"]`. The helper requires exactly six named phase
+records (`planning`, `preseed`, `seed`, `candidate`, `evidence`, and `closure`),
+each with only `phase_id`, `states`, and `operation_classes`, plus exactly four
+control fields; it derives phase-to-class and phase-to-state maps and compares
+both exactly to the embedded `PHASE_CLASSES` and `PHASE_STATES`. No caller
+projection data is accepted without this authenticated binding.
 The broker then materializes every named exact-scope capability: commits/trees, review and CI
 records, action/ledger records, runtime artifacts, and the phase-specific
 checkout or object view. Seed and candidate implementation receive distinct
