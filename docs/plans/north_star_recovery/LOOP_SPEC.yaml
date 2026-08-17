@@ -9532,6 +9532,100 @@ bootstrap_policy:
       - module_ownership_and_selected_checker_conformance
       - negative_fixture_families
     planning_contract:
+      reviewed_authored_amendment_anchor:
+        role: activation_planning_core_and_review_head
+        exact_single_parent_commit: true
+        parent_role: reviewed_base
+        planning_core_proof_commits: [reviewed_base, reviewed_authored_amendment_anchor]
+        review_subject_commit_identity: reviewed_authored_amendment_anchor_only
+      later_github_merge_commit:
+        role: independently_authenticated_whole_tree_equivalent_handoff_identity
+        whole_tree_equality_to_authored_anchor_at_merge: true
+        may_replace_planning_core_commit: false
+        may_replace_review_subject_field: false
+        planning_core_or_review_subject_substitution_forbidden: true
+      generated_state_only_commits:
+        role: independently_authenticated_planning_projection_equivalent_materialization_identities
+        preserves_exact_two_planning_blob_oids_and_bytes: true
+        full_tree_equality_to_authored_anchor_required: false
+        may_replace_planning_core_commit: false
+        may_replace_review_subject_field: false
+        planning_core_or_review_subject_substitution_forbidden: true
+      current_remote_recovery_observation:
+        required: true
+        proves: [broker_authenticated_github_remote_ref_tip, current_capability_store_atomic_observation_replay_guard, authored_anchor_reachable_from_authenticated_remote, authored_anchor_planning_tree_equals_authenticated_merged_planning_tree]
+        broker_private_planning_core: true
+        invocation_broker_clock_binding_required: true
+      remote_recovery_record:
+        schema_version: bb.north_star_recovery.g2_remote_recovery.v1
+        exact_fields: [schema_version, repository_remote_url, remote_ref, observation_event_handle, observation_receipt_sha256, observation_replay_guard_event_handle, observation_replay_guard_sha256, observation_packet_key, observation_execution_epoch, observation_scope_version, observation_phase_id, observation_operation_class, observation_operation_instance_id, observation_invocation_id, observation_reservation_id, observed_remote_head, source_base_commit, source_merge_base_commit, authored_anchor_commit, authenticated_merge_commit, state_materialization_commits, allowed_materialization_paths, broker_observer, observation_method, observed_ref_tip, observed_at_utc, remote_recovery_sha256]
+        repository_remote_url: https://github.com/kmccleary3301/breadboard.git
+        remote_ref: refs/heads/north-star/recovery-execution
+        allowed_materialization_paths: [docs/plans/north_star_recovery/STATE.json]
+        broker_observer: omp_broker
+        observation_method: authenticated_github_remote_ref_tip_v1
+        observation_event_type: github_remote_ref_observation
+        observation_event_actor: omp_broker
+        observation_event_operation_class: planning_core_seal
+        observation_event_registered_in_authenticated_broker_store: true
+        observation_event_payload_exact_fields: [schema_version, packet_key, execution_epoch, scope_version, phase_id, operation_class, operation_instance_id, invocation_id, reservation_id, repository_remote_url, remote_ref, argv, stdout_hex, stdout_sha256, stderr_hex, stderr_sha256, exit_code, observation_nonce, observed_remote_head, observed_at_utc, receipt_sha256]
+        observation_event_schema_version: bb.north_star_recovery.g2_github_remote_ref_observation.v1
+        observation_receipt_digest_binds_exact_payload_without_receipt_sha256: true
+        observation_event_handle_and_receipt_sha256_must_bind_remote_record: true
+        exactly_one_remote_observation_event_in_admitted_broker_snapshot: true
+        observation_packet_epoch_scope_operation_instance_invocation_and_reservation_equal_completed_current_planning_core_seal_ledger_chain: true
+        fresh_cross_run_observation_receipt_replay: reject
+        observation_replay_guard_event_type: github_remote_ref_observation_replay_guard
+        observation_replay_guard_schema_version: bb.north_star_recovery.g2_github_remote_ref_observation_replay_guard.v1
+        observation_replay_guard_actor: omp_broker
+        observation_replay_guard_operation_class: planning_core_seal
+        observation_replay_guard_payload_exact_fields: [schema_version, packet_key, execution_epoch, scope_version, phase_id, operation_class, operation_instance_id, invocation_id, reservation_id, capability_store_instance, observation_event_handle, observation_immutable_object_id, observation_nonce, replay_store_before_event_handle, replay_store_before_sha256, replay_store_after_event_handle, replay_store_after_sha256, prior_store_tip_sha256, prior_observation_immutable_object_ids, prior_observation_nonces, append_committed, recorded_store_tip_sha256, recorded_at_utc, guard_sha256]
+        observation_replay_store_snapshot_event_type: github_remote_ref_observation_replay_store_snapshot
+        observation_replay_store_snapshot_schema_version: bb.north_star_recovery.g2_github_remote_ref_observation_replay_store_snapshot.v1
+        observation_replay_store_snapshot_payload_exact_fields: [schema_version, store_instance_id, operation_instance_id, invocation_id, reservation_id, observation_event_handle, prior_store_tip_sha256, observation_immutable_object_ids, observation_nonces, captured_at_utc, body_sha256, store_tip_sha256]
+        exactly_one_replay_guard_and_exactly_two_before_after_replay_store_snapshot_events_in_admitted_broker_snapshot: true
+        replay_guard_handle_and_payload_sha256_must_bind_remote_record: true
+        replay_guard_capability_store_operation_invocation_reservation_and_nonce_equal_current_planning_core_broker_authority: true
+        replay_store_before_and_after_snapshot_handles_payload_digests_store_instance_operation_identity_and_observation_handle_bind_guard: true
+        replay_store_before_tip_and_sets_are_broker_authenticated_unique_and_exclude_current_observation: true
+        replay_store_after_prior_tip_equals_before_tip_and_sets_equal_exact_before_plus_current_observation: true
+        replay_store_empty_genesis_sets_require_recomputed_store_instance_genesis_tip: true
+        replay_guard_prior_and_recorded_tips_equal_authenticated_before_and_after_snapshot_tips: true
+        replay_guard_atomic_append_committed_and_before_guard_after_chronology_fresh: true
+        observation_exact_argv: ["/usr/bin/git", "ls-remote", "--refs", "https://github.com/kmccleary3301/breadboard.git", "refs/heads/north-star/recovery-execution"]
+        observation_stdout_canonical_bytes: "<40-lowercase-oid>\\trefs/heads/north-star/recovery-execution\\n"
+        observation_stderr_canonical_bytes: ""
+        observation_exit_code: 0
+        observation_nonce_nonempty: true
+        observed_ref_tip_equals_observed_remote_head: true
+        source_base_and_merge_base_equal_authored_anchor_exact_reviewed_base_parent_and_current_reviewed_base_head: true
+        source_tree_equals_reviewed_base_tree: true
+        authenticated_invocation_broker_clock_is_observation_freshness_clock: true
+        observation_nonfuture_and_not_after_planning_core_creation: true
+        observation_live_freshness_seconds_max: 900
+        authenticated_merge_commit_parents_exactly: [source_base_commit, authored_anchor_commit]
+        authenticated_merge_commit_tree_equals_authored_anchor_tree: true
+        state_materialization_commits_nonempty_ordered: true
+        state_chain_starts_after_authenticated_merge_and_ends_at_observed_remote_ref_tip: true
+        each_state_commit_has_exactly_one_parent_equal_to_previous_identity: true
+        every_state_transition_raw_tree_diff_exactly_allowed_materialization_paths: true
+        every_state_pre_and_post_leaf_exists_regular_mode_100644_distinct_blob_oid: true
+        source_tree_recursively_closed_with_existing_authenticated_tree_walker: true
+        all_commit_tree_blob_proofs_come_from_planning_core_git_objects: true
+        duplicate_missing_wrong_hash_or_unused_git_objects_rejected: true
+        remote_recovery_sha256_excludes_only_remote_recovery_sha256: true
+      authored_head_merge_and_generated_state_identities_are_non_substitutable: true
+      parse_commit_header_rules:
+        accepted_headers: [tree, parent, author, committer, gpgsig]
+        gpgsig_at_most_once: true
+        gpgsig_continuations_only_while_inside_gpgsig: true
+        preserve_parent_order: true
+        reject_unknown_headers: true
+        reject_orphan_or_non_gpgsig_continuations: true
+        reject_duplicate_singleton_headers: true
+        reject_malformed_header_separators: true
+        reject_invalid_tree_or_parent_oids: true
+        reject_missing_tree_author_or_committer: true
       parent_commit: broker_authenticated_reviewed_base_head
       reviewed_base_identity_source: supervisor_broker_planning_core_descriptor
       required_commit_count: 1
@@ -10121,12 +10215,23 @@ bootstrap_policy:
       source_scalar_exact_bytes_committed_in_LOOP_SPEC: true
       source_scalar_sha256_bound_after_planning_commit: true
       argv_source: exact_reviewed_LOOP_SPEC_scalar_bytes
+      source_scalar_extraction:
+        marker: "\n        missing_mismatch_failed_or_future_digest: block\n      source_sha256: "
+        source_block_marker: "      source: |-\n"
+        content_indentation: at_least_eight_spaces
+        blank_lines_preserved: true
+        stop_at_first_nonblank_line_below_eight_spaces: true
+        yaml_trailing_line_breaks_stripped_only: true
+        declared_source_sha256_equals_recomputed_extracted_bytes: true
+        non_newline_content_never_stripped: true
+        negative_self_tests: [source_scalar_chomping_mismatch, source_scalar_digest_mismatch, noncanonical_planning_object_hex]
+      remote_recovery_negative_self_tests: [remote_digest_tamper, remote_receipt_payload_tamper, remote_receipt_raw_stdout_tamper, remote_receipt_handle_tamper, remote_receipt_envelope_tamper, remote_receipt_duplicate, remote_receipt_replay_operation_identity, remote_receipt_replay_store, remote_receipt_replay_capability_store, remote_receipt_replay_authority_nonce, remote_stale_observation, remote_wrong_merge_parent_or_order, remote_merge_tree_mismatch, remote_state_parent, remote_state_path, remote_state_deletion, remote_state_mode, remote_head_mismatch, remote_source_oid]
       argv_construction_rule: broker launch record contains exact argv [-I, -S, -c] and separately binds the extracted UTF-8 scalar bytes by digest
       symbolic_scalar_name_in_argv: forbidden
       active_projection_contract:
         digest_domain: canonical_json_object_with_exact_keys_result_contract_phase_map_operation_profiles_non_ledger_transition_registry_fresh_action_instances_fresh_action_consumption_map_budgets_seed_scope_candidate_scope_negative_fixture_requirement_selected_checker_conformance_state_machine_operation_ledger_no_spend_attestations_required_records_authority_input_schema_capability_evidence_schema_refresh_revalidation_verifier_and_schema_source_digests
         projection_sources: {result_contract: bootstrap_policy.G2_reset_3_amendment.result_contract, phase_map: bootstrap_policy.G2_reset_3_amendment.phase_map, operation_profiles: bootstrap_policy.G2_reset_3_amendment.command_profiles.operation_profiles, non_ledger_transition_registry: bootstrap_policy.G2_reset_3_amendment.command_profiles.non_ledger_transition_registry, fresh_action_instances: bootstrap_policy.G2_reset_3_amendment.fresh_actions.instances, fresh_action_consumption_map: bootstrap_policy.G2_reset_3_amendment.fresh_actions.action_to_consumption.entries, budgets: bootstrap_policy.G2_reset_3_amendment.budgets, seed_scope: bootstrap_policy.G2_reset_3_amendment.seed, candidate_scope: bootstrap_policy.G2_reset_3_amendment.candidate, negative_fixture_requirement: bootstrap_policy.G2_reset_3_amendment.negative_fixture_requirement, selected_checker_conformance: bootstrap_policy.G2_reset_3_amendment.generated_projection_and_selected_checker_conformance, state_machine: bootstrap_policy.G2_reset_3_amendment.state_machine, operation_ledger: bootstrap_policy.G2_reset_3_amendment.operation_ledger, no_spend_attestations: bootstrap_policy.G2_reset_3_amendment.no_spend_attestations, required_records: bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.required_records, authority_input_schema: bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.authority_input_schema, capability_evidence_schema: bootstrap_policy.G2_reset_3_amendment.preseed_admission_validator.authority_input_schema.operation_capability_evidence_schema, refresh_revalidation_verifier: bootstrap_policy.G2_reset_3_amendment.refresh_revalidation_result_event_verifier.source}
-        sha256: 449485f7d580e5f3d3fd9108f5d7c559870eb4126a726e33ab624853f4d64e67
+        sha256: 0e84c18b81576d29c58f8b1adde622c596cdf32d42a4d0832a6234ba9f65ffe1
         source: exact_authenticated_current_LOOP_SPEC_blob
         broker_recomputation:
           authority: broker_builtin_active_projection_generator
@@ -10644,10 +10749,72 @@ bootstrap_policy:
       required_records:
         planning_core:
           schema_version: bb.north_star_recovery.g2_planning_core.v3
-          exact_fields: [schema_version, parent_commit, head_commit, head_tree, execution_epoch, scope_version, plan_blob_oids, source_base_sha, source_merge_base_sha, writer_identity, supervisor_identity, human_identity, fresh, reviewed_base_head, reviewed_base_tree, created_at_utc, git_objects, planning_core_sha256]
+          exact_fields: [schema_version, parent_commit, head_commit, head_tree, execution_epoch, scope_version, plan_blob_oids, source_base_sha, source_merge_base_sha, writer_identity, supervisor_identity, human_identity, fresh, reviewed_base_head, reviewed_base_tree, created_at_utc, remote_recovery, git_objects, planning_core_sha256]
+          remote_recovery:
+            schema_version: bb.north_star_recovery.g2_remote_recovery.v1
+            exact_fields: [schema_version, repository_remote_url, remote_ref, observation_event_handle, observation_receipt_sha256, observation_replay_guard_event_handle, observation_replay_guard_sha256, observation_packet_key, observation_execution_epoch, observation_scope_version, observation_phase_id, observation_operation_class, observation_operation_instance_id, observation_invocation_id, observation_reservation_id, observed_remote_head, source_base_commit, source_merge_base_commit, authored_anchor_commit, authenticated_merge_commit, state_materialization_commits, allowed_materialization_paths, broker_observer, observation_method, observed_ref_tip, observed_at_utc, remote_recovery_sha256]
+            repository_remote_url: https://github.com/kmccleary3301/breadboard.git
+            remote_ref: refs/heads/north-star/recovery-execution
+            allowed_materialization_paths: [docs/plans/north_star_recovery/STATE.json]
+            broker_observer: omp_broker
+            observation_method: authenticated_github_remote_ref_tip_v1
+            observation_event_type: github_remote_ref_observation
+            observation_event_actor: omp_broker
+            observation_event_operation_class: planning_core_seal
+            observation_event_registered_in_authenticated_broker_store: true
+            observation_event_payload_exact_fields: [schema_version, packet_key, execution_epoch, scope_version, phase_id, operation_class, operation_instance_id, invocation_id, reservation_id, repository_remote_url, remote_ref, argv, stdout_hex, stdout_sha256, stderr_hex, stderr_sha256, exit_code, observation_nonce, observed_remote_head, observed_at_utc, receipt_sha256]
+            observation_event_schema_version: bb.north_star_recovery.g2_github_remote_ref_observation.v1
+            observation_receipt_digest_binds_exact_payload_without_receipt_sha256: true
+            observation_event_handle_and_receipt_sha256_bind_remote_recovery: true
+            exactly_one_remote_observation_event_in_admitted_broker_snapshot: true
+            observation_packet_epoch_scope_operation_instance_invocation_and_reservation_equal_completed_current_planning_core_seal_ledger_chain: true
+            fresh_cross_run_observation_receipt_replay: reject
+            observation_replay_guard_event_type: github_remote_ref_observation_replay_guard
+            observation_replay_guard_schema_version: bb.north_star_recovery.g2_github_remote_ref_observation_replay_guard.v1
+            observation_replay_guard_actor: omp_broker
+            observation_replay_guard_operation_class: planning_core_seal
+            observation_replay_guard_payload_exact_fields: [schema_version, packet_key, execution_epoch, scope_version, phase_id, operation_class, operation_instance_id, invocation_id, reservation_id, capability_store_instance, observation_event_handle, observation_immutable_object_id, observation_nonce, replay_store_before_event_handle, replay_store_before_sha256, replay_store_after_event_handle, replay_store_after_sha256, prior_store_tip_sha256, prior_observation_immutable_object_ids, prior_observation_nonces, append_committed, recorded_store_tip_sha256, recorded_at_utc, guard_sha256]
+            observation_replay_store_snapshot_event_type: github_remote_ref_observation_replay_store_snapshot
+            observation_replay_store_snapshot_schema_version: bb.north_star_recovery.g2_github_remote_ref_observation_replay_store_snapshot.v1
+            observation_replay_store_snapshot_payload_exact_fields: [schema_version, store_instance_id, operation_instance_id, invocation_id, reservation_id, observation_event_handle, prior_store_tip_sha256, observation_immutable_object_ids, observation_nonces, captured_at_utc, body_sha256, store_tip_sha256]
+            exactly_one_replay_guard_and_exactly_two_before_after_replay_store_snapshot_events_in_admitted_broker_snapshot: true
+            replay_guard_handle_and_payload_sha256_bind_remote_recovery: true
+            replay_guard_capability_store_operation_invocation_reservation_and_nonce_equal_current_planning_core_broker_authority: true
+            replay_store_before_and_after_snapshot_handles_payload_digests_store_instance_operation_identity_and_observation_handle_bind_guard: true
+            replay_store_before_tip_and_sets_are_broker_authenticated_unique_and_exclude_current_observation: true
+            replay_store_after_prior_tip_equals_before_tip_and_sets_equal_exact_before_plus_current_observation: true
+            replay_store_empty_genesis_sets_require_recomputed_store_instance_genesis_tip: true
+            replay_guard_prior_and_recorded_tips_equal_authenticated_before_and_after_snapshot_tips: true
+            replay_guard_atomic_append_committed_and_before_guard_after_chronology_fresh: true
+            observation_exact_argv: ["/usr/bin/git", "ls-remote", "--refs", "https://github.com/kmccleary3301/breadboard.git", "refs/heads/north-star/recovery-execution"]
+            observation_stdout_exact_bytes: "<40-lowercase-oid>\\t<exact-ref>\\n"
+            observation_stderr_exact_bytes: ""
+            observation_exit_code_zero: true
+            observation_nonce_nonempty: true
+            observed_utc_and_head_equal_remote_record: true
+            authenticated_invocation_broker_clock_observation_freshness_seconds_max: 900
+            observation_nonfuture_and_not_after_planning_core_created_at_utc: true
+            observed_ref_tip_equals_observed_remote_head: true
+            state_materialization_commits_nonempty_ordered_and_final_equals_observed_remote_ref_tip: true
+            source_base_and_merge_base_equal_authored_anchor_exact_reviewed_base_parent_and_current_reviewed_base_head: true
+            source_tree_equals_reviewed_base_tree: true
+            authenticated_merge_raw_parents_exactly_source_base_then_authored_anchor: true
+            authenticated_merge_tree_equals_authored_anchor_head_tree: true
+            state_chain_each_commit_has_one_parent_equal_to_previous_merge_or_state_identity: true
+            state_tree_transitions_use_authenticated_recursive_raw_tree_diff: true
+            each_state_tree_transition_changes_exactly_allowed_materialization_paths: true
+            each_state_pre_and_post_STATE_leaf_exists_mode_100644_and_distinct_blob_oid: true
+            source_tree_recursively_closed_with_existing_authenticated_tree_walker: true
+            authenticated_head_base_source_and_transition_tree_leaf_maps_are_complete: true
+            remote_transition_blobs_are_required_in_git_objects: true
+            duplicate_missing_wrong_hash_or_unused_git_objects_rejected: true
+            remote_recovery_sha256_excludes_only_remote_recovery_sha256: true
           current_head_tree_and_two_plan_blob_oids_supplied_by_broker: true
           current_head_tree_and_blob_oids_recomputed_from_authenticated_git_object_bytes: true
-          git_objects_include_every_intermediate_tree_for_head_and_reviewed_parent: true
+          git_objects_include_source_base_merge_materialization_head_and_reviewed_parent_commit_bodies: true
+          git_objects_include_every_authenticated_changed_intermediate_tree_and_blob: true
+          every_planning_git_object_body_hex_equals_exact_lowercase_raw_hex: true
+          git_objects_reject_duplicate_missing_wrong_hash_or_unused_objects: true
           recursive_tree_walk_component_by_component: true
           exact_two_path_head_vs_base_diff_and_additions_deletions_recomputed: true
           no_other_path_change_or_flat_root_path_claim: true
@@ -10677,11 +10844,11 @@ bootstrap_policy:
             evidence_item_exact_fields: [control_id, predicate_id, path, blob_oid, blob_sha256, start_line, end_line, excerpt_sha256, outcome]
             mandatory_control_map:
               specification_correctness:
-                specification_execution_plan_complete: {path: docs/plans/north_star_recovery/EXECUTION_PLAN.md, predicate_id: execution_plan_requirements_complete_noncontradictory_and_executable}
-                specification_loop_spec_closed: {path: docs/plans/north_star_recovery/LOOP_SPEC.yaml, predicate_id: loop_spec_schemas_sources_projections_guards_events_states_and_digests_are_closed}
+                specification_execution_plan_complete_noncontradictory_and_executable: {path: docs/plans/north_star_recovery/EXECUTION_PLAN.md, predicate_id: execution_plan_requirements_complete_noncontradictory_and_executable}
+                specification_loop_spec_complete: {path: docs/plans/north_star_recovery/LOOP_SPEC.yaml, predicate_id: specification_sources_projections_guards_events_states_and_digests_are_closed}
               security_standards_generated_drift:
                 security_execution_plan_fail_closed: {path: docs/plans/north_star_recovery/EXECUTION_PLAN.md, predicate_id: execution_plan_authority_approval_and_evidence_boundaries_reject_untrusted_stale_or_ambiguous_inputs}
-                security_loop_spec_false_approval_closed: {path: docs/plans/north_star_recovery/LOOP_SPEC.yaml, predicate_id: loop_spec_authorization_review_replay_projection_and_transition_paths_fail_closed}
+                security_loop_spec_broker_owned_remote_materialization_integrity_receipt_replay_and_source_integrity_fail_closed: {path: docs/plans/north_star_recovery/LOOP_SPEC.yaml, predicate_id: loop_spec_remote_materialization_recomputes_recursive_authenticated_git_object_closure_binds_broker_observation_event_receipt_and_planning_core_identity_rejects_replay_stale_source_drift_mode_deletion_and_untrusted_paths_and_blocks_runtime_source_schema_digest_or_object_mismatch}
             exact_two_known_controls_one_per_complete_reviewed_path_for_each_lens: true
             evidence_outcome_enum: [satisfied, violated]
             approve_requires_every_mandatory_control_satisfied: true
@@ -11020,9 +11187,9 @@ bootstrap_policy:
         result_bytes_are_semantic_evidence_only_until_broker_stores_and_cross_binds_them: true
         fake_parent_or_direct_scalar_execution_cannot_create_a_capability_store_transition: true
         missing_mismatch_failed_or_future_digest: block
-      source_sha256: 5c35bf041a77b3b6c9adcb496a111689b0ad6ea94618e142b2ff246a4465d4b1
+      source_sha256: 60b163f45ae166f4963eedaa674a31b8dba98b1a9b1df964059ab6e1dc41a309
       source: |-
-        ACTIVE_PROJECTION_SHA256="449485f7d580e5f3d3fd9108f5d7c559870eb4126a726e33ab624853f4d64e67"
+        ACTIVE_PROJECTION_SHA256="0e84c18b81576d29c58f8b1adde622c596cdf32d42a4d0832a6234ba9f65ffe1"
         MACH_PROBE_SOURCE_SHA256="a3ccdf5fb5889a9b58641ae267666b63dee4db84e1c95598373d2d710d72137d"
         PREFLIGHT_PROBE_SOURCE_SHA256="de4675bbd98eabef15b9d9f0d0f2e71f5124008e3e842c9be3573389fe1d98f7"
         EXPECTED_GUARD_REGISTRY_SHA256="a8753cb3b70441e8b664fc37e73bfe11f4d7ef3e3fcee0d7570dfb6ec1d6ef45"
@@ -11099,7 +11266,8 @@ bootstrap_policy:
         FAILURE_CLASSIFICATION_FLAG_BY_ROUTE_CLASS={"cancellation":"cancellation_observed","environment":"runtime_capability_unrecoverable","identity_drift":"identity_drift_observed","human_action_invalidity":"human_action_invalidity_observed","candidate_review_terminal":"candidate_review_terminal_observed"}
         FAILURE_ROUTE_EVENT_CLASSES={"budget_or_review_cap_exhausted":"budget_exhausted","candidate_attempt_failed_with_capacity":"retryable_operation","candidate_ci_failed_with_capacity":"retryable_operation","candidate_review_failed":"candidate_review_terminal","closed_packet_bound_identity_or_digest_changed":"identity_drift","interrupt_or_cancellation":"cancellation","missing_expired_replayed_or_wrong_action":"human_action_invalidity","operation_failed_terminal":"operation_terminal","scope_source_identity_or_bound_digest_changed":"identity_drift","seed_attempt_failed_with_capacity":"retryable_operation","seed_ci_or_review_failed_with_capacity":"retryable_operation","unrecoverable_runtime_capability_or_transaction_reconciliation_failure":"environment"}
         FAILURE_ROUTE_EVENT_OPERATIONS={"budget_or_review_cap_exhausted":["seed_implementation_attempt","seed_review_round","seed_ci_rerun","candidate_implementation_attempt","candidate_review_round","candidate_ci_rerun"],"candidate_attempt_failed_with_capacity":["candidate_implementation_attempt"],"candidate_ci_failed_with_capacity":["candidate_ci_rerun"],"candidate_review_failed":["candidate_review_round"],"closed_packet_bound_identity_or_digest_changed":["packet_closure"],"interrupt_or_cancellation":"every_reset_3_operation_class","missing_expired_replayed_or_wrong_action":"every_human_action_operation_class","operation_failed_terminal":["activation_record_seal","anchor_selection","candidate_budget_validation","candidate_merge","candidate_preflight","candidate_review_round","capability_probe","evidence_seal","final_review","human_candidate_action_consumption","human_candidate_merge_action","human_closure_action_consumption","human_closure_anchor_selection_action","human_governance_action","human_packet_closure_action","human_planning_action_consumption","human_scope_budget_action","human_security_boundary_action","human_seed_action_consumption","human_seed_merge_action","human_seed_selection_action","installed_validation","live_recheck","packet_closure","planning_core_seal","planning_review","predecessor_search","private_validation","renderer","review_seal","seed_admission","seed_merge","selected_seed_checker_execution","selected_seed_checker_verification"],"scope_source_identity_or_bound_digest_changed":"every_reset_3_operation_class","seed_attempt_failed_with_capacity":["seed_implementation_attempt"],"seed_ci_or_review_failed_with_capacity":["seed_ci_rerun","seed_review_round"],"unrecoverable_runtime_capability_or_transaction_reconciliation_failure":"every_reset_3_operation_class"}
-        EXPECTED_SCHEMA_SOURCE_DIGESTS={"authority_input_schema":"5d39f1de6f2f7f903fe6f3c86f975d6cef5cecb3d28b6539c9429c0eeb3d2698","budgets":"6a9224fe01a9107492a294a23c334ebf765d4466430c4b7a185ded728c3e80f3","candidate_scope":"c7fa7b606629d87c813a6f5462a77ea4d85f473f7dd3b950c6f49c234832d9a2","capability_evidence_schema":"92871cc73607b499e35327a0c5e9b760a7f8bf02b9126539e9ea2674e00df8d2","fresh_action_consumption_map":"0011641e363aecc9bb5b805f61779b07c6e63804e4f588bd63357170cf3723b9","fresh_action_instances":"ce7829758b0b323bad70afa2163ac8812b2884389c460154d7dcc5e29e612565","negative_fixture_requirement":"d83bbc06d2637ed4090b32a113122ddd199762249bd981409ad8592248470096","no_spend_attestations":"061c68f63fe830d4d1dd842619cd5acbfd29333d31619eaafca8671e295ca8a2","non_ledger_transition_registry":"61cfea1d87216cc5b1dafdf96562eed249c68fb3e998a201129285c0d30b0d99","operation_ledger":"53b1cea4910bf3dc9d055a39431955822a487bb2b8f47d01ea916ffb932c0d7d","operation_profiles":"584a2a5410f41b65b844c2c56b99a0606eb2892a76b57560b8c7dc283c385521","phase_map":"69169a53cf1d864ab47591348f4baf25f9c79397edb132a6de4288d024b5daeb","refresh_revalidation_verifier":"a49c2b738f1f81194961fadb29db299a99cbb1ceed10f620e3aa2cb9bbf7d77d","required_records":"51cc2c12cb0c7738c503745ac639d83e6a6e866848e2f233af32a51e9e51e311","result_contract":"682e7dc6deb5fca2bb99e90714b87d7ec10fc94c585da88b2c9963567bc17240","seed_scope":"779c756b3a05bea33ce91c88ccec38c8b31951924fd0a59999a7006eb3e84ba0","selected_checker_conformance":"21a053b7b64ad55a2287ecf7b6bf20e78259013bdb8bac4c375cb35d2c2b5644","state_machine":"0f2febac57172e57e3c57075963224f6563c3e699ced57fa899c884fab34bd1c"}
+        EXPECTED_SCHEMA_SOURCE_DIGESTS={"authority_input_schema":"5d39f1de6f2f7f903fe6f3c86f975d6cef5cecb3d28b6539c9429c0eeb3d2698","budgets":"6a9224fe01a9107492a294a23c334ebf765d4466430c4b7a185ded728c3e80f3","candidate_scope":"c7fa7b606629d87c813a6f5462a77ea4d85f473f7dd3b950c6f49c234832d9a2","capability_evidence_schema":"92871cc73607b499e35327a0c5e9b760a7f8bf02b9126539e9ea2674e00df8d2","fresh_action_consumption_map":"0011641e363aecc9bb5b805f61779b07c6e63804e4f588bd63357170cf3723b9","fresh_action_instances":"ce7829758b0b323bad70afa2163ac8812b2884389c460154d7dcc5e29e612565","negative_fixture_requirement":"d83bbc06d2637ed4090b32a113122ddd199762249bd981409ad8592248470096","no_spend_attestations":"061c68f63fe830d4d1dd842619cd5acbfd29333d31619eaafca8671e295ca8a2","non_ledger_transition_registry":"61cfea1d87216cc5b1dafdf96562eed249c68fb3e998a201129285c0d30b0d99","operation_ledger":"53b1cea4910bf3dc9d055a39431955822a487bb2b8f47d01ea916ffb932c0d7d","operation_profiles":"584a2a5410f41b65b844c2c56b99a0606eb2892a76b57560b8c7dc283c385521","phase_map":"69169a53cf1d864ab47591348f4baf25f9c79397edb132a6de4288d024b5daeb","refresh_revalidation_verifier":"a49c2b738f1f81194961fadb29db299a99cbb1ceed10f620e3aa2cb9bbf7d77d","required_records":"afd1be92577f789a36d715fddbd264c1cef7aea76c410e8b3cdc03a3b6149f59","result_contract":"682e7dc6deb5fca2bb99e90714b87d7ec10fc94c585da88b2c9963567bc17240","selected_checker_conformance":"21a053b7b64ad55a2287ecf7b6bf20e78259013bdb8bac4c375cb35d2c2b5644","seed_scope":"779c756b3a05bea33ce91c88ccec38c8b31951924fd0a59999a7006eb3e84ba0","state_machine":"2de7f01e9397d403f3878dd2dcb7f015fb145195ae79c551994a0a0c0947b134"}
+        EXPECTED_SCHEMA_SOURCE_DIGESTS.update({"negative_fixture_requirement":"b40b002b31de686a8d40376ca7311e5381963e762ceca18e4f64fa579726f291","refresh_revalidation_verifier":"a49c2b738f1f81194961fadb29db299a99cbb1ceed10f620e3aa2cb9bbf7d77d","required_records":"536780715bacdfb883606c6b13b4ddc6b442ebb95127dbb9fd65a7c6cdb30f58","state_machine":"f3d66bef6078718cbeacb8d006aae68a5fc5e3361db0f3b262fefd05be3f4ddd"})
         RUNTIME_PATH_COMPONENT_FIELDS=["component_index","component_name","component_path","parent_path","device","inode","mode","owner_uid","owner_gid","file_flags","file_type","size_bytes","sha256","rdev","symlink_target","acl_length","acl_sha256","child_uid_write_denied","write_denial_basis","opened_nofollow","descriptor_identity_sha256","post_device","post_inode","post_mode","post_owner_uid","post_owner_gid","post_file_flags","post_file_type","post_size_bytes","post_sha256","post_rdev","post_symlink_target","post_acl_length","post_acl_sha256","post_descriptor_identity_sha256","post_opened_nofollow","component_sha256"]
         RUNTIME_DENIAL_MAX_AGE_SECONDS=300
         SELECTED_CHECKER_SNAPSHOT_MAX_LIVE_LAG_SECONDS=60
@@ -11251,7 +11419,7 @@ bootstrap_policy:
             "genesis_cycle_rejected":{"op":"replace","path":"/operation_ledger/genesis/predecessor_ledger_tip_sha256","value":"self"},
             "replayed_admission_rejected":{"op":"replace","path":"/required_records/stored_result_event_handles/exact_map","value":"replayed_handle_map"},
             "human_decision_rejected":{"op":"replace","path":"/fresh_action_instances/3/protected_action","value":"broker_invented_approve"},
-            "review_evidence_rejected":{"op":"remove","path":"/required_records/planning_reviews/parser_contract/mandatory_control_map/specification_correctness/specification_loop_spec_closed","value":None},
+            "review_evidence_rejected":{"op":"remove","path":"/required_records/planning_reviews/parser_contract/mandatory_control_map/specification_correctness/specification_loop_spec_complete","value":None},
             "denied_union_rejected":{"op":"replace","path":"/required_records/negative_manifest/exact_20_6_union_and_11_entry_mapping","value":False},
             "seed_scope_rejected":{"op":"append","path":"/seed_scope/allowed_paths","value":"unapproved/path"},
             "candidate_scope_rejected":{"op":"append","path":"/candidate_scope/allowed_paths","value":"unchanged/path"},
@@ -11958,16 +12126,27 @@ bootstrap_policy:
         def git_oid(kind,value):
             return hashlib.sha1((kind+" "+str(len(value))+"\0").encode("ascii")+value).hexdigest()
         def parse_commit(raw):
-            header=raw.split(b"\n\n",1)[0]
+            expect(isinstance(raw,bytes),"commit raw bytes")
+            header,separator,_=raw.partition(b"\n\n")
+            expect(separator==b"\n\n","commit header separator")
             fields={}
             parents=[]
-            for line in header.splitlines():
+            current_key=None
+            for line in header.split(b"\n"):
+                expect(b"\r" not in line and b"\x00" not in line,"commit header separators")
+                if line.startswith(b" "):
+                    expect(current_key==b"gpgsig","commit continuation")
+                    continue
                 key,sep,value=line.partition(b" ")
-                expect(sep==b" " and key in {b"tree",b"parent",b"author",b"committer"},"commit header")
+                expect(sep==b" " and value and not value.startswith(b" ") and key in {b"tree",b"parent",b"author",b"committer",b"gpgsig"},"commit header")
                 if key==b"parent":
-                    parents.append(value.decode("ascii"))
-                elif key not in fields:
+                    parent=value.decode("ascii")
+                    expect(oid(parent),"commit parent")
+                    parents.append(parent)
+                else:
+                    expect(key not in fields,"commit duplicate header")
                     fields[key]=value.decode("ascii")
+                current_key=key
             expect(oid(fields.get(b"tree")),"commit tree")
             expect(b"author" in fields and b"committer" in fields,"commit identities")
             return {"tree":fields[b"tree"],"parents":parents}
@@ -12005,8 +12184,411 @@ bootstrap_policy:
                     expect(not set(rows).intersection(child),"duplicate recursive path")
                     rows.update(child)
                 else:
+                    expect(entry["oid"] in objects and kinds.get(entry["oid"])=="blob","tree blob object")
                     rows[path]={"mode":entry["mode"],"oid":entry["oid"]}
             return rows,used_trees
+        def collect_tree_leaves(objects,kinds,tree_oid,prefix,used_trees,used_blobs):
+            expect(kinds.get(tree_oid)=="tree" and tree_oid in objects,"changed tree object")
+            used_trees.add(tree_oid)
+            leaves=set()
+            for entry in parse_tree(objects[tree_oid]):
+                path=entry["path"] if not prefix else prefix+"/"+entry["path"]
+                if entry["mode"]=="40000":
+                    leaves.update(collect_tree_leaves(objects,kinds,entry["oid"],path,used_trees,used_blobs))
+                else:
+                    expect(kinds.get(entry["oid"])=="blob" and entry["oid"] in objects,"changed blob object")
+                    used_blobs.add(entry["oid"])
+                    leaves.add(path)
+            return leaves
+        def diff_tree_paths(objects,kinds,left_tree_oid,right_tree_oid,prefix=""):
+            used_trees=set()
+            used_blobs=set()
+            def descend(left_oid,right_oid,path_prefix):
+                if left_oid==right_oid:
+                    return set()
+                expect(kinds.get(left_oid)=="tree" and kinds.get(right_oid)=="tree" and left_oid in objects and right_oid in objects,"changed tree pair")
+                used_trees.update({left_oid,right_oid})
+                left_entries={item["path"]:item for item in parse_tree(objects[left_oid])}
+                right_entries={item["path"]:item for item in parse_tree(objects[right_oid])}
+                changed_paths=set()
+                for name in sorted(set(left_entries)|set(right_entries)):
+                    left=left_entries.get(name)
+                    right=right_entries.get(name)
+                    path=name if not path_prefix else path_prefix+"/"+name
+                    if left==right:
+                        continue
+                    if left is not None and right is not None and left["mode"]==right["mode"]=="40000":
+                        changed_paths.update(descend(left["oid"],right["oid"],path))
+                        continue
+                    if left is not None and left["mode"]=="40000":
+                        changed_paths.update(collect_tree_leaves(objects,kinds,left["oid"],path,used_trees,used_blobs))
+                    elif left is not None:
+                        expect(kinds.get(left["oid"])=="blob" and left["oid"] in objects,"changed left blob")
+                        used_blobs.add(left["oid"])
+                        changed_paths.add(path)
+                    if right is not None and right["mode"]=="40000":
+                        changed_paths.update(collect_tree_leaves(objects,kinds,right["oid"],path,used_trees,used_blobs))
+                    elif right is not None:
+                        expect(kinds.get(right["oid"])=="blob" and right["oid"] in objects,"changed right blob")
+                        used_blobs.add(right["oid"])
+                        changed_paths.add(path)
+                return changed_paths
+            paths=descend(left_tree_oid,right_tree_oid,prefix)
+            return paths,used_trees,used_blobs
+        REMOTE_RECOVERY_FRESHNESS_SECONDS=900
+        def verify_remote_observation_operation(observation,observation_envelope,replay_guard,operation_instance_id,invocation_id,reservation_id,capability_store_instance,authority_replay_nonce):
+            expect((observation["packet_key"],observation["execution_epoch"],observation["scope_version"],observation["phase_id"],observation["operation_class"])==("G2","G2/reset-3","bb.north_star_recovery.g2.scope.v4","G2/reset-3/planning","planning_core_seal"),"remote observation packet epoch scope phase and operation class")
+            expect((observation["operation_instance_id"],observation["invocation_id"],observation["reservation_id"])==(operation_instance_id,invocation_id,reservation_id),"remote observation current planning-core operation binding")
+            expect((replay_guard["packet_key"],replay_guard["execution_epoch"],replay_guard["scope_version"],replay_guard["phase_id"],replay_guard["operation_class"],replay_guard["operation_instance_id"],replay_guard["invocation_id"],replay_guard["reservation_id"])==("G2","G2/reset-3","bb.north_star_recovery.g2.scope.v4","G2/reset-3/planning","planning_core_seal",operation_instance_id,invocation_id,reservation_id),"remote replay guard current planning-core operation binding")
+            expect(replay_guard["capability_store_instance"]==capability_store_instance and observation["observation_nonce"]==replay_guard["observation_nonce"]==authority_replay_nonce,"remote replay guard current capability store and broker authority nonce binding")
+            expect(replay_guard["observation_event_handle"]==observation_envelope["handle"] and replay_guard["observation_immutable_object_id"]==observation_envelope["immutable_object_id"],"remote replay guard immutable observation binding")
+        def verify_remote_recovery(core,objects,kinds,invocation_broker_clock_utc,broker_events):
+            remote=core["remote_recovery"]
+            remote_fields=["schema_version","repository_remote_url","remote_ref","observation_event_handle","observation_receipt_sha256","observation_replay_guard_event_handle","observation_replay_guard_sha256","observation_packet_key","observation_execution_epoch","observation_scope_version","observation_phase_id","observation_operation_class","observation_operation_instance_id","observation_invocation_id","observation_reservation_id","observed_remote_head","source_base_commit","source_merge_base_commit","authored_anchor_commit","authenticated_merge_commit","state_materialization_commits","allowed_materialization_paths","broker_observer","observation_method","observed_ref_tip","observed_at_utc","remote_recovery_sha256"]
+            exact(remote,remote_fields,"remote recovery")
+            observation_fields=["schema_version","packet_key","execution_epoch","scope_version","phase_id","operation_class","operation_instance_id","invocation_id","reservation_id","repository_remote_url","remote_ref","argv","stdout_hex","stdout_sha256","stderr_hex","stderr_sha256","exit_code","observation_nonce","observed_remote_head","observed_at_utc","receipt_sha256"]
+            observation=resolve_registered_event(broker_events,remote["observation_event_handle"],"github_remote_ref_observation","omp_broker",observation_fields,"bb.north_star_recovery.g2_github_remote_ref_observation.v1","github remote ref observation")
+            observation_handles=[handle for handle,envelope in broker_events.items() if isinstance(envelope,dict) and envelope.get("event_type")=="github_remote_ref_observation"]
+            expect(len(observation_handles)==1 and observation_handles[0]==remote["observation_event_handle"],"exactly one current remote observation event")
+            expect(remote["observation_receipt_sha256"]==observation["receipt_sha256"],"remote observation receipt binding")
+            expect(observation["receipt_sha256"]==sha({key:value for key,value in observation.items() if key!="receipt_sha256"}),"remote observation receipt digest")
+            observation_envelope=broker_events[remote["observation_event_handle"]]
+            replay_guard_fields=["schema_version","packet_key","execution_epoch","scope_version","phase_id","operation_class","operation_instance_id","invocation_id","reservation_id","capability_store_instance","observation_event_handle","observation_immutable_object_id","observation_nonce","replay_store_before_event_handle","replay_store_before_sha256","replay_store_after_event_handle","replay_store_after_sha256","prior_store_tip_sha256","prior_observation_immutable_object_ids","prior_observation_nonces","append_committed","recorded_store_tip_sha256","recorded_at_utc","guard_sha256"]
+            replay_guard=resolve_registered_event(broker_events,remote["observation_replay_guard_event_handle"],"github_remote_ref_observation_replay_guard","omp_broker",replay_guard_fields,"bb.north_star_recovery.g2_github_remote_ref_observation_replay_guard.v1","github remote ref observation replay guard")
+            replay_guard_handles=[handle for handle,envelope in broker_events.items() if isinstance(envelope,dict) and envelope.get("event_type")=="github_remote_ref_observation_replay_guard"]
+            expect(len(replay_guard_handles)==1 and replay_guard_handles[0]==remote["observation_replay_guard_event_handle"],"exactly one current remote observation replay guard")
+            expect(remote["observation_replay_guard_sha256"]==broker_events[remote["observation_replay_guard_event_handle"]]["payload_sha256"]==sha(replay_guard),"remote observation replay guard receipt binding")
+            expect(replay_guard["guard_sha256"]==sha({key:value for key,value in replay_guard.items() if key!="guard_sha256"}),"remote observation replay guard digest")
+            snapshot_fields=["schema_version","store_instance_id","operation_instance_id","invocation_id","reservation_id","observation_event_handle","prior_store_tip_sha256","observation_immutable_object_ids","observation_nonces","captured_at_utc","body_sha256","store_tip_sha256"]
+            before_snapshot=resolve_registered_event(broker_events,replay_guard["replay_store_before_event_handle"],"github_remote_ref_observation_replay_store_snapshot","omp_broker",snapshot_fields,"bb.north_star_recovery.g2_github_remote_ref_observation_replay_store_snapshot.v1","remote observation replay store before snapshot")
+            after_snapshot=resolve_registered_event(broker_events,replay_guard["replay_store_after_event_handle"],"github_remote_ref_observation_replay_store_snapshot","omp_broker",snapshot_fields,"bb.north_star_recovery.g2_github_remote_ref_observation_replay_store_snapshot.v1","remote observation replay store after snapshot")
+            snapshot_handles=[handle for handle,envelope in broker_events.items() if isinstance(envelope,dict) and envelope.get("event_type")=="github_remote_ref_observation_replay_store_snapshot"]
+            expect(len(snapshot_handles)==2 and set(snapshot_handles)=={replay_guard["replay_store_before_event_handle"],replay_guard["replay_store_after_event_handle"]},"exactly two current remote observation replay store snapshots")
+            expect(replay_guard["replay_store_before_sha256"]==broker_events[replay_guard["replay_store_before_event_handle"]]["payload_sha256"]==sha(before_snapshot) and replay_guard["replay_store_after_sha256"]==broker_events[replay_guard["replay_store_after_event_handle"]]["payload_sha256"]==sha(after_snapshot),"remote observation replay store snapshot digest binding")
+            for label,snapshot in (("before",before_snapshot),("after",after_snapshot)):
+                expect((snapshot["store_instance_id"],snapshot["operation_instance_id"],snapshot["invocation_id"],snapshot["reservation_id"],snapshot["observation_event_handle"])==(replay_guard["capability_store_instance"],replay_guard["operation_instance_id"],replay_guard["invocation_id"],replay_guard["reservation_id"],replay_guard["observation_event_handle"]),"remote observation replay store "+label+" current authority binding")
+                expect(isinstance(snapshot["observation_immutable_object_ids"],list) and isinstance(snapshot["observation_nonces"],list) and len(snapshot["observation_immutable_object_ids"])==len(snapshot["observation_nonces"]) and len(snapshot["observation_immutable_object_ids"])==len(set(snapshot["observation_immutable_object_ids"])) and len(snapshot["observation_nonces"])==len(set(snapshot["observation_nonces"])) and all(digest(item) for item in snapshot["observation_immutable_object_ids"]) and all(nonempty(item) for item in snapshot["observation_nonces"]) and digest(snapshot["prior_store_tip_sha256"]),"remote observation replay store "+label+" unique parallel sets and prior tip")
+                snapshot_body={key:value for key,value in snapshot.items() if key not in {"body_sha256","store_tip_sha256"}}
+                expect(snapshot["body_sha256"]==sha(snapshot_body) and snapshot["store_tip_sha256"]==sha({"prior_store_tip_sha256":snapshot["prior_store_tip_sha256"],"body_sha256":snapshot["body_sha256"]}),"remote observation replay store "+label+" digest chain")
+            genesis_tip=sha({"schema_version":"bb.north_star_recovery.g2_github_remote_ref_observation_replay_store_genesis.v1","store_instance_id":before_snapshot["store_instance_id"]})
+            expect(before_snapshot["observation_immutable_object_ids"] or before_snapshot["prior_store_tip_sha256"]==genesis_tip,"remote observation replay store empty genesis binding")
+            expect(replay_guard["prior_observation_immutable_object_ids"]==before_snapshot["observation_immutable_object_ids"] and replay_guard["prior_observation_nonces"]==before_snapshot["observation_nonces"],"remote observation replay guard authenticated prior sets")
+            expect(replay_guard["observation_immutable_object_id"] not in before_snapshot["observation_immutable_object_ids"] and replay_guard["observation_nonce"] not in before_snapshot["observation_nonces"],"remote observation replay guard nonreplay")
+            expect(after_snapshot["prior_store_tip_sha256"]==before_snapshot["store_tip_sha256"] and after_snapshot["observation_immutable_object_ids"]==before_snapshot["observation_immutable_object_ids"]+[replay_guard["observation_immutable_object_id"]] and after_snapshot["observation_nonces"]==before_snapshot["observation_nonces"]+[replay_guard["observation_nonce"]],"remote observation replay store exact atomic append")
+            expect(replay_guard["append_committed"] is True and replay_guard["prior_store_tip_sha256"]==before_snapshot["store_tip_sha256"] and replay_guard["recorded_store_tip_sha256"]==after_snapshot["store_tip_sha256"],"remote observation replay guard authenticated snapshot tips")
+            observed_at=timestamp(remote["observed_at_utc"]); before_at=timestamp(before_snapshot["captured_at_utc"]); replay_guard_recorded_at=timestamp(replay_guard["recorded_at_utc"]); after_at=timestamp(after_snapshot["captured_at_utc"])
+            expect(observed_at<=before_at<=replay_guard_recorded_at<=after_at<=timestamp(invocation_broker_clock_utc),"remote observation replay guard and store chronology")
+            expect(remote["schema_version"]=="bb.north_star_recovery.g2_remote_recovery.v1" and remote["repository_remote_url"]=="https://github.com/kmccleary3301/breadboard.git" and remote["remote_ref"]=="refs/heads/north-star/recovery-execution" and remote["broker_observer"]=="omp_broker" and remote["observation_method"]=="authenticated_github_remote_ref_tip_v1" and remote["observed_ref_tip"]==remote["observed_remote_head"],"remote recovery authenticated GitHub ref-tip observation")
+            expected_argv=["/usr/bin/git","ls-remote","--refs","https://github.com/kmccleary3301/breadboard.git","refs/heads/north-star/recovery-execution"]
+            expect(observation["repository_remote_url"]==remote["repository_remote_url"] and observation["remote_ref"]==remote["remote_ref"] and observation["argv"]==expected_argv,"remote observation URL ref argv")
+            expect(isinstance(observation["observation_nonce"],str) and bool(observation["observation_nonce"]),"remote observation nonce")
+            expect(observation["observed_remote_head"]==remote["observed_remote_head"] and observation["observed_at_utc"]==remote["observed_at_utc"],"remote observation head and time binding")
+            remote_observation_identity=(remote["observation_packet_key"],remote["observation_execution_epoch"],remote["observation_scope_version"],remote["observation_phase_id"],remote["observation_operation_class"],remote["observation_operation_instance_id"],remote["observation_invocation_id"],remote["observation_reservation_id"])
+            event_observation_identity=(observation["packet_key"],observation["execution_epoch"],observation["scope_version"],observation["phase_id"],observation["operation_class"],observation["operation_instance_id"],observation["invocation_id"],observation["reservation_id"])
+            expect(remote_observation_identity==event_observation_identity and event_observation_identity[:5]==("G2","G2/reset-3","bb.north_star_recovery.g2.scope.v4","G2/reset-3/planning","planning_core_seal") and all(nonempty(value) for value in event_observation_identity[5:]),"remote observation scoped operation identity binding")
+            expect(observation["exit_code"]==0,"remote observation exit code")
+            expect(isinstance(observation["stdout_hex"],str) and observation["stdout_hex"]==observation["stdout_hex"].lower() and len(observation["stdout_hex"])%2==0 and all(char in "0123456789abcdef" for char in observation["stdout_hex"]),"remote observation stdout hex")
+            expect(isinstance(observation["stderr_hex"],str) and observation["stderr_hex"]==observation["stderr_hex"].lower() and len(observation["stderr_hex"])%2==0 and all(char in "0123456789abcdef" for char in observation["stderr_hex"]),"remote observation stderr hex")
+            stdout=bytes.fromhex(observation["stdout_hex"]); stderr=bytes.fromhex(observation["stderr_hex"])
+            expect(stdout==(remote["observed_remote_head"]+"\t"+remote["remote_ref"]+"\n").encode("ascii"),"remote observation stdout bytes")
+            expect(stderr==b"","remote observation stderr bytes")
+            expect(observation["stdout_sha256"]==sha_bytes(stdout) and observation["stderr_sha256"]==sha_bytes(stderr),"remote observation raw SHA-256")
+            expect(remote["allowed_materialization_paths"]==["docs/plans/north_star_recovery/STATE.json"],"remote recovery allowed path")
+            expect(isinstance(remote["state_materialization_commits"],list) and remote["state_materialization_commits"] and len(remote["state_materialization_commits"])==len(set(remote["state_materialization_commits"])),"remote recovery state chain")
+            expect(remote["remote_recovery_sha256"]==sha({key:value for key,value in remote.items() if key!="remote_recovery_sha256"}),"remote recovery digest")
+            identity_fields=["source_base_commit","source_merge_base_commit","authored_anchor_commit","authenticated_merge_commit","observed_remote_head","observed_ref_tip"]
+            identity_fields.extend(["parent_commit","head_commit","head_tree","reviewed_base_head","reviewed_base_tree","source_base_sha","source_merge_base_sha"])
+            expect(all(oid(core.get(key) if key in core else remote[key]) for key in identity_fields if key in core or key in remote),"remote recovery full OIDs")
+            expect(remote["source_base_commit"]==remote["source_merge_base_commit"]==core["parent_commit"]==core["reviewed_base_head"]==core["source_base_sha"]==core["source_merge_base_sha"],"remote recovery source base reviewed parent binding")
+            expect(remote["authored_anchor_commit"]==core["head_commit"],"authored anchor is planning head")
+            broker_clock=timestamp(invocation_broker_clock_utc)
+            observed_at=timestamp(remote["observed_at_utc"])
+            expect(remote["observed_at_utc"].endswith("Z") and observed_at<=timestamp(core["created_at_utc"]) and observed_at<=broker_clock and (broker_clock-observed_at).total_seconds()<=REMOTE_RECOVERY_FRESHNESS_SECONDS,"remote recovery observation freshness against authenticated invocation broker clock")
+            commit_ids={core["head_commit"],core["parent_commit"],remote["source_base_commit"],remote["authenticated_merge_commit"],*remote["state_materialization_commits"]}
+            expect(all(kinds.get(item)=="commit" and item in objects for item in commit_ids),"remote recovery commit objects")
+            source=parse_commit(objects[remote["source_base_commit"]])
+            head=parse_commit(objects[core["head_commit"]])
+            merge=parse_commit(objects[remote["authenticated_merge_commit"]])
+            expect(source["tree"]==core["reviewed_base_tree"] and head["parents"]==[core["reviewed_base_head"]],"remote recovery source tree and authored parent binding")
+            expect(merge["parents"]==[remote["source_base_commit"],core["head_commit"]] and merge["tree"]==head["tree"]==core["head_tree"],"authenticated merge relationship")
+            source_paths,source_tree_oids=walk_tree(objects,kinds,source["tree"])
+            used_trees=set(source_tree_oids)
+            used_blobs={item["oid"] for item in source_paths.values()}
+            previous_commit=remote["authenticated_merge_commit"]
+            previous_tree=merge["tree"]
+            for state_commit in remote["state_materialization_commits"]:
+                state=parse_commit(objects[state_commit])
+                expect(state["parents"]==[previous_commit],"state commit parent chain")
+                paths,transition_trees,transition_blobs=diff_tree_paths(objects,kinds,previous_tree,state["tree"])
+                expect(paths==set(remote["allowed_materialization_paths"]),"state transition path scope")
+                before_paths,before_tree_oids=walk_tree(objects,kinds,previous_tree)
+                after_paths,after_tree_oids=walk_tree(objects,kinds,state["tree"])
+                state_path=remote["allowed_materialization_paths"][0]
+                expect(state_path in before_paths and state_path in after_paths and before_paths[state_path]["mode"]=="100644" and after_paths[state_path]["mode"]=="100644" and before_paths[state_path]["oid"]!=after_paths[state_path]["oid"],"STATE leaf existence mode and distinct blob transition")
+                used_trees.update(transition_trees|before_tree_oids|after_tree_oids)
+                used_blobs.update(transition_blobs|{before_paths[state_path]["oid"],after_paths[state_path]["oid"]})
+                previous_commit=state_commit
+                previous_tree=state["tree"]
+            expect(remote["observed_remote_head"]==remote["observed_ref_tip"]==previous_commit,"remote recovery observed ref tip")
+            return commit_ids,used_trees,used_blobs,observation,observation_envelope,replay_guard
+        def remote_fixture():
+            old_state_blob=b"old-state\n"
+            old_state_blob_oid=git_oid("blob",old_state_blob)
+            state_blob=b"state\n"
+            state_blob_oid=git_oid("blob",state_blob)
+            recovery_tree_old=b"100644 STATE.json\0"+bytes.fromhex(old_state_blob_oid)
+            recovery_tree_old_oid=git_oid("tree",recovery_tree_old)
+            recovery_tree_new=b"100644 STATE.json\0"+bytes.fromhex(state_blob_oid)
+            recovery_tree_new_oid=git_oid("tree",recovery_tree_new)
+            plans_tree_old=b"40000 north_star_recovery\0"+bytes.fromhex(recovery_tree_old_oid)
+            plans_tree_old_oid=git_oid("tree",plans_tree_old)
+            plans_tree_new=b"40000 north_star_recovery\0"+bytes.fromhex(recovery_tree_new_oid)
+            plans_tree_new_oid=git_oid("tree",plans_tree_new)
+            docs_tree_old=b"40000 plans\0"+bytes.fromhex(plans_tree_old_oid)
+            docs_tree_old_oid=git_oid("tree",docs_tree_old)
+            docs_tree_new=b"40000 plans\0"+bytes.fromhex(plans_tree_new_oid)
+            docs_tree_new_oid=git_oid("tree",docs_tree_new)
+            state_tree_old=b"40000 docs\0"+bytes.fromhex(docs_tree_old_oid)
+            state_tree_old_oid=git_oid("tree",state_tree_old)
+            state_tree_new=b"40000 docs\0"+bytes.fromhex(docs_tree_new_oid)
+            state_tree_new_oid=git_oid("tree",state_tree_new)
+            def fixture_commit(tree,parents,label):
+                headers=[f"tree {tree}",*[f"parent {parent}" for parent in parents],"author Fixture <fixture@example.com> 0 +0000","committer Fixture <fixture@example.com> 0 +0000"]
+                return ("\n".join(headers)+"\n\n"+label+"\n").encode("ascii")
+            reviewed_parent=fixture_commit(state_tree_old_oid,[],"reviewed-parent")
+            reviewed_parent_oid=git_oid("commit",reviewed_parent)
+            authored=fixture_commit(state_tree_old_oid,[reviewed_parent_oid],"authored-anchor")
+            authored_oid=git_oid("commit",authored)
+            merge=fixture_commit(state_tree_old_oid,[reviewed_parent_oid,authored_oid],"authenticated-merge")
+            merge_oid=git_oid("commit",merge)
+            state=fixture_commit(state_tree_new_oid,[merge_oid],"state-materialization")
+            state_oid=git_oid("commit",state)
+            records=[("blob",old_state_blob_oid,old_state_blob),("blob",state_blob_oid,state_blob),("tree",recovery_tree_old_oid,recovery_tree_old),("tree",recovery_tree_new_oid,recovery_tree_new),("tree",plans_tree_old_oid,plans_tree_old),("tree",plans_tree_new_oid,plans_tree_new),("tree",docs_tree_old_oid,docs_tree_old),("tree",docs_tree_new_oid,docs_tree_new),("tree",state_tree_old_oid,state_tree_old),("tree",state_tree_new_oid,state_tree_new),("commit",reviewed_parent_oid,reviewed_parent),("commit",authored_oid,authored),("commit",merge_oid,merge),("commit",state_oid,state)]
+            objects={item[1]:item[2] for item in records}
+            kinds={item[1]:item[0] for item in records}
+            observation={"schema_version":"bb.north_star_recovery.g2_github_remote_ref_observation.v1","packet_key":"G2","execution_epoch":"G2/reset-3","scope_version":"bb.north_star_recovery.g2.scope.v4","phase_id":"G2/reset-3/planning","operation_class":"planning_core_seal","operation_instance_id":"fixture-current-planning-core-operation","invocation_id":"fixture-current-planning-core-invocation","reservation_id":"fixture-current-planning-core-reservation","repository_remote_url":"https://github.com/kmccleary3301/breadboard.git","remote_ref":"refs/heads/north-star/recovery-execution","argv":["/usr/bin/git","ls-remote","--refs","https://github.com/kmccleary3301/breadboard.git","refs/heads/north-star/recovery-execution"],"stdout_hex":(state_oid+"\trefs/heads/north-star/recovery-execution\n").encode("ascii").hex(),"stdout_sha256":"","stderr_hex":"","stderr_sha256":sha_bytes(b""),"exit_code":0,"observation_nonce":"fixture-observation-nonce","observed_remote_head":state_oid,"observed_at_utc":"2026-08-17T00:00:00Z","receipt_sha256":""}
+            stdout=bytes.fromhex(observation["stdout_hex"])
+            observation["stdout_sha256"]=sha_bytes(stdout)
+            observation["receipt_sha256"]=sha({key:value for key,value in observation.items() if key!="receipt_sha256"})
+            handle="fixture-github-remote-ref-observation"
+            envelope={"handle":handle,"origin":"omp_broker","immutable_object_id":"","raw_sha256":"","event_type":"github_remote_ref_observation","actor":"omp_broker","payload_sha256":sha(observation),"payload":observation}
+            object_preimage={key:value for key,value in envelope.items() if key not in {"raw_sha256","immutable_object_id"}}
+            envelope["immutable_object_id"]=sha_bytes(canon(object_preimage))
+            raw_preimage={key:value for key,value in envelope.items() if key!="raw_sha256"}
+            envelope["raw_sha256"]=sha_bytes(canon(raw_preimage))
+            def fixture_event(event_handle,event_type,payload):
+                event_envelope={"handle":event_handle,"origin":"omp_broker","immutable_object_id":"","raw_sha256":"","event_type":event_type,"actor":"omp_broker","payload_sha256":sha(payload),"payload":payload}
+                event_object_preimage={key:value for key,value in event_envelope.items() if key not in {"raw_sha256","immutable_object_id"}}
+                event_envelope["immutable_object_id"]=sha_bytes(canon(event_object_preimage))
+                event_raw_preimage={key:value for key,value in event_envelope.items() if key!="raw_sha256"}
+                event_envelope["raw_sha256"]=sha_bytes(canon(event_raw_preimage))
+                return event_envelope
+            store_instance_id="fixture-current-capability-store"
+            replay_store_before_handle="fixture-github-remote-ref-observation-replay-store-before"
+            replay_store_after_handle="fixture-github-remote-ref-observation-replay-store-after"
+            genesis_tip=sha({"schema_version":"bb.north_star_recovery.g2_github_remote_ref_observation_replay_store_genesis.v1","store_instance_id":store_instance_id})
+            replay_store_before={"schema_version":"bb.north_star_recovery.g2_github_remote_ref_observation_replay_store_snapshot.v1","store_instance_id":store_instance_id,"operation_instance_id":observation["operation_instance_id"],"invocation_id":observation["invocation_id"],"reservation_id":observation["reservation_id"],"observation_event_handle":handle,"prior_store_tip_sha256":genesis_tip,"observation_immutable_object_ids":[],"observation_nonces":[],"captured_at_utc":"2026-08-17T00:00:01Z","body_sha256":"","store_tip_sha256":""}
+            replay_store_before["body_sha256"]=sha({key:value for key,value in replay_store_before.items() if key not in {"body_sha256","store_tip_sha256"}})
+            replay_store_before["store_tip_sha256"]=sha({"prior_store_tip_sha256":replay_store_before["prior_store_tip_sha256"],"body_sha256":replay_store_before["body_sha256"]})
+            replay_store_before_envelope=fixture_event(replay_store_before_handle,"github_remote_ref_observation_replay_store_snapshot",replay_store_before)
+            replay_store_after={"schema_version":"bb.north_star_recovery.g2_github_remote_ref_observation_replay_store_snapshot.v1","store_instance_id":store_instance_id,"operation_instance_id":observation["operation_instance_id"],"invocation_id":observation["invocation_id"],"reservation_id":observation["reservation_id"],"observation_event_handle":handle,"prior_store_tip_sha256":replay_store_before["store_tip_sha256"],"observation_immutable_object_ids":[envelope["immutable_object_id"]],"observation_nonces":[observation["observation_nonce"]],"captured_at_utc":"2026-08-17T00:00:03Z","body_sha256":"","store_tip_sha256":""}
+            replay_store_after["body_sha256"]=sha({key:value for key,value in replay_store_after.items() if key not in {"body_sha256","store_tip_sha256"}})
+            replay_store_after["store_tip_sha256"]=sha({"prior_store_tip_sha256":replay_store_after["prior_store_tip_sha256"],"body_sha256":replay_store_after["body_sha256"]})
+            replay_store_after_envelope=fixture_event(replay_store_after_handle,"github_remote_ref_observation_replay_store_snapshot",replay_store_after)
+            replay_guard={"schema_version":"bb.north_star_recovery.g2_github_remote_ref_observation_replay_guard.v1","packet_key":"G2","execution_epoch":"G2/reset-3","scope_version":"bb.north_star_recovery.g2.scope.v4","phase_id":"G2/reset-3/planning","operation_class":"planning_core_seal","operation_instance_id":observation["operation_instance_id"],"invocation_id":observation["invocation_id"],"reservation_id":observation["reservation_id"],"capability_store_instance":store_instance_id,"observation_event_handle":handle,"observation_immutable_object_id":envelope["immutable_object_id"],"observation_nonce":observation["observation_nonce"],"replay_store_before_event_handle":replay_store_before_handle,"replay_store_before_sha256":replay_store_before_envelope["payload_sha256"],"replay_store_after_event_handle":replay_store_after_handle,"replay_store_after_sha256":replay_store_after_envelope["payload_sha256"],"prior_store_tip_sha256":replay_store_before["store_tip_sha256"],"prior_observation_immutable_object_ids":[],"prior_observation_nonces":[],"append_committed":True,"recorded_store_tip_sha256":replay_store_after["store_tip_sha256"],"recorded_at_utc":"2026-08-17T00:00:02Z","guard_sha256":""}
+            replay_guard["guard_sha256"]=sha({key:value for key,value in replay_guard.items() if key!="guard_sha256"})
+            replay_guard_handle="fixture-github-remote-ref-observation-replay-guard"
+            replay_guard_envelope=fixture_event(replay_guard_handle,"github_remote_ref_observation_replay_guard",replay_guard)
+            broker_events={handle:envelope,replay_store_before_handle:replay_store_before_envelope,replay_guard_handle:replay_guard_envelope,replay_store_after_handle:replay_store_after_envelope}
+            remote={"schema_version":"bb.north_star_recovery.g2_remote_recovery.v1","repository_remote_url":"https://github.com/kmccleary3301/breadboard.git","remote_ref":"refs/heads/north-star/recovery-execution","observation_event_handle":handle,"observation_receipt_sha256":observation["receipt_sha256"],"observation_packet_key":"G2","observation_execution_epoch":"G2/reset-3","observation_scope_version":"bb.north_star_recovery.g2.scope.v4","observation_phase_id":"G2/reset-3/planning","observation_operation_class":"planning_core_seal","observation_operation_instance_id":observation["operation_instance_id"],"observation_invocation_id":observation["invocation_id"],"observation_reservation_id":observation["reservation_id"],"observed_remote_head":state_oid,"source_base_commit":reviewed_parent_oid,"source_merge_base_commit":reviewed_parent_oid,"authored_anchor_commit":authored_oid,"authenticated_merge_commit":merge_oid,"state_materialization_commits":[state_oid],"allowed_materialization_paths":["docs/plans/north_star_recovery/STATE.json"],"broker_observer":"omp_broker","observation_method":"authenticated_github_remote_ref_tip_v1","observed_ref_tip":state_oid,"observed_at_utc":"2026-08-17T00:00:00Z","remote_recovery_sha256":""}
+            remote["observation_replay_guard_event_handle"]=replay_guard_handle
+            remote["observation_replay_guard_sha256"]=replay_guard_envelope["payload_sha256"]
+            remote["remote_recovery_sha256"]=sha({key:value for key,value in remote.items() if key!="remote_recovery_sha256"})
+            core={"head_commit":authored_oid,"head_tree":state_tree_old_oid,"parent_commit":reviewed_parent_oid,"reviewed_base_head":reviewed_parent_oid,"reviewed_base_tree":state_tree_old_oid,"source_base_sha":reviewed_parent_oid,"source_merge_base_sha":reviewed_parent_oid,"created_at_utc":"2026-08-17T00:00:00Z","remote_recovery":remote}
+            return core,objects,kinds,broker_events
+        def self_test_remote_valid():
+            core,objects,kinds,broker_events=remote_fixture()
+            commits,trees,blobs,observation,observation_envelope,replay_guard=verify_remote_recovery(core,objects,kinds,"2026-08-17T00:01:00Z",broker_events)
+            verify_remote_observation_operation(observation,observation_envelope,replay_guard,"fixture-current-planning-core-operation","fixture-current-planning-core-invocation","fixture-current-planning-core-reservation","fixture-current-capability-store","fixture-observation-nonce")
+            expect(core["remote_recovery"]["observed_remote_head"] in commits and trees and blobs,"valid remote recovery fixture")
+        def refresh_remote_observation_envelope(envelope):
+            payload=envelope["payload"]
+            payload["receipt_sha256"]=sha({key:value for key,value in payload.items() if key!="receipt_sha256"})
+            envelope["payload_sha256"]=sha(payload)
+            object_preimage={key:value for key,value in envelope.items() if key not in {"raw_sha256","immutable_object_id"}}
+            envelope["immutable_object_id"]=sha_bytes(canon(object_preimage))
+            raw_preimage={key:value for key,value in envelope.items() if key!="raw_sha256"}
+            envelope["raw_sha256"]=sha_bytes(canon(raw_preimage))
+        def refresh_remote_replay_store_envelope(envelope):
+            payload=envelope["payload"]
+            payload["body_sha256"]=sha({key:value for key,value in payload.items() if key not in {"body_sha256","store_tip_sha256"}})
+            payload["store_tip_sha256"]=sha({"prior_store_tip_sha256":payload["prior_store_tip_sha256"],"body_sha256":payload["body_sha256"]})
+            envelope["payload_sha256"]=sha(payload)
+            object_preimage={key:value for key,value in envelope.items() if key not in {"raw_sha256","immutable_object_id"}}
+            envelope["immutable_object_id"]=sha_bytes(canon(object_preimage))
+            raw_preimage={key:value for key,value in envelope.items() if key!="raw_sha256"}
+            envelope["raw_sha256"]=sha_bytes(canon(raw_preimage))
+        def refresh_remote_replay_guard_envelope(envelope):
+            payload=envelope["payload"]
+            payload["guard_sha256"]=sha({key:value for key,value in payload.items() if key!="guard_sha256"})
+            envelope["payload_sha256"]=sha(payload)
+            object_preimage={key:value for key,value in envelope.items() if key not in {"raw_sha256","immutable_object_id"}}
+            envelope["immutable_object_id"]=sha_bytes(canon(object_preimage))
+            raw_preimage={key:value for key,value in envelope.items() if key!="raw_sha256"}
+            envelope["raw_sha256"]=sha_bytes(canon(raw_preimage))
+        def remote_expect_rejected(label,mutator,recompute=True,broker_clock="2026-08-17T00:01:00Z",expected=None):
+            core,objects,kinds,broker_events=remote_fixture()
+            mutator(core,objects,kinds,broker_events)
+            remote=core["remote_recovery"]
+            if recompute:
+                remote["remote_recovery_sha256"]=sha({key:value for key,value in remote.items() if key!="remote_recovery_sha256"})
+            try:
+                _,_,_,observation,observation_envelope,replay_guard=verify_remote_recovery(core,objects,kinds,broker_clock,broker_events)
+                verify_remote_observation_operation(observation,observation_envelope,replay_guard,"fixture-current-planning-core-operation","fixture-current-planning-core-invocation","fixture-current-planning-core-reservation","fixture-current-capability-store","fixture-observation-nonce")
+            except ValueError as error:
+                expect(expected is None or expected in str(error),label+" intended rejection predicate")
+                return
+            raise ValueError(label)
+        def self_test_remote_digest_tamper():
+            remote_expect_rejected("remote recovery digest tamper",lambda core,objects,kinds,broker_events: core["remote_recovery"].update({"remote_recovery_sha256":"0"*64}),False,expected="remote recovery digest")
+        def self_test_remote_receipt_payload_tamper():
+            def mutate(core,objects,kinds,broker_events):
+                broker_events[core["remote_recovery"]["observation_event_handle"]]["payload"]["observed_remote_head"]=core["head_commit"]
+                refresh_remote_observation_envelope(broker_events[core["remote_recovery"]["observation_event_handle"]])
+                core["remote_recovery"]["observation_receipt_sha256"]=broker_events[core["remote_recovery"]["observation_event_handle"]]["payload"]["receipt_sha256"]
+            remote_expect_rejected("remote observation payload tamper",mutate,expected="remote observation head and time binding")
+        def self_test_remote_receipt_raw_stdout_tamper():
+            def mutate(core,objects,kinds,broker_events):
+                envelope=broker_events[core["remote_recovery"]["observation_event_handle"]]
+                envelope["payload"]["stdout_hex"]=b"forged\n".hex()
+                refresh_remote_observation_envelope(envelope)
+                core["remote_recovery"]["observation_receipt_sha256"]=envelope["payload"]["receipt_sha256"]
+            remote_expect_rejected("remote observation raw stdout tamper",mutate,expected="remote observation stdout bytes")
+        def self_test_remote_receipt_handle_tamper():
+            remote_expect_rejected("remote observation handle tamper",lambda core,objects,kinds,broker_events: core["remote_recovery"].update({"observation_event_handle":"forged-observation-handle"}),True,expected="github remote ref observation handle")
+        def self_test_remote_receipt_envelope_tamper():
+            def mutate(core,objects,kinds,broker_events):
+                broker_events[core["remote_recovery"]["observation_event_handle"]]["actor"]="forged_actor"
+            remote_expect_rejected("remote observation envelope tamper",mutate,expected="registered type and actor")
+        def self_test_remote_receipt_duplicate():
+            def mutate(core,objects,kinds,broker_events):
+                original=broker_events[core["remote_recovery"]["observation_event_handle"]]
+                duplicate=json.loads(json.dumps(original))
+                duplicate["handle"]="fixture-duplicate-github-remote-ref-observation"
+                object_preimage={key:value for key,value in duplicate.items() if key not in {"raw_sha256","immutable_object_id"}}
+                duplicate["immutable_object_id"]=sha_bytes(canon(object_preimage))
+                raw_preimage={key:value for key,value in duplicate.items() if key!="raw_sha256"}
+                duplicate["raw_sha256"]=sha_bytes(canon(raw_preimage))
+                broker_events[duplicate["handle"]]=duplicate
+            remote_expect_rejected("duplicate remote observation event",mutate,expected="exactly one current remote observation event")
+        def self_test_remote_receipt_replay_operation_identity():
+            def mutate(core,objects,kinds,broker_events):
+                remote=core["remote_recovery"]
+                envelope=broker_events[remote["observation_event_handle"]]
+                replayed={"operation_instance_id":"replayed-planning-core-operation","invocation_id":"replayed-planning-core-invocation","reservation_id":"replayed-planning-core-reservation"}
+                envelope["payload"].update(replayed)
+                remote.update({"observation_operation_instance_id":replayed["operation_instance_id"],"observation_invocation_id":replayed["invocation_id"],"observation_reservation_id":replayed["reservation_id"]})
+                refresh_remote_observation_envelope(envelope)
+                remote["observation_receipt_sha256"]=envelope["payload"]["receipt_sha256"]
+            remote_expect_rejected("replayed remote observation operation identity",mutate,expected="remote observation current planning-core operation binding")
+        def self_test_remote_receipt_replay_store():
+            def mutate(core,objects,kinds,broker_events):
+                remote=core["remote_recovery"]
+                guard_envelope=broker_events[remote["observation_replay_guard_event_handle"]]
+                guard=guard_envelope["payload"]
+                guard["prior_observation_immutable_object_ids"].append(guard["observation_immutable_object_id"])
+                guard["prior_observation_nonces"].append(guard["observation_nonce"])
+                refresh_remote_replay_guard_envelope(guard_envelope)
+                remote["observation_replay_guard_sha256"]=guard_envelope["payload_sha256"]
+            remote_expect_rejected("cross-run exact remote observation replay",mutate,expected="remote observation replay guard authenticated prior sets")
+        def self_test_remote_receipt_replay_capability_store():
+            core,objects,kinds,broker_events=remote_fixture()
+            _,_,_,observation,observation_envelope,replay_guard=verify_remote_recovery(core,objects,kinds,"2026-08-17T00:01:00Z",broker_events)
+            try:
+                verify_remote_observation_operation(observation,observation_envelope,replay_guard,"fixture-current-planning-core-operation","fixture-current-planning-core-invocation","fixture-current-planning-core-reservation","forged-capability-store","fixture-observation-nonce")
+            except ValueError as error:
+                expect("remote replay guard current capability store and broker authority nonce binding" in str(error),"remote replay capability-store mismatch intended rejection predicate")
+                return
+            raise ValueError("remote replay capability-store mismatch accepted")
+        def self_test_remote_receipt_replay_authority_nonce():
+            core,objects,kinds,broker_events=remote_fixture()
+            _,_,_,observation,observation_envelope,replay_guard=verify_remote_recovery(core,objects,kinds,"2026-08-17T00:01:00Z",broker_events)
+            try:
+                verify_remote_observation_operation(observation,observation_envelope,replay_guard,"fixture-current-planning-core-operation","fixture-current-planning-core-invocation","fixture-current-planning-core-reservation","fixture-current-capability-store","forged-authority-replay-nonce")
+            except ValueError as error:
+                expect("remote replay guard current capability store and broker authority nonce binding" in str(error),"remote replay authority-nonce mismatch intended rejection predicate")
+                return
+            raise ValueError("remote replay authority-nonce mismatch accepted")
+        def self_test_remote_stale_observation():
+            def mutate(core,objects,kinds,broker_events):
+                remote=core["remote_recovery"]
+                remote["observed_at_utc"]="2026-08-16T23:59:00Z"
+                envelope=broker_events[remote["observation_event_handle"]]
+                envelope["payload"]["observed_at_utc"]=remote["observed_at_utc"]
+                refresh_remote_observation_envelope(envelope)
+                remote["observation_receipt_sha256"]=envelope["payload"]["receipt_sha256"]
+            remote_expect_rejected("stale remote observation",mutate,True,"2026-08-17T00:20:00Z",expected="remote recovery observation freshness")
+        def self_test_remote_wrong_merge_parent_or_order():
+            def mutate(core,objects,kinds,broker_events):
+                remote=core["remote_recovery"]
+                raw=("tree "+core["head_tree"]+"\nparent "+core["head_commit"]+"\nparent "+core["source_base_sha"]+"\nauthor Fixture <fixture@example.com> 0 +0000\ncommitter Fixture <fixture@example.com> 0 +0000\n\nauthenticated-merge-reversed\n").encode("ascii")
+                merge_oid=git_oid("commit",raw); objects[merge_oid]=raw; kinds[merge_oid]="commit"; remote.update({"authenticated_merge_commit":merge_oid})
+            remote_expect_rejected("reversed two-parent merge",mutate)
+        def self_test_remote_merge_tree_mismatch():
+            def mutate(core,objects,kinds,broker_events):
+                blob=b"wrong\n"; blob_oid=git_oid("blob",blob); tree=b"100644 wrong\0"+bytes.fromhex(blob_oid); tree_oid=git_oid("tree",tree)
+                raw=("tree "+tree_oid+"\nparent "+core["source_base_sha"]+"\nparent "+core["head_commit"]+"\nauthor Fixture <fixture@example.com> 0 +0000\ncommitter Fixture <fixture@example.com> 0 +0000\n\nbad-merge\n").encode("ascii")
+                merge_oid=git_oid("commit",raw); objects.update({blob_oid:blob,tree_oid:tree,merge_oid:raw}); kinds.update({blob_oid:"blob",tree_oid:"tree",merge_oid:"commit"}); core["remote_recovery"].update({"authenticated_merge_commit":merge_oid})
+            remote_expect_rejected("merge tree mismatch",mutate)
+        def self_test_remote_state_parent():
+            def mutate(core,objects,kinds,broker_events):
+                remote=core["remote_recovery"]; state=parse_commit(objects[remote["state_materialization_commits"][0]]); raw=("tree "+state["tree"]+"\nparent "+core["source_base_sha"]+"\nauthor Fixture <fixture@example.com> 0 +0000\ncommitter Fixture <fixture@example.com> 0 +0000\n\nbad-parent\n").encode("ascii"); bad=git_oid("commit",raw); objects[bad]=raw; kinds[bad]="commit"; remote.update({"state_materialization_commits":[bad],"observed_remote_head":bad,"observed_ref_tip":bad})
+            remote_expect_rejected("state commit wrong parent",mutate)
+        def self_test_remote_state_path():
+            def mutate(core,objects,kinds,broker_events):
+                remote=core["remote_recovery"]; state=parse_commit(objects[remote["state_materialization_commits"][0]]); blob=b"other\n"; blob_oid=git_oid("blob",blob); tree=b"100644 OTHER\0"+bytes.fromhex(blob_oid); tree_oid=git_oid("tree",tree); raw=("tree "+tree_oid+"\nparent "+remote["authenticated_merge_commit"]+"\nauthor Fixture <fixture@example.com> 0 +0000\ncommitter Fixture <fixture@example.com> 0 +0000\n\nbad-path\n").encode("ascii"); bad=git_oid("commit",raw); objects.update({blob_oid:blob,tree_oid:tree,bad:raw}); kinds.update({blob_oid:"blob",tree_oid:"tree",bad:"commit"}); remote.update({"state_materialization_commits":[bad],"observed_remote_head":bad,"observed_ref_tip":bad})
+            remote_expect_rejected("state transition path",mutate)
+        def self_test_remote_state_deletion():
+            def mutate(core,objects,kinds,broker_events):
+                remote=core["remote_recovery"]; empty_tree=b""; empty_tree_oid=git_oid("tree",empty_tree); raw=("tree "+empty_tree_oid+"\nparent "+remote["authenticated_merge_commit"]+"\nauthor Fixture <fixture@example.com> 0 +0000\ncommitter Fixture <fixture@example.com> 0 +0000\n\ndeleted-state\n").encode("ascii"); bad=git_oid("commit",raw); objects.update({empty_tree_oid:empty_tree,bad:raw}); kinds.update({empty_tree_oid:"tree",bad:"commit"}); remote.update({"state_materialization_commits":[bad],"observed_remote_head":bad,"observed_ref_tip":bad})
+            remote_expect_rejected("STATE deletion",mutate)
+        def self_test_remote_state_mode():
+            def mutate(core,objects,kinds,broker_events):
+                remote=core["remote_recovery"]; state=parse_commit(objects[remote["state_materialization_commits"][0]])
+                docs=next(item for item in parse_tree(objects[state["tree"]]) if item["path"]=="docs")
+                plans=next(item for item in parse_tree(objects[docs["oid"]]) if item["path"]=="plans")
+                recovery=next(item for item in parse_tree(objects[plans["oid"]]) if item["path"]=="north_star_recovery")
+                leaf=next(item for item in parse_tree(objects[recovery["oid"]]) if item["path"]=="STATE.json")
+                changed_recovery=b"100755 STATE.json\0"+bytes.fromhex(leaf["oid"]); changed_recovery_oid=git_oid("tree",changed_recovery)
+                changed_plans=b"40000 north_star_recovery\0"+bytes.fromhex(changed_recovery_oid); changed_plans_oid=git_oid("tree",changed_plans)
+                changed_docs=b"40000 plans\0"+bytes.fromhex(changed_plans_oid); changed_docs_oid=git_oid("tree",changed_docs)
+                changed_root=b"40000 docs\0"+bytes.fromhex(changed_docs_oid); changed_root_oid=git_oid("tree",changed_root)
+                raw=("tree "+changed_root_oid+"\nparent "+remote["authenticated_merge_commit"]+"\nauthor Fixture <fixture@example.com> 0 +0000\ncommitter Fixture <fixture@example.com> 0 +0000\n\nmode-state\n").encode("ascii")
+                bad=git_oid("commit",raw); objects.update({changed_recovery_oid:changed_recovery,changed_plans_oid:changed_plans,changed_docs_oid:changed_docs,changed_root_oid:changed_root,bad:raw}); kinds.update({changed_recovery_oid:"tree",changed_plans_oid:"tree",changed_docs_oid:"tree",changed_root_oid:"tree",bad:"commit"}); remote.update({"state_materialization_commits":[bad],"observed_remote_head":bad,"observed_ref_tip":bad})
+            remote_expect_rejected("STATE mode mutation",mutate)
+        def self_test_remote_head_mismatch():
+            remote_expect_rejected("remote head mismatch",lambda core,objects,kinds,broker_events: core["remote_recovery"].update({"observed_remote_head":core["head_commit"]}))
+        def self_test_remote_source_oid():
+            remote_expect_rejected("malformed source base oid",lambda core,objects,kinds,broker_events: core["remote_recovery"].update({"source_base_commit":"not-an-oid"}))
+            remote_expect_rejected("stale source base oid",lambda core,objects,kinds,broker_events: core["remote_recovery"].update({"source_base_commit":"0"*40,"source_merge_base_commit":"0"*40}))
+        def self_test_source_scalar_chomping_mismatch():
+            marker=b"\n        missing_mismatch_failed_or_future_digest: block\n      source_sha256: "+b"52eb5eb9342883804222cbd728661a5be8758cf676ab2a87195fcecb303bda22"+b"\n      source: |-\n"
+            fixture=marker+b"        print('first')\n\n        print('last')\n      next: true\n"
+            scalar=extract_source_scalar(fixture)
+            expect(scalar==b"print('first')\n\nprint('last')","source scalar preserves blanks and strips YAML trailing line breaks")
+            try:
+                expect(scalar==b"print('first')\n\nprint('last')\n","source scalar chomping mismatch")
+            except ValueError:
+                return
+            raise ValueError("source scalar chomping mismatch was accepted")
+        def self_test_source_scalar_digest_mismatch():
+            marker=b"\n        missing_mismatch_failed_or_future_digest: block\n      source_sha256: "+b"0"*64+b"\n      source: |-\n"
+            fixture=marker+b"        print('first')\n\n        print('last')\n      next: true\n"
+            try:
+                extract_source_scalar(fixture)
+            except ValueError:
+                return
+            raise ValueError("source scalar digest mismatch was accepted")
         def resolve_tree_path(objects,kinds,root_oid,path):
             expect(isinstance(path,str) and path and not path.startswith("/") and not path.endswith("/") and "//" not in path,"historical canonical path")
             parts=path.split("/")
@@ -12026,16 +12608,65 @@ bootstrap_policy:
                 used.add(tree_oid)
             raise ValueError("historical path resolution")
         def extract_source_scalar(loop_blob):
-            marker=b"\n        missing_mismatch_failed_or_future_digest: block\n      source: |-\n"
+            marker=b"\n        missing_mismatch_failed_or_future_digest: block\n      source_sha256: "
             expect(loop_blob.count(marker)==1,"preseed validator source anchor")
-            body=loop_blob.split(marker,1)[1]
+            digest_line,separator,body=loop_blob.split(marker,1)[1].partition(b"\n")
+            expect(separator==b"\n" and len(digest_line)==64 and all(byte in b"0123456789abcdef" for byte in digest_line),"preseed validator source digest anchor")
+            source_marker=b"      source: |-\n"
+            expect(body.startswith(source_marker),"preseed validator source block anchor")
+            body=body[len(source_marker):]
             lines=[]
             for line in body.splitlines(keepends=True):
-                if not line.startswith(b"        "):
+                content=line.rstrip(b"\r\n")
+                if not content.strip(b" "):
+                    lines.append(b"\n" if line.endswith((b"\n",b"\r")) else b"")
+                    continue
+                leading=len(line)-len(line.lstrip(b" "))
+                if leading<8:
                     break
                 lines.append(line[8:])
             expect(lines,"source scalar body")
-            return b"".join(lines)
+            result=b"".join(lines)
+            while result.endswith(b"\n"):
+                result=result[:-1]
+                if result.endswith(b"\r"):
+                    result=result[:-1]
+            expect(sha_bytes(result)==digest_line.decode("ascii"),"declared source scalar digest matches extracted bytes")
+            return result
+        def verify_planning_object_body_hex(body_hex):
+            expect(isinstance(body_hex,str),"planning object body hex type")
+            body=bytes.fromhex(body_hex)
+            expect(body_hex==body.hex(),"planning object body hex canonical lowercase exact bytes")
+            return body
+        def self_test_noncanonical_planning_object_hex():
+            try:
+                verify_planning_object_body_hex("AB")
+            except ValueError:
+                return
+            raise ValueError("noncanonical planning object body hex was accepted")
+        self_test_remote_valid()
+        self_test_remote_digest_tamper()
+        self_test_remote_receipt_payload_tamper()
+        self_test_remote_receipt_raw_stdout_tamper()
+        self_test_remote_receipt_handle_tamper()
+        self_test_remote_receipt_envelope_tamper()
+        self_test_remote_receipt_duplicate()
+        self_test_remote_receipt_replay_operation_identity()
+        self_test_remote_receipt_replay_store()
+        self_test_remote_receipt_replay_capability_store()
+        self_test_remote_receipt_replay_authority_nonce()
+        self_test_remote_stale_observation()
+        self_test_remote_wrong_merge_parent_or_order()
+        self_test_remote_merge_tree_mismatch()
+        self_test_remote_state_parent()
+        self_test_remote_state_path()
+        self_test_remote_state_deletion()
+        self_test_remote_state_mode()
+        self_test_remote_head_mismatch()
+        self_test_remote_source_oid()
+        self_test_source_scalar_chomping_mismatch()
+        self_test_source_scalar_digest_mismatch()
+        self_test_noncanonical_planning_object_hex()
         def runtime_check(source_bytes,invocation,attestation,executable_descriptor):
             expect(sys.argv==["-c"] and sys.flags.isolated==1 and sys.flags.no_site==1,"python isolation")
             expect(sys.executable==PYTHON_EXECUTABLE,"child executable path")
@@ -12624,6 +13255,8 @@ bootstrap_policy:
         semantic_input_role_fields=["selector","role","authority_event_handle","authority_object_id","authority_object_sha256","descriptor_grant_event_handle","immutable_object_id","object_sha256"]
         semantic_input_snapshot_fields=["schema_version","operation_class","operation_instance_id","invocation_id","reservation_id","profile_digest","ledger_tip_sha256","ordered_roles","resolved_role_map","ordered_handles","ordered_object_digests","semantic_input_set_sha256","snapshot_sha256"]
         semantic_input_authority_fields=["schema_version","operation_class","operation_instance_id","invocation_id","reservation_id","profile_digest","ledger_tip_sha256","role","authority_event_handle","descriptor_object_id","descriptor_object_sha256","source_event_handles","source_object_ids","source_object_digests","materialized_at_utc","authority_sha256"]
+        remote_replay_guard_fields=["schema_version","packet_key","execution_epoch","scope_version","phase_id","operation_class","operation_instance_id","invocation_id","reservation_id","capability_store_instance","observation_event_handle","observation_immutable_object_id","observation_nonce","replay_store_before_event_handle","replay_store_before_sha256","replay_store_after_event_handle","replay_store_after_sha256","prior_store_tip_sha256","prior_observation_immutable_object_ids","prior_observation_nonces","append_committed","recorded_store_tip_sha256","recorded_at_utc","guard_sha256"]
+        remote_replay_store_snapshot_fields=["schema_version","store_instance_id","operation_instance_id","invocation_id","reservation_id","observation_event_handle","prior_store_tip_sha256","observation_immutable_object_ids","observation_nonces","captured_at_utc","body_sha256","store_tip_sha256"]
         private_store_operand_fields=["descriptor_id","role","transport","event_handle","immutable_object_id","object_sha256","reservation_id","invocation_id"]
         creator_source_object_fields=["oid","body_hex"]
         creator_source_fields=["creator_commit_oid","creator_commit_object_hex","creator_tree_oid","creator_tree_object_hex","creator_tree_objects","creator_blob_oid","creator_blob_object_hex","source_path","source_bytes_hex","source_bytes_sha256","creator_source_sha256"]
@@ -12674,6 +13307,9 @@ bootstrap_policy:
         worker_event_types={"capability_probe_worker_request","capability_probe_worker_response"}
         active_event_payload_fields={
           "planning_review_raw_artifact":["schema_version","operation_instance_id","operation_class","review_round_id","subject_bindings_sha256","artifact_handle","artifact_bytes_hex","artifact_bytes_sha256"],
+          "github_remote_ref_observation":["schema_version","packet_key","execution_epoch","scope_version","phase_id","operation_class","operation_instance_id","invocation_id","reservation_id","repository_remote_url","remote_ref","argv","stdout_hex","stdout_sha256","stderr_hex","stderr_sha256","exit_code","observation_nonce","observed_remote_head","observed_at_utc","receipt_sha256"],
+          "github_remote_ref_observation_replay_guard":remote_replay_guard_fields,
+          "github_remote_ref_observation_replay_store_snapshot":remote_replay_store_snapshot_fields,
           "runtime_write_denial_prelaunch":runtime_write_denial_record_fields,
           "runtime_write_denial_post_waitpid":runtime_write_denial_record_fields,
           "operation_capability_manifest":capability_fields,
@@ -12760,6 +13396,7 @@ bootstrap_policy:
         active_event_actor["runtime_write_denial_prelaunch"]="omp_broker"
         active_event_actor["runtime_write_denial_post_waitpid"]="omp_broker"
         active_event_actor.update({"selected_seed_checker_challenge_bundle":"omp_broker","selected_seed_checker_case_execution":"omp_broker","selected_seed_checker_conformance_result":"omp_broker","selected_seed_checker_conformance_receipt":"omp_broker","selected_seed_checker_execution":"omp_broker","selected_seed_checker_source_resolution":"omp_broker"})
+        active_event_actor.update({"github_remote_ref_observation":"omp_broker","github_remote_ref_observation_replay_guard":"omp_broker","github_remote_ref_observation_replay_store_snapshot":"omp_broker"})
         active_event_actor.update({"broker_builtin_authority":"omp_broker","delegated_agent_route":"omp_broker"})
         active_event_actor.update({"reset_3_refresh_authority_revalidation_result":"omp_broker","reset_3_refresh_authority_revalidated":"omp_broker","downstream_invalidation_record":"omp_broker","refresh_replay_store_snapshot":"omp_broker","operation_failure_observation":"omp_broker","operation_failure_classification":"omp_broker","operation_failure_no_mutation_no_spend":"omp_broker","operation_failure_downstream_snapshot":"omp_broker","operation_failure_runtime_reconciliation":"omp_broker","operation_failure_transaction_reconciliation":"omp_broker","operation_failure_identity_reconciliation":"omp_broker","operation_failure_timeout_observation":"omp_broker","operation_failure_integrity_observation":"omp_broker","operation_failure_candidate_review_verdict":"omp_broker","operation_failure_protected_artifact_snapshot":"omp_broker","operation_failure_cancellation_observation":"omp_broker"})
         active_event_actor.update({"capability_probe_worker_request":"delegated_worker_handle","capability_probe_worker_response":"delegated_worker_handle"})
@@ -12776,6 +13413,7 @@ bootstrap_policy:
         all_event_operation_class.update({"planning_review_raw_artifact":"planning_review|seed_review_round|candidate_review_round","capability_probe_route":"capability_probe","capability_probe_challenge":"capability_probe","capability_probe_worker_request":"capability_probe","capability_probe_worker_response":"capability_probe","capability_probe_broker_denial":"capability_probe","capability_probe_store_snapshot":"capability_probe","private_store_operand_grant":"every_broker_builtin_or_delegated_agent_operation_class","broker_builtin_authority":"every_broker_builtin_or_delegated_agent_operation_class","delegated_agent_route":"every_broker_builtin_or_delegated_agent_operation_class","mach_lookup_denial_receipt":"every_reset_3_operation_class","operation_network_denial_receipt":"every_reset_3_operation_class"})
         all_event_operation_class.update({"reset_3_refresh_authority_revalidation_result":"reset_3_refresh_revalidation","reset_3_refresh_authority_revalidated":"reset_3_refresh_revalidation","downstream_invalidation_record":"every_reset_3_operation_class","refresh_replay_store_snapshot":"reset_3_refresh_revalidation"})
         all_event_operation_class["operation_failure_candidate_review_verdict"]="candidate_review_round"
+        all_event_operation_class.update({"github_remote_ref_observation":"planning_core_seal","github_remote_ref_observation_replay_guard":"planning_core_seal","github_remote_ref_observation_replay_store_snapshot":"planning_core_seal"})
         all_event_operation_class.update({"runtime_write_denial_prelaunch":"seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun|selected_seed_checker_execution|selected_seed_checker_verification","runtime_write_denial_post_waitpid":"seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun|selected_seed_checker_execution|selected_seed_checker_verification","human_action_response":"human_scope_budget_action|human_governance_action|human_security_boundary_action|human_seed_selection_action|human_seed_merge_action|human_candidate_merge_action|human_closure_anchor_selection_action|human_packet_closure_action","human_action_grant":"human_scope_budget_action|human_governance_action|human_security_boundary_action|human_seed_selection_action|human_seed_merge_action|human_candidate_merge_action|human_closure_anchor_selection_action|human_packet_closure_action","human_action_consumption":"human_planning_action_consumption|human_seed_action_consumption|human_candidate_action_consumption|human_closure_action_consumption","mach_probe_identity_drop":"seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun|selected_seed_checker_execution|selected_seed_checker_verification","mach_lookup_probe_output":"seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun|selected_seed_checker_execution|selected_seed_checker_verification","preflight_probe_identity_drop":"seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun|selected_seed_checker_execution|selected_seed_checker_verification","preflight_probe_output":"seed_admission|candidate_budget_validation|candidate_ci_rerun|installed_validation|private_validation|renderer|seed_ci_rerun|selected_seed_checker_execution|selected_seed_checker_verification"})
         for value in broker_events.values():
             verify_envelope(value,None,None)
@@ -12867,14 +13505,15 @@ bootstrap_policy:
         expect(invocation["broker_attestation_sha256"]==attestation["runtime_attestation_sha256"] and invocation["result_fifo_descriptor_id"]==result_descriptor["descriptor_id"] and result_descriptor["reservation_id"]==invocation["reservation_id"] and result_descriptor["invocation_id"]==invocation["invocation_id"] and invocation["launch_record_event_handle"]==attestation["launch_record_event_handle"] and invocation["launch_record_sha256"]==attestation["launch_record_sha256"]==launch_record["launch_record_sha256"],"invocation broker bindings")
         expect(invocation["invocation_manifest_sha256"]==sha({key:value for key,value in invocation.items() if key!="invocation_manifest_sha256"}),"invocation digest")
         runtime_check(by_role["source_scalar"][1],invocation,attestation,by_role["executable"][0])
-        core_fields=["schema_version","parent_commit","head_commit","head_tree","execution_epoch","scope_version","plan_blob_oids","source_base_sha","source_merge_base_sha","writer_identity","supervisor_identity","human_identity","fresh","reviewed_base_head","reviewed_base_tree","created_at_utc","git_objects","planning_core_sha256"]
+        core_fields=["schema_version","parent_commit","head_commit","head_tree","execution_epoch","scope_version","plan_blob_oids","source_base_sha","source_merge_base_sha","writer_identity","supervisor_identity","human_identity","fresh","reviewed_base_head","reviewed_base_tree","created_at_utc","remote_recovery","git_objects","planning_core_sha256"]
         exact(core,core_fields,"planning core")
         expect(core["schema_version"]=="bb.north_star_recovery.g2_planning_core.v3" and core["execution_epoch"]=="G2/reset-3" and core["scope_version"]=="bb.north_star_recovery.g2.scope.v4" and nonempty(core["writer_identity"]) and core["supervisor_identity"]=="Main" and core["human_identity"]=="Kyle_McCleary" and core["fresh"] is True and core["parent_commit"]==core["reviewed_base_head"] and core["planning_core_sha256"]==sha({key:value for key,value in core.items() if key!="planning_core_sha256"}),"planning core")
+        expect(all(oid(core[key]) for key in ("parent_commit","head_commit","head_tree","reviewed_base_head","reviewed_base_tree","source_base_sha","source_merge_base_sha")),"planning core full identities")
         object_by_oid={}
         kind_by_oid={}
         for item in core["git_objects"]:
             exact(item,["kind","oid","body_hex"],"planning object")
-            body=bytes.fromhex(item["body_hex"])
+            body=verify_planning_object_body_hex(item["body_hex"])
             expect(item["kind"] in {"commit","tree","blob"} and oid(item["oid"]) and item["oid"] not in object_by_oid and git_oid(item["kind"],body)==item["oid"],"planning object identity")
             object_by_oid[item["oid"]]=body
             kind_by_oid[item["oid"]]=item["kind"]
@@ -12882,13 +13521,18 @@ bootstrap_policy:
         head=parse_commit(object_by_oid[core["head_commit"]])
         parent=parse_commit(object_by_oid[core["parent_commit"]])
         expect(head["tree"]==core["head_tree"] and head["parents"]==[core["parent_commit"]] and parent["tree"]==core["reviewed_base_tree"],"head parent tree binding")
+        remote_commit_oids,remote_tree_oids,remote_blob_oids,remote_observation,remote_observation_envelope,remote_replay_guard=verify_remote_recovery(core,object_by_oid,kind_by_oid,invocation["broker_clock_utc"],broker_events)
         head_paths,head_tree_oids=walk_tree(object_by_oid,kind_by_oid,core["head_tree"])
         base_paths,base_tree_oids=walk_tree(object_by_oid,kind_by_oid,core["reviewed_base_tree"])
         plan_paths={"docs/plans/north_star_recovery/EXECUTION_PLAN.md","docs/plans/north_star_recovery/LOOP_SPEC.yaml"}
         changed={path for path in set(head_paths)|set(base_paths) if path not in head_paths or path not in base_paths or head_paths[path]!=base_paths[path]}
         expected_plan_blobs={head_paths[path]["oid"] for path in plan_paths}|{base_paths[path]["oid"] for path in plan_paths}
+        expected_planning_blobs={item["oid"] for item in head_paths.values()}|{item["oid"] for item in base_paths.values()}
         expect(changed==plan_paths and set(core["plan_blob_oids"])=={head_paths[path]["oid"] for path in plan_paths},"exact recursive two-path diff")
-        expect({key for key,value in kind_by_oid.items() if value=="commit"}=={core["head_commit"],core["parent_commit"]} and {key for key,value in kind_by_oid.items() if value=="tree"}==head_tree_oids|base_tree_oids and {key for key,value in kind_by_oid.items() if value=="blob"}==expected_plan_blobs,"minimal authenticated planning object proof")
+        expected_commits={core["head_commit"],core["parent_commit"]}|remote_commit_oids
+        expected_trees=head_tree_oids|base_tree_oids|remote_tree_oids
+        expected_blobs=expected_planning_blobs|remote_blob_oids
+        expect({key for key,value in kind_by_oid.items() if value=="commit"}==expected_commits and {key for key,value in kind_by_oid.items() if value=="tree"}==expected_trees and {key for key,value in kind_by_oid.items() if value=="blob"}==expected_blobs,"minimal authenticated planning and remote object proof")
         additions=deletions=0
         for path in sorted(plan_paths):
             old=object_by_oid[base_paths[path]["oid"]].decode("utf-8").splitlines()
@@ -12933,12 +13577,12 @@ bootstrap_policy:
         review_times=[]
         required_review_controls={
             "specification_correctness":{
-                "specification_execution_plan_complete":("execution_plan_requirements_complete_noncontradictory_and_executable","docs/plans/north_star_recovery/EXECUTION_PLAN.md"),
-                "specification_loop_spec_closed":("loop_spec_schemas_sources_projections_guards_events_states_and_digests_are_closed","docs/plans/north_star_recovery/LOOP_SPEC.yaml"),
+                "specification_execution_plan_complete_noncontradictory_and_executable":("execution_plan_requirements_complete_noncontradictory_and_executable","docs/plans/north_star_recovery/EXECUTION_PLAN.md"),
+                "specification_loop_spec_complete":("specification_sources_projections_guards_events_states_and_digests_are_closed","docs/plans/north_star_recovery/LOOP_SPEC.yaml"),
             },
             "security_standards_generated_drift":{
                 "security_execution_plan_fail_closed":("execution_plan_authority_approval_and_evidence_boundaries_reject_untrusted_stale_or_ambiguous_inputs","docs/plans/north_star_recovery/EXECUTION_PLAN.md"),
-                "security_loop_spec_false_approval_closed":("loop_spec_authorization_review_replay_projection_and_transition_paths_fail_closed","docs/plans/north_star_recovery/LOOP_SPEC.yaml"),
+                "security_loop_spec_broker_owned_remote_materialization_integrity_receipt_replay_and_source_integrity_fail_closed":("loop_spec_remote_materialization_recomputes_recursive_authenticated_git_object_closure_binds_broker_observation_event_receipt_and_planning_core_identity_rejects_replay_stale_source_drift_mode_deletion_and_untrusted_paths_and_blocks_runtime_source_schema_digest_or_object_mismatch","docs/plans/north_star_recovery/LOOP_SPEC.yaml"),
             },
         }
         for value in reviews:
@@ -13146,6 +13790,8 @@ bootstrap_policy:
         expected_active_event_actors.update({"operation_failure_observation":"omp_broker","operation_failure_classification":"omp_broker","operation_failure_no_mutation_no_spend":"omp_broker","operation_failure_downstream_snapshot":"omp_broker"})
         expected_active_event_operations.update({"operation_failure_runtime_reconciliation":"every_reset_3_operation_class","operation_failure_transaction_reconciliation":"every_reset_3_operation_class","operation_failure_identity_reconciliation":"every_reset_3_operation_class","operation_failure_timeout_observation":"every_reset_3_operation_class","operation_failure_integrity_observation":"every_reset_3_operation_class","operation_failure_candidate_review_verdict":"candidate_review_round","operation_failure_protected_artifact_snapshot":"every_reset_3_operation_class","operation_failure_cancellation_observation":"every_reset_3_operation_class"})
         expected_active_event_actors.update({"operation_failure_runtime_reconciliation":"omp_broker","operation_failure_transaction_reconciliation":"omp_broker","operation_failure_identity_reconciliation":"omp_broker","operation_failure_timeout_observation":"omp_broker","operation_failure_integrity_observation":"omp_broker","operation_failure_candidate_review_verdict":"omp_broker","operation_failure_protected_artifact_snapshot":"omp_broker","operation_failure_cancellation_observation":"omp_broker"})
+        expected_active_event_operations.update({"github_remote_ref_observation":"planning_core_seal","github_remote_ref_observation_replay_guard":"planning_core_seal","github_remote_ref_observation_replay_store_snapshot":"planning_core_seal"})
+        expected_active_event_actors.update({"github_remote_ref_observation":"omp_broker","github_remote_ref_observation_replay_guard":"omp_broker","github_remote_ref_observation_replay_store_snapshot":"omp_broker"})
         for event_type,payload_fields in active_event_payload_fields.items():
             expect(event_type in broker_event_by_type and broker_event_by_type[event_type]=={"event_type":event_type,"operation_class":expected_active_event_operations[event_type],"actor_class":expected_active_event_actors[event_type],"payload_exact_fields":payload_fields},"embedded and declarative broker event schema parity")
         expect(projection_event==projection and projection["schema_version"]=="bb.north_star_recovery.g2_active_projection.v1" and projection["projection_bytes_sha256"]==sha_bytes(canon(projection_object)) and projection["projection_sha256"]==sha(projection_object)==ACTIVE_PROJECTION_SHA256 and projection["guard_registry_sha256"]==EXPECTED_GUARD_REGISTRY_SHA256 and projection["event_registry_sha256"]==EXPECTED_EVENT_REGISTRY_SHA256 and projection["loop_spec_blob_oid"]==head_paths["docs/plans/north_star_recovery/LOOP_SPEC.yaml"]["oid"] and projection["loop_spec_blob_sha256"]==sha_bytes(loop_blob) and projection["execution_plan_blob_oid"]==head_paths["docs/plans/north_star_recovery/EXECUTION_PLAN.md"]["oid"] and projection["execution_plan_blob_sha256"]==sha_bytes(execution_plan_blob) and timestamp(core["created_at_utc"])<timestamp(projection["generated_at_utc"])<timestamp(intent["created_at_utc"]) and projection["projection_record_sha256"]==sha({key:value for key,value in projection.items() if key!="projection_record_sha256"}),"active projection authority")
@@ -13821,7 +14467,7 @@ bootstrap_policy:
         expect(isinstance(stored_result_handles,dict) and all(nonempty(key) and nonempty(value) for key,value in stored_result_handles.items()),"stored result handle map")
         event_fields=["schema_version","packet_key","execution_epoch","phase_id","from_state","sequence","sequence_label","previous_event_sha256","event_kind","operation_instance_id","operation_class","reservation_id","actor_identity","source_identity","result_sha256","completion_event_sha256","receipt_event_handle","receipt_sha256","status","phase_counter_snapshot","aggregate_counter_snapshot","cap_snapshot","timestamp_utc","event_sha256"]
         expect(isinstance(events,list) and events,"nonempty operation ledger")
-        previous=genesis["genesis_sha256"]; prior_time=timestamp(genesis["created_at_utc"]); chains={}; active_reservations={}; operation_instance_ids=set(); failed_operation_instance_ids=set(); terminal_failure_operation_instance_ids=set(); counts={name:0 for name in ALL_CLASSES}
+        previous=genesis["genesis_sha256"]; prior_time=timestamp(genesis["created_at_utc"]); chains={}; active_reservations={}; operation_instance_ids=set(); operation_invocation_ids={}; operation_capability_store_instances={}; operation_authority_replay_nonces={}; failed_operation_instance_ids=set(); terminal_failure_operation_instance_ids=set(); counts={name:0 for name in ALL_CLASSES}
         candidate_operation_ledger_count=0
         failure_evidence_event_types={"operation_failure_observation","operation_failure_classification","operation_failure_no_mutation_no_spend","operation_failure_downstream_snapshot","operation_failure_runtime_reconciliation","operation_failure_transaction_reconciliation","operation_failure_identity_reconciliation","operation_failure_timeout_observation","operation_failure_integrity_observation","operation_failure_candidate_review_verdict","operation_failure_protected_artifact_snapshot","operation_failure_cancellation_observation"}
         referenced_failure_evidence_handles=set()
@@ -14054,8 +14700,11 @@ bootstrap_policy:
                 exact(acceptance,acceptance_fields,"broker acceptance")
                 operation_invocation=verify_envelope(broker_events[acceptance["operation_invocation_event_handle"]],"operation_invocation")
                 exact(operation_invocation,["schema_version","operation_class","operation_instance_id","execution_kind","source_identity","profile_digest","platform_identity_sha256","capability_manifest_event_handle","capability_manifest_sha256","invocation_intent_sha256","invocation_id","invocation_manifest_sha256","reservation_id","expected_child_uid","expected_child_gid","expected_child_supplementary_groups_sha256","input_object_handles_sha256","semantic_input_set_sha256","git_discovery_sha256","broker_current_state","invocation_record_sha256"],"operation invocation")
+                expect(event["operation_instance_id"] not in operation_invocation_ids,"operation invocation identity recorded once")
+                operation_invocation_ids[event["operation_instance_id"]]=operation_invocation["invocation_id"]
                 operation_capability=verify_envelope(broker_events[operation_invocation["capability_manifest_event_handle"]],"operation_capability_manifest")
                 exact(operation_capability,capability_fields,"operation capability manifest")
+                operation_capability_store_instances[event["operation_instance_id"]]=operation_capability["capability_store_instance"]
                 operation_kind=next(kind for kind,classes in KIND_CLASSES.items() if event["operation_class"] in classes)
                 operation_launch=verify_envelope(broker_events[acceptance["operation_launch_event_handle"]],"operation_launch_record")
                 exact(operation_launch,["schema_version","execution_kind","executor_instance_id","capability_store_instance","authority_descriptor_id","authority_descriptor_device","authority_descriptor_inode","authority_descriptor_mode","child_pid","parent_pid","expected_child_uid","expected_child_gid","expected_child_supplementary_groups_sha256","executable_path","executable_sha256","executable_device","executable_inode","executable_mode","sandbox_executable_path","sandbox_executable_sha256","sandbox_executable_device","sandbox_executable_inode","sandbox_executable_mode","sandbox_profile_sha256","argv","argv_sha256","environment","environment_sha256","source_path","source_descriptor_id","source_fd","source_device","source_inode","source_mode","source_bytes_hex","source_sha256","descriptor_grant_set_sha256","platform_identity_sha256","git_discovery_sha256","capability_manifest_sha256","invocation_id","reservation_id","input_object_handles_sha256","semantic_input_set_sha256","creator_source_sha256","result_fifo_descriptor_id","result_fifo_device","result_fifo_inode","launched_at_utc","launch_record_sha256"],"operation launch")
@@ -14066,6 +14715,9 @@ bootstrap_policy:
                 operation_fifo=verify_envelope(broker_events[acceptance["operation_result_fifo_event_handle"]],"result_fifo_grant")
                 expect(verify_bounded_result_fifo_drain(acceptance,operation_launch,result_event["status"]=="passed",65536 if event["operation_class"] in {"selected_seed_checker_execution","selected_seed_checker_verification"} else 67108864),"operation concurrent bounded result FIFO drain")
                 operation_capability_evidence=verify_envelope(broker_events[acceptance["operation_capability_evidence_event_handle"]],"operation_capability_evidence")
+                if operation_capability_evidence["proof_kind"]=="broker_builtin_no_child":
+                    operation_broker_authority=verify_envelope(broker_events[operation_capability_evidence["broker_builtin_no_child_proof"]["broker_authority_event_handle"]],"broker_builtin_authority")
+                    operation_authority_replay_nonces[event["operation_instance_id"]]=operation_broker_authority["replay_nonce"]
                 process_kind=operation_kind in {"embedded_validator","verified_script"}
                 passed_process=isinstance(receipt["child_exit_code"],int) and not isinstance(receipt["child_exit_code"],bool) and receipt["child_exit_code"]==0 and receipt["child_term_signal"] is None
                 if process_kind:
@@ -14128,6 +14780,11 @@ bootstrap_policy:
             expected=(["reservation","invocation","failure","completion","receipt"] if "failure" in kinds else ["reservation","invocation","result_stored"]+(["action_consumption"] if chain[0]["operation_class"] in consumption_classes else [])+["completion","receipt"])
             expect(kinds==expected and chain[-1]["receipt_event_handle"] is not None and len({item["result_sha256"] for item in chain[2:]})==1,"exact completed success or failure operation lifecycle")
             expect((all(item["status"]=="passed" for item in chain[2:]) if "failure" not in kinds else chain[2]["status"] in {"failed","canceled","timed_out","integrity_failed"}),"completed lifecycle terminal status")
+        planning_core_operation_chains=[chain for chain in chains.values() if chain[0]["operation_class"]=="planning_core_seal"]
+        expect(len(planning_core_operation_chains)==1 and planning_core_operation_chains[0][-1]["event_kind"]=="receipt","exact completed planning-core seal operation chain")
+        planning_core_operation=planning_core_operation_chains[0][0]
+        expect(planning_core_operation["operation_instance_id"] in operation_invocation_ids,"planning-core invocation identity available")
+        verify_remote_observation_operation(remote_observation,remote_observation_envelope,remote_replay_guard,planning_core_operation["operation_instance_id"],operation_invocation_ids[planning_core_operation["operation_instance_id"]],planning_core_operation["reservation_id"],operation_capability_store_instances[planning_core_operation["operation_instance_id"]],operation_authority_replay_nonces[planning_core_operation["operation_instance_id"]])
         review_operation_chains=[chain for chain in chains.values() if chain[0]["operation_class"]=="planning_review"]
         expect(len(review_operation_chains)==4 and all(chain[-1]["event_kind"]=="receipt" for chain in review_operation_chains),"planning review operation chains complete")
         for review in reviews:
@@ -15392,6 +16049,9 @@ bootstrap_policy:
         - {event_type: mach_lookup_denial_receipt, operation_class: every_reset_3_operation_class, actor_class: omp_broker, payload_exact_fields: [schema_version, broker_id, operation_instance_id, invocation_id, reservation_id, challenge_nonce, preflight_probe_launch_record_sha256, preflight_child_pid, preflight_child_parent_pid, child_uid, child_gid, child_supplementary_groups_sha256, identity_drop_event_handle, identity_drop_sha256, result_fifo_descriptor_id, result_fifo_child_write_device, result_fifo_child_write_inode, result_fifo_child_write_mode, result_fifo_child_write_access_direction, result_fifo_broker_read_fd, result_fifo_broker_read_device, result_fifo_broker_read_inode, result_fifo_broker_read_mode, result_fifo_broker_read_access_direction, sandbox_profile_sha256, probe_profile_sha256, probe_runtime_closure_sha256, probed_service_names, probe_results, raw_output_sha256, output_sha256, output_event_handle, child_exit_code, child_term_signal, wait_status, launched_at_utc, identity_dropped_at_utc, output_observed_at_utc, waited_at_utc, consumed_at_utc, checked_at_utc, consumed_once, receipt_sha256]}
         - {event_type: operation_network_denial_receipt, operation_class: every_reset_3_operation_class, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, challenge_nonce, probe_launch_record_sha256, probe_child_pid, probe_child_parent_pid, child_uid, child_gid, child_supplementary_groups_sha256, identity_drop_event_handle, identity_drop_sha256, raw_probe_bytes_hex, raw_probe_sha256, probe_result, result_fifo_descriptor_id, result_fifo_child_write_device, result_fifo_child_write_inode, result_fifo_child_write_mode, result_fifo_child_write_access_direction, result_fifo_broker_read_fd, result_fifo_broker_read_device, result_fifo_broker_read_inode, result_fifo_broker_read_mode, result_fifo_broker_read_access_direction, output_event_handle, child_exit_code, child_term_signal, wait_status, launched_at_utc, identity_observed_at_utc, child_observed_at_utc, waited_at_utc, consumed_at_utc, output_observed_at_utc, checked_at_utc, consumed_once, receipt_sha256]}
         - {event_type: planning_review_raw_artifact, operation_class: planning_review|seed_review_round|candidate_review_round, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, operation_class, review_round_id, subject_bindings_sha256, artifact_handle, artifact_bytes_hex, artifact_bytes_sha256]}
+        - {event_type: github_remote_ref_observation, operation_class: planning_core_seal, actor_class: omp_broker, payload_exact_fields: [schema_version, packet_key, execution_epoch, scope_version, phase_id, operation_class, operation_instance_id, invocation_id, reservation_id, repository_remote_url, remote_ref, argv, stdout_hex, stdout_sha256, stderr_hex, stderr_sha256, exit_code, observation_nonce, observed_remote_head, observed_at_utc, receipt_sha256]}
+        - {event_type: github_remote_ref_observation_replay_guard, operation_class: planning_core_seal, actor_class: omp_broker, payload_exact_fields: [schema_version, packet_key, execution_epoch, scope_version, phase_id, operation_class, operation_instance_id, invocation_id, reservation_id, capability_store_instance, observation_event_handle, observation_immutable_object_id, observation_nonce, replay_store_before_event_handle, replay_store_before_sha256, replay_store_after_event_handle, replay_store_after_sha256, prior_store_tip_sha256, prior_observation_immutable_object_ids, prior_observation_nonces, append_committed, recorded_store_tip_sha256, recorded_at_utc, guard_sha256]}
+        - {event_type: github_remote_ref_observation_replay_store_snapshot, operation_class: planning_core_seal, actor_class: omp_broker, payload_exact_fields: [schema_version, store_instance_id, operation_instance_id, invocation_id, reservation_id, observation_event_handle, prior_store_tip_sha256, observation_immutable_object_ids, observation_nonces, captured_at_utc, body_sha256, store_tip_sha256]}
         - {event_type: operation_capability_manifest, operation_class: every_reset_3_operation_class, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, operation_class, execution_kind, executor_route_identity, sandbox_executable_sha256, sandbox_profile_sha256, system_runtime_access_manifest, system_runtime_access_manifest_sha256, system_runtime_write_denial_prelaunch_event_handles, system_runtime_write_denial_prelaunch_event_handles_sha256, system_runtime_write_denial_post_waitpid_event_handles, system_runtime_write_denial_post_waitpid_event_handles_sha256, mach_lookup_services, mach_lookup_services_sha256, mach_lookup_probe_launch_record, mach_lookup_probe_launch_record_sha256, mach_lookup_denial_receipt, mach_lookup_denial_receipt_sha256, environment_sha256, credential_input_set_sha256, expected_child_uid, expected_child_gid, expected_child_supplementary_groups_sha256, network_mode, network_denial_receipt_sha256, workspace_path, workspace_device, workspace_inode, workspace_mount_id, canonical_common_git_dir, canonical_common_git_dir_device, canonical_common_git_dir_inode, canonical_object_store, canonical_object_store_device, canonical_object_store_inode, writable_paths, write_allowlist_sha256, read_only_input_handles_sha256, preflight_negative_probe_sha256, platform_identity_sha256, git_discovery_sha256, semantic_input_set_sha256, capability_manifest_sha256]}
         - {event_type: repository_workspace_anchor, operation_class: every_reset_3_operation_class, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, invocation_id, reservation_id, anchor_path, anchor_device, anchor_inode, anchor_mode, anchor_owner_uid, anchor_owner_gid, authenticated_at_utc, anchor_sha256]}
         - {event_type: operation_capability_evidence, operation_class: every_reset_3_operation_class, actor_class: omp_broker, payload_exact_fields: [schema_version, operation_instance_id, operation_class, execution_kind, proof_kind, invocation_id, reservation_id, profile_digest, capability_manifest_sha256, platform_identity, sandbox_profile, system_runtime_access_manifest, system_runtime_write_denial_prelaunch_event_handles, system_runtime_write_denial_prelaunch_event_handles_sha256, system_runtime_write_denial_post_waitpid_event_handles, system_runtime_write_denial_post_waitpid_event_handles_sha256, mach_lookup_services, mach_lookup_probe_launch_record, mach_lookup_denial_receipt, credential_input_set, preflight_probe_sandbox_profile, preflight_probe_launch, network_denial_receipt, repository_identity, writable_path_bindings, preflight_negative_probe, child_runtime_attestation_evidence, git_discovery_sha256, semantic_input_set_sha256, semantic_input_snapshot, creator_source, mach_v2_child_proof, broker_builtin_no_child_proof, delegated_agent_attestation_proof, observed_at_utc, capability_evidence_sha256]}
@@ -15623,7 +16283,7 @@ bootstrap_policy:
         null_tip_or_genesis_predecessor_digest_cycle_or_wrong_chronology: {"fixture_id":"reset3_negative_02_genesis_cycle","verifier_id":"selected_seed_checker_fixture_matrix","verifier_case_id":"genesis_cycle_rejected","family":"null_tip_or_genesis_predecessor_digest_cycle_or_wrong_chronology","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"null_tip_or_cycle_rejected","input":{"input_kind":"canonical_object","input_bytes_hex":null,"input_object_canonical_json":"{\"baseline\":\"current_generated_projection_after_authenticated_context_binding\",\"case_id\":\"genesis_cycle_rejected\",\"mutation\":{\"op\":\"replace\",\"path\":\"/operation_ledger/genesis/predecessor_ledger_tip_sha256\",\"value\":\"self\"},\"schema_version\":\"bb.north_star_recovery.g2_selected_checker_fixture.v1\"}","input_sha256":"bf4ddab970b759b43784bf9dcfa106bb8ff4fffc795b100b708a8a8ad42aeaef"},"expected_status":"rejected","expected_rejection_code":"genesis_cycle_rejected"}
         stale_missing_substituted_or_replayed_reviews_actions_consumptions_or_admission: {"fixture_id":"reset3_negative_03_replayed_admission","verifier_id":"selected_seed_checker_fixture_matrix","verifier_case_id":"replayed_admission_rejected","family":"stale_missing_substituted_or_replayed_reviews_actions_consumptions_or_admission","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"stale_or_replayed_record_rejected","input":{"input_kind":"canonical_object","input_bytes_hex":null,"input_object_canonical_json":"{\"baseline\":\"current_generated_projection_after_authenticated_context_binding\",\"case_id\":\"replayed_admission_rejected\",\"mutation\":{\"op\":\"replace\",\"path\":\"/required_records/stored_result_event_handles/exact_map\",\"value\":\"replayed_handle_map\"},\"schema_version\":\"bb.north_star_recovery.g2_selected_checker_fixture.v1\"}","input_sha256":"aceb3ece348d3471d03f9b4318f4eeb3940a24f6c1d9cc95d847afdcffb8aec1"},"expected_status":"rejected","expected_rejection_code":"replayed_admission_rejected"}
         denied_ambiguous_missing_or_broker_invented_human_response_decision: {"fixture_id":"reset3_negative_10_human_decision","verifier_id":"selected_seed_checker_fixture_matrix","verifier_case_id":"human_decision_rejected","family":"denied_ambiguous_missing_or_broker_invented_human_response_decision","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"denied_ambiguous_missing_or_mismatched_decision_rejected","input":{"input_kind":"canonical_object","input_bytes_hex":null,"input_object_canonical_json":"{\"baseline\":\"current_generated_projection_after_authenticated_context_binding\",\"case_id\":\"human_decision_rejected\",\"mutation\":{\"op\":\"replace\",\"path\":\"/fresh_action_instances/3/protected_action\",\"value\":\"broker_invented_approve\"},\"schema_version\":\"bb.north_star_recovery.g2_selected_checker_fixture.v1\"}","input_sha256":"bbdb2460cfd2caa4eb46fe95948f4b29c5ed798621814211af392460dce3bce3"},"expected_status":"rejected","expected_rejection_code":"human_decision_rejected"}
-        verdict_only_nonreferential_partial_scope_stale_blob_stale_excerpt_unknown_placeholder_or_boilerplate_review_evidence: {"fixture_id":"reset3_negative_11_review_evidence","verifier_id":"selected_seed_checker_fixture_matrix","verifier_case_id":"review_evidence_rejected","family":"verdict_only_nonreferential_partial_scope_stale_blob_stale_excerpt_unknown_placeholder_or_boilerplate_review_evidence","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"nonreferential_incomplete_unknown_placeholder_or_boilerplate_review_evidence_rejected","input":{"input_kind":"canonical_object","input_bytes_hex":null,"input_object_canonical_json":"{\"baseline\":\"current_generated_projection_after_authenticated_context_binding\",\"case_id\":\"review_evidence_rejected\",\"mutation\":{\"op\":\"remove\",\"path\":\"/required_records/planning_reviews/parser_contract/mandatory_control_map/specification_correctness/specification_loop_spec_closed\",\"value\":null},\"schema_version\":\"bb.north_star_recovery.g2_selected_checker_fixture.v1\"}","input_sha256":"ccab341b47c327a1ba553660d3f6b24f8af5ad1b274e94c32c2312e17f1bf4d5"},"expected_status":"rejected","expected_rejection_code":"review_evidence_rejected"}
+        verdict_only_nonreferential_partial_scope_stale_blob_stale_excerpt_unknown_placeholder_or_boilerplate_review_evidence: {"fixture_id":"reset3_negative_11_review_evidence","verifier_id":"selected_seed_checker_fixture_matrix","verifier_case_id":"review_evidence_rejected","family":"verdict_only_nonreferential_partial_scope_stale_blob_stale_excerpt_unknown_placeholder_or_boilerplate_review_evidence","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"nonreferential_incomplete_unknown_placeholder_or_boilerplate_review_evidence_rejected","input":{"input_kind":"canonical_object","input_bytes_hex":null,"input_object_canonical_json":"{\"baseline\":\"current_generated_projection_after_authenticated_context_binding\",\"case_id\":\"review_evidence_rejected\",\"mutation\":{\"op\":\"remove\",\"path\":\"/required_records/planning_reviews/parser_contract/mandatory_control_map/specification_correctness/specification_loop_spec_complete\",\"value\":null},\"schema_version\":\"bb.north_star_recovery.g2_selected_checker_fixture.v1\"}","input_sha256":"dfdfe6062c328e5c7fc422eb3b34667d18bdd7566d04586cb7955c306f7f330a"},"expected_status":"rejected","expected_rejection_code":"review_evidence_rejected"}
         reset_1_reset_2_or_round3_denied_blob_union_omission_overlap_or_candidate_reuse: {"fixture_id":"reset3_negative_04_denied_union","verifier_id":"selected_seed_checker_fixture_matrix","verifier_case_id":"denied_union_rejected","family":"reset_1_reset_2_or_round3_denied_blob_union_omission_overlap_or_candidate_reuse","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"canonical_union_mismatch_rejected","input":{"input_kind":"canonical_object","input_bytes_hex":null,"input_object_canonical_json":"{\"baseline\":\"current_generated_projection_after_authenticated_context_binding\",\"case_id\":\"denied_union_rejected\",\"mutation\":{\"op\":\"replace\",\"path\":\"/required_records/negative_manifest/exact_20_6_union_and_11_entry_mapping\",\"value\":false},\"schema_version\":\"bb.north_star_recovery.g2_selected_checker_fixture.v1\"}","input_sha256":"79a672c3a9c9ba273960b25f2e2840955496c4803b2f9223c7cc411981cc5b53"},"expected_status":"rejected","expected_rejection_code":"denied_union_rejected"}
         seed_eight_path_scope_budget_manifest_or_module_ownership_drift: {"fixture_id":"reset3_negative_05_seed_scope","verifier_id":"selected_seed_checker_fixture_matrix","verifier_case_id":"seed_scope_rejected","family":"seed_eight_path_scope_budget_manifest_or_module_ownership_drift","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"seed_scope_drift_rejected","input":{"input_kind":"canonical_object","input_bytes_hex":null,"input_object_canonical_json":"{\"baseline\":\"current_generated_projection_after_authenticated_context_binding\",\"case_id\":\"seed_scope_rejected\",\"mutation\":{\"op\":\"append\",\"path\":\"/seed_scope/allowed_paths\",\"value\":\"unapproved/path\"},\"schema_version\":\"bb.north_star_recovery.g2_selected_checker_fixture.v1\"}","input_sha256":"1a0a16d644fb6e44718cba4937a77c5040d653049753ab165373ff77405f2438"},"expected_status":"rejected","expected_rejection_code":"seed_scope_rejected"}
         unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift: {"fixture_id":"reset3_negative_06_candidate_scope","verifier_id":"selected_seed_checker_fixture_matrix","verifier_case_id":"candidate_scope_rejected","family":"unchanged_candidate_path_scope_budget_or_candidate_blob_identity_drift","source_path":"docs/plans/north_star_recovery/LOOP_SPEC.yaml","assertion":"candidate_scope_drift_rejected","input":{"input_kind":"canonical_object","input_bytes_hex":null,"input_object_canonical_json":"{\"baseline\":\"current_generated_projection_after_authenticated_context_binding\",\"case_id\":\"candidate_scope_rejected\",\"mutation\":{\"op\":\"append\",\"path\":\"/candidate_scope/allowed_paths\",\"value\":\"unchanged/path\"},\"schema_version\":\"bb.north_star_recovery.g2_selected_checker_fixture.v1\"}","input_sha256":"2db86c1069184f642f18b782cf5bed385bc707c5f5b925f10e34af7fae88058a"},"expected_status":"rejected","expected_rejection_code":"candidate_scope_rejected"}
