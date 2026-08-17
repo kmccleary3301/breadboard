@@ -9532,6 +9532,39 @@ bootstrap_policy:
       - module_ownership_and_selected_checker_conformance
       - negative_fixture_families
     planning_contract:
+      reviewed_authored_amendment_anchor:
+        role: activation_planning_core_and_review_head
+        exact_single_parent_commit: true
+        parent_role: reviewed_base
+        planning_core_proof_commits: [reviewed_base, reviewed_authored_amendment_anchor]
+        review_subject_commit_identity: reviewed_authored_amendment_anchor_only
+      later_github_merge_commit:
+        role: independently_authenticated_whole_tree_equivalent_handoff_identity
+        whole_tree_equality_to_authored_anchor_at_merge: true
+        may_replace_planning_core_commit: false
+        may_replace_review_subject_field: false
+        planning_core_or_review_subject_substitution_forbidden: true
+      generated_state_only_commits:
+        role: independently_authenticated_planning_projection_equivalent_materialization_identities
+        preserves_exact_two_planning_blob_oids_and_bytes: true
+        full_tree_equality_to_authored_anchor_required: false
+        may_replace_planning_core_commit: false
+        may_replace_review_subject_field: false
+        planning_core_or_review_subject_substitution_forbidden: true
+      current_remote_recovery_observation:
+        required: true
+        proves: [authored_anchor_reachable_from_authenticated_remote, authored_anchor_planning_tree_equals_authenticated_merged_planning_tree]
+      parse_commit_header_rules:
+        accepted_headers: [tree, parent, author, committer, gpgsig]
+        gpgsig_at_most_once: true
+        gpgsig_continuations_only_while_inside_gpgsig: true
+        preserve_parent_order: true
+        reject_unknown_headers: true
+        reject_orphan_or_non_gpgsig_continuations: true
+        reject_duplicate_singleton_headers: true
+        reject_malformed_header_separators: true
+        reject_invalid_tree_or_parent_oids: true
+        reject_missing_tree_author_or_committer: true
       parent_commit: broker_authenticated_reviewed_base_head
       reviewed_base_identity_source: supervisor_broker_planning_core_descriptor
       required_commit_count: 1
@@ -11020,7 +11053,7 @@ bootstrap_policy:
         result_bytes_are_semantic_evidence_only_until_broker_stores_and_cross_binds_them: true
         fake_parent_or_direct_scalar_execution_cannot_create_a_capability_store_transition: true
         missing_mismatch_failed_or_future_digest: block
-      source_sha256: 5c35bf041a77b3b6c9adcb496a111689b0ad6ea94618e142b2ff246a4465d4b1
+      source_sha256: d907a52c82ec845c90db39f7e21fed4c79013373cca6c1b6728ec087b6d3a745
       source: |-
         ACTIVE_PROJECTION_SHA256="449485f7d580e5f3d3fd9108f5d7c559870eb4126a726e33ab624853f4d64e67"
         MACH_PROBE_SOURCE_SHA256="a3ccdf5fb5889a9b58641ae267666b63dee4db84e1c95598373d2d710d72137d"
@@ -11958,16 +11991,27 @@ bootstrap_policy:
         def git_oid(kind,value):
             return hashlib.sha1((kind+" "+str(len(value))+"\0").encode("ascii")+value).hexdigest()
         def parse_commit(raw):
-            header=raw.split(b"\n\n",1)[0]
+            expect(isinstance(raw,bytes),"commit raw bytes")
+            header,separator,_=raw.partition(b"\n\n")
+            expect(separator==b"\n\n","commit header separator")
             fields={}
             parents=[]
-            for line in header.splitlines():
+            current_key=None
+            for line in header.split(b"\n"):
+                expect(b"\r" not in line and b"\x00" not in line,"commit header separators")
+                if line.startswith(b" "):
+                    expect(current_key==b"gpgsig","commit continuation")
+                    continue
                 key,sep,value=line.partition(b" ")
-                expect(sep==b" " and key in {b"tree",b"parent",b"author",b"committer"},"commit header")
+                expect(sep==b" " and value and not value.startswith(b" ") and key in {b"tree",b"parent",b"author",b"committer",b"gpgsig"},"commit header")
                 if key==b"parent":
-                    parents.append(value.decode("ascii"))
-                elif key not in fields:
+                    parent=value.decode("ascii")
+                    expect(oid(parent),"commit parent")
+                    parents.append(parent)
+                else:
+                    expect(key not in fields,"commit duplicate header")
                     fields[key]=value.decode("ascii")
+                current_key=key
             expect(oid(fields.get(b"tree")),"commit tree")
             expect(b"author" in fields and b"committer" in fields,"commit identities")
             return {"tree":fields[b"tree"],"parents":parents}

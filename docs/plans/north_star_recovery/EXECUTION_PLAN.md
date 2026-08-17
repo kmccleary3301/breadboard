@@ -1274,15 +1274,30 @@ paths, while superseding reset-2 with scope
 `bb.north_star_recovery.g2.scope.v4`. The historical reset-2 record above
 cannot satisfy any active guard.
 
-The planning proposal is evaluated from the broker-supplied authenticated current
-planning `HEAD`, tree, and the two exact planning-file blob OIDs. The four fresh
-planning review records bind those same runtime identities; the embedded source
-contains no current-head literal and cannot become stale when this amendment
-changes the planning files. The reviewed-base parent/tree are separate
-authenticated fields in the planning-core record. The repair is exactly one new
-commit with the reviewed base as its parent, changing exactly the two planning
-paths below and no other path; the cumulative two-file tree/diff is the
-authority, and an earlier multi-commit planning history is not a violation.
+The reviewed authored amendment anchor is the activation planning-core and
+review head: one exact authored commit whose sole parent is the exact
+reviewed-base commit. The planning-core proof and all four fresh planning
+review subject fields use this authored anchor and its sole parent only. A
+later GitHub merge commit is separately authenticated and must be whole-tree
+equal to the authored anchor at merge; generated `STATE`-only materialization
+commits are separately authenticated identities that need only preserve the
+exact two planning blob OIDs and bytes (their full trees may differ). Neither
+is ever substituted for either core commit in the two-commit planning-core
+proof or for any of the four review subjects. The
+current remote recovery observation must prove that the authored anchor is
+reachable from the authenticated remote and that its planning tree equals the
+authenticated merged planning tree.
+The planning proposal is evaluated from the broker-supplied authenticated
+current planning `HEAD` (the reviewed authored amendment anchor), tree, and
+the two exact planning-file blob OIDs. The four fresh planning review records
+bind those same runtime identities; the embedded source contains no
+current-head literal and cannot become stale when this amendment changes the
+planning files. The reviewed-base parent/tree are separate authenticated
+fields in the planning-core record. The repair is exactly one new
+single-parent commit with the reviewed base as its parent, changing exactly
+the two planning paths below and no other path; the cumulative two-file
+tree/diff is the authority, and an earlier multi-commit planning history is
+not a violation.
 The planning-core Git proof contains the two commits, every intermediate tree
 reachable from the current and reviewed-base roots, and only the old and new
 blobs for the two planning paths. Tree entry OIDs and modes prove unchanged
