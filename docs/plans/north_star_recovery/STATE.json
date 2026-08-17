@@ -557,12 +557,12 @@
       "total_rows": 21
     }
   },
-  "generated_at_utc": "2026-08-17T20:43:27.993944Z",
+  "generated_at_utc": "2026-08-17T20:46:09.086799Z",
   "generator": {
     "authored_input": false,
     "do_not_edit": true,
     "id": "north_star_recovery_manual_renderer",
-    "refresh_rule": "Rebuilt from live Beads, GitHub, exact merged Git objects, immutable evidence, current E4 inventory, and fresh exact-head reviews. Prior STATE.json supplied presentation shape only and no authority fact.",
+    "refresh_rule": "Rebuilt after the final Beads authority note from live Beads, GitHub, exact merged Git objects, immutable evidence, current E4 inventory, and fresh exact-head reviews. Prior STATE.json supplied presentation shape only and no authority fact.",
     "self_hash_policy": "Hash STATE.json in an external handoff manifest after rendering; the file cannot contain its own stable hash.",
     "version": "2"
   },
@@ -961,7 +961,7 @@
         "title": "F1 Final candidate audit"
       }
     ],
-    "materialized_at_utc": "2026-08-17T20:43:27.993944Z",
+    "materialized_at_utc": "2026-08-17T20:46:09.086799Z",
     "scope_version": "bb.north_star_recovery.g2.scope.v4",
     "tracker_materialization": "live_Beads_projection"
   },
@@ -1215,7 +1215,7 @@
       "priority": 1,
       "status": "open",
       "title": "G2 Install packet-control enforcement",
-      "updated_at": "2026-08-17T10:30:42Z"
+      "updated_at": "2026-08-17T20:45:16Z"
     },
     "projection_note": "bd show dependent_count includes closed human child bb-zjd.1; bd list dependent_count excludes it. Packet dependency graph is derived from each live issue dependency list, not either count.",
     "records": {
@@ -1336,7 +1336,7 @@
         "priority": 1,
         "status": "open",
         "title": "G2 Install packet-control enforcement",
-        "updated_at": "2026-08-17T10:30:42Z"
+        "updated_at": "2026-08-17T20:45:16Z"
       }
     }
   }
