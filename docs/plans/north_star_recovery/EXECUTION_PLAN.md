@@ -891,6 +891,109 @@ path escapes, duplicate JSON keys, non-finite numbers, wrong object types,
 undeclared lengths, and any object whose OID or SHA-256 does not recompute.
 Git refs are locators only.
 
+Reset-3 seals one nested `remote_recovery` record inside planning-core v3
+before any review reservation. Its exact fields are
+`schema_version`, `repository_remote_url`, `remote_ref`,
+`observation_event_handle`, `observation_receipt_sha256`,
+`observation_replay_guard_event_handle`, `observation_replay_guard_sha256`,
+`observation_packet_key`, `observation_execution_epoch`,
+`observation_scope_version`, `observation_phase_id`,
+`observation_operation_class`, `observation_operation_instance_id`,
+`observation_invocation_id`, `observation_reservation_id`,
+`observed_remote_head`, `source_base_commit`,
+`source_merge_base_commit`, `authored_anchor_commit`,
+`authenticated_merge_commit`, `state_materialization_commits`,
+`allowed_materialization_paths`, `broker_observer`, `observation_method`,
+`observed_ref_tip`, `observed_at_utc`, and `remote_recovery_sha256`. The
+record fixes the remote
+to `https://github.com/kmccleary3301/breadboard.git` at
+`refs/heads/north-star/recovery-execution`, permits only
+`docs/plans/north_star_recovery/STATE.json`, requires a nonempty ordered
+materialization chain, and binds an immutable authenticated
+`github_remote_ref_observation` broker event. That event is actor
+`omp_broker`, operation class `planning_core_seal`, and has the exact
+`/usr/bin/git ls-remote --refs https://github.com/kmccleary3301/breadboard.git
+refs/heads/north-star/recovery-execution` argv, canonical raw stdout
+`<40-lowercase-oid>\t<exact-ref>\n`, empty raw stderr, raw SHA-256s, exit
+code zero, nonempty nonce, observed UTC time/head, current packet, epoch,
+scope, operation class, operation instance, invocation, reservation, and its
+own receipt digest. `observation_event_handle` resolves the sole registered
+remote-observation event in the admitted broker snapshot, and
+`observation_receipt_sha256` equals its receipt digest. The record also binds
+the sole authenticated `github_remote_ref_observation_replay_guard` event and
+exactly two authenticated
+`github_remote_ref_observation_replay_store_snapshot` events: the broker-owned
+state immediately before and after one atomic append. The snapshots bind the
+current capability-store instance, planning-core operation instance,
+invocation, reservation, and observation-event handle. Their complete parallel
+identity/nonce sets are unique; the before snapshot excludes the current
+observation identity and authority nonce; and the after snapshot equals exactly
+the before sets plus those two current values. Each snapshot recomputes its body
+digest and store tip, the after snapshot's prior tip equals the before
+snapshot's tip, and an empty before set is accepted only with the canonical
+store-instance genesis tip. The replay guard binds both snapshot handles and
+payload digests, copies the authenticated before sets and tip, records the
+authenticated after tip, and commits the append. Observation, before snapshot,
+guard, and after snapshot times are monotonically ordered and fresh against the
+broker clock. The guard's handle and payload digest equal
+`observation_replay_guard_event_handle` and
+`observation_replay_guard_sha256`. Those eight operation-scope fields equal the
+completed current `planning_core_seal` ledger chain, and the observation nonce
+equals that operation's fresh authenticated broker-authority replay nonce. An
+exact prior receipt with reused labels, a fresh event from another planning-core
+invocation, a duplicate event, a mismatched capability-store instance or
+authority nonce, a stale/forged replay-store snapshot, a replay-guard event
+whose authenticated prior sets already contain the observation identity or
+nonce, or label-only broker fields cannot authenticate the observation. The
+record digests all fields except its own digest.
+Every identity in that record and in its planning-core bindings is a full
+lowercase SHA-1 OID. `source_base_commit` and `source_merge_base_commit` must
+equal the authored anchor's exact reviewed-base parent, `parent_commit`,
+`reviewed_base_head`, `source_base_sha`, and `source_merge_base_sha`; the source
+commit tree must equal `reviewed_base_tree`. The broker rejects an observation
+from the future, an observation after planning-core creation, or an observation
+older than the configured 900-second live freshness window, all measured
+against the authenticated invocation `broker_clock_utc`. `authored_anchor_commit`
+is exactly the authored planning head. The authenticated merge commit is parsed
+from raw `core.git_objects` bytes and must have parents exactly
+`[source_base_commit, authored_anchor_commit]` with a tree exactly equal to the
+authored anchor head tree. Each generated STATE commit follows the merge (or
+previous STATE commit) with exactly one parent, and the final identity equals
+both `observed_remote_head` and `observed_ref_tip`. Each transition must change
+exactly the one allowed STATE path; before and after leaves must both exist,
+have regular mode `100644`, and have distinct blob OIDs.
+
+The existing authenticated tree walker recursively closes the trusted source
+tree and every transition tree, including every referenced leaf blob. A raw-tree
+recursive diff stops at equal tree OIDs, descends only changed authenticated tree
+pairs, yields leaf paths, and rejects a missing, deleted, mode-mutated, or
+same-blob STATE leaf.
+
+`core.git_objects` is the sole proof source: it must contain the raw
+source-base/reviewed-parent and authored-head planning-core commit bodies,
+the authenticated remote merge and every remote materialization commit body,
+every recursively referenced head/base/source/transition tree, every head
+and base leaf blob needed for complete path maps, and every remote transition
+leaf blob used by the proofs. Every planning `git_objects.body_hex` must equal
+the exact lowercase `raw.hex()` bytes before Git identity recomputation. The
+validator recomputes every Git object OID and rejects missing, duplicate,
+wrong-hash, or unused commits, trees, and blobs; exact minimality admits no
+extras. Generated merge or STATE identities cannot replace authored
+review-head fields, and the existing exact two-planning-path diff remains
+independently enforced.
+
+The executable source extractor reproduces YAML `source: |-` bytes: it keeps
+internal blank lines, stops only at the first nonblank line with indentation
+below eight spaces, removes YAML trailing line breaks only, never strips
+non-newline content, and binds the declared `source_sha256` to the extracted
+bytes. Startup negative fixtures cover remote record digest tamper without
+recomputation, forged/tampered remote observation payload, raw stdout,
+event handle, and envelope, stale observation, an actual reversed two-parent
+merge, merge-tree mismatch, wrong STATE parent, STATE deletion, STATE mode
+mutation, non-STATE transition, remote-head mismatch, malformed or stale
+source-base OIDs, source digest mismatch, noncanonical planning object hex,
+and scalar chomping mismatch; `gpgsig` continuation parsing remains unchanged.
+
 #### Shared replacement-candidate phase
 
 The exact candidate surfaces remain the following eleven paths (the count is
@@ -1286,7 +1389,8 @@ is ever substituted for either core commit in the two-commit planning-core
 proof or for any of the four review subjects. The
 current remote recovery observation must prove that the authored anchor is
 reachable from the authenticated remote and that its planning tree equals the
-authenticated merged planning tree.
+authenticated merged planning tree, using the bound immutable
+`github_remote_ref_observation` receipt rather than label-only fields.
 The planning proposal is evaluated from the broker-supplied authenticated
 current planning `HEAD` (the reviewed authored amendment anchor), tree, and
 the two exact planning-file blob OIDs. The four fresh planning review records
@@ -1298,12 +1402,15 @@ single-parent commit with the reviewed base as its parent, changing exactly
 the two planning paths below and no other path; the cumulative two-file
 tree/diff is the authority, and an earlier multi-commit planning history is
 not a violation.
-The planning-core Git proof contains the two commits, every intermediate tree
-reachable from the current and reviewed-base roots, and only the old and new
-blobs for the two planning paths. Tree entry OIDs and modes prove unchanged
-leaves without copying every unchanged repository blob into the bounded
-descriptor; the validator rejects a missing or extra commit, tree, or planning
-blob and still recomputes the complete recursive path map and exact diff.
+The planning-core Git proof contains the two core commits plus the
+authenticated remote source-base, merge, and materialization commit set;
+recursively closes the current-head, reviewed-base, source, and every
+remote-transition tree; and includes every head/base leaf blob required for
+complete path maps plus every remote-transition leaf blob used by those
+proofs. Tree entry OIDs and modes prove unchanged leaves without omitting
+the recursive authenticated closure. Exact minimality rejects every missing,
+duplicate, wrong-hash, or unused commit, tree, or blob, so no extra object is
+accepted.
 Fresh predecessor searches and the live recheck query every G2 epoch, including
 reset-3, but exclude exactly the current chain by its authenticated genesis
 SHA-256. Any tip from another reset-3 activation remains visible and blocks;
