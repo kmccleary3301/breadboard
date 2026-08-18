@@ -459,8 +459,14 @@ that lookup or append authority. The broker consumes and erases the capability
 exactly once before append; evidence exposes only its digest after success.
 For `broker_builtin_no_child`, the broker records an authenticated no-child
 capability proof with the exact broker opcode, authority event, capability-store
-principal, and `executable: null`, `argv: []`; it proves that no executable,
-Python process, `sandbox-exec`, waitpid, or local Mach probe was launched.
+principal, and `executable: null`, `argv: []`; it proves that the ledger
+operation launched no child executable, Python process, `sandbox-exec`, waitpid,
+or local Mach probe. It does not authorize ambient broker I/O. A broker-private
+control-plane suboperation is permitted only where a separately named closed
+profile fixes its executable identity, argv, cleared-then-exact environment,
+network destination, credential/config policy, reservation, invocation, launch,
+result, completion, receipt, and replay-store append. Its immutable completed
+receipt is an input to—not an execution by—the consuming no-child operation.
 For `delegated_agent_attestation`, the broker records the actual authenticated
 route, worker/session identity, materialized delegated profile and sandbox
 attestation, with denied network, empty credentials, broker-mediated-only
@@ -878,70 +884,199 @@ validation. Trusted selections come
 only from immutable parent-session actions, never environment variables,
 filesystem JSON, or worker output.
 
-The verifier invokes absolute `/usr/bin/git` without a shell. It pins the
-canonical common Git directory and repository/remote identity; clears all
-`GIT_*`, Python, locale, pager, editor, hook, credential, config, object,
-alternate-object, index, worktree, and path override variables except an
-explicit fixed allowlist; disables replacement objects, hooks, filters,
-textconv, pagers, external diffs, and optional locks; rejects replace/graft or
-shallow ancestry; and uses full OIDs plus NUL-delimited raw tree/diff output
-with rename detection disabled. It rejects ambiguous abbreviations, symlinks,
-submodules, non-regular modes, case or Unicode-normalization path collisions,
-path escapes, duplicate JSON keys, non-finite numbers, wrong object types,
-undeclared lengths, and any object whose OID or SHA-256 does not recompute.
-Git refs are locators only.
+Remote refs are locators only. Before planning-core sealing or any review
+reservation, the broker performs one dedicated
+`planning_remote_ref_observation` suboperation. It does not launch Git, curl,
+Python, a shell, or any helper. The already running broker process uses
+`Foundation.URLSession` directly against the exact authenticated REST endpoint
+`https://api.github.com/repos/kmccleary3301/breadboard/git/ref/heads/north-star/recovery-execution`.
+The session uses `GET`, the fixed public `Accept`, `User-Agent`, and
+`X-GitHub-Api-Version` headers, and a Bearer credential fetched from the
+broker-private credential store. Secret bytes never enter planning-core,
+events, logs, response records, or the child invocation manifest. Every
+redirect, timeout, non-200 response, oversize body, duplicate JSON key, schema
+mismatch, proxy route, reused connection, non-global endpoint, or unexpected
+child process blocks.
 
 Reset-3 seals one nested `remote_recovery` record inside planning-core v3
 before any review reservation. Its exact fields are
 `schema_version`, `repository_remote_url`, `remote_ref`,
-`observation_event_handle`, `observation_receipt_sha256`,
-`observation_replay_guard_event_handle`, `observation_replay_guard_sha256`,
-`observation_packet_key`, `observation_execution_epoch`,
-`observation_scope_version`, `observation_phase_id`,
-`observation_operation_class`, `observation_operation_instance_id`,
-`observation_invocation_id`, `observation_reservation_id`,
-`observed_remote_head`, `source_base_commit`,
-`source_merge_base_commit`, `authored_anchor_commit`,
-`authenticated_merge_commit`, `state_materialization_commits`,
-`allowed_materialization_paths`, `broker_observer`, `observation_method`,
-`observed_ref_tip`, `observed_at_utc`, and `remote_recovery_sha256`. The
-record fixes the remote
+`replacement_generation`, `predecessor_remote_recovery_sha256`,
+`predecessor_observed_ref_tip`, `predecessor_planning_core_sha256`,
+`predecessor_acceptance_event_handle`,
+`recovery_registry_snapshot_event_handle`,
+`recovery_registry_snapshot_sha256`, `observation_event_handle`,
+`observation_receipt_sha256`, `observation_replay_guard_event_handle`,
+`observation_replay_guard_sha256`, `observation_packet_key`,
+`observation_execution_epoch`, `observation_scope_version`,
+`observation_phase_id`, `observation_operation_class`,
+`observation_operation_instance_id`, `observation_invocation_id`,
+`observation_reservation_id`, `observed_remote_head`,
+`source_base_commit`, `source_merge_base_commit`,
+`authored_anchor_commit`, `authenticated_merge_commit`,
+`state_materialization_commits`, `allowed_materialization_paths`,
+`broker_observer`, `observation_method`, `observed_ref_tip`,
+`observed_at_utc`, and `remote_recovery_sha256`. The record fixes the remote
 to `https://github.com/kmccleary3301/breadboard.git` at
 `refs/heads/north-star/recovery-execution`, permits only
 `docs/plans/north_star_recovery/STATE.json`, requires a nonempty ordered
 materialization chain, and binds an immutable authenticated
 `github_remote_ref_observation` broker event. That event is actor
-`omp_broker`, operation class `planning_core_seal`, and has the exact
-`/usr/bin/git ls-remote --refs https://github.com/kmccleary3301/breadboard.git
-refs/heads/north-star/recovery-execution` argv, canonical raw stdout
-`<40-lowercase-oid>\t<exact-ref>\n`, empty raw stderr, raw SHA-256s, exit
-code zero, nonempty nonce, observed UTC time/head, current packet, epoch,
-scope, operation class, operation instance, invocation, reservation, and its
-own receipt digest. `observation_event_handle` resolves the sole registered
+`omp_broker`, phase `G2/reset-3/planning-control-plane`, and operation class
+`planning_remote_ref_observation`, distinct from `planning_core_seal`.
+
+Before sending the request, the broker authenticates its own running process
+without launching a helper. It resolves the absolute executable backing its PID
+with `proc_pidpath`, then walks exactly that absolute path from an opened root
+directory descriptor using parent-descriptor-relative `O_NOFOLLOW` opens for
+every ancestor and the final file. It hashes bytes read from the final
+descriptor and requires identical pre/post `fstat` device, inode, mode, owner,
+link-count, and size. The file must be root-owned and not group- or
+world-writable. It obtains the current process audit token, calls
+`SecCodeCopyGuestWithAttributes` with both `kSecGuestAttributePid` and the
+audit token, calls `SecCodeCheckValidityWithErrors`, and records
+`kSecCodeInfoIdentifier`, `kSecCodeInfoTeamIdentifier`, `kSecCodeInfoUnique`,
+and `SecCodeCopyDesignatedRequirement`. The preseed verifier independently
+repeats `proc_pidpath` for the recorded PID, repeats the descriptor-relative
+no-follow walk from root through every resolved component, rehashes final
+descriptor bytes, and requires the live path, digest, and stable pre/post
+descriptor identity to equal the process-image record.
+The verifier source and control profile, not the process under test, pin
+`TeamIdentifier=VTLHGQC72S`, identifier `com.ohmypi.broker`, and the exact
+designated requirement combining that team, identifier, `anchor apple generic`,
+and the Developer ID leaf OU. The accepted release population is therefore code
+authorized by that pinned Developer ID team and validated by
+Security.framework's Apple code-signing chain. CDHash, executable SHA-256, and
+the required non-null package-receipt SHA-256 remain observed identity evidence,
+not a self-issued authorization record. A different PID executable, descriptor
+digest, team, identifier, requirement, invalid chain, ad-hoc signature, missing
+package receipt, or Security.framework error blocks.
+
+The resulting immutable `github_remote_ref_process_image_observation` event
+binds the PID-resolved nofollow descriptor source, bytes SHA-256, stable file
+identity, PID and parent PID, audit-token SHA-256, audit-token-bound SecCode
+guest attributes, validity result, identifier, team ID, CDHash, exact designated
+requirement, mandatory package receipt, and `Foundation.URLSession`
+implementation. Its PID, executable SHA-256, and audit-token SHA-256 must equal
+the authenticated broker authority event. Platform-identity v5 commits the
+complete current process identity but carries no nested process-supplied release
+authorization. The invocation manifest binds the process event handle and
+payload SHA-256, so a swapped executable, audit token, process, signer, missing
+receipt, or event blocks.
+
+The URLSession authentication challenge applies
+`SecPolicyCreateSSL(server=true,hostname=api.github.com)` and
+`SecPolicyCreateRevocation(kSecRevocationUseAnyAvailableMethod|
+kSecRevocationRequirePositiveResponse)`, enables Security.framework network
+fetch during system-trust evaluation, forbids custom anchor certificates, and
+calls `SecTrustEvaluateWithError`. The contract does not claim that
+Security.framework exposes or proves per-fetch intermediate-versus-revocation
+scope. Failure, absent positive aggregate revocation evidence, a custom anchor,
+hostname mismatch, or an empty chain blocks.
+
+The broker emits `github_remote_ref_platform_trust_observation`, binding the
+exact operation identity, policies, trust result/error, every certificate's DER
+bytes and SHA-256, leaf DNS names and validity interval, leaf/root SPKI SHA-256,
+root subject/self-signature status, the exact Apple system-anchor DER digest
+set, the user/admin trust-setting certificate digest sets, and the raw
+`SecTrustCopyResult` binary plist. The verifier requires
+`RevocationChecked == true`, a `RevocationValidUntilDate` after evaluation, the
+evaluated root in the Apple system set, and that root absent from user/admin
+sets. The current invocation manifest binds this event's handle and digest.
+
+After the response completes, the broker serializes one exact security-relevant
+normalized projection for every entry in
+`URLSessionTaskMetrics.transactionMetrics` into one immutable
+`github_remote_ref_control_connection_observation`. The projection is not a
+claim to serialize the entire native Objective-C transaction object. Exactly
+one native entry and therefore one projected record is allowed. That record
+binds the URLSession session and task identifiers, request method and URL,
+response URL and status, protocol, connected remote and local addresses and
+ports, proxy/reuse flags, TLS version and cipher, and
+fetch/connect/secure/response timestamps. Request, trust-evaluation, response,
+completion, and receipt records repeat the same session/task identity.
+Flattened convenience fields must equal the sole normalized record exactly.
+An omitted native entry, extra projected record, task/session substitution,
+request/response mismatch, proxy, or reused transaction blocks. The verifier
+also requires a globally routable remote IP on port 443, TLS 1.2 or 1.3, and
+ordered metrics. The response and invocation manifest bind the connection
+event handle and digest; no DNS-only or hostname-only route observation is
+accepted.
+
+The separate immutable `github_remote_ref_control_plane_authority` event binds
+the dedicated operation, authenticated current capability-store and platform
+identities, broker instance/boot/PID/executable/audit-token identities, closed
+profile digest, private credential persistent-reference handle, credential
+access-group digest, and broker-current replay and recovery-registry snapshots.
+After reservation, the broker performs a `SecItemCopyMatching` query pinned to
+that authority persistent reference and access group, generic-password service
+`com.ohmypi.broker.github-app-installation-token`, account
+`kmccleary3301/breadboard`, authentication UI fail, non-synchronizable storage,
+and `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. A separate
+`kSecMatchLimitAll` attribute/persistent-reference uniqueness query must return
+exactly one matching item. The credential-use record binds OS status zero, the
+same persistent-reference and access-group digests, accessibility and
+synchronizable attributes, token-bytes digest, and final Authorization-header
+digest. Secret bytes remain unserialized; an unpinned, wrong-access-group,
+duplicate, synchronizable, UI-requiring, inaccessible, or failed retrieval
+blocks.
+
+Reservation, credential-use, request, trust-evaluation, response, completion,
+and receipt records carry exact operation/invocation/reservation identity,
+strict lifecycle sequence, prior-record SHA-256 links, and recomputed body
+digests. Serialized timestamps require strict order from authority through
+process observation, reservation, credential retrieval, request, platform
+trust, connection observation, response, completion, and receipt; the trust
+record time must equal its platform-trust event time, and all transaction
+metrics must nest within the request/trust/connection/response interval.
+The request binds the process event and proves the authorization secret was not
+serialized. The trust record binds the platform-trust event. The response
+binds the connection event, zero redirects, status 200, exact response headers,
+and a bounded exact JSON body with only `ref`, `node_id`, `url`, and `object`;
+the object contains only the full commit SHA, type, and URL. The observation
+binds that parsed full commit OID, nonempty nonce, observed UTC time, response
+body SHA-256, and its own receipt digest. `planning_core_seal` launches no
+child and has no network authority; it consumes only this completed,
+invocation-bound receipt through `remote_recovery`.
+`observation_event_handle` resolves the sole registered
 remote-observation event in the admitted broker snapshot, and
 `observation_receipt_sha256` equals its receipt digest. The record also binds
-the sole authenticated `github_remote_ref_observation_replay_guard` event and
 exactly two authenticated
 `github_remote_ref_observation_replay_store_snapshot` events: the broker-owned
-state immediately before and after one atomic append. The snapshots bind the
-current capability-store instance, planning-core operation instance,
-invocation, reservation, and observation-event handle. Their complete parallel
-identity/nonce sets are unique; the before snapshot excludes the current
-observation identity and authority nonce; and the after snapshot equals exactly
-the before sets plus those two current values. Each snapshot recomputes its body
-digest and store tip, the after snapshot's prior tip equals the before
-snapshot's tip, and an empty before set is accepted only with the canonical
-store-instance genesis tip. The replay guard binds both snapshot handles and
-payload digests, copies the authenticated before sets and tip, records the
-authenticated after tip, and commits the append. Observation, before snapshot,
-guard, and after snapshot times are monotonically ordered and fresh against the
-broker clock. The guard's handle and payload digest equal
+state immediately before and after one atomic append. The snapshots, replay
+guard, and every operation support authority bind the current capability-store
+instance authenticated by the admission broker attestation, never an identity
+selected from the remote packet. The after snapshot tip must equal
+`remote_observation_replay_store_current_tip_sha256` in the authenticated main
+invocation manifest; test-only fixture wrappers may derive this input, but the
+production verifier cannot.
+The snapshots also bind
+the dedicated remote-observation operation instance, invocation, reservation,
+and observation-event handle. Their complete parallel identity/nonce sets are
+unique; the before snapshot excludes the current observation identity and
+authority nonce; and the after snapshot equals exactly the before sets plus
+those two current values. Each snapshot recomputes its body digest and store
+tip, the after snapshot's prior tip equals the before snapshot's tip, and an
+empty before set is accepted only with the canonical authenticated
+store-instance genesis tip. The replay guard is the broker's durable atomic
+append receipt: it binds both snapshot handles and payload digests, copies the
+authenticated before sets and tip, records the authenticated after tip,
+requires compare-and-swap success and a positive durable-store commit
+sequence, and commits the append. The verifier scans the broker store and
+requires exactly one append receipt from that prior tip; a sibling winner,
+staged-only receipt, or fork blocks. Observation, before snapshot, guard, and
+after snapshot times are monotonically ordered and fresh against the broker
+clock. The guard's handle and payload digest equal
 `observation_replay_guard_event_handle` and
 `observation_replay_guard_sha256`. Those eight operation-scope fields equal the
-completed current `planning_core_seal` ledger chain, and the observation nonce
-equals that operation's fresh authenticated broker-authority replay nonce. An
-exact prior receipt with reused labels, a fresh event from another planning-core
-invocation, a duplicate event, a mismatched capability-store instance or
+completed `planning_remote_ref_observation` control-plane lifecycle and are
+required to differ from the consuming `planning_core_seal` ledger lifecycle.
+The observation nonce equals that control-plane lifecycle's fresh authenticated
+broker-authority replay nonce. The planning-core lifecycle contributes only
+the authenticated capability-store context in which the completed receipt is
+consumed.
+An exact prior receipt with reused labels, a fresh event from another
+control-plane invocation, a duplicate event, a mismatched capability-store instance or
 authority nonce, a stale/forged replay-store snapshot, a replay-guard event
 whose authenticated prior sets already contain the observation identity or
 nonce, or label-only broker fields cannot authenticate the observation. The
@@ -986,13 +1121,18 @@ The executable source extractor reproduces YAML `source: |-` bytes: it keeps
 internal blank lines, stops only at the first nonblank line with indentation
 below eight spaces, removes YAML trailing line breaks only, never strips
 non-newline content, and binds the declared `source_sha256` to the extracted
-bytes. Startup negative fixtures cover remote record digest tamper without
-recomputation, forged/tampered remote observation payload, raw stdout,
-event handle, and envelope, stale observation, an actual reversed two-parent
-merge, merge-tree mismatch, wrong STATE parent, STATE deletion, STATE mode
-mutation, non-STATE transition, remote-head mismatch, malformed or stale
-source-base OIDs, source digest mismatch, noncanonical planning object hex,
-and scalar chomping mismatch; `gpgsig` continuation parsing remains unchanged.
+bytes. Startup negative fixtures cover remote record and response-body digest
+tamper, forged event handles, duplicate observations, replay prior-set and
+empty-genesis substitution, competing CAS winners, stale or post-core
+observations, closed-profile drift, duplicate Keychain items, invalid broker
+code signing, audit-token and release substitution, executable descriptor drift
+and PID-path substitution, missing package receipts, failed
+Security.framework trust, proxy or hidden URLSession transactions, task
+substitution, lifecycle chronology, broker-current registry drift, hidden
+genesis acceptance, successor CAS continuity, an actual reversed two-parent
+merge, non-STATE transition, remote-head mismatch, malformed source-base OIDs,
+source digest mismatch, noncanonical planning object hex, and scalar chomping
+mismatch; `gpgsig` continuation parsing remains unchanged.
 
 #### Shared replacement-candidate phase
 
@@ -1399,9 +1539,60 @@ current-head literal and cannot become stale when this amendment changes the
 planning files. The reviewed-base parent/tree are separate authenticated
 fields in the planning-core record. The repair is exactly one new
 single-parent commit with the reviewed base as its parent, changing exactly
-the two planning paths below and no other path; the cumulative two-file
-tree/diff is the authority, and an earlier multi-commit planning history is
-not a violation.
+the two planning paths below and no other path; the exact two-file delta from
+that direct parent is the authority, while multi-commit history strictly before
+the reviewed base is not a violation.
+
+Merge admissibility is stricter than a reviewed single-parent head in
+isolation: that head's sole parent must also be the authenticated merge
+commit's first parent. A reviewed branch with any intermediate authored commit
+between the reviewed base and the reviewed head cannot satisfy the active
+planning-core identity, even when the merge and reviewed trees are equal. The
+replacement authored anchor consists of exactly one new commit changing only
+these two planning paths. Its sole parent must equal the later authenticated
+merge commit's first parent.
+
+This record authenticates a completed, already-published recovery sequence:
+`source_base_commit` is that sequence's reviewed parent, while
+`observed_ref_tip` and `observed_remote_head` are the exact control-plane
+observation result after its merge and ordered STATE materializations. It
+grants no authority for a later publication. This genesis record has
+`replacement_generation: 0` and null predecessor acceptance bindings. Every
+later activation must resolve exactly one authenticated
+`github_remote_recovery_acceptance` v3 event from the current broker store.
+That event is the broker's durable atomic compare-and-swap receipt: it binds
+the current capability-store instance, prior admitted planning-core digest,
+the full exact predecessor `remote_recovery` record and digest, prior
+observation envelope handle/immutable-object/receipt identities, prior replay
+guard handle and digest, expected previous registry tip, compare-and-swap
+success, positive durable-store commit sequence, and acceptance time.
+The closed broker event-type registry carries this exact payload schema under
+operation class `planning_remote_recovery_acceptance`; an undeclared
+same-shape envelope cannot serve as continuity authority. Every broker-current
+`github_remote_recovery_registry_snapshot` uses schema v2. Genesis has
+generation `-1`, a recomputed remote-identity-specific genesis tip, and null
+previous-snapshot and current-acceptance fields. Every non-genesis snapshot
+binds the previous snapshot's event handle, payload digest, and registry tip.
+The verifier recursively authenticates that complete snapshot chain, requires
+each generation to increase by exactly one, and scans the broker store for
+exactly one acceptance from the previous tip and next generation. The
+acceptance body digest and previous tip derive the exact new tip; its admitted
+planning core, remote record, observation, replay guard, and acceptance digest
+must equal the durable current snapshot fields. A sibling acceptance,
+staged-only mutation, failed CAS, or fork blocks.
+
+The successor sets `replacement_generation` to exactly its authenticated
+predecessor plus one, binds the acceptance event, prior planning-core and
+remote-record digests, and prior `observed_ref_tip`, and uses that exact
+observed OID as both `source_base_commit` and `source_merge_base_commit`. It
+then performs its own fresh replay-guarded observation under a new
+control-plane lifecycle.
+Genesis is accepted only when the broker store contains no predecessor
+acceptance;
+successors are accepted only through the authenticated event, never an
+optional caller-supplied dictionary. A missing or extra acceptance, arbitrary
+parent, repeated generation, non-increasing observation time, or predecessor
+digest mismatch is rejected.
 The planning-core Git proof contains the two core commits plus the
 authenticated remote source-base, merge, and materialization commit set;
 recursively closes the current-head, reviewed-base, source, and every
@@ -1491,10 +1682,11 @@ challenge generator. Its inputs are the authenticated current projection,
 selected-`S` identity, a fresh 256-bit CSPRNG nonce, and a private grammar
 commitment. Selected-`S` code, caller templates, caller cases, prior checker
 outputs, and public fixture recipes are forbidden generator inputs. The
-generator produces at least two independently salted valid case encodings of
-the exact authenticated current projection and at least two distinct,
-non-enumerable, single-invariant negative candidate projections for every one
-of the eleven semantic families: at least 24 cases total. Valid and negative
+generator produces exactly two independently salted randomized valid cases in
+total and exactly two private, opaque, non-enumerable, single-invariant
+negative cases for each of the eleven semantic families: exactly 24 private
+checker case executions. The three fixed selection-admission events described
+above are authority checks, not additional checker cases. Valid and negative
 inputs have the same canonical-object transport shape.
 
 Before the first checker launch, the broker fixes the entire private bundle:
