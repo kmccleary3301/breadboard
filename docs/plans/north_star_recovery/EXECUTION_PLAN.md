@@ -920,17 +920,35 @@ materialization chain, and binds an immutable authenticated
 `omp_broker`, phase `G2/reset-3/planning-control-plane`, and operation class
 `planning_remote_ref_observation`, distinct from `planning_core_seal`. Its
 closed broker-control-plane profile permits only the broker-opened
-`/usr/bin/git` identity and exact
+`/usr/bin/git` primary image, the broker-opened
+`/usr/libexec/git-core/git-remote-https` helper image, and exact
 `/usr/bin/git ls-remote --refs https://github.com/kmccleary3301/breadboard.git
-refs/heads/north-star/recovery-execution` argv, a cleared-then-exact
-noninteractive Git environment, no credentials or config includes, and HTTPS
-to `github.com:443`. The immutable observation contains exact reservation,
-invocation, launch, result, completion, and post-exec receipt records; binds
-the opened executable device, inode, mode, and SHA-256; and records canonical
-raw stdout `<40-lowercase-oid>\t<exact-ref>\n`, empty raw stderr, raw
-SHA-256s, exit code zero, nonempty nonce, observed UTC time/head, and its own
-receipt digest. `planning_core_seal` launches no child and has no network
-authority; it consumes this completed receipt through `remote_recovery`.
+refs/heads/north-star/recovery-execution` argv. The broker starts it from an
+opened, empty, non-repository `/var/empty` directory under a cleared-then-exact
+noninteractive environment. System and global Git config are disabled; the
+empty non-repository working directory makes local config unreachable; command
+config, includes, credential helpers, proxy variables, extra headers, and
+credentials are absent. A separate immutable
+`github_remote_ref_control_plane_authority` event binds the dedicated
+operation, capability-store instance, closed profile digest, and fresh
+authority replay nonce. A `github_remote_ref_execution_attestation` event
+binds the opened primary image to the launched child PID, the opened HTTPS
+helper image to its distinct PID and primary-parent PID, the opened
+working-directory identity, an empty effective Git-config source set, empty
+proxy environment, no unexpected child processes, and start/completion times.
+A `github_remote_ref_network_observation` event binds its connector PID to that
+attested HTTPS helper and binds the actually resolved and connected
+`github.com:443` address, proxy-free direct connection, zero redirects, GitHub
+SNI, validated hostname and TLS chain, and peer-certificate digest. The
+immutable observation contains exact reservation, invocation, launch, result,
+completion, and post-exec receipt records; the post-exec receipt binds all
+three support-event digests without requiring a prelaunch record to attest
+future execution or network results; and the observation records canonical
+raw stdout
+`<40-lowercase-oid>\t<exact-ref>\n`, empty raw stderr, raw SHA-256s, exit code
+zero, nonempty nonce, observed UTC time/head, and its own receipt digest.
+`planning_core_seal` launches no child and has no network authority; it
+consumes this completed receipt through `remote_recovery`.
 `observation_event_handle` resolves the sole registered
 remote-observation event in the admitted broker snapshot, and
 `observation_receipt_sha256` equals its receipt digest. The record also binds
@@ -1432,11 +1450,11 @@ merge commit's first parent.
 This record authenticates a completed, already-published recovery sequence:
 `source_base_commit` is that sequence's reviewed parent, while
 `observed_ref_tip` and `observed_remote_head` are the exact control-plane
-observation result after its merge and ordered STATE materializations. There
-is no unauthenticated or label-only pre-next-replacement tip. Any later
-replacement must start from this observed OID under a newly authenticated
-planning-core record and fresh remote-observation lifecycle; the current
-record cannot authorize that later publication.
+observation result after its merge and ordered STATE materializations. It
+grants no authority for a later publication. A later activation must perform
+its own fresh, replay-guarded remote observation and construct a new
+authenticated planning-core record; this record makes no claim about an
+unmaterialized future replacement parent.
 The planning-core Git proof contains the two core commits plus the
 authenticated remote source-base, merge, and materialization commit set;
 recursively closes the current-head, reviewed-base, source, and every
