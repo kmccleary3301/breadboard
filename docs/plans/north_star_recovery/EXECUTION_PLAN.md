@@ -964,6 +964,8 @@ closed profile digest, both preoperation authority digests, and fresh replay
 nonce. Distinct immutable `github_remote_ref_process_image_observation` events
 bind the primary and helper PID, parent PID, effective credentials, executable
 vnode and SHA-256, audit token, and EndpointSecurity `NOTIFY_EXEC` identity.
+The closed broker event-type registry carries both process observations with
+their exact payload schema and `planning_remote_ref_observation` operation class.
 The `github_remote_ref_execution_attestation` event binds each no-follow opened
 image to its independently approved platform identity, pre/post descriptor
 identity checks, and corresponding kernel exec observation. It also binds the
@@ -1505,6 +1507,9 @@ broker-signed event binds the current capability-store instance, prior admitted
 planning-core digest, the full exact predecessor `remote_recovery` record and
 digest, prior observation envelope handle/immutable-object/receipt identities,
 prior replay-guard handle and digest, and acceptance time.
+The closed broker event-type registry carries this exact payload schema under
+operation class `planning_remote_recovery_acceptance`; an undeclared same-shape
+envelope cannot serve as continuity authority.
 The successor
 sets `replacement_generation` to exactly its authenticated predecessor plus
 one, binds the acceptance event, prior planning-core and remote-record digests,
