@@ -934,21 +934,27 @@ audit token, calls `SecCodeCopyGuestWithAttributes` with both PID and that audit
 token, validates the resulting guest with `SecCodeCheckValidityWithErrors`,
 and reads signing information and the designated requirement with
 `SecCodeCopySigningInformation(kSecCSSigningInformation)` and
-`SecCodeCopyDesignatedRequirement`. Validation requires identifier
-`com.ohmypi.broker`, a nonempty team ID, and the exact designated requirement
-`identifier "com.ohmypi.broker" and anchor apple generic and certificate
-leaf[subject.OU] = "<team-id>"`; any Security.framework error blocks.
+`SecCodeCopyDesignatedRequirement`. The verifier source and control profile,
+not the process under test, pin `TeamIdentifier=VTLHGQC72S`, identifier
+`com.ohmypi.broker`, and the exact designated requirement combining that team,
+identifier, `anchor apple generic`, and the Developer ID leaf OU. The accepted
+release population is therefore code authorized by that pinned Developer ID
+team and validated by Security.framework's Apple code-signing chain. CDHash,
+executable SHA-256, and package-receipt SHA-256 remain observed identity
+evidence, not a self-issued authorization record. A different team, identifier,
+requirement, invalid chain, ad-hoc signature, or Security.framework error
+blocks.
 
 The resulting immutable `github_remote_ref_process_image_observation` event
 binds the nofollow descriptor source, bytes SHA-256, stable file identity, PID
 and parent PID, audit-token SHA-256, audit-token-bound SecCode guest attributes,
 validity result, identifier, team ID, CDHash, exact designated requirement,
-optional package receipt, and `Foundation.URLSession` implementation. Its PID,
-executable SHA-256, and audit-token SHA-256 must equal the independently
-authenticated broker authority event. Platform-identity v3 commits a canonical
-SHA-256 over this complete process identity; the verifier reconstructs it from
-the process event. The current invocation manifest binds the event handle and
-payload SHA-256, so a swapped executable, audit token, process, or event blocks.
+package receipt, and `Foundation.URLSession` implementation. Its PID,
+executable SHA-256, and audit-token SHA-256 must equal the authenticated broker
+authority event. Platform-identity v5 commits the complete current process
+identity but carries no nested process-supplied release authorization. The
+invocation manifest binds the process event handle and payload SHA-256, so a
+swapped executable, audit token, process, signer, or event blocks.
 
 The URLSession authentication challenge applies
 `SecPolicyCreateSSL(server=true,hostname=api.github.com)` and
@@ -970,31 +976,42 @@ set, the user/admin trust-setting certificate digest sets, and the raw
 evaluated root in the Apple system set, and that root absent from user/admin
 sets. The current invocation manifest binds this event's handle and digest.
 
-After the response completes, the broker serializes the complete
-`URLSessionTaskMetrics.transactionMetrics` array into one immutable
-`github_remote_ref_control_connection_observation`. Exactly one transaction is
-allowed. The event binds the complete transaction object and array digest,
-task identifier, zero redirects, protocol, connected remote and local
-addresses and ports, proxy/reuse flags, TLS version and cipher, and
-fetch/connect/secure/response timestamps. Flattened convenience fields must
-equal that sole transaction exactly. An omitted, extra, proxy, or reused
-transaction blocks. The verifier also requires a globally routable remote IP
-on port 443, TLS 1.2 or 1.3, and ordered metrics. The response and invocation
-manifest bind the connection event handle and digest; no DNS-only or
-hostname-only route observation is accepted.
+After the response completes, the broker serializes one exact security-relevant
+normalized projection for every entry in
+`URLSessionTaskMetrics.transactionMetrics` into one immutable
+`github_remote_ref_control_connection_observation`. The projection is not a
+claim to serialize the entire native Objective-C transaction object. Exactly
+one native entry and therefore one projected record is allowed. That record
+binds the URLSession session and task identifiers, request method and URL,
+response URL and status, protocol, connected remote and local addresses and
+ports, proxy/reuse flags, TLS version and cipher, and
+fetch/connect/secure/response timestamps. Request, trust-evaluation, response,
+completion, and receipt records repeat the same session/task identity.
+Flattened convenience fields must equal the sole normalized record exactly.
+An omitted native entry, extra projected record, task/session substitution,
+request/response mismatch, proxy, or reused transaction blocks. The verifier
+also requires a globally routable remote IP on port 443, TLS 1.2 or 1.3, and
+ordered metrics. The response and invocation manifest bind the connection
+event handle and digest; no DNS-only or hostname-only route observation is
+accepted.
 
 The separate immutable `github_remote_ref_control_plane_authority` event binds
 the dedicated operation, authenticated current capability-store and platform
 identities, broker instance/boot/PID/executable/audit-token identities, closed
-profile digest, private credential handle, and broker-current replay and
-recovery-registry snapshots. After reservation, the broker performs exactly one
-`SecItemCopyMatching` query for generic-password service
+profile digest, private credential persistent-reference handle, credential
+access-group digest, and broker-current replay and recovery-registry snapshots.
+After reservation, the broker performs a `SecItemCopyMatching` query pinned to
+that authority persistent reference and access group, generic-password service
 `com.ohmypi.broker.github-app-installation-token`, account
-`kmccleary3301/breadboard`, match limit one, authentication UI fail, returning
-data, attributes, and persistent reference. Its credential-use record binds OS
-status zero, the persistent-reference digest, private credential-handle digest,
-token-bytes digest, and final Authorization-header digest. Secret bytes remain
-unserialized; missing, duplicate, UI-requiring, or failed retrieval blocks.
+`kmccleary3301/breadboard`, authentication UI fail, non-synchronizable storage,
+and `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. A separate
+`kSecMatchLimitAll` attribute/persistent-reference uniqueness query must return
+exactly one matching item. The credential-use record binds OS status zero, the
+same persistent-reference and access-group digests, accessibility and
+synchronizable attributes, token-bytes digest, and final Authorization-header
+digest. Secret bytes remain unserialized; an unpinned, wrong-access-group,
+duplicate, synchronizable, UI-requiring, inaccessible, or failed retrieval
+blocks.
 
 Reservation, credential-use, request, trust-evaluation, response, completion,
 and receipt records carry exact operation/invocation/reservation identity,
@@ -1033,11 +1050,15 @@ authority nonce; and the after snapshot equals exactly the before sets plus
 those two current values. Each snapshot recomputes its body digest and store
 tip, the after snapshot's prior tip equals the before snapshot's tip, and an
 empty before set is accepted only with the canonical authenticated
-store-instance genesis tip. The replay guard binds both snapshot handles and
-payload digests, copies the authenticated before sets and tip, records the
-authenticated after tip, and commits the append. Observation,
-before snapshot, guard, and after snapshot times are monotonically ordered and
-fresh against the broker clock. The guard's handle and payload digest equal
+store-instance genesis tip. The replay guard is the broker's durable atomic
+append receipt: it binds both snapshot handles and payload digests, copies the
+authenticated before sets and tip, records the authenticated after tip,
+requires compare-and-swap success and a positive durable-store commit
+sequence, and commits the append. The verifier scans the broker store and
+requires exactly one append receipt from that prior tip; a sibling winner,
+staged-only receipt, or fork blocks. Observation, before snapshot, guard, and
+after snapshot times are monotonically ordered and fresh against the broker
+clock. The guard's handle and payload digest equal
 `observation_replay_guard_event_handle` and
 `observation_replay_guard_sha256`. Those eight operation-scope fields equal the
 completed `planning_remote_ref_observation` control-plane lifecycle and are
@@ -1528,24 +1549,27 @@ observation result after its merge and ordered STATE materializations. It
 grants no authority for a later publication. This genesis record has
 `replacement_generation: 0` and null predecessor acceptance bindings. Every
 later activation must resolve exactly one authenticated
-`github_remote_recovery_acceptance` event from the current broker store. That
-broker-signed event binds the current capability-store instance, prior admitted
-planning-core digest, the full exact predecessor `remote_recovery` record and
-digest, prior observation envelope handle/immutable-object/receipt identities,
-prior replay-guard handle and digest, and acceptance time.
+`github_remote_recovery_acceptance` v3 event from the current broker store.
+That event is the broker's durable atomic compare-and-swap receipt: it binds
+the current capability-store instance, prior admitted planning-core digest,
+the full exact predecessor `remote_recovery` record and digest, prior
+observation envelope handle/immutable-object/receipt identities, prior replay
+guard handle and digest, expected previous registry tip, compare-and-swap
+success, positive durable-store commit sequence, and acceptance time.
 The closed broker event-type registry carries this exact payload schema under
-operation class `planning_remote_recovery_acceptance`; an undeclared same-shape
-envelope cannot serve as continuity authority. Every broker-current
+operation class `planning_remote_recovery_acceptance`; an undeclared
+same-shape envelope cannot serve as continuity authority. Every broker-current
 `github_remote_recovery_registry_snapshot` uses schema v2. Genesis has
 generation `-1`, a recomputed remote-identity-specific genesis tip, and null
 previous-snapshot and current-acceptance fields. Every non-genesis snapshot
 binds the previous snapshot's event handle, payload digest, and registry tip.
 The verifier recursively authenticates that complete snapshot chain, requires
-each generation to increase by exactly one, and requires each current
-acceptance's `previous_registry_tip_sha256` to equal its authenticated previous
-snapshot tip. The acceptance body digest and previous tip derive the exact new
-tip; its admitted planning core, remote record, observation, replay guard, and
-acceptance digest must equal the current snapshot fields.
+each generation to increase by exactly one, and scans the broker store for
+exactly one acceptance from the previous tip and next generation. The
+acceptance body digest and previous tip derive the exact new tip; its admitted
+planning core, remote record, observation, replay guard, and acceptance digest
+must equal the durable current snapshot fields. A sibling acceptance,
+staged-only mutation, failed CAS, or fork blocks.
 
 The successor sets `replacement_generation` to exactly its authenticated
 predecessor plus one, binds the acceptance event, prior planning-core and
@@ -1648,12 +1672,12 @@ challenge generator. Its inputs are the authenticated current projection,
 selected-`S` identity, a fresh 256-bit CSPRNG nonce, and a private grammar
 commitment. Selected-`S` code, caller templates, caller cases, prior checker
 outputs, and public fixture recipes are forbidden generator inputs. The
-generator produces exactly two independently salted randomized valid cases and
-exactly two private, opaque, non-enumerable, single-invariant negative cases for
-each of the eleven semantic families, for exactly 24 cases in every one of ten
-challenge seeds and exactly 243 case executions including the three fixed
-admission cases. Valid and negative inputs have the same canonical-object
-transport shape.
+generator produces exactly two independently salted randomized valid cases in
+total and exactly two private, opaque, non-enumerable, single-invariant
+negative cases for each of the eleven semantic families: exactly 24 private
+checker case executions. The three fixed selection-admission events described
+above are authority checks, not additional checker cases. Valid and negative
+inputs have the same canonical-object transport shape.
 
 Before the first checker launch, the broker fixes the entire private bundle:
 case order, canonical input bytes and digests, private family and expected
