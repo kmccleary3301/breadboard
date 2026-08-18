@@ -411,7 +411,7 @@
     {
       "authority": "GitHub branch north-star/recovery-execution at authenticated PR #56 merge; reviewed authored anchor retained separately",
       "concern": "recovery planning authority",
-      "current_ref": "github:kmccleary3301/breadboard@75efe56fad477d5c326a403732b2ca833a3986f3; authored-anchor:7acfae74de8aee4620c239ae875d1f4a87d616ee"
+      "current_ref": "github:kmccleary3301/breadboard@55d30538aa172f034e0b38bbcba4358492696181; authenticated-merge:75efe56fad477d5c326a403732b2ca833a3986f3; authored-anchor:7acfae74de8aee4620c239ae875d1f4a87d616ee"
     },
     {
       "authority": "GitHub main",
@@ -563,7 +563,7 @@
       "total_rows": 21
     }
   },
-  "generated_at_utc": "2026-08-18T00:11:06.678744Z",
+  "generated_at_utc": "2026-08-18T00:13:30.501336Z",
   "generator": {
     "authored_input": false,
     "do_not_edit": true,
@@ -600,7 +600,7 @@
     {
       "authority_role": "generated_non_authoritative_pre_refresh_view",
       "path": "docs/plans/north_star_recovery/STATE.json",
-      "sha256": "sha256:9362764a6bef0a2d5060476db6fdcf463a7c636e0fc85e8baa5c5890e5829606",
+      "sha256": "sha256:4d21d0a2d98d884cf725a0bf7cda91f7b15f188f426b0d64b68438ceba485040",
       "source_status": "present_merged_recovery_source"
     },
     {
@@ -934,7 +934,7 @@
         "title": "F1 Final candidate audit"
       }
     ],
-    "materialized_at_utc": "2026-08-18T00:11:06.678744Z",
+    "materialized_at_utc": "2026-08-18T00:13:30.501336Z",
     "scope_version": "bb.north_star_recovery.g2.scope.v4",
     "tracker_materialization": "dedicated_authoritative_local_only_Beads_projection"
   },
@@ -1132,14 +1132,14 @@
     "planning_authority_at_refresh": {
       "branch": "north-star/recovery-execution",
       "checkout_path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
-      "commit_sha": "75efe56fad477d5c326a403732b2ca833a3986f3",
+      "commit_sha": "55d30538aa172f034e0b38bbcba4358492696181",
       "merge_base_with_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "remote_commit_sha_at_refresh": "75efe56fad477d5c326a403732b2ca833a3986f3",
+      "remote_commit_sha_at_refresh": "55d30538aa172f034e0b38bbcba4358492696181",
       "reviewed_authored_anchor": "7acfae74de8aee4620c239ae875d1f4a87d616ee",
       "reviewed_authored_anchor_parent": "eba2edad3f7aa64c5bdf26ce4caf6dfe28980299",
-      "role": "Authenticated PR #56 merge preserving the exact two reviewed authored planning blobs and whole reviewed authored-anchor tree.",
-      "tree_sha": "5b41619db486f5b0a0b0972822969400c8c17446",
-      "working_tree_state": "clean_before_generated_STATE_refresh"
+      "role": "Generated STATE-only materialization tip after authenticated PR #56 merge; reviewed authored anchor and exact two planning blobs remain separately bound.",
+      "tree_sha": "c4014e53ff3990c870f76337597caa2f47a034e2",
+      "working_tree_state": "clean_before_final_generated_STATE_refresh"
     },
     "postmerge_ci": {
       "conclusion": "success",
@@ -1189,8 +1189,10 @@
       "tree_equivalent_to_reviewed_authored_anchor": true
     },
     "state_materialization_commit": {
+      "prior_materialization_commit": "55d30538aa172f034e0b38bbcba4358492696181",
+      "prior_materialization_tree": "c4014e53ff3990c870f76337597caa2f47a034e2",
       "reason": "A commit containing STATE.json cannot be named inside that same file without recursive identity drift. The external handoff manifest binds the final commit and STATE.json SHA-256.",
-      "status": "pending_external_binding_after_commit"
+      "status": "pending_final_external_binding_after_commit"
     }
   },
   "tracker": {
@@ -1203,7 +1205,7 @@
     },
     "g2_issue": {
       "dependency_count": 1,
-      "dependent_count": 4,
+      "dependent_count": 5,
       "id": "bb-zjd",
       "labels": [
         "north-star-recovery",
@@ -1212,7 +1214,7 @@
       "priority": 1,
       "status": "open",
       "title": "G2 Install packet-control enforcement",
-      "updated_at": "2026-08-18T00:08:27Z"
+      "updated_at": "2026-08-18T00:12:56Z"
     },
     "projection_note": "The packet graph is materialized only from the dedicated authoritative local-only recovery store. Primary project Beads is isolated non-authoritative for this campaign.",
     "records": {
