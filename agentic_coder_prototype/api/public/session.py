@@ -49,7 +49,7 @@ async def _session_result(service, session_id: str, command_name: str) -> CliRes
     )
 def _resolve_start_lock(request: SessionStartRequest, workspace: Path):
     lock_path = workspace_path(request.lock_id, workspace)
-    _, metadata_path = harness_operations.load_lock(lock_path, workspace, explicit=True)
+    lock, metadata_path = harness_operations.load_lock(lock_path, workspace, explicit=True)
     metadata = json.loads(metadata_path.read_text())
     source_ref = metadata.get("source_ref")
     if not isinstance(source_ref, str) or not source_ref:
@@ -62,11 +62,11 @@ def _resolve_start_lock(request: SessionStartRequest, workspace: Path):
         check=True,
         contained=True,
     ))
-    return lock_path, source_path, checked
+    return lock, source_path, checked
 async def _start_result(request: SessionStartRequest, workspace: Path, service) -> CliResult:
     if request.session_id and request.session_id != Path(request.session_id).name:
         raise ValueError("session_id must be a portable identifier")
-    _, source_path, checked = await run_in_threadpool(_resolve_start_lock, request, workspace)
+    effective_lock, source_path, checked = await run_in_threadpool(_resolve_start_lock, request, workspace)
     if not checked.ok:
         error = checked.error or {}
         return CliResult.failure(
@@ -80,10 +80,16 @@ async def _start_result(request: SessionStartRequest, workspace: Path, service) 
             next_actions=checked.next_actions,
         )
     created = await service.create_session(
-        BridgeSessionCreateRequest(config_path=str(source_path), task=request.task, workspace=str(workspace)),
+        BridgeSessionCreateRequest(
+            config_path=str(source_path),
+            task=request.task,
+            workspace=str(workspace),
+            metadata={"non_interactive_cli_session": True, "cli_session_kind": "oneshot"},
+        ),
         session_id=request.session_id,
-        event_root=workspace_path(".breadboard/service_events", workspace),
+        event_root=workspace_path(".breadboard/sessions", workspace),
         runtime_root=workspace_path(".breadboard/service_records", workspace),
+        effective_lock=effective_lock,
     )
     return await _session_result(service, created.session_id, "start")
 async def _list_result(service) -> CliResult:

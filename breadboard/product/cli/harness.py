@@ -1,5 +1,5 @@
 from __future__ import annotations
-import contextlib,json,os,shlex,socket,sys,threading,time
+import contextlib,json,os,shlex,socket,threading,time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any,Mapping
@@ -102,61 +102,55 @@ def load_lock(p,w,*,explicit=False):
     if not t.exists():raise FileNotFoundError(f"lock is missing: {_ref(t,w)}")
     if not lock_metadata_path(t).exists():raise ValueError("lock metadata is missing; lock must be regenerated")
     return EffectiveHarnessLock._from_record(json.loads(t.read_text())),lock_metadata_path(t)
-def _record_count(response):
-    if not isinstance(response,dict):return 0
-    total=response.get("total")
-    if isinstance(total,int):return total
-    records=response.get("records")
-    return len(records) if isinstance(records,list) else 0
-def _poll_records(client,session_id):
-    deadline=time.monotonic()+0.5
-    while True:
-        response=client.read_session_records(session_id)
-        if _record_count(response)>0 or time.monotonic()>=deadline:return response
-        time.sleep(0.1)
 @contextlib.contextmanager
-def _local_server()->Iterator[str]:
+def _local_server(workspace:Path)->Iterator[str]:
     import uvicorn
     from agentic_coder_prototype.api.cli_bridge.app import create_app
-    names=("BREADBOARD_LEGACY_ROUTES","BREADBOARD_ENABLE_PUBLIC_API");previous={name:os.environ.pop(name,None) for name in names};listener=None
+    settings={
+        "BREADBOARD_LEGACY_ROUTES":"0",
+        "BREADBOARD_ENABLE_PUBLIC_API":"1",
+        "BREADBOARD_ENABLE_E4_API":"0",
+        "BREADBOARD_PUBLIC_WORKSPACE":str(workspace),
+        "RAY_SCE_LOCAL_MODE":"1",
+    }
+    previous={name:os.environ.get(name) for name in settings}
+    os.environ.update(settings);listener=None
     def restore_environment():
         for name,value in previous.items():
             if value is None:os.environ.pop(name,None)
             else:os.environ[name]=value
     try:
         listener=socket.socket(socket.AF_INET,socket.SOCK_STREAM);listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1);listener.bind(("127.0.0.1",0));listener.listen(128)
-        server=uvicorn.Server(uvicorn.Config(create_app(),host="127.0.0.1",port=int(listener.getsockname()[1]),log_config=None,access_log=False))
+        server=uvicorn.Server(uvicorn.Config(create_app(),host="127.0.0.1",port=int(listener.getsockname()[1]),log_level="critical",access_log=False))
     except BaseException:
         if listener is not None:listener.close()
         restore_environment()
         raise
-    real_out,real_err=sys.stdout,sys.stderr
     def serve():
-        with open(os.devnull,"w") as sink,contextlib.redirect_stdout(sink),contextlib.redirect_stderr(sink):server.run(sockets=[listener])
+        server.run(sockets=[listener])
     thread=threading.Thread(target=serve,daemon=True);thread.start();deadline=time.monotonic()+10
     while not server.started and thread.is_alive() and time.monotonic()<deadline:time.sleep(0.01)
     if not server.started:
         server.should_exit=True;thread.join(timeout=5);listener.close();restore_environment()
-        if thread.is_alive():sys.stdout,sys.stderr=real_out,real_err
         raise RuntimeError("local create_app server did not start")
     try:yield f"http://127.0.0.1:{listener.getsockname()[1]}"
     finally:
         server.should_exit=True;thread.join(timeout=10);listener.close();restore_environment()
-        if thread.is_alive():
-            sys.stdout,sys.stderr=real_out,real_err
-            raise RuntimeError("local create_app server did not stop")
+        if thread.is_alive():raise RuntimeError("local create_app server did not stop")
 def run(a):
     p,w=_p(a),_w(a)
     try:
-        lock_argument=getattr(a,"lock",None); lock_path=Path(lock_argument).expanduser().resolve() if lock_argument else p
-        lock,mp=load_lock(lock_path,w,explicit=bool(lock_argument)); c=_compile(p,w,getattr(a,"contained",False)); m=json.loads(mp.read_text())
+        lock_argument=getattr(a,"lock",None)
+        requested_lock_path=Path(lock_argument).expanduser().resolve() if lock_argument else p
+        effective_lock_path=requested_lock_path if lock_argument or requested_lock_path.name.endswith(".lock.json") else lock_path(requested_lock_path)
+        lock,mp=load_lock(requested_lock_path,w,explicit=bool(lock_argument)); c=_compile(p,w,getattr(a,"contained",False)); m=json.loads(mp.read_text())
         lock_action=f"breadboard harness lock {shlex.quote(str(p))}"
-        if lock_argument:lock_action+=f" --out {shlex.quote(str(lock_path))}"
+        if lock_argument:lock_action+=f" --out {shlex.quote(str(requested_lock_path))}"
         if m.get("source_sha256")!=sha256_json(c.resolved_author_dict()) or m.get("graph_hash")!=lock["graph_hash"] or c.lock.as_dict()!=lock.as_dict():return CliResult.failure(["harness","run"],5,"lock_drift","mutable harness definition cannot run without a fresh lock","harness.run",next_actions=[lock_action])
-        a._effective_lock=lock;a._workspace=w
+        a._effective_lock=lock;a._workspace=w;a._lock_id=_ref(effective_lock_path,w)
         if getattr(a,"local",False):
             try:
-                with _local_server() as server:
+                with _local_server(w) as server:
                     a.server=server
                     return _server(a)
             except ModuleNotFoundError as e:return CliResult.failure(["harness","run"],6,"local_backend_unavailable",str(e),"harness.run",next_actions=["install BreadBoard with local runtime support or use --server"],status="blocked")
@@ -165,19 +159,33 @@ def run(a):
 def _server(a):
     try:
         import breadboard_sdk
-        task=str(getattr(a,"task",None) or "List files");c=breadboard_sdk.BreadboardClient(a.server);s=c.create_session(config_path=str(a.PATH),task="");sid=str(s["session_id"]);c.post_input(sid,content=task);terminal=False
-        for e in c.stream_events(sid,query={"replay":"true"}):
-            kind=str(e.get("type") or "") if isinstance(e,dict) else ""
-            if kind=="error":return CliResult.failure(["harness","run"],4,"session_stream_error",f"session event stream failed: {e.get('payload')}","harness.run")
-            if kind in {"completion","run_finished"}:terminal=True;break
+        task=str(getattr(a,"task",None) or "List files");c=breadboard_sdk.BreadboardClient(a.server,timeout_s=120)
+        started=c.start_session({"lock_id":a._lock_id,"task":task},idempotency_key=sha256_json({"lock_id":a._lock_id,"task":task}))
+        if not isinstance(started,dict) or not started.get("ok"):
+            raise RuntimeError(f"session.start failed: {started!r}")
+        session=started.get("data",{}).get("session",{})
+        sid=str(session.get("session_id") or "")
+        if not sid:raise RuntimeError("session.start returned no session identity")
+        terminal=False
+        for event in c.events_session(sid):
+            kind=str(event.get("kind") or event.get("type") or "") if isinstance(event,dict) else ""
+            if kind in {"session.failed","session.canceled","error"}:
+                payload=event.get("payload") if isinstance(event,dict) else event
+                return CliResult.failure(["harness","run"],4,"session_execution_failed",f"session execution failed: {payload}","harness.run")
+            if kind=="session.completed":terminal=True;break
         if not terminal:return CliResult.failure(["harness","run"],4,"session_stream_eof","session event stream ended before a terminal event","harness.run")
-        records=_poll_records(c,sid);record_count=_record_count(records);refs=sorted({_ref(Path(str(row["path"])),_w(a)) for row in records.get("records",[]) if isinstance(row,dict) and row.get("path")}) if isinstance(records,dict) else [];hashes={};next_actions=[]
+        current=c.get_session(sid)
+        view=current.get("data",{}).get("session",{}) if isinstance(current,dict) else {}
+        event_count=int(view.get("event_count") or 0)
+        refs=[];next_actions=[]
+        hashes={"lock":str(view.get("effective_lock_hash") or ""),"task":str(view.get("task_hash") or "")}
+        hashes={name:value for name,value in hashes.items() if value}
         if getattr(a,"local",False):
-            from .session import persist_completed_run
-            workspace_arg=shlex.quote(str(getattr(a,"workspace",None) or "."));local_ref,view=persist_completed_run(a._effective_lock,task,sid,a._workspace);record_count=max(record_count,view.event_count);refs=sorted({*refs,local_ref});hashes={"lock":view.effective_lock_hash,"task":view.task_hash};next_actions=[f"breadboard session --workspace {workspace_arg} show {sid}"]
-        result=CliResult.success(["harness","run"],{"session_id":sid,"record_count":record_count},refs=refs,hashes=hashes,next_actions=next_actions,stage="harness.run")
-        if not record_count:result.warnings.append("session completed before bridge runtime records became visible")
-        return result
+            from .session import session_event_path
+            workspace_arg=shlex.quote(str(getattr(a,"workspace",None) or "."))
+            refs=[_ref(session_event_path(a._workspace,sid),a._workspace)]
+            next_actions=[f"breadboard session --workspace {workspace_arg} show {sid}"]
+        return CliResult.success(["harness","run"],{"session_id":sid,"record_count":event_count,"event_count":event_count},refs=refs,hashes=hashes,next_actions=next_actions,stage="harness.run")
     except ModuleNotFoundError as e:return CliResult.failure(["harness","run"],6,"client_backend_unavailable",str(e),"harness.run",next_actions=["install BreadBoard SDK support"],status="blocked")
     except Exception as e:return from_exception(["harness","run"],e,"harness.run")
 def list_harnesses(a):

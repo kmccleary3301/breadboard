@@ -31,6 +31,8 @@ def test_session_lifecycle_and_resumable_event_stream(client: TestClient, monkey
     )
     assert started.status_code == 202
     assert started.json()["data"]["session"]["status"] == "running"
+    lock = json.loads((tmp_path / lock_id).read_text(encoding="utf-8"))
+    assert started.json()["hashes"]["lock"] == lock["graph_hash"]
     monkeypatch.setenv("SESSION_TOKEN", "abc")
     def finish() -> None:
         sleep(0.05)

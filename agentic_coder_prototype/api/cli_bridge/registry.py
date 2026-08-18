@@ -16,6 +16,15 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+_PRODUCT_STATUS_PROJECTION = {
+    "running": SessionStatus.RUNNING,
+    "awaiting_approval": SessionStatus.RUNNING,
+    "paused": SessionStatus.RUNNING,
+    "completed": SessionStatus.COMPLETED,
+    "failed": SessionStatus.FAILED,
+    "canceled": SessionStatus.STOPPED,
+}
+
 @dataclass
 class SessionRecord:
     session_id: str
@@ -35,6 +44,16 @@ class SessionRecord:
     dispatch_lock: "asyncio.Lock" = field(default_factory=asyncio.Lock, repr=False)
     dispatcher_task: Optional[asyncio.Task] = None
     runner: Any = None  # Populated with SessionRunner once started
+    product_session: Any = None
+
+    def projected_status(self) -> SessionStatus:
+        if self.product_session is None:
+            return self.status
+        product_status = self.product_session.read_model.status
+        try:
+            return _PRODUCT_STATUS_PROJECTION[product_status]
+        except KeyError as error:
+            raise RuntimeError(f"unknown product Session status: {product_status}") from error
 
     def to_summary(self) -> SessionSummary:
         model = None
@@ -44,7 +63,7 @@ class SessionRecord:
             mode = self.metadata.get("mode")
         return SessionSummary(
             session_id=self.session_id,
-            status=self.status,
+            status=self.projected_status(),
             created_at=self.created_at,
             last_activity_at=self.last_activity_at,
             model=model,
@@ -81,7 +100,15 @@ class SessionRegistry:
             record = self._records.get(session_id)
             if not record:
                 return
-            record.status = status
+            projected = record.projected_status()
+            if getattr(record, "product_session", None) is None:
+                record.status = status
+            elif projected is not status:
+                raise RuntimeError(
+                    f"bridge status {status.value} disagrees with product Session status {projected.value}"
+                )
+            if getattr(record, "product_session", None) is not None:
+                record.status = projected
             record.last_activity_at = _utcnow()
 
     async def update_metadata(
