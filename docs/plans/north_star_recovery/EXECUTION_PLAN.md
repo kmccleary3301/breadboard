@@ -884,26 +884,28 @@ validation. Trusted selections come
 only from immutable parent-session actions, never environment variables,
 filesystem JSON, or worker output.
 
-The verifier invokes absolute `/usr/bin/git` without a shell. It pins the
-canonical common Git directory and repository/remote identity; clears all
-`GIT_*`, Python, locale, pager, editor, hook, credential, config, object,
-alternate-object, index, worktree, and path override variables except an
-explicit fixed allowlist; disables replacement objects, hooks, filters,
-textconv, pagers, external diffs, and optional locks; rejects replace/graft or
-shallow ancestry; and uses full OIDs plus NUL-delimited raw tree/diff output
-with rename detection disabled. It rejects ambiguous abbreviations, symlinks,
-submodules, non-regular modes, case or Unicode-normalization path collisions,
-path escapes, duplicate JSON keys, non-finite numbers, wrong object types,
-undeclared lengths, and any object whose OID or SHA-256 does not recompute.
-Git refs are locators only.
+Remote refs are locators only. Before planning-core sealing or any review
+reservation, the broker performs one dedicated
+`planning_remote_ref_observation` suboperation. It does not launch Git, curl,
+Python, a shell, or any helper. The already running broker process uses
+`Foundation.URLSession` directly against the exact authenticated REST endpoint
+`https://api.github.com/repos/kmccleary3301/breadboard/git/ref/heads/north-star/recovery-execution`.
+The session uses `GET`, the fixed public `Accept`, `User-Agent`, and
+`X-GitHub-Api-Version` headers, and a Bearer credential fetched from the
+broker-private credential store. Secret bytes never enter planning-core,
+events, logs, response records, or the child invocation manifest. Every
+redirect, timeout, non-200 response, oversize body, duplicate JSON key, schema
+mismatch, proxy route, reused connection, non-global endpoint, or unexpected
+child process blocks.
 
 Reset-3 seals one nested `remote_recovery` record inside planning-core v3
 before any review reservation. Its exact fields are
 `schema_version`, `repository_remote_url`, `remote_ref`,
 `replacement_generation`, `predecessor_remote_recovery_sha256`,
-`predecessor_observed_ref_tip`,
-`predecessor_planning_core_sha256`,
-`predecessor_acceptance_event_handle`, `observation_event_handle`,
+`predecessor_observed_ref_tip`, `predecessor_planning_core_sha256`,
+`predecessor_acceptance_event_handle`,
+`recovery_registry_snapshot_event_handle`,
+`recovery_registry_snapshot_sha256`, `observation_event_handle`,
 `observation_receipt_sha256`, `observation_replay_guard_event_handle`,
 `observation_replay_guard_sha256`, `observation_packet_key`,
 `observation_execution_epoch`, `observation_scope_version`,
@@ -921,75 +923,67 @@ to `https://github.com/kmccleary3301/breadboard.git` at
 materialization chain, and binds an immutable authenticated
 `github_remote_ref_observation` broker event. That event is actor
 `omp_broker`, phase `G2/reset-3/planning-control-plane`, and operation class
-`planning_remote_ref_observation`, distinct from `planning_core_seal`. Its
-closed broker-control-plane profile executes the actual regular
-`/Library/Developer/CommandLineTools/usr/bin/git` image directly, permits only
-the resolved regular
-`/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-http`
-helper image, and uses the exact
-`/Library/Developer/CommandLineTools/usr/bin/git ls-remote --refs
-https://github.com/kmccleary3301/breadboard.git
-refs/heads/north-star/recovery-execution` argv. It never treats the
-`git-remote-https` symlink or the `/usr/bin/git` Xcode-select shim as an
-executable image authority.
+`planning_remote_ref_observation`, distinct from `planning_core_seal`.
 
-The authenticated platform-identity record supplied through the broker-owned
-authority descriptor contains exact Git/helper package approvals and the
-approved TLS trust-policy identity. The verifier opens both approved regular
-image paths with no-follow, compares their live bytes, SHA-256, device, inode,
-mode, and root ownership to those platform approvals, and binds package
-receipt, designated code-signing requirement, identifier, team, CDHash, and
-successful Security.framework validation evidence. The platform TLS approval
-binds the trust-store digest, allowed root/intermediate SPKI digests,
-`github.com`, validation-policy version, required revocation policy, and
-Security.framework trust-evaluation authority. Before authority issuance, the
-broker records immutable operation-scoped
-`github_remote_ref_execution_image_manifest` and
-`github_remote_ref_tls_trust_policy` events that must equal those independently
-authenticated platform approvals exactly.
+Before sending the request, the broker emits an immutable
+`github_remote_ref_process_image_observation` event for its own process. The
+event binds the executable's absolute path, bytes SHA-256, device, inode, mode,
+PID and parent PID, code-signing validation status, identifier, optional team,
+CDHash, CodeDirectory SHA-256, designated requirement, optional package
+receipt, and `Foundation.URLSession` transport implementation. Its executable
+SHA-256 and PID must equal the independently authenticated broker authority
+event. The current invocation manifest binds the event handle and payload
+SHA-256; an unbound or substituted process observation cannot authorize the
+request.
+The authenticated platform-identity v2 record commits a canonical SHA-256 over
+that complete process identity. The verifier reconstructs the same object from
+the process-image event and requires equality, so broker PID/executable/signing
+fields cannot be replaced by a mutually self-consistent authority/event pair.
 
-The broker starts Git from the target's root-owned, opened-no-follow, empty
-non-repository `/var/empty` directory under a cleared-then-exact noninteractive
-environment. The primary EndpointSecurity exec record must prove a non-root
-effective child UID. The verifier requires no ACL entries before or after
-waitpid and requires group/other write bits to be clear, then recomputes that
-this child cannot write despite the root owner's normal `0755` write bit. It
-rechecks the same directory identity, mode, ownership, ACL bytes, and emptiness
-after waitpid. System and global Git config are disabled; stable emptiness makes
-local config unreachable; command config, includes, credential helpers, proxy
-variables, extra headers, and credentials are absent. A separate immutable
-`github_remote_ref_control_plane_authority` event binds the dedicated
-operation, authenticated current capability-store and platform identities,
-closed profile digest, both preoperation authority digests, and fresh replay
-nonce. Distinct immutable `github_remote_ref_process_image_observation` events
-bind the primary and helper PID, parent PID, effective credentials, executable
-vnode and SHA-256, audit token, and EndpointSecurity `NOTIFY_EXEC` identity.
-The closed broker event-type registry carries both process observations with
-their exact payload schema and `planning_remote_ref_observation` operation class.
-The `github_remote_ref_execution_attestation` event binds each no-follow opened
-image to its independently approved platform identity, pre/post descriptor
-identity checks, and corresponding kernel exec observation. It also binds the
-stable working directory, empty effective Git-config source set, empty proxy
-environment, no unexpected child processes, and strict start/completion times.
+The URLSession authentication challenge applies
+`SecPolicyCreateSSL(server=true,hostname=api.github.com)` and
+`SecPolicyCreateRevocation(kSecRevocationUseAnyAvailableMethod|
+kSecRevocationRequirePositiveResponse)`, enables trust network fetch, forbids
+custom anchor certificates, and calls `SecTrustEvaluateWithError`. Failure,
+unknown or soft-fail revocation, a custom anchor, hostname mismatch, or an
+empty chain blocks. The broker emits
+`github_remote_ref_platform_trust_observation`, binding the exact operation
+identity, policies, trust result/error, every certificate's DER bytes and
+SHA-256, positive per-certificate revocation statuses, leaf DNS names and
+validity interval, leaf/root SPKI SHA-256, root subject/self-signature status,
+the raw `SecTrustCopyResult` binary plist and its parsed key set, and the fact
+that the macOS system trust store—not caller-supplied anchors—was evaluated.
+The current invocation manifest binds this event's handle and payload SHA-256.
 
-A `github_remote_ref_network_observation` event binds its connector PID to that
-attested helper and binds the actually resolved and connected
-`github.com:443` address, proxy-free direct connection, zero redirects, SNI,
-validated hostname and TLS chain, peer certificate plus every chain
-certificate DER/SPKI digest, selected root/intermediate SPKI identities,
-authenticated trust-store and validation policy, Security.framework trust
-result, and revocation result. The immutable observation contains exact
-reservation, invocation, execution-start, launch, network, waitpid-result,
-execution-completion, completion, and post-exec receipt records. The two
-preoperation authorities have timestamps strictly before authority issuance;
-broker-assigned strict sequence numbers, prior-record SHA-256 chaining, and
-strictly increasing lifecycle timestamps establish the remaining order. The
-post-exec receipt binds both preoperation authorities and every result digest.
-The observation records canonical raw stdout
-`<40-lowercase-oid>\t<exact-ref>\n`, empty raw stderr, raw SHA-256s, exit code
-zero, nonempty nonce, observed UTC time/head, and its own receipt digest.
-`planning_core_seal` launches no child and has no network authority; it
-consumes this completed receipt through `remote_recovery`.
+After the response completes, URLSession task metrics produce one immutable
+`github_remote_ref_control_connection_observation`. It binds task identifier,
+zero redirects, protocol, connected remote and local addresses and ports,
+proxy/reuse flags, TLS version and cipher, and fetch/connect/secure/response
+timestamps. The verifier requires a fresh connection, no proxy, a globally
+routable remote IP on port 443, TLS 1.2 or 1.3, and monotonic metrics. The
+response record and current invocation manifest bind the connection event
+handle and payload SHA-256. This is the authenticated route claim; no DNS-only
+or hostname-only observation is accepted.
+
+The separate immutable `github_remote_ref_control_plane_authority` event binds
+the dedicated operation, authenticated current capability-store and platform
+identities, broker instance/boot/PID/executable/audit-token identities, closed
+profile digest, private credential handle, and broker-current replay and
+recovery-registry snapshots. Reservation, request, trust-evaluation, response,
+completion, and receipt records carry exact operation/invocation/reservation
+identity, strict lifecycle sequence, prior-record SHA-256 links, and
+recomputed body digests. Their timestamps strictly order authority, process
+observation, reservation, request, trust evaluation, response, completion, and
+receipt; connection metrics lie within the request/response interval. The
+request binds the process event and proves the authorization secret was not
+serialized. The trust record binds the platform-trust event. The response
+binds the connection event, zero redirects, status 200, exact response headers,
+and a bounded exact JSON body with only `ref`, `node_id`, `url`, and `object`;
+the object contains only the full commit SHA, type, and URL. The observation
+binds that parsed full commit OID, nonempty nonce, observed UTC time, response
+body SHA-256, and its own receipt digest. `planning_core_seal` launches no
+child and has no network authority; it consumes only this completed,
+invocation-bound receipt through `remote_recovery`.
 `observation_event_handle` resolves the sole registered
 remote-observation event in the admitted broker snapshot, and
 `observation_receipt_sha256` equals its receipt digest. The record also binds
@@ -1070,12 +1064,15 @@ internal blank lines, stops only at the first nonblank line with indentation
 below eight spaces, removes YAML trailing line breaks only, never strips
 non-newline content, and binds the declared `source_sha256` to the extracted
 bytes. Startup negative fixtures cover remote record digest tamper without
-recomputation, forged/tampered remote observation payload, raw stdout,
-event handle, and envelope, stale observation, an actual reversed two-parent
-merge, merge-tree mismatch, wrong STATE parent, STATE deletion, STATE mode
-mutation, non-STATE transition, remote-head mismatch, malformed or stale
-source-base OIDs, source digest mismatch, noncanonical planning object hex,
-and scalar chomping mismatch; `gpgsig` continuation parsing remains unchanged.
+recomputation, forged/tampered remote observation payload and event handle,
+duplicate/replayed observation identity, stale observation, closed-profile
+drift, invalid broker code signing, failed Security.framework trust, proxy
+connection metrics, broker-current registry drift, successor CAS continuity,
+an actual reversed two-parent merge, merge-tree mismatch, wrong STATE parent,
+STATE deletion, STATE mode mutation, non-STATE transition, remote-head
+mismatch, malformed or stale source-base OIDs, source digest mismatch,
+noncanonical planning object hex, and scalar chomping mismatch; `gpgsig`
+continuation parsing remains unchanged.
 
 #### Shared replacement-candidate phase
 
