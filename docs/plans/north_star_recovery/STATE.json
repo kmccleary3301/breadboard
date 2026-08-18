@@ -394,6 +394,12 @@
       "merge_commit": "5c79249dd8c57d2832870babfdecbd8e7ec1a033",
       "status": "approved_executed"
     },
+    "PR56_merge": {
+      "authorization_gate": "g2_merge",
+      "decision": "Merge PR #56",
+      "merge_commit": "75efe56fad477d5c326a403732b2ca833a3986f3",
+      "status": "approved_executed"
+    },
     "claim_publication": "pending",
     "external_spend": "pending_named_target_and_expiry",
     "future_merge": "pending_per_packet",
@@ -403,9 +409,9 @@
   },
   "authority_matrix": [
     {
-      "authority": "GitHub branch north-star/recovery-execution at last authored planning commit",
+      "authority": "GitHub branch north-star/recovery-execution at authenticated PR #56 merge; reviewed authored anchor retained separately",
       "concern": "recovery planning authority",
-      "current_ref": "github:kmccleary3301/breadboard@5c79249dd8c57d2832870babfdecbd8e7ec1a033"
+      "current_ref": "github:kmccleary3301/breadboard@75efe56fad477d5c326a403732b2ca833a3986f3; authored-anchor:7acfae74de8aee4620c239ae875d1f4a87d616ee"
     },
     {
       "authority": "GitHub main",
@@ -413,19 +419,19 @@
       "current_ref": "github:kmccleary3301/breadboard@3fe342b49a760b8ae95347bbb4394da71deb2609"
     },
     {
-      "authority": "Beads Dolt state",
+      "authority": "Dedicated local-only Beads Dolt state",
       "concern": "packet lifecycle and dependencies",
-      "current_ref": "beads:bb-06u and packet-labeled issues"
+      "current_ref": "beads:/Users/kylemccleary/projects/breadboard/breadboard_g0_isolated_aug8/.beads/embeddeddolt@bb-06u and packet-labeled issues"
     },
     {
       "authority": "GitHub",
       "concern": "PR review CI and merge provenance",
-      "current_ref": "PR #55 / run 32066074628"
+      "current_ref": "PR #56 / run 32082536625"
     },
     {
       "authority": "raw result bound to exact source and environment",
       "concern": "executed behavior",
-      "current_ref": "none for G2/reset-3 after PR55"
+      "current_ref": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-activation-20260817T205225Z/activation_blocked.json is immutable failed activation evidence; no passing G2 activation result yet"
     },
     {
       "authority": "current inventory plus claim artifacts; active status requires current-source reverification",
@@ -542,7 +548,7 @@
       "id": "source_authority_split",
       "left": "Ordinary source authority is main 3fe342b49a760b8ae95347bbb4394da71deb2609.",
       "resolution": "Preserve both identities and make no current-main product claim.",
-      "right": "Recovery planning authority is authored commit 5c79249dd8c57d2832870babfdecbd8e7ec1a033; the subsequent STATE-only materialization commit adds no authored execution contract. No recovery change is ordinary product source until separately reviewed and merged.",
+      "right": "Recovery planning branch is at authenticated merge 75efe56fad477d5c326a403732b2ca833a3986f3; reviewed authored anchor 7acfae74de8aee4620c239ae875d1f4a87d616ee has the same tree. The subsequent generated STATE-only materialization commit will add no authored execution contract. No recovery change is ordinary product source until separately reviewed and merged.",
       "severity": "material"
     }
   ],
@@ -557,12 +563,12 @@
       "total_rows": 21
     }
   },
-  "generated_at_utc": "2026-08-17T20:46:09.086799Z",
+  "generated_at_utc": "2026-08-18T00:11:06.678744Z",
   "generator": {
     "authored_input": false,
     "do_not_edit": true,
     "id": "north_star_recovery_manual_renderer",
-    "refresh_rule": "Rebuilt after the final Beads authority note from live Beads, GitHub, exact merged Git objects, immutable evidence, current E4 inventory, and fresh exact-head reviews. Prior STATE.json supplied presentation shape only and no authority fact.",
+    "refresh_rule": "Rebuilt from the dedicated authoritative local-only recovery Beads store, GitHub, exact merged Git objects, immutable evidence, current E4 inventory, and exact reviewed authored-anchor artifacts after PR #56. Prior STATE.json supplied presentation shape only and no authority fact.",
     "self_hash_policy": "Hash STATE.json in an external handoff manifest after rendering; the file cannot contain its own stable hash.",
     "version": "2"
   },
@@ -576,13 +582,13 @@
     {
       "authority_role": "required_authority",
       "path": "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
-      "sha256": "sha256:223912a1ddd23556ef9e07a339a81b9b86b66109992e4eb2751cd2cd12133e37",
+      "sha256": "sha256:a32a32c393abb0e17a21fa95a7aeff8fcb4743baec92825cbd0985c7ca7263a2",
       "source_status": "present_merged_recovery_source"
     },
     {
       "authority_role": "required_authority",
       "path": "docs/plans/north_star_recovery/LOOP_SPEC.yaml",
-      "sha256": "sha256:bd53efa7d341715c1f463ef4eacdfedcfa785bb9d7a1a4f1238d3e8f748b75d2",
+      "sha256": "sha256:737bc7159b6adc955752e03cbd1d3cb7245568c8f13a05c454d65a4c30b9a456",
       "source_status": "present_merged_recovery_source"
     },
     {
@@ -594,7 +600,7 @@
     {
       "authority_role": "generated_non_authoritative_pre_refresh_view",
       "path": "docs/plans/north_star_recovery/STATE.json",
-      "sha256": "sha256:5f9ba7eaf78e7ac2162c4b6fe8ef94c3e37c32b682d9b040b0e017fb51537afb",
+      "sha256": "sha256:9362764a6bef0a2d5060476db6fdcf463a7c636e0fc85e8baa5c5890e5829606",
       "source_status": "present_merged_recovery_source"
     },
     {
@@ -644,6 +650,24 @@
       "path": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-final-repaired-plan-review-20260817T102130Z/planning_amendment_record.json",
       "sha256": "sha256:dc88f9490060d390970bc27d4610ada3c89c146c83addf613e547e610bc294db",
       "source_status": "present_external_evidence"
+    },
+    {
+      "authority_role": "immutable_evidence",
+      "path": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-activation-20260817T205225Z/activation_blocked.json",
+      "sha256": "sha256:20796a5fafab7536d399200df8b7ae0da8d36a98e9d0159630ab11242ac27d07",
+      "source_status": "present_external_evidence"
+    },
+    {
+      "authority_role": "immutable_evidence",
+      "path": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge56-authority-20260818T000656Z/planning_review_matrix_observation.json",
+      "sha256": "sha256:710e5a28160c7ae5505cc24c5d496b6ac72787663bd4be6c4f6a910fb10a6faf",
+      "source_status": "present_external_evidence"
+    },
+    {
+      "authority_role": "immutable_evidence",
+      "path": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge56-authority-20260818T000656Z/postmerge_authority_record.json",
+      "sha256": "sha256:dfc21a4ed2316a5bbcfeabf7a10cf7d36497f89f581f8b19d83884ae21141593",
+      "source_status": "present_external_evidence"
     }
   ],
   "next_frontier": [
@@ -651,7 +675,7 @@
       "bead_id": "bb-zjd",
       "packet_key": "G2",
       "phase": "G2/reset-3/planning",
-      "reason": "G0 is closed; PR #55 merged; postmerge exact-head review is green. No preseed or implementation action has yet been admitted.",
+      "reason": "G0 is closed; PR #56 merged; its merge tree equals the four-cell-reviewed authored-anchor tree; postmerge CI and local contract checks pass. The prior activation attempt is immutable failed evidence and no fresh activation or preseed has been admitted.",
       "state": "ready_for_fresh_activation_admission"
     }
   ],
@@ -732,10 +756,8 @@
       {
         "bead_id": "bb-zjd",
         "dependent_count_list": 4,
-        "dependent_count_show": 5,
-        "depends_on": [
-          "G0"
-        ],
+        "dependent_count_show": 4,
+        "depends_on": [],
         "key": "G2",
         "state": "open",
         "title": "G2 Install packet-control enforcement"
@@ -744,10 +766,7 @@
         "bead_id": "bb-q5l",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "G2",
-          "G0"
-        ],
+        "depends_on": [],
         "key": "G1",
         "state": "open",
         "title": "G1 Split product and evidence surfaces"
@@ -756,9 +775,7 @@
         "bead_id": "bb-lxu",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "G2"
-        ],
+        "depends_on": [],
         "key": "R0",
         "state": "open",
         "title": "R0 Replay records and admission"
@@ -767,9 +784,7 @@
         "bead_id": "bb-alg",
         "dependent_count_list": 2,
         "dependent_count_show": 2,
-        "depends_on": [
-          "G2"
-        ],
+        "depends_on": [],
         "key": "V1",
         "state": "open",
         "title": "V1 Correct visibility semantics"
@@ -778,9 +793,7 @@
         "bead_id": "bb-76u",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "G2"
-        ],
+        "depends_on": [],
         "key": "P0",
         "state": "open",
         "title": "P0 Lock provider behavior"
@@ -789,9 +802,7 @@
         "bead_id": "bb-6s8",
         "dependent_count_list": 2,
         "dependent_count_show": 2,
-        "depends_on": [
-          "R0"
-        ],
+        "depends_on": [],
         "key": "R1",
         "state": "open",
         "title": "R1 Worker protocol and minimal isolation"
@@ -800,9 +811,7 @@
         "bead_id": "bb-dgw",
         "dependent_count_list": 3,
         "dependent_count_show": 3,
-        "depends_on": [
-          "R1"
-        ],
+        "depends_on": [],
         "key": "R2",
         "state": "open",
         "title": "R2 Workspace, publication, and redaction"
@@ -811,10 +820,7 @@
         "bead_id": "bb-6np",
         "dependent_count_list": 2,
         "dependent_count_show": 2,
-        "depends_on": [
-          "P0",
-          "R1"
-        ],
+        "depends_on": [],
         "key": "P1",
         "state": "open",
         "title": "P1 Extract provider runtime seams"
@@ -823,11 +829,7 @@
         "bead_id": "bb-95r",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "V1",
-          "P1",
-          "R2"
-        ],
+        "depends_on": [],
         "key": "R3A",
         "state": "open",
         "title": "R3A Provider replay adapter"
@@ -836,9 +838,7 @@
         "bead_id": "bb-7p5",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "R2"
-        ],
+        "depends_on": [],
         "key": "R3B",
         "state": "open",
         "title": "R3B Tool replay adapter"
@@ -847,9 +847,7 @@
         "bead_id": "bb-sef",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "R2"
-        ],
+        "depends_on": [],
         "key": "R3C",
         "state": "open",
         "title": "R3C Host replay adapter"
@@ -858,12 +856,7 @@
         "bead_id": "bb-4o4",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "R3C",
-          "R3B",
-          "V1",
-          "R3A"
-        ],
+        "depends_on": [],
         "key": "R4",
         "state": "open",
         "title": "R4 Replay coordinator"
@@ -872,10 +865,7 @@
         "bead_id": "bb-ayd",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "P1",
-          "R4"
-        ],
+        "depends_on": [],
         "key": "N9B",
         "state": "open",
         "title": "N9B Production deadlines and provider conformance"
@@ -884,9 +874,7 @@
         "bead_id": "bb-kp4",
         "dependent_count_list": 2,
         "dependent_count_show": 2,
-        "depends_on": [
-          "N9B"
-        ],
+        "depends_on": [],
         "key": "N10",
         "state": "open",
         "title": "N10 Internal composed lane and claim lifecycle"
@@ -895,10 +883,7 @@
         "bead_id": "bb-3fj",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "G1",
-          "N10"
-        ],
+        "depends_on": [],
         "key": "S1",
         "state": "open",
         "title": "S1 Extract SessionRunner seams"
@@ -907,9 +892,7 @@
         "bead_id": "bb-jpl",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "S1"
-        ],
+        "depends_on": [],
         "key": "A1",
         "state": "open",
         "title": "A1 Stage the product API candidate"
@@ -918,9 +901,7 @@
         "bead_id": "bb-8xc",
         "dependent_count_list": 2,
         "dependent_count_show": 2,
-        "depends_on": [
-          "A1"
-        ],
+        "depends_on": [],
         "key": "C1",
         "state": "open",
         "title": "C1 Cut over product clients and activate the default"
@@ -929,9 +910,7 @@
         "bead_id": "bb-cw5",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "C1"
-        ],
+        "depends_on": [],
         "key": "O1",
         "state": "open",
         "title": "O1 Product outsider falsifier"
@@ -940,10 +919,7 @@
         "bead_id": "bb-cz1",
         "dependent_count_list": 1,
         "dependent_count_show": 1,
-        "depends_on": [
-          "C1",
-          "N10"
-        ],
+        "depends_on": [],
         "key": "O2",
         "state": "open",
         "title": "O2 Evidence outsider falsifier"
@@ -952,18 +928,15 @@
         "bead_id": "bb-w6l",
         "dependent_count_list": 0,
         "dependent_count_show": 0,
-        "depends_on": [
-          "O2",
-          "O1"
-        ],
+        "depends_on": [],
         "key": "F1",
         "state": "open",
         "title": "F1 Final candidate audit"
       }
     ],
-    "materialized_at_utc": "2026-08-17T20:46:09.086799Z",
+    "materialized_at_utc": "2026-08-18T00:11:06.678744Z",
     "scope_version": "bb.north_star_recovery.g2.scope.v4",
-    "tracker_materialization": "live_Beads_projection"
+    "tracker_materialization": "dedicated_authoritative_local_only_Beads_projection"
   },
   "planning_package": {
     "authorization": {
@@ -984,21 +957,21 @@
       "approve_count": 4,
       "open_finding_count": 0,
       "review_count": 4,
-      "review_matrix_ref": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge55-review-20260817T203927Z/planning_review_matrix_observation.json",
-      "review_matrix_sha256": "sha256:da1cd611d40ed82979b0af3d7e7d3289731d5eec8b636d17de1f5eda82d1259c",
-      "review_record_ref": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge55-review-20260817T203927Z/postmerge_authority_record.json",
-      "review_record_sha256": "sha256:3b09b0f09f1e4668ab33c8402282de346bb82254f184ff590fb8cdbf704dc26d",
+      "review_matrix_ref": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge56-authority-20260818T000656Z/planning_review_matrix_observation.json",
+      "review_matrix_sha256": "sha256:710e5a28160c7ae5505cc24c5d496b6ac72787663bd4be6c4f6a910fb10a6faf",
+      "review_record_ref": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge56-authority-20260818T000656Z/postmerge_authority_record.json",
+      "review_record_sha256": "sha256:dfc21a4ed2316a5bbcfeabf7a10cf7d36497f89f581f8b19d83884ae21141593",
       "reviewed_artifact_hashes": {
         "docs/DIRECTION_CHARTER.md": "sha256:deb1f2b0437c963bfab25f2c0141d847b7cf768bea668581aa3187c7561f41af",
         "docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md": "sha256:c8ae60e74777e52576e172b961dfce8928a29e7b29813ab36b78f63be208dd7c",
-        "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:223912a1ddd23556ef9e07a339a81b9b86b66109992e4eb2751cd2cd12133e37",
-        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:bd53efa7d341715c1f463ef4eacdfedcfa785bb9d7a1a4f1238d3e8f748b75d2",
+        "docs/plans/north_star_recovery/EXECUTION_PLAN.md": "sha256:a32a32c393abb0e17a21fa95a7aeff8fcb4743baec92825cbd0985c7ca7263a2",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml": "sha256:737bc7159b6adc955752e03cbd1d3cb7245568c8f13a05c454d65a4c30b9a456",
         "docs/plans/north_star_recovery/WORKER_CONTRACTS.md": "sha256:050b39cd38827447b2615f51ff03fa25fa7b9733b5363c2294a59cba7ed40494",
         "docs/plans/phase_20_right_shape/FREEZE_POLICY.md": "sha256:4c209726f8c95d951f545cbebf6f9728f9a82b1cbba560c1a46cafa2a8ee6391"
       },
-      "reviewed_head": "5c79249dd8c57d2832870babfdecbd8e7ec1a033",
-      "reviewed_tree": "9c2fe844f28b03ff802513e742db8001df861763",
-      "status": "approved"
+      "reviewed_head": "7acfae74de8aee4620c239ae875d1f4a87d616ee",
+      "reviewed_tree": "5b41619db486f5b0a0b0972822969400c8c17446",
+      "status": "approved_reviewed_authored_anchor_tree_equal_to_authenticated_merge"
     },
     "merged_amendments": [
       {
@@ -1010,29 +983,39 @@
         "merge_commit": "5c79249dd8c57d2832870babfdecbd8e7ec1a033",
         "merged_at_utc": "2026-08-17T20:29:32Z",
         "pr": 55
+      },
+      {
+        "authorization_gate": "g2_merge",
+        "decision": "Merge PR #56",
+        "merge_commit": "75efe56fad477d5c326a403732b2ca833a3986f3",
+        "merged_at_utc": "2026-08-17T23:56:29Z",
+        "pr": 56
       }
     ],
-    "status": "approved_postmerge_exact_head_review"
+    "status": "approved_postmerge_pr56_authored_anchor_review"
   },
   "planning_review_lineage": {
-    "current_review_matrix_ref": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge55-review-20260817T203927Z/planning_review_matrix_observation.json",
-    "current_review_matrix_sha256": "sha256:da1cd611d40ed82979b0af3d7e7d3289731d5eec8b636d17de1f5eda82d1259c",
-    "current_review_record_ref": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge55-review-20260817T203927Z/postmerge_authority_record.json",
-    "current_review_record_sha256": "sha256:3b09b0f09f1e4668ab33c8402282de346bb82254f184ff590fb8cdbf704dc26d",
-    "premerge_review_refs": {
-      "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-final-repaired-plan-review-20260817T102130Z/planning_amendment_record.json": {
+    "authenticated_merge_commit": "75efe56fad477d5c326a403732b2ca833a3986f3",
+    "authenticated_merge_tree": "5b41619db486f5b0a0b0972822969400c8c17446",
+    "current_review_matrix_ref": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge56-authority-20260818T000656Z/planning_review_matrix_observation.json",
+    "current_review_matrix_sha256": "sha256:710e5a28160c7ae5505cc24c5d496b6ac72787663bd4be6c4f6a910fb10a6faf",
+    "current_review_record_ref": "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge56-authority-20260818T000656Z/postmerge_authority_record.json",
+    "current_review_record_sha256": "sha256:dfc21a4ed2316a5bbcfeabf7a10cf7d36497f89f581f8b19d83884ae21141593",
+    "prior_postmerge55_review_refs": {
+      "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge55-review-20260817T203927Z/planning_review_matrix_observation.json": {
         "present": true,
-        "sha256": "sha256:dc88f9490060d390970bc27d4610ada3c89c146c83addf613e547e610bc294db"
+        "sha256": "sha256:da1cd611d40ed82979b0af3d7e7d3289731d5eec8b636d17de1f5eda82d1259c"
       },
-      "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-final-repaired-plan-review-20260817T102130Z/planning_review_matrix_observation.json": {
+      "../docs_tmp/north_star_recovery/bootstrap/G2-reset-3-postmerge55-review-20260817T203927Z/postmerge_authority_record.json": {
         "present": true,
-        "sha256": "sha256:f21ec0913d6b98d1dc3818e9e127f83ba85ad6aee3c840603e4c61862ebd9ee6"
+        "sha256": "sha256:3b09b0f09f1e4668ab33c8402282de346bb82254f184ff590fb8cdbf704dc26d"
       }
     },
-    "reviewed_head": "5c79249dd8c57d2832870babfdecbd8e7ec1a033",
-    "reviewed_tree": "9c2fe844f28b03ff802513e742db8001df861763",
-    "reviewed_tree_equals_pr55_head_tree": true,
-    "status": "postmerge_pr55_exact_head_review_approved"
+    "reviewed_authored_anchor": "7acfae74de8aee4620c239ae875d1f4a87d616ee",
+    "reviewed_authored_anchor_parent": "eba2edad3f7aa64c5bdf26ce4caf6dfe28980299",
+    "reviewed_tree": "5b41619db486f5b0a0b0972822969400c8c17446",
+    "reviewed_tree_equals_authenticated_merge_tree": true,
+    "status": "postmerge_pr56_authored_anchor_review_approved"
   },
   "product_surface": {
     "current_catalog": {
@@ -1124,6 +1107,18 @@
       "state": "MERGED",
       "title": "G2: close phase map and runtime denial gaps",
       "url": "https://github.com/kmccleary3301/breadboard/pull/55"
+    },
+    {
+      "base_sha": "51eae29855529bca3d25b16b88a4e4e1955181b0",
+      "disposition": "merged_G2_activation_git_proof_planning_amendment",
+      "draft": false,
+      "head_sha": "7acfae74de8aee4620c239ae875d1f4a87d616ee",
+      "merge_commit_sha": "75efe56fad477d5c326a403732b2ca833a3986f3",
+      "merged_at_utc": "2026-08-17T23:56:29Z",
+      "number": 56,
+      "state": "MERGED",
+      "title": "G2: repair activation Git object proof",
+      "url": "https://github.com/kmccleary3301/breadboard/pull/56"
     }
   ],
   "schema_version": "bb.north_star_recovery.state.v1",
@@ -1136,50 +1131,27 @@
     },
     "planning_authority_at_refresh": {
       "branch": "north-star/recovery-execution",
-      "checkout_path": "/Users/kylemccleary/projects/breadboard/g2_postmerge55_authority_20260817",
-      "commit_sha": "5c79249dd8c57d2832870babfdecbd8e7ec1a033",
+      "checkout_path": "/Users/kylemccleary/projects/breadboard/breadboard_north_star_recovery_20260725",
+      "commit_sha": "75efe56fad477d5c326a403732b2ca833a3986f3",
       "merge_base_with_main_sha": "3fe342b49a760b8ae95347bbb4394da71deb2609",
-      "remote_commit_sha_at_refresh": "5c79249dd8c57d2832870babfdecbd8e7ec1a033",
-      "role": "Exact merged authored planning authority reviewed by the four-cell matrix.",
-      "tree_sha": "9c2fe844f28b03ff802513e742db8001df861763",
+      "remote_commit_sha_at_refresh": "75efe56fad477d5c326a403732b2ca833a3986f3",
+      "reviewed_authored_anchor": "7acfae74de8aee4620c239ae875d1f4a87d616ee",
+      "reviewed_authored_anchor_parent": "eba2edad3f7aa64c5bdf26ce4caf6dfe28980299",
+      "role": "Authenticated PR #56 merge preserving the exact two reviewed authored planning blobs and whole reviewed authored-anchor tree.",
+      "tree_sha": "5b41619db486f5b0a0b0972822969400c8c17446",
       "working_tree_state": "clean_before_generated_STATE_refresh"
     },
     "postmerge_ci": {
       "conclusion": "success",
-      "head_sha": "5c79249dd8c57d2832870babfdecbd8e7ec1a033",
+      "head_sha": "75efe56fad477d5c326a403732b2ca833a3986f3",
       "job_counts": {
+        "failed": 0,
         "skipped": 5,
         "success": 24
       },
-      "required_observed_jobs": [
-        "Live smoke (ubuntu)",
-        "product-spine",
-        "Governance v2 templates guard",
-        "E4 target-freeze manifest guard",
-        "Conformance gate (ubuntu)",
-        "Zero-importer advisory",
-        "Event-envelope snapshot stability gate",
-        "Python (ubuntu-latest)",
-        "Kernel-extension boundary guard",
-        "Compat core (ubuntu)",
-        "Python smoke (ubuntu-latest)",
-        "Conformance matrix sync guard",
-        "Tool-schema hash stability gate",
-        "Python smoke (windows-latest)",
-        "TUI (macos-latest)",
-        "Python smoke (macos-latest)",
-        "VSCode Sidebar E2E (ubuntu)",
-        "TUI (windows-latest)",
-        "TUI (ubuntu-latest)",
-        "Evidence bundle contract guard",
-        "Request-body byte stability gate",
-        "Replay determinism guard",
-        "Extension-disabled regression lane",
-        "Extension-enabled smoke lane"
-      ],
-      "run_id": 32066074628,
+      "run_id": 32082536625,
       "status": "completed",
-      "url": "https://github.com/kmccleary3301/breadboard/actions/runs/32066074628"
+      "url": "https://github.com/kmccleary3301/breadboard/actions/runs/32082536625"
     },
     "pr55_merge": {
       "changed_paths": [
@@ -1198,15 +1170,40 @@
       "merge_tree_sha": "9c2fe844f28b03ff802513e742db8001df861763",
       "tree_equivalent_to_reviewed_head": true
     },
+    "pr56_merge": {
+      "changed_paths": [
+        "docs/plans/north_star_recovery/EXECUTION_PLAN.md",
+        "docs/plans/north_star_recovery/LOOP_SPEC.yaml"
+      ],
+      "diff_budget": {
+        "additions": 824,
+        "deletions": 42,
+        "files": 2
+      },
+      "first_parent_sha": "51eae29855529bca3d25b16b88a4e4e1955181b0",
+      "head_sha": "7acfae74de8aee4620c239ae875d1f4a87d616ee",
+      "head_tree_sha": "5b41619db486f5b0a0b0972822969400c8c17446",
+      "merge_commit_sha": "75efe56fad477d5c326a403732b2ca833a3986f3",
+      "merge_tree_sha": "5b41619db486f5b0a0b0972822969400c8c17446",
+      "reviewed_authored_anchor_parent": "eba2edad3f7aa64c5bdf26ce4caf6dfe28980299",
+      "tree_equivalent_to_reviewed_authored_anchor": true
+    },
     "state_materialization_commit": {
       "reason": "A commit containing STATE.json cannot be named inside that same file without recursive identity drift. The external handoff manifest binds the final commit and STATE.json SHA-256.",
-      "status": "bound_externally_after_commit"
+      "status": "pending_external_binding_after_commit"
     }
   },
   "tracker": {
+    "authoritative_store": {
+      "data_dir": "/Users/kylemccleary/projects/breadboard/breadboard_g0_isolated_aug8/.beads/embeddeddolt",
+      "database": "bb",
+      "issue_count": 568,
+      "remote_sync": "forbidden_without_new_dedicated_non_source_remote_approval",
+      "role": "recovery_execution"
+    },
     "g2_issue": {
       "dependency_count": 1,
-      "dependent_count": 5,
+      "dependent_count": 4,
       "id": "bb-zjd",
       "labels": [
         "north-star-recovery",
@@ -1215,9 +1212,9 @@
       "priority": 1,
       "status": "open",
       "title": "G2 Install packet-control enforcement",
-      "updated_at": "2026-08-17T20:45:16Z"
+      "updated_at": "2026-08-18T00:08:27Z"
     },
-    "projection_note": "bd show dependent_count includes closed human child bb-zjd.1; bd list dependent_count excludes it. Packet dependency graph is derived from each live issue dependency list, not either count.",
+    "projection_note": "The packet graph is materialized only from the dedicated authoritative local-only recovery store. Primary project Beads is isolated non-authoritative for this campaign.",
     "records": {
       "bb-06u": {
         "close_reason": null,
@@ -1336,7 +1333,7 @@
         "priority": 1,
         "status": "open",
         "title": "G2 Install packet-control enforcement",
-        "updated_at": "2026-08-17T20:45:16Z"
+        "updated_at": "2026-08-18T00:08:27Z"
       }
     }
   }
