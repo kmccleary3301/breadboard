@@ -900,18 +900,21 @@ Git refs are locators only.
 Reset-3 seals one nested `remote_recovery` record inside planning-core v3
 before any review reservation. Its exact fields are
 `schema_version`, `repository_remote_url`, `remote_ref`,
-`observation_event_handle`, `observation_receipt_sha256`,
-`observation_replay_guard_event_handle`, `observation_replay_guard_sha256`,
-`observation_packet_key`, `observation_execution_epoch`,
-`observation_scope_version`, `observation_phase_id`,
-`observation_operation_class`, `observation_operation_instance_id`,
-`observation_invocation_id`, `observation_reservation_id`,
-`observed_remote_head`, `source_base_commit`,
-`source_merge_base_commit`, `authored_anchor_commit`,
-`authenticated_merge_commit`, `state_materialization_commits`,
-`allowed_materialization_paths`, `broker_observer`, `observation_method`,
-`observed_ref_tip`, `observed_at_utc`, and `remote_recovery_sha256`. The
-record fixes the remote
+`replacement_generation`, `predecessor_remote_recovery_sha256`,
+`predecessor_observed_ref_tip`,
+`predecessor_planning_core_sha256`,
+`predecessor_acceptance_event_handle`, `observation_event_handle`,
+`observation_receipt_sha256`, `observation_replay_guard_event_handle`,
+`observation_replay_guard_sha256`, `observation_packet_key`,
+`observation_execution_epoch`, `observation_scope_version`,
+`observation_phase_id`, `observation_operation_class`,
+`observation_operation_instance_id`, `observation_invocation_id`,
+`observation_reservation_id`, `observed_remote_head`,
+`source_base_commit`, `source_merge_base_commit`,
+`authored_anchor_commit`, `authenticated_merge_commit`,
+`state_materialization_commits`, `allowed_materialization_paths`,
+`broker_observer`, `observation_method`, `observed_ref_tip`,
+`observed_at_utc`, and `remote_recovery_sha256`. The record fixes the remote
 to `https://github.com/kmccleary3301/breadboard.git` at
 `refs/heads/north-star/recovery-execution`, permits only
 `docs/plans/north_star_recovery/STATE.json`, requires a nonempty ordered
@@ -919,50 +922,68 @@ materialization chain, and binds an immutable authenticated
 `github_remote_ref_observation` broker event. That event is actor
 `omp_broker`, phase `G2/reset-3/planning-control-plane`, and operation class
 `planning_remote_ref_observation`, distinct from `planning_core_seal`. Its
-closed broker-control-plane profile permits only the broker-opened
-`/usr/bin/git` primary image, the broker-opened
-`/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-https`
-helper image, and exact `/usr/bin/git ls-remote --refs
+closed broker-control-plane profile executes the actual regular
+`/Library/Developer/CommandLineTools/usr/bin/git` image directly, permits only
+the resolved regular
+`/Library/Developer/CommandLineTools/usr/libexec/git-core/git-remote-http`
+helper image, and uses the exact
+`/Library/Developer/CommandLineTools/usr/bin/git ls-remote --refs
 https://github.com/kmccleary3301/breadboard.git
-refs/heads/north-star/recovery-execution` argv. Before authority issuance, the
-broker records immutable `github_remote_ref_execution_image_manifest` and
-`github_remote_ref_tls_trust_policy` events in the current capability store.
-The image manifest is rooted in the approved platform package/code-signing
-identity rather than hashes read from the launched files; it binds exact
-primary/helper paths, regular-file type, root owner, nonwritable mode, SHA-256,
-and code-signing identities. The TLS policy is rooted in the approved platform
-trust store and binds its digest, allowed root/intermediate SPKI digests,
-`github.com`, validation-policy version, and required revocation policy.
+refs/heads/north-star/recovery-execution` argv. It never treats the
+`git-remote-https` symlink or the `/usr/bin/git` Xcode-select shim as an
+executable image authority.
 
-The broker starts Git from a root-owned, child-nonwritable, opened-no-follow,
-empty non-repository `/var/empty` directory under a cleared-then-exact
-noninteractive environment. It rechecks the same directory identity, mode,
-ownership, and emptiness after waitpid. System and global Git config are
-disabled; stable emptiness makes local config unreachable; command config,
-includes, credential helpers, proxy variables, extra headers, and credentials
-are absent. A separate immutable
+The authenticated platform-identity record supplied through the broker-owned
+authority descriptor contains exact Git/helper package approvals and the
+approved TLS trust-policy identity. The verifier opens both approved regular
+image paths with no-follow, compares their live bytes, SHA-256, device, inode,
+mode, and root ownership to those platform approvals, and binds package
+receipt, designated code-signing requirement, identifier, team, CDHash, and
+successful Security.framework validation evidence. The platform TLS approval
+binds the trust-store digest, allowed root/intermediate SPKI digests,
+`github.com`, validation-policy version, required revocation policy, and
+Security.framework trust-evaluation authority. Before authority issuance, the
+broker records immutable operation-scoped
+`github_remote_ref_execution_image_manifest` and
+`github_remote_ref_tls_trust_policy` events that must equal those independently
+authenticated platform approvals exactly.
+
+The broker starts Git from the target's root-owned, opened-no-follow, empty
+non-repository `/var/empty` directory under a cleared-then-exact noninteractive
+environment. The primary EndpointSecurity exec record must prove a non-root
+effective child UID. The verifier requires no ACL entries before or after
+waitpid and requires group/other write bits to be clear, then recomputes that
+this child cannot write despite the root owner's normal `0755` write bit. It
+rechecks the same directory identity, mode, ownership, ACL bytes, and emptiness
+after waitpid. System and global Git config are disabled; stable emptiness makes
+local config unreachable; command config, includes, credential helpers, proxy
+variables, extra headers, and credentials are absent. A separate immutable
 `github_remote_ref_control_plane_authority` event binds the dedicated
-operation, capability-store and platform identities, closed profile digest,
-both preoperation authority digests, and fresh replay nonce. A
-`github_remote_ref_execution_attestation` event binds each opened image to its
-independently approved manifest identity, descriptor-exec and post-exec
-identity checks, kernel-observed PID image, the primary child PID, and the
-distinct helper PID and primary-parent PID. It also binds the stable working
-directory, empty effective Git-config source set, empty proxy environment, no
-unexpected child processes, and strict start/completion times.
+operation, authenticated current capability-store and platform identities,
+closed profile digest, both preoperation authority digests, and fresh replay
+nonce. Distinct immutable `github_remote_ref_process_image_observation` events
+bind the primary and helper PID, parent PID, effective credentials, executable
+vnode and SHA-256, audit token, and EndpointSecurity `NOTIFY_EXEC` identity.
+The `github_remote_ref_execution_attestation` event binds each no-follow opened
+image to its independently approved platform identity, pre/post descriptor
+identity checks, and corresponding kernel exec observation. It also binds the
+stable working directory, empty effective Git-config source set, empty proxy
+environment, no unexpected child processes, and strict start/completion times.
 
 A `github_remote_ref_network_observation` event binds its connector PID to that
 attested helper and binds the actually resolved and connected
 `github.com:443` address, proxy-free direct connection, zero redirects, SNI,
-validated hostname and TLS chain, peer certificate/chain/SPKI digests,
-approved trust-store and selected root/intermediate SPKI identities, validation
-policy, and revocation result. The immutable observation contains exact
+validated hostname and TLS chain, peer certificate plus every chain
+certificate DER/SPKI digest, selected root/intermediate SPKI identities,
+authenticated trust-store and validation policy, Security.framework trust
+result, and revocation result. The immutable observation contains exact
 reservation, invocation, execution-start, launch, network, waitpid-result,
-execution-completion, completion, and post-exec receipt records. Broker-assigned
-strict sequence numbers, prior-record SHA-256 chaining, and strictly increasing
-timestamps establish that order; the post-exec receipt binds both preoperation
-authorities and every result digest. The observation records canonical raw
-stdout
+execution-completion, completion, and post-exec receipt records. The two
+preoperation authorities have timestamps strictly before authority issuance;
+broker-assigned strict sequence numbers, prior-record SHA-256 chaining, and
+strictly increasing lifecycle timestamps establish the remaining order. The
+post-exec receipt binds both preoperation authorities and every result digest.
+The observation records canonical raw stdout
 `<40-lowercase-oid>\t<exact-ref>\n`, empty raw stderr, raw SHA-256s, exit code
 zero, nonempty nonce, observed UTC time/head, and its own receipt digest.
 `planning_core_seal` launches no child and has no network authority; it
@@ -972,17 +993,24 @@ remote-observation event in the admitted broker snapshot, and
 `observation_receipt_sha256` equals its receipt digest. The record also binds
 exactly two authenticated
 `github_remote_ref_observation_replay_store_snapshot` events: the broker-owned
-state immediately before and after one atomic append. The snapshots bind the
-current capability-store instance, the dedicated remote-observation
-operation instance, invocation, reservation, and observation-event handle.
-Their complete parallel identity/nonce sets are unique; the before snapshot
-excludes the current observation identity and authority nonce; and the after
-snapshot equals exactly the before sets plus those two current values. Each
-snapshot recomputes its body digest and store tip, the after snapshot's prior
-tip equals the before snapshot's tip, and an empty before set is accepted only
-with the canonical store-instance genesis tip. The replay guard binds both
-snapshot handles and payload digests, copies the authenticated before sets and
-tip, records the authenticated after tip, and commits the append. Observation,
+state immediately before and after one atomic append. The snapshots, replay
+guard, and every operation support authority bind the current capability-store
+instance authenticated by the admission broker attestation, never an identity
+selected from the remote packet. The after snapshot tip must equal
+`remote_observation_replay_store_current_tip_sha256` in the authenticated main
+invocation manifest; test-only fixture wrappers may derive this input, but the
+production verifier cannot.
+The snapshots also bind
+the dedicated remote-observation operation instance, invocation, reservation,
+and observation-event handle. Their complete parallel identity/nonce sets are
+unique; the before snapshot excludes the current observation identity and
+authority nonce; and the after snapshot equals exactly the before sets plus
+those two current values. Each snapshot recomputes its body digest and store
+tip, the after snapshot's prior tip equals the before snapshot's tip, and an
+empty before set is accepted only with the canonical authenticated
+store-instance genesis tip. The replay guard binds both snapshot handles and
+payload digests, copies the authenticated before sets and tip, records the
+authenticated after tip, and commits the append. Observation,
 before snapshot, guard, and after snapshot times are monotonically ordered and
 fresh against the broker clock. The guard's handle and payload digest equal
 `observation_replay_guard_event_handle` and
@@ -1470,14 +1498,24 @@ This record authenticates a completed, already-published recovery sequence:
 `observed_ref_tip` and `observed_remote_head` are the exact control-plane
 observation result after its merge and ordered STATE materializations. It
 grants no authority for a later publication. This genesis record has
-`replacement_generation: 0` and null predecessor bindings. Every later
-activation must carry the prior authenticated `remote_recovery` record, set
-`replacement_generation` to exactly its predecessor plus one, bind the prior
-record digest and prior `observed_ref_tip`, and use that exact observed OID as
-both `source_base_commit` and `source_merge_base_commit`. It must then perform
-its own fresh, replay-guarded remote observation under a new control-plane
-lifecycle. A missing predecessor, arbitrary parent, repeated generation,
-non-increasing observation time, or predecessor digest mismatch is rejected.
+`replacement_generation: 0` and null predecessor acceptance bindings. Every
+later activation must resolve exactly one authenticated
+`github_remote_recovery_acceptance` event from the current broker store. That
+broker-signed event binds the current capability-store instance, prior admitted
+planning-core digest, the full exact predecessor `remote_recovery` record and
+digest, prior observation envelope handle/immutable-object/receipt identities,
+prior replay-guard handle and digest, and acceptance time.
+The successor
+sets `replacement_generation` to exactly its authenticated predecessor plus
+one, binds the acceptance event, prior planning-core and remote-record digests,
+and prior `observed_ref_tip`, and uses that exact observed OID as both
+`source_base_commit` and `source_merge_base_commit`. It then performs its own
+fresh replay-guarded observation under a new control-plane lifecycle. Genesis
+is accepted only when the broker store contains no predecessor acceptance;
+successors are accepted only through the authenticated event, never an
+optional caller-supplied dictionary. A missing or extra acceptance, arbitrary
+parent, repeated generation, non-increasing observation time, or predecessor
+digest mismatch is rejected.
 The planning-core Git proof contains the two core commits plus the
 authenticated remote source-base, merge, and materialization commit set;
 recursively closes the current-head, reviewed-base, source, and every
