@@ -459,8 +459,14 @@ that lookup or append authority. The broker consumes and erases the capability
 exactly once before append; evidence exposes only its digest after success.
 For `broker_builtin_no_child`, the broker records an authenticated no-child
 capability proof with the exact broker opcode, authority event, capability-store
-principal, and `executable: null`, `argv: []`; it proves that no executable,
-Python process, `sandbox-exec`, waitpid, or local Mach probe was launched.
+principal, and `executable: null`, `argv: []`; it proves that the ledger
+operation launched no child executable, Python process, `sandbox-exec`, waitpid,
+or local Mach probe. It does not authorize ambient broker I/O. A broker-private
+control-plane suboperation is permitted only where a separately named closed
+profile fixes its executable identity, argv, cleared-then-exact environment,
+network destination, credential/config policy, reservation, invocation, launch,
+result, completion, receipt, and replay-store append. Its immutable completed
+receipt is an input to—not an execution by—the consuming no-child operation.
 For `delegated_agent_attestation`, the broker records the actual authenticated
 route, worker/session identity, materialized delegated profile and sandbox
 attestation, with denied network, empty credentials, broker-mediated-only
@@ -911,37 +917,48 @@ to `https://github.com/kmccleary3301/breadboard.git` at
 `docs/plans/north_star_recovery/STATE.json`, requires a nonempty ordered
 materialization chain, and binds an immutable authenticated
 `github_remote_ref_observation` broker event. That event is actor
-`omp_broker`, operation class `planning_core_seal`, and has the exact
+`omp_broker`, phase `G2/reset-3/planning-control-plane`, and operation class
+`planning_remote_ref_observation`, distinct from `planning_core_seal`. Its
+closed broker-control-plane profile permits only the broker-opened
+`/usr/bin/git` identity and exact
 `/usr/bin/git ls-remote --refs https://github.com/kmccleary3301/breadboard.git
-refs/heads/north-star/recovery-execution` argv, canonical raw stdout
-`<40-lowercase-oid>\t<exact-ref>\n`, empty raw stderr, raw SHA-256s, exit
-code zero, nonempty nonce, observed UTC time/head, current packet, epoch,
-scope, operation class, operation instance, invocation, reservation, and its
-own receipt digest. `observation_event_handle` resolves the sole registered
+refs/heads/north-star/recovery-execution` argv, a cleared-then-exact
+noninteractive Git environment, no credentials or config includes, and HTTPS
+to `github.com:443`. The immutable observation contains exact reservation,
+invocation, launch, result, completion, and post-exec receipt records; binds
+the opened executable device, inode, mode, and SHA-256; and records canonical
+raw stdout `<40-lowercase-oid>\t<exact-ref>\n`, empty raw stderr, raw
+SHA-256s, exit code zero, nonempty nonce, observed UTC time/head, and its own
+receipt digest. `planning_core_seal` launches no child and has no network
+authority; it consumes this completed receipt through `remote_recovery`.
+`observation_event_handle` resolves the sole registered
 remote-observation event in the admitted broker snapshot, and
 `observation_receipt_sha256` equals its receipt digest. The record also binds
-the sole authenticated `github_remote_ref_observation_replay_guard` event and
 exactly two authenticated
 `github_remote_ref_observation_replay_store_snapshot` events: the broker-owned
 state immediately before and after one atomic append. The snapshots bind the
-current capability-store instance, planning-core operation instance,
-invocation, reservation, and observation-event handle. Their complete parallel
-identity/nonce sets are unique; the before snapshot excludes the current
-observation identity and authority nonce; and the after snapshot equals exactly
-the before sets plus those two current values. Each snapshot recomputes its body
-digest and store tip, the after snapshot's prior tip equals the before
-snapshot's tip, and an empty before set is accepted only with the canonical
-store-instance genesis tip. The replay guard binds both snapshot handles and
-payload digests, copies the authenticated before sets and tip, records the
-authenticated after tip, and commits the append. Observation, before snapshot,
-guard, and after snapshot times are monotonically ordered and fresh against the
-broker clock. The guard's handle and payload digest equal
+current capability-store instance, the dedicated remote-observation
+operation instance, invocation, reservation, and observation-event handle.
+Their complete parallel identity/nonce sets are unique; the before snapshot
+excludes the current observation identity and authority nonce; and the after
+snapshot equals exactly the before sets plus those two current values. Each
+snapshot recomputes its body digest and store tip, the after snapshot's prior
+tip equals the before snapshot's tip, and an empty before set is accepted only
+with the canonical store-instance genesis tip. The replay guard binds both
+snapshot handles and payload digests, copies the authenticated before sets and
+tip, records the authenticated after tip, and commits the append. Observation,
+before snapshot, guard, and after snapshot times are monotonically ordered and
+fresh against the broker clock. The guard's handle and payload digest equal
 `observation_replay_guard_event_handle` and
 `observation_replay_guard_sha256`. Those eight operation-scope fields equal the
-completed current `planning_core_seal` ledger chain, and the observation nonce
-equals that operation's fresh authenticated broker-authority replay nonce. An
-exact prior receipt with reused labels, a fresh event from another planning-core
-invocation, a duplicate event, a mismatched capability-store instance or
+completed `planning_remote_ref_observation` control-plane lifecycle and are
+required to differ from the consuming `planning_core_seal` ledger lifecycle.
+The observation nonce equals that control-plane lifecycle's fresh authenticated
+broker-authority replay nonce. The planning-core lifecycle contributes only
+the authenticated capability-store context in which the completed receipt is
+consumed.
+An exact prior receipt with reused labels, a fresh event from another
+control-plane invocation, a duplicate event, a mismatched capability-store instance or
 authority nonce, a stale/forged replay-store snapshot, a replay-guard event
 whose authenticated prior sets already contain the observation identity or
 nonce, or label-only broker fields cannot authenticate the observation. The
@@ -1399,9 +1416,27 @@ current-head literal and cannot become stale when this amendment changes the
 planning files. The reviewed-base parent/tree are separate authenticated
 fields in the planning-core record. The repair is exactly one new
 single-parent commit with the reviewed base as its parent, changing exactly
-the two planning paths below and no other path; the cumulative two-file
-tree/diff is the authority, and an earlier multi-commit planning history is
-not a violation.
+the two planning paths below and no other path; the exact two-file delta from
+that direct parent is the authority, while multi-commit history strictly before
+the reviewed base is not a violation.
+
+Merge admissibility is stricter than a reviewed single-parent head in
+isolation: that head's sole parent must also be the authenticated merge
+commit's first parent. A reviewed branch with any intermediate authored commit
+between the reviewed base and the reviewed head cannot satisfy the active
+planning-core identity, even when the merge and reviewed trees are equal. The
+replacement authored anchor consists of exactly one new commit changing only
+these two planning paths. Its sole parent must equal the later authenticated
+merge commit's first parent.
+
+This record authenticates a completed, already-published recovery sequence:
+`source_base_commit` is that sequence's reviewed parent, while
+`observed_ref_tip` and `observed_remote_head` are the exact control-plane
+observation result after its merge and ordered STATE materializations. There
+is no unauthenticated or label-only pre-next-replacement tip. Any later
+replacement must start from this observed OID under a newly authenticated
+planning-core record and fresh remote-observation lifecycle; the current
+record cannot authorize that later publication.
 The planning-core Git proof contains the two core commits plus the
 authenticated remote source-base, merge, and materialization commit set;
 recursively closes the current-head, reviewed-base, source, and every
