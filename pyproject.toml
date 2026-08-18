@@ -30,8 +30,10 @@ namespaces = true
 "contracts.kernel.examples" = ["*.json"]
 "contracts.kernel.registries" = ["*.json"]
 "contracts.kernel.schemas" = ["*.schema.json"]
-"contracts.public" = ["operations.v1.json"]
+"contracts.public" = ["operations.v1.json", "operations.v2.json"]
 "contracts.public.schemas" = ["*.schema.json"]
+"contracts.internal.evidence" = ["operations.v1.json"]
+"contracts.internal.evidence.schemas" = ["*.schema.json"]
 "docs.conformance" = ["e4_lane_inventory.json"]
 "implementations.tools.defs" = ["*.yaml"]
 

@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 from breadboard.product.cli.result import CliResult, from_exception
 from breadboard.product.runtime.events import ProcessLock
-_FAMILIES = frozenset({"artifact", "harness", "harness_lock", "integration", "session", "system"})
+from breadboard.product.operation_catalog import product_operation_catalog
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MAINTAINER_ROOTS = (_REPO_ROOT / "contracts", _REPO_ROOT / "docs", _REPO_ROOT.parent / "docs_tmp")
 _STATUS_BY_EXIT = {2: 422, 3: 404, 4: 500, 5: 409, 6: 409}
@@ -23,14 +23,12 @@ _ASYNC_OPERATIONS = frozenset(
     {"integration.probe", "session.approve", "session.cancel", "session.resume", "session.send_input", "session.start"}
 )
 def _operation_contract() -> tuple[frozenset[str], frozenset[tuple[str, re.Pattern[str]]]]:
-    document = json.loads((_REPO_ROOT / "contracts/public/operations.v1.json").read_text())
+    document = product_operation_catalog()
     operation_ids: set[str] = set()
     routes: set[tuple[str, re.Pattern[str]]] = set()
-    for operation in document.get("operations", []):
-        operation_id = str(operation.get("operation_id", ""))
-        binding = operation.get("bindings", {}).get("openapi", {})
-        if operation_id.split(".", 1)[0] not in _FAMILIES or binding.get("status") != "candidate":
-            continue
+    for operation in document["operations"]:
+        operation_id = str(operation["operation_id"])
+        binding = operation["bindings"]["openapi"]
         operation_ids.add(operation_id)
         path = re.escape(str(binding["path"]))
         pattern = re.sub(r"\\\{[^}]+\\\}", r"[^/]+", path)

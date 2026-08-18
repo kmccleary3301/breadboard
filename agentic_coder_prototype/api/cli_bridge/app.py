@@ -51,8 +51,6 @@ from .models import (
     SessionInputResponse,
     SessionSummary,
 )
-from agentic_coder_prototype.api.e4 import create_e4_router
-from agentic_coder_prototype.api.e4.models import E4ApiError
 from .service import SessionService
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
@@ -261,14 +259,6 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     rl_router = create_phase3_rl_router(rl_service)
     app.include_router(rl_router, prefix="/v1/rl", tags=["rl"])
     app.include_router(rl_router, prefix="/rl", tags=["rl"])
-    e4_repo_root = Path(__file__).resolve().parents[3]
-
-    @app.exception_handler(E4ApiError)
-    async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=ErrorEnvelope(error=exc.error, detail=exc.detail_text, path=exc.path).model_dump(),
-        )
 
     @app.exception_handler(HTTPException)
     async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
@@ -293,10 +283,20 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             content=ErrorEnvelope(error="invalid_request", detail={"errors": exc.errors()}, path=None).model_dump(),
         )
 
+    e4_repo_root = Path(__file__).resolve().parents[3]
     legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
     public_api_enabled = _env_flag_default("BREADBOARD_ENABLE_PUBLIC_API", default=False)
-    e4_api_flag = os.environ.get("BREADBOARD_ENABLE_E4_API", "").strip().lower()
-    if e4_api_flag not in {"0", "false", "no"}:
+    if _env_flag("BREADBOARD_ENABLE_E4_API"):
+        from agentic_coder_prototype.api.e4 import create_e4_router
+        from agentic_coder_prototype.api.e4.models import E4ApiError
+
+        @app.exception_handler(E4ApiError)
+        async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=ErrorEnvelope(error=exc.error, detail=exc.detail_text, path=exc.path).model_dump(),
+            )
+
         app.include_router(
             create_e4_router(
                 repo_root=e4_repo_root,

@@ -218,12 +218,11 @@ def test_stream_events_gets_exact_v1_session_url(
 
 
 def test_candidate_product_bindings_exist_on_python_sdk() -> None:
-    contract = json.loads((Path(__file__).parents[1] / "contracts/public/operations.v1.json").read_text())
-    families = {"artifact", "harness", "harness_lock", "integration", "session", "system"}
+    contract = json.loads((Path(__file__).parents[1] / "contracts/public/operations.v2.json").read_text())
     methods = {
         operation["bindings"]["python_sdk"]["method"]
         for operation in contract["operations"]
-        if operation["status"] == "candidate" and operation["module"] in families
+        if operation["status"] == "candidate"
     }
     assert methods
     assert all(callable(getattr(BreadboardClient, method, None)) for method in methods)

@@ -78,6 +78,8 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
     assert describe["schema_version"] == "bb.cli.result.v1"
     assert describe["command"] == ["system", "describe"]
     assert describe["data"]["system"] == "breadboard"
+    assert describe["data"]["operation_count"] == 26
+    assert describe["data"]["internal_extensions"] == []
 
     import_result = subprocess.run(
         [

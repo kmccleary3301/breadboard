@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -338,30 +340,33 @@ def reverify_fixture(
 
 
 
-@pytest.mark.parametrize("flag_value", ["0", "false", "no"])
-def test_e4_mount_gate_excludes_versioned_routes_when_disabled(
-    monkeypatch: pytest.MonkeyPatch, flag_value: str
-) -> None:
-    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", flag_value)
-
-    response = TestClient(create_app()).get("/v1/e4/health")
-
-    assert response.status_code == 404
-
-
-@pytest.mark.parametrize("flag_value", [None, "1", "true", "yes", "on"])
-def test_e4_mount_gate_serves_versioned_routes_by_default_or_when_enabled(
+@pytest.mark.parametrize("flag_value", [None, "", "0", "false", "no", "off", "unknown"])
+def test_e4_mount_gate_fails_closed_when_not_explicitly_enabled(
     monkeypatch: pytest.MonkeyPatch, flag_value: str | None
 ) -> None:
     if flag_value is None:
         monkeypatch.delenv("BREADBOARD_ENABLE_E4_API", raising=False)
     else:
         monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", flag_value)
+    assert TestClient(create_app()).get("/v1/e4/health").status_code == 404
 
+
+@pytest.mark.parametrize("flag_value", ["1", "true", "yes", "on"])
+def test_e4_mount_gate_accepts_only_documented_true_values(
+    monkeypatch: pytest.MonkeyPatch, flag_value: str
+) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", flag_value)
     response = TestClient(create_app()).get("/v1/e4/health")
-
     assert response.status_code == 200
     assert response.json()["ok"] is True
+
+
+def test_default_app_import_does_not_load_e4_modules() -> None:
+    env = os.environ.copy()
+    env.pop("BREADBOARD_ENABLE_E4_API", None)
+    code = "import sys; import agentic_coder_prototype.api.cli_bridge.app; assert not any(name == 'agentic_coder_prototype.api.e4' or name.startswith('agentic_coder_prototype.api.e4.') for name in sys.modules)"
+    result = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).parents[1], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("flag_value", ["1", "true", "yes", "on"])

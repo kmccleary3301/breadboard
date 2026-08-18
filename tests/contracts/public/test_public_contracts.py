@@ -15,12 +15,29 @@ from scripts.quality.validate_public_contracts import (
     load_frozen_surface,
     validate_axis_manifest,
     validate_catalog,
+    validate_current_catalogs,
     validate_record_surface,
     sync_record_schemas,
     validate_public_contracts,
 )
 def catalog() -> dict:
     return load_json(PUBLIC_DIR / "operations.v1.json")
+def current_catalog() -> dict:
+    return load_json(PUBLIC_DIR / "operations.v2.json")
+def internal_catalog() -> dict:
+    return load_json(PUBLIC_DIR.parent / "internal" / "evidence" / "operations.v1.json")
+def test_current_catalogs_partition_the_historical_authority() -> None:
+    validate_current_catalogs()
+    product, internal = current_catalog(), internal_catalog()
+    product_ids = {row["operation_id"] for row in product["operations"]}
+    internal_ids = {row["operation_id"] for row in internal["operations"]}
+    assert product["contract_id"] == "bb.public_operation_catalog.v2" and product["status"] == "current"
+    assert internal["contract_id"] == "bb.internal_evidence_operation_catalog.v1" and internal["status"] == "current"
+    assert len(product_ids) == 26 and len(internal_ids) == 19 and product_ids.isdisjoint(internal_ids)
+    assert product_ids | internal_ids == frozen_operation_ids(load_frozen_surface())
+    assert {operation_id.split(".",1)[0] for operation_id in product_ids} == {"artifact","harness","harness_lock","integration","session","system"}
+    assert {operation_id.split(".",1)[0] for operation_id in internal_ids} == {"claim","lane","lane_execution","lane_lock"}
+
 def test_catalog_is_the_frozen_non_active_six_surface_candidate() -> None:
     value = catalog()
     validate_catalog(value)
@@ -100,6 +117,7 @@ def staged_root(tmp_path):
     root = tmp_path / "staged"
     shutil.copytree(PUBLIC_DIR, root / "contracts" / "public")
     shutil.copytree(PUBLIC_DIR.parent / "kernel" / "schemas", root / "contracts" / "kernel" / "schemas")
+    shutil.copytree(PUBLIC_DIR.parent / "internal" / "evidence", root / "contracts" / "internal" / "evidence")
     return root
 def test_staged_contracts_reject_their_malformed_schema(tmp_path) -> None:
     root = staged_root(tmp_path)
@@ -160,7 +178,7 @@ def test_inventory_is_a_checked_in_fixed_point_with_honest_gaps() -> None:
     assert first["parity_claimed"] is False
     assert first["candidate_status"] == "candidate"
     assert any(summary["gaps"] > 0 for summary in first["summary"].values())
-    assert all(summary["detected"] + summary["gaps"] == 45 for summary in first["summary"].values())
+    assert all(summary["detected"] + summary["gaps"] == 26 for summary in first["summary"].values())
 def test_generated_binding_manifest_ignores_source_text(tmp_path) -> None:
     manifest = tmp_path / "generated" / "public_surface_manifest.v1.json"
     (tmp_path / "client.test.ts").write_text("// system.health BreadBoardClient health", encoding="utf-8")
