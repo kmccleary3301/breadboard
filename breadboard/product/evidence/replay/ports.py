@@ -26,6 +26,17 @@ class ReplayWorker(Protocol):
 class ReplayWorkerIntegrityError(RuntimeError):
     pass
 
+class ReplayWorkerCanceled(RuntimeError):
+    pass
+
+
+class ReplayWorkerTimedOut(RuntimeError):
+    pass
+
+
+class ReplayWorkerProcessError(RuntimeError):
+    pass
+
 
 @dataclass(frozen=True, slots=True)
 class ReplayWorkerResult:
