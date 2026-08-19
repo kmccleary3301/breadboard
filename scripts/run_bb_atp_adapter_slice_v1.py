@@ -21,7 +21,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from _cross_system_eval_v1 import dump_json, load_manifest
-from breadboard_sdk.client import BreadboardClient
+from breadboard_sdk.compat import CompatibilityBreadboardClient as BreadboardClient
 
 try:
     from breadboard_ext.atp.aristotle_adapter import build_toolchain_id, normalize_input_hash

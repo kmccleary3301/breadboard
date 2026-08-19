@@ -1,16 +1,5 @@
 import { streamSessionEvents, type EventStreamOptions } from "./stream.js"
-import type {
-  CTreeSnapshotResponse,
-  HealthResponse,
-  ModelCatalogResponse,
-  SessionCreateRequest,
-  PublicResult,
-  SessionCreateResponse,
-  SessionFileContent,
-  SessionFileInfo,
-  SessionSummary,
-  SkillCatalogResponse,
-} from "./types.js"
+import type { PublicResult } from "./types.js"
 
 export class ApiError extends Error {
   readonly status: number
@@ -144,6 +133,8 @@ export const createBreadboardClient = (config: BreadboardClientConfig) => ({
       headers: idempotencyHeaders(idempotencyKey),
     }),
   listSession: () => requestWithConfig<PublicResult>(config, "/v1/sessions", "GET"),
+  getSession: (sessionId: string) =>
+    requestWithConfig<PublicResult>(config, `/v1/sessions/${encodeURIComponent(sessionId)}`, "GET"),
   sendInputSession: (sessionId: string, content: string, idempotencyKey?: string) =>
     requestWithConfig<PublicResult>(config, `/v1/sessions/${encodeURIComponent(sessionId)}/input`, "POST", {
       body: { content },
@@ -167,35 +158,5 @@ export const createBreadboardClient = (config: BreadboardClientConfig) => ({
     requestWithConfig<PublicResult>(config, `/v1/sessions/${encodeURIComponent(sessionId)}/artifacts`, "GET"),
   eventsSession: (sessionId: string, options: Omit<EventStreamOptions, "config"> = {}) =>
     streamSessionEvents(sessionId, { ...options, config }),
-  health: () => requestWithConfig<HealthResponse>(config, "/health", "GET"),
-  createSession: (payload: SessionCreateRequest) =>
-    requestWithConfig<SessionCreateResponse>(config, "/v1/sessions", "POST", { body: payload }),
-  listSessions: () => requestWithConfig<SessionSummary[]>(config, "/v1/sessions", "GET"),
-  getSession: (sessionId: string) => requestWithConfig<SessionSummary>(config, `/v1/sessions/${sessionId}`, "GET"),
-  postInput: (sessionId: string, body: { content: string; attachments?: ReadonlyArray<string> }) =>
-    requestWithConfig<void>(config, `/v1/sessions/${sessionId}/input`, "POST", { body }),
-  postCommand: (sessionId: string, body: Record<string, unknown>) =>
-    requestWithConfig<void>(config, `/v1/sessions/${sessionId}/command`, "POST", { body }),
-  deleteSession: (sessionId: string) => requestWithConfig<void>(config, `/v1/sessions/${sessionId}`, "DELETE"),
-  readSessionRecords: (sessionId: string) =>
-    requestWithConfig<Record<string, unknown>>(config, `/v1/sessions/${sessionId}/records`, "GET"),
-  listSessionFiles: (sessionId: string, path?: string) =>
-    requestWithConfig<SessionFileInfo[]>(config, `/v1/sessions/${sessionId}/files`, "GET", {
-      query: path ? { path } : undefined,
-    }),
-  readSessionFile: (sessionId: string, filePath: string, options?: ReadSessionFileOptions) =>
-    requestWithConfig<SessionFileContent>(config, `/v1/sessions/${sessionId}/files/content`, "GET", {
-      query: {
-        path: filePath,
-        mode: options?.mode ?? "cat",
-        head_lines: options?.headLines,
-        tail_lines: options?.tailLines,
-        max_bytes: options?.maxBytes,
-      },
-    }),
-  getModelCatalog: (configPath: string) =>
-    requestWithConfig<ModelCatalogResponse>(config, "/v1/models", "GET", { query: { config_path: configPath } }),
-  getSkillsCatalog: (sessionId: string) => requestWithConfig<SkillCatalogResponse>(config, `/v1/sessions/${sessionId}/skills`, "GET"),
-  getCtreeSnapshot: (sessionId: string) => requestWithConfig<CTreeSnapshotResponse>(config, `/v1/sessions/${sessionId}/ctrees`, "GET"),
 })
 

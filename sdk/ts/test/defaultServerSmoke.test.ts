@@ -64,27 +64,27 @@ test(
     assert.equal((await fetch(`${baseUrl}/sessions`)).status, 404)
 
     const client = createBreadboardClient({ baseUrl, requestTimeoutMs: 5_000 })
-    assert.equal((await client.health()).status, "ok")
-    const session = await client.createSession({
-      config_path: "agent_configs/templates/minimal_harness.v2.yaml",
-      task: "List files",
-      stream: true,
-    })
-    await client.postInput(session.session_id, { content: "Continue" })
-    const records = await client.readSessionRecords(session.session_id)
+    assert.equal((await client.healthSystem()).ok, true)
+    const created = await client.createHarness()
+    const locked = await client.lockHarness(created.data.path as string)
+    const started = await client.startSession(
+      {
+        lock_id: locked.data.path,
+        task: "Exercise the installed client",
+        session_id: "sdk-v1-smoke-session",
+      },
+      "start-smoke",
+    )
+    const session = started.data.session as { session_id: string }
+    const sent = await client.sendInputSession(session.session_id, "Continue", "input-smoke")
+    const canceled = await client.cancelSession(session.session_id, "smoke complete", "cancel-smoke")
     const events = []
-    for await (const event of streamSessionEvents(session.session_id, {
-      config: { baseUrl, requestTimeoutMs: 5_000 },
-    })) {
+    for await (const event of client.eventsSession(session.session_id)) {
       events.push(event)
     }
 
-    assert.equal(records.total, 1)
-    const recordRows = records.records as Array<{ record: { content: string } }>
-    assert.equal(recordRows[0].record.content, "Continue")
-    assert.deepEqual(
-      events.map((event) => event.type),
-      ["completion"],
-    )
+    assert.ok((sent.data.session as { event_count: number }).event_count >= 2)
+    assert.equal((canceled.data.session as { status: string }).status, "canceled")
+    assert.equal(events.at(-1)?.type, "session.canceled")
   },
 )

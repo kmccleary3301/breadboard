@@ -57,7 +57,8 @@ def test_incompatible_adapter_fails_before_capture(tmp_path: Path) -> None:
     (tmp_path / "refs/adapter.json").write_text(json.dumps({"target_families": ["codex"], "config_ids": ["config-a"]}) + "\n", encoding="utf-8")
     document = {**_document(), "metadata": {"config_id": "config-b"}}
     with pytest.raises(LaneCompatibilityError, match="target is incompatible"): build(document)
-def test_run_lane_preflights_manifest_v2_before_inactive_execution(tmp_path: Path, capsys) -> None:
+def test_run_lane_preflights_manifest_v2_before_execution(tmp_path: Path, capsys, monkeypatch) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "1")
     for name in ("harness", "target", "adapter", "source", "comparator", "policy"):
         path = tmp_path / "refs" / f"{name}.json"; path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"family": "codex"} if name == "target" else ({"target_families": ["codex"]} if name == "adapter" else {}); path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
@@ -76,8 +77,8 @@ def test_run_lane_preflights_manifest_v2_before_inactive_execution(tmp_path: Pat
     assert breadboard_cli.main(["--json", "lane", "capture", str(manifest)]) == 5; assert json.loads(capsys.readouterr().out)["error"]["error_code"] == "lock_drift"
     manifest.write_text(json.dumps(_document()) + "\n", encoding="utf-8")
     tampered = {**lock, "lock_sha256": "sha256:" + "0" * 64}; (lane_dir / "candidate_lane.lock.json").write_text(json.dumps(tampered, sort_keys=True, separators=(",", ":")) + "\n"); assert breadboard_cli.main(["--json", "lane", "capture", str(manifest)]) == 5; assert json.loads(capsys.readouterr().out)["error"]["error_code"] == "lock_drift"; (lane_dir / "candidate_lane.lock.json").write_text(json.dumps(lock, sort_keys=True, separators=(",", ":")) + "\n")
-    with pytest.raises(run_lane.LaneRunError, match="execution is inactive"): run_lane.run_lane("candidate_lane", stage="capture", out_dir=None, lane_def_dir=lane_dir)
+    with pytest.raises(run_lane.LaneRunError, match="requires adapter_id"): run_lane.run_lane("candidate_lane", stage="capture", out_dir=None, lane_def_dir=lane_dir)
     (tmp_path / "refs/adapter.json").write_text(json.dumps({"target_families": ["claude_code"]}) + "\n", encoding="utf-8")
     with pytest.raises(run_lane.LaneRunError, match="incompatible with target family"): run_lane.run_lane("candidate_lane", stage="capture", out_dir=None, lane_def_dir=lane_dir)
     (tmp_path / "refs/adapter.json").write_text(json.dumps({"target_families": ["codex"], "target_versions": ["v1"]}) + "\n"); v3 = {**_document(), "schema_version": LANE_SCHEMA_VERSION, "lane_id": "candidate_v3"}; v3_manifest = lane_dir / "candidate_v3.manifest.json"; v3_manifest.write_text(json.dumps(v3) + "\n"); v3_lock = build_lane_lock(v3, root=tmp_path, manifest_path=v3_manifest); (lane_dir / "candidate_v3.lock.json").write_text(json.dumps(v3_lock, sort_keys=True, separators=(",", ":")) + "\n")
-    with pytest.raises(run_lane.LaneRunError, match="execution is inactive"): run_lane.run_lane("candidate_v3", stage="capture", out_dir=None, lane_def_dir=lane_dir)
+    with pytest.raises(run_lane.LaneRunError, match="requires adapter_id"): run_lane.run_lane("candidate_v3", stage="capture", out_dir=None, lane_def_dir=lane_dir)

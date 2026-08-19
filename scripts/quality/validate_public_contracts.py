@@ -126,20 +126,13 @@ def _reject_inline_models(value: Any, path: tuple[str, ...] = ()) -> None:
     elif isinstance(value, list):
         for index, child in enumerate(value):
             _reject_inline_models(child, (*path, str(index)))
-def validate_catalog(
-    catalog: dict[str, Any], schema_dir: Path = SCHEMA_DIR, frozen: dict[str, Any] | None = None,
-) -> None:
-    _raise_if_errors(_schema_errors(catalog, "bb.public_operation_catalog.v1.schema.json", schema_dir))
+def _validate_catalog_rows(catalog: dict[str, Any]) -> set[str]:
     _reject_inline_models(catalog)
     rows = catalog["operations"]
     operation_ids = [row["operation_id"] for row in rows]
     duplicates = sorted({item for item in operation_ids if operation_ids.count(item) > 1})
     if duplicates:
         raise ContractValidationError(f"duplicate operation IDs: {', '.join(duplicates)}")
-    frozen = frozen or load_frozen_surface()
-    expected, actual = frozen_operation_ids(frozen), set(operation_ids)
-    if expected != actual:
-        raise ContractValidationError(f"frozen operation set mismatch; missing={sorted(expected-actual)}, extra={sorted(actual-expected)}")
     identity_fields = {"bbh": ("command",), "openapi": ("method", "path"), "python_sdk": ("method",), "typescript_sdk": ("method",), "tui": ("action_id",), "docs": ("slug",)}
     seen: dict[str, dict[tuple[str, ...], str]] = {surface: {} for surface in SURFACES}
     for row in rows:
@@ -151,10 +144,41 @@ def validate_catalog(
             if identity in seen[surface]:
                 raise ContractValidationError(f"duplicate {surface} binding identity for {seen[surface][identity]} and {row['operation_id']}: {identity}")
             seen[surface][identity] = row["operation_id"]
-    by_id = {row["operation_id"]: row for row in rows}
+    return set(operation_ids)
+def validate_catalog(
+    catalog: dict[str, Any], schema_dir: Path = SCHEMA_DIR, frozen: dict[str, Any] | None = None,
+) -> None:
+    _raise_if_errors(_schema_errors(catalog, "bb.public_operation_catalog.v1.schema.json", schema_dir))
+    actual = _validate_catalog_rows(catalog)
+    frozen = frozen or load_frozen_surface()
+    expected = frozen_operation_ids(frozen)
+    if expected != actual:
+        raise ContractValidationError(f"frozen operation set mismatch; missing={sorted(expected-actual)}, extra={sorted(actual-expected)}")
+    by_id = {row["operation_id"]: row for row in catalog["operations"]}
     for operation_id, command in frozen["surface_bindings"]["bbh"]["examples"].items():
         if by_id[operation_id]["bindings"]["bbh"]["command"] != command:
             raise ContractValidationError(f"{operation_id}.bbh: command differs from frozen example {command}")
+def validate_current_catalogs(public_dir: Path = PUBLIC_DIR, internal_dir: Path | None = None) -> None:
+    internal_dir = internal_dir or public_dir.parent / "internal" / "evidence"
+    product = load_json(public_dir / "operations.v2.json")
+    internal = load_json(internal_dir / "operations.v1.json")
+    _raise_if_errors(_schema_errors(product, "bb.public_operation_catalog.v2.schema.json", public_dir / "schemas"))
+    _raise_if_errors(_schema_errors(internal, "bb.internal_evidence_operation_catalog.v1.schema.json", internal_dir / "schemas"))
+    product_ids = _validate_catalog_rows(product)
+    internal_ids = _validate_catalog_rows(internal)
+    if product_ids & internal_ids:
+        raise ContractValidationError(f"product/internal operation catalogs overlap: {sorted(product_ids & internal_ids)}")
+    legacy_ids = frozen_operation_ids(load_frozen_surface(public_dir))
+    if product_ids | internal_ids != legacy_ids:
+        raise ContractValidationError(
+            f"catalog split does not partition the historical authority; missing={sorted(legacy_ids-product_ids-internal_ids)}, extra={sorted((product_ids|internal_ids)-legacy_ids)}"
+        )
+    expected_product = {"artifact": 3, "harness": 7, "harness_lock": 1, "integration": 3, "session": 9, "system": 3}
+    expected_internal = {"claim": 4, "lane": 12, "lane_execution": 2, "lane_lock": 1}
+    for label, rows, expected in (("product", product["operations"], expected_product), ("internal", internal["operations"], expected_internal)):
+        counts = {family: sum(row["operation_id"].startswith(f"{family}.") for row in rows) for family in expected}
+        if counts != expected:
+            raise ContractValidationError(f"{label} operation family mismatch: expected={expected}, actual={counts}")
 def _schema_index(schema_dir: Path, kernel_schema_dir: Path) -> dict[str, Path]:
     by_id: dict[str, Path] = {}
     by_uri: dict[str, Path] = {}
@@ -210,6 +234,7 @@ def validate_public_contracts(public_dir: Path = PUBLIC_DIR) -> None:
     sync_record_schemas(public_dir)
     frozen = load_frozen_surface(public_dir)
     validate_catalog(load_json(public_dir / "operations.v1.json"), schema_dir, frozen)
+    validate_current_catalogs(public_dir)
     validate_record_surface(load_json(public_dir / "record_surface.v1.json"), schema_dir, kernel_schema_dir, frozen)
     validate_axis_manifest(load_json(public_dir / "axis_smoke.v1.json"), schema_dir)
 def main(argv: list[str] | None = None) -> int:
@@ -224,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     except ContractValidationError as exc:
         print(f"public contract validation failed: {exc}")
         return 1
-    print("public candidate contracts valid: 45 operations, 6 bindings each, non-active")
+    print("operation catalogs valid: historical 45 operations; current product 26; internal evidence 19")
     return 0
 if __name__ == "__main__":
     raise SystemExit(main())

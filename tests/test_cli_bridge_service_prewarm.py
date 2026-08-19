@@ -1,6 +1,7 @@
 from __future__ import annotations
 from types import SimpleNamespace; from pathlib import Path; import asyncio, hashlib, json, os, threading, pytest, yaml
 from fastapi import HTTPException
+from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import events as runtime_ports; from breadboard.product.runtime.artifacts import ArtifactStore
 from agentic_coder_prototype.api.cli_bridge.models import SessionCommandRequest, SessionCreateRequest, SessionInputRequest, SessionStatus
 from agentic_coder_prototype.api.cli_bridge.events import EventType; from agentic_coder_prototype.api.cli_bridge.service import SessionService
@@ -41,6 +42,32 @@ async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch
         assert [item["name"] for item in work] == ["work_item_created", "work_item_lease_acquired", "work_item_attempt_started", "work_item_snapshot"] and [item["record"].get("kind") for item in work] == ["work_item.created", "lease.acquired", "attempt.started", None] and work[-1]["schema_version"] == "bb.work_item.v2"
         assert work[-1]["record"]["title"] == title and record.product_session.events[0].payload["task_hash"] == "sha256:" + hashlib.sha256(title.encode()).hexdigest() and record.runner.request.task == "" and record.runner._input_queue.empty()
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.STOPPED and type(record.product_session).restore(record.product_session.events).read_model.status == "canceled"; await _stop(record)
+@pytest.mark.asyncio
+async def test_product_session_projects_bridge_status_and_exact_supplied_lock(monkeypatch, tmp_path) -> None:
+    supplied_lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64})
+    monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
+    monkeypatch.setattr(RUNNER + "authorize_start", lambda _runner: None)
+    service = SessionService()
+    response = await service.create_session(
+        SessionCreateRequest(config_path=CONFIG, task="project product state"),
+        event_root=tmp_path / "events",
+        effective_lock=supplied_lock,
+    )
+    record = await service.ensure_session(response.session_id)
+    assert response.status is SessionStatus.RUNNING
+    assert record.status is SessionStatus.STARTING
+    assert record.to_summary().status is SessionStatus.RUNNING
+    assert record.product_session.read_model.effective_lock_hash == supplied_lock["graph_hash"]
+    product_session = record.product_session
+    record.product_session = SimpleNamespace(read_model=SimpleNamespace(status="unknown"))
+    with pytest.raises(RuntimeError, match="unknown product Session status"):
+        record.projected_status()
+    record.product_session = product_session
+    with pytest.raises(RuntimeError, match="disagrees with product Session"):
+        await service.registry.update_status(response.session_id, SessionStatus.COMPLETED)
+    await service.stop_session(response.session_id)
+    assert record.status is SessionStatus.STOPPED
+    await _stop(record)
 @pytest.mark.asyncio
 async def test_session_service_authorizes_runner_after_prewarm(monkeypatch, tmp_path) -> None:
     service, order = SessionService(), []

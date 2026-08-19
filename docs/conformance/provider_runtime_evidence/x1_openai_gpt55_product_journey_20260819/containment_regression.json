@@ -1,0 +1,8 @@
+{
+  "behavior": "Codex app-server thread/start uses sandbox=read-only, approvalPolicy=never, ephemeral=true, dynamicTools=[], and environments=[].",
+  "command": "uv run --isolated --no-project --with pytest --with pyyaml pytest tests/providers/test_provider_runtime_codex.py -q",
+  "exit_code": 0,
+  "result": "6 passed, 1 warning",
+  "schema_version": "bb.north_star.x1.regression_verification.v1",
+  "test_ref": "tests/providers/test_provider_runtime_codex.py::test_codex_runtime_starts_threads_read_only_without_approvals"
+}

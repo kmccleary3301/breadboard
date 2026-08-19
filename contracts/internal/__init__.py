@@ -1,0 +1,1 @@
+"""Internal contract resources."""

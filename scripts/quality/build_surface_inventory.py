@@ -20,12 +20,12 @@ if str(ROOT) not in sys.path:
 try:
     from .validate_public_contracts import (
         ContractValidationError, SURFACES, canonical_bytes, load_frozen_surface,
-        load_json, load_schema, validate_catalog, validate_record_surface,
+        load_json, load_schema, validate_current_catalogs, validate_record_surface,
     )
 except ImportError:
     from validate_public_contracts import (  # type: ignore[no-redef]
         ContractValidationError, SURFACES, canonical_bytes, load_frozen_surface,
-        load_json, load_schema, validate_catalog, validate_record_surface,
+        load_json, load_schema, validate_current_catalogs, validate_record_surface,
     )
 
 PUBLIC_DIR = ROOT / "contracts" / "public"
@@ -88,9 +88,9 @@ def build_inventory(root: Path = ROOT) -> dict[str, Any]:
     public_dir = root / "contracts" / "public"
     schema_dir = public_dir / "schemas"
     kernel_schema_dir = root / "contracts" / "kernel" / "schemas"
-    catalog_path, records_path = public_dir / "operations.v1.json", public_dir / "record_surface.v1.json"
+    catalog_path, records_path = public_dir / "operations.v2.json", public_dir / "record_surface.v1.json"
     catalog, records, frozen = load_json(catalog_path), load_json(records_path), load_frozen_surface(public_dir)
-    validate_catalog(catalog, schema_dir, frozen)
+    validate_current_catalogs(public_dir)
     validate_record_surface(records, schema_dir, kernel_schema_dir, frozen)
 
     cli_commands, openapi = _cli_commands(root), _openapi_operations(root)

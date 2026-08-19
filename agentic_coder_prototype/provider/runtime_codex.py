@@ -556,7 +556,17 @@ class CodexAppServerRuntime(ProviderRuntime):
             after_initialize_at = time.monotonic()
         else:
             after_start_at = spawn_started_at
-        thread_result = client.thread_start({"model": model, "cwd": cwd})
+        thread_result = client.thread_start(
+            {
+                "model": model,
+                "cwd": cwd,
+                "sandbox": "read-only",
+                "approvalPolicy": "never",
+                "ephemeral": True,
+                "dynamicTools": [],
+                "environments": [],
+            }
+        )
         after_thread_start_at = time.monotonic()
         thread = thread_result.get("thread") if isinstance(thread_result, dict) else {}
         thread_id = str((thread or {}).get("id") or "")

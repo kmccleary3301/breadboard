@@ -1,0 +1,1 @@
+"""Packaged BreadBoard contract resources."""

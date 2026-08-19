@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs"
 import path from "node:path"
-import { ApiClient, ApiError } from "../api/client.js"
+import { ApiClient, ApiError } from "../api/internalClient.js"
 import type { ModelCatalogEntry } from "../api/types.js"
 import { DEFAULT_MODEL_ID } from "../config/appConfig.js"
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ApiClient, ApiError } from "../../../api/client.js"
+import { ApiClient, ApiError } from "../../../api/internalClient.js"
 import type { SessionEvent } from "../../../api/types.js"
 import { CliProviders } from "../../../providers/cliProviders.js"
 import { ReplSessionController } from "../controller.js"

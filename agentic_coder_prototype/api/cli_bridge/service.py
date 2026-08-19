@@ -169,13 +169,23 @@ class SessionService:
         if publish_records and runtime_record_dir != event_dir: staged_event_dir.replace(event_dir); AnchoredStorage.sync_directory(event_dir.parent)
         for owner in {target / _START_OWNER, event_dir / _START_OWNER}: owner.unlink(missing_ok=True)
         for root in {target, event_dir}: AnchoredStorage.sync_directory(root) if root.is_dir() else None
-    async def create_session(self, request: SessionCreateRequest, *, session_id: str | None = None, event_root: Path | None = None, runtime_root: Path | None = None) -> SessionCreateResponse:
+    async def create_session(
+        self,
+        request: SessionCreateRequest,
+        *,
+        session_id: str | None = None,
+        event_root: Path | None = None,
+        runtime_root: Path | None = None,
+        effective_lock: EffectiveHarnessLock | None = None,
+    ) -> SessionCreateResponse:
         session_id, metadata = session_id or str(uuid.uuid4()), dict(request.metadata or {}); metadata.setdefault("config_path", request.config_path)
         if await self.registry.get(session_id) is not None: raise ValueError(f"session already exists: {session_id}")
         if self._bridge_chaos: metadata.setdefault("bridgeChaos", self._bridge_chaos)
         session_title = request.task if request.task.strip() else DEFAULT_INTERACTIVE_SESSION_TITLE
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata); runner = SessionRunner(session=record, registry=self.registry, request=request)
-        runtime_config = runner.prepare_runtime_config(); persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config); runtime_graph = compile_runtime_effective_config_graph(session_id, persisted_runtime_config, request.config_path); runtime_lock = EffectiveHarnessLock._from_record(runtime_graph)
+        runtime_config = runner.prepare_runtime_config(); persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config); runtime_graph = compile_runtime_effective_config_graph(session_id, persisted_runtime_config, request.config_path)
+        if effective_lock is not None and not isinstance(effective_lock, EffectiveHarnessLock): raise TypeError("effective_lock must be an EffectiveHarnessLock")
+        runtime_lock = effective_lock if effective_lock is not None else EffectiveHarnessLock._from_record(runtime_graph)
         emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = (runtime_root or default_runtime_record_root()) / session_id, (event_root or _event_root()) / session_id
         staging_record_root = runtime_record_dir.parent / f".{session_id}.records.starting"
         staged_record_dir, staged_event_dir = staging_record_root / session_id, event_dir.with_name(f".{session_id}.events.starting")
@@ -226,7 +236,7 @@ class SessionService:
             else: await self.registry.update_status(session_id, SessionStatus.FAILED)
             raise
         logger.info("Session %s created", session_id)
-        return SessionCreateResponse(session_id=session_id, status=record.status, created_at=record.created_at, logging_dir=record.logging_dir)
+        return SessionCreateResponse(session_id=session_id, status=record.projected_status(), created_at=record.created_at, logging_dir=record.logging_dir)
     async def _maybe_prewarm_request_runtime(self, request: SessionCreateRequest, metadata: Dict[str, Any], runtime_config: dict[str, Any]) -> None:
         if not self._should_prewarm_request_runtime(metadata): return
         try: await asyncio.to_thread(self._prewarm_request_runtime_sync, request, metadata, runtime_config)

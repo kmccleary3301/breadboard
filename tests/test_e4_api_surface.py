@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -43,6 +45,11 @@ def _write_json(path: Path, payload: object) -> str:
 def _stable_hash(payload: object) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+@pytest.fixture(autouse=True)
+def _enable_internal_e4_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "1")
+
 
 
 @pytest.fixture()
@@ -338,30 +345,33 @@ def reverify_fixture(
 
 
 
-@pytest.mark.parametrize("flag_value", ["0", "false", "no"])
-def test_e4_mount_gate_excludes_versioned_routes_when_disabled(
-    monkeypatch: pytest.MonkeyPatch, flag_value: str
-) -> None:
-    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", flag_value)
-
-    response = TestClient(create_app()).get("/v1/e4/health")
-
-    assert response.status_code == 404
-
-
-@pytest.mark.parametrize("flag_value", [None, "1", "true", "yes", "on"])
-def test_e4_mount_gate_serves_versioned_routes_by_default_or_when_enabled(
+@pytest.mark.parametrize("flag_value", [None, "", "0", "false", "no", "off", "unknown"])
+def test_e4_mount_gate_fails_closed_when_not_explicitly_enabled(
     monkeypatch: pytest.MonkeyPatch, flag_value: str | None
 ) -> None:
     if flag_value is None:
         monkeypatch.delenv("BREADBOARD_ENABLE_E4_API", raising=False)
     else:
         monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", flag_value)
+    assert TestClient(create_app()).get("/v1/e4/health").status_code == 404
 
+
+@pytest.mark.parametrize("flag_value", ["1", "true", "yes", "on"])
+def test_e4_mount_gate_accepts_only_documented_true_values(
+    monkeypatch: pytest.MonkeyPatch, flag_value: str
+) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", flag_value)
     response = TestClient(create_app()).get("/v1/e4/health")
-
     assert response.status_code == 200
     assert response.json()["ok"] is True
+
+
+def test_default_app_import_does_not_load_e4_modules() -> None:
+    env = os.environ.copy()
+    env.pop("BREADBOARD_ENABLE_E4_API", None)
+    code = "import sys; import agentic_coder_prototype.api.cli_bridge.app; forbidden=('agentic_coder_prototype.api.e4','breadboard.product.evidence','scripts.e4_parity'); assert not any(any(name == root or name.startswith(root + '.') for root in forbidden) for name in sys.modules)"
+    result = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).parents[1], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("flag_value", ["1", "true", "yes", "on"])
@@ -391,10 +401,10 @@ def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pyte
     assert local_client.get("/sessions").status_code == 404
     assert local_client.get("/rl/runs/probe").status_code == 404
     assert local_client.get("/health").status_code == 200
-    assert local_client.get("/v1/status").status_code == 200
-    assert local_client.get("/v1/features").status_code == 200
-    assert local_client.get("/v1/sessions").status_code == 200
-    assert local_client.get("/v1/rl/runs/probe").status_code == 400
+    assert local_client.get("/v1/status").status_code == 404
+    assert local_client.get("/v1/features").status_code == 404
+    assert local_client.get("/v1/system").status_code == 200
+    assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 @pytest.mark.parametrize("flag_value", ["0", "false", "no", "off"])
 def test_legacy_routes_flag_off_removes_unversioned_aliases(
@@ -410,10 +420,10 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
     assert local_client.get("/sessions").status_code == 404
     assert local_client.get("/rl/runs/probe").status_code == 404
     assert local_client.get("/health").status_code == 200
-    assert local_client.get("/v1/status").status_code == 200
-    assert local_client.get("/v1/features").status_code == 200
-    assert local_client.get("/v1/sessions").status_code == 200
-    assert local_client.get("/v1/rl/runs/probe").status_code == 400
+    assert local_client.get("/v1/status").status_code == 404
+    assert local_client.get("/v1/features").status_code == 404
+    assert local_client.get("/v1/system").status_code == 200
+    assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 
 def test_validate_e4_c4_chain_shim_reexports_public_conformance_functions() -> None:
@@ -682,7 +692,10 @@ def test_registries_endpoints_expose_contract_registry_files(client: TestClient)
     assert missing.json()["error"] == "registry_not_found"
 
 
-def test_split_v1_session_file_endpoints_list_and_read_content(tmp_path: Path) -> None:
+def test_split_v1_session_file_endpoints_list_and_read_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "alpha.txt").write_text("alpha\n", encoding="utf-8")
@@ -714,6 +727,7 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     runtime_root = tmp_path / "runtime_records"
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(runtime_root))
     emit_session_start_records(
@@ -750,6 +764,7 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
 
 
 def test_api_error_envelope_covers_auth_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     monkeypatch.setenv("BREADBOARD_API_TOKEN", "secret")
     auth_response = TestClient(create_app()).get("/v1/sessions")
     assert auth_response.status_code == 401
@@ -932,6 +947,7 @@ def test_e4_claim_detail_missing_evidence_manifest_returns_flat_error_envelope(
 
 
 def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     monkeypatch.delenv("BREADBOARD_EMIT_PRIMITIVES", raising=False)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "runtime_records"))
     monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.schedule_start", lambda _runner: None)

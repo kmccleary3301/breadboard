@@ -1,0 +1,165 @@
+{
+  "schema_version": "bb.installed_product_journey_evidence.v1",
+  "run_id": "i1-installed-product-journey-20260818",
+  "status": "passed",
+  "source_issue": "bb-2dq",
+  "environment": {
+    "invocation_cwd": "/tmp/breadboard-i1-release.5INP3i/outside",
+    "outside_source_checkout": true,
+    "python": "3.13.14",
+    "provider_credentials_present": false,
+    "provider_network_used": false,
+    "legacy_routes_enabled": false,
+    "e4_api_enabled": false
+  },
+  "packages": {
+    "python_wheel": {
+      "filename": "breadboard_harness_cli-0.0.0-py3-none-any.whl",
+      "sha256": "1864cd8d3604dc91e5972105794770be5da0b6ec7c42d436667cfd2e2a2359fb",
+      "size_bytes": 3019449,
+      "installed_import_root": "/tmp/breadboard-i1-release.5INP3i/venv/lib/python3.13/site-packages"
+    },
+    "typescript_sdk": {
+      "filename": "breadboard-sdk-0.1.0.tgz",
+      "sha256": "1a9843a1d0118b45a619b860a6ef416caf8f1d1b1c86ad2969526edee5b65757",
+      "size_bytes": 5769,
+      "installed_outside_checkout": true
+    },
+    "tui_api_bundle": {
+      "filename": "tui-client.mjs",
+      "sha256": "74f4728811715e1c09258aea8b72ad04c4d20a992745310d00b14f7949ec14f3",
+      "size_bytes": 966395,
+      "executed_outside_checkout": true
+    }
+  },
+  "fixture": {
+    "manifest": "minimal_harness.v2.yaml",
+    "lock": "minimal_harness.v2.lock.json",
+    "graph_hash": "sha256:e22397cee73597c960aa60ca37c0606f02fd9e6ab0457f9e089f039be2e7448f",
+    "source_hash": "sha256:a175e2d0cf7115ec5f0183ce530bef1fb6285ded0aadf7e91573ec51ba622508",
+    "session_id": "i1-release-session"
+  },
+  "direction_charter_measurements": {
+    "authored_manifest_lines": 65,
+    "authored_prompt_lines": 3,
+    "authored_adapter_lines": 0,
+    "manifest_line_budget": 150,
+    "adapter_line_budget": 300,
+    "readiness_points_awarded": 0,
+    "interpretation": "The installed minimal fixture uses a built-in adapter, so no fixture-specific adapter code was authored. These counts measure I1 only and do not prove the accepted-scope claim portion of the Direction Charter thesis."
+  },
+  "raw_transcript": [
+    {
+      "client": "CLI",
+      "operation": "harness create and lock from the installed wheel",
+      "result": {
+        "ok": true,
+        "manifest": "minimal_harness.v2.yaml",
+        "lock": "minimal_harness.v2.lock.json",
+        "graph_hash": "sha256:e22397cee73597c960aa60ca37c0606f02fd9e6ab0457f9e089f039be2e7448f"
+      }
+    },
+    {
+      "client": "Python SDK",
+      "operation": "start and cancel session",
+      "result": {"session_id": "i1-release-session", "start_status": "running", "terminal_status": "canceled"}
+    },
+    {
+      "client": "service lifecycle",
+      "operation": "stop and start a new installed-wheel server process over the same workspace",
+      "result": {"restarted": true}
+    },
+    {
+      "client": "raw HTTP API",
+      "operation": "GET /v1/sessions/i1-release-session after restart",
+      "result": {"ok": true, "status": "canceled", "event_count": 2}
+    },
+    {
+      "client": "Python SDK",
+      "operation": "durable session, event, and artifact read-back after restart",
+      "result": {"session_status": "canceled", "listed": true, "event_count": 2, "last_event": "session.canceled", "artifact_count": 1, "artifact_verified": true}
+    },
+    {
+      "client": "TypeScript SDK",
+      "operation": "durable session and artifact verification after restart",
+      "result": {"session_status": "canceled", "event_count": 2, "artifact_count": 1, "artifact_verified": true}
+    },
+    {
+      "client": "TUI API client",
+      "operation": "durable session and artifact verification after restart",
+      "result": {"session_status": "canceled", "event_count": 2, "artifact_count": 1, "artifact_verified": true}
+    },
+    {
+      "client": "CLI",
+      "operation": "durable session and artifact read-back after restart",
+      "result": {"session_status": "canceled", "artifact_count": 1, "artifact_verified_by_public_api": true}
+    },
+    {
+      "client": "raw HTTP API",
+      "operation": "reject dot-segment session identifier",
+      "result": {"session_id": "..", "status_code": 422}
+    }
+  ],
+  "durable_session_events": [
+    {
+      "kind": "session.started",
+      "occurred_at": "2026-08-19T03:16:03.256326Z",
+      "payload": {
+        "effective_lock_hash": "sha256:e22397cee73597c960aa60ca37c0606f02fd9e6ab0457f9e089f039be2e7448f",
+        "task_hash": "sha256:eee9413adfc344637fa0cd6e2352a285f2806b932c004efc7c538b2577990cb3"
+      },
+      "schema_version": "bb.session_event.v1",
+      "sequence": 1,
+      "session_id": "i1-release-session"
+    },
+    {
+      "kind": "session.canceled",
+      "occurred_at": "2026-08-19T03:16:04.778164Z",
+      "payload": {"outcome": "canceled", "reason": "release proof"},
+      "schema_version": "bb.session_event.v1",
+      "sequence": 2,
+      "session_id": "i1-release-session"
+    }
+  ],
+  "durable_artifact": {
+    "name": "release-proof",
+    "digest": "sha256:096a7470afb9d8b76db30342a78187d136b79bb7acc5c9731727550ef185c0c8",
+    "size_bytes": 24,
+    "seeded_by": "installed breadboard.product.runtime.artifacts.ArtifactStore plus a session-scoped content-addressed manifest",
+    "verified_by": ["CLI listing", "raw public API", "Python SDK", "TypeScript SDK", "TUI API client"]
+  },
+  "discovered_product_seam": {
+    "initial_failure": "A fresh service process returned HTTP 404 for a durable terminal session because SessionService.registry is process-local.",
+    "resolution": "Public read endpoints now fall back to the durable product Session event log and session artifact manifest while mutation endpoints remain live-registry-only. Dot-segment session identifiers are rejected before path construction.",
+    "changed_paths": [
+      "agentic_coder_prototype/api/public/session.py",
+      "breadboard/product/cli/session.py",
+      "tests/api/public/test_session.py",
+      "tests/test_sdk_v1_default_server_smoke.py"
+    ],
+    "regression_tests": [
+      "test_public_session_readback_survives_service_restart",
+      "test_session_invalid_state_is_stable_and_secret_free"
+    ]
+  },
+  "verification": {
+    "checks": [
+      {
+        "command": "uv run --isolated --no-project --with pytest --with requests --with uvicorn --with fastapi --with httpx2 --with jsonschema --with python-dotenv --with python-multipart --with pyyaml --with ray pytest tests/api/public/test_session.py tests/test_breadboard_sdk_client.py tests/test_breadboard_cli_packaging.py tests/test_sdk_v1_default_server_smoke.py -q",
+        "result": "10 passed"
+      },
+      {
+        "command": "npm test",
+        "cwd": "sdk/ts",
+        "result": "3 passed"
+      },
+      {
+        "command": "npx vitest run src/api/__tests__/defaultServerSmoke.test.ts",
+        "cwd": "tui_skeleton",
+        "result": "1 passed"
+      }
+    ],
+    "claim_publication_attempted": false,
+    "readiness_score_changed": false
+  }
+}

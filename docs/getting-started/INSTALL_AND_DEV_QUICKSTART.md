@@ -111,10 +111,10 @@ make devx-timing
 make disk-report
 ```
 
-Or via CLI:
+The ordinary product CLI begins after setup:
 
 ```bash
-breadboard quickstart --include-advanced
+breadboard --json system health
 ```
 
 ---
@@ -126,12 +126,11 @@ python scripts/dev/first_time_doctor.py --strict
 python scripts/dev/first_time_doctor.py --profile engine --strict
 ```
 
-Via CLI (if your build supports first-time doctor flags):
+Verify the installed product CLI:
 
 ```bash
-breadboard doctor --first-time
-breadboard doctor --first-time --first-time-profile engine
-breadboard doctor --first-time --first-time-profile tui
+breadboard --json system health
+breadboard --json system describe
 ```
 
 ---
@@ -169,91 +168,62 @@ hash -r
 
 ## Running BreadBoard
 
-### Auto-start behavior
+The installed `breadboard` command exposes the product `system`, `harness`,
+`harness-lock`, `session`, `integration`, and `artifact` namespaces.
 
-The CLI auto-starts a local engine when:
-
-- base URL is local (`localhost`/`127.0.0.1`) and reachability checks fail, and
-- the command is not `connect`, `engine`, or `config`
-
-### Common commands
+Create, validate, lock, and run a harness:
 
 ```bash
-breadboard doctor --config agent_configs/misc/opencode_mock_c_fs.yaml
-breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml
-breadboard run --config agent_configs/misc/opencode_mock_c_fs.yaml "Say hi and exit."
+breadboard harness create --out ./harness
+breadboard harness validate ./harness/minimal_harness.v2.yaml
+breadboard harness lock ./harness/minimal_harness.v2.yaml \
+  --out ./harness/minimal_harness.lock.json
+breadboard harness run ./harness/minimal_harness.v2.yaml \
+  --lock ./harness/minimal_harness.lock.json \
+  --local \
+  --task "Say hi and exit."
+```
+
+Inspect the installed product contract:
+
+```bash
+breadboard --json system describe
+breadboard system schemas
 ```
 
 ### Useful environment toggles
 
 | Variable | Effect |
 |----------|--------|
-| `RAY_SCE_LOCAL_MODE=1` | Skip Ray init during engine startup |
-| `BREADBOARD_ENGINE_KEEPALIVE=1` | Don't auto-shutdown engine on CLI exit |
-| `BREADBOARD_PROTOCOL_STRICT=1` | Fail if engine protocol mismatches CLI |
-| `BREADBOARD_KEYCHAIN=1` | Allow API token lookup from OS keychain |
+| `RAY_SCE_LOCAL_MODE=1` | Skip Ray initialization during local engine startup |
+| `BREADBOARD_ENGINE_KEEPALIVE=1` | Keep a locally launched engine alive after a client exits |
+| `BREADBOARD_PROTOCOL_STRICT=1` | Fail if the engine protocol does not match the client |
 | `BREADBOARD_SANDBOX_DRIVER=light\|docker\|process` | Override sandbox driver selection |
-| `RAY_USE_DOCKER_SANDBOX=1` | Legacy toggle; forces docker sandbox if available |
-| `BREADBOARD_DOCKER_NETWORK=<name>` | Optional docker network name |
+| `BREADBOARD_DOCKER_NETWORK=<name>` | Select the Docker network used by sandboxed runs |
 
----
+## Provider credentials
 
-## Auth
-
-```bash
-breadboard auth set "<token>"
-breadboard auth status
-breadboard auth clear
-breadboard auth list
-```
-
-Interactive provider login (OpenCode-style menu):
-
-```bash
-breadboard auth
-breadboard auth login --config agent_configs/codex_0-107-0_e4_3-6-2026.yaml
-```
-
-In the OpenAI login-method menu, use `ChatGPT Pro/Plus (browser, force re-login)` to force a fresh browser auth handshake even if a reusable local Codex token already exists.
-
-Codex subscription non-interactive flow (CI-friendly):
-
-```bash
-breadboard auth codex-subscription login --no-browser --config agent_configs/codex_0-107-0_e4_3-6-2026.yaml
-```
-
-If the local keychain is locked or unavailable, BreadBoard saves subscription tokens to `~/.breadboard/auth/codex_subscription_tokens.json`.
+The bundled minimal harness uses `mock/reference` and needs no provider
+credentials. Real provider adapters read their credentials from the runtime
+environment; do not put tokens in CLI arguments, harness definitions, locks, or
+session records.
 
 ---
 
 ## SDK verification
 
-Start a local engine in one shell:
+Start the product API in one shell:
 
 ```bash
 ./.venv/bin/python -m agentic_coder_prototype.api.cli_bridge.server
 ```
 
-Run SDK hello scripts in another:
+The Python and TypeScript SDK examples in the repository root use the same
+lock-first session lifecycle. Verify both installed clients with:
 
 ```bash
-python scripts/dev/python_sdk_hello.py
-node scripts/dev/ts_sdk_hello.mjs
-```
-
-One-command live SDK verification (starts a temporary local engine):
-
-```bash
-bash scripts/dev/sdk_hello_live_smoke.sh
-# or
-make sdk-hello-live
-make onboarding-contract
-```
-
-Engine-only (skip TypeScript lane):
-
-```bash
-bash scripts/dev/sdk_hello_live_smoke.sh --no-ts
+python -m pytest tests/test_sdk_v1_default_server_smoke.py -q
+(cd sdk/ts && npm test)
 ```
 
 ---

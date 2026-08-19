@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { ApiClient, createApiClient, type AttachmentUploadPayload } from "../client.js"
+import { ApiClient, createApiClient, type AttachmentUploadPayload } from "../internalClient.js"
 
 const ORIGINAL_ENV = {
   BREADBOARD_API_TOKEN: process.env.BREADBOARD_API_TOKEN,
   BREADBOARD_API_URL: process.env.BREADBOARD_API_URL,
+  BREADBOARD_LEGACY_ROUTES: process.env.BREADBOARD_LEGACY_ROUTES,
 }
 
 afterEach(() => {
@@ -80,5 +81,29 @@ describe("createApiClient upload auth", () => {
 
     expect(authToken).toHaveBeenCalledOnce()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe("internal client compatibility gates", () => {
+  it("does not issue unversioned ctree requests without explicit legacy opt-in", async () => {
+    delete process.env.BREADBOARD_LEGACY_ROUTES
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ nodes: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    )
+    const client = createApiClient({ baseUrl: "http://127.0.0.1:9099" })
+
+    expect(() => client.getCtreeTree("session-1")).toThrow(
+      "requires BREADBOARD_LEGACY_ROUTES=1",
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    process.env.BREADBOARD_LEGACY_ROUTES = "true"
+    await expect(client.getCtreeTree("session-1")).resolves.toEqual({ nodes: [] })
+    expect(fetchMock.mock.calls[0][0].toString()).toBe(
+      "http://127.0.0.1:9099/sessions/session-1/ctrees/tree",
+    )
   })
 })
