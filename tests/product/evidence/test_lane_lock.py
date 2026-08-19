@@ -57,7 +57,8 @@ def test_incompatible_adapter_fails_before_capture(tmp_path: Path) -> None:
     (tmp_path / "refs/adapter.json").write_text(json.dumps({"target_families": ["codex"], "config_ids": ["config-a"]}) + "\n", encoding="utf-8")
     document = {**_document(), "metadata": {"config_id": "config-b"}}
     with pytest.raises(LaneCompatibilityError, match="target is incompatible"): build(document)
-def test_run_lane_preflights_manifest_v2_before_inactive_execution(tmp_path: Path, capsys) -> None:
+def test_run_lane_preflights_manifest_v2_before_inactive_execution(tmp_path: Path, capsys, monkeypatch) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "1")
     for name in ("harness", "target", "adapter", "source", "comparator", "policy"):
         path = tmp_path / "refs" / f"{name}.json"; path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"family": "codex"} if name == "target" else ({"target_families": ["codex"]} if name == "adapter" else {}); path.write_text(json.dumps(payload) + "\n", encoding="utf-8")

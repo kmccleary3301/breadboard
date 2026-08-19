@@ -159,7 +159,7 @@ def run(a):
 def _server(a):
     try:
         import breadboard_sdk
-        task=str(getattr(a,"task",None) or "List files");c=breadboard_sdk.BreadboardClient(a.server,timeout_s=120)
+        task=str(getattr(a,"task",None) or "List files");c=breadboard_sdk.BreadBoardClient(a.server,timeout_s=120)
         started=c.start_session({"lock_id":a._lock_id,"task":task},idempotency_key=sha256_json({"lock_id":a._lock_id,"task":task}))
         if not isinstance(started,dict) or not started.get("ok"):
             raise RuntimeError(f"session.start failed: {started!r}")

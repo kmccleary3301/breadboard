@@ -13,6 +13,11 @@ from breadboard.product.evidence import load_lane
 from breadboard.product.runtime.artifacts import ArtifactStore
 
 
+@pytest.fixture(autouse=True)
+def _enable_internal_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "1")
+
+
 def _invoke(argv: list[str], capsys) -> tuple[int, str, str]:
     exit_code = breadboard_cli.main(argv)
     captured = capsys.readouterr()
@@ -25,7 +30,7 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
 ) -> None:
     out_dir = tmp_path / "harness"
 
-    exit_code, _, stderr = _invoke(["harness", "init", "--out", str(out_dir)], capsys)
+    exit_code, _, stderr = _invoke(["harness", "create", "--out", str(out_dir)], capsys)
 
     assert exit_code == 0, stderr
     harness_path = out_dir / "minimal_harness.v2.yaml"
@@ -66,7 +71,7 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
         prompt_path: prompt_path.read_bytes(),
     }
 
-    exit_code, _, stderr = _invoke(["harness", "init", "--out", str(out_dir)], capsys)
+    exit_code, _, stderr = _invoke(["harness", "create", "--out", str(out_dir)], capsys)
 
     assert exit_code == 2
     assert "exist" in stderr.lower() or "overwrite" in stderr.lower()
@@ -75,7 +80,7 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
 
 def test_harness_update_replaces_definition_from_explicit_source(tmp_path: Path, capsys) -> None:
     out_dir = tmp_path / "harness"
-    assert _invoke(["harness", "init", "--out", str(out_dir)], capsys)[0] == 0
+    assert _invoke(["harness", "create", "--out", str(out_dir)], capsys)[0] == 0
     harness_path = out_dir / "minimal_harness.v2.yaml"
     definition = yaml.safe_load(harness_path.read_text())
     definition["modes"][0]["name"] = "review"
@@ -300,7 +305,7 @@ def test_init_json_is_the_only_output_and_identifies_every_created_file(
             "--json",
             *extra_global_flags,
             namespace,
-            "init",
+            "create" if namespace == "harness" else "init",
             "--out",
             str(out_dir),
         ],
@@ -311,9 +316,9 @@ def test_init_json_is_the_only_output_and_identifies_every_created_file(
     payload = json.loads(stdout)
     assert payload["ok"] is True
     assert payload["schema_version"] == "bb.cli.result.v1"
-    assert payload["data"]["path"] == (str(out_dir / created_paths[0]) if namespace == "harness" else created_paths[0])
+    assert payload["data"]["path"] == created_paths[0]
     if namespace == "harness":
-        assert payload["data"]["prompt_path"] == str(out_dir / created_paths[1])
+        assert payload["data"]["prompt_path"] == Path(created_paths[1]).name
     assert stderr == ""
 
 
@@ -324,7 +329,7 @@ def test_init_quiet_emits_no_success_output(
     capsys,
 ) -> None:
     exit_code, stdout, stderr = _invoke(
-        ["--quiet", namespace, "init", "--out", str(tmp_path / namespace)],
+        ["--quiet", namespace, "create" if namespace == "harness" else "init", "--out", str(tmp_path / namespace)],
         capsys,
     )
 
@@ -364,7 +369,9 @@ def test_artifact_verify_infers_stored_size_when_size_is_omitted(
 def test_artifact_put_is_content_addressed_and_immutable(
     tmp_path: Path,
     capsys,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     source = tmp_path / "proof.txt"
     source.write_bytes(b"immutable proof")
     argv = [
@@ -393,7 +400,9 @@ def test_artifact_put_is_content_addressed_and_immutable(
 def test_artifact_delete_removes_only_the_addressed_content(
     tmp_path: Path,
     capsys,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     source = tmp_path / "proof.bin"
     source.write_bytes(b"delete this proof")
     put_code, stdout, _ = _invoke(

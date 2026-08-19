@@ -39,8 +39,8 @@ import type {
   RewindMenuState,
   CheckpointSummary,
 } from "../../repl/types.js"
-import { ApiError } from "../../api/client.js"
-import type { ReadSessionFileOptions } from "../../api/client.js"
+import { ApiError } from "../../api/internalClient.js"
+import type { ReadSessionFileOptions } from "../../api/internalClient.js"
 import type {
   SessionEvent,
   SessionFileInfo,

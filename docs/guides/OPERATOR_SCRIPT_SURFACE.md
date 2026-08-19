@@ -1,4 +1,6 @@
 # Operator Script Surface
+> Internal maintainer reference. These repository scripts are not part of the installed product CLI.
+
 
 BreadBoard now has a real script taxonomy.
 

@@ -1,4 +1,4 @@
-import { ApiError } from "../../api/client.js"
+import { ApiError } from "../../api/internalClient.js"
 import type { CTreeTreeResponse, CTreeTreeSource, CTreeTreeStage } from "../../api/types.js"
 import { formatErrorPayload } from "./controllerUtils.js"
 

@@ -46,25 +46,23 @@ const prepareVerifierCopy = (): VerifierCopy => {
 
 const negativeCases = [
   {
-    name: "rejects a missing request DTO even when the response DTO remains generated",
+    name: "rejects a product route missing from the ordinary client",
     before:
-      "postInput: (sessionId: string, body: SessionInputRequest) =>\n    requestWithConfig<SessionInputResponse>",
-    after:
-      "postInput: (sessionId: string, body: Record<string, unknown>) =>\n    requestWithConfig<SessionInputResponse>",
-    diagnostic: "POST /v1/sessions/{}/input request expected one of SessionInputRequest",
+      '    case "public.artifact.verify": return request("POST", `/v1/artifacts/${identifier(input, "artifact_id")}/verify`)',
+    after: "",
+    diagnostic: "OpenAPI routes missing from product client: POST /v1/artifacts/{}/verify",
   },
   {
-    name: "rejects a missing response DTO even when the request DTO remains generated",
-    before: "requestWithConfig<SessionInputResponse>(config, `/v1/sessions/${sessionId}/input`",
-    after: "requestWithConfig<unknown>(config, `/v1/sessions/${sessionId}/input`",
-    diagnostic:
-      "POST /v1/sessions/{}/input response -> unknown (expected one of SessionInputResponse)",
+    name: "rejects an ordinary client route missing from the product contract",
+    before: '`/v1/artifacts/${identifier(input, "artifact_id")}/verify`',
+    after: '`/v1/artifacts/${identifier(input, "artifact_id")}/unowned`',
+    diagnostic: "Client routes missing from OpenAPI contract: POST /v1/artifacts/{}/unowned",
   },
   {
-    name: "rejects removal of the direct attachment-upload route",
-    before: "const url = buildUrl(config.baseUrl, `/v1/sessions/${sessionId}/attachments`)",
-    after: "const url = config.baseUrl",
-    diagnostic: "Required direct-fetch client routes are missing: POST /v1/sessions/{}/attachments",
+    name: "rejects removal of the product session event stream",
+    before: "      return streamSessionEvents(sessionId, { config, query, lastEventId })",
+    after: "      return []",
+    diagnostic: "OpenAPI routes missing from product client: GET /v1/sessions/{}/events",
   },
 ] as const
 

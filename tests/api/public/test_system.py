@@ -21,13 +21,15 @@ def test_candidate_family_routes_are_mounted_exactly_once(monkeypatch, tmp_path:
         operation["operationId"]
         for methods in app.openapi()["paths"].values()
         for operation in methods.values()
-        if isinstance(operation, dict) and operation.get("operationId") in expected
+        if isinstance(operation, dict) and "operationId" in operation
     ]
     assert len(observed) == len(set(observed)) == 26
     assert set(observed) == expected
-def test_candidate_routes_wait_for_atomic_activation(monkeypatch) -> None:
+def test_product_routes_are_enabled_by_default_and_can_be_disabled(monkeypatch) -> None:
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     monkeypatch.delenv("BREADBOARD_ENABLE_PUBLIC_API", raising=False)
+    assert TestClient(create_app(include_atp_routes=False)).get("/v1/system").status_code == 200
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "0")
     assert TestClient(create_app(include_atp_routes=False)).get("/v1/system").status_code == 404
 def test_system_describe_matches_cli_result(monkeypatch, tmp_path: Path) -> None:
     client = _client(monkeypatch, tmp_path)
@@ -50,6 +52,7 @@ def test_public_auth_failure_is_stable_and_secret_free(monkeypatch, tmp_path: Pa
     assert "never-echo-this-token" not in response.text
 def test_default_legacy_http_errors_keep_error_envelope(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("BREADBOARD_ENABLE_PUBLIC_API", raising=False)
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
     response = TestClient(create_app(include_atp_routes=False)).get("/v1/registries/missing")
     assert response.status_code == 404

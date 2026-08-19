@@ -1,7 +1,7 @@
 import { loadAppConfig, type AppConfig } from "../config/appConfig.js"
-import { ApiClient } from "../api/client.js"
+import { ApiClient } from "../api/internalClient.js"
 import { openEventStream, streamSessionEvents, type EventStreamHandlers, type EventStreamHandle } from "../api/stream.js"
-import type { AttachmentUploadPayload } from "../api/client.js"
+import type { AttachmentUploadPayload } from "../api/internalClient.js"
 import type { SessionEvent } from "../api/types.js"
 
 export class CliArgsProvider {

@@ -40,7 +40,7 @@ import type {
   SessionInputResponse as GeneratedSessionInputResponse,
   SessionSummary as GeneratedSessionSummary,
   SkillCatalogResponse as GeneratedSkillCatalogResponse,
-} from "./generated/openapi-types.js"
+} from "./generated/internal-openapi-types.js"
 import type { KernelEventV2 } from "@breadboard/kernel-contracts/generated/types/bb.kernel_event.v2"
 
 export type EventType =

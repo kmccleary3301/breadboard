@@ -106,7 +106,7 @@ def test_harness_run_submits_task_once_and_reports_completed_session(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _RunClient.calls = []
-    monkeypatch.setattr(breadboard_sdk, "BreadboardClient", _RunClient)
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
 
     exit_code = breadboard_cli.main(
         [
@@ -156,7 +156,7 @@ def test_harness_run_consumes_custom_lock(
     )
     custom_lock = extensionless_lock
     _RunClient.calls = []
-    monkeypatch.setattr(breadboard_sdk, "BreadboardClient", _RunClient)
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
 
     exit_code = breadboard_cli.main(
         ["harness", "run", str(harness_path), "--lock", str(custom_lock), "--server", "https://breadboard.test/api"]
@@ -187,7 +187,7 @@ def test_harness_run_rejects_event_stream_eof_before_terminal_event(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _EofClient.calls = []
-    monkeypatch.setattr(breadboard_sdk, "BreadboardClient", _EofClient)
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _EofClient)
 
     exit_code = breadboard_cli.main(
         [
@@ -219,7 +219,7 @@ def test_harness_run_maps_sdk_failures_to_runtime_exit(
         def start_session(self, payload: dict[str, Any], *, idempotency_key: str) -> dict[str, Any]:
             raise RuntimeError("bridge unavailable")
 
-    monkeypatch.setattr(breadboard_sdk, "BreadboardClient", FailingClient)
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", FailingClient)
 
     exit_code = breadboard_cli.main(
         [
@@ -245,7 +245,7 @@ def test_harness_run_rejects_definition_changed_after_lock(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _RunClient.calls = []
-    monkeypatch.setattr(breadboard_sdk, "BreadboardClient", _RunClient)
+    monkeypatch.setattr(breadboard_sdk, "BreadBoardClient", _RunClient)
     locked_harness.write_text(
         locked_harness.read_text(encoding="utf-8").replace(
             "idle_turn_limit: 1",

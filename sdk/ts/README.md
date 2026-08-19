@@ -1,21 +1,26 @@
 # `@breadboard/sdk`
 
-Minimal TypeScript SDK for the BreadBoard CLI bridge API (HTTP + SSE).
+Product-only TypeScript SDK for the BreadBoard 26-operation HTTP/SSE surface.
 
-This package is intentionally small and mirrors the contract exported under:
-- `docs/contracts/cli_bridge/openapi.json`
-- `docs/contracts/cli_bridge/schemas/*`
+The client mirrors `contracts/public/operations.v2.json` and the generated
+`docs/contracts/cli_bridge/openapi.json`. Internal and legacy endpoints are not
+part of this package's ordinary client.
 
 ## Usage
 
 ```ts
-import { createBreadboardClient, streamSessionEvents } from "@breadboard/sdk"
+import { createBreadboardClient } from "@breadboard/sdk"
 
 const client = createBreadboardClient({ baseUrl: "http://127.0.0.1:9099" })
+const harness = await client.createHarness()
+const lock = await client.lockHarness(harness.data.path as string)
+const started = await client.startSession({
+  lock_id: lock.data.path,
+  task: "Hi",
+})
+const session = started.data.session as { session_id: string }
 
-const session = await client.createSession({ config_path: "agent_configs/misc/opencode_mock_c_fs.yaml", task: "Hi" })
-
-for await (const event of streamSessionEvents(session.session_id, { config: { baseUrl: "http://127.0.0.1:9099" } })) {
+for await (const event of client.eventsSession(session.session_id)) {
   console.log(event.type, event.payload)
 }
 ```

@@ -40,7 +40,6 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
             "pip",
             "install",
             "--no-deps",
-            "--no-build-isolation",
             "--editable",
             str(ROOT),
         ],
@@ -63,7 +62,14 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
     assert help_result.returncode == 0, help_result.stderr
     assert help_result.stdout.startswith("usage: breadboard")
     assert "harness" in help_result.stdout
-    assert "lane" in help_result.stdout
+    assert "lane" not in help_result.stdout
+    internal_environment = dict(environment, BREADBOARD_ENABLE_E4_API="1")
+    internal_help = subprocess.run(
+        [str(breadboard), "--help"], cwd=outside_repo, env=internal_environment,
+        check=False, capture_output=True, text=True,
+    )
+    assert internal_help.returncode == 0, internal_help.stderr
+    assert "lane" in internal_help.stdout
 
     describe_result = subprocess.run(
         [str(breadboard), "--json", "system", "describe"],
@@ -87,11 +93,11 @@ def test_editable_install_exposes_console_and_runtime_packages_outside_repo(
             "-I",
             "-c",
             (
-                "import adaptive_iter, json, agentic_coder_prototype, breadboard, "
-                "breadboard_sdk, conformance, scripts.authoring, scripts.e4_parity; "
-                "print(json.dumps([adaptive_iter.__file__, "
-                "agentic_coder_prototype.__file__, breadboard.__file__, "
-                "breadboard_sdk.__file__, conformance.__file__]))"
+                "import importlib.util, json; "
+                "names=['adaptive_iter','agentic_coder_prototype','breadboard','breadboard_sdk','conformance','scripts.authoring','scripts.e4_parity']; "
+                "specs=[importlib.util.find_spec(name) for name in names]; "
+                "assert all(spec is not None for spec in specs); "
+                "print(json.dumps([spec.origin for spec in specs[:5]]))"
             ),
         ],
         cwd=outside_repo,

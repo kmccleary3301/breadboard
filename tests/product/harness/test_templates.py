@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from zipfile import ZipFile
 
 import yaml
 
@@ -60,12 +61,11 @@ def test_wheel_import_loads_template_from_distribution_data_root(tmp_path: Path)
             text=True,
         ).stdout
 
-    run(sys.executable, "-m", "pip", "wheel", "--no-deps", "--no-build-isolation",
-        "--wheel-dir", str(wheelhouse), str(ROOT))
+    run("uv", "build", "--wheel", "--out-dir", str(wheelhouse), str(ROOT))
     wheel = next(wheelhouse.glob("*.whl"))
     install_root = tmp_path / "install"
-    run(sys.executable, "-m", "pip", "install", "--no-deps",
-        "--target", str(install_root), str(wheel))
+    with ZipFile(wheel) as archive:
+        archive.extractall(install_root)
     script = (
         f"import sys; sys.path.insert(0, {str(install_root)!r}); import json; "
         "from breadboard.product.harness.templates import "

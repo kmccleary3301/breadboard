@@ -124,12 +124,12 @@ def _env_flag_default(name: str, *, default: bool) -> bool:
     return default
 
 
-def _drop_legacy_routes(app: FastAPI, *, drop_versioned_sessions: bool = False) -> None:
-    # "/status" stays first-class: main's engine metadata contract (tests/test_cli_bridge_ready.py) and the TUI doctor consume it.
+def _drop_legacy_routes(app: FastAPI, *, drop_versioned: bool = False) -> None:
+    # Operational probes remain routable for existing launchers, but are not product-contract operations.
+    hidden_operational = {"/health", "/ready", "/status"}
     legacy_exact = {"/models", "/features"}
-    legacy_prefixes = ("/sessions", "/rl", "/atp", "/ext/evolake") + (
-        ("/v1/sessions",) if drop_versioned_sessions else ()
-    )
+    legacy_prefixes = ("/sessions", "/rl", "/atp", "/ext/evolake")
+    preserved_versioned = ("/v1/e4",) if _env_flag("BREADBOARD_ENABLE_E4_API") else ()
 
     def _route_path(route: Any) -> str:
         path = getattr(route, "path", None)
@@ -139,14 +139,20 @@ def _drop_legacy_routes(app: FastAPI, *, drop_versioned_sessions: bool = False) 
         prefix = getattr(include_context, "prefix", None)
         return str(prefix) if prefix is not None else ""
 
-    app.router.routes = [
-        route
-        for route in app.router.routes
-        if not (
-            _route_path(route) in legacy_exact
-            or any(_route_path(route).startswith(prefix) for prefix in legacy_prefixes)
-        )
-    ]
+    retained = []
+    for route in app.router.routes:
+        path = _route_path(route)
+        remove = path in legacy_exact or any(path.startswith(prefix) for prefix in legacy_prefixes)
+        if drop_versioned and path.startswith("/v1/") and not any(
+            path.startswith(prefix) for prefix in preserved_versioned
+        ):
+            remove = True
+        if remove:
+            continue
+        if path in hidden_operational and hasattr(route, "include_in_schema"):
+            route.include_in_schema = False
+        retained.append(route)
+    app.router.routes = retained
 
 
 def _run_git_command(args: list[str], cwd: Path) -> str | None:
@@ -285,7 +291,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
 
     e4_repo_root = Path(__file__).resolve().parents[3]
     legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
-    public_api_enabled = _env_flag_default("BREADBOARD_ENABLE_PUBLIC_API", default=False)
+    public_api_enabled = _env_flag_default("BREADBOARD_ENABLE_PUBLIC_API", default=True)
     if _env_flag("BREADBOARD_ENABLE_E4_API"):
         from agentic_coder_prototype.api.e4 import create_e4_router
         from agentic_coder_prototype.api.e4.models import E4ApiError
@@ -980,9 +986,9 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         mounted_extensions.append("evolake")
 
     if public_api_enabled and legacy_routes_enabled:
-        logger.warning("BREADBOARD_LEGACY_ROUTES takes precedence; candidate public API routes remain disabled")
+        logger.warning("BREADBOARD_LEGACY_ROUTES takes precedence; product API routes remain disabled")
     if public_api_enabled and not legacy_routes_enabled:
-        _drop_legacy_routes(app, drop_versioned_sessions=True)
+        _drop_legacy_routes(app, drop_versioned=True)
         app.include_router(create_public_router())
     elif not legacy_routes_enabled:
         _drop_legacy_routes(app)

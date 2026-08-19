@@ -16,7 +16,6 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white" />
   <img alt="Node" src="https://img.shields.io/badge/node-22%2B-5FA04E?logo=node.js&logoColor=white" />
   <img alt="TypeScript SDKs" src="https://img.shields.io/badge/typescript-SDKs-3178C6?logo=typescript&logoColor=white" />
-  <img alt="E4 dossiers" src="https://img.shields.io/badge/public%20E4%20dossiers-4%20harnesses-1f6feb" />
   <img alt="CLI bridge" src="https://img.shields.io/badge/engine-client%20split-HTTP%20%2B%20SSE-0A7EA4" />
 </p>
 
@@ -24,10 +23,6 @@
   <a href="docs/quickstarts/FIRST_RUN_5_MIN.md"><strong>5-minute quickstart</strong></a>
   ·
   <a href="docs/INDEX.md"><strong>docs index</strong></a>
-  ·
-  <a href="docs/conformance/README.md"><strong>conformance</strong></a>
-  ·
-  <a href="agent_configs/codex_0-107-0_e4_3-6-2026.yaml"><strong>public E4 dossiers</strong></a>
 </p>
 
 <p align="center">
@@ -45,7 +40,7 @@ BreadBoard is simultaneously:
 - a Python engine with a CLI bridge and deterministic event log
 - Python and TypeScript SDKs over the same bridge
 - a terminal-first coding stack with multiple client surfaces
-- a harness emulator with public E4 dossier configs for Codex, Claude Code, OpenCode, and oh-my-opencode
+- authorable harness definitions with lock-first execution
 - TypeScript packages for SDK, transport, and runtime-boundary experiments
 - a conformance-heavy environment for replay, parity, optimization, long-run agents, and future evaluation work
 - a growing research platform for ATP, formal sandboxes, optimization, DAG search, RL export layers, C-Trees, and DARWIN
@@ -71,7 +66,7 @@ This repository is for engineers and researchers who care about:
 | TUI | Main terminal UX in [`tui_skeleton/`](tui_skeleton/) | 🟢 |
 | OpenTUI slab | Fixed-height slab client in [`opentui_slab/`](opentui_slab/) | 🟡 |
 | VSCode sidebar | Early client surface in [`vscode_sidebar/`](vscode_sidebar/) | 🟡 |
-| Harness emulation | Public dossier configs plus replay/parity tooling | 🟢 |
+| Harness execution | Author, validate, lock, and run reproducible harnesses | 🟢 |
 | Replay / conformance | Golden, parity, and contract validation paths | 🟢 |
 | Long-run / RLM / optimization work | Experimental and advancing, but real | 🟡 |
 | DAG / RL / DARWIN / ATP / C-Trees research layers | Integrated and documented, with active playbooks | 🟡 |
@@ -103,7 +98,6 @@ It is **not** a thin wrapper around one provider SDK, and it is **not** just a t
 | figure out which canonical script family or entrypoint to use | [docs/guides/OPERATOR_SCRIPT_SURFACE.md](docs/guides/OPERATOR_SCRIPT_SURFACE.md) |
 | understand the repo at a high level | [docs/INDEX.md](docs/INDEX.md) |
 | understand the research systems and choose the right advanced subsystem | [docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md](docs/quickstarts/RESEARCH_SYSTEMS_QUICKSTART.md) |
-| inspect the public E4 dossier configs | [`agent_configs/`](agent_configs/) |
 | use the engine from Python or TypeScript | [docs/contracts/cli_bridge/openapi.json](docs/contracts/cli_bridge/openapi.json) and the examples below |
 | evaluate parity / replay / evidence | [docs/conformance/README.md](docs/conformance/README.md) |
 | evaluate the TypeScript package surfaces | [`sdk/ts/`](sdk/ts/), [`sdk/ts-kernel-contracts/`](sdk/ts-kernel-contracts/), [`sdk/ts-backbone/`](sdk/ts-backbone/) |
@@ -142,9 +136,8 @@ The stable top-level zone model is documented in
 ## Repository map
 
 ```text
-breadboard/
-├── agent_configs/                 public top-level E4 dossier configs + misc overlays
-│   └── misc/                      scenario-specific, historical, and supporting configs
+├── agent_configs/                 product harness definitions and supporting configs
+│   └── misc/                      scenario-specific and historical configs
 ├── agentic_coder_prototype/       canonical Python engine and runtime substrate
 │   ├── api/                       CLI bridge server, session runner, protocol surfaces
 │   ├── execution/                 runtime execution primitives
@@ -174,7 +167,6 @@ breadboard/
 │   ├── ts-execution-driver-remote/ delegated remote execution driver
 │   └── ts-orchestration-temporal/ durable orchestration adapter work
 ├── config/
-│   ├── e4_targets/                tracked target harness packages
 │   ├── longrun/                   long-run and durable-execution config surfaces
 │   └── text_contracts/            text and contract artifacts
 ├── conformance/                   engine fixture bundles and conformance manifests
@@ -274,10 +266,6 @@ For the detailed setup reference:
 | SDK hello verification | `make sdk-hello-live` |
 | fast dev-x smoke | `make devx-smoke` |
 | full dev-x confidence pass | `make devx-full-pass` |
-| validate E4 target manifest | `make e4-target-manifest` |
-| validate E4 snapshot coverage | `make e4-snapshot-coverage` |
-| strict parity probe | `make e4-postrestore-strict-probe` |
-| strict Claude legacy probe | `make e4-claude-legacy-strict-probe` |
 | inspect `~/.breadboard` disk usage | `make disk-report` |
 | prune `~/.breadboard` safely | `make disk-prune` |
 
@@ -289,18 +277,16 @@ For the full set, see [`Makefile`](Makefile).
 
 ### CLI
 
-Run a one-shot task:
+Create, lock, and run a product harness:
 
 ```bash
-breadboard run \
-  --config agent_configs/misc/opencode_mock_c_fs.yaml \
-  "Summarize the repository layout in five bullets."
-```
-
-Open the TUI:
-
-```bash
-breadboard ui --config agent_configs/misc/opencode_mock_c_fs.yaml
+breadboard harness create --out ./harness
+breadboard harness lock ./harness/minimal_harness.v2.yaml \
+  --out ./harness/minimal_harness.lock.json
+breadboard harness run ./harness/minimal_harness.v2.yaml \
+  --lock ./harness/minimal_harness.lock.json \
+  --local \
+  --task "Summarize the repository layout in five bullets."
 ```
 
 Run the engine directly from source:
@@ -312,38 +298,37 @@ python -m agentic_coder_prototype.api.cli_bridge.server
 ### Python SDK
 
 ```python
-from breadboard_sdk import BreadboardClient
+from breadboard_sdk import BreadBoardClient
 
-client = BreadboardClient(base_url="http://127.0.0.1:9099")
-session = client.create_session(
-    config_path="agent_configs/misc/opencode_mock_c_fs.yaml",
-    task="List the top-level modules and explain each in one line.",
-    stream=True,
-)
+client = BreadBoardClient(base_url="http://127.0.0.1:9099")
+client.create_harness()
+lock = client.lock_harness("minimal_harness.v2.yaml")
+started = client.start_session({
+    "lock_id": lock["data"]["path"],
+    "task": "List the top-level modules and explain each in one line.",
+})
+session_id = started["data"]["session"]["session_id"]
 
-for event in client.stream_events(session["session_id"], query={"schema": 2, "replay": True}):
-    if event.get("type") == "assistant_message":
-        print(event.get("payload", {}).get("text", ""))
-    if event.get("type") == "completion":
-        break
+for event in client.events_session(session_id):
+    print(event["kind"], event["payload"])
 ```
 
 ### TypeScript SDK
 
 ```ts
-import { createBreadboardClient, streamSessionEvents } from "@breadboard/sdk"
+import { createBreadboardClient } from "@breadboard/sdk"
 
 const client = createBreadboardClient({ baseUrl: "http://127.0.0.1:9099" })
-const session = await client.createSession({
-  config_path: "agent_configs/misc/opencode_mock_c_fs.yaml",
+await client.createHarness()
+const lock = await client.lockHarness("minimal_harness.v2.yaml")
+const started = await client.startSession({
+  lock_id: lock.data.path,
   task: "Explain the purpose of the conformance directory."
 })
+const sessionId = started.data.session.session_id
 
-for await (const event of streamSessionEvents(session.session_id, {
-  config: { baseUrl: "http://127.0.0.1:9099" },
-})) {
-  console.log(event.type)
-  if (event.type === "completion") break
+for await (const event of client.eventsSession(sessionId)) {
+  console.log(event.type, event.payload)
 }
 ```
 
@@ -388,28 +373,6 @@ Relevant package docs:
 
 ---
 
-## Public E4 dossiers
-
-One of the strongest features in this repo is that the top-level public E4 configs are no longer tiny opaque overlays. They are intended to read like inspectable harness dossiers.
-
-| Harness | Public dossier | What it gives you |
-|---|---|---|
-| Codex | [codex_0-107-0_e4_3-6-2026.yaml](agent_configs/codex_0-107-0_e4_3-6-2026.yaml) | current Codex public dossier with rich commentary and tracked target package refs |
-| Claude Code | [claude_code_2-1-63_e4_3-6-2026.yaml](agent_configs/claude_code_2-1-63_e4_3-6-2026.yaml) | replay-focused Claude dossier with explicit policy and reminder surfaces |
-| OpenCode | [opencode_1-2-17_e4_3-6-2026.yaml](agent_configs/opencode_1-2-17_e4_3-6-2026.yaml) | shared OpenCode dossier with lane-specific replay bundles in `misc/` |
-| oh-my-opencode | [oh_my_opencode_3-10-0_e4_3-6-2026.yaml](agent_configs/oh_my_opencode_3-10-0_e4_3-6-2026.yaml) | async/background-task-oriented dossier surface |
-
-Supporting docs:
-
-- [docs/conformance/E4_COOKBOOK_V1.md](docs/conformance/E4_COOKBOOK_V1.md)
-- [docs/conformance/E4_TARGET_PACKAGES.md](docs/conformance/E4_TARGET_PACKAGES.md)
-- [docs/conformance/E4_DOSSIER_STYLE_GUIDE_V1.md](docs/conformance/E4_DOSSIER_STYLE_GUIDE_V1.md)
-- [config/e4_targets/README.md](config/e4_targets/README.md)
-
-> BreadBoard is careful about parity wording. Public dossier readability does **not** mean “everything is magically identical.” Use the evidence docs and replay bundles for exact claim boundaries.
-
----
-
 ## Conformance, replay, and evidence
 
 BreadBoard keeps a deterministic event log and leans heavily on replay/evidence.
@@ -430,7 +393,6 @@ python scripts/log_reduce.py "${RUN_DIR}" --turn-limit 2 --tool-only
 | conformance overview | [docs/conformance/README.md](docs/conformance/README.md) |
 | test matrix | [docs/conformance/CONFORMANCE_TEST_MATRIX_V1.md](docs/conformance/CONFORMANCE_TEST_MATRIX_V1.md) |
 | kernel contract pack | [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md) |
-| E4 target/version posture | [docs/conformance/E4_TARGET_VERSIONING.md](docs/conformance/E4_TARGET_VERSIONING.md) |
 | replay-proof quickstart | [docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md](docs/quickstarts/REPLAY_PROOF_BUNDLE_QUICKSTART.md) |
 | launch proof media | [docs/media/proof/README.md](docs/media/proof/README.md) |
 
@@ -512,7 +474,6 @@ The repo docs are large. These are the most useful entrypoints.
 | Doc | Purpose |
 |---|---|
 | [docs/conformance/README.md](docs/conformance/README.md) | conformance suite overview |
-| [docs/conformance/E4_TARGET_VERSIONING.md](docs/conformance/E4_TARGET_VERSIONING.md) | E4 target freeze/versioning policy |
 | [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md) | public-facing contract and change discipline |
 
 ## Claim boundaries
@@ -522,12 +483,11 @@ BreadBoard has strong parity and conformance claims, but it does **not** use vag
 Two examples of what this README is **not** claiming:
 
 - BreadBoard is not presented here as a blanket drop-in replacement for every other harness.
-- BreadBoard is not presented here as having perfect parity everywhere just because dossier configs exist.
+- BreadBoard is not presented here as having perfect parity everywhere just because a harness definition exists.
 
 Use these before repeating a claim:
 
 - [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md)
-- [docs/conformance/E4_TARGET_VERSIONING.md](docs/conformance/E4_TARGET_VERSIONING.md)
 - [docs/conformance/README.md](docs/conformance/README.md)
 
 ---
@@ -537,7 +497,7 @@ Use these before repeating a claim:
 | Area | Current posture |
 |---|---|
 | Engine and CLI bridge | 🟢 active |
-| Public E4 dossiers | 🟢 active |
+| Product contract catalog | 🟢 active |
 | TypeScript SDK and runtime-boundary packages | 🟡 active / evolving |
 | TUI and client surfaces | 🟢 active / evolving |
 | VSCode sidebar | 🟡 active buildout |
@@ -549,7 +509,7 @@ Use these before repeating a claim:
 ## A few repo-specific observations
 
 - The engine-client split is the central design bet, not a detail.
-- The public E4 dossiers are meant to be read, not just loaded.
+- The product operation catalog is the source for the ordinary CLI, HTTP API, and SDK surfaces.
 - The TypeScript package work is active, but public claims should stay tied to shipped package behavior and conformance evidence.
 - The conformance and evidence story is part of the product, not just internal test infrastructure.
 
@@ -563,8 +523,8 @@ If those things are what you care about, BreadBoard is likely worth your time. I
    - [docs/quickstarts/FIRST_RUN_5_MIN.md](docs/quickstarts/FIRST_RUN_5_MIN.md)
 2. Read the docs map:
    - [docs/INDEX.md](docs/INDEX.md)
-3. Open one of the public E4 dossiers:
-   - [codex_0-107-0_e4_3-6-2026.yaml](agent_configs/codex_0-107-0_e4_3-6-2026.yaml)
+3. Inspect the product operation contract:
+   - [contracts/public/operations.v2.json](contracts/public/operations.v2.json)
 4. If you are evaluating TypeScript packages, start here:
    - [sdk/ts/README.md](sdk/ts/README.md)
    - [sdk/ts-kernel-contracts/README.md](sdk/ts-kernel-contracts/README.md)
