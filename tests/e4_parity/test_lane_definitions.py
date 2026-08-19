@@ -49,6 +49,7 @@ def test_lane_source_inventory_and_legacy_executable_stage_contracts() -> None:
         ("oh_my_pi_p6_6_task_job_subagent.manifest.yaml", "lane_manifest"),
         ("oh_my_pi_p6_6_task_job_subagent.payloads.yaml", "payload_source"),
         ("oh_my_pi_p6_6_task_job_subagent.yaml", "lane_def_legacy"),
+        ("oh_my_pi_p6_6_task_job_subagent_v2.yaml", "lane_def_legacy"),
         ("opencode_north_star_capture_v1.yaml", "lane_def_legacy"),
         ("pi_p5_l1_cli_config_context_tool_surface.yaml", "lane_def_legacy"),
         ("pi_p5_l2_extension_session_residual.yaml", "lane_def_legacy"),

@@ -466,3 +466,206 @@ def test_llm_query_artifact_write_handles_non_serializable_usage(monkeypatch: An
     assert len(rows) >= 1
     usage = rows[-1].get("usage") or {}
     assert isinstance(usage.get("opaque"), str)
+
+
+def test_rlm_provider_execution_preserves_single_and_batch_results_and_context(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    contexts: list[Dict[str, Any]] = []
+
+    def _handler(messages: list[Dict[str, Any]], context: Any) -> ProviderResult:
+        _ = messages
+        contexts.append(dict(context.extra))
+        return ProviderResult(
+            messages=[
+                ProviderMessage(role="assistant", content=" first "),
+                ProviderMessage(role="assistant", content="second"),
+            ],
+            raw_response={},
+            usage={"input_tokens": 2, "output_tokens": 3, "cost_usd": 0.25},
+        )
+
+    _install_stub_provider(monkeypatch, _handler)
+    cfg = {
+        "features": {
+            "rlm": {
+                "enabled": True,
+                "budget": {"max_subcalls": 4},
+                "scheduling": {"mode": "batch", "batch": {"enabled": True, "max_concurrency": 1}},
+            }
+        },
+        "providers": {"default_model": "stub/model"},
+    }
+    conductor = _make_conductor(cfg, tmp_path)
+
+    single = conductor._exec_raw(
+        {
+            "function": "llm.query",
+            "arguments": {
+                "prompt": "single",
+                "model": "stub/model",
+                "branch_id": "single-branch",
+                "max_completion_tokens": 123,
+                "temperature": 0.25,
+            },
+        }
+    )
+    batch = conductor._exec_raw(
+        {
+            "id": "batch-context-id",
+            "function": "llm.batch_query",
+            "arguments": {
+                "model": "stub/model",
+                "queries": [
+                    {
+                        "prompt": "batch",
+                        "branch_id": "batch-branch",
+                        "max_completion_tokens": 456,
+                        "temperature": 0.5,
+                    }
+                ],
+            },
+        }
+    )
+    batch_row = (batch.get("results") or [{}])[0]
+
+    assert single["text"] == "first\n\nsecond"
+    assert single["usage"] == {"input_tokens": 2, "output_tokens": 3, "cost_usd": 0.25}
+    assert single["usage_tokens"] == 5
+    assert single["estimated_cost_usd"] == 0.25
+    assert single["model"] == "stub-model"
+    assert single["route_id"] == "stub/model"
+    assert single["provider_id"] == "stub"
+    assert batch_row["text"] == "first\n\nsecond"
+    assert batch_row["usage"] == single["usage"]
+    assert batch_row["usage_tokens"] == 5
+    assert batch_row["estimated_cost_usd"] == 0.25
+    assert batch_row["resolved_model"] == "stub-model"
+    assert batch_row["route_id"] == "stub/model"
+    assert batch_row["provider_id"] == "stub"
+
+    assert contexts == [
+        {
+            "rlm_subcall": True,
+            "branch_id": "single-branch",
+            "max_completion_tokens": 123,
+            "temperature": 0.25,
+        },
+        {
+            "rlm_subcall": True,
+            "rlm_batch_subcall": True,
+            "branch_id": "batch-branch",
+            "batch_id": "batch-context-id",
+            "request_index": 0,
+            "max_completion_tokens": 456,
+            "temperature": 0.5,
+        },
+    ]
+
+
+def test_rlm_provider_execution_preserves_missing_key_errors_for_single_and_batch(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    router = _StubRouter()
+    registry = _StubRegistry(lambda _messages: None)
+    monkeypatch.setattr(router, "create_client_config", lambda _model: {"api_key": None})
+    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_router", router)
+    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_registry", registry)
+    cfg = {
+        "features": {
+            "rlm": {
+                "enabled": True,
+                "budget": {"max_subcalls": 4},
+                "scheduling": {"mode": "batch", "batch": {"enabled": True, "max_concurrency": 1}},
+            }
+        },
+        "providers": {"default_model": "stub/model"},
+    }
+    conductor = _make_conductor(cfg, tmp_path)
+
+    single = conductor._exec_raw({"function": "llm.query", "arguments": {"prompt": "single"}})
+    batch = conductor._exec_raw(
+        {
+            "id": "missing-key-batch",
+            "function": "llm.batch_query",
+            "arguments": {"queries": [{"prompt": "batch"}]},
+        }
+    )
+    batch_row = (batch.get("results") or [{}])[0]
+
+    assert single["reason"] == "api_key_missing"
+    assert single["error"] == "RLM api_key_missing: STUB_API_KEY missing in environment."
+    assert batch_row == {
+        "request_index": 0,
+        "status": "failed",
+        "reason": "api_key_missing",
+        "error": "STUB_API_KEY missing in environment.",
+        "branch_id": "root",
+        "depth": 0,
+        "lane": "tool_heavy",
+        "attempt_count": 1,
+        "parent_call_id": "",
+        "blob_refs": [],
+        "call_id": "missing-key-batch:0",
+    }
+    assert registry.invocation_count == 0
+
+
+def test_llm_batch_timeout_retry_uses_post_invoke_elapsed_for_completed_attempt(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    clock = {"now": 0.0}
+    invocation_count = 0
+
+    def _handler(_messages: list[Dict[str, Any]]) -> ProviderResult:
+        nonlocal invocation_count
+        invocation_count += 1
+        clock["now"] += 2.0 if invocation_count == 1 else 0.5
+        return ProviderResult(
+            messages=[ProviderMessage(role="assistant", content="ok")],
+            raw_response={},
+            usage={"input_tokens": 1, "output_tokens": 1},
+        )
+
+    def _extract_usage_metrics(_usage: Dict[str, Any]) -> tuple[int, float]:
+        clock["now"] = 50.0
+        return 2, 0.0
+
+    _install_stub_provider(monkeypatch, _handler)
+    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.time.time", lambda: clock["now"])
+    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.extract_usage_metrics", _extract_usage_metrics)
+    cfg = {
+        "features": {
+            "rlm": {
+                "enabled": True,
+                "scheduling": {"mode": "batch", "batch": {"enabled": True, "max_concurrency": 1}},
+            }
+        },
+        "providers": {"default_model": "stub/model"},
+    }
+    conductor = _make_conductor(cfg, tmp_path)
+    out = conductor._exec_raw(
+        {
+            "function": "llm.batch_query",
+            "arguments": {
+                "queries": [
+                    {
+                        "prompt": "timeout then complete",
+                        "timeout_seconds": 1.0,
+                        "retries": 1,
+                    }
+                ]
+            },
+        }
+    )
+    row = (out.get("results") or [{}])[0]
+
+    assert row["status"] == "completed"
+    assert row["attempt_count"] == 2
+    assert row["attempts"] == [
+        {"attempt": 1, "status": "timeout", "duration_seconds": 2.0},
+        {"attempt": 2, "status": "completed", "duration_seconds": 0.5},
+    ]

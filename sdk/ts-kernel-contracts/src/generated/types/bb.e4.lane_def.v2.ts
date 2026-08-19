@@ -48,6 +48,19 @@ export type E4LaneDefV2 = {
     };
   };
   claim: {
+    /**
+     * Optional retained evidence status when it differs from the producer lane lifecycle status.
+     */
+    status?:
+      | "planned"
+      | "captured"
+      | "replayed"
+      | "compared"
+      | "claimed"
+      | "accepted"
+      | "blocked"
+      | "superseded"
+      | "scaffolded";
     scope: {
       behaviors: string[];
       surfaces: string[];

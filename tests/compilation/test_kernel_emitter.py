@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.primitive_records import PrimitiveCompileError, SPEC_REGISTRY, finalize_record, get_spec
+from agentic_coder_prototype.compilation.primitive_records import PrimitiveCompileError, SPEC_REGISTRY, finalize_record, get_spec, validate_record
 from agentic_coder_prototype.runtime.kernel_emitter import JsonlKernelEmitter
 from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest
 from agentic_coder_prototype.api.cli_bridge.runtime_emission import emit_session_start_records
@@ -270,7 +270,7 @@ def test_session_state_add_message_dual_emits_kernel_event_v2_without_changing_l
 
 
 def test_runtime_v2_schema_files_and_registry_files_are_registered() -> None:
-    non_primitive_v2_schemas = {"bb.agent_config_surface.v2"}
+    non_primitive_v2_schemas = {"bb.agent_config_surface.v2", "bb.e4.lane_lock.v2", "bb.e4.lane_manifest.v2"}
     missing = []
     for schema_path in sorted(SCHEMA_DIR.glob("bb.*.v2.schema.json")):
         schema_version = schema_path.name.removesuffix(".schema.json")
@@ -286,6 +286,26 @@ def test_runtime_v2_schema_files_and_registry_files_are_registered() -> None:
             continue
         finalized = finalize_record(get_spec("bb.registry.v1"), payload)
         assert finalized["schema_version"] == "bb.registry.v1"
+
+
+def test_retired_work_and_coordination_contracts_are_read_only() -> None:
+    examples = {
+        "bb.work_item.v1": "work_item_minimal.json",
+        "bb.task.v1": "task_minimal.json",
+        "bb.distributed_task_descriptor.v1": "distributed_task_descriptor_minimal.json",
+        "bb.coordination_slice.v2": "coordination_slice_v2_minimal.json",
+        "bb.coordination_pack.v3": "coordination_pack_v3_minimal.json",
+        "bb.coordination_reference_slice.v1": "coordination_reference_slice_v1_minimal.json",
+        "bb.coordination_longrun_reference_slice.v1": "coordination_longrun_reference_slice_v1_minimal.json",
+        "bb.coordination_multi_worker_reference_slice.v1": "coordination_multi_worker_reference_slice_v1_minimal.json",
+        "bb.coordination_delegated_verification_reference_slice.v1": "coordination_delegated_verification_reference_slice_v1_minimal.json",
+        "bb.coordination_intervention_reference_slice.v1": "coordination_intervention_reference_slice_v1_minimal.json",
+    }
+    for schema_version, filename in examples.items():
+        record = json.loads((ROOT / "contracts" / "kernel" / "examples" / filename).read_text(encoding="utf-8"))
+        assert validate_record(get_spec(schema_version), record) == record
+        with pytest.raises(PrimitiveCompileError, match="validation-only"):
+            finalize_record(get_spec(schema_version), record)
 
 
 def test_config_surface_fields_registry_matches_curated_inventory_contract() -> None:
@@ -403,14 +423,19 @@ def test_session_start_records_use_append_only_config_plane_stream(tmp_path: Pat
     envelopes = [json.loads(line) for line in stream_path.read_text(encoding="utf-8").splitlines()]
     assert len(envelopes) >= 12
     assert len(envelopes) % 2 == 0
-    assert {entry["name"] for entry in envelopes[-(len(envelopes) // 2):]} >= {
+    latest_names = [entry["name"] for entry in envelopes[-(len(envelopes) // 2):]]
+    assert set(latest_names) >= {
         "effective_operation_policy",
         "effective_config_graph",
         "capability_registry",
         "effective_tool_surface",
-        "work_item_queued",
-        "work_item_running",
     }
+    assert latest_names[-4:] == [
+        "work_item_created",
+        "work_item_lease_acquired",
+        "work_item_attempt_started",
+        "work_item_snapshot",
+    ]
 
 
 def test_real_exec_func_emits_tool_call_outcome_render_and_transcript_records(

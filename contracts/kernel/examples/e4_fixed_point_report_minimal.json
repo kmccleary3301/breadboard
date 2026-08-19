@@ -6,5 +6,25 @@
   "first_pass_snapshot_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
   "second_pass_snapshot_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
   "byte_identical": true,
-  "changed_paths": []
+  "changed_paths": [],
+  "score_authority": {
+    "source_ref": "docs_tmp/phase_16/BB_ER_PROGRESS.json#totals",
+    "source_sha256": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "source_observed": {
+      "points_total": 1000,
+      "points_done": 1000,
+      "points_blocked": 0
+    },
+    "expected": {
+      "points": 1000,
+      "target_claims": 10,
+      "non_target_claims": 8
+    },
+    "observed": {
+      "points": 1000,
+      "target_claims": 10,
+      "non_target_claims": 8
+    },
+    "ok": true
+  }
 }

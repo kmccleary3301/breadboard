@@ -3,21 +3,29 @@
   "fixture_id": "session_transcript_python_reference",
   "comparator_class": "normalized-trace-equal",
   "support_tier": "reference-engine",
-  "contract": "bb.session_transcript.v1",
+  "contract": "bb.session_transcript.v2",
   "reference_output": {
-    "schemaVersion": "bb.session_transcript.v1",
-    "sessionId": "sess-ref-1",
-    "runId": "run-ref-1",
-    "eventCursor": 1,
+    "schema_version": "bb.session_transcript.v2",
+    "session_id": "sess-ref-1",
+    "run_id": "run-ref-1",
+    "event_cursor": 1,
     "items": [
       {
         "kind": "assistant_message",
-        "visibility": "model",
+        "visibility": {
+          "model_visible": true,
+          "provider_visible": true,
+          "host_visible": true
+        },
         "content": {
           "text": "hello"
         },
+        "content_schema_version": null,
+        "event_id": "evt-ref-1",
+        "seq": 1,
         "provenance": {
-          "source": "reference-fixture"
+          "source": "fixture",
+          "source_ref": "python_reference"
         }
       }
     ],

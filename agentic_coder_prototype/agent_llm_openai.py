@@ -27,6 +27,7 @@ import ray
 from adaptive_iter import decode_adaptive_iterable
 
 from breadboard.sandbox import DevSandboxV2
+from breadboard.product.runtime.artifacts import ArtifactRef, read_workspace_artifact
 from breadboard.opencode_patch import PatchParseError, parse_opencode_patch, to_unified_diff
 from breadboard.sandbox_factory import SandboxFactory, DeploymentMode
 from .core.core import ToolDefinition, ToolParameter
@@ -160,6 +161,26 @@ COMPLETION_GUARD_ABORT_TEMPLATE = (
     "Completion guard engaged repeatedly. The run will now terminate to avoid wasting budget.\n"
     "</VALIDATION_ERROR>"
 )
+
+
+class _RlmProviderApiKeyMissing(Exception):
+    pass
+
+
+class _RlmProviderSubcallTimeout(Exception):
+    def __init__(self, elapsed_seconds: float) -> None:
+        self.elapsed_seconds = elapsed_seconds
+
+
+@dataclass(frozen=True, slots=True)
+class _RlmProviderSubcallExecution:
+    text: str
+    usage: Dict[str, Any]
+    usage_tokens: int
+    usage_cost_usd: float
+    resolved_model: str
+    provider_id: str
+    elapsed_seconds: float | None
 
 
 @dataclass
@@ -3307,6 +3328,63 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         )
         return result
 
+    def _execute_rlm_provider_subcall(
+        self,
+        *,
+        model_route: str,
+        messages: List[Dict[str, Any]],
+        runtime_extra: Dict[str, Any],
+        started_at: float | None = None,
+        timeout_seconds: float = 0.0,
+    ) -> _RlmProviderSubcallExecution:
+        runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
+        client_cfg = provider_router.create_client_config(model_route)
+        if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
+            raise _RlmProviderApiKeyMissing(f"{runtime_descriptor.api_key_env} missing in environment.")
+        runtime = provider_registry.create_runtime(runtime_descriptor)
+        client = runtime.create_client(
+            client_cfg.get("api_key"),
+            base_url=client_cfg.get("base_url"),
+            default_headers=client_cfg.get("default_headers"),
+        )
+        result = runtime.invoke(
+            client=client,
+            model=runtime_model,
+            messages=messages,
+            tools=None,
+            stream=False,
+            context=ProviderRuntimeContext(
+                session_state=getattr(self, "_active_session_state", None),
+                agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
+                stream=False,
+                extra=runtime_extra,
+            ),
+        )
+        elapsed_seconds = None
+        if started_at is not None:
+            elapsed_seconds = max(0.0, time.time() - started_at)
+            if timeout_seconds > 0.0 and elapsed_seconds > timeout_seconds:
+                raise _RlmProviderSubcallTimeout(elapsed_seconds)
+        text_parts = [
+            message.content.strip()
+            for message in result.messages or []
+            if isinstance(message, ProviderMessage)
+            and isinstance(message.content, str)
+            and message.content.strip()
+        ]
+        usage = dict(result.usage or {})
+        usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
+        return _RlmProviderSubcallExecution(
+            text="\n\n".join(text_parts).strip(),
+            usage=usage,
+            usage_tokens=usage_tokens,
+            usage_cost_usd=usage_cost_usd,
+            resolved_model=runtime_model,
+            provider_id=runtime_descriptor.provider_id,
+            elapsed_seconds=elapsed_seconds,
+        )
+
+
     def _handle_llm_query_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:
         expected_output = tool_call.get("expected_output")
         expected_status = tool_call.get("expected_status")
@@ -3396,42 +3474,21 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         )
 
         try:
-            runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
-            client_cfg = provider_router.create_client_config(model_route)
-            if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
-                return self._rlm_mvi_error("api_key_missing", f"{runtime_descriptor.api_key_env} missing in environment.")
-            runtime = provider_registry.create_runtime(runtime_descriptor)
-            client = runtime.create_client(
-                client_cfg.get("api_key"),
-                base_url=client_cfg.get("base_url"),
-                default_headers=client_cfg.get("default_headers"),
-            )
-            runtime_context = ProviderRuntimeContext(
-                session_state=getattr(self, "_active_session_state", None),
-                agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
-                stream=False,
-                extra={
+            execution = self._execute_rlm_provider_subcall(
+                model_route=model_route,
+                messages=messages,
+                runtime_extra={
                     "rlm_subcall": True,
                     "branch_id": branch_id,
                     "max_completion_tokens": args.get("max_completion_tokens") or subcall_cfg.get("max_completion_tokens"),
                     "temperature": args.get("temperature", subcall_cfg.get("temperature")),
                 },
             )
-            result = runtime.invoke(
-                client=client,
-                model=runtime_model,
-                messages=messages,
-                tools=None,
-                stream=False,
-                context=runtime_context,
-            )
-            text_parts: List[str] = []
-            for msg in result.messages or []:
-                if isinstance(msg, ProviderMessage) and isinstance(msg.content, str) and msg.content.strip():
-                    text_parts.append(msg.content.strip())
-            text = "\n\n".join(text_parts).strip()
-            usage = dict(result.usage or {})
-            usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
+            runtime_model = execution.resolved_model
+            text = execution.text
+            usage = execution.usage
+            usage_tokens = execution.usage_tokens
+            usage_cost_usd = execution.usage_cost_usd
             next_state = consume_subcall(
                 state=state,
                 branch_id=branch_id,
@@ -3451,7 +3508,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "lane": lane,
                 "route_id": model_route,
                 "resolved_model": runtime_model,
-                "provider_id": runtime_descriptor.provider_id,
+                "provider_id": execution.provider_id,
                 "prompt_hash": prompt_hash,
                 "blob_refs": blob_refs,
                 "consumed_blobs": list(blob_refs),
@@ -3491,12 +3548,14 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "estimated_cost_usd": usage_cost_usd,
                 "model": runtime_model,
                 "route_id": model_route,
-                "provider_id": runtime_descriptor.provider_id,
+                "provider_id": execution.provider_id,
                 "branch_id": branch_id,
                 "lane": lane,
                 "cached": False,
                 "__mvi_text_output": mvi,
             }
+        except _RlmProviderApiKeyMissing as exc:
+            return self._rlm_mvi_error("api_key_missing", str(exc))
         except ProviderRuntimeError as exc:
             self._rlm_record_branch_event(
                 branch_id=branch_id,
@@ -3737,30 +3796,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             for attempt in range(retries + 1):
                 started = time.time()
                 try:
-                    runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
-                    client_cfg = provider_router.create_client_config(model_route)
-                    if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
-                        return {
-                            "request_index": request_index,
-                            "status": "failed",
-                            "reason": "api_key_missing",
-                            "error": f"{runtime_descriptor.api_key_env} missing in environment.",
-                            "branch_id": branch_id,
-                            "depth": depth,
-                            "lane": item.get("lane"),
-                            "attempt_count": attempt + 1,
-                        }
-                    runtime = provider_registry.create_runtime(runtime_descriptor)
-                    client = runtime.create_client(
-                        client_cfg.get("api_key"),
-                        base_url=client_cfg.get("base_url"),
-                        default_headers=client_cfg.get("default_headers"),
-                    )
-                    runtime_context = ProviderRuntimeContext(
-                        session_state=getattr(self, "_active_session_state", None),
-                        agent_config=self.config if isinstance(getattr(self, "config", None), dict) else {},
-                        stream=False,
-                        extra={
+                    execution = self._execute_rlm_provider_subcall(
+                        model_route=model_route,
+                        messages=messages,
+                        runtime_extra={
                             "rlm_subcall": True,
                             "rlm_batch_subcall": True,
                             "branch_id": branch_id,
@@ -3769,54 +3808,52 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                             "max_completion_tokens": item.get("max_completion_tokens"),
                             "temperature": item.get("temperature"),
                         },
+                        started_at=started,
+                        timeout_seconds=timeout_seconds,
                     )
-                    result = runtime.invoke(
-                        client=client,
-                        model=runtime_model,
-                        messages=messages,
-                        tools=None,
-                        stream=False,
-                        context=runtime_context,
-                    )
-                    elapsed = max(0.0, time.time() - started)
-                    if timeout_seconds > 0.0 and elapsed > timeout_seconds:
-                        attempts.append({"attempt": attempt + 1, "status": "timeout", "duration_seconds": elapsed})
-                        if attempt < retries:
-                            continue
-                        return {
-                            "request_index": request_index,
-                            "status": "timeout",
-                            "reason": "timeout",
-                            "error": f"subcall exceeded timeout_seconds={timeout_seconds}",
-                            "branch_id": branch_id,
-                            "depth": depth,
-                            "lane": item.get("lane"),
-                            "attempt_count": attempt + 1,
-                            "attempts": attempts,
-                        }
-                    text_parts: List[str] = []
-                    for msg in result.messages or []:
-                        if isinstance(msg, ProviderMessage) and isinstance(msg.content, str) and msg.content.strip():
-                            text_parts.append(msg.content.strip())
-                    text = "\n\n".join(text_parts).strip()
-                    usage = dict(result.usage or {})
-                    usage_tokens, usage_cost_usd = extract_usage_metrics(usage)
                     return {
                         "request_index": request_index,
                         "status": "completed",
                         "branch_id": branch_id,
                         "depth": depth,
                         "lane": item.get("lane"),
-                        "text": text,
-                        "usage": usage,
-                        "usage_tokens": usage_tokens,
-                        "estimated_cost_usd": usage_cost_usd,
+                        "text": execution.text,
+                        "usage": execution.usage,
+                        "usage_tokens": execution.usage_tokens,
+                        "estimated_cost_usd": execution.usage_cost_usd,
                         "route_id": model_route,
-                        "resolved_model": runtime_model,
-                        "provider_id": runtime_descriptor.provider_id,
+                        "resolved_model": execution.resolved_model,
+                        "provider_id": execution.provider_id,
                         "prompt_hash": hashlib.sha256(user_prompt.encode("utf-8", errors="ignore")).hexdigest(),
                         "attempt_count": attempt + 1,
-                        "attempts": attempts + [{"attempt": attempt + 1, "status": "completed", "duration_seconds": elapsed}],
+                        "attempts": attempts + [{"attempt": attempt + 1, "status": "completed", "duration_seconds": execution.elapsed_seconds}],
+                    }
+                except _RlmProviderSubcallTimeout as exc:
+                    elapsed = exc.elapsed_seconds
+                    attempts.append({"attempt": attempt + 1, "status": "timeout", "duration_seconds": elapsed})
+                    if attempt < retries:
+                        continue
+                    return {
+                        "request_index": request_index,
+                        "status": "timeout",
+                        "reason": "timeout",
+                        "error": f"subcall exceeded timeout_seconds={timeout_seconds}",
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
+                        "attempts": attempts,
+                    }
+                except _RlmProviderApiKeyMissing as exc:
+                    return {
+                        "request_index": request_index,
+                        "status": "failed",
+                        "reason": "api_key_missing",
+                        "error": str(exc),
+                        "branch_id": branch_id,
+                        "depth": depth,
+                        "lane": item.get("lane"),
+                        "attempt_count": attempt + 1,
                     }
                 except ProviderRuntimeError as exc:
                     attempts.append({"attempt": attempt + 1, "status": "provider_error", "error": str(exc)})
@@ -4354,6 +4391,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
     def read_file(self, path: str) -> Dict[str, Any]:
         return self._ray_get(self.sandbox.read_text.remote(path))
+    def _private_workspace_path(self, path: str) -> bool: relative = Path(self._normalize_workspace_path(path)).relative_to(Path(self.workspace).resolve()).parts; return relative[:2] in {(".breadboard", "artifacts"), (".breadboard", "attachments")}
+    def _patch_touches_private_workspace(self, patch: str) -> bool: return any(self._private_workspace_path(match.group(1).strip().strip('"')) for match in re.finditer(r'^(?:\*\*\* (?:Add|Update|Delete) File:|\*\*\* Move to:|---|\+\+\+|(?:rename|copy) (?:from|to))\s+(?:[ab]/)?("?[^"\t\n]+"?)(?:\t.*)?$', str(patch), re.MULTILINE))
 
     def list_dir(self, path: str, depth: int = 1) -> Dict[str, Any]:
         # Always pass virtual paths when using VirtualizedSandbox; else pass normalized absolute
@@ -4492,7 +4531,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         if normalized == "blob.put":
             return self._handle_blob_put_tool(tool_call)
         if normalized == "blob.put_file_slice":
-            return self._handle_blob_put_file_slice_tool(tool_call)
+            return {"error": "private workspace storage is unavailable to model tools"} if tool_call.get("expected_output") is None and self._private_workspace_path(str(args.get("path") or "")) else self._handle_blob_put_file_slice_tool(tool_call)
         if normalized == "blob.get":
             return self._handle_blob_get_tool(tool_call)
         if normalized == "blob.search":
@@ -4504,7 +4543,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
 
         if normalized == "create_file":
             target = self._normalize_workspace_path(str(args.get("path", "")))
-            return self.create_file(target)
+            return {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self.create_file(target)
         if normalized == "todo.write_board":
             return self._execute_todo_tool("todo.write_board", args)
         if normalized == "todo.list":
@@ -4523,27 +4562,33 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "__mvi_text_output": "Plan updated",
             }
         if normalized == "create_file_from_block":
-            target = self._normalize_workspace_path(str(args.get("file_name", "")))
-            content = str(args.get("content", ""))
-            return self._ray_get(self.sandbox.write_text.remote(target, content))
+            target = self._normalize_workspace_path(str(args.get("file_name", ""))); content = str(args.get("content", ""))
+            return {"error": "private workspace storage is unavailable to model tools"} if self._private_workspace_path(target) else self._ray_get(self.sandbox.write_text.remote(target, content))
         if normalized == "read_file":
-            target = self._normalize_workspace_path(str(args.get("path", "")))
-            return self.read_file(target)
+            requested = str(args.get("path", ""))
+            if requested.startswith("attachment://"):
+                if not re.fullmatch(r"attachment://sha256:[0-9a-f]{64}", requested): return {"error": "invalid attachment URI"}
+                state = getattr(self, "_active_session_state", None); capabilities = state.get_provider_metadata("attachment_capabilities", {}) if state is not None else {}; trusted = capabilities.get(requested) if isinstance(capabilities, dict) else None
+                if not isinstance(trusted, dict): return {"error": "attachment URI is not authorized for this turn"}
+                try:
+                    ref = ArtifactRef(digest=str(trusted["digest"]), size_bytes=int(trusted["size_bytes"]), media_type=str(trusted["media_type"])); content = read_workspace_artifact(self.workspace, ref)
+                except Exception as exc: return {"error": f"attachment read failed: {exc}"}
+                return {"path": requested, "content": content.decode("utf-8", errors="replace"), "truncated": False, "offset": 0, "limit": None}
+            target = self._normalize_workspace_path(requested)
+            return {"error": "artifact store is private; use an authorized attachment URI"} if self._private_workspace_path(target) else self.read_file(target)
         if normalized == "glob":
             pattern = str(args.get("pattern") or "")
             root = str(args.get("path") or ".")
             limit = args.get("limit")
-            return self._ray_get(self.sandbox.glob.remote(pattern, root, limit))
+            matches = self._ray_get(self.sandbox.glob.remote(pattern, root, None)); visible = [match for match in matches if not self._private_workspace_path(str(Path(root) / match))]; return visible[:int(limit)] if limit is not None and int(limit) >= 0 else visible
         if normalized == "grep":
             pattern = str(args.get("pattern") or "")
             root = str(args.get("path") or ".")
             include = args.get("include")
             limit = int(args.get("limit") or 100)
-            return self._ray_get(self.sandbox.grep.remote(pattern, root, include, limit))
+            result = self._ray_get(self.sandbox.grep.remote(pattern, root, include, 0)); result["matches"] = [row for row in result.get("matches", []) if not self._private_workspace_path(str(Path(root) / str(row.get("path", ""))))][:limit]; return result
         if normalized == "list_dir":
-            target = self._normalize_workspace_path(str(args.get("path", "")))
-            depth = int(args.get("depth", 1))
-            return self.list_dir(target, depth)
+            target = self._normalize_workspace_path(str(args.get("path", ""))); depth = int(args.get("depth", 1)); result = self.list_dir(target, depth); visible = [row for row in result.get("items", []) if not self._private_workspace_path(str(Path(target) / str(row.get("path", ""))))]; result["items"] = result["entries"] = visible; return result
         if normalized == "run_shell":
             expected_output = tool_call.get("expected_output")
             expected_status = tool_call.get("expected_status")
@@ -4587,6 +4632,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             return self.run_shell(command, timeout)
         if normalized == "apply_search_replace":
             target = self._normalize_workspace_path(str(args.get("file_name", "")))
+            if self._private_workspace_path(target): return {"error": "private workspace storage is unavailable to model tools"}
             search_text = str(args.get("search", ""))
             replace_text = str(args.get("replace", ""))
             try:
@@ -4598,6 +4644,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             return self._ray_get(self.sandbox.edit_replace.remote(target, search_text, replace_text, 1))
         if normalized == "apply_unified_patch":
             patch_source_text = str(args.get("patch") or args.get("input") or "")
+            if self._patch_touches_private_workspace(patch_source_text): return {"error": "private workspace storage is unavailable to model tools"}
             patch_text = patch_source_text
             if (
                 "*** Add File:" in patch_text
@@ -4827,6 +4874,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             for key, value in context.items():
                 if isinstance(key, str) and (key.startswith("phase15_") or key.startswith("phase16_")):
                     session_state.set_provider_metadata(key, value)
+            capabilities = context.get("attachment_capabilities")
+            if isinstance(capabilities, dict): session_state.set_provider_metadata("attachment_capabilities", capabilities)
         session_state.set_provider_metadata("initial_user_prompt", user_prompt or "")
         session_state.set_provider_metadata(
             "requires_build_guard",

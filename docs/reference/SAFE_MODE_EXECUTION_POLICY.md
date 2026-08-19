@@ -6,7 +6,7 @@ This policy is mandatory for engine-side development in the canonical
 ## Checklist (Instituted)
 
 1. Do **not** run runtime/task commands directly against canonical repo unless preflight passes.
-   - Blocked commands without preflight: `breadboard run`, `python main.py ...`, parity/replay task runs.
+   - Blocked commands without preflight: `breadboard harness run`, `python main.py ...`, parity/replay task runs.
 2. Limit canonical-repo work to docs/code edits and non-destructive verification.
 3. If runtime validation is required, prefer an isolated disposable workspace clone/copy when
    the run is expected to mutate or aggressively reset the workspace.

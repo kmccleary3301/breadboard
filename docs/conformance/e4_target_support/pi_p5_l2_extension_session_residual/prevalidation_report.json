@@ -1,0 +1,30 @@
+{
+  "accepted": true,
+  "checks": [
+    {
+      "name": "target_commands_exit_zero",
+      "passed": true
+    },
+    {
+      "name": "replay_record_schema_validation",
+      "passed": true
+    },
+    {
+      "name": "machine_comparator_assertions",
+      "passed": true
+    },
+    {
+      "name": "secret_scan",
+      "passed": true
+    },
+    {
+      "name": "raw_capture_written",
+      "passed": true
+    }
+  ],
+  "config_id": "pi_p5_l2_extension_session_residual_v1",
+  "generated_at_utc": "2026-07-03T10:45:00Z",
+  "lane_id": "pi_p5_l2_extension_session_residual",
+  "ok": true,
+  "schema_version": "bb.e4.prevalidation_report.v1"
+}

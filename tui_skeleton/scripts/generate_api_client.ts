@@ -15,7 +15,7 @@ interface OpenApiOperation {
 }
 
 interface ClientRoute {
-  readonly method: "GET" | "POST" | "DELETE"
+  readonly method: "GET" | "POST" | "PUT" | "DELETE"
   readonly path: string
 }
 
@@ -42,10 +42,21 @@ const normalizeOpenApiPath = (path: string): string => path.replace(/\{[^}]+\}/g
 
 const extractClientRoutes = (source: string): ClientRoute[] => {
   const routes = new Map<string, ClientRoute>()
-  const callPattern = /requestWithConfig<([\s\S]*?)>\(config,\s*([`"])([\s\S]*?)\2,\s*"(GET|POST|DELETE)"/g
-  for (const match of source.matchAll(callPattern)) {
+  const genericPattern = /requestWithConfig<([\s\S]*?)>\(config,\s*([`"])([\s\S]*?)\2,\s*"(GET|POST|PUT|DELETE)"/g
+  for (const match of source.matchAll(genericPattern)) {
     const method = match[4] as ClientRoute["method"]
     const path = normalizeTemplatePath(match[3])
+    routes.set(`${method} ${path}`, { method, path })
+  }
+  const actionPattern = /\brequest\("(GET|POST|PUT|DELETE)",\s*([`"])([\s\S]*?)\2/g
+  for (const match of source.matchAll(actionPattern)) {
+    const method = match[1] as ClientRoute["method"]
+    const path = normalizeTemplatePath(match[3])
+    routes.set(`${method} ${path}`, { method, path })
+  }
+  if (/\bstreamSessionEvents\(/.test(source)) {
+    const method: ClientRoute["method"] = "GET"
+    const path = "/v1/sessions/{}/events"
     routes.set(`${method} ${path}`, { method, path })
   }
   return [...routes.values()].sort((left, right) => left.path.localeCompare(right.path) || left.method.localeCompare(right.method))
@@ -65,32 +76,6 @@ const extractDirectFetchRoutes = (source: string): ClientRoute[] => {
   return [...routes.values()].sort((left, right) => left.path.localeCompare(right.path) || left.method.localeCompare(right.method))
 }
 
-const requiredDirectFetchRoutes: Record<string, true> = {
-  "POST /v1/sessions/{}/attachments": true,
-}
-
-const assertRequiredDirectFetchRoutes = (routes: readonly ClientRoute[]): void => {
-  const discovered = new Set(routes.map((route) => `${route.method} ${route.path}`))
-  const missing = Object.keys(requiredDirectFetchRoutes).filter((route) => !discovered.has(route))
-  if (missing.length > 0) {
-    throw new Error(`Required direct-fetch client routes are missing: ${missing.join(", ")}`)
-  }
-}
-
-const extensionClientRoutes: Record<string, true> = {
-  "GET /sessions/{}/ctrees/tree": true,
-  "GET /sessions/{}/ctrees/disk": true,
-  "GET /sessions/{}/ctrees/events": true,
-  "GET /v1/status": true,
-  "POST /v1/rl/runs": true,
-  "GET /v1/rl/runs/{}": true,
-  "GET /v1/rl/runs/{}/artifacts": true,
-  "GET /v1/rl/runs/{}/audit": true,
-  "POST /v1/rl/runs/{}/cancel": true,
-  "GET /v1/rl/runs/{}/events": true,
-  "GET /v1/rl/runs/{}/replay/{}": true,
-  "GET /v1/sessions/{}/records": true,
-}
 
 const assertRoutesHaveOpenApiOwners = (routes: readonly ClientRoute[], openapi: OpenApiDocument): void => {
   const openApiRoutes = new Set<string>()
@@ -99,11 +84,14 @@ const assertRoutesHaveOpenApiOwners = (routes: readonly ClientRoute[], openapi: 
       openApiRoutes.add(`${method.toUpperCase()} ${normalizeOpenApiPath(path)}`)
     }
   }
-  const missing = routes
-    .map((route) => `${route.method} ${route.path}`)
-    .filter((route) => !openApiRoutes.has(route) && !extensionClientRoutes[route])
-  if (missing.length > 0) {
-    throw new Error(`Client routes missing from OpenAPI contract: ${missing.join(", ")}`)
+  const clientRoutes = new Set(routes.map((route) => `${route.method} ${route.path}`))
+  const missingOpenApiOwners = [...clientRoutes].filter((route) => !openApiRoutes.has(route))
+  if (missingOpenApiOwners.length > 0) {
+    throw new Error(`Client routes missing from OpenAPI contract: ${missingOpenApiOwners.join(", ")}`)
+  }
+  const missingClientOwners = [...openApiRoutes].filter((route) => !clientRoutes.has(route))
+  if (missingClientOwners.length > 0) {
+    throw new Error(`OpenAPI routes missing from product client: ${missingClientOwners.join(", ")}`)
   }
 }
 
@@ -274,7 +262,6 @@ const clientSource = await readFile(clientPath, "utf8")
 const typesSource = await readFile(typesPath, "utf8")
 const routes = extractClientRoutes(clientSource)
 const directFetchRoutes = extractDirectFetchRoutes(clientSource)
-assertRequiredDirectFetchRoutes(directFetchRoutes)
 assertNoLegacyRlClientRoutes(routes)
 assertRoutesHaveOpenApiOwners([...routes, ...directFetchRoutes], openapi)
 assertSchemaDtoDefinitionsDeleted(

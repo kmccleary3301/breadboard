@@ -1,0 +1,21 @@
+{
+  "binding": {
+    "harness_lock_hash": "sha256:6bd6410a5486fdb938b0b4173dbb00c6da60a77475e7369625b5a7b8c92e5c1b",
+    "persisted_event_log_sha256": "sha256:ae2a597b6c4a53316a9320a0e2537d2bc7fcf09dab168e190c65660275b18915",
+    "raw_capture_sha256": "sha256:835c5e56baabed1813d96df81011fbdb186320177a3aab946fc1b329cb2fafb6",
+    "session_id": "x1-openai-gpt55-secured-20260819-v2",
+    "task_hash": "sha256:8b058b1494f051a70ed87323977557682afd7c3d92314a8586759e05e6823593"
+  },
+  "observed": {
+    "event_count": 2,
+    "last_event": "session.completed",
+    "status": "completed",
+    "terminal_outcome": {
+      "outcome": "completed",
+      "summary": "completed"
+    }
+  },
+  "passed": true,
+  "schema_version": "bb.north_star.x1.restart_reverification.v2",
+  "service_restart_performed": true
+}

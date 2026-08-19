@@ -26,6 +26,30 @@ def default_tool_defs_dir() -> Path:
     return Path(__file__).resolve().parents[2] / "implementations" / "tools" / "defs"
 
 
+def resolve_tool_defs_dir(defs_dir: str | Path | None) -> Path:
+    if defs_dir is None:
+        return default_tool_defs_dir()
+    candidate = Path(defs_dir).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    if candidate.is_dir():
+        return candidate.resolve()
+
+    repo_root = Path(__file__).resolve().parents[2]
+    repo_candidate = (repo_root / candidate).resolve()
+    if repo_candidate.is_dir():
+        return repo_candidate
+
+    relative_parts = list(candidate.parts)
+    while relative_parts and relative_parts[0] in {".", ".."}:
+        relative_parts.pop(0)
+    if relative_parts:
+        repo_candidate = repo_root.joinpath(*relative_parts).resolve()
+        if repo_candidate.is_dir():
+            return repo_candidate
+    return candidate
+
+
 @dataclass(frozen=True)
 class ToolRegistry:
     tools_by_name: dict[str, RegistryTool]
@@ -82,7 +106,7 @@ def load_tool_registry(
     *,
     aliases: Mapping[str, str] | None = None,
 ) -> ToolRegistry:
-    defs_path = Path(defs_dir) if defs_dir is not None else default_tool_defs_dir()
+    defs_path = resolve_tool_defs_dir(defs_dir)
     if not defs_path.is_dir():
         raise FileNotFoundError(f"Tools definitions directory not found: {defs_path}")
 
@@ -115,10 +139,16 @@ def registry_from_config(config: Mapping[str, Any] | None) -> ToolRegistry:
     tools_cfg = (config or {}).get("tools", {}) if isinstance(config, Mapping) else {}
     tools_cfg = tools_cfg or {}
     defs_dir = tools_cfg.get("defs_dir")
+    registry_cfg = tools_cfg.get("registry")
+    if not defs_dir and isinstance(registry_cfg, Mapping):
+        paths = registry_cfg.get("paths")
+        if isinstance(paths, list) and paths:
+            defs_dir = paths[0]
+    resolved_defs_dir = str(resolve_tool_defs_dir(defs_dir))
     aliases = {str(key): str(value) for key, value in (tools_cfg.get("aliases") or {}).items()}
     if not aliases:
-        return cached_tool_registry(str(defs_dir) if defs_dir else None)
-    return load_tool_registry(defs_dir, aliases=aliases)
+        return cached_tool_registry(resolved_defs_dir)
+    return load_tool_registry(resolved_defs_dir, aliases=aliases)
 
 
 def guardrail_names_for(config: Mapping[str, Any] | None, guardrail_set: str) -> set[str]:

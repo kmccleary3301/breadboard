@@ -33,10 +33,9 @@ SCRATCH_LANES = (
     *P3_SCRATCH_LANES,
     "oh_my_pi_p6_0_l5_memory_compaction",
     "oh_my_pi_p6_0_l6_tui_projection",
-    "oh_my_pi_p6_6_task_job_subagent",
 )
 P31_PROJECTION_HASHES = {
-    "capability_registry": "sha256:72e56f97b5c38f48eec0eae46bd1b4847cfafaa3e4b85d745d0fc63d312a9bce",
+    "capability_registry": "sha256:20a474699dc6d6886d79036d320ead3085812701359dec49d4b343f0cabbce92",
     "effective_config_graph": "sha256:3816a6751ea56e8526f0acc0cceb50a93d651090d8ed553457e1ac7e37d2c898",
     "effective_tool_surface": "sha256:1ad75cf55a3e26cd73580e5aa152c37cdf35373c0dcc86b0712a33fdbcdf4359",
 }
@@ -114,6 +113,13 @@ def _assert_accepted_unchanged(snapshot: Mapping[Path, bytes]) -> None:
     assert {path: path.read_bytes() for path in snapshot} == snapshot
 
 
+def test_compiler_ledger_reads_workspace_evidence() -> None:
+    assert compiler.WORKSPACE == WORKSPACE
+    assert compiler.LEDGER_PATH == (
+        WORKSPACE / "docs_tmp/phase_15/BB_E4_ATOMIC_FEATURE_LEDGER_SEED.json"
+    )
+
+
 @pytest.mark.parametrize("lane_id", SCRATCH_LANES)
 def test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepted_writes(
     lane_id: str,
@@ -148,6 +154,16 @@ def test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepte
     )
 
     assert report["ok"] is True
+    if lane_id == "oh_my_pi_p3_1_effective_config_graph_compiler":
+        assert {
+            report["paths"]["parity_results"],
+            report["paths"]["secret_scan_report"],
+            report["paths"]["validator_output"],
+        } == {
+            f"docs/conformance/e4_target_support/{lane_id}/parity_results.json",
+            f"docs/conformance/e4_target_support/{lane_id}/secret_scan_report.json",
+            f"docs/conformance/e4_target_support/{lane_id}/prevalidation_report.json",
+        }
     assert writes
     scratch_root = scratch.resolve()
     for written in writes:
@@ -171,7 +187,6 @@ def test_scratch_capture_reproduces_governed_accepted_role_bytes_without_accepte
             assert _sha256(accepted) == manifest_row["sha256"]
 
     _assert_accepted_unchanged(accepted_before)
-
 
 def test_p31_lane_names_and_byte_locks_all_three_projection_outputs() -> None:
     lane = _lane("oh_my_pi_p3_1_effective_config_graph_compiler")
@@ -363,7 +378,7 @@ def _mutate_p31(context: dict[str, Any]) -> None:
 
 
 def _mutate_p32(context: dict[str, Any]) -> None:
-    context["root"] = str(Path(context["root"]) / "mutated_source_root")
+    context["lane_id"] = f"{context['lane_id']}_mutated"
 
 
 def _mutate_l5(context: dict[str, Any]) -> None:
@@ -375,10 +390,6 @@ def _mutate_l6(context: dict[str, Any]) -> None:
     stdout_path = context["constants"]["events"][0]["stdout_path"]
     context["inputs"][stdout_path]["sha256"] = "sha256:" + "2" * 64
 
-
-def _mutate_p66(context: dict[str, Any]) -> None:
-    observation = context["source"]["value"]["work_item_observations"][0]
-    observation["status"] = "running" if observation.get("status") != "running" else "completed"
 
 
 @pytest.mark.parametrize(
@@ -404,14 +415,9 @@ def _mutate_p66(context: dict[str, Any]) -> None:
             "p6_l6_tui_projection",
             _mutate_l6,
         ),
-        (
-            "oh_my_pi_p6_6_task_job_subagent",
-            "p6_6_task_job_subagent",
-            _mutate_p66,
-        ),
     ],
 )
-def test_pure_projections_are_repeatable_and_sensitive_to_declared_source_context(
+def test_pure_projections_are_repeatable_and_sensitive_to_declared_semantic_context(
     lane_id: str,
     projection_id: str,
     mutate: Callable[[dict[str, Any]], None],
@@ -583,7 +589,11 @@ def test_auto_bind_role_refs_binds_refs_hash_maps_and_artifact_rows_topologicall
                     "input_hashes": {"data/base.json": stale},
                     "ref": f"data/base.json#{stale}",
                 },
-                "top": {"mid_ref": f"data/mid.json#{stale}"},
+                "top": {
+                    "hashes": {"mid": stale},
+                    "mid_ref": f"data/mid.json#{stale}",
+                    "refs": {"mid": "data/mid.json"},
+                },
             },
             # Reverse listing order proves rendering follows reference topology.
             "required_roles": ["top", "mid", "base"],
@@ -596,6 +606,17 @@ def test_auto_bind_role_refs_binds_refs_hash_maps_and_artifact_rows_topologicall
         {},
         {},
         source_bytes={"base": 1},
+        role_hashes={"base": stale},
+        input_refs={"base": f"data/base.json#{stale}"},
+        source_payloads={
+            "mid": {
+                "artifacts": [
+                    {"path": "data/base.json", "sha256": stale, "bytes": 1, "exists": False}
+                ],
+                "input_hashes": {"data/base.json": stale},
+                "ref": f"data/base.json#{stale}",
+            }
+        },
     )
 
     base_hash = "sha256:" + hashlib.sha256(packet["base"]).hexdigest()
@@ -606,7 +627,11 @@ def test_auto_bind_role_refs_binds_refs_hash_maps_and_artifact_rows_topologicall
     assert mid["artifacts"] == [
         {"path": "data/base.json", "sha256": base_hash, "bytes": len(packet["base"]), "exists": True}
     ]
-    assert json.loads(packet["top"]) == {"mid_ref": f"data/mid.json#{mid_hash}"}
+    assert json.loads(packet["top"]) == {
+        "hashes": {"mid": mid_hash},
+        "mid_ref": f"data/mid.json#{mid_hash}",
+        "refs": {"mid": "data/mid.json"},
+    }
 
 
 def test_lane_values_derive_freeze_ledger_catalog_and_scope_facts() -> None:

@@ -56,6 +56,13 @@ normalize:
         lane_dir: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent
         joined_session_dir: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/joined_sessions
         detached_session_dir: docs/conformance/e4_target_support/oh_my_pi_p6_6_task_job_subagent/detached_sessions
+      verbatim_source_roles:
+        - target_probe_output
+        - target_setup_report
+        - joined_subagent_target_capture
+        - detached_subagent_target_capture
+        - probe_script
+        - agent_config
   projection_constants:
     p6_6_task_job_subagent:
       generated_at_utc: '2026-07-04T00:00:00Z'

@@ -1,0 +1,2648 @@
+{
+  "archive": {
+    "bytes": 25364889,
+    "file": "e4_immutable_inputs.v1.zip",
+    "sha256": "3d344fe52dd2017db8845871b3ab40d75d54c5ba38e709cc98cf25b543d6005a"
+  },
+  "format_version": 1,
+  "members": [
+    {
+      "bytes": 2416,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/bb_replay_result.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/bb_replay_result.json",
+      "sha256": "457d9c20d86c4e071e537fb9eb2e492f92e5aeb4f0701971e1ffcc54e936658f"
+    },
+    {
+      "bytes": 1813,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/c4_validation_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/c4_validation_report.json",
+      "sha256": "8e794527c8d964c138ea80e93bdf5d230f7bc66863f0a39a37e38dfec014398c"
+    },
+    {
+      "bytes": 10198,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/comparator_report.json",
+      "sha256": "c408077792bcdc8cdd7277dc603e4bc800cd17239f7ddf8d6261157a8b941d29"
+    },
+    {
+      "bytes": 6248,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/codex_cli_e4_capture_probe_v1/raw_capture_manifest.json",
+      "sha256": "c22cddc606d25a4e4720d812bf8b162e802240b1859c9ab735fde872926b90eb"
+    },
+    {
+      "bytes": 1482,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/bb_replay_result.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/bb_replay_result.json",
+      "sha256": "3f3291decc890f0e96f1515f9a43faf14eb9d94cd03b5ddffa405a7456289ef2"
+    },
+    {
+      "bytes": 4243,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/comparator_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/comparator_report.json",
+      "sha256": "fc4e84e687838b9b6eb15d9feb2ba3dce8bb25285a9e14ce584df0f9c7e8fefd"
+    },
+    {
+      "bytes": 3764,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/oh_my_pi_p6_0_l1_probe.ts",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/oh_my_pi_p6_0_l1_probe.ts",
+      "sha256": "10253eac34da47d5bd777aef84aa3e9771895f0f4e50e2bf87fc5b626dee46f4"
+    },
+    {
+      "bytes": 1811,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/parity_results.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/parity_results.json",
+      "sha256": "0c6dc5fcb57543c9cc2b17eae5ef9f5f32773a97ea23c63314691f63f84fe6a4"
+    },
+    {
+      "bytes": 1977,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/prevalidation_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/prevalidation_report.json",
+      "sha256": "dbb62cbb5af25c575ae189ed7239751497831aa28af75d5917a381e8fb2d5a2f"
+    },
+    {
+      "bytes": 961,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/install_exact_native_leaf_package.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/install_exact_native_leaf_package.command_report.json",
+      "sha256": "0207e43df6ce904b3d2b7e5e01d4c41a1e899a61edc040bbe749d1c54cd856cf"
+    },
+    {
+      "bytes": 1080,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash.command_report.json",
+      "sha256": "867c43713b23f3d8fe2dc867271d70ec3ad6fd1f078fa19ba3b00105abde8bdb"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1137,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_after_native_build.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_after_native_build.command_report.json",
+      "sha256": "ec44812cf6c36653d685b1553895d19e53784a38c4b3e47bc5273f4c1f9cf98b"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_after_native_build.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_after_native_build.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_after_native_build.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_after_native_build.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1132,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_with_leaf_native.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_with_leaf_native.command_report.json",
+      "sha256": "12e5fc1a2965a76a3cbb0b86824dabd26be89dbc2955cca04c783b443af34a74"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_with_leaf_native.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_with_leaf_native.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 17107,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_with_leaf_native.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_completions_bash_with_leaf_native.stdout.txt",
+      "sha256": "f52c28cf65299b10da41188bcd5c0d03437cdefda84cde2edc311b7f0970b5ce"
+    },
+    {
+      "bytes": 1089,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json.command_report.json",
+      "sha256": "6d1cde9f2a184cf0bab8c1a1680c13e136a1a76294926ed20bf6b26e544c5fa7"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1146,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_after_native_build.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_after_native_build.command_report.json",
+      "sha256": "c7e121f891ab66481f9812deb32743fd7ce4c2729a90802551bfa0f7c3779712"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_after_native_build.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_after_native_build.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_after_native_build.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_after_native_build.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1141,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_with_leaf_native.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_with_leaf_native.command_report.json",
+      "sha256": "ef7b05df4fd0f70fdaaac5e158993490a3d1f05c6d3781778c8f55d8bb7522fe"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_with_leaf_native.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_with_leaf_native.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 65536,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_with_leaf_native.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_list_json_with_leaf_native.stdout.txt",
+      "sha256": "2f370cd1ec956f497adc179756ad8da5163e69139063d99dfb7548f237586329"
+    },
+    {
+      "bytes": 1060,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path.command_report.json",
+      "sha256": "256e826e60371f54a0fea0a1f222d87812c3547178755c4aa32371790e0294d0"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1117,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_after_native_build.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_after_native_build.command_report.json",
+      "sha256": "c1fc031a7f106943e6f1a6d5a368f79da73d1e75df7c04df07c6ba7d726980b1"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_after_native_build.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_after_native_build.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_after_native_build.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_after_native_build.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1110,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_with_leaf_native.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_with_leaf_native.command_report.json",
+      "sha256": "9fee8dfd4298893ab9e0d99751997aeee4dba1b462826b70595d4ad144e540f9"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_with_leaf_native.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_with_leaf_native.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 218,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_with_leaf_native.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_config_path_with_leaf_native.stdout.txt",
+      "sha256": "380e7adfb247c18135d8a3216ea444d30a5b3185abcd31b914c23dc4ec53ba0c"
+    },
+    {
+      "bytes": 1027,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help.command_report.json",
+      "sha256": "ccbe931c403682815c3271ee395515496976669d15cee7912cf87e318d70f240"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1084,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_after_native_build.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_after_native_build.command_report.json",
+      "sha256": "add939b2d19c6863e8c886a7c3929c0dbc6361670b85f46ae63875d681b1d567"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_after_native_build.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_after_native_build.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_after_native_build.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_after_native_build.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1079,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_with_leaf_native.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_with_leaf_native.command_report.json",
+      "sha256": "e1e4071bef024df1b1d35b1d1948fdb1059826f4f0a0bea282de0dce8c183cb8"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_with_leaf_native.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_with_leaf_native.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 10840,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_with_leaf_native.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_help_with_leaf_native.stdout.txt",
+      "sha256": "941c61b169d11be8ca2bc5691058b1bea03871c81bc0f3face1c4e15f01e281d"
+    },
+    {
+      "bytes": 1062,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help.command_report.json",
+      "sha256": "ce4501ef89885d1fd65807ee5e276c3a7e4164cf0b5e546a2a33c56b2694ce49"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1119,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_after_native_build.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_after_native_build.command_report.json",
+      "sha256": "5f0a41d67f56ff0b34e86f7c5618dba40c6d1f48fa3ec9e569d7db842295a1a7"
+    },
+    {
+      "bytes": 1682,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_after_native_build.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_after_native_build.stderr.txt",
+      "sha256": "6a283c08fbe229f178535388b861618d66a9976e6deca920df827f9636b5719f"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_after_native_build.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_after_native_build.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1113,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_with_leaf_native.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_with_leaf_native.command_report.json",
+      "sha256": "8d660d45a01adfdc0b97ddf4ce747b64898c0e37c45767b13e969800d6d40d6c"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_with_leaf_native.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_with_leaf_native.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 4354,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_with_leaf_native.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_launch_help_with_leaf_native.stdout.txt",
+      "sha256": "cbdbe29f1f673dbedaa67a96a930bb27d587b7a65578257c30498c5f0c7d1aa8"
+    },
+    {
+      "bytes": 1273,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe.command_report.json",
+      "sha256": "d2233eef9eacc9c9d7f0fde71eedee448d171487723f058c0902ec0275f6bdbc"
+    },
+    {
+      "bytes": 234,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe.stderr.txt",
+      "sha256": "7e254885d7c52e83fcf1b17f4df6cc9d9b0be14ee64d80f22a3388354475da56"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1330,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_after_native_build.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_after_native_build.command_report.json",
+      "sha256": "7064398814c4c3c6346c0611b232cfa58588a2e7b70c35e5545181f2b0bcbcdb"
+    },
+    {
+      "bytes": 2504,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_after_native_build.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_after_native_build.stderr.txt",
+      "sha256": "13a2ab1aa06040c0eddb8d8d1bd43a9f10d173af0bfa0657bf4b20a7c6248800"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_after_native_build.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_after_native_build.stdout.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 1324,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_with_leaf_native.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_with_leaf_native.command_report.json",
+      "sha256": "c8bfc72a85a2587bd9794ced428b03ae358fa1f64b0b5dff084d56abb91b5d3a"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_with_leaf_native.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_with_leaf_native.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 4015,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_with_leaf_native.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_sdk_probe_with_leaf_native.stdout.txt",
+      "sha256": "28dd54288fc2267b7ef68329d826c199a6b8e0b1e7dbb7b911e8b7f50713abdd"
+    },
+    {
+      "bytes": 1037,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_version.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_version.command_report.json",
+      "sha256": "49841195a08428a2cac5ee1b51cf9f77d392583d599823d982172a58d56c5540"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/omp_version.stdout.txt",
+      "sha256": "76fbc537e289fa5f2befe8a3581a5cae08f76f34100a2da01655cf96a1cb36f7"
+    },
+    {
+      "bytes": 20936373,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/pi-natives-darwin-arm64-16.2.13.tgz",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/pi-natives-darwin-arm64-16.2.13.tgz",
+      "sha256": "b3e7d0083bc1951f780179bf860ab8864c15b8025f00f78944877a4b9975f61d"
+    },
+    {
+      "bytes": 892,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native.command_report.json",
+      "sha256": "02a850c12ec796f025cc3eb36a4a2b319fe50321c1896d1eabf362db23a52470"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 8939,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native.stdout.txt",
+      "sha256": "07e29fda0c93bb4519e37a407d2791a015d081d0954055fd9aae4c6214f7867d"
+    },
+    {
+      "bytes": 920,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native_cwd_equals.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native_cwd_equals.command_report.json",
+      "sha256": "6db058f70cbda2608d53f4c3369da21a1e878fad9b0b79d2c15da2be15fe060a"
+    },
+    {
+      "bytes": 519,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native_cwd_equals.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native_cwd_equals.stderr.txt",
+      "sha256": "bebd4c394332354b7618b353d3440f37fe3b3c9fe832cdee055a70bc0716a273"
+    },
+    {
+      "bytes": 1173,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native_cwd_equals.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_build_native_cwd_equals.stdout.txt",
+      "sha256": "fdc1a798c2f9e4267d4acba9fc2aba53695ac1b58f37ac67e60bcc54e82450c9"
+    },
+    {
+      "bytes": 906,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_install_frozen_lockfile.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_install_frozen_lockfile.command_report.json",
+      "sha256": "013eb027f31be4a25f26a11ff076b3467cbcb00334d10fa4f86e684ab96107f7"
+    },
+    {
+      "bytes": 175,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_install_frozen_lockfile.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_install_frozen_lockfile.stderr.txt",
+      "sha256": "dc7c580e24ab3251381131de819c687ac4096059a774eb1d4987290bf57f88fb"
+    },
+    {
+      "bytes": 412,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_install_frozen_lockfile.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw/target_bun_install_frozen_lockfile.stdout.txt",
+      "sha256": "04cef4e1442889f2401f1ed122439af322a5f735beff2f622d212d5702da41b0"
+    },
+    {
+      "bytes": 7368,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/raw_capture_manifest.json",
+      "sha256": "a5819fd983019702e0c5808e018a716fe98f51766e2b95cd3a986df5e5906b98"
+    },
+    {
+      "bytes": 2169,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/secret_scan_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/secret_scan_report.json",
+      "sha256": "d1e73455492a1c6d2eab8557116c84e325022b56b2f56d996202d665e96d00b6"
+    },
+    {
+      "bytes": 64,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/AGENTS.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/AGENTS.md",
+      "sha256": "447408305cfb22867ee81f5651574f4329f38bce341ea17fde1c9fea3cb138ef"
+    },
+    {
+      "bytes": 45,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/RULES.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/RULES.md",
+      "sha256": "c03e29188036c7b4d51118ed728a2a6547c635758c5b70f5bcd5d4d7e21f546c"
+    },
+    {
+      "bytes": 41,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/SYSTEM.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/SYSTEM.md",
+      "sha256": "1536251b784711e6dc6bb29a868ba02fa084817c4684511116daad08a337c21b"
+    },
+    {
+      "bytes": 49,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/commands/p6-smoke.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/commands/p6-smoke.md",
+      "sha256": "f201de3991b1346c2705c29a9af7d32ca07ac7c6ded21fb9737e91de2f30babf"
+    },
+    {
+      "bytes": 37,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/prompts/p6-prompt.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/prompts/p6-prompt.md",
+      "sha256": "82b813d664fcd1510e14d80c2ec419ba51912bbbe291be311086c94defb0bbd0"
+    },
+    {
+      "bytes": 121,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/skills/p6_fixture/SKILL.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/.omp/skills/p6_fixture/SKILL.md",
+      "sha256": "667a64d290a4efd26d7dea994e1645396963035c98d9be57567cd4dc83e51098"
+    },
+    {
+      "bytes": 85,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/AGENTS.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_fixture_workspace/AGENTS.md",
+      "sha256": "80ab0ac60b6dfaebbc52386bb22cde2f4550f9b2c8f3d61d64b468e594666cae"
+    },
+    {
+      "bytes": 4015,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_probe_output.json",
+      "sha256": "bf41d1cab9535556032e654b934e431a38315ae8031cee409cc33cde7e5ef519"
+    },
+    {
+      "bytes": 62692,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/target_setup_and_capture_report.json",
+      "sha256": "693c9d9c01d1cd8515f56b4f9f7cbbc677f02f9a206e8d7a41ecdf8b258b23c6"
+    },
+    {
+      "bytes": 1502,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/bb_replay_result.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/bb_replay_result.json",
+      "sha256": "3461b6a831c014511370cd321a9cfcfdb4d4fde72495b2d37463a7fdbe5be88d"
+    },
+    {
+      "bytes": 4787,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/comparator_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/comparator_report.json",
+      "sha256": "75cef22187aec0a95aa98a383c5c1754af99fd5b3a9d44ef4a9f35fc93e0208c"
+    },
+    {
+      "bytes": 6494,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/oh_my_pi_p6_0_l2_tool_execution_probe.mjs",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/oh_my_pi_p6_0_l2_tool_execution_probe.mjs",
+      "sha256": "49a7b3957919954539c4f927e7dc452b475f8f86abff3c665499b3d61eca357d"
+    },
+    {
+      "bytes": 2254,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/parity_results.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/parity_results.json",
+      "sha256": "f88837fa163d4d82ba1fa66e047012aee8090ddefbf48e4f32c3ab2f13905289"
+    },
+    {
+      "bytes": 1951,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/prevalidation_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/prevalidation_report.json",
+      "sha256": "451572bedadc9e37bc6b59de72908d02cf1df2bdc743cb2b02a6a7bb81dacc7a"
+    },
+    {
+      "bytes": 1369,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_api_probe.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_api_probe.command_report.json",
+      "sha256": "7a9fc5145531c4cdb7dbf88357529f4b6328999fc9caac4bde0cee6cd3f84af3"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_api_probe.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_api_probe.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 5828,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_api_probe.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_api_probe.stdout.txt",
+      "sha256": "75af9d553948bc7d33f62245b9b72d52f08cec98d4df1b2ce06781a2c99be589"
+    },
+    {
+      "bytes": 1450,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_gallery_bash_success.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_gallery_bash_success.command_report.json",
+      "sha256": "04c1cd3339cb92a97f0b16ff7db1d2b3989f6ea43ea82315b916e9ae0c19928b"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_gallery_bash_success.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_gallery_bash_success.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2433,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_gallery_bash_success.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_gallery_bash_success.stdout.txt",
+      "sha256": "2a2a6e6326022fb2aec5c0405c0c8a5b2f542b6fe5bb4eddf60f1196e361db0d"
+    },
+    {
+      "bytes": 1409,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_grep_fixture.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_grep_fixture.command_report.json",
+      "sha256": "bfa3087b0164b12a6dc8394552ae47a51db663abc142b31e42339562d5f7b395"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_grep_fixture.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_grep_fixture.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 451,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_grep_fixture.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_grep_fixture.stdout.txt",
+      "sha256": "d55aac545968c8a8a4f77cd792d42534f2a1991e1c32483e72d49e64f4da6c84"
+    },
+    {
+      "bytes": 1364,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_read_fixture.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_read_fixture.command_report.json",
+      "sha256": "df7f2c56a7e3ddb8f60ab3bcec1a789b600da185b34d72f33047f44eab186b50"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_read_fixture.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_read_fixture.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 64,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_read_fixture.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_read_fixture.stdout.txt",
+      "sha256": "2ef9e9d3373dc38d58699c8f8d183ce681407fb34233239165e08f4db22343c6"
+    },
+    {
+      "bytes": 1314,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_version.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_version.command_report.json",
+      "sha256": "96027c9b6035e6a4d4ebec8c1efbca06a3827593a3936d50c38aff0e2a41dd10"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw/omp_version.stdout.txt",
+      "sha256": "76fbc537e289fa5f2befe8a3581a5cae08f76f34100a2da01655cf96a1cb36f7"
+    },
+    {
+      "bytes": 8609,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/raw_capture_manifest.json",
+      "sha256": "541c8fa785cf5d8e48b9619755fd201e95df956c14e91e43479b358309bcbf67"
+    },
+    {
+      "bytes": 3331,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/secret_scan_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/secret_scan_report.json",
+      "sha256": "9b7acf436cff49b94783bb241aa0cdd8a871a779968029b943dcf0c55792d6c6"
+    },
+    {
+      "bytes": 103,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/AGENTS.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/AGENTS.md",
+      "sha256": "86e69364b4b9124fdf99de49eb764d11246847d211ac51e0add52ff44b4242b4"
+    },
+    {
+      "bytes": 55,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/RULES.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/RULES.md",
+      "sha256": "3a7af0b277c5cf3cd9549d3a1a4339893e3bbc090b8377f98cadb00f5d006f9f"
+    },
+    {
+      "bytes": 109,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/SYSTEM.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/SYSTEM.md",
+      "sha256": "b7f5d11a819188386669942dd352ebe0bebea581d85c3b4fed9a907c2b351b5e"
+    },
+    {
+      "bytes": 606,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/commands/p6-l2/index.ts",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/commands/p6-l2/index.ts",
+      "sha256": "7dd9e10e774ae6308a7629dfe71128e6d3dd273420962321e87aee6f1e281a4a"
+    },
+    {
+      "bytes": 1447,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/hooks/pre/p6_l2.ts",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/hooks/pre/p6_l2.ts",
+      "sha256": "9aeb3dd40e1b41daa4457a666fa25f874e4ac27bb6c9f06bc3075da2a8b2f75f"
+    },
+    {
+      "bytes": 1412,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/tools/p6_echo.ts",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/.omp/tools/p6_echo.ts",
+      "sha256": "cac41488ec3eef1fba1d03dd424f0020bb341c045bdc83eb4872ba1a47e1850b"
+    },
+    {
+      "bytes": 70,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/AGENTS.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/AGENTS.md",
+      "sha256": "0eeeae096d81d6507c4ea63c57005afe56b6f76d8d4a5b61565601505fad5813"
+    },
+    {
+      "bytes": 64,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/fixture_data/read_target.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/fixture_data/read_target.txt",
+      "sha256": "2ef9e9d3373dc38d58699c8f8d183ce681407fb34233239165e08f4db22343c6"
+    },
+    {
+      "bytes": 40,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/fixture_data/second.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_fixture_workspace/fixture_data/second.txt",
+      "sha256": "932b5b2794e5f9a568356f48e34a83dc1f0682b4b00c843c6e5e8cd578a6d48a"
+    },
+    {
+      "bytes": 5828,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_probe_output.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_probe_output.json",
+      "sha256": "8ecba00f598a084dc8e4aa729b040659f6182c2dba1e61fdd2c9f669718af31e"
+    },
+    {
+      "bytes": 3631,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_setup_and_capture_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l2_tool_execution/target_setup_and_capture_report.json",
+      "sha256": "41e5c954ff77c7f4eef8fb201c5f8b480eecd44f6ce551cbc9c177ee9115fe70"
+    },
+    {
+      "bytes": 1528,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/bb_replay_result.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/bb_replay_result.json",
+      "sha256": "edb29da6dfc858a72b8acd3faf86ae20366d2c1385db885e3e81899fe5789800"
+    },
+    {
+      "bytes": 5342,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/comparator_report.json",
+      "sha256": "954f4ef6112d537917384c257a6cb146266409f1c285c2606c5ef1698528ca54"
+    },
+    {
+      "bytes": 7950,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/oh_my_pi_p6_0_l3_command_network_hook_probe.mjs",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/oh_my_pi_p6_0_l3_command_network_hook_probe.mjs",
+      "sha256": "452165d28830bfe692cfd9eaaa1395acab469bb24d8fb9d00b7e176cb29e8eea"
+    },
+    {
+      "bytes": 2616,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/parity_results.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/parity_results.json",
+      "sha256": "9cbc75f9be478221d3c9ca8db9d67ab60c95eb47335dd0dee2e038ceb2a63b67"
+    },
+    {
+      "bytes": 2069,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/prevalidation_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/prevalidation_report.json",
+      "sha256": "936143afb98bb1b5a21481d3fa46f4c3393a5b3dfe8106aadf668f4043991559"
+    },
+    {
+      "bytes": 1068,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_l3_hook_network_probe.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_l3_hook_network_probe.command_report.json",
+      "sha256": "c0237aa306616d105e54df27c9866b2d9521bfda6eb1ba9ed657b64ffaa34ad9"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_l3_hook_network_probe.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_l3_hook_network_probe.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 7050,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_l3_hook_network_probe.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_l3_hook_network_probe.stdout.txt",
+      "sha256": "6d5f6d1af047dbea6f53033b7564ba1d8c51c5e4627e36489218b46e7620597a"
+    },
+    {
+      "bytes": 965,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_version.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_version.command_report.json",
+      "sha256": "09d277e1f0d346c767d9b2229d89c7a39a122b6ab2ed2f11e3bfb3c7d73621b9"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw/omp_version.stdout.txt",
+      "sha256": "76fbc537e289fa5f2befe8a3581a5cae08f76f34100a2da01655cf96a1cb36f7"
+    },
+    {
+      "bytes": 9981,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/raw_capture_manifest.json",
+      "sha256": "bddbcf8b317dd599b55c3d84f9c6fea16c1443c366fa74e3ce26e150122f22a5"
+    },
+    {
+      "bytes": 1973,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/secret_scan_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/secret_scan_report.json",
+      "sha256": "77db9c0c1d61b7837f9b188b25114fd2cb17ffae317aadd57097d7de9a2f1e15"
+    },
+    {
+      "bytes": 83,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/.omp/AGENTS.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/.omp/AGENTS.md",
+      "sha256": "cb0abf31fdfbfff4dd36f18763746c2c658885ae5662755e16d4127d19d7e269"
+    },
+    {
+      "bytes": 128,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/.omp/SYSTEM.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/.omp/SYSTEM.md",
+      "sha256": "f19762ccef2fc28e906ef4f1c90dfd99ed2070ff3c205e073a7189c04cac9e12"
+    },
+    {
+      "bytes": 748,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/.omp/commands/p6-l3-network/index.ts",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/.omp/commands/p6-l3-network/index.ts",
+      "sha256": "7a30259a65b17bde01daea9a8f305b309d5549823bea9433f2869455674b97a6"
+    },
+    {
+      "bytes": 2988,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/.omp/hooks/pre/p6_l3.ts",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/.omp/hooks/pre/p6_l3.ts",
+      "sha256": "9b4b676e6426be3cf380ef7a640a9114cb8dad6330853f3fa7d27bf3e3bf1baf"
+    },
+    {
+      "bytes": 33,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/fixture.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_fixture_workspace/fixture.txt",
+      "sha256": "e4d3bf1e6eb0dfc2009cbdf929b2273537da689a4b0782736c03f7ca3ca25002"
+    },
+    {
+      "bytes": 7050,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_probe_output.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_probe_output.json",
+      "sha256": "26cc6aee9c8cd992d4520e5ca09e94b60b6eba9e52ad7777f4b690d1190b6598"
+    },
+    {
+      "bytes": 2667,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_setup_and_capture_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/target_setup_and_capture_report.json",
+      "sha256": "7bf0f1a32197de85ba7f4c7ea49ef143ae3b16a194489fa7384c352e50a1b23e"
+    },
+    {
+      "bytes": 1982,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/bb_replay_result.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/bb_replay_result.json",
+      "sha256": "7821101f52dece47e28cae604cc9a3c20c824bf18e8c415e9ff0f23cc5ada8ec"
+    },
+    {
+      "bytes": 5649,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/comparator_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/comparator_report.json",
+      "sha256": "8a3020309dbe445f96a5409ea10c97395f7bf8948180d21be92699429acbb491"
+    },
+    {
+      "bytes": 4665,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/oh_my_pi_p6_0_l4_mcp_browser_resource_probe.mjs",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/oh_my_pi_p6_0_l4_mcp_browser_resource_probe.mjs",
+      "sha256": "e5ff6fad8277691a752a2020bd807f606dc138314407878794c01329d8f15976"
+    },
+    {
+      "bytes": 695,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/parity_results.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/parity_results.json",
+      "sha256": "4a6fce33c13e929c4dfe314a0d808382d688562e884fa9e87e6e7a91e007ed3e"
+    },
+    {
+      "bytes": 2100,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/prevalidation_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/prevalidation_report.json",
+      "sha256": "a48462e6b6e97379e95fa53fd37c9afda7c3b31aa2bcdda302480c4cf6a8511d"
+    },
+    {
+      "bytes": 1092,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_l4_mcp_browser_resource_probe.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_l4_mcp_browser_resource_probe.command_report.json",
+      "sha256": "a4eb1debfbe91d8541a18d40d951ac9738340f0d18e4eb8216f659d24f03a162"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_l4_mcp_browser_resource_probe.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_l4_mcp_browser_resource_probe.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 3528,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_l4_mcp_browser_resource_probe.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_l4_mcp_browser_resource_probe.stdout.txt",
+      "sha256": "9158548168dfde9574781209c9a8af2145ebb77e8267dc6f93c706b6ffc8665b"
+    },
+    {
+      "bytes": 952,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_version.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_version.command_report.json",
+      "sha256": "d0bf1ff5a9907d115d4197c073c0ac05dccdbd137003deba58f9be1d66327697"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw/omp_version.stdout.txt",
+      "sha256": "76fbc537e289fa5f2befe8a3581a5cae08f76f34100a2da01655cf96a1cb36f7"
+    },
+    {
+      "bytes": 10934,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw_capture_manifest.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/raw_capture_manifest.json",
+      "sha256": "6a1b4bd8293aeaa910dc010dec6d9f5e91cf55456ca2f17b2f05714f878eca87"
+    },
+    {
+      "bytes": 2456,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/secret_scan_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/secret_scan_report.json",
+      "sha256": "816a7fd42eb826ce0f15224e8ec3334b38a44b272a9f67d141aa11c10f5913e5"
+    },
+    {
+      "bytes": 638,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.mcp.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.mcp.json",
+      "sha256": "862f1c62583d4d10929f93fb178aa49bd01e89ec8488f20f6fe199c4195bb682"
+    },
+    {
+      "bytes": 71,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.omp/SYSTEM.md",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/.omp/SYSTEM.md",
+      "sha256": "df7a07ce57cc9db1db0a922b1e0f35b253f0f7c55bdf3390f8641cc8b0d11528"
+    },
+    {
+      "bytes": 2019,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/p6_l4_fixture_mcp_server.mjs",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_fixture_workspace/p6_l4_fixture_mcp_server.mjs",
+      "sha256": "47776d41f1f3c36539e64f28cf95593b8bf6e7c5f43809ec4db251452afe0d42"
+    },
+    {
+      "bytes": 3528,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_probe_output.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_probe_output.json",
+      "sha256": "76a341b6ea3c7542f183507891ea94936ef87157d3d614a626449432f9f893bd"
+    },
+    {
+      "bytes": 2712,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_setup_and_capture_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l4_mcp_browser_resource/target_setup_and_capture_report.json",
+      "sha256": "def5638179ec7f4752e0cb825c9ee19c597bf32d407211658a14e728e139600d"
+    },
+    {
+      "bytes": 10948,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/oh_my_pi_p6_0_l5_memory_compaction_probe.mjs",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/oh_my_pi_p6_0_l5_memory_compaction_probe.mjs",
+      "sha256": "da99424eedc16a2204e43ce9b32b508443b701fc7dd4c45d618554ff57dbaaa8"
+    },
+    {
+      "bytes": 2337,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_l5_memory_compaction_probe.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_l5_memory_compaction_probe.command_report.json",
+      "sha256": "0de82ea2a9185539bfdb1748663c78427b707f13589b417c98a493713f5e6806"
+    },
+    {
+      "bytes": 0,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_l5_memory_compaction_probe.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_l5_memory_compaction_probe.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 11107,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_l5_memory_compaction_probe.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_l5_memory_compaction_probe.stdout.txt",
+      "sha256": "5ed631fda0f3c58f9b40ff33adb3f18c4f2f7292bc0d9a98ee336032f2cc1f92"
+    },
+    {
+      "bytes": 2018,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_version.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_version.command_report.json",
+      "sha256": "6b3fa537345c2ee560024f5f87c038259e4775663387660676e7d1a87b1ccda4"
+    },
+    {
+      "bytes": 0,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/raw/omp_version.stdout.txt",
+      "sha256": "76fbc537e289fa5f2befe8a3581a5cae08f76f34100a2da01655cf96a1cb36f7"
+    },
+    {
+      "bytes": 11107,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_probe_output.json",
+      "sha256": "6e3ae730f649651e3b51233fe15f030fc7a3ac2d83bc40c6aa7b5acefe51e1a3"
+    },
+    {
+      "bytes": 2426,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_setup_and_capture_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_setup_and_capture_report.json",
+      "sha256": "2a2f503ea21fae75739aae7a5fae53317380360a9e9dcf3e1f57c61e9b36a15d"
+    },
+    {
+      "bytes": 2688,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l5_memory_compaction/target_transcript_fixture.json",
+      "sha256": "9b2d514a27ca3d1fdf2e559385301de173c2dda14b6ca2211ceda26c017f6164"
+    },
+    {
+      "bytes": 3375,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/oh_my_pi_p6_0_l6_tui_projection_probe.mjs",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/oh_my_pi_p6_0_l6_tui_projection_probe.mjs",
+      "sha256": "14e913899d907eaafd0e4b2b2c86e326a0f72c93f15b048394665e7419f3009a"
+    },
+    {
+      "bytes": 2203,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.command_report.json",
+      "sha256": "b579359e26210d95ae212a99b5ea96b2ada0f1fb395bd8cea87f6a9e019dee6f"
+    },
+    {
+      "bytes": 0,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2225,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_bash_error_plain.stdout.txt",
+      "sha256": "5af016202aef3842885dde19901ed3ee37f997d8e74e256cafdafc574cccc804"
+    },
+    {
+      "bytes": 2215,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.command_report.json",
+      "sha256": "f12a94616a1c7314d735cf23b263127ffd85a7ddb5ff9e726c31063c7e182bcb"
+    },
+    {
+      "bytes": 0,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2848,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_read_success_plain.stdout.txt",
+      "sha256": "e0c68231942e6ab95b01059aa935b92bd07c2107810d2875d7c29df4eead3ea3"
+    },
+    {
+      "bytes": 2302,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.command_report.json",
+      "sha256": "ee18a334a598655347850fb91c8592e76f79e3254b7eb62d5118dcdc14e8cdcb"
+    },
+    {
+      "bytes": 0,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 854,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_gallery_report_tool_issue_success_plain.stdout.txt",
+      "sha256": "f4ced853152d2a8ebe36a95be1490e5747542a1c583b795c4cdd56507fc87acd"
+    },
+    {
+      "bytes": 2274,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_l6_tui_projection_probe.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_l6_tui_projection_probe.command_report.json",
+      "sha256": "925a8cc2975facdd12d28e260518d6b996074eb0975b06a16e8961adb7c60c0d"
+    },
+    {
+      "bytes": 0,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_l6_tui_projection_probe.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_l6_tui_projection_probe.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 2646,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_l6_tui_projection_probe.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_l6_tui_projection_probe.stdout.txt",
+      "sha256": "8c04a5e4b0d6af1d6b3303ca089f533db9e46d03aa1c03867ab5876143ac0972"
+    },
+    {
+      "bytes": 2003,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_version.command_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_version.command_report.json",
+      "sha256": "ae632ff16f1cdfd3b17654200026c99006e79e51590803192530ad668427b8e0"
+    },
+    {
+      "bytes": 0,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 12,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/raw/omp_version.stdout.txt",
+      "sha256": "76fbc537e289fa5f2befe8a3581a5cae08f76f34100a2da01655cf96a1cb36f7"
+    },
+    {
+      "bytes": 2646,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_probe_output.json",
+      "sha256": "9b8da9aa7be53a52f049968340a7f25d84b146af2d581c494c25babbcbdd39a4"
+    },
+    {
+      "bytes": 3936,
+      "classification": "raw_target_input",
+      "destination": "docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/oh_my_pi_p6_0_l6_tui_projection/target_setup_and_capture_report.json",
+      "sha256": "9353515d79728afa3abe319b5ca2c9f7fb19ac85bbea63fc4b813fdb19d12f87"
+    },
+    {
+      "bytes": 5159,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/pi_p5_target_probe.mjs",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/pi_p5_target_probe.mjs",
+      "sha256": "2acf19b24e3b87c70919f5cc40bdb4ced1e4a32636bf6895abf83a17c455fe10"
+    },
+    {
+      "bytes": 339,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/module_probe.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/module_probe.command.json",
+      "sha256": "08904d949186adddfe69f8e32ff69af1a303e328c798a93a5e1848964acbf7a6"
+    },
+    {
+      "bytes": 191,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/module_probe.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/module_probe.stderr.txt",
+      "sha256": "9952400b5b2eade13256ecdf4c6084ae30c2e3bbdfa9b121eeb37478d9aedb0b"
+    },
+    {
+      "bytes": 3030,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/module_probe.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/module_probe.stdout.txt",
+      "sha256": "76f6a26d35e8159c79313ca144f1a1208096585b41ba317f064257c5afeb0a97"
+    },
+    {
+      "bytes": 158,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/node_version.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/node_version.command.json",
+      "sha256": "35894a5dabb74997acbb4a334ef3a6bf6a34ef0c4a93c4ebabd7a560c1d0f64d"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/node_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/node_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 8,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/node_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/node_version.stdout.txt",
+      "sha256": "08f6347c6bc47b1f68fb3e5b85f789b6baabb1c94d2006983a485d4501048459"
+    },
+    {
+      "bytes": 209,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_ci.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_ci.command.json",
+      "sha256": "c841898ba6f9b884ddc14191298d6ab3fe8a9fffdc25fac379337e05bdf8103b"
+    },
+    {
+      "bytes": 243,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_ci.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_ci.stderr.txt",
+      "sha256": "1bbfb7f1efe3c9f7addc97e9941ebc552392e7776485cd56ec61f12d8b56dbea"
+    },
+    {
+      "bytes": 26,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_ci.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_ci.stdout.txt",
+      "sha256": "42f4b03f4ce6d16740e5ac650f3392373a35faa50a40d63b4ee06fbd469f9b48"
+    },
+    {
+      "bytes": 157,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_version.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_version.command.json",
+      "sha256": "f85584a53fd0981f9820ff901cec545e8cd34a8ac168b83ceea45896c2c13a18"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 8,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/npm_version.stdout.txt",
+      "sha256": "041fb0a6f23ccf0102a18d4591e1bfa36eebc17d27d348727a5eee18806d1c3c"
+    },
+    {
+      "bytes": 191,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_help.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_help.command.json",
+      "sha256": "73f000a3d7e4ac9ee87f8c4c3512cb068b2f83d78114e661362df20f2e43b7d8"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_help.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_help.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 7024,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_help.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_help.stdout.txt",
+      "sha256": "1caa2a14d06a534fdc54c123244d6d147c33b80f84f088d6056668f5ebd6b88a"
+    },
+    {
+      "bytes": 194,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_version.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_version.command.json",
+      "sha256": "0917123fb9a1fe784eb8e98124664bca0f2c0342390581bae0727699af851253"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 35,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/raw/pi_version.stdout.txt",
+      "sha256": "8f7e7b388a9a1e8882c034bae25995b84022e146142ce0b693025892683dff7d"
+    },
+    {
+      "bytes": 4078,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_probe_output.json",
+      "sha256": "f7eb1c6a7a409bc724a1a34d6adfd69157e1c827095f8ffbb4f935c49a8ad261"
+    },
+    {
+      "bytes": 5621,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_setup_and_capture_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l1_cli_config_context_tool_surface/target_setup_and_capture_report.json",
+      "sha256": "158fc96b623da590f0c0a57220808d360b82d18540978decc2b6bce78cf5982f"
+    },
+    {
+      "bytes": 14355,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/pi_p5_residual_target_probe.mjs",
+      "sha256": "d84700ffe82039146008260f2cf43b5e8b8488571e99543d251a2fe9694bae47"
+    },
+    {
+      "bytes": 352,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.command.json",
+      "sha256": "36c1f7e975aa0299fac55b1226acce64ae901e640303e79e161b8535c4cbfd59"
+    },
+    {
+      "bytes": 191,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.stderr.txt",
+      "sha256": "1eccbf75a6ed019df08db35cee4f9f1cd9e571228be9d84255b7d9e578a1dfe1"
+    },
+    {
+      "bytes": 7911,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/module_probe.stdout.txt",
+      "sha256": "8c3a988e88b1566502749ac66584de65d01bd1776e6f929f3c73e540c413ee30"
+    },
+    {
+      "bytes": 167,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/node_version.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/node_version.command.json",
+      "sha256": "e335dc797f5104031bb7efc284b2e6ac411958e3f55622ffc5832cd864f0be17"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/node_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/node_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 8,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/node_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/node_version.stdout.txt",
+      "sha256": "08f6347c6bc47b1f68fb3e5b85f789b6baabb1c94d2006983a485d4501048459"
+    },
+    {
+      "bytes": 218,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_ci.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_ci.command.json",
+      "sha256": "08bc97db4d19672f4792cbe4d1e2e73c8b61bc5e40d843a9ed7f5a216e9981ab"
+    },
+    {
+      "bytes": 243,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_ci.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_ci.stderr.txt",
+      "sha256": "1bbfb7f1efe3c9f7addc97e9941ebc552392e7776485cd56ec61f12d8b56dbea"
+    },
+    {
+      "bytes": 26,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_ci.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_ci.stdout.txt",
+      "sha256": "7ee42ae51e06b953ec9589e5b204f80ae009545f513dd88d1604f89280164f99"
+    },
+    {
+      "bytes": 166,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_version.command.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_version.command.json",
+      "sha256": "b4e9874931c83e442018b782113d10189474dc68f6f8a47b059d6183a887c6d8"
+    },
+    {
+      "bytes": 0,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_version.stderr.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_version.stderr.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 8,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_version.stdout.txt",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw/npm_version.stdout.txt",
+      "sha256": "041fb0a6f23ccf0102a18d4591e1bfa36eebc17d27d348727a5eee18806d1c3c"
+    },
+    {
+      "bytes": 10838,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_probe_output.json",
+      "sha256": "96f3fa209d0adf13d1a49590534b1946575d531cc8b046227d1c091c431a2fde"
+    },
+    {
+      "bytes": 4099,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json",
+      "namespace": "repo",
+      "path": "repo/docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/target_setup_and_capture_report.json",
+      "sha256": "185b925ae0bbfa60e43eb3394b11c58e063541b8591f8b475f94ab10896646a0"
+    },
+    {
+      "bytes": 13633,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/runtime_emission.py",
+      "sha256": "202b2086ab449c58b49b4288029f0d9092b14f8764f7db99ea474cbe37b98401"
+    },
+    {
+      "bytes": 45389,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/cli_bridge/service.py",
+      "sha256": "aff3c4ed9cd1fe08846b4467c833e5f029a1c1fbaae151dfe81bc514bb67ebaf"
+    },
+    {
+      "bytes": 26559,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/agentic_coder_prototype/api/e4/router.py",
+      "sha256": "4342d2f4df75c3d462dadd222f5bc38bc51ee005c80e25093dce3323d505c6ec"
+    },
+    {
+      "bytes": 231320,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/config/e4_lanes/evidence_inputs/oh_my_pi_p6_6_atomic_feature_ledger.v1.json",
+      "sha256": "908cd3764b8cb14b4c3de8e7e4df46a05303ead47165960119e54ad64e33663e"
+    },
+    {
+      "bytes": 3475,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/capability_registry.json",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/capability_registry.json",
+      "sha256": "5f75adf39a7e9d3c2a684b3f3a1b3d4dc33ea2e42c752d4bf120980f08c0d4ea"
+    },
+    {
+      "bytes": 12824,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_config_graph.json",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_config_graph.json",
+      "sha256": "2e868bc4831faf63c9cbc8b8d3d53c50907121b8873fffedb1e8b26ead684c85"
+    },
+    {
+      "bytes": 448,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_tool_surface.json",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/effective_tool_surface.json",
+      "sha256": "c7b6714c0aa4ff2839d5b7bc7ac7adabc901186f1df3f28f4065d544644f5981"
+    },
+    {
+      "bytes": 1600,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_queued.json",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_queued.json",
+      "sha256": "9722e1dc8db8e7073187e129a22db883311c4110c29b681cf10975812bbbe588"
+    },
+    {
+      "bytes": 1608,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_running.json",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/conformance/engine_fixtures/runtime_emission/runtime_emission_c3_session/work_item_running.json",
+      "sha256": "e8afc95107b7a56b3a5ae48780e28411018c08ae01a48d45044025f6e31ae647"
+    },
+    {
+      "bytes": 4475,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/docs/contracts/RFC_RUNTIME_CAPTURE_REPLAY.md",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/docs/contracts/RFC_RUNTIME_CAPTURE_REPLAY.md",
+      "sha256": "3a0d7084595421e2dfabce83e255ee2b4c072dd4fb39580aa37e89661929ea30"
+    },
+    {
+      "bytes": 42863,
+      "classification": "phase16_score_evidence",
+      "destination": "breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
+      "namespace": "workspace",
+      "path": "workspace/breadboard_repo_integration_main_20260326/tests/test_e4_api_surface.py",
+      "sha256": "218f225eba10c08faa18d31a07e984e12b057cae233e3894a56a1de69ee9f87f"
+    },
+    {
+      "bytes": 48027,
+      "classification": "phase15_static_validator_input",
+      "destination": "docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json",
+      "sha256": "936c6d5904f8043d913f6c12b140cfece43a27ee0758db3ebe06bab57fa2c778"
+    },
+    {
+      "bytes": 4713,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/BB_E4_EVIDENCE_GOVERNANCE.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/BB_E4_EVIDENCE_GOVERNANCE.json",
+      "sha256": "3713481a86742bbf9d7097bac4536e3a1f655d57ff503f69117d3ac21706945c"
+    },
+    {
+      "bytes": 5140,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/BB_E4_NEGATIVE_PRIMITIVE_LEDGER.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/BB_E4_NEGATIVE_PRIMITIVE_LEDGER.json",
+      "sha256": "2d2fb1f06b74e6f48862553cb4638d6f6c0251843276668b1af9395c3f065b75"
+    },
+    {
+      "bytes": 28997,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/BB_E4_OH_MY_PI_P6_COMPLETION_PLAYBOOK.md",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/BB_E4_OH_MY_PI_P6_COMPLETION_PLAYBOOK.md",
+      "sha256": "25cdd87dad70078b4aaf34df9100b5a4a82596a9188a459ca1a9eba78623f54a"
+    },
+    {
+      "bytes": 12473,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/BB_E4_PRIMITIVE_DECISION_LEDGER.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/BB_E4_PRIMITIVE_DECISION_LEDGER.json",
+      "sha256": "4b3671aff7f5d023ceb7e0195af8dfbfa13871195d5d59f22cd4bff527fcf330"
+    },
+    {
+      "bytes": 54914,
+      "classification": "phase15_static_validator_input",
+      "destination": "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_MASTER_PLAN.md",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_MASTER_PLAN.md",
+      "sha256": "2d183f2f250daaf10b3cf5bb988718e04fe3054e74a0aaccba5da7cec2d8a877"
+    },
+    {
+      "bytes": 78695,
+      "classification": "phase15_static_validator_input",
+      "destination": "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_SCORECARD.json",
+      "sha256": "fb9f9190664e019f75a38a6179f43f6ec92bc3985d2d650c3e920f571bed3f9d"
+    },
+    {
+      "bytes": 3517,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/BB_E4_REMAINING_PREREQUISITES_AFTER_L6.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/BB_E4_REMAINING_PREREQUISITES_AFTER_L6.json",
+      "sha256": "3243854d7a4d6395065f6d5ef121001dd6d8ddca5dfd6b6e9c2374841655eff1"
+    },
+    {
+      "bytes": 37942,
+      "classification": "phase15_static_validator_input",
+      "destination": "docs_tmp/phase_15/BB_E4_SCORE_SUBLEDGER.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/BB_E4_SCORE_SUBLEDGER.json",
+      "sha256": "a4cbdf6d6c350efee34c48d7a4b16c30f8bdbccd57b5a49222a9fd67aa6bbf13"
+    },
+    {
+      "bytes": 4755355,
+      "classification": "phase15_pi_source_archive",
+      "destination": "docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
+      "sha256": "bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b"
+    },
+    {
+      "bytes": 87765,
+      "classification": "phase15_static_validator_input",
+      "destination": "docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/oh_my_pi_p6/BB_E4_OH_MY_PI_P6_TERMINAL_HASH_MANIFEST.json",
+      "sha256": "4ba6cdbb5ad6f06e0c710d6fc089f611a5a920492e05ec41833097ee21d20ef6"
+    },
+    {
+      "bytes": 41448,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_HASH_MANIFEST.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_HASH_MANIFEST.json",
+      "sha256": "6c298f4a830183551e5d03177dd2a8440da657ec1e4d282678478034912e4da8"
+    },
+    {
+      "bytes": 106696,
+      "classification": "phase15_static_validator_input",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_REPORT.json",
+      "sha256": "0db5a32437e468c965fd3c263531e94371c5a93578ab380559dfb507c27408ec"
+    },
+    {
+      "bytes": 32899,
+      "classification": "phase15_static_validator_input",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_ACCEPTED_CLAIM_VALIDATION_REPORT.json",
+      "sha256": "baa98019c356ad3af35f1c5b44be7c98566b56889906df6ba4bab67b1e6029d5"
+    },
+    {
+      "bytes": 24056,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_BLOCKED_READY_REPORT.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_BLOCKED_READY_REPORT.json",
+      "sha256": "a19676297909e84c6a9bd576cde930dc0e325af9b1768c957f4ed1592acee903"
+    },
+    {
+      "bytes": 2253,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_BLOCKED_READY_REPORT.md",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_BLOCKED_READY_REPORT.md",
+      "sha256": "79257be33d59a354349035d3e79476dd219941c790c4f9c586fb75e5d830d60b"
+    },
+    {
+      "bytes": 4294,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_FINAL_HANDOFF.md",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_FINAL_HANDOFF.md",
+      "sha256": "bf61585c3281a3f7301415f3f74f5edc44b390f2b2027abda2e15e69006646fd"
+    },
+    {
+      "bytes": 6253,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_FINAL_HASH_MANIFEST.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_FINAL_HASH_MANIFEST.json",
+      "sha256": "02354a1e18726c713fa4bc5f6cb261fa4fc62d03afb6c54244618a4339f610b4"
+    },
+    {
+      "bytes": 4069,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_FINAL_VALIDATION_REPORT.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_FINAL_VALIDATION_REPORT.json",
+      "sha256": "ca56d769a337c2d5b81a9cc950c07a3f874a8c60d724d923fc9fc397e1489abb"
+    },
+    {
+      "bytes": 2180,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_HASH_REPORT.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_HASH_REPORT.json",
+      "sha256": "76d164ef59eb2adefd2bf3d4e75fe990b1cb7fbae12c6994a1ded9dc7a5606de"
+    },
+    {
+      "bytes": 1802,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_POST_HASH_VALIDATION.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_POST_HASH_VALIDATION.json",
+      "sha256": "7b25c443d2c481654f80fcaf9821bd8c4f79e284faf0e0a27b636ece328ff622"
+    },
+    {
+      "bytes": 48566,
+      "classification": "phase15_static_validator_input",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_PROGRESS.json",
+      "sha256": "1c2fa06f7991e02f21cda69439cbbd7f73ee2965855dc7301e7d64908f7e9dbf"
+    },
+    {
+      "bytes": 6189,
+      "classification": "phase15_static_report_authority",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_VALIDATION_REPORT.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/BB_E4_TARGET_SUPPORT_VALIDATION_REPORT.json",
+      "sha256": "3ba85544bf27a0b5973f63134268abcb959c54cd7a59ddc1fc03d24a85d0bf72"
+    },
+    {
+      "bytes": 1805,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/bb_replay_result.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/bb_replay_result.json",
+      "sha256": "fde6ac26911712730596451b8fbe3a36ed38239d5bae545c1cda0388bb53d7bd"
+    },
+    {
+      "bytes": 2,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/exit_code.txt",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/exit_code.txt",
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "bytes": 1418,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/exports/replay_session.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/exports/replay_session.json",
+      "sha256": "87b541250e075323afe362685221532c5806c8e95751dd13ec27eb4e5c7e1e78"
+    },
+    {
+      "bytes": 886,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/rollout.jsonl",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/rollout.jsonl",
+      "sha256": "dc0ec56754df8e0d7f9cd677f924c32a271a1eb044fa482a0b61d6a8f86a0efe"
+    },
+    {
+      "bytes": 348,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/scenario.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/scenario.json",
+      "sha256": "9886abe40a8621a6c5bd34f9501772ca6a7b9566a3468b2a72d1d964d689395a"
+    },
+    {
+      "bytes": 39,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/stderr.txt",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/canonical_capture/stderr.txt",
+      "sha256": "1aa26269eb1cc57f86b235a03cda53c004edb5b1e9fc99d4da4f00843293d721"
+    },
+    {
+      "bytes": 3859,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/comparator_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/comparator_report.json",
+      "sha256": "9ccc8578ae4b97e814ba9ef682dea185eeb376f55ee3316ed8bd56d1cb0fdcd8"
+    },
+    {
+      "bytes": 3654,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/lineage_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/lineage_report.json",
+      "sha256": "c195146f2ffa9f0c1ff0b617008805fc55155c801c0ac0aaae96d1ea2a789822"
+    },
+    {
+      "bytes": 632,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/parity_results.jsonl",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/parity_results.jsonl",
+      "sha256": "a87a2ed2f94233db521b2b198cfd7fef6056161622d19750e643bf17ede8a6d1"
+    },
+    {
+      "bytes": 2685,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/raw_capture_manifest.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/raw_capture_manifest.json",
+      "sha256": "63e4b572935bbbae03851b5471f283511aab216d21f778785e77edc26959a290"
+    },
+    {
+      "bytes": 2445,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/pro_requests/e4_breakthrough_20260629/execution/codex_gpt55_capture_probe/secret_scan_report.json",
+      "sha256": "02ce7bff97694bd2571c2b3161ae049742e9be8290463f26891c3685a4c61ebf"
+    },
+    {
+      "bytes": 1601,
+      "classification": "source_freeze_provenance",
+      "destination": "docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/source_freezes/oh_my_pi_main_5356713e_freeze_provenance.json",
+      "sha256": "4da3ae4a1c3bd4b9f305e4abad7af81bf5efb6a4681480243e4b74b4f1dbe36a"
+    },
+    {
+      "bytes": 1746,
+      "classification": "source_freeze_provenance",
+      "destination": "docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
+      "sha256": "273af1489b94b4cf5c30574999af9875b10a43fe36193aa2157f4ff558fe8602"
+    },
+    {
+      "bytes": 96299,
+      "classification": "phase16_score_authority",
+      "destination": "docs_tmp/phase_16/BB_ER_PROGRESS.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/BB_ER_PROGRESS.json",
+      "sha256": "af9bf10d416ca3fc2cd291025e5475137303f02c37a7b358f976239635535a20"
+    },
+    {
+      "bytes": 6917,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave0_validation_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave0_validation_report.json",
+      "sha256": "4415c7ba3fe97ee36beb2369e54d320d7fc54be35f90affd792f56b390f7232c"
+    },
+    {
+      "bytes": 1990,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1_a3_contract_conventions_lint_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1_a3_contract_conventions_lint_report.json",
+      "sha256": "d4358a9c3006e3e3608a9f3af9d2600228491cdeb113680acd79e665146b4b50"
+    },
+    {
+      "bytes": 3118,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1_a6_examples_manifest_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1_a6_examples_manifest_report.json",
+      "sha256": "9d8e89258cbe800f60a442e8b4b409710823d7590e85199ef3e4b1a9642a0f16"
+    },
+    {
+      "bytes": 1980,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1_b6_validator_removal_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1_b6_validator_removal_report.json",
+      "sha256": "92ead16b51f145b0fde182d2b1b9840087e3324a8bf5230389f800cd65e4c2f3"
+    },
+    {
+      "bytes": 7973,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1a_b1_b2_d2_validation_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1a_b1_b2_d2_validation_report.json",
+      "sha256": "3d3fa8a13fb03cf1b6d16e0c2f8aec07bebdc74fd10650fb1d683d7733177355"
+    },
+    {
+      "bytes": 4204,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1a_g1_g4_ct_honesty_validation_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1a_g1_g4_ct_honesty_validation_report.json",
+      "sha256": "f38593c819cf611f397e4e8350bcdccd75b06e79e2d9f45f662efdb17df3a63e"
+    },
+    {
+      "bytes": 2503,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1a_g5_ct_generator_validation_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1a_g5_ct_generator_validation_report.json",
+      "sha256": "8bb061e6daf7cb20a17d46f97f99a6ea160df3cda30a3bcf300da259e6f81b5e"
+    },
+    {
+      "bytes": 2781,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1b_c2_artifact_catalog_validation_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1b_c2_artifact_catalog_validation_report.json",
+      "sha256": "b98c5d1793e6566d9ed02d7d6e486cc67551fab2f11fe4eaad0e176515fa3cd7"
+    },
+    {
+      "bytes": 3006,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1b_c3_catalog_refs_validation_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1b_c3_catalog_refs_validation_report.json",
+      "sha256": "54b271cc5d4e626c33d05d06f89df61ab9c1bc0b211c049cfc8906a0e21db559"
+    },
+    {
+      "bytes": 3587,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1b_c4_regenerate_evidence_validation_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1b_c4_regenerate_evidence_validation_report.json",
+      "sha256": "ef80edb199cdbb50416a6e580831480e8ea3fe95a12296452e4e00f719481d4e"
+    },
+    {
+      "bytes": 3422,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1b_c5_legacy_refresh_removal_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1b_c5_legacy_refresh_removal_report.json",
+      "sha256": "07706dd803c21f46291084557c2fcf8bd09e25c4e53acff091873c8f2ce1202b"
+    },
+    {
+      "bytes": 1593,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1b_c6_duplication_gate_validation_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1b_c6_duplication_gate_validation_report.json",
+      "sha256": "92dc5c0e9c29adaf80e30377947e16f2e3e9b4e848f891e11ee33b39a0997419"
+    },
+    {
+      "bytes": 2034,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1b_d3_p3_inventory_derivation_partial_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1b_d3_p3_inventory_derivation_partial_report.json",
+      "sha256": "3cc89d089199afbd42dbbda7c6a31e7fc16b0f32b73cd040e31ab1857295939d"
+    },
+    {
+      "bytes": 6567,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1c_d3_builder_inventory_completion_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1c_d3_builder_inventory_completion_report.json",
+      "sha256": "761704f6808d8e386660a52bea146d212bc4a72ff5baf05a36da4d7e81389cd0"
+    },
+    {
+      "bytes": 3955,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1c_d4_final_renderer_derivation_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1c_d4_final_renderer_derivation_report.json",
+      "sha256": "ee44af0493e2e96f651c95211833fd25129ea07bfbf5abed87dd5852023f4fe0"
+    },
+    {
+      "bytes": 2971,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1c_d6_inventory_tests_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1c_d6_inventory_tests_report.json",
+      "sha256": "5a07d119dc73a144cb0b469a1bb1768a74e8b7cd8492361aa1aafb44a4b21e6f"
+    },
+    {
+      "bytes": 2701,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1c_d7_ct_inventory_generator_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1c_d7_ct_inventory_generator_report.json",
+      "sha256": "9281b3859f75629aa05beee5a1171b83f7cda773afc25d23180610fc7787445d"
+    },
+    {
+      "bytes": 2349,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave1c_d8_scaffold_upgrade_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave1c_d8_scaffold_upgrade_report.json",
+      "sha256": "684d216833cd3b8bf3b3ecc30d270e0c2e119c13ef33e0e8b7f5a1f1127da6b7"
+    },
+    {
+      "bytes": 5355,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave2_a4_metadata_partial_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave2_a4_metadata_partial_report.json",
+      "sha256": "acb80f0081e6a9bfc2828d0cccdd9087f93927ed9212065dfd910b158f4c28d4"
+    },
+    {
+      "bytes": 277737,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave2_c7_d5_freshness_catalog_inventory_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave2_c7_d5_freshness_catalog_inventory_report.json",
+      "sha256": "3fe8b7224a369bfe267586bf0cd65b505928f45095299cc64c8a959c6278ed7a"
+    },
+    {
+      "bytes": 4127,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave2_wse_comparator_reexecution_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave2_wse_comparator_reexecution_report.json",
+      "sha256": "c7e8750429601d16cc2ba0d9b1dfb636b4d4f0a5b0941f9ec5bdd7d4bb95f72c"
+    },
+    {
+      "bytes": 1241,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave3_e6_comparator_rerun_tests_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave3_e6_comparator_rerun_tests_report.json",
+      "sha256": "97de40a71465cbae08f3c9f209b7a39e94edd429a560a35644cefa5133a79e50"
+    },
+    {
+      "bytes": 2217,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_a8_work_item_extension_partial_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_a8_work_item_extension_partial_report.json",
+      "sha256": "1be51368b97c7010c841818a59b186194fd4788edecc137a6ffabfde1713e472"
+    },
+    {
+      "bytes": 1517,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_b9_regeneration_partial_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_b9_regeneration_partial_report.json",
+      "sha256": "209d487f2910564c276d8c09544e01b9c19392dd1f1c7d1767ee798fc97e3c30"
+    },
+    {
+      "bytes": 1444,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_ct_checker_unblock_progress_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_ct_checker_unblock_progress_report.json",
+      "sha256": "c8e63220c7e8f65b8e6b6d5ca2380d680c90dc9c4ee195cb1f8f69ffe6a04cc9"
+    },
+    {
+      "bytes": 2471,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_ct_terminal_regeneration_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_ct_terminal_regeneration_report.json",
+      "sha256": "4d7ff5caab876267fcf0be19c275e2c5ced4b8381644a8f112867e81b7b3321f"
+    },
+    {
+      "bytes": 1277,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_i1_ordering_regression_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_i1_ordering_regression_report.json",
+      "sha256": "896b506d609c1605f5d46def344a687d24da48c34c77b0240b7f1978cf838721"
+    },
+    {
+      "bytes": 1508,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_i2_ct_malformed_input_tests_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_i2_ct_malformed_input_tests_report.json",
+      "sha256": "642a883804a778c6237ba20afd7bd8a7d69bb7968817042a939d0b5518d11b3f"
+    },
+    {
+      "bytes": 1202,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_i3_scaffold_write_mode_tests_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_i3_scaffold_write_mode_tests_report.json",
+      "sha256": "671e61f6821016902d1847558d8de3c1eb24a31e5486107d2fda69ba9849221d"
+    },
+    {
+      "bytes": 1144,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_i4_freshness_semantics_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_i4_freshness_semantics_report.json",
+      "sha256": "8855d9e6eb2fadba221cdd44dd41024a7165c7934936aabc79a987ac5bcf1ee1"
+    },
+    {
+      "bytes": 1947,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_i5_progress_checker_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_i5_progress_checker_report.json",
+      "sha256": "64fa209cdafac6365638bfe1bb509c61d8fd5f1fab47dd260e044a92f12cf1f7"
+    },
+    {
+      "bytes": 2961,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_ws_b_helper_runtime_boundary_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_ws_b_helper_runtime_boundary_report.json",
+      "sha256": "49d5de22c8182b5b4450b513dee05abad6f428d78b1093c9675afe96a22f6780"
+    },
+    {
+      "bytes": 3180,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_wsh_api_surface_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_wsh_api_surface_report.json",
+      "sha256": "d66baaec93f5cb1d99f097ed35172181d9f2df37ee784049555afe93beda113b"
+    },
+    {
+      "bytes": 1089,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave4_wsh_tui_e4_client_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave4_wsh_tui_e4_client_report.json",
+      "sha256": "38c4ec01b5f36f926f0162b994d041fa108906b93d2645b3d494346620eab177"
+    },
+    {
+      "bytes": 1767,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave5_ws_a_schema_polish_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave5_ws_a_schema_polish_report.json",
+      "sha256": "33bed273b419257b9e062dec3763080853098ee51dbcc7ae864429f5f87fb5a7"
+    },
+    {
+      "bytes": 4066,
+      "classification": "phase16_score_evidence",
+      "destination": "docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/phase_16/evidence/wave6_wsf_wsh_terminal_report.json",
+      "sha256": "daf5cb1cfca8b2a5bbf583eedf21dd2980c603e35611772a3d315d7ae3a998fe"
+    },
+    {
+      "bytes": 0,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/.keep",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/.keep",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "bytes": 3590,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/apply_patch.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/apply_patch.yaml",
+      "sha256": "19dc12bae88f558c4a83a81a2c0bfa866e2b6e998271cbde94ecb5bd4de9d49c"
+    },
+    {
+      "bytes": 671,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/apply_search_replace.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/apply_search_replace.yaml",
+      "sha256": "051e812098fe0e5be0f9028653c36a0b7e265ba336722da90735f98ebdb4d1b4"
+    },
+    {
+      "bytes": 597,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/apply_unified_patch.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/apply_unified_patch.yaml",
+      "sha256": "12ecd3be96366314be602c5e621f9dec353bb24f6888e26e7c3c48b8d8a8f65a"
+    },
+    {
+      "bytes": 493,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/create_file.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/create_file.yaml",
+      "sha256": "06437b8e224454a0cd8ac83826d81e0ca0abb6710649d71ae0918fcb86383155"
+    },
+    {
+      "bytes": 757,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/create_file_from_block.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/create_file_from_block.yaml",
+      "sha256": "7879ad689dbcabc69398e353c954c4f992c3dea8b755f94763f0db78a33bfe34"
+    },
+    {
+      "bytes": 657,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/list_dir.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/list_dir.yaml",
+      "sha256": "c0c0e9edd37846e2ee88f120d8291dde5fd93719971b7a98e047e0b726ac0798"
+    },
+    {
+      "bytes": 503,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/mark_task_complete.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/mark_task_complete.yaml",
+      "sha256": "3551c44510764b32b3c761c99e618b1f3a1366d561f9188d2caa4f9f9512cd14"
+    },
+    {
+      "bytes": 818,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/read_file.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/read_file.yaml",
+      "sha256": "8d4889d7748fc8d2da27dba6ab09bd7211d7f6570301a813b958c988bf1e0d7d"
+    },
+    {
+      "bytes": 713,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/run_shell.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/run_shell.yaml",
+      "sha256": "1faabe7afd37deae35df28813e02b8f539da728ab226f07adf5853ea3e4934f0"
+    },
+    {
+      "bytes": 1259,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/shell_command.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/shell_command.yaml",
+      "sha256": "6b3a4af3d474f8fbe4303869c95845261194ec77fc6853e14614f7e307a3b683"
+    },
+    {
+      "bytes": 921,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/todo_attach.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/todo_attach.yaml",
+      "sha256": "fe164555f7de376379098368d4b08ae37fe1e2dbe6d16a5151de1bb4ef6244a9"
+    },
+    {
+      "bytes": 514,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/todo_cancel.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/todo_cancel.yaml",
+      "sha256": "83bf99c1acb5e45d5e512780845817f266ce0078b831c8df8ecd77176e44e035"
+    },
+    {
+      "bytes": 516,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/todo_complete.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/todo_complete.yaml",
+      "sha256": "bc2a11897dffb6ca9a0debc018bd87a0e8c20621355c56ffda8d919fd30eb42a"
+    },
+    {
+      "bytes": 1583,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/todo_create.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/todo_create.yaml",
+      "sha256": "ba709685a1df20284f674dcc3e1ceffb99c86f08cca29d05e9e421c8f2054847"
+    },
+    {
+      "bytes": 504,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/todo_list.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/todo_list.yaml",
+      "sha256": "f90ebf0bdcc71b9243214bbd625e7db80ee1345a1596a990e0a43a2292e5c689"
+    },
+    {
+      "bytes": 614,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/todo_note.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/todo_note.yaml",
+      "sha256": "8e3c832223654f37e170937e7a7e3635c8f14a8a5731b29db1bfa4acd617db4b"
+    },
+    {
+      "bytes": 473,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/todo_reorder.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/todo_reorder.yaml",
+      "sha256": "8b09ff45d19168873f0b3b442f6574d9fbe111cad6f1727b22ca4e5cf54c3858"
+    },
+    {
+      "bytes": 1168,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/todo_update.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/todo_update.yaml",
+      "sha256": "b3dc3c3bbf82b7ed4ff8baa23a2cb651bcb1f8d14472767b231fbf12b9ad8aeb"
+    },
+    {
+      "bytes": 1021,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/todo_write.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/todo_write.yaml",
+      "sha256": "c1f9defec04e433f2e82be98759575b030cff033ba549efb17766afb0cd18507"
+    },
+    {
+      "bytes": 1074,
+      "classification": "external_tool_definition",
+      "destination": "implementations/tools/defs/update_plan.yaml",
+      "namespace": "workspace",
+      "path": "workspace/implementations/tools/defs/update_plan.yaml",
+      "sha256": "588408ad85215665c6a0f97057a245900e5e0615065fa1daacd006afd22c7afc"
+    }
+  ],
+  "secret_scan": {
+    "finding_count": 0,
+    "patterns": [
+      "authorization_bearer",
+      "aws_access_key",
+      "env_secret_assignment",
+      "github_token",
+      "private_key",
+      "provider_key",
+      "slack_token"
+    ],
+    "result": "passed",
+    "scanned_member_count": 328
+  }
+}

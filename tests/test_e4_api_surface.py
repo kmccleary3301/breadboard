@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from agentic_coder_prototype.conformance.catalog_binding import (
     catalog_segments_hash,
     stable_entries_hash,
 )
+from scripts.e4_parity import seed_atomic_feature_ledger
 
 
 ACCEPTED_CLAIM_ID = "oh_my_pi_p6_0_l4_mcp_browser_resource_v1_c4_support_claim"
@@ -42,6 +45,11 @@ def _write_json(path: Path, payload: object) -> str:
 def _stable_hash(payload: object) -> str:
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+@pytest.fixture(autouse=True)
+def _enable_internal_e4_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "1")
+
 
 
 @pytest.fixture()
@@ -337,30 +345,33 @@ def reverify_fixture(
 
 
 
-@pytest.mark.parametrize("flag_value", ["0", "false", "no"])
-def test_e4_mount_gate_excludes_versioned_routes_when_disabled(
-    monkeypatch: pytest.MonkeyPatch, flag_value: str
-) -> None:
-    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", flag_value)
-
-    response = TestClient(create_app()).get("/v1/e4/health")
-
-    assert response.status_code == 404
-
-
-@pytest.mark.parametrize("flag_value", [None, "1", "true", "yes", "on"])
-def test_e4_mount_gate_serves_versioned_routes_by_default_or_when_enabled(
+@pytest.mark.parametrize("flag_value", [None, "", "0", "false", "no", "off", "unknown"])
+def test_e4_mount_gate_fails_closed_when_not_explicitly_enabled(
     monkeypatch: pytest.MonkeyPatch, flag_value: str | None
 ) -> None:
     if flag_value is None:
         monkeypatch.delenv("BREADBOARD_ENABLE_E4_API", raising=False)
     else:
         monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", flag_value)
+    assert TestClient(create_app()).get("/v1/e4/health").status_code == 404
 
+
+@pytest.mark.parametrize("flag_value", ["1", "true", "yes", "on"])
+def test_e4_mount_gate_accepts_only_documented_true_values(
+    monkeypatch: pytest.MonkeyPatch, flag_value: str
+) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", flag_value)
     response = TestClient(create_app()).get("/v1/e4/health")
-
     assert response.status_code == 200
     assert response.json()["ok"] is True
+
+
+def test_default_app_import_does_not_load_e4_modules() -> None:
+    env = os.environ.copy()
+    env.pop("BREADBOARD_ENABLE_E4_API", None)
+    code = "import sys; import agentic_coder_prototype.api.cli_bridge.app; forbidden=('agentic_coder_prototype.api.e4','breadboard.product.evidence','scripts.e4_parity'); assert not any(any(name == root or name.startswith(root + '.') for root in forbidden) for name in sys.modules)"
+    result = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).parents[1], env=env, text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("flag_value", ["1", "true", "yes", "on"])
@@ -390,10 +401,10 @@ def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pyte
     assert local_client.get("/sessions").status_code == 404
     assert local_client.get("/rl/runs/probe").status_code == 404
     assert local_client.get("/health").status_code == 200
-    assert local_client.get("/v1/status").status_code == 200
-    assert local_client.get("/v1/features").status_code == 200
-    assert local_client.get("/v1/sessions").status_code == 200
-    assert local_client.get("/v1/rl/runs/probe").status_code == 400
+    assert local_client.get("/v1/status").status_code == 404
+    assert local_client.get("/v1/features").status_code == 404
+    assert local_client.get("/v1/system").status_code == 200
+    assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 @pytest.mark.parametrize("flag_value", ["0", "false", "no", "off"])
 def test_legacy_routes_flag_off_removes_unversioned_aliases(
@@ -409,10 +420,10 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
     assert local_client.get("/sessions").status_code == 404
     assert local_client.get("/rl/runs/probe").status_code == 404
     assert local_client.get("/health").status_code == 200
-    assert local_client.get("/v1/status").status_code == 200
-    assert local_client.get("/v1/features").status_code == 200
-    assert local_client.get("/v1/sessions").status_code == 200
-    assert local_client.get("/v1/rl/runs/probe").status_code == 400
+    assert local_client.get("/v1/status").status_code == 404
+    assert local_client.get("/v1/features").status_code == 404
+    assert local_client.get("/v1/system").status_code == 200
+    assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 
 def test_validate_e4_c4_chain_shim_reexports_public_conformance_functions() -> None:
@@ -681,7 +692,10 @@ def test_registries_endpoints_expose_contract_registry_files(client: TestClient)
     assert missing.json()["error"] == "registry_not_found"
 
 
-def test_split_v1_session_file_endpoints_list_and_read_content(tmp_path: Path) -> None:
+def test_split_v1_session_file_endpoints_list_and_read_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "alpha.txt").write_text("alpha\n", encoding="utf-8")
@@ -713,6 +727,7 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     runtime_root = tmp_path / "runtime_records"
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(runtime_root))
     emit_session_start_records(
@@ -734,21 +749,22 @@ def test_session_records_endpoint_serves_runtime_jsonl_with_schema_filter(
 
     response = local_client.get(
         "/v1/sessions/records-session/records",
-        params={"schema_version": "bb.work_item.v1", "offset": 0, "limit": 1},
+        params={"schema_version": "bb.work_item.v2", "offset": 0, "limit": 1},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["session_id"] == "records-session"
-    assert payload["total"] == 2
+    assert payload["total"] == 1
     assert payload["offset"] == 0
     assert payload["limit"] == 1
     assert len(payload["records"]) == 1
-    assert payload["records"][0]["schema_version"] == "bb.work_item.v1"
-    assert payload["records"][0]["record"]["state"]["status"] in {"queued", "running"}
+    assert payload["records"][0]["schema_version"] == "bb.work_item.v2"
+    assert payload["records"][0]["record"]["status"] == "running"
 
 
 def test_api_error_envelope_covers_auth_and_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     monkeypatch.setenv("BREADBOARD_API_TOKEN", "secret")
     auth_response = TestClient(create_app()).get("/v1/sessions")
     assert auth_response.status_code == 401
@@ -931,12 +947,11 @@ def test_e4_claim_detail_missing_evidence_manifest_returns_flat_error_envelope(
 
 
 def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     monkeypatch.delenv("BREADBOARD_EMIT_PRIMITIVES", raising=False)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "runtime_records"))
-    async def _noop_start(self: object) -> None:
-        return None
-
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.start", _noop_start)
+    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.schedule_start", lambda _runner: None)
+    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.authorize_start", lambda _runner: None)
 
     client = TestClient(create_app())
 
@@ -956,24 +971,52 @@ def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyP
 def test_runtime_emission_records_are_served_by_e4_api(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     runtime_root = tmp_path / "runtime_records"
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(runtime_root))
+    session_id = "api_surface_runtime_session"
+    generated_at = "2026-07-04T00:00:00Z"
     paths = emit_session_start_records(
-        session_id="api_surface_runtime_session",
+        session_id=session_id,
         request=SessionCreateRequest(
             config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml",
             task="runtime emission probe",
         ),
-        generated_at="2026-07-04T00:00:00Z",
+        generated_at=generated_at,
     )
 
-    payloads = {name: Path(path).read_text(encoding="utf-8") for name, path in paths.items()}
+    payloads = {name: json.loads(Path(path).read_text(encoding="utf-8")) for name, path in paths.items()}
     assert set(payloads) == {
         "capability_registry",
         "effective_config_graph",
         "effective_operation_policy",
         "effective_tool_surface",
-        "work_item_queued",
-        "work_item_running",
-        "coordination_slice",
+        "work_item_created",
+        "work_item_lease_acquired",
+        "work_item_attempt_started",
+        "work_item_snapshot",
+    }
+    events = [
+        payloads["work_item_created"],
+        payloads["work_item_lease_acquired"],
+        payloads["work_item_attempt_started"],
+    ]
+    assert [(event["sequence"], event["kind"], event["occurred_at"]) for event in events] == [
+        (1, "work_item.created", generated_at),
+        (2, "lease.acquired", generated_at),
+        (3, "attempt.started", generated_at),
+    ]
+    assert {event["work_item_id"] for event in events} == {session_id}
+    assert events[0]["payload"]["cancellation_policy"]["cancellable_by"] == ["cli_bridge.session_service"]
+    assert events[1]["payload"]["worker_id"] == "session_runner"
+    assert events[2]["payload"]["session_ref"] == session_id
+
+    snapshot = payloads["work_item_snapshot"]
+    assert snapshot["schema_version"] == "bb.work_item.v2"
+    assert snapshot["work_item_id"] == session_id
+    assert snapshot["status"] == "running"
+    assert snapshot["event_count"] == 3
+    assert snapshot["placement_refs"] == []
+    assert snapshot["budget"] == {
+        "limits": {"token_limit": None, "cost_limit_microusd": None, "wall_time_limit_ms": None},
+        "usage": {"tokens": 0, "cost_microusd": 0, "wall_time_ms": 0},
     }
 
     client = TestClient(create_app())
@@ -983,44 +1026,23 @@ def test_runtime_emission_records_are_served_by_e4_api(monkeypatch: pytest.Monke
     )
     assert graph_records.status_code == 200
     assert [record["record"]["graph_id"] for record in graph_records.json()["records"]] == [
-        "api_surface_runtime_session_effective_config_graph"
+        f"{session_id}_effective_config_graph"
     ]
 
     work_records = client.get(
         "/v1/e4/records",
-        params={"schema_version": "bb.work_item.v1", "source": "runtime"},
+        params={"schema_version": "bb.work_item.v2", "source": "runtime"},
     )
     assert work_records.status_code == 200
-    states = {record["record"]["state"]["status"] for record in work_records.json()["records"]}
-    assert states == {"queued", "running"}
-
-def test_runtime_emission_dual_dialect_serves_coordination_pack(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    runtime_root = tmp_path / "runtime_records"
-    monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(runtime_root))
-    monkeypatch.setenv("BREADBOARD_CONFIG_PLANE_DIALECT", "both")
-    paths = emit_session_start_records(
-        session_id="api_surface_dual_dialect_session",
-        request=SessionCreateRequest(
-            config_path="agent_configs/atp_hilbert_like_gpt54_v1.yaml",
-            task="runtime emission dialect probe",
-        ),
-        generated_at="2026-07-04T00:00:00Z",
-    )
-
-    assert {"coordination_slice", "coordination_pack"} <= set(paths)
-    pack = json.loads(Path(paths["coordination_pack"]).read_text(encoding="utf-8"))
-    assert pack["schema_version"] == "bb.coordination_pack.v3"
-    assert pack["records"]["slices"][0]["schema_version"] == "bb.coordination_slice.v2"
-
-    client = TestClient(create_app())
-    response = client.get(
-        "/v1/e4/records",
-        params={"schema_version": "bb.coordination_pack.v3", "source": "runtime"},
-    )
-    assert response.status_code == 200
-    assert [record["record"]["pack_id"] for record in response.json()["records"]] == [
-        "api_surface_dual_dialect_session_coordination_pack"
-    ]
+    assert [record["record"]["work_item_id"] for record in work_records.json()["records"]] == [session_id]
+    for retired_schema in ("bb.work_item.v1", "bb.coordination_slice.v2", "bb.coordination_pack.v3"):
+        retired_records = client.get(
+            "/v1/e4/records",
+            params={"schema_version": retired_schema, "source": "runtime"},
+        )
+        assert retired_records.status_code == 200
+        assert retired_records.json()["records"] == []
+    assert all(spec["semantic_key"] != "runtime_session_work_item_lifecycle_c3" for spec in seed_atomic_feature_ledger.SEED_SPECS)
 
 
 

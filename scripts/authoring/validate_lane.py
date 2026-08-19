@@ -54,25 +54,6 @@ CHECK_IDS = (
     "metadata_non_normative",
 )
 REQUIRED_SCOPE_KEYS = {"config_id", "lane_id", "run_id", "target_version", "provider_model", "sandbox_mode"}
-INVENTORY_COMPARE_FIELDS = (
-    "config_id",
-    "claim_id",
-    "kind",
-    "status",
-    "points",
-    "target_family",
-    "target_version",
-    "run_id",
-    "provider_model",
-    "sandbox_mode",
-    "builder",
-    "ct",
-    "reverify_command",
-    "artifact_roles",
-    "ledger_feature_ids",
-    "score_row_id",
-    "artifacts_root",
-)
 
 
 def _manifest_flow_style_errors(node: yaml.Node, pointer: str = "") -> list[str]:
@@ -298,7 +279,7 @@ def _inventory_check(lane_def: Mapping[str, Any], inventory_lane: Mapping[str, A
         generated = generate_lane_inventory.lane_inventory_row(lane_def)
     except Exception as exc:
         return _fail("inventory_row_consistent", f"unable to generate inventory row: {exc}")
-    mismatches = [field for field in INVENTORY_COMPARE_FIELDS if generated.get(field) != inventory_lane.get(field)]
+    mismatches = generate_lane_inventory.lane_row_mismatches(generated, inventory_lane)
     if mismatches:
         return _fail("inventory_row_consistent", "inventory mismatches: " + ", ".join(mismatches))
     return _pass("inventory_row_consistent", "generated lane inventory fields match canonical inventory row")

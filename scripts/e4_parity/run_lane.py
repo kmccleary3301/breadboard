@@ -2,30 +2,67 @@
 from __future__ import annotations
 
 import argparse
-import json
 import importlib
+import json
 import os
+import shutil
 import subprocess
 import sys
-import shutil
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 try:
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, lane_lock_sha256, load_lane_defs
+    from breadboard.product.evidence.lane_lock import (
+        LaneLockError,
+        validate_before_capture,
+    )
+    from breadboard.product.evidence.lanes import (
+        LANE_SCHEMA_VERSION,
+        MANIFEST_SCHEMA_VERSION,
+        MutableReferenceError,
+        load_lane,
+    )
+    from scripts.e4_parity.lane_definitions import (
+        DEFAULT_LANE_DEF_DIR,
+        lane_lock_sha256,
+        load_lane_defs,
+        record_builder_source_paths,
+    )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
+    from scripts.e4_parity.path_refs import (
+        resolve_declared_reference,
+        workspace_root_for_checkout,
+    )
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
-    from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scripts.e4_parity.lane_definitions import DEFAULT_LANE_DEF_DIR, lane_lock_sha256, load_lane_defs
+    from breadboard.product.evidence.lane_lock import (
+        LaneLockError,
+        validate_before_capture,
+    )
+    from breadboard.product.evidence.lanes import (
+        LANE_SCHEMA_VERSION,
+        MANIFEST_SCHEMA_VERSION,
+        MutableReferenceError,
+        load_lane,
+    )
+    from scripts.e4_parity.lane_definitions import (
+        DEFAULT_LANE_DEF_DIR,
+        lane_lock_sha256,
+        load_lane_defs,
+        record_builder_source_paths,
+    )
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
+    from scripts.e4_parity.path_refs import (
+        resolve_declared_reference,
+        workspace_root_for_checkout,
+    )
     from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
     from scripts.e4_parity.tree_digest import digest_directory
     from scripts.e4_parity.validators.registries import load_registry
-    from scripts.e4_parity.path_refs import ReferenceResolutionError, resolve_declared_reference
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
@@ -46,12 +83,24 @@ _DERIVED_OUTPUT_PREFIXES = (
 _REGEN_SCRATCH_ROOT = ROOT / "tmp" / "e4_regen_capture"
 
 
+def preflight_candidate_capture(
+    lane_def: Mapping[str, Any], lock: Mapping[str, Any], *,
+    root: Path = ROOT, manifest_path: Path | None = None, adapter_resolver=None,
+) -> None:
+    """Validate product candidate identity before invoking capture code."""
+    try:
+        validate_before_capture(lane_def, lock, root=root, manifest_path=manifest_path, adapter_resolver=adapter_resolver)
+    except (LaneLockError, MutableReferenceError) as exc: raise LaneLockDriftError(str(exc)) from exc
+
 class LaneRunError(ValueError):
     pass
+class LaneLockDriftError(LaneRunError): pass
 
 
 def _load_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
+    payload = path.read_bytes(); value = json.loads(payload)
+    if path.name.endswith(".lock.json") and payload != (json.dumps(value, allow_nan=False, ensure_ascii=False, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8"): raise LaneLockDriftError("lane lock bytes must use canonical-json-v2")
+    return value
 
 
 def _display_path(path: Path) -> str:
@@ -659,10 +708,14 @@ def _finalize_stage_result(
 
 
 
-def _refresh_er_progress_seed_pin(seed_path: Path) -> None:
-    progress_path = ROOT.parent / "docs_tmp" / "phase_16" / "BB_ER_PROGRESS.json"
-    if not progress_path.exists():
-        return
+def _refresh_er_progress_seed_pin(seed_path: Path, *, workspace_root: Path) -> None:
+    progress_path = resolve_declared_reference(
+        "docs_tmp/phase_16/BB_ER_PROGRESS.json",
+        checkout_root=ROOT,
+        namespace="workspace_evidence",
+        label="ER progress seed pin",
+        workspace_root=workspace_root,
+    )
     progress = _load_json(progress_path)
     changed = False
     for workstream in progress.get("workstreams", []):
@@ -685,9 +738,16 @@ def _refresh_er_progress_seed_pin(seed_path: Path) -> None:
 
 def _refresh_promoted_bindings() -> dict[str, Any]:
     """Refresh deterministic artifacts whose hashes depend on promoted lane packets."""
+    workspace_root = workspace_root_for_checkout(ROOT)
     try:
-        from scripts.e4_parity import build_artifact_catalog, build_e4_final_readiness_packet, seed_atomic_feature_ledger
-        from scripts.e4_parity.generate_support_claims import generate as generate_support_claims
+        from scripts.e4_parity import (
+            build_artifact_catalog,
+            build_e4_final_readiness_packet,
+            seed_atomic_feature_ledger,
+        )
+        from scripts.e4_parity.generate_support_claims import (
+            generate as generate_support_claims,
+        )
     except ModuleNotFoundError:  # pragma: no cover - direct script execution
         import build_artifact_catalog
         import build_e4_final_readiness_packet
@@ -698,7 +758,10 @@ def _refresh_promoted_bindings() -> dict[str, Any]:
         seed_atomic_feature_ledger.DEFAULT_OUT,
         seed_atomic_feature_ledger.DEFAULT_INDEX_OUT,
     )
-    _refresh_er_progress_seed_pin(seed_atomic_feature_ledger.DEFAULT_OUT)
+    _refresh_er_progress_seed_pin(
+        seed_atomic_feature_ledger.DEFAULT_OUT,
+        workspace_root=workspace_root,
+    )
     first_catalog = build_artifact_catalog.build_catalog(write_bindings=True, schema_version="v2")
     build_artifact_catalog.write_json(build_artifact_catalog.DEFAULT_OUTPUT_PATH, first_catalog)
     first_claims = generate_support_claims(dry_run=False)
@@ -728,21 +791,7 @@ def _capture_owned_paths(lane_def: Mapping[str, Any]) -> tuple[str, ...]:
     normalize = lane_def.get("normalize")
     config = normalize.get("config") if isinstance(normalize, Mapping) else None
     roles = config.get("roles") if isinstance(config, Mapping) else None
-    record_builders = config.get("record_builders") if isinstance(config, Mapping) else None
-    projection_sources: set[str] = set()
-    if isinstance(record_builders, list):
-        for builder in record_builders:
-            if not isinstance(builder, Mapping):
-                continue
-            source = builder.get("source")
-            if isinstance(source, str):
-                projection_sources.add(source)
-            source_roles = builder.get("source_roles")
-            if isinstance(source_roles, Mapping):
-                projection_sources.update(
-                    value for value in source_roles.values() if isinstance(value, str)
-                )
-    preserved_sources = declared_inputs | projection_sources
+    preserved_sources = declared_inputs | set(record_builder_source_paths(lane_def))
     if isinstance(roles, Mapping):
         for value in roles.values():
             if (
@@ -815,7 +864,9 @@ def _run_isolated_capture(
         )
     else:
         try:
-            from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
+            from scripts.e4_parity.lane_acceptance_artifacts import (
+                build_lane_from_definition,
+            )
         except ModuleNotFoundError:  # pragma: no cover - direct script execution
             from lane_acceptance_artifacts import build_lane_from_definition
         row = build_lane_from_definition(lane_def, inventory_lane, output_root=scratch_root)
@@ -844,6 +895,7 @@ def run_lane(
     promote_accepted: bool = False,
     defer_promotion_refresh: bool = False,
     defer_derived_writes: bool = False,
+    adapter_resolver=None,
 ):
     lane_defs = load_lane_defs(lane_def_dir)
     try:
@@ -851,15 +903,89 @@ def run_lane(
     except KeyError as exc:
         raise LaneRunError(f"unknown lane {lane_id!r} in {lane_def_dir}") from exc
     lane_def = dict(lane_def)
-    lane_def["_lock_sha256"] = lane_lock_sha256(lane_id, lane_def_dir)
-    inventory_lane = _inventory_lane(lane_id, inventory_path)
-    if inventory_lane is not None and inventory_lane.get("config_id") != lane_def.get("config_id"):
-        raise LaneRunError(f"lane {lane_id!r} config_id differs between lane_def and inventory")
-
     stages = _stage_list(stage)
     unsupported = [name for name in stages if name not in EXECUTABLE_STAGES]
     if unsupported:
         raise LaneRunError("unsupported stage(s): " + ", ".join(unsupported))
+    if lane_def.get("schema_version") in (LANE_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION):
+        if "capture" not in lane_def.get("execute", ()) and "capture" not in lane_def.get(
+            "reuse", ()
+        ):
+            raise LaneRunError(
+                "candidate lane must declare capture for execution or reuse"
+            )
+        candidate_root = (
+            lane_def_dir.parent.parent
+            if lane_def_dir.name == "lanes" and lane_def_dir.parent.name == ".breadboard"
+            else ROOT
+        )
+        lock_path = lane_def_dir / f"{lane_id}.lock.json"
+        if not lock_path.exists():
+            lock_path = (
+                candidate_root
+                / ".breadboard"
+                / "lanes"
+                / f"{lane_id}.lock.json"
+            )
+        if lock_path.is_symlink() or not lock_path.is_file():
+            raise LaneLockDriftError(
+                "candidate lane execution requires a real bb.e4.lane_lock.v2 lock"
+            )
+        manifest_path = next(
+            (
+                path
+                for path in sorted(
+                    (
+                        *lane_def_dir.glob("*.manifest.json"),
+                        *lane_def_dir.glob("*.manifest.yaml"),
+                        *lane_def_dir.glob("*.manifest.yml"),
+                    )
+                )
+                if load_lane(path).get("lane_id") == lane_id
+            ),
+            None,
+        )
+        try:
+            lock = _load_json(lock_path)
+            preflight_candidate_capture(
+                lane_def,
+                lock,
+                root=candidate_root,
+                manifest_path=manifest_path,
+                adapter_resolver=adapter_resolver,
+            )
+        except LaneLockDriftError:
+            raise
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise LaneLockDriftError(str(exc)) from exc
+        except LaneRunError:
+            raise
+        except ValueError as exc:
+            raise LaneLockDriftError(str(exc)) from exc
+        if out_dir is not None:
+            raise LaneRunError(
+                "candidate lane execution writes only to its .breadboard workspace"
+            )
+        try:
+            from scripts.e4_parity.candidate_journey import (
+                CandidateJourneyError,
+                run_candidate_journey,
+            )
+        except ModuleNotFoundError:  # pragma: no cover - direct script execution
+            from candidate_journey import CandidateJourneyError, run_candidate_journey
+        try:
+            return run_candidate_journey(
+                lane_def,
+                lock,
+                root=candidate_root,
+                stage=stage,
+            )
+        except CandidateJourneyError as exc:
+            raise LaneRunError(str(exc)) from exc
+    lane_def["_lock_sha256"] = lane_lock_sha256(lane_id, lane_def_dir)
+    inventory_lane = _inventory_lane(lane_id, inventory_path)
+    if inventory_lane is not None and inventory_lane.get("config_id") != lane_def.get("config_id"):
+        raise LaneRunError(f"lane {lane_id!r} config_id differs between lane_def and inventory")
     if lane_def.get("status") == "accepted" and out_dir is None and not promote_accepted:
         raise LaneRunError("accepted lanes require --out unless --promote-accepted is set")
     if defer_derived_writes and (
@@ -953,14 +1079,22 @@ def run_lane(
                 continue
             continue
         argv = _command_stage_argv(stage_name, lane_def, inventory_lane)
-        if argv is None and stage_name == "capture" and promote_accepted:
+        if argv is None and stage_name == "capture" and (promote_accepted or out_dir is not None):
             try:
-                from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
+                from scripts.e4_parity.lane_acceptance_artifacts import (
+                    build_lane_from_definition,
+                )
             except ModuleNotFoundError:  # pragma: no cover - direct script execution
                 from lane_acceptance_artifacts import build_lane_from_definition
 
-            row = build_lane_from_definition(lane_def, inventory_lane)
-            refresh_report = _refresh_promoted_bindings() if row.get("ok") and not defer_promotion_refresh else {"skipped": True, "reason": "deferred by --defer-promotion-refresh"} if row.get("ok") else None
+            row = build_lane_from_definition(lane_def, inventory_lane, output_root=out_dir)
+            refresh_report = (
+                _refresh_promoted_bindings()
+                if row.get("ok") and promote_accepted and not defer_promotion_refresh
+                else {"skipped": True, "reason": "deferred by --defer-promotion-refresh"}
+                if row.get("ok") and promote_accepted
+                else None
+            )
             builder_result = _finalize_stage_result(
                 {
                     "stage": stage_name,
@@ -1068,10 +1202,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 defer_promotion_refresh=args.defer_promotion_refresh,
                 defer_derived_writes=args.defer_derived_writes,
             )
-        except LaneRunError as exc:
+        except (LaneRunError, ValueError) as exc:
             payload = {"ok": False, "lane_id": lane_id, "error": str(exc)}
             rows.append(payload)
-            exit_code = 2
+            exit_code = 5 if isinstance(exc, LaneLockDriftError) else 2
             if not args.json:
                 print(f"run_lane: {exc}", file=sys.stderr)
             break

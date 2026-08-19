@@ -145,15 +145,16 @@ def _schema_ids(schemas_dir: Path) -> list[str]:
     return sorted(_schema_id_from_path(path) for path in schemas_dir.glob("*.schema.json") if path.is_file())
 
 
-def _family_owners(kernel_families_path: Path) -> tuple[dict[str, list[str]], list[LifecycleDiagnostic]]:
+def _family_owners(kernel_families_path: Path) -> tuple[dict[str, list[str]], set[str], list[LifecycleDiagnostic]]:
     rel_path = kernel_families_path.as_posix()
     payload = _load_json(kernel_families_path)
     if not isinstance(payload, Mapping):
-        return {}, [LifecycleDiagnostic(rel_path, "kernel_families_shape", "kernel_families root must be an object")]
+        return {}, set(), [LifecycleDiagnostic(rel_path, "kernel_families_shape", "kernel_families root must be an object")]
     entries = payload.get("entries")
     if not isinstance(entries, list):
-        return {}, [LifecycleDiagnostic(rel_path, "kernel_families_shape", "kernel_families entries must be an array")]
+        return {}, set(), [LifecycleDiagnostic(rel_path, "kernel_families_shape", "kernel_families entries must be an array")]
     owners: dict[str, list[str]] = {}
+    candidate_only_families: set[str] = set()
     diagnostics: list[LifecycleDiagnostic] = []
     family_indices: dict[str, list[int]] = {}
     for entry_index, entry in enumerate(entries):
@@ -161,12 +162,14 @@ def _family_owners(kernel_families_path: Path) -> tuple[dict[str, list[str]], li
             diagnostics.append(LifecycleDiagnostic(rel_path, "kernel_families_shape", f"entries[{entry_index}] must be an object", f"$/entries/{entry_index}"))
             continue
         family_id = entry.get("id")
-        versions = entry.get("metadata", {}).get("schema_versions") if isinstance(entry.get("metadata"), Mapping) else None
+        metadata = entry.get("metadata")
+        versions = metadata.get("schema_versions") if isinstance(metadata, Mapping) else None
         if versions is None:
             continue
         if not isinstance(family_id, str) or not family_id:
             diagnostics.append(LifecycleDiagnostic(rel_path, "kernel_families_shape", f"entries[{entry_index}].id must be non-empty", f"$/entries/{entry_index}/id"))
             continue
+        if isinstance(metadata, Mapping) and metadata.get("generation_policy") == "candidate_only": candidate_only_families.add(family_id)
         family_indices.setdefault(family_id, []).append(entry_index)
         if not isinstance(versions, list) or not all(isinstance(version, str) for version in versions):
             diagnostics.append(LifecycleDiagnostic(rel_path, "kernel_families_shape", f"entries[{entry_index}].metadata.schema_versions must be a string array", f"$/entries/{entry_index}/metadata/schema_versions"))
@@ -183,7 +186,7 @@ def _family_owners(kernel_families_path: Path) -> tuple[dict[str, list[str]], li
                     "$/entries",
                 )
             )
-    return owners, diagnostics
+    return owners, candidate_only_families, diagnostics
 
 
 def _version_number(schema_id: str) -> int:
@@ -456,7 +459,7 @@ def lint_schema_lifecycle(
 
     schema_ids = _schema_ids(schemas_dir)
     schema_id_set = set(schema_ids)
-    owners, owner_diagnostics = _family_owners(kernel_families_path)
+    owners, candidate_only_families, owner_diagnostics = _family_owners(kernel_families_path)
     diagnostics.extend(
         LifecycleDiagnostic(_display(kernel_families_path, repo_root), diag.rule, diag.message, diag.pointer)
         for diag in owner_diagnostics
@@ -518,7 +521,20 @@ def lint_schema_lifecycle(
 
     generation_default_by_schema: dict[str, str] = {}
     for family, family_entries in sorted(families.items()):
+        family_by_schema = {
+            str(entry.get("schema_id")): (index, entry)
+            for index, entry in family_entries
+            if isinstance(entry.get("schema_id"), str)
+        }
         defaults = [(index, entry) for index, entry in family_entries if entry.get("default_for_generation") is True]
+        candidate_only = family in candidate_only_families and all(
+            entry.get("lifecycle") in {"validate_only", "frozen_accepted_evidence"}
+            and entry.get("default_for_generation") is False
+            for _, entry in family_entries
+        )
+        if family in candidate_only_families and not candidate_only: diagnostics.append(LifecycleDiagnostic(registry_rel, "generation_policy", f"family {family} candidate_only requires every entry to be non-generating", "$/entries"))
+        if not defaults and candidate_only:
+            continue
         if len(defaults) != 1:
             diagnostics.append(LifecycleDiagnostic(registry_rel, "default_per_family", f"family {family} has {len(defaults)} defaults; expected exactly one", "$/entries"))
             continue
@@ -528,11 +544,6 @@ def lint_schema_lifecycle(
             diagnostics.append(LifecycleDiagnostic(registry_rel, "default_per_family", f"family {family} default must be active_production", f"$/entries/{default_index}/lifecycle"))
         if not isinstance(default_schema_id, str):
             continue
-        family_by_schema = {
-            str(entry.get("schema_id")): (index, entry)
-            for index, entry in family_entries
-            if isinstance(entry.get("schema_id"), str)
-        }
         for schema_id in family_by_schema:
             generation_default_by_schema[schema_id] = default_schema_id
         if len(family_by_schema) < 2:
@@ -548,6 +559,12 @@ def lint_schema_lifecycle(
             )
         for schema_id, (index, entry) in sorted(family_by_schema.items()):
             if schema_id == default_schema_id:
+                continue
+            if (
+                entry.get("lifecycle") == "validate_only"
+                and entry.get("superseded_by") is None
+                and _version_number(schema_id) > _version_number(default_schema_id)
+            ):
                 continue
             pointer = f"$/entries/{index}/superseded_by"
             superseded_by = entry.get("superseded_by")

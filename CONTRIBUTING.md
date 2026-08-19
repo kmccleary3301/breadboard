@@ -3,28 +3,48 @@
 ## Deletion policy
 
 Breadboard deletion work follows the WS-H rule: static zero-importer evidence is
-a starting point, not deletion proof. Do not remove or quarantine a Python module
-until all of the following are true:
+a starting point, not deletion proof. Before removing or quarantining a Python
+module:
 
-- The current deletion audit or a fresh narrow scan shows no static inbound
+- Confirm that a current deletion audit or narrow scan has no static inbound
   imports for the exact module path.
-- Built-in `grep`/`ast_grep` checks show no unresolved string references,
-  dynamic import references, docs references, tests, scripts, workflow entries,
-  or package entry points for the module path, dotted module name, and stem.
-- Any owner-specific smoke test or import smoke for the package still passes.
-- Ambiguous modules are quarantined under the owning legacy area for one tranche
-  instead of deleted.
+- Run `scripts/check_deleted_path_references.py` with the repository-relative
+  path being deleted. Live references in docs, tests, scripts, workflows,
+  dynamic imports, and package entry points block deletion.
+- Run the owner's smoke test or package import smoke.
+- Quarantine an ambiguous module under its owning legacy area for one tranche.
 
-If a target still has dynamic/string/docs/test references, leave it in place and
-record the blocker evidence. Deletion waves must not rely on restoring from git as
-the safety mechanism.
+The deleted-path audit recognizes historical commands only in digest-bound
+records listed by an applicable `--immutable-snapshot-manifest`. Snapshot
+manifests may authorize individual files under
+`docs/conformance/evidence_snapshots/`. The deletion-audit source separately
+names the one external historical record it accepts; its exact path and digest
+are stored in `config/deletion_audit/immutable_historical_records.v1.json`.
+Other `docs_tmp` files cannot be exempted. Every manifest must be tracked, list
+an individual file, and match that file's SHA-256 digest. A directory name, an
+unlisted file, or a digest mismatch does not exempt a reference. Do not rewrite
+historical records to make a deletion audit pass.
 
-Run the advisory zero-importer check when adding or moving Python modules:
+For example:
+
+```bash
+python scripts/check_deleted_path_references.py \
+  --deleted-path scripts/example/removed_builder.py \
+  --immutable-snapshot-manifest docs/conformance/evidence_snapshots/phase_20/MANIFEST.json \
+  --immutable-snapshot-manifest docs/conformance/evidence_snapshots/phase16_er_progress/snapshot_manifest.json \
+  --immutable-snapshot-manifest config/deletion_audit/immutable_historical_records.v1.json
+```
+
+The command exits nonzero for every live reference. Record the blocker instead
+of relying on restoration from Git.
+
+Run the separate advisory zero-importer check when adding or moving Python
+modules:
 
 ```bash
 python scripts/check_zero_importer_advisory.py --json
 ```
 
-The check is non-blocking by design. A new zero-importer module means the module
-needs an explicit owner, an entry point, a test/import smoke, or deletion-audit
-coverage before a later WS-H pass treats it as safe to prune.
+This advisory remains non-blocking. A new zero-importer module needs an explicit
+owner, entry point, test/import smoke, or deletion-audit coverage before a later
+WS-H pass treats it as safe to prune.

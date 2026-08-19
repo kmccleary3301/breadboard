@@ -1,0 +1,20 @@
+{
+  "checks": [
+    {
+      "errors": [],
+      "ok": true,
+      "record": "memory_compaction_plan",
+      "schema": "bb.memory_compaction_plan.v1"
+    },
+    {
+      "errors": [],
+      "ok": true,
+      "record": "work_item",
+      "schema": "bb.work_item.v1"
+    }
+  ],
+  "errors": [],
+  "generated_at_utc": "2026-07-03T07:30:00Z",
+  "ok": true,
+  "schema_version": "bb.e4.helper_runtime_schema_validation.v1"
+}

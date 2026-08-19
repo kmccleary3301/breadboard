@@ -9,7 +9,13 @@ import pytest
 import yaml
 
 from scripts import breadboard_cli
-from scripts.authoring.validate_lane import load_lane_manifest
+from breadboard.product.evidence import load_lane
+from breadboard.product.runtime.artifacts import ArtifactStore
+
+
+@pytest.fixture(autouse=True)
+def _enable_internal_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "1")
 
 
 def _invoke(argv: list[str], capsys) -> tuple[int, str, str]:
@@ -24,7 +30,7 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
 ) -> None:
     out_dir = tmp_path / "harness"
 
-    exit_code, _, stderr = _invoke(["harness", "init", "--out", str(out_dir)], capsys)
+    exit_code, _, stderr = _invoke(["harness", "create", "--out", str(out_dir)], capsys)
 
     assert exit_code == 0, stderr
     harness_path = out_dir / "minimal_harness.v2.yaml"
@@ -65,28 +71,110 @@ def test_harness_init_produces_a_valid_explainable_bundle_without_overwriting(
         prompt_path: prompt_path.read_bytes(),
     }
 
-    exit_code, _, stderr = _invoke(["harness", "init", "--out", str(out_dir)], capsys)
+    exit_code, _, stderr = _invoke(["harness", "create", "--out", str(out_dir)], capsys)
 
     assert exit_code == 2
     assert "exist" in stderr.lower() or "overwrite" in stderr.lower()
     assert {path: path.read_bytes() for path in before} == before
 
 
-def test_lane_init_produces_a_loader_valid_manifest_without_overwriting(
+def test_harness_update_replaces_definition_from_explicit_source(tmp_path: Path, capsys) -> None:
+    out_dir = tmp_path / "harness"
+    assert _invoke(["harness", "create", "--out", str(out_dir)], capsys)[0] == 0
+    harness_path = out_dir / "minimal_harness.v2.yaml"
+    definition = yaml.safe_load(harness_path.read_text())
+    definition["modes"][0]["name"] = "review"
+    definition["loop"]["sequence"][0]["mode"] = "review"
+    source = tmp_path / "replacement.yaml"
+    source.write_text(yaml.safe_dump(definition), encoding="utf-8")
+    exit_code, _, stderr = _invoke(["harness", "update", str(harness_path), "--from", str(source)], capsys)
+    assert exit_code == 0, stderr
+    assert yaml.safe_load(harness_path.read_text())["modes"][0]["name"] == "review"
+
+
+def test_json_harness_explain_validates_resolved_legacy_surface(
     tmp_path: Path,
     capsys,
 ) -> None:
+    harness_path = tmp_path / "invalid.yaml"
+    harness = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "agent_configs/templates/minimal_harness.v2.yaml").read_text()
+    )
+    del harness["providers"]["models"][0]["adapter"]
+    harness_path.write_text(yaml.safe_dump(harness))
+
+    exit_code, stdout, stderr = _invoke(
+        ["--json", "harness", "explain", str(harness_path)],
+        capsys,
+    )
+
+    assert exit_code == 2, stderr
+    result = json.loads(stdout)
+    assert "/providers/models/0/adapter" in result["error"]["message"]
+
+
+def test_json_harness_explain_rejects_recursive_yaml_alias(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    harness_path = tmp_path / "recursive.yaml"
+    harness_path.write_text(
+        "schema_version: bb.agent_config_surface.v2\n"
+        "version: 2\n"
+        "dossier: &recursive\n"
+        "  self: *recursive\n"
+    )
+
+    exit_code, stdout, stderr = _invoke(
+        ["--json", "harness", "explain", str(harness_path)],
+        capsys,
+    )
+
+    assert exit_code == 2, stderr
+    assert "json_cycle" in json.loads(stdout)["error"]["message"]
+
+
+def test_harness_extends_resolve_from_external_source_directory(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    workspace = tmp_path / "workspace"
+    external = tmp_path / "external"
+    workspace.mkdir()
+    external.mkdir()
+    nested = external / "nested"
+    nested.mkdir()
+    template = yaml.safe_load(
+        (Path(__file__).resolve().parents[1] / "agent_configs/templates/minimal_harness.v3.yaml").read_text()
+    )
+    (external / "base.yaml").write_text(yaml.safe_dump(template))
+    (nested / "child.yaml").write_text(yaml.safe_dump({**template, "extends": "../base.yaml"}))
+
+    exit_code, stdout, stderr = _invoke(
+        ["--json", "harness", "--workspace", str(workspace), "explain", str(nested / "child.yaml")],
+        capsys,
+    )
+
+    assert exit_code == 0, stderr
+    result = json.loads(stdout)
+    assert result["data"]["resolved_summary"]["extends_chain"] == ["base.yaml"]
+    assert str(tmp_path) not in stdout
+
+
+def test_lane_init_produces_a_loader_valid_manifest_without_overwriting(tmp_path: Path, capsys, monkeypatch) -> None:
     out_dir = tmp_path / "lane"
 
     exit_code, _, stderr = _invoke(["lane", "init", "--out", str(out_dir)], capsys)
 
     assert exit_code == 0, stderr
-    manifest_path = out_dir / "lane.manifest.yaml"
-    loaded = load_lane_manifest(manifest_path)
-    assert loaded["schema_version"] == "bb.e4.lane_manifest.v1"
+    manifest_path = out_dir / ".breadboard/lanes/new_lane.manifest.json"
+    loaded = load_lane(manifest_path)
+    assert loaded["schema_version"] == "bb.e4.lane_manifest.v2"
 
-    exit_code, _, stderr = _invoke(["lane", "validate", str(manifest_path)], capsys)
-    assert exit_code == 0, stderr
+    exit_code, _, stderr = _invoke(["lane", "validate", str(manifest_path)], capsys); assert exit_code == 0, stderr
+    legacy = Path(__file__).resolve().parents[1] / "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.yaml"; exit_code, _, stderr = _invoke(["lane", "validate", str(legacy)], capsys); assert exit_code == 0, stderr
+    exit_code, stdout, stderr = _invoke(["--json", "lane", "lock", str(manifest_path)], capsys); assert exit_code == 3 and json.loads(stdout)["error"]["error_code"] == "path_unavailable", stderr
+    original = manifest_path.read_bytes(); payload = json.loads(original); payload["lane_id"] = "new.lane"; manifest_path.write_text(json.dumps(payload)); yaml_path = manifest_path.with_name("new.lane.manifest.yaml"); manifest_path.rename(yaml_path); monkeypatch.chdir(tmp_path); (tmp_path / "new.lane").write_text(json.dumps({**payload, "lane_id": "hijacked"})); exit_code, stdout, stderr = _invoke(["--json", "lane", "--workspace", str(out_dir), "get", "new.lane"], capsys); assert exit_code == 0, stderr; yaml_path.rename(manifest_path); manifest_path.write_bytes(original)
 
     manifest_path.write_text("author-owned lane\n", encoding="utf-8")
     before = manifest_path.read_bytes()
@@ -137,16 +225,17 @@ def test_lane_validate_returns_pointerful_schema_failure(
     out_dir = tmp_path / "lane"
     exit_code, _, stderr = _invoke(["lane", "init", "--out", str(out_dir)], capsys)
     assert exit_code == 0, stderr
-    manifest_path = out_dir / "lane.manifest.yaml"
-    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
-    manifest["target"] = []
-    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    manifest_path = out_dir / ".breadboard/lanes/new_lane.manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["references"]["target"] = []
+    manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
 
     exit_code, _, stderr = _invoke(["lane", "validate", str(manifest_path)], capsys)
 
     assert exit_code == 2
-    assert "/target" in stderr
-    assert "object" in stderr.lower()
+    assert "invalid_lane" in stderr
+    assert "references.target" in stderr
+    assert "repo-relative path" in stderr.lower()
 
 
 def test_pyproject_installs_cli_and_runtime_import_packages() -> None:
@@ -156,14 +245,17 @@ def test_pyproject_installs_cli_and_runtime_import_packages() -> None:
     )
 
     assert metadata["project"]["scripts"]["bbh"] == "scripts.breadboard_cli:main"
-    assert set(metadata["tool"]["setuptools"]["packages"]) >= {
-        "scripts",
-        "breadboard",
-        "agentic_coder_prototype",
-        "breadboard_sdk",
-        "conformance",
+    package_find = metadata["tool"]["setuptools"]["packages"]["find"]
+    assert set(package_find["include"]) >= {
+        "scripts*",
+        "breadboard*",
+        "agentic_coder_prototype*",
+        "conformance*",
     }
+    assert package_find["namespaces"] is True
     assert "adaptive_iter" in metadata["tool"]["setuptools"]["py-modules"]
+    assert metadata["tool"]["setuptools"]["package-data"]["contracts.kernel.schemas"] == ["*.schema.json"]
+    from breadboard.product.coordination import WorkItem as ExportedWorkItem; assert ExportedWorkItem.__name__ == "WorkItem"
 
 
 @pytest.mark.parametrize("namespace", ["harness", "lane"])
@@ -196,7 +288,7 @@ def test_validate_returns_resolution_failure_for_unresolvable_paths(
             "harness",
             ("minimal_harness.v2.yaml", "prompts/minimal_system.md"),
         ),
-        ("lane", ("lane.manifest.yaml",)),
+        ("lane", (".breadboard/lanes/new_lane.manifest.json",)),
     ],
 )
 def test_init_json_is_the_only_output_and_identifies_every_created_file(
@@ -213,7 +305,7 @@ def test_init_json_is_the_only_output_and_identifies_every_created_file(
             "--json",
             *extra_global_flags,
             namespace,
-            "init",
+            "create" if namespace == "harness" else "init",
             "--out",
             str(out_dir),
         ],
@@ -223,9 +315,10 @@ def test_init_json_is_the_only_output_and_identifies_every_created_file(
     assert exit_code == 0, stderr
     payload = json.loads(stdout)
     assert payload["ok"] is True
-    assert payload["path"] == str(out_dir / created_paths[0])
+    assert payload["schema_version"] == "bb.cli.result.v1"
+    assert payload["data"]["path"] == created_paths[0]
     if namespace == "harness":
-        assert payload["prompt_path"] == str(out_dir / created_paths[1])
+        assert payload["data"]["prompt_path"] == Path(created_paths[1]).name
     assert stderr == ""
 
 
@@ -236,10 +329,98 @@ def test_init_quiet_emits_no_success_output(
     capsys,
 ) -> None:
     exit_code, stdout, stderr = _invoke(
-        ["--quiet", namespace, "init", "--out", str(tmp_path / namespace)],
+        ["--quiet", namespace, "create" if namespace == "harness" else "init", "--out", str(tmp_path / namespace)],
         capsys,
     )
 
     assert exit_code == 0
     assert stdout == ""
     assert stderr == ""
+
+
+def test_artifact_verify_infers_stored_size_when_size_is_omitted(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    artifact_ref = ArtifactStore(tmp_path / ".breadboard" / "artifacts").put(
+        b"verified artifact",
+        media_type="text/plain",
+    )
+
+    exit_code, stdout, stderr = _invoke(
+        [
+            "--json",
+            "artifact",
+            "--workspace",
+            str(tmp_path),
+            "verify",
+            artifact_ref.digest,
+        ],
+        capsys,
+    )
+
+    assert exit_code == 0
+    assert stderr == ""
+    payload = json.loads(stdout)
+    assert payload["data"]["verified"] is True
+    assert payload["data"]["artifact"]["size_bytes"] == len(b"verified artifact")
+
+
+def test_artifact_put_is_content_addressed_and_immutable(
+    tmp_path: Path,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+    source = tmp_path / "proof.txt"
+    source.write_bytes(b"immutable proof")
+    argv = [
+        "--json",
+        "artifact",
+        "--workspace",
+        str(tmp_path),
+        "put",
+        str(source),
+        "--media-type",
+        "text/plain",
+    ]
+    first_code, first_stdout, first_stderr = _invoke(argv, capsys)
+    second_code, second_stdout, second_stderr = _invoke(argv, capsys)
+    first = json.loads(first_stdout)
+    second = json.loads(second_stdout)
+    assert first_code == second_code == 0
+    assert first_stderr == second_stderr == ""
+    assert first["data"]["artifact"] == second["data"]["artifact"]
+    assert first["data"]["artifact"]["media_type"] == "text/plain"
+    digest = first["data"]["artifact"]["digest"].removeprefix("sha256:")
+    stored = tmp_path / ".breadboard" / "artifacts" / "sha256" / digest[:2] / digest
+    assert stored.read_bytes() == b"immutable proof"
+
+
+def test_artifact_delete_removes_only_the_addressed_content(
+    tmp_path: Path,
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+    source = tmp_path / "proof.bin"
+    source.write_bytes(b"delete this proof")
+    put_code, stdout, _ = _invoke(
+        ["--json", "artifact", "--workspace", str(tmp_path), "put", str(source)],
+        capsys,
+    )
+    artifact = json.loads(stdout)["data"]["artifact"]
+    assert put_code == 0
+    delete_code, stdout, stderr = _invoke(
+        ["--json", "artifact", "--workspace", str(tmp_path), "delete", artifact["digest"]],
+        capsys,
+    )
+    deleted = json.loads(stdout)
+    assert delete_code == 0 and stderr == ""
+    assert deleted["data"]["deleted"] is True
+    get_code, stdout, _ = _invoke(
+        ["--json", "artifact", "--workspace", str(tmp_path), "get", artifact["digest"]],
+        capsys,
+    )
+    assert get_code == 3
+    assert json.loads(stdout)["error"]["error_code"] == "path_unavailable"

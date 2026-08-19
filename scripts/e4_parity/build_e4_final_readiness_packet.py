@@ -35,6 +35,11 @@ except ReferenceResolutionError as exc:
 GENERATED_AT_UTC = "2026-07-03T09:15:00Z"
 P8_SCORE_ROW_ID = "score_p8_final_readiness_blocked_ready_handoff"
 BLOCKED_P8_POINTS = 35
+SCORE_AUTHORITY_POINTS = 1000
+SCORE_AUTHORITY_TARGET_CLAIMS = 10
+SCORE_AUTHORITY_NON_TARGET_CLAIMS = 8
+SCORE_AUTHORITY_REF = "docs_tmp/phase_16/BB_ER_PROGRESS.json#totals"
+SCORE_AUTHORITY_PATH = WORKSPACE / SCORE_AUTHORITY_REF.split("#", 1)[0]
 
 PHASE_ROOT = WORKSPACE / "docs_tmp" / "phase_15"
 EXEC_ROOT = PHASE_ROOT / "pro_requests" / "e4_breakthrough_20260629" / "execution"
@@ -136,16 +141,33 @@ def _inventory() -> dict[str, Any]:
     return lane_inventory.load_inventory(INVENTORY_PATH)
 
 
+def _inventory_lanes() -> tuple[dict[str, Any], ...]:
+    return tuple(lane for lane in _inventory()["lanes"] if isinstance(lane, dict))
+
+
 def _accepted_lanes() -> tuple[dict[str, Any], ...]:
-    lanes = _inventory()["lanes"]
-    return tuple(lane for lane in lanes if isinstance(lane, dict) and lane.get("status") == "accepted")
+    return tuple(lane for lane in _inventory_lanes() if lane.get("status") == "accepted")
+
+
+def _accounted_lanes() -> tuple[dict[str, Any], ...]:
+    return tuple(
+        lane
+        for lane in _inventory_lanes()
+        if lane.get("status") == "accepted" or lane.get("evidence_status") == "accepted"
+    )
+
+
+def _scored_lanes() -> tuple[dict[str, Any], ...]:
+    """Return evidence-accounted lanes that participate in Phase-16 score authority."""
+    return tuple(lane for lane in _accounted_lanes() if int(lane.get("points", 0)) > 0)
 
 
 def _lanes_by_kind(kind: str) -> tuple[dict[str, Any], ...]:
-    return tuple(lane for lane in _accepted_lanes() if lane.get("kind") == kind)
+    return tuple(lane for lane in _scored_lanes() if lane.get("kind") == kind)
+
 
 def _accepted_lane_points(kind: str | None = None) -> int:
-    lanes = _accepted_lanes() if kind is None else _lanes_by_kind(kind)
+    lanes = _scored_lanes() if kind is None else _lanes_by_kind(kind)
     return sum(int(lane.get("points", 0)) for lane in lanes)
 
 
@@ -161,7 +183,24 @@ def _lane_arg(lane: Mapping[str, Any], flag: str) -> str:
     raise RuntimeError(f"inventory lane {lane.get('lane_id')!r} missing {flag}")
 
 
+def _retired_lane_evidence_path(lane: Mapping[str, Any], filename: str) -> Path | None:
+    if lane.get("status") == "accepted" or lane.get("evidence_status") != "accepted":
+        return None
+    artifacts_root = lane.get("artifacts_root")
+    if not isinstance(artifacts_root, str) or not artifacts_root:
+        raise RuntimeError(
+            f"retired inventory lane {lane.get('lane_id')!r} missing artifacts_root"
+        )
+    return _resolve_read_reference(
+        f"{artifacts_root}/{filename}",
+        label=f"retired lane {lane.get('lane_id')!r} {filename}",
+    )
+
+
 def _lane_support_claim_path(lane: Mapping[str, Any]) -> Path:
+    retired_path = _retired_lane_evidence_path(lane, "frozen_c4_support_claim.json")
+    if retired_path is not None:
+        return retired_path
     return _resolve_read_reference(
         _lane_arg(lane, "--support-claim"),
         label=f"lane {lane.get('lane_id')!r} support claim",
@@ -169,6 +208,9 @@ def _lane_support_claim_path(lane: Mapping[str, Any]) -> Path:
 
 
 def _lane_evidence_manifest_path(lane: Mapping[str, Any]) -> Path:
+    retired_path = _retired_lane_evidence_path(lane, "frozen_c4_evidence_manifest.json")
+    if retired_path is not None:
+        return retired_path
     return _resolve_read_reference(
         _lane_arg(lane, "--evidence-manifest"),
         label=f"lane {lane.get('lane_id')!r} evidence manifest",
@@ -176,6 +218,16 @@ def _lane_evidence_manifest_path(lane: Mapping[str, Any]) -> Path:
 
 
 def _lane_node_gate_path(lane: Mapping[str, Any]) -> Path:
+    if lane.get("status") != "accepted" and lane.get("evidence_status") == "accepted":
+        artifacts_root = lane.get("artifacts_root")
+        if not isinstance(artifacts_root, str) or not artifacts_root:
+            raise RuntimeError(
+                f"retired inventory lane {lane.get('lane_id')!r} missing artifacts_root"
+            )
+        return _resolve_read_reference(
+            f"{artifacts_root}/frozen_c4_validation_report.json",
+            label=f"retired lane {lane.get('lane_id')!r} frozen node gate",
+        )
     return _resolve_read_reference(
         _lane_arg(lane, "--json-out"),
         label=f"lane {lane.get('lane_id')!r} node gate",
@@ -205,7 +257,7 @@ def _projected_score_rows() -> list[dict[str, Any]]:
         if isinstance(row, Mapping) and isinstance(row.get("score_row_id"), str)
     }
     rows = [dict(row) for row in subledger.get("score_rows", []) if isinstance(row, Mapping) and row.get("score_row_id") not in managed_score_row_ids()]
-    for lane in _accepted_lanes():
+    for lane in _accounted_lanes():
         row_id = _lane_score_row_id(lane)
         existing = existing_by_score_row_id.get(row_id)
         rows.append(build_lane_score_row(lane, existing if isinstance(existing, Mapping) else None))
@@ -245,7 +297,11 @@ def _projected_score_row_points_for_expected(kind: str | None = None) -> int:
 
 
 def _expected_target_support_claim_count() -> int:
-    return len(_lanes_by_kind("target_support"))
+    return sum(
+        1
+        for lane in _accounted_lanes()
+        if int(lane.get("points", 0)) > 0 and lane.get("kind") == "target_support"
+    )
 
 
 def _projected_score_row_points(kind: str | None = None) -> int:
@@ -259,11 +315,78 @@ def _expected_target_support_claims() -> int:
 
 
 def _expected_non_target_claims() -> int:
-    return len(_lanes_by_kind("non_target_accounting"))
+    return sum(
+        1
+        for lane in _accounted_lanes()
+        if int(lane.get("points", 0)) > 0 and lane.get("kind") == "non_target_accounting"
+    )
 
 
 def expected_points() -> int:
     return _projected_score_row_points_for_expected() + BLOCKED_P8_POINTS
+
+
+def _score_authority_source() -> dict[str, int]:
+    payload = load_json(SCORE_AUTHORITY_PATH)
+    if not isinstance(payload, Mapping):
+        raise RuntimeError(f"score authority must be an object: {SCORE_AUTHORITY_PATH}")
+    totals = payload.get("totals")
+    if not isinstance(totals, Mapping):
+        raise RuntimeError(f"score authority is missing totals: {SCORE_AUTHORITY_PATH}")
+    observed: dict[str, int] = {}
+    for source_key, output_key in (
+        ("points_total", "points_total"),
+        ("points_done", "points_done"),
+        ("points_blocked", "points_blocked"),
+    ):
+        value = totals.get(source_key)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise RuntimeError(
+                f"score authority totals.{source_key} must be an integer: {SCORE_AUTHORITY_PATH}"
+            )
+        observed[output_key] = value
+    return observed
+
+
+def score_authority(
+    *,
+    expected_points_value: int = SCORE_AUTHORITY_POINTS,
+    expected_target_claims_value: int = SCORE_AUTHORITY_TARGET_CLAIMS,
+    expected_non_target_claims_value: int = SCORE_AUTHORITY_NON_TARGET_CLAIMS,
+) -> dict[str, Any]:
+    source_observed = _score_authority_source()
+    observed = {
+        "points": expected_points(),
+        "target_claims": _expected_target_support_claims(),
+        "non_target_claims": _expected_non_target_claims(),
+    }
+    expected = {
+        "points": expected_points_value,
+        "target_claims": expected_target_claims_value,
+        "non_target_claims": expected_non_target_claims_value,
+    }
+    source_ok = source_observed == {
+        "points_total": expected_points_value,
+        "points_done": expected_points_value,
+        "points_blocked": 0,
+    }
+    return {
+        "source_ref": SCORE_AUTHORITY_REF,
+        "source_sha256": _hash_utils.sha256_file(SCORE_AUTHORITY_PATH),
+        "source_observed": source_observed,
+        "expected": expected,
+        "observed": observed,
+        "ok": source_ok and observed == expected,
+    }
+
+
+def assert_score_authority() -> None:
+    authority = score_authority()
+    if not authority["ok"]:
+        raise RuntimeError(
+            f"readiness score drifted from {SCORE_AUTHORITY_REF}: "
+            f"expected {authority['expected']}, observed {authority['observed']}"
+        )
 
 
 def expected_target_support_points() -> int:
@@ -313,6 +436,8 @@ def refresh_score_artifact_hashes() -> None:
     """Refresh generated score/accepted hashes without changing readiness state."""
     subledger = load_json(SCORE_SUBLEDGER_PATH)
     accepted_report = load_json(ACCEPTED_REPORT_PATH)
+    _refresh_managed_lane_score_rows(subledger)
+
 
     for row in subledger.get("score_rows", []):
         if not isinstance(row, dict):
@@ -374,6 +499,8 @@ def refresh_blocked_score_artifacts(errors: list[str]) -> None:
     """Refresh generated score/accepted hashes without marking final readiness complete."""
     subledger = load_json(SCORE_SUBLEDGER_PATH)
     accepted_report = load_json(ACCEPTED_REPORT_PATH)
+    _refresh_managed_lane_score_rows(subledger)
+
 
     for row in subledger.get("score_rows", []):
         if not isinstance(row, dict):
@@ -463,23 +590,56 @@ def ref(path: Path) -> str:
 
 
 def accepted_support_claim_paths() -> list[Path]:
-    return [_lane_support_claim_path(lane) for lane in _accepted_lanes()]
+    return [_lane_support_claim_path(lane) for lane in _accounted_lanes()]
 
 
 def accepted_evidence_manifest_paths() -> list[Path]:
-    return [_lane_evidence_manifest_path(lane) for lane in _accepted_lanes()]
+    return [_lane_evidence_manifest_path(lane) for lane in _accounted_lanes()]
 
 
 def accepted_node_gate_paths() -> list[Path]:
-    return [_lane_node_gate_path(lane) for lane in _accepted_lanes()]
+    return [_lane_node_gate_path(lane) for lane in _accounted_lanes()]
 
 
 def managed_score_row_ids() -> set[str]:
-    return {_lane_score_row_id(lane) for lane in _accepted_lanes()} | {P8_SCORE_ROW_ID}
+    return {
+        score_row_id
+        for lane in _inventory_lanes()
+        if isinstance((score_row_id := lane.get("score_row_id")), str) and score_row_id
+    } | {P8_SCORE_ROW_ID}
+
+def _refresh_managed_lane_score_rows(subledger: dict[str, Any]) -> None:
+    lanes = _accounted_lanes()
+    existing_rows = [
+        row for row in subledger.get("score_rows", []) if isinstance(row, Mapping)
+    ]
+    lane_score_row_ids = {_lane_score_row_id(lane) for lane in lanes}
+    existing_by_score_row_id = {
+        row.get("score_row_id"): row
+        for row in existing_rows
+        if isinstance(row.get("score_row_id"), str)
+    }
+    retained_rows = [
+        dict(row)
+        for row in existing_rows
+        if row.get("score_row_id") not in lane_score_row_ids
+        and row.get("score_row_id") != P8_SCORE_ROW_ID
+    ]
+    retained_rows.extend(
+        build_lane_score_row(
+            lane,
+            existing_by_score_row_id.get(_lane_score_row_id(lane)),
+        )
+        for lane in lanes
+    )
+    p8_row = existing_by_score_row_id.get(P8_SCORE_ROW_ID)
+    if isinstance(p8_row, Mapping):
+        retained_rows.append(dict(p8_row))
+    subledger["score_rows"] = retained_rows
 
 
 def c4_validator_paths() -> list[tuple[Path, str]]:
-    return [(_lane_node_gate_path(lane), _validator_ref_key(lane)) for lane in _accepted_lanes()]
+    return [(_lane_node_gate_path(lane), _validator_ref_key(lane)) for lane in _accounted_lanes()]
 
 
 def builder_ref_paths() -> dict[str, str]:
@@ -617,7 +777,7 @@ def write_blocked_final_outputs(errors: list[str]) -> dict[str, Any]:
 
 
 def upsert_c4_artifacts(payload: dict[str, Any], list_key: str) -> None:
-    for lane in _accepted_lanes():
+    for lane in _accounted_lanes():
         role_prefix = str(lane["lane_id"])
         upsert_artifact_list(payload, list_key, _lane_support_claim_path(lane), f"{role_prefix}_support_claim")
         upsert_artifact_list(payload, list_key, _lane_evidence_manifest_path(lane), f"{role_prefix}_evidence_manifest")
@@ -673,6 +833,22 @@ def _support_claim_count(payload: Mapping[str, Any]) -> int | None:
     if isinstance(claims, list):
         return len(claims)
     return None
+
+
+def _point_bearing_claims(claims: object) -> list[Mapping[str, Any]]:
+    if not isinstance(claims, list):
+        return []
+    return [
+        claim
+        for claim in claims
+        if isinstance(claim, Mapping)
+        and isinstance(claim.get("points"), int)
+        and int(claim["points"]) > 0
+    ]
+
+
+def _point_bearing_claim_count(claims: object) -> int:
+    return len(_point_bearing_claims(claims))
 
 
 def _current_report_artifact_is_stale(path_ref: str) -> bool:
@@ -897,7 +1073,8 @@ def refresh_score_row_hashes(row: Mapping[str, Any]) -> dict[str, Any]:
         refreshed["support_claim_sha256"] = sha256_path(support_claim_path)
         support_claim = load_json(support_claim_path)
         if isinstance(support_claim, Mapping):
-            refreshed["ledger_row_refs"] = list(support_claim.get("ledger_row_refs", refreshed.get("ledger_row_refs", [])))
+            if support_claim_path.name != "frozen_c4_support_claim.json":
+                refreshed["ledger_row_refs"] = list(support_claim.get("ledger_row_refs", refreshed.get("ledger_row_refs", [])))
             if isinstance(support_claim.get("scope"), Mapping):
                 scope = dict(support_claim["scope"])
                 previous_scope = row.get("scope")
@@ -929,7 +1106,7 @@ def update_score_subledger() -> dict[str, Any]:
         if isinstance(row, Mapping) and isinstance(row.get("score_row_id"), str)
     }
     rows = [row for row in subledger["score_rows"] if row.get("score_row_id") not in managed_score_row_ids()]
-    for lane in _accepted_lanes():
+    for lane in _accounted_lanes():
         row_id = _lane_score_row_id(lane)
         existing = existing_by_score_row_id.get(row_id)
         rows.append(build_lane_score_row(lane, existing if isinstance(existing, Mapping) else None))
@@ -943,7 +1120,7 @@ def update_score_subledger() -> dict[str, Any]:
     subledger["notes"] = [
         "Rows with kind=non_target_accounting are not target-support claims.",
         "Rows with kind=target_support_claim map one accepted support claim to one exact score row, ledger row refs, and a live node_gate validator ref.",
-        f"Inventory-backed accepted non-target lanes contribute {_accepted_lane_points('non_target_accounting')} non-target C4 lineage points.",
+        f"Inventory-backed evidence-accounted non-target lanes contribute {_accepted_lane_points('non_target_accounting')} non-target C4 lineage points.",
         f"Inventory-backed target-support lanes contribute {expected_target_support_points()} exact-scope target-support points.",
         "P8 contributes 35 final-readiness points after all weighted E4 items validate at 1000/1000.",
     ]
@@ -1077,16 +1254,17 @@ def update_terminal_manifest() -> dict[str, Any]:
     manifest["e4_score_before_after"] = dict(accepted_report["e4_score"])
     manifest["remaining_blockers"] = list(accepted_report.get("remaining_blockers", []))
     manifest["blocked_lanes"] = blocked_items()
+    scored_support_claims = _point_bearing_claims(accepted_report.get("accepted_support_claims", []))
     manifest["accepted_support_claim_refs"] = [
         str(claim["claim_ref"])
-        for claim in accepted_report.get("accepted_support_claims", [])
-        if isinstance(claim, Mapping) and isinstance(claim.get("claim_ref"), str)
+        for claim in scored_support_claims
+        if isinstance(claim.get("claim_ref"), str)
     ]
     manifest["accepted_non_target_claims"] = list(accepted_report.get("accepted_non_target_claims", []))
     manifest["accepted_non_target_claim_refs"] = [
         str(claim["claim_ref"])
         for claim in accepted_report.get("accepted_non_target_claims", [])
-        if isinstance(claim, Mapping) and isinstance(claim.get("claim_ref"), str)
+        if isinstance(claim.get("claim_ref"), str)
     ]
     manifest["accepted_validation_ref"] = ref(ACCEPTED_VALIDATION_PATH)
     manifest["accepted_validation_report_sha256"] = sha256_path(ACCEPTED_VALIDATION_PATH)
@@ -1164,7 +1342,9 @@ def update_validation_report() -> dict[str, Any]:
     score_errors = collect_score_subledger_errors(subledger_path=SCORE_SUBLEDGER_PATH, accepted_report_path=ACCEPTED_REPORT_PATH, repo_root=ROOT)
     add_check("accepted_report_points_1000", accepted_report.get("current_accepted_points") == expected_points(), observed=accepted_report.get("current_accepted_points"))
     add_check("accepted_report_target_claims_10", accepted_report.get("target_support_claims_accepted") == _expected_target_support_claims(), observed=accepted_report.get("target_support_claims_accepted"))
-    add_check("accepted_report_non_target_claims_8", len(accepted_report.get("accepted_non_target_claims", [])) == _expected_non_target_claims(), observed=len(accepted_report.get("accepted_non_target_claims", [])))
+    accepted_non_target_claims = accepted_report.get("accepted_non_target_claims", [])
+    accepted_non_target_claim_count = _point_bearing_claim_count(accepted_non_target_claims)
+    add_check("accepted_report_non_target_claims_8", accepted_non_target_claim_count == _expected_non_target_claims(), observed=accepted_non_target_claim_count)
     add_check("score_subledger_validator_ok", not score_errors, observed_errors=len(score_errors))
     for node_gate_path, role in c4_validator_paths():
         node_gate = load_json(node_gate_path)
@@ -1300,7 +1480,7 @@ def write_final_manifest() -> dict[str, Any]:
         (CT_MATRIX_SYNC_SUMMARY_MD_PATH, "ct_matrix_sync_summary_md_e4_1000"),
         *[(path, role) for path, role in c4_validator_paths()],
     ]
-    for lane in _accepted_lanes():
+    for lane in _accounted_lanes():
         role_prefix = str(lane["lane_id"])
         artifact_paths.append((_lane_support_claim_path(lane), f"{role_prefix}_support_claim"))
         artifact_paths.append((_lane_evidence_manifest_path(lane), f"{role_prefix}_evidence_manifest"))
@@ -1432,7 +1612,7 @@ def build() -> dict[str, Any]:
         "blocked_points": blocked_items_points(),
         "final_report": display(P8_REPORT_PATH),
         "final_manifest": display(P8_MANIFEST_PATH),
-        "accepted_support_claims": len(accepted_report.get("accepted_support_claims", [])),
+        "accepted_support_claims": _point_bearing_claim_count(accepted_report.get("accepted_support_claims", [])),
         "artifact_count": len(final_manifest["artifacts"]),
     }
 
@@ -1442,6 +1622,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     try:
+        assert_score_authority()
         report = build()
     except Exception as exc:
         if args.json:

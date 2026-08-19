@@ -55,6 +55,36 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
     monkeypatch.setattr(builder, "SUPPORT_DIR", support_dir)
     monkeypatch.setattr(builder, "NODE_GATE_DIR", node_gate_dir)
     monkeypatch.setattr(builder, "CATALOG_PATH", catalog_path)
+    runtime_relpaths = (
+        "docs/conformance/e4_target_support/candidate_validation/runtime_records/manifest.json",
+        "docs/conformance/e4_target_support/candidate_validation/runtime_records/records/bb.kernel_event.v2.jsonl",
+        "docs/conformance/e4_target_support/candidate_validation/runtime_records/records/bb.session_transcript.v2.jsonl",
+    )
+
+    def emit_candidate_runtime_records(
+        physical_lane_dir: Path,
+        spec: object,
+        logical_lane_dir: Path,
+    ) -> list[str]:
+        assert spec
+        assert logical_lane_dir == repo_root / "docs/conformance/e4_target_support/candidate_validation"
+        for index, relative in enumerate(runtime_relpaths):
+            path = output_root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(
+                json.dumps({"candidate_runtime_record": index}) + "\n",
+                encoding="utf-8",
+            )
+        return list(runtime_relpaths)
+
+    monkeypatch.setattr(
+        builder, "emit_self_runtime_records", emit_candidate_runtime_records
+    )
+    monkeypatch.setattr(
+        builder,
+        "replay_session_from_records",
+        lambda _runtime_dir: {"ok": True},
+    )
     monkeypatch.setattr(builder, "ledger_row_ref", lambda spec: "ledger.json#feat#sha256:" + "0" * 64)
     monkeypatch.setattr(
         builder,
@@ -82,9 +112,31 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
         }:
             return {"ok": False, "errors": ["PIN_STALE: validation read canonical pre-capture bytes"]}
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        support_artifact = next(item for item in manifest["artifacts"] if item["role"] == "support_claim_ref")
-        actual = "sha256:" + hashlib.sha256(support_path.read_bytes()).hexdigest()
-        return {"ok": actual == support_artifact["sha256"], "errors": [] if actual == support_artifact["sha256"] else ["PIN_STALE"]}
+        support_artifact = next(
+            item
+            for item in manifest["artifacts"]
+            if item["role"] == "support_claim_ref"
+        )
+        session_artifact = next(
+            item
+            for item in manifest["artifacts"]
+            if item["role"] == "session_transcript"
+        )
+        expected_hashes = {
+            support_artifact["sha256"]: "sha256:"
+            + hashlib.sha256(support_path.read_bytes()).hexdigest(),
+            session_artifact["sha256"]: "sha256:"
+            + hashlib.sha256(
+                (output_root / session_artifact["path"]).read_bytes()
+            ).hexdigest(),
+        }
+        current = all(
+            declared == actual for declared, actual in expected_hashes.items()
+        )
+        return {
+            "ok": current,
+            "errors": [] if current else ["PIN_STALE"],
+        }
 
     monkeypatch.setattr(builder, "validate_c4_chain", validate_candidate)
     spec = {
@@ -103,8 +155,8 @@ def test_build_lane_validates_fresh_candidate_bytes_before_promotion(
         "sandbox_mode": "read-only",
         "semantic_key": "candidate_validation",
         "source_paths": ["config/candidate_source.json"],
-        "target": "opencode",
-        "target_family": "opencode",
+        "target": "breadboard",
+        "target_family": "breadboard",
         "target_version": "candidate",
         "upstream_commit": "a" * 40,
         "upstream_commit_date": "2026-07-11T00:00:00Z",

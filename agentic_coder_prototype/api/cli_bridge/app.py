@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import Any, AsyncIterator, Dict
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 
@@ -51,11 +51,11 @@ from .models import (
     SessionInputResponse,
     SessionSummary,
 )
-from agentic_coder_prototype.api.e4 import create_e4_router
-from agentic_coder_prototype.api.e4.models import E4ApiError
 from .service import SessionService
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
+from agentic_coder_prototype.api.public import mount_public_routes
+from agentic_coder_prototype.api.public.models import is_public_operation_request, problem_response
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
@@ -124,10 +124,12 @@ def _env_flag_default(name: str, *, default: bool) -> bool:
     return default
 
 
-def _drop_legacy_routes(app: FastAPI) -> None:
-    # "/status" stays first-class: main's engine metadata contract (tests/test_cli_bridge_ready.py) and the TUI doctor consume it.
+def _drop_legacy_routes(app: FastAPI, *, drop_versioned: bool = False) -> None:
+    # Operational probes remain routable for existing launchers, but are not product-contract operations.
+    hidden_operational = {"/health", "/ready", "/status"}
     legacy_exact = {"/models", "/features"}
     legacy_prefixes = ("/sessions", "/rl", "/atp", "/ext/evolake")
+    preserved_versioned = ("/v1/e4",) if _env_flag("BREADBOARD_ENABLE_E4_API") else ()
 
     def _route_path(route: Any) -> str:
         path = getattr(route, "path", None)
@@ -137,14 +139,20 @@ def _drop_legacy_routes(app: FastAPI) -> None:
         prefix = getattr(include_context, "prefix", None)
         return str(prefix) if prefix is not None else ""
 
-    app.router.routes = [
-        route
-        for route in app.router.routes
-        if not (
-            _route_path(route) in legacy_exact
-            or any(_route_path(route).startswith(prefix) for prefix in legacy_prefixes)
-        )
-    ]
+    retained = []
+    for route in app.router.routes:
+        path = _route_path(route)
+        remove = path in legacy_exact or any(path.startswith(prefix) for prefix in legacy_prefixes)
+        if drop_versioned and path.startswith("/v1/") and not any(
+            path.startswith(prefix) for prefix in preserved_versioned
+        ):
+            remove = True
+        if remove:
+            continue
+        if path in hidden_operational and hasattr(route, "include_in_schema"):
+            route.include_in_schema = False
+        retained.append(route)
+    app.router.routes = retained
 
 
 def _run_git_command(args: list[str], cwd: Path) -> str | None:
@@ -252,33 +260,49 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
+    app.state.session_service = _service
     rl_service = LiveRLRunService(Path(os.environ.get("BREADBOARD_RL_RUN_STORE", ":memory:")))
     rl_router = create_phase3_rl_router(rl_service)
     app.include_router(rl_router, prefix="/v1/rl", tags=["rl"])
     app.include_router(rl_router, prefix="/rl", tags=["rl"])
-    e4_repo_root = Path(__file__).resolve().parents[3]
-
-    @app.exception_handler(E4ApiError)
-    async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:
-        return JSONResponse(
-            status_code=exc.status_code,
-            content=ErrorEnvelope(error=exc.error, detail=exc.detail_text, path=exc.path).model_dump(),
-        )
 
     @app.exception_handler(HTTPException)
-    async def _http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
+    async def _http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        operation_id = getattr(request.scope.get("route"), "operation_id", None)
+        if legacy_routes_enabled:
+            content = _http_error_content(exc)
+            content["detail"] = exc.detail
+            return JSONResponse(status_code=exc.status_code, content=content)
+        if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path, operation_id):
+            content = _http_error_content(exc)
+            detail = content["detail"] if content["detail"] is not None else content["error"]
+            return problem_response(operation_id or "public.request", exc.status_code, str(content["error"]), str(detail))
         return JSONResponse(status_code=exc.status_code, content=_http_error_content(exc))
 
     @app.exception_handler(RequestValidationError)
-    async def _validation_exception_handler(_request: Request, exc: RequestValidationError) -> JSONResponse:
+    async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        operation_id = getattr(request.scope.get("route"), "operation_id", None)
+        if public_api_enabled and not legacy_routes_enabled and is_public_operation_request(request.method, request.url.path, operation_id):
+            return problem_response(operation_id or "public.request", 422, "invalid_request", "request validation failed")
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content=ErrorEnvelope(error="invalid_request", detail={"errors": exc.errors()}, path=None).model_dump(),
         )
 
+    e4_repo_root = Path(__file__).resolve().parents[3]
     legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
-    e4_api_flag = os.environ.get("BREADBOARD_ENABLE_E4_API", "").strip().lower()
-    if e4_api_flag not in {"0", "false", "no"}:
+    public_api_enabled = _env_flag_default("BREADBOARD_ENABLE_PUBLIC_API", default=True)
+    if _env_flag("BREADBOARD_ENABLE_E4_API"):
+        from agentic_coder_prototype.api.e4 import create_e4_router
+        from agentic_coder_prototype.api.e4.models import E4ApiError
+
+        @app.exception_handler(E4ApiError)
+        async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content=ErrorEnvelope(error=exc.error, detail=exc.detail_text, path=exc.path).model_dump(),
+            )
+
         app.include_router(
             create_e4_router(
                 repo_root=e4_repo_root,
@@ -888,7 +912,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         responses={404: {"model": ErrorResponse}},
     )
     async def delete_session(session_id: str, svc: SessionService = Depends(get_service)):
-        await svc.stop_session(session_id)
+        await svc.delete_session(session_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
     @app.get(
@@ -961,7 +985,12 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                 provider.register_routes(app, get_service)
         mounted_extensions.append("evolake")
 
-    if not legacy_routes_enabled:
+    if public_api_enabled and legacy_routes_enabled:
+        logger.warning("BREADBOARD_LEGACY_ROUTES takes precedence; product API routes remain disabled")
+    if public_api_enabled and not legacy_routes_enabled:
+        _drop_legacy_routes(app, drop_versioned=True)
+        mount_public_routes(app)
+    elif not legacy_routes_enabled:
         _drop_legacy_routes(app)
 
     return app

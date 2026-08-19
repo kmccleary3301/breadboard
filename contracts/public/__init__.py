@@ -1,0 +1,1 @@
+"""Public product contract resources."""

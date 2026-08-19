@@ -212,6 +212,25 @@ def hermetic_accepted_lane(
         validator.generate_lane_inventory._SCORE_SUBLEDGER_CACHE = None
 
 
+def test_inventory_check_rejects_retained_evidence_status_drift(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generated = {"lane_id": "demo", "evidence_status": "accepted"}
+    monkeypatch.setattr(
+        validator.generate_lane_inventory,
+        "lane_inventory_row",
+        lambda _lane_def: generated,
+    )
+
+    check = validator._inventory_check(
+        {},
+        {**generated, "evidence_status": "blocked"},
+    )
+
+    assert check["status"] == "failed"
+    assert check["detail"] == "inventory mismatches: evidence_status"
+
+
 @pytest.mark.parametrize(
     ("ok", "failed_check"),
     [

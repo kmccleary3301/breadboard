@@ -1,0 +1,121 @@
+North-Star Recovery outcome goal
+
+Objective
+
+Ship one installed BreadBoard path in which an author defines and locks a harness once, runs and resumes a durable Session through the default CLI/API/Python SDK/TypeScript SDK/TUI surfaces, inspects events and artifacts after restart, replays one representative provider/tool/host execution safely through internal E4, and publishes one reverifiable exact-scope claim from a named real provider run.
+
+The working product is the goal. Validation is the minimum proof needed to expose a plausible failure of that product or its claim. Do not build proof-of-proof machinery, duplicate Git/CI/package records, or use scores, hashes, packet counts, and review counts as substitutes for the journey.
+
+Authorities
+
+Read before selecting work:
+
+1. `docs/plans/north_star_recovery/ARCHITECTURE_SPEC.md`
+2. `docs/plans/north_star_recovery/EXECUTION_PLAN.md`
+3. `docs/plans/north_star_recovery/LOOP_SPEC.yaml`
+4. `docs/plans/north_star_recovery/WORKER_CONTRACTS.md`
+5. `docs/DIRECTION_CHARTER.md`
+6. `docs/plans/phase_20_right_shape/FREEZE_POLICY.md`
+
+Read `STATE.json` only as a generated control-panel view. Refresh it after packet closure, approved merge, or handoff. A stale field blocks only a decision that depends on that field.
+
+Start-up
+
+- Run `bd prime` and inspect the ready tracker frontier.
+- Confirm current source, base, open PRs, active issue, and required external resources.
+- Treat merged source and observed behavior as authority; treat blocked branches and historical artifacts as inventory only.
+- Select the earliest dependency-ready outcome packet from `EXECUTION_PLAN.md`.
+- State its outcome, scope, non-goals, material risk, smallest checks, attempt budget, and human gates before editing.
+- Reproduce the relevant public or durable behavior first.
+
+Execution priorities
+
+1. Rebaseline current work and retire the blocked replay implementation without merging it.
+2. Run the minimal product tracer and fix the first owning-seam failure.
+3. Split the 26-operation product catalog from the 19-operation internal E4 catalog; keep E4 off by default.
+4. Extract the SessionRunner seams and make CLI/API use the same Session lifecycle.
+5. Rebuild replay vertically: records and admission, then isolation/durability/redaction, then provider/tool/host adapters.
+6. Cut over Python SDK, TypeScript SDK, TUI, CLI, OpenAPI, and default routing together only after their shared journey passes.
+7. Run the internal E4 lane-lock -> capture -> replay -> compare -> claim -> reverify journey.
+8. Prove the actual installed product outside the source checkout, including restart and durable read-back.
+9. Run named real-provider conformance after credentials, endpoint, model/runtime, resource envelope, and cleanup preflight pass; publish only the exact supported scope.
+10. Integrate, migrate or remove compatibility callers, run relevant CI and one broad compatibility suite, and prepare the merge/release decision.
+11. Run additional provider matrices, target sweeps, soak, performance, outsider, or provenance work only when a named risk or broader claim requires it.
+
+Working method
+
+- Prefer one vertical packet ending at a public, persistence, process, package, or external boundary.
+- Use OMP only where parallelism, specialist review, or isolated writes help. Keep at most four workers and two disjoint isolated writers active.
+- The supervisor owns decomposition and product judgment. The implementer never reviews itself.
+- Use LSP for definitions, references, renames, implementations, and diagnostics when available.
+- Run focused checks during edits. Add a test only for uncovered observable behavior or a diagnosed regression.
+- Run a boundary smoke when behavior crosses API, client, process, persistence, package, provider, or target seams.
+- Run broad CI once on a stable integrated candidate, not after every packet.
+- Store raw output in the existing test, CI, package, or external-run artifact location. Keep packet reports concise.
+- Hash only immutable locks, captures, claims, releases, and external inputs whose identity affects a claim.
+- Stop after two implementation attempts without new information, two review rounds on the same risk, or one unexplained CI rerun. Diagnose or escalate; do not increase the limit silently.
+
+Outcome and assurance
+
+Outcome work blocks completion:
+
+- one default product catalog and runtime path;
+- installed lock-first journey across all ordinary clients;
+- restart-safe durable sessions and artifacts;
+- deterministic replay with safe cancellation, containment, redaction, and publication;
+- internal default-off E4 representative journey;
+- named real-provider conformance and one exact-scope reverifiable claim;
+- compatibility migration or owned removal.
+
+Assurance work is risk-driven. Extra providers, targets, lanes, benchmarks, soak runs, reviewers, and provenance analysis strengthen only named claims or release risks. They never compensate for a missing product journey and do not block unrelated product value.
+
+Human gates
+
+Stop for one precise decision before:
+
+- merge or release;
+- closing or superseding an issue or PR;
+- changing a public catalog, schema, route default, or ordinary generated client surface;
+- changing isolation, secret, filesystem, network, capability, approval, or authoritative publication behavior;
+- spending external provider/target resources;
+- publishing a support claim;
+- accepting a known P0-P2 defect or expanding an exhausted packet.
+
+Routine local diagnosis, bounded edits, focused tests, and preparation of a gated change are authorized.
+
+Fail-closed rules
+
+- No fake provider, target, sandbox, claim, approval, or CI evidence.
+- No execution claim from stored-only, reused-without-valid-binding, failed, canceled, timed-out, or integrity-failed work.
+- No broad support claim from one narrow run.
+- No product completion claim from a campaign score, green-counter aggregate, hash chain, or document review.
+- No runtime dependency on `docs_tmp`, tracker state, or campaign code.
+- No broad runtime, provider, sandbox, artifact-store, or campaign-platform rewrite.
+- No accepted historical artifact edits; supersede with a new record.
+
+Blocking and escalation
+
+A missing credential, provider endpoint, target, or spend approval blocks only the external packet that needs it. Preserve local product facts and continue any dependency-independent outcome work. Do not repair product code for an external or stale red.
+
+When blocked, report the affected packet, observed blocker, what was tried, the cheapest discriminating next action, alternatives, and one recommended human decision.
+
+Completion
+
+Complete only when all outcome packets pass on one integrated candidate, the installed journey and exact-scope claim still reverify, relevant CI and one broad compatibility run are green, generated clients are current, required risk-based reviews have no unresolved P0/P1 findings, and the human approves merge/release.
+
+Final handoff
+
+Return:
+
+- exact integrated source and package identity;
+- what the user can now do;
+- changed product surfaces;
+- focused, boundary, installed, external, and broad checks actually run;
+- required review verdicts;
+- active exact-scope claims and exclusions;
+- compatibility removal status;
+- external limitations and nonblocking assurance follow-ups;
+- recommendation: merge, do not merge, or blocked;
+- one human action, if any.
+
+Do not report a cumulative readiness score.

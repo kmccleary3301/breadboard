@@ -1,0 +1,44 @@
+{
+  "accepted": true,
+  "asserted_behaviors": [
+    "A product harness was created, updated, validated, and locked through the public API.",
+    "The installed wheel dispatched the named Session through runtime codex_app_server with model gpt-5.5.",
+    "The captured provider text event was exactly BREADBOARD_X1_PROVIDER_OK with no tool calls.",
+    "BreadBoard normalized the final answer to finish_reason stop while preserving native runtime completion reason final_answer_timeout.",
+    "BreadBoard recorded session.completed with terminal outcome completed.",
+    "The hash- and identity-bound normalized provider turn replayed exactly through ReplayRuntime.",
+    "The same digest-bound completed Session and event log remained readable after service restart."
+  ],
+  "claim_id": "x1_openai_gpt55_installed_product_journey_20260819",
+  "evidence_refs": {
+    "comparator_report.json": "sha256:e627fdbacf3ebf8c2eafde82452a478a7cb9089ba5cf859992839b2674979251",
+    "containment_regression.json": "sha256:ec877f4991cf51515ebd7b6fbff81dfe895b3e6e3ab84e683b8aebf0fd579b94",
+    "raw_capture.json": "sha256:835c5e56baabed1813d96df81011fbdb186320177a3aab946fc1b329cb2fafb6",
+    "replay_report.json": "sha256:15866606bd35177dfa8f3955987b802c6c6b2a4809efc4e22979d39e0e427020",
+    "replay_session.json": "sha256:883eb2d3e1461fd2722f5031ae9fe180683691e91cb8e21f53746e2d72802a3e",
+    "restart_reverification.json": "sha256:7e0c39a0f7f3e747c3c20da6532d0344ad718d02e83ab1a57817ec211e84f5fa",
+    "secret_scan_report.json": "sha256:0ab64560e64b01af12bb459af6ce2661dcc1d57bea82f68800deb7fbf0317697"
+  },
+  "exclusions": [
+    "No OpenAI Responses API transport claim is made; this run used the locally authenticated Codex app-server runtime.",
+    "No claim is made that the upstream provider emitted a native stop reason; stop is BreadBoard's normalized finish reason after final_answer_timeout.",
+    "No provider-wide, model-family-wide, benchmark-quality, cost, latency, tool-use, write-enabled, or multi-turn claim is made.",
+    "No claim is made for any wheel other than the pinned sha256.",
+    "The run authorizes no publication beyond this evidence packet."
+  ],
+  "schema_version": "bb.north_star.x1.exact_scope_claim.v2",
+  "scope": {
+    "codex_cli_version": "0.144.0",
+    "harness_lock_hash": "sha256:6bd6410a5486fdb938b0b4173dbb00c6da60a77475e7369625b5a7b8c92e5c1b",
+    "installed_wheel_sha256": "sha256:29309d9ff5acfa1a82f34f1328085703892bafc061e75c25fc94bd4a51b5738e",
+    "persisted_event_log_sha256": "sha256:ae2a597b6c4a53316a9320a0e2537d2bc7fcf09dab168e190c65660275b18915",
+    "provider_model": "gpt-5.5",
+    "provider_owner": "openai",
+    "provider_route": "codex",
+    "raw_capture_sha256": "sha256:835c5e56baabed1813d96df81011fbdb186320177a3aab946fc1b329cb2fafb6",
+    "runtime_id": "codex_app_server",
+    "session_id": "x1-openai-gpt55-secured-20260819-v2",
+    "task_hash": "sha256:8b058b1494f051a70ed87323977557682afd7c3d92314a8586759e05e6823593"
+  },
+  "summary": "Installed BreadBoard wheel sha256:29309d9ff5acfa1a82f34f1328085703892bafc061e75c25fc94bd4a51b5738e completed one tools-disabled product Session through the locally authenticated Codex app-server runtime using OpenAI gpt-5.5; BreadBoard captured the exact response, preserved the native runtime completion reason, replayed the normalized turn exactly, and read the same digest-bound completed Session after service restart."
+}

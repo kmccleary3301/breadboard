@@ -19,16 +19,9 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.config_mutation_record.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_intervention_reference_slice.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_multi_worker_reference_slice.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_pack.v3.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_reference_slice.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_slice.v2.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.effective_tool_surface.v1.schema.json",
@@ -57,7 +50,6 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v2.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.side_effect_broker.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.signal.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.terminal_cleanup_result.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.terminal_interaction.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.terminal_output_delta.v1.schema.json",
@@ -71,7 +63,8 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v2.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.transcript_continuation_patch.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.wake_subscription.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v1.schema.json"
+      "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.work_placement.v1.schema.json"
     ]
   },
   "e4": {
@@ -86,8 +79,6 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_plan.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v4.schema.json",
@@ -111,6 +102,14 @@ export const PACKS = {
     status: "active",
     description: "Superseded for new production; retained to validate frozen accepted evidence and not-yet-migrated lanes. Producers MUST NOT emit these for new artifacts.",
     schemas: [
+      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_intervention_reference_slice.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_multi_worker_reference_slice.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_pack.v3.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_reference_slice.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_slice.v2.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.artifact_catalog.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v1.schema.json",
@@ -121,10 +120,12 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.tool_call.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.tool_execution_outcome.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.tool_model_render.v1.schema.json",
-      "https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v1.schema.json"
+      "https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v1.schema.json"
     ]
   }
 } as const satisfies Record<string, { id: string; status: string; description: string; schemas: readonly string[] }>
@@ -147,16 +148,9 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.config_mutation_record.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.config_mutation_record.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.context_resource_pack.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.contract_tiers.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_intervention_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_intervention_reference_slice.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_multi_worker_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_multi_worker_reference_slice.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_pack.v3.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_pack.v3.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_reference_slice.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_slice.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_slice.v2.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.effective_tool_surface.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_tool_surface.v1.schema.json"],
@@ -185,7 +179,6 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v2.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.side_effect_broker.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.side_effect_broker.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.signal.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.signal.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.terminal_cleanup_result.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.terminal_cleanup_result.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.terminal_interaction.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.terminal_interaction.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.terminal_output_delta.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.terminal_output_delta.v1.schema.json"],
@@ -199,7 +192,8 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v2.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.transcript_continuation_patch.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.transcript_continuation_patch.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.wake_subscription.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.wake_subscription.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v1.schema.json"]
+    "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.work_placement.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.work_placement.v1.schema.json"]
   },
   "e4": {
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.artifact_catalog.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.artifact_catalog.v2.schema.json"],
@@ -209,8 +203,6 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v2.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v2.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_failure_classification.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_plan.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.regen_plan.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v4.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v4.schema.json"],
@@ -224,6 +216,14 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.unsupported_case.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.unsupported_case.v1.schema.json"]
   },
   "legacy_frozen": {
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_delegated_verification_reference_slice.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_intervention_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_intervention_reference_slice.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_longrun_reference_slice.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_multi_worker_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_multi_worker_reference_slice.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_pack.v3.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_pack.v3.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_reference_slice.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_reference_slice.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_slice.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_slice.v2.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.distributed_task_descriptor.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.artifact_catalog.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.artifact_catalog.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_inventory.v1.schema.json"],
@@ -234,10 +234,12 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.environment_selector.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.kernel_event.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.session_transcript.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.task.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.tool_call.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.tool_call.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.tool_execution_outcome.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.tool_execution_outcome.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.tool_model_render.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.tool_model_render.v1.schema.json"],
-    "https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v1.schema.json"]
+    "https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.tool_spec.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v1.schema.json"]
   }
 } as const
 
@@ -259,6 +261,7 @@ export type { CoordinationPackV3 } from "./types/bb.coordination_pack.v3.js"
 export type { CoordinationReferenceSliceV1 } from "./types/bb.coordination_reference_slice.v1.js"
 export type { CoordinationSliceV2 } from "./types/bb.coordination_slice.v2.js"
 export type { CoordinationVerificationResultV1 } from "./types/bb.coordination_verification_result.v1.js"
+export type { CoordinationViewV1 } from "./types/bb.coordination_view.v1.js"
 export type { DirectiveV1 } from "./types/bb.directive.v1.js"
 export type { DistributedTaskDescriptorV1 } from "./types/bb.distributed_task_descriptor.v1.js"
 export type { E4ArtifactCatalogV1 } from "./types/bb.e4.artifact_catalog.v1.js"
@@ -271,8 +274,6 @@ export type { E4LaneDefV1 } from "./types/bb.e4.lane_def.v1.js"
 export type { E4LaneDefV2 } from "./types/bb.e4.lane_def.v2.js"
 export type { E4LaneInventoryV1 } from "./types/bb.e4.lane_inventory.v1.js"
 export type { E4LaneInventoryV2 } from "./types/bb.e4.lane_inventory.v2.js"
-export type { E4LaneLockV1 } from "./types/bb.e4.lane_lock.v1.js"
-export type { E4LaneManifestV1 } from "./types/bb.e4.lane_manifest.v1.js"
 export type { E4RegenFailureClassificationV1 } from "./types/bb.e4.regen_failure_classification.v1.js"
 export type { E4RegenPlanV1 } from "./types/bb.e4.regen_plan.v1.js"
 export type { E4SupportClaimV1 } from "./types/bb.e4.support_claim.v1.js"
@@ -335,3 +336,5 @@ export type { TranscriptContinuationPatchV1 } from "./types/bb.transcript_contin
 export type { UnsupportedCaseV1 } from "./types/bb.unsupported_case.v1.js"
 export type { WakeSubscriptionV1 } from "./types/bb.wake_subscription.v1.js"
 export type { WorkItemV1 } from "./types/bb.work_item.v1.js"
+export type { WorkItemV2 } from "./types/bb.work_item.v2.js"
+export type { WorkPlacementV1 } from "./types/bb.work_placement.v1.js"

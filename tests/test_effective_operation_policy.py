@@ -131,9 +131,19 @@ def test_work_items_reference_emitted_operation_policy(monkeypatch: pytest.Monke
     policy_path = Path(paths["effective_operation_policy"])
     digest = hashlib.sha256(policy_path.read_bytes()).hexdigest()
     expected_ref = f"effective_operation_policy.json#sha256:{digest}"
-    for name in ("work_item_queued", "work_item_running"):
-        work_item = json.loads(Path(paths[name]).read_text(encoding="utf-8"))
-        assert work_item["operation_policy_ref"] == expected_ref
+    config_plane = runtime_root / "policy-ref-session" / "records" / "config_plane.jsonl"
+    envelopes = [json.loads(line) for line in config_plane.read_text(encoding="utf-8").splitlines()]
+    work_item_envelopes = [row for row in envelopes if row["name"].startswith("work_item_")]
+    assert [row["name"] for row in work_item_envelopes] == [
+        "work_item_created",
+        "work_item_lease_acquired",
+        "work_item_attempt_started",
+        "work_item_snapshot",
+    ]
+    assert {row["operation_policy_ref"] for row in work_item_envelopes} == {expected_ref}
+    assert {tuple(sorted(row["correlation"].items())) for row in work_item_envelopes} == {
+        (("run_id", "policy-ref-session"), ("session_id", "policy-ref-session"), ("work_item_id", "policy-ref-session"))
+    }
 
 
 def test_runner_metadata_merge_preserves_service_keys_with_request_precedence() -> None:
@@ -163,10 +173,8 @@ async def test_policy_authority_unset_keeps_emission_off(monkeypatch: pytest.Mon
     monkeypatch.delenv("BREADBOARD_EMIT_PRIMITIVES", raising=False)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "runtime_records"))
 
-    async def _noop_start(self: object) -> None:
-        return None
-
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.start", _noop_start)
+    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.schedule_start", lambda _runner: None)
+    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.authorize_start", lambda _runner: None)
     service = SessionService(SessionRegistry())
 
     response = await service.create_session(

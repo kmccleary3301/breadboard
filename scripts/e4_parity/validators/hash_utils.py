@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -16,6 +16,29 @@ def sha256_hex(data: bytes) -> str:
     """Return a bare lowercase sha256 hex digest."""
 
     return hashlib.sha256(data).hexdigest()
+
+
+def sha256_stream_hex(stream: BinaryIO) -> tuple[str, int]:
+    """Return a bare digest and byte count for a binary stream."""
+
+    digest = hashlib.sha256()
+    total = 0
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        digest.update(chunk)
+        total += len(chunk)
+    return digest.hexdigest(), total
+
+
+def copy_stream_sha256_hex(source: BinaryIO, target: BinaryIO) -> tuple[str, int]:
+    """Copy a binary stream while returning its bare digest and byte count."""
+
+    digest = hashlib.sha256()
+    total = 0
+    for chunk in iter(lambda: source.read(1024 * 1024), b""):
+        digest.update(chunk)
+        target.write(chunk)
+        total += len(chunk)
+    return digest.hexdigest(), total
 
 
 def sha256_file(path: Path) -> str:

@@ -12,9 +12,11 @@ Pin forms handled, each strictly line- or block-scoped (no window heuristics):
 2. Row dicts:    { ... "path": "<p>" ... "sha256": ... "bytes": N ... }
    parsed by brace matching from the row's opening line.
 """
+
 from __future__ import annotations
 
 import argparse
+
 try:
     from scripts.e4_parity import compile_lane_lock
     from scripts.e4_parity.validators import hash_utils as _hash_utils
@@ -33,14 +35,21 @@ MAP_RE = re.compile(r'^(\s*)"([^"]+)":\s*"(sha256:[0-9a-f]{64})"(,?)\s*$')
 PATH_RE = re.compile(r'^\s*"path":\s*"([^"]+)"(,?)\s*$')
 SHA_RE = re.compile(r'^(\s*"sha256":\s*")(sha256:[0-9a-f]{64})("(?:,?))\s*$')
 BYTES_RE = re.compile(r'^(\s*"bytes":\s*)(\d+)(,?)\s*$')
-REF_RE = re.compile(r'([a-zA-Z0-9_./@-]+)#(sha256:[0-9a-f]{64})')
-FREEZE_REF_RE = re.compile(r'config/e4_target_freeze_manifest\.yaml#([A-Za-z0-9_.-]+)#(sha256:[0-9a-f]{64})')
-CATALOG_HASH_RE = re.compile(r'^(\s*"catalog_hash":\s*")(sha256:[0-9a-f]{64})("(?:,?))\s*$')
+REF_RE = re.compile(r"([a-zA-Z0-9_./@-]+)#(sha256:[0-9a-f]{64})")
+FREEZE_REF_RE = re.compile(
+    r"config/e4_target_freeze_manifest\.yaml#([A-Za-z0-9_.-]+)#(sha256:[0-9a-f]{64})"
+)
+CATALOG_BINDING_HASH_RE = re.compile(
+    r'^(\s*)"(catalog_hash|segment_hash|shared_segment_hash)":\s*"(sha256:[0-9a-f]{64})"(,?)\s*$'
+)
 CATALOG_REV_RE = re.compile(r'^(\s*"catalog_revision":\s*)(\d+)(,?)\s*$')
 
 
 FREEZE_MANIFEST_PATH = "config/e4_target_freeze_manifest.yaml"
 CONFIG_ID_RE = re.compile(r'"config_id":\s*"([^"]+)"')
+LANE_ID_RE = re.compile(
+    r'(?m)^\s*(?:"lane_id"|lane_id):\s*"?(?P<lane_id>[A-Za-z0-9_.-]+)'
+)
 
 
 def _sha(path: Path) -> str:
@@ -48,15 +57,12 @@ def _sha(path: Path) -> str:
 
 
 def _resolve_pin_path(path_str: str) -> Path | None:
-    """Resolve a descriptor pin path: repo root first, workspace fallback for docs_tmp/."""
-    physical = ROOT / path_str
-    if physical.is_file():
-        return physical
+    """Resolve governed workspace evidence before repo-relative artifacts."""
     if path_str.startswith("docs_tmp/"):
         workspace = ROOT.parent / path_str
-        if workspace.is_file():
-            return workspace
-    return None
+        return workspace if workspace.is_file() else None
+    physical = ROOT / path_str
+    return physical if physical.is_file() else None
 
 
 def _block_bounds(lines: list[str], idx: int) -> tuple[int, int] | None:
@@ -84,28 +90,49 @@ def _freeze_row_hash(config_id: str) -> str | None:
     sys.path.insert(0, str(ROOT / "scripts" / "e4_parity"))
     try:
         from adapters.oh_my_pi_compiler_capture import _freeze_row_hash as row_hash
+
         return row_hash(config_id)
     except Exception:
         return None
 
 
-def _live_catalog() -> tuple[str | None, int | None]:
+def _live_catalog(lane_id: str | None) -> tuple[dict[str, str], int | None]:
     catalog_path = ROOT / "docs" / "conformance" / "e4_artifact_catalog.json"
     try:
         catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return None, None
+        return {}, None
     integrity = catalog.get("integrity")
-    stable = integrity.get("stable_entries_hash") if isinstance(integrity, dict) else None
+    stable = (
+        integrity.get("stable_entries_hash") if isinstance(integrity, dict) else None
+    )
+    segment_hashes = {
+        row.get("segment_id"): row.get("stable_entries_hash")
+        for row in catalog.get("segments", [])
+        if isinstance(row, dict)
+    }
+    hashes = {
+        "catalog_hash": stable,
+        "segment_hash": segment_hashes.get(lane_id),
+        "shared_segment_hash": segment_hashes.get("shared"),
+    }
     revision = catalog.get("revision")
-    return (stable if isinstance(stable, str) else None,
-            revision if isinstance(revision, int) else None)
+    return (
+        {
+            key: value
+            for key, value in hashes.items()
+            if isinstance(value, str) and value.startswith("sha256:")
+        },
+        revision if isinstance(revision, int) else None,
+    )
 
 
 def refresh_pins_once(yaml_path: Path, prefixes: tuple[str, ...]) -> list[str]:
     """One structured pass: pin every matching path row/map entry to disk truth."""
     config_id_match = CONFIG_ID_RE.search(yaml_path.read_text(encoding="utf-8"))
     lane_config_id = config_id_match.group(1) if config_id_match else None
+    lane_id_match = LANE_ID_RE.search(yaml_path.read_text(encoding="utf-8"))
+    lane_id = lane_id_match.group("lane_id") if lane_id_match else None
     lane_freeze_row = _freeze_row_hash(lane_config_id) if lane_config_id else None
     lines = yaml_path.read_text(encoding="utf-8").splitlines()
     stale: set[str] = set()
@@ -166,7 +193,7 @@ def refresh_pins_once(yaml_path: Path, prefixes: tuple[str, ...]) -> list[str]:
     # Pass 3: embedded "<path>#sha256:<hex>" refs (whole-file pins), freeze row
     # refs (row-hash pins), and catalog_binding constants (live catalog truth).
     freeze_cache: dict[str, str | None] = {}
-    live_stable, live_revision = _live_catalog()
+    live_hashes, live_revision = _live_catalog(lane_id)
 
     def _ref_sub(match: re.Match[str]) -> str:
         path_str, pinned = match.group(1), match.group(2)
@@ -194,10 +221,13 @@ def refresh_pins_once(yaml_path: Path, prefixes: tuple[str, ...]) -> list[str]:
             lines[i] = FREEZE_REF_RE.sub(_freeze_sub, lines[i])
         elif REF_RE.search(line):
             lines[i] = REF_RE.sub(_ref_sub, lines[i])
-        ch = CATALOG_HASH_RE.match(lines[i])
-        if ch and live_stable and ch.group(2) != live_stable:
-            lines[i] = f"{ch.group(1)}{live_stable}{ch.group(3)}"
-            stale.add("catalog_binding.catalog_hash")
+        ch = CATALOG_BINDING_HASH_RE.match(lines[i])
+        if ch:
+            key = ch.group(2)
+            live_hash = live_hashes.get(key)
+            if live_hash and ch.group(3) != live_hash:
+                lines[i] = f'{ch.group(1)}"{key}": "{live_hash}"{ch.group(4)}'
+                stale.add(f"catalog_binding.{key}")
         cr = CATALOG_REV_RE.match(lines[i])
         if cr and live_revision is not None and int(cr.group(2)) != live_revision:
             lines[i] = f"{cr.group(1)}{live_revision}{cr.group(3)}"
@@ -224,7 +254,12 @@ def refresh_migrated_lane(
 
 
 def refresh(lane_id: str, max_iterations: int = 6) -> dict[str, object]:
-    yaml_path = ROOT / "config" / "e4_lanes" / f"{lane_id}.yaml"
+    lane_dir = ROOT / "config" / "e4_lanes"
+    legacy_path = lane_dir / f"{lane_id}.yaml"
+    manifest_path = lane_dir / f"{lane_id}.manifest.yaml"
+    payload_path = lane_dir / f"{lane_id}.payloads.yaml"
+    migrated = manifest_path.is_file() and payload_path.is_file()
+    pin_source_path = payload_path if migrated else legacy_path
     prefixes = (
         f"docs/conformance/e4_target_support/{lane_id}/",
         f"docs/conformance/support_claims/{lane_id}_",
@@ -234,17 +269,33 @@ def refresh(lane_id: str, max_iterations: int = 6) -> dict[str, object]:
     scratch = ROOT / "tmp" / "e4_regen_capture" / lane_id
     history: list[dict[str, object]] = []
     for iteration in range(max_iterations):
-        stale = refresh_pins_once(yaml_path, prefixes)
+        stale = refresh_pins_once(pin_source_path, prefixes)
         entry: dict[str, object] = {"iteration": iteration, "stale_pins": stale}
         history.append(entry)
         if not stale and iteration > 0:
             break
+        if migrated:
+            compile_code = refresh_migrated_lane(manifest_path)
+            entry["compile_ok"] = compile_code == 0
+            if compile_code != 0:
+                break
         if scratch.exists():
             shutil.rmtree(scratch)
         run = subprocess.run(
-            [sys.executable, "scripts/e4_parity/run_lane.py", "--lane", lane_id, "--stage", "capture",
-             "--promote-accepted", "--defer-promotion-refresh", "--json"],
-            cwd=ROOT, capture_output=True, text=True,
+            [
+                sys.executable,
+                "scripts/e4_parity/run_lane.py",
+                "--lane",
+                lane_id,
+                "--stage",
+                "capture",
+                "--promote-accepted",
+                "--defer-promotion-refresh",
+                "--json",
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
         )
         try:
             ok = bool(json.loads(run.stdout).get("ok"))
@@ -256,7 +307,11 @@ def refresh(lane_id: str, max_iterations: int = 6) -> dict[str, object]:
             break
         if not stale:
             break
-    return {"lane_id": lane_id, "yaml": str(yaml_path.relative_to(ROOT)), "history": history}
+    return {
+        "lane_id": lane_id,
+        "yaml": str(pin_source_path.relative_to(ROOT)),
+        "history": history,
+    }
 
 
 def main() -> int:

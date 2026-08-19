@@ -11,7 +11,7 @@ from .concurrency_validator import (
     ConcurrencyConfigError,
     validate_concurrency_config,
 )
-from agentic_coder_prototype.compilation.tool_registry import load_tool_registry
+from agentic_coder_prototype.compilation.tool_registry import registry_from_config
 
 
 class AgentToolExecutor:
@@ -61,9 +61,7 @@ class AgentToolExecutor:
         return self._canonical_tool_name(name)
 
     def _load_concurrency_config(self) -> None:
-        tools_cfg = (self.config.get("tools", {}) or {})
-        raw_aliases = {str(k): str(v) for k, v in (tools_cfg.get("aliases") or {}).items()}
-        registry = load_tool_registry(tools_cfg.get("defs_dir"), aliases=raw_aliases)
+        registry = registry_from_config(self.config)
         self.alias_map = registry.alias_map()
 
         conc_cfg = dict(self._validated_concurrency)

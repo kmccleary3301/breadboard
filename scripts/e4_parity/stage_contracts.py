@@ -78,7 +78,14 @@ def check_stage_report(report: StageReport, manifest: Mapping[str, Any]) -> list
         stage = report.get("stage")
         pointer = report.get("manifest_rule")
         value = resolve(pointer)
-        authorized = (
+        candidate_authorized = (
+            manifest.get("schema_version")
+            in {"bb.e4.lane_manifest.v2", "bb.e4.lane_def.v3"}
+            and isinstance(pointer, str)
+            and pointer.startswith("/reuse/")
+            and value == stage
+        )
+        authorized = candidate_authorized or (
             (stage == "replay" and pointer == "/replay/mode" and value == "stored")
             or (
                 stage == "capture"
@@ -87,7 +94,7 @@ def check_stage_report(report: StageReport, manifest: Mapping[str, Any]) -> list
                 and value in {"replay_dump", "runtime_records"}
             )
         )
-        if stage == "normalize":
+        if stage == "normalize" and not candidate_authorized:
             errors.append("normalize NEVER reuses stored results; identity normalize must execute")
         elif not authorized:
             errors.append(f"{stage} reused_stored_result manifest_rule does not resolve to an authorized declaration")

@@ -4,119 +4,67 @@
   "routes": [
     {
       "method": "GET",
-      "path": "/health"
+      "path": "/v1/artifacts"
     },
     {
       "method": "GET",
-      "path": "/sessions/{}/ctrees/disk"
-    },
-    {
-      "method": "GET",
-      "path": "/sessions/{}/ctrees/events"
-    },
-    {
-      "method": "GET",
-      "path": "/sessions/{}/ctrees/tree"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/e4/catalog"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/e4/catalog/binding"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/e4/claims"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/e4/claims/{}"
+      "path": "/v1/artifacts/{}"
     },
     {
       "method": "POST",
-      "path": "/v1/e4/claims/{}/reverify"
+      "path": "/v1/artifacts/{}/verify"
     },
     {
       "method": "GET",
-      "path": "/v1/e4/coverage/{}"
+      "path": "/v1/harness-locks/{}"
     },
     {
       "method": "GET",
-      "path": "/v1/e4/health"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/e4/lanes"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/e4/lanes/{}"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/e4/ledger/rows"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/e4/records"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/e4/schemas"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/models"
+      "path": "/v1/harnesses"
     },
     {
       "method": "POST",
-      "path": "/v1/provider-auth/attach"
+      "path": "/v1/harnesses"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/harnesses/{}"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/harnesses/{}"
     },
     {
       "method": "POST",
-      "path": "/v1/provider-auth/detach"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/provider-auth/status"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/registries"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/registries/{}"
+      "path": "/v1/harnesses/{}/explain"
     },
     {
       "method": "POST",
-      "path": "/v1/rl/runs"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/rl/runs/{}"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/rl/runs/{}/artifacts"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/rl/runs/{}/audit"
+      "path": "/v1/harnesses/{}/lock"
     },
     {
       "method": "POST",
-      "path": "/v1/rl/runs/{}/cancel"
+      "path": "/v1/harnesses/{}/validate"
     },
     {
       "method": "GET",
-      "path": "/v1/rl/runs/{}/events"
+      "path": "/v1/health"
     },
     {
       "method": "GET",
-      "path": "/v1/rl/runs/{}/replay/{}"
+      "path": "/v1/integrations"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/integrations/{}"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/integrations/{}/probe"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/schemas"
     },
     {
       "method": "GET",
@@ -127,48 +75,36 @@
       "path": "/v1/sessions"
     },
     {
-      "method": "DELETE",
-      "path": "/v1/sessions/{}"
-    },
-    {
       "method": "GET",
       "path": "/v1/sessions/{}"
     },
     {
       "method": "POST",
-      "path": "/v1/sessions/{}/command"
+      "path": "/v1/sessions/{}/approve"
     },
     {
       "method": "GET",
-      "path": "/v1/sessions/{}/ctrees"
+      "path": "/v1/sessions/{}/artifacts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/sessions/{}/cancel"
     },
     {
       "method": "GET",
-      "path": "/v1/sessions/{}/download"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/sessions/{}/files"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/sessions/{}/files/content"
+      "path": "/v1/sessions/{}/events"
     },
     {
       "method": "POST",
       "path": "/v1/sessions/{}/input"
     },
     {
-      "method": "GET",
-      "path": "/v1/sessions/{}/records"
+      "method": "POST",
+      "path": "/v1/sessions/{}/resume"
     },
     {
       "method": "GET",
-      "path": "/v1/sessions/{}/skills"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/status"
+      "path": "/v1/system"
     }
   ]
 }

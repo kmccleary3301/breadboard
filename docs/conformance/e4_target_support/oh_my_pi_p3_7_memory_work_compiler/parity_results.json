@@ -1,0 +1,10 @@
+{
+  "comparator_ref": "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01",
+  "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+  "failed": 0,
+  "generated_at_utc": "2026-07-03T07:30:00Z",
+  "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+  "passed": true,
+  "schema_version": "bb.e4.parity_results.v1",
+  "warned": 0
+}

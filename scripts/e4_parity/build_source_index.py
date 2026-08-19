@@ -23,6 +23,10 @@ GENERATED_NAMES = {
     "atomic_feature_ledger_seed.json",
     "BB_E4_ATOMIC_FEATURE_LEDGER_REPORT.json",
     "atomic_feature_ledger_report.json",
+    "BB_E4_COMPATIBILITY_MIGRATION_NOTES.md",
+    "BB_E4_PRIMITIVE_FAMILY_READINESS_REPORT.json",
+    "BB_E4_FINAL_ARTIFACT_FRESHNESS_MANIFEST.json",
+    "BB_E4_OH_MY_PI_P6_TERMINAL_REPORT.json",
     "BB_E4_FINAL_READINESS_REPORT.md",
 }
 SKIP_DIR_NAMES = {".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "node_modules", ".venv", ".venv_linux_import_20260618"}

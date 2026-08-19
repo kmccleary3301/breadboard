@@ -9,7 +9,6 @@ import pytest
 from scripts.e4_parity import run_lane
 from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
 
-
 _VALID_SHA256 = "sha256:" + "a" * 64
 _STAGE_REPORT_BASE: dict[str, Any] = {
     "stage": "capture",
@@ -73,6 +72,23 @@ def _report(**overrides: Any) -> dict[str, Any]:
                 report_ref=None,
             ),
             {"kind": "self_runtime", "capture": {"strategy": "runtime_records"}},
+        ),
+        (
+            "candidate normalize reuse resolves its author declaration",
+            _report(
+                stage="normalize",
+                outcome="reused_stored_result",
+                manifest_rule="/reuse/0",
+                reused_inputs=[
+                    {"path": ".breadboard/e4/lane/normalization.json", "sha256": _VALID_SHA256}
+                ],
+                report_ref=".breadboard/e4/lane/normalization.json",
+            ),
+            {
+                "schema_version": "bb.e4.lane_manifest.v2",
+                "kind": "candidate",
+                "reuse": ["normalize"],
+            },
         ),
         (
             "boolean false disables a stage through an escaped JSON pointer",

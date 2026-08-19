@@ -6,7 +6,7 @@ target_version: breadboard runtime_records strict kernel emission
 package_ref: docs_tmp/phase_15/BB_E4_SOURCE_INDEX.json
 kind: non_target_accounting
 status: accepted
-points: 15
+points: 0
 capture:
   strategy: runtime_records
   argv: null

@@ -19,6 +19,7 @@ try:
     from scripts.e4_parity.path_refs import (
         ReferenceResolutionError,
         resolve_declared_reference,
+        workspace_root_for_checkout,
     )
     from scripts.e4_parity.promote_lane_payload_source import (
         extract_payload_source,
@@ -27,7 +28,11 @@ try:
     from scripts.e4_parity.tree_digest import TreeDigest, TreeDigestError, digest_directory
     from scripts.e4_parity.validators.hash_utils import sha256_bytes
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
-    from path_refs import ReferenceResolutionError, resolve_declared_reference
+    from path_refs import (
+        ReferenceResolutionError,
+        resolve_declared_reference,
+        workspace_root_for_checkout,
+    )
     from promote_lane_payload_source import extract_payload_source, validate_payload_source
     from tree_digest import TreeDigest, TreeDigestError, digest_directory
     from validators.hash_utils import sha256_bytes
@@ -283,8 +288,9 @@ def _derived_reference_path(reference: str) -> Path:
         return resolve_declared_reference(
             reference,
             checkout_root=ROOT,
-            namespace="repo",
+            namespace="workspace_evidence",
             label="derived extraction",
+            workspace_root=workspace_root_for_checkout(ROOT),
             must_exist=False,
         )
     except ReferenceResolutionError as exc:

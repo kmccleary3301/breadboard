@@ -40,6 +40,19 @@ export interface E4LaneInventoryV2 {
         | "accepted"
         | "blocked"
         | "superseded";
+      /**
+       * Retained evidence lifecycle when it differs from the producer lifecycle in status.
+       */
+      evidence_status?:
+        | "planned"
+        | "scaffolded"
+        | "captured"
+        | "replayed"
+        | "compared"
+        | "claimed"
+        | "accepted"
+        | "blocked"
+        | "superseded";
       points: number;
       target_family: string;
       target_version: string;
@@ -98,6 +111,19 @@ export interface E4LaneInventoryV2 {
       phase: string;
       kind: "target_support" | "non_target_accounting" | "infrastructure";
       status:
+        | "planned"
+        | "scaffolded"
+        | "captured"
+        | "replayed"
+        | "compared"
+        | "claimed"
+        | "accepted"
+        | "blocked"
+        | "superseded";
+      /**
+       * Retained evidence lifecycle when it differs from the producer lifecycle in status.
+       */
+      evidence_status?:
         | "planned"
         | "scaffolded"
         | "captured"

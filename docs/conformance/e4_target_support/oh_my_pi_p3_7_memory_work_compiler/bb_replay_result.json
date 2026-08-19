@@ -1,0 +1,221 @@
+{
+  "config_id": "oh_my_pi_p3_7_memory_work_compiler_v1",
+  "errors": [],
+  "exit_status": "passed",
+  "generated_at_utc": "2026-07-03T07:30:00Z",
+  "input_hashes": {
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/compiled_records.json": "sha256:184fc6e1846aa2a808d6d881830793cb77ea48d97a851aebf732f4d6256c8074",
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json": "sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72",
+    "docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/schema_validation_report.json": "sha256:dc7125da298679304d3e9a5e7b7e378192a808552ba64d5a97e98409bbefded5"
+  },
+  "lane_id": "oh_my_pi_p3_7_memory_work_compiler",
+  "normalization": {
+    "mode": "p3_helper_runtime_compiler",
+    "preserved_fields": [
+      "memory_compaction_plan",
+      "work_item"
+    ]
+  },
+  "normalized_records": {
+    "memory_compaction_plan": {
+      "backend_contributions": [
+        {
+          "contribution_id": "backend_compactor",
+          "contributor_id": "breadboard.helper_runtime",
+          "contributor_kind": "compactor",
+          "hash": "sha256:1564d4f81b2e66b3b5a9302cab06d7286f4286609c904e4f780780a89a949f06",
+          "input_refs": [
+            "bb.session_transcript.v1:20260701_oh_my_pi_p6_0_l1_capture#turns:2-3"
+          ],
+          "output_refs": [
+            "bb.resource_ref.v1:20260701_oh_my_pi_p6_0_l1_capture_terminal_summary"
+          ],
+          "visibility": {
+            "host_visible": true,
+            "model_visible": false,
+            "provider_visible": false
+          }
+        }
+      ],
+      "elided_refs": [
+        {
+          "reason": "Terminal output is represented by a summary artifact.",
+          "ref": "bb.session_transcript.v1:20260701_oh_my_pi_p6_0_l1_capture#turns:2-3",
+          "ref_id": "elide_terminal",
+          "replacement_ref": "bb.resource_ref.v1:20260701_oh_my_pi_p6_0_l1_capture_terminal_summary",
+          "token_estimate": 12000,
+          "visibility": {
+            "host_visible": true,
+            "model_visible": false,
+            "provider_visible": false
+          }
+        }
+      ],
+      "generated_refs": [
+        {
+          "artifact_ref": "bb.resource_ref.v1:20260701_oh_my_pi_p6_0_l1_capture_terminal_summary",
+          "hash": "sha256:f1d9c5fec6909d07cee806fe1848294cbed11a848fc6bd6be7898c3a287b477e",
+          "produced_by": "breadboard.helper_runtime",
+          "ref_id": "generated_summary",
+          "ref_kind": "summary"
+        }
+      ],
+      "hashes": {
+        "algorithm": "sha256",
+        "compacted_hash": "sha256:c15f0577edaca79eff6a37de9b937eb7596d1d5a76b6533631903f199fc943db",
+        "plan_hash": "sha256:db467a806e8f634430ae455095681ea67a972681b8155f06c1f8e24f333d76c2",
+        "source_hash": "sha256:d592e76b85f388f34862a9ab006123e98e9800f63e2784f15d5edc1ca78167d0"
+      },
+      "model_visible_insertions": [
+        {
+          "content_hash": "sha256:614fea4ec83b4e6b0e1bc30be366bb423ba1fa20573ad63c50702d3ba4909334",
+          "content_ref": "bb.resource_ref.v1:20260701_oh_my_pi_p6_0_l1_capture_terminal_summary",
+          "insertion_id": "insert_summary",
+          "position": "system_context",
+          "token_estimate": 512
+        }
+      ],
+      "plan_id": "oh_my_pi_p3_7_memory_work_compiler_plan",
+      "preserved_refs": [
+        {
+          "hash": "sha256:769214e263f6ade8cc08c76c18e09e319faee21fa76c79929d759e598eda8dda",
+          "reason": "System directives stay authoritative.",
+          "ref": "bb.session_transcript.v1:20260701_oh_my_pi_p6_0_l1_capture#turn:0",
+          "ref_id": "preserve_system",
+          "ref_kind": "policy",
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": true
+          }
+        }
+      ],
+      "schema_version": "bb.memory_compaction_plan.v1",
+      "status": "applied",
+      "token_budget": {
+        "before_tokens": 64000,
+        "max_input_tokens": 120000,
+        "model_context_window": 128000,
+        "reserved_output_tokens": 8000,
+        "target_after_tokens": 32000
+      },
+      "transcript_refs": [
+        {
+          "end_seq": 4,
+          "hash": "sha256:191039dc41bcfc71f4d834909283a2d8a23d981b1bdc2b4bfff095171e9efb2b",
+          "ref": "bb.session_transcript.v1:20260701_oh_my_pi_p6_0_l1_capture#turns:0-4",
+          "start_seq": 0,
+          "transcript_id": "20260701_oh_my_pi_p6_0_l1_capture_transcript",
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": true
+          }
+        }
+      ],
+      "trigger": {
+        "kind": "checkpoint",
+        "observed_tokens": 64000,
+        "reason": "P3 helper runtime compiler fixture records checkpoint-backed transcript continuation.",
+        "source_ref": "bb.kernel_event.v1:20260701_oh_my_pi_p6_0_l1_capture_checkpoint",
+        "threshold_tokens": 120000
+      }
+    },
+    "work_item": {
+      "assignee": {
+        "actor_id": "20260701_oh_my_pi_p6_0_l1_capture_worker",
+        "actor_kind": "subagent"
+      },
+      "budget": {
+        "cost_budget_usd": 1.25,
+        "token_budget": 4096,
+        "wall_time_seconds": 900
+      },
+      "cancellation_policy": {
+        "cancellable_by": [
+          {
+            "actor_id": "main",
+            "actor_kind": "agent"
+          }
+        ],
+        "mode": "cooperative",
+        "on_cancel": "checkpoint_then_stop",
+        "propagate_to_children": true
+      },
+      "delegation": {
+        "delegated_by": {
+          "actor_id": "main",
+          "actor_kind": "agent"
+        },
+        "delegation_ref": "bb.distributed_task_descriptor.v1:20260701_oh_my_pi_p6_0_l1_capture_distributed",
+        "parent_task_id": "20260701_oh_my_pi_p6_0_l1_capture_parent_task",
+        "parent_work_item_id": "20260701_oh_my_pi_p6_0_l1_capture_parent"
+      },
+      "identity": {
+        "correlation_id": "20260701_oh_my_pi_p6_0_l1_capture_correlation",
+        "distributed_task_id": "20260701_oh_my_pi_p6_0_l1_capture_distributed",
+        "subagent_id": "20260701_oh_my_pi_p6_0_l1_capture_worker",
+        "task_id": "20260701_oh_my_pi_p6_0_l1_capture_task",
+        "task_kind": "subagent"
+      },
+      "input_artifact_refs": [
+        {
+          "artifact_kind": "prompt",
+          "ref": "bb.resource_ref.v1:20260701_oh_my_pi_p6_0_l1_capture_assignment",
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": true
+          }
+        }
+      ],
+      "isolation": "sandbox",
+      "metadata": {
+        "example": "p3-helper-runtime"
+      },
+      "operation_policy_ref": "bb.effective_operation_policy.v1:20260701_oh_my_pi_p6_0_l1_capture_policy",
+      "output_artifact_refs": [
+        {
+          "artifact_kind": "report",
+          "ref": "bb.resource_ref.v1:20260701_oh_my_pi_p6_0_l1_capture_result",
+          "visibility": {
+            "host_visible": true,
+            "model_visible": true,
+            "provider_visible": false
+          }
+        }
+      ],
+      "owner": {
+        "actor_id": "main",
+        "actor_kind": "agent"
+      },
+      "provider_route_ref": "bb.provider_route.v1:20260701_oh_my_pi_p6_0_l1_capture_route",
+      "resume_policy": {
+        "mode": "checkpoint",
+        "requires_approval": false,
+        "resume_from_ref": "bb.memory_compaction_plan.v1:oh_my_pi_p3_7_memory_work_compiler_plan",
+        "wake_refs": [
+          "bb.wake_subscription.v1:20260701_oh_my_pi_p6_0_l1_capture_wake"
+        ]
+      },
+      "schema_version": "bb.work_item.v1",
+      "state": {
+        "checkpoint_ref": "bb.memory_compaction_plan.v1:oh_my_pi_p3_7_memory_work_compiler_plan",
+        "entered_at": "2026-07-03T07:30:00Z",
+        "reason": "Worker completed helper-runtime compiler validation.",
+        "status": "completed"
+      },
+      "visibility": {
+        "host_visible": true,
+        "model_visible": true,
+        "provider_visible": false
+      },
+      "work_item_id": "oh_my_pi_p3_7_memory_work_compiler_work_item"
+    }
+  },
+  "p3_item": "P3.7",
+  "replay_summary": "BreadBoard helper runtime emitted schema-valid bb.work_item.v1 scoped records for P3.7 without changing existing runtime loaders.",
+  "run_id": "20260701_oh_my_pi_p6_0_l1_capture",
+  "schema_version": "bb.e4.bb_replay_result.v1",
+  "warnings": []
+}

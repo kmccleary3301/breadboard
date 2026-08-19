@@ -7,8 +7,8 @@
   "plan_ref": "docs_tmp/phase_15/BB_E4_PRIMITIVE_PARITY_MASTER_PLAN.md:317-323",
   "reference_resolution": {
     "policy": "Every unresolved historical source/fixture reference has an explicit justified tombstone; the P6.6 claim consumes only tracked, lock-pinned inputs.",
-    "resolved_reference_count": 312,
-    "tombstone_count": 182
+    "resolved_reference_count": 324,
+    "tombstone_count": 170
   },
   "reference_tombstones": [
     {
@@ -220,48 +220,6 @@
       "field": "fixture_refs",
       "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
       "reference": "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l3_command_network_hook/prevalidation_report.json#sha256:936143afb98bb1b5a21481d3fa46f4c3393a5b3dfe8106aadf668f4043991559"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_38725eb172b28cb1",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "capture:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_38725eb172b28cb1",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "comparator:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json#sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_38725eb172b28cb1",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "parity_results:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json#sha256:346b3bf965105867ecab099e0b154f8388cdc83c027853716e1b59c81dbd9e21"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_38725eb172b28cb1",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "replay:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json#sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_38725eb172b28cb1",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "secret_scan_report:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json#sha256:f033e4e2b70364f8b0c178252c862a98d91aa7d9e08a4c56375e4ea448ac42d7"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_38725eb172b28cb1",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "validator_output:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/prevalidation_report.json#sha256:049cbe20737a74146df0e5e0b0fad6be80daf2f6810a6d498c98dee08ee62ca9"
     },
     {
       "disposition": "historical_provenance_only",
@@ -843,48 +801,6 @@
       "field": "fixture_refs",
       "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
       "reference": "validator_output:docs/conformance/e4_target_support/oh_my_pi_p6_0_l1_config_context_tool_surface/prevalidation_report.json#sha256:dbb62cbb5af25c575ae189ed7239751497831aa28af75d5917a381e8fb2d5a2f"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_b650fa627d57aa92",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "capture:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_b650fa627d57aa92",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_b650fa627d57aa92",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json#sha256:ce16682d0bd3a14e4f777aa796cb000181552ac13bf2f088346641fe03b0b037"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_b650fa627d57aa92",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "replay:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_b650fa627d57aa92",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/secret_scan_report.json#sha256:2173d93d68a7a1d6348c3f99b44fdca88f67129d51da94942f3e36f2de04ba57"
-    },
-    {
-      "disposition": "historical_provenance_only",
-      "feature_id": "feat_b650fa627d57aa92",
-      "field": "fixture_refs",
-      "reason": "Historical fixture is absent from the tracked checkout at this packet head; retained only as provenance and not consumed by the P6.6 lane.",
-      "reference": "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/prevalidation_report.json#sha256:1eee90f7fc5558e828a0864f53795bfc2cd71c83a449298f92c6f3aa78d031f4"
     },
     {
       "disposition": "historical_provenance_only",
@@ -3569,12 +3485,12 @@
       "family": "task",
       "feature_id": "feat_b650fa627d57aa92",
       "fixture_refs": [
-        "freeze:config/e4_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:f931b518016ae1c13d2d1389ec59595b79b79e6360a979e310605421c407c9c6",
+        "freeze:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_target_freeze_manifest.yaml#oh_my_pi_p3_7_memory_work_compiler_v1#sha256:f931b518016ae1c13d2d1389ec59595b79b79e6360a979e310605421c407c9c6",
         "capture:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/raw_capture_manifest.json#sha256:d66fbda836f9ba1fb70a6364292fe78da798d58ea8c802a243d3f54800d9db72",
         "replay:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/bb_replay_result.json#sha256:2f87bd32e0430c915a5a5575382899340b68e242a42b02423db6be979f48d33e",
         "comparator:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/comparator_report.json#sha256:fe55c714a62914d8a2e95659e7b6133562273359cb7d78cdb9b2dc0f7b297a01",
-        "support_claim:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
-        "evidence_manifest:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json",
+        "support_claim:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json",
         "parity_results:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/parity_results.json#sha256:ce16682d0bd3a14e4f777aa796cb000181552ac13bf2f088346641fe03b0b037",
         "secret_scan_report:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/secret_scan_report.json#sha256:2173d93d68a7a1d6348c3f99b44fdca88f67129d51da94942f3e36f2de04ba57",
         "validator_output:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/prevalidation_report.json#sha256:1eee90f7fc5558e828a0864f53795bfc2cd71c83a449298f92c6f3aa78d031f4"
@@ -3586,8 +3502,8 @@
       "source_refs": [
         "source:agentic_coder_prototype/compilation/helper_runtime_primitives.py",
         "source:scripts/e4_parity/adapters/oh_my_pi_p3_remaining_capture.py",
-        "source:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_support_claim.json",
-        "source:docs/conformance/support_claims/oh_my_pi_p3_7_memory_work_compiler_v1_c4_evidence_manifest.json"
+        "source:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_support_claim.json",
+        "source:docs/conformance/e4_target_support/oh_my_pi_p3_7_memory_work_compiler/frozen_c4_evidence_manifest.json"
       ],
       "stateful": true,
       "target": "omp"
@@ -3749,12 +3665,12 @@
       "family": "product",
       "feature_id": "feat_38725eb172b28cb1",
       "fixture_refs": [
-        "freeze:config/e4_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:368abb149bb533f7fc7396a4143e7a03f1cd18db1a7bde95d98c8bc556c245e3",
+        "freeze:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_target_freeze_manifest.yaml#pi_p5_l2_extension_session_residual_v1#sha256:368abb149bb533f7fc7396a4143e7a03f1cd18db1a7bde95d98c8bc556c245e3",
         "capture:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/raw_capture_manifest.json#sha256:5260ea230cd01fe5f2115ca14d2f412ac37245ff20f40fecf2e1bb4a935a78ec",
         "replay:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/bb_replay_result.json#sha256:567453e99e01d51ecc61dfe08ec7f003b9b638d8f7cbb885dce27fb8a2200c6f",
         "comparator:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/comparator_report.json#sha256:f98a5bd4f933ebe336393af9004c662df2d256260893af92eec9b97511c9d043",
-        "support_claim:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
-        "evidence_manifest:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json",
+        "support_claim:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_support_claim.json",
+        "evidence_manifest:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_evidence_manifest.json",
         "parity_results:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/parity_results.json#sha256:346b3bf965105867ecab099e0b154f8388cdc83c027853716e1b59c81dbd9e21",
         "secret_scan_report:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/secret_scan_report.json#sha256:f033e4e2b70364f8b0c178252c862a98d91aa7d9e08a4c56375e4ea448ac42d7",
         "validator_output:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/prevalidation_report.json#sha256:049cbe20737a74146df0e5e0b0fad6be80daf2f6810a6d498c98dee08ee62ca9"
@@ -3766,8 +3682,8 @@
       "source_refs": [
         "source:docs_tmp/phase_15/source_freezes/pi_mono_0_57_1_archive_freeze_provenance.json",
         "source:docs_tmp/phase_15/JUNE_26_FEATURE_AUDIT_PRO_ATTACHMENTS_FLAT/01_pi_mono_git_tracked.zip",
-        "source:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_support_claim.json",
-        "source:docs/conformance/support_claims/pi_p5_l2_extension_session_residual_v1_c4_evidence_manifest.json"
+        "source:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_support_claim.json",
+        "source:docs/conformance/e4_target_support/pi_p5_l2_extension_session_residual/frozen_c4_evidence_manifest.json"
       ],
       "stateful": true,
       "target": "pi"

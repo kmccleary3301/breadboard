@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .client import ApiError, BreadboardClient
+from .client import ApiError, BreadBoardClient
 from .import_ir import import_ir_to_cli_bridge_events, load_json, write_events_jsonl
 from .langflow import (
     LangflowBreadboardExecutionPayload,
@@ -31,7 +31,7 @@ from .langflow_patch import make_langflow_v2_sync_override
 
 __all__ = [
     "ApiError",
-    "BreadboardClient",
+    "BreadBoardClient",
     "LangflowBreadboardExecutionPayload",
     "import_ir_to_cli_bridge_events",
     "LangflowCompileError",

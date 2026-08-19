@@ -249,7 +249,12 @@ def test_inventory_report_roles_registry_and_regeneration_cover_north_star_lanes
 def test_north_star_lanes_run_through_lane_def_and_support_claim_generators(tmp_path: Path) -> None:
     """WS-J lanes must run from lane_def/inventory data instead of a bespoke packet-builder literal."""
     for lane_id in EXPECTED_LANES:
-        result = run_lane.run_lane(lane_id, stage="all", out_dir=None, promote_accepted=True)
+        result = run_lane.run_lane(
+            lane_id,
+            stage="all",
+            out_dir=tmp_path / lane_id,
+            promote_accepted=False,
+        )
         assert result["ok"] is True, result
         assert [stage["stage"] for stage in result["stages"]] == ["capture", "normalize", "replay", "compare", "claim"]
         assert result["stages"][0]["artifact_writer"] == "run_lane"

@@ -1,0 +1,341 @@
+{
+  "agent_dir": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent",
+  "app": {
+    "config_dir_name": ".pi",
+    "env_agent_dir": "PI_CODING_AGENT_DIR",
+    "name": "pi",
+    "sessions_dir": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions",
+    "version": "0.57.1"
+  },
+  "cwd": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project",
+  "extension": {
+    "emitted_results": {
+      "beforeAgentStart": {
+        "messages": [
+          {
+            "content": "residual start",
+            "customType": "residual_agent_start",
+            "display": false
+          }
+        ],
+        "systemPrompt": "system prompt\nresidual-start"
+      },
+      "contextMessages": [
+        {
+          "content": [
+            {
+              "text": "hi",
+              "type": "text"
+            }
+          ],
+          "role": "user"
+        },
+        {
+          "content": [
+            {
+              "text": "residual context",
+              "type": "text"
+            }
+          ],
+          "customType": "residual_context",
+          "display": false,
+          "role": "custom"
+        }
+      ],
+      "providerPayload": {
+        "messages": [
+          {
+            "content": "hi",
+            "role": "user"
+          }
+        ],
+        "residualHook": true
+      },
+      "resourcesDiscover": {
+        "promptPaths": [
+          {
+            "extensionPath": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project/.pi/extensions/residual-hook.mjs",
+            "path": "prompts/residual"
+          }
+        ],
+        "skillPaths": [
+          {
+            "extensionPath": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project/.pi/extensions/residual-hook.mjs",
+            "path": "skills/residual"
+          }
+        ],
+        "themePaths": [
+          {
+            "extensionPath": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project/.pi/extensions/residual-hook.mjs",
+            "path": "themes/residual"
+          }
+        ]
+      },
+      "sessionBeforeCompact": {
+        "compaction": {
+          "details": {
+            "source": "residual-hook"
+          },
+          "firstKeptEntryId": "none",
+          "summary": "extension compact summary",
+          "tokensBefore": 4242
+        }
+      },
+      "sessionBeforeFork": {
+        "cancel": false,
+        "skipConversationRestore": true
+      },
+      "sessionBeforeSwitch": {
+        "cancel": false
+      },
+      "sessionBeforeTree": {
+        "label": "residual-label",
+        "summary": {
+          "details": {
+            "source": "residual-hook"
+          },
+          "summary": "tree summary from extension"
+        }
+      },
+      "toolCallRead": {
+        "block": false
+      },
+      "toolCallWrite": {
+        "block": true,
+        "reason": "residual write blocked"
+      },
+      "toolResult": {
+        "content": [
+          {
+            "text": "residual tool result",
+            "type": "text"
+          }
+        ],
+        "details": {
+          "residual": true
+        },
+        "isError": false
+      }
+    },
+    "errors": [],
+    "event_log": [
+      {
+        "event": "before_provider_request",
+        "payload": {
+          "hasPayload": true
+        }
+      },
+      {
+        "event": "context",
+        "payload": {
+          "messages": 1
+        }
+      },
+      {
+        "event": "before_agent_start",
+        "payload": {
+          "prompt": "prompt residual",
+          "systemPrompt": "system prompt"
+        }
+      },
+      {
+        "event": "tool_call",
+        "payload": {
+          "toolName": "read"
+        }
+      },
+      {
+        "event": "tool_call",
+        "payload": {
+          "toolName": "write"
+        }
+      },
+      {
+        "event": "tool_result",
+        "payload": {
+          "isError": false,
+          "toolName": "read"
+        }
+      },
+      {
+        "event": "user_bash",
+        "payload": {
+          "command": "echo residual",
+          "excludeFromContext": false
+        }
+      },
+      {
+        "event": "resources_discover",
+        "payload": {
+          "cwd": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project",
+          "reason": "startup"
+        }
+      },
+      {
+        "event": "session_before_switch",
+        "payload": {
+          "reason": "resume",
+          "targetSessionFile": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl"
+        }
+      },
+      {
+        "event": "session_before_fork",
+        "payload": {
+          "entryId": "db29e409"
+        }
+      },
+      {
+        "event": "session_before_compact",
+        "payload": {
+          "branchEntries": 0,
+          "customInstructions": "compact residual"
+        }
+      },
+      {
+        "event": "session_compact",
+        "payload": {
+          "compactionEntryType": "compaction",
+          "fromExtension": true
+        }
+      },
+      {
+        "event": "session_before_tree",
+        "payload": {
+          "targetId": "2fbcd9de",
+          "userWantsSummary": true
+        }
+      },
+      {
+        "event": "session_tree",
+        "payload": {
+          "fromExtension": true,
+          "newLeafId": "2fbcd9de",
+          "oldLeafId": "d577a010"
+        }
+      }
+    ],
+    "flags": [
+      {
+        "default": true,
+        "name": "residual-flag",
+        "type": "boolean"
+      }
+    ],
+    "loaded_count": 1,
+    "path": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project/.pi/extensions/residual-hook.mjs",
+    "paths": [
+      "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project/.pi/extensions/residual-hook.mjs"
+    ],
+    "registered_commands": [
+      {
+        "description": "Residual command",
+        "name": "residual-command"
+      }
+    ],
+    "registered_tools": [
+      {
+        "label": "Residual Tool",
+        "name": "residual_tool",
+        "promptSnippet": "residual_tool: provider-free residual probe"
+      }
+    ]
+  },
+  "no_secret_env": {
+    "ANTHROPIC_API_KEY": false,
+    "GEMINI_API_KEY": false,
+    "OPENAI_API_KEY": false,
+    "PI_OFFLINE": "1"
+  },
+  "schema_version": "pi.p5.residual.target_probe_output.v1",
+  "session": {
+    "assistant_entry_id": "db29e409",
+    "branch_summary_entry_id": "91fba466",
+    "branched_entry_types": [
+      "session",
+      "message",
+      "message",
+      "branch_summary",
+      "compaction"
+    ],
+    "branched_header": {
+      "cwd": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project",
+      "id": "3949f694-c323-4334-8913-261c3da7a8e8",
+      "parentSession": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-536Z_eecf53b6-77b5-4f35-9998-c81a2e10306a.jsonl",
+      "timestamp": "2026-07-08T19:03:10.537Z",
+      "type": "session",
+      "version": 3
+    },
+    "branched_session_path": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+    "compaction_entry_id": "bb05908f",
+    "context_messages": [
+      {
+        "role": "compactionSummary",
+        "summary": "extension compact summary",
+        "timestamp": 1783537390539,
+        "tokensBefore": 4242
+      }
+    ],
+    "context_model": {
+      "modelId": "residual-model",
+      "provider": "no-provider"
+    },
+    "continued_session_file": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-536Z_eecf53b6-77b5-4f35-9998-c81a2e10306a.jsonl",
+    "custom_entry_id": "e78ee1e4",
+    "forked_entry_types": [
+      "session",
+      "message",
+      "message",
+      "branch_summary"
+    ],
+    "forked_header": {
+      "cwd": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/forked-project",
+      "id": "cc0762b2-d7cc-4189-8b8e-8e2acb0cb043",
+      "parentSession": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+      "timestamp": "2026-07-08T19:03:10.538Z",
+      "type": "session",
+      "version": 3
+    },
+    "forked_session_file": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/forked/2026-07-08T19-03-10-538Z_cc0762b2-d7cc-4189-8b8e-8e2acb0cb043.jsonl",
+    "hashes": {
+      "branched_session": "sha256:0ae9eab27fe553209275140361ca7e6d69bdbdc4a9a27eb895dcaf015529a6cc",
+      "forked_session": "sha256:0a7b9e920dd8e8a938afbf278ca96c0be5feffc4ec9689a8604fff5540a0364c",
+      "session_file": "sha256:0ae9eab27fe553209275140361ca7e6d69bdbdc4a9a27eb895dcaf015529a6cc"
+    },
+    "header": {
+      "cwd": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/fixture_workspace/project",
+      "id": "3949f694-c323-4334-8913-261c3da7a8e8",
+      "parentSession": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-536Z_eecf53b6-77b5-4f35-9998-c81a2e10306a.jsonl",
+      "timestamp": "2026-07-08T19:03:10.537Z",
+      "type": "session",
+      "version": 3
+    },
+    "latest_compaction": {
+      "details": {
+        "source": "residual-hook"
+      },
+      "firstKeptEntryId": "none",
+      "fromHook": true,
+      "id": "d577a010",
+      "parentId": "91fba466",
+      "summary": "extension compact summary",
+      "timestamp": "2026-07-08T19:03:10.539Z",
+      "tokensBefore": 4242,
+      "type": "compaction"
+    },
+    "leaf_id": "d577a010",
+    "loaded_entry_count": 5,
+    "reopened_session_id": "3949f694-c323-4334-8913-261c3da7a8e8",
+    "session_dir": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual",
+    "session_file": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/pi_p5_residual_capture_c2fhhh42/agent/sessions/p5-residual/2026-07-08T19-03-10-537Z_3949f694-c323-4334-8913-261c3da7a8e8.jsonl",
+    "session_file_entry_types": [
+      "session",
+      "message",
+      "message",
+      "branch_summary",
+      "compaction"
+    ],
+    "session_id": "3949f694-c323-4334-8913-261c3da7a8e8",
+    "tree_root_count": 1,
+    "user_entry_id": "2fbcd9de"
+  }
+}

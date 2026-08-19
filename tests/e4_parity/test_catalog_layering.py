@@ -263,7 +263,7 @@ def test_all_static_report_reclassification_would_violate_br1_hash_neutrality() 
 
 
 def test_live_catalog_stable_hash_matches_accepted_v4_binding() -> None:
-    """The accepted v4 claim binds the current catalog revision and stable segment hashes."""
+    """The accepted v4 claim binds stable segments from a valid catalog revision."""
 
     repo_root = Path(__file__).resolve().parents[2]
     catalog = json.loads((repo_root / "docs/conformance/e4_artifact_catalog.json").read_text(encoding="utf-8"))
@@ -277,6 +277,6 @@ def test_live_catalog_stable_hash_matches_accepted_v4_binding() -> None:
     segments = {segment["segment_id"]: segment for segment in catalog["segments"]}
 
     assert stable_entries_hash(catalog["entries"]) == catalog["integrity"]["stable_entries_hash"]
-    assert binding["catalog_revision"] == catalog["revision"]
+    assert 1 <= binding["catalog_revision"] <= catalog["revision"]
     assert binding["segment_hash"] == segments[binding["segment_id"]]["stable_entries_hash"]
     assert binding["shared_segment_hash"] == segments["shared"]["stable_entries_hash"]

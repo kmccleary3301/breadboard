@@ -18,6 +18,24 @@ URL_SCHEMA_ID = (
 )
 TEST_BASELINE_SHA = "1" * 40
 EVOLUTION_REF = "plan §3 H2/H3 + AM17a/AM17b-r"
+FIXED_POINT_SCHEMA_ID = (
+    "https://breadboard.dev/contracts/kernel/schemas/"
+    "bb.e4.fixed_point_report.v1.schema.json"
+)
+
+
+def test_fixed_point_score_authority_tightening_is_freeze_allowlisted() -> None:
+    schema_path = (
+        check_phase20_freeze.ROOT
+        / "contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json"
+    )
+    entry = check_phase20_freeze.TIGHTENING_ALLOWLIST[FIXED_POINT_SCHEMA_ID]
+
+    assert entry == {
+        "packet": "bb-31n",
+        "sha256": hashlib.sha256(schema_path.read_bytes()).hexdigest(),
+        "class": "tightening",
+    }
 
 
 @dataclass(frozen=True)

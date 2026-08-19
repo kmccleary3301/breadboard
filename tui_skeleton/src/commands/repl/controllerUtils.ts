@@ -1,5 +1,6 @@
 import type { CTreeSnapshotSummary } from "../../api/types.js"
 import type { TodoItem, UsageMetrics } from "../../repl/types.js"
+import { normalizeTodoStatus } from "../../repl/todos/todoStatus.js"
 
 export const MAX_HINTS = 6
 export const MAX_TOOL_HISTORY = 400
@@ -103,28 +104,6 @@ export const extractCtreeSnapshotSummary = (payload: Record<string, unknown>): C
   }
 }
 
-export const normalizeTodoStatus = (value: unknown): string => {
-  const raw = String(value ?? "").trim().toLowerCase()
-  switch (raw) {
-    case "in_progress":
-    case "progress":
-    case "active":
-      return "in_progress"
-    case "done":
-    case "complete":
-    case "completed":
-      return "done"
-    case "blocked":
-      return "blocked"
-    case "cancelled":
-    case "canceled":
-      return "canceled"
-    case "todo":
-    case "pending":
-    default:
-      return "todo"
-  }
-}
 
 export const parseTodoEntry = (entry: unknown, fallbackId: string): TodoItem | null => {
   if (!isRecord(entry)) return null

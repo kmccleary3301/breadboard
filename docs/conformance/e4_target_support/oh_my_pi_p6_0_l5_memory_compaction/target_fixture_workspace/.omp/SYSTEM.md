@@ -1,0 +1,1 @@
+Oh-My-Pi P6.0-L5 provider-free memory/compaction fixture. The probe exercises frozen target compaction and memory-tool visibility only; no provider, network, task/job, browser, or broad OMP claim is made.

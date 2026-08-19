@@ -1,0 +1,10 @@
+{
+  "schema_version": "bb.deletion_audit.immutable_historical_records.v1",
+  "records": [
+    {
+      "path": "docs_tmp/phase_20/evidence/SP6/implementer.json",
+      "sha256": "sha256:53ca249360c3af787e3cd48d9165c64ebcce3b74c68a92f37dd638f4e673c648",
+      "reason": "Phase-20 SP6 command and test result record retained byte-for-byte as historical evidence"
+    }
+  ]
+}
