@@ -1,9 +1,19 @@
 from __future__ import annotations
+
+import hashlib
 import json
 from pathlib import Path
-from typing import Any
-from breadboard.product.runtime.events import JsonlEventSink,KernelEvent,Session,SessionView
-from .result import CliResult,from_exception,portable_ref
+
+from breadboard.product.runtime.events import (
+    JsonlEventSink,
+    KernelEvent,
+    Session,
+    SessionView,
+)
+
+from .result import CliResult, from_exception, portable_ref
+
+
 def _workspace(a=None,w=None):return w.expanduser().resolve() if w else Path(getattr(a,"workspace",None) or Path.cwd()).expanduser().resolve()
 def session_directory(w):return w/".breadboard"/"sessions"
 def session_event_path(w,s):return session_directory(w)/s/"session_events.jsonl"
@@ -19,11 +29,12 @@ def persist_session(w,s,event_path=None):
     metadata_path.parent.mkdir(parents=True,exist_ok=True)
     metadata_path.write_text(json.dumps({"schema_version":"bb.session.v1",**v.as_dict()},sort_keys=True,indent=2)+"\n")
 def _load(w,s):
-    if not s or Path(s).name!=s:raise ValueError("session_id must be a portable identifier")
+    if not s or s in {".",".."} or Path(s).name!=s:raise ValueError("session_id must be a portable identifier")
     p=session_event_path(w,s)
     if not p.exists():p=legacy_session_event_path(w,s)
     if not p.exists():raise FileNotFoundError(f"session not found: {s}")
     return Session.restore(_events(p),sink=JsonlEventSink(p)),p
+def load_session(workspace,session_id):return _load(_workspace(w=Path(workspace)),session_id)
 def list_sessions(a):
     w=_workspace(a)
     try:
@@ -55,11 +66,24 @@ def events(a):
     w=_workspace(a)
     try:s,p=_load(w,a.SESSION_ID); return CliResult.success(["session","events"],{"session_id":a.SESSION_ID,"events":[x.as_dict() for x in s.events]},[portable_ref(p,w)],stage="session.events")
     except Exception as e:return from_exception(["session","events"],e,"session.events")
+def _artifact_rows(w,s):
+    root=w/".breadboard"/"artifacts"/"manifests"; rows={}
+    if not root.exists():return []
+    if root.is_symlink():raise ValueError("artifact manifest directory must not be a symlink")
+    prefix=f"{s}."
+    for m in sorted(root.iterdir()):
+        if m.is_symlink() or not m.is_file() or not m.name.startswith(prefix) or not m.name.endswith(".json"):continue
+        digest=m.name[len(prefix):-5]; body=m.read_bytes()
+        if len(digest)!=64 or any(c not in "0123456789abcdef" for c in digest) or hashlib.sha256(body).hexdigest()!=digest:raise ValueError("artifact manifest digest mismatch")
+        document=json.loads(body)
+        if document.get("schema_version")!="bb.artifact_manifest.v1" or document.get("session_id")!=s or not isinstance(document.get("artifacts"),list):raise ValueError("invalid artifact manifest")
+        for row in document["artifacts"]:
+            if not isinstance(row,dict) or not isinstance(row.get("name"),str):raise ValueError("invalid artifact manifest row")
+            previous=rows.setdefault(row["name"],row)
+            if previous!=row:raise ValueError("conflicting artifact manifest rows")
+    return [rows[name] for name in sorted(rows)]
 def artifacts(a):
     w=_workspace(a)
-    try:s,p=_load(w,a.SESSION_ID); rows=[]
+    try:s,p=_load(w,a.SESSION_ID); rows=_artifact_rows(w,a.SESSION_ID)
     except Exception as e:return from_exception(["session","artifacts"],e,"session.artifacts")
-    for m in sorted(session_directory(w).glob(f"{a.SESSION_ID}*.manifest.json")):
-        try:rows+=json.loads(m.read_text()).get("artifacts",[])
-        except Exception:pass
     return CliResult.success(["session","artifacts"],{"session_id":a.SESSION_ID,"artifacts":rows},[portable_ref(p,w)],stage="session.artifacts")

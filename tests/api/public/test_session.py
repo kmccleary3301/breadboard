@@ -1,12 +1,18 @@
 from __future__ import annotations
-from collections.abc import Iterator
+
 import json
+from collections.abc import Iterator
 from pathlib import Path
 from threading import Thread
 from time import monotonic, sleep
+
 import pytest
 from fastapi.testclient import TestClient
+
 from agentic_coder_prototype.api.cli_bridge.app import create_app
+from breadboard.product.cli import session as session_operations
+
+
 @pytest.fixture
 def client(monkeypatch, tmp_path: Path) -> Iterator[TestClient]:
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
@@ -89,6 +95,14 @@ def test_session_invalid_state_is_stable_and_secret_free(client: TestClient, tmp
     )
     assert rejected_input.status_code == 409
     assert rejected_input.json()["error"]["error_code"] == "invalid_state"
+    traversal = client.post(
+        "/v1/sessions",
+        json={"lock_id": lock_id, "task": "must stay contained", "session_id": ".."},
+        headers={"Idempotency-Key": "traversal"},
+    )
+    assert traversal.status_code == 422
+    with pytest.raises(ValueError, match="portable identifier"):
+        session_operations.load_session(tmp_path, "..")
 def test_session_start_preserves_lock_drift_error(client: TestClient, tmp_path: Path) -> None:
     lock_id = _locked_harness(client)
     harness = tmp_path / "minimal_harness.v2.yaml"
