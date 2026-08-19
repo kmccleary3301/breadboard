@@ -51,6 +51,48 @@ def test_codex_provider_routes_to_app_server() -> None:
     assert client_config["api_key"] == "codex"
 
 
+def test_codex_runtime_starts_threads_read_only_without_approvals(monkeypatch, tmp_path) -> None:
+    monkeypatch.delenv("BREADBOARD_CODEX_APP_SERVER_POOL", raising=False)
+    runtime_codex_module._reset_codex_client_pool_for_tests()
+    thread_starts: list[dict] = []
+
+    class _ReadOnlyFakeClient:
+        def __init__(self, *, codex_bin: str, cwd: str, env: dict) -> None:
+            del codex_bin, cwd, env
+
+        def start(self) -> None:
+            pass
+
+        def initialize(self) -> dict:
+            return {"ok": True}
+
+        def thread_start(self, params: dict) -> dict:
+            thread_starts.append(dict(params))
+            return {"thread": {"id": "thread-read-only"}}
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(runtime_codex_module, "_CodexJsonRpcClient", _ReadOnlyFakeClient)
+    descriptor, model = provider_router.get_runtime_descriptor("codex/gpt-5.5")
+    runtime = provider_registry.create_runtime(descriptor)
+
+    runtime._ensure_client(model=model, cwd=str(tmp_path))
+
+    assert thread_starts == [
+        {
+            "model": "gpt-5.5",
+            "cwd": str(tmp_path),
+            "sandbox": "read-only",
+            "approvalPolicy": "never",
+            "ephemeral": True,
+            "dynamicTools": [],
+            "environments": [],
+        }
+    ]
+    runtime._release_leased_client(healthy=True)
+
+
 def test_codex_runtime_streams_commentary_tool_exec_and_final_answer(monkeypatch) -> None:
     descriptor, model = provider_router.get_runtime_descriptor("codex/gpt-5.4-mini")
     runtime = provider_registry.create_runtime(descriptor)

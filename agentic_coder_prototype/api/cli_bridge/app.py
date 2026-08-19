@@ -54,7 +54,7 @@ from .models import (
 from .service import SessionService
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
-from agentic_coder_prototype.api.public import create_public_router
+from agentic_coder_prototype.api.public import mount_public_routes
 from agentic_coder_prototype.api.public.models import is_public_operation_request, problem_response
 
 logger = logging.getLogger(__name__)
@@ -989,7 +989,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         logger.warning("BREADBOARD_LEGACY_ROUTES takes precedence; product API routes remain disabled")
     if public_api_enabled and not legacy_routes_enabled:
         _drop_legacy_routes(app, drop_versioned=True)
-        app.include_router(create_public_router())
+        mount_public_routes(app)
     elif not legacy_routes_enabled:
         _drop_legacy_routes(app)
 

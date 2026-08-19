@@ -100,6 +100,23 @@ def test_session_cli_restores_flat_legacy_event_layout(tmp_path: Path) -> None:
 
 
 
+def test_session_cli_mutation_persists_through_anchored_storage(tmp_path: Path) -> None:
+    session_id = "anchored-session"
+    event_path = session_operations.session_event_path(tmp_path, session_id)
+    lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64})
+    Session.start(lock, "anchored task", session_id=session_id, sink=JsonlEventSink(event_path))
+    args = SimpleNamespace(workspace=tmp_path, SESSION_ID=session_id, reason="operator stop")
+
+    canceled = session_operations.cancel(args)
+    restored, restored_path = session_operations.load_session(tmp_path, session_id)
+
+    assert canceled.ok
+    assert canceled.data["session"]["status"] == "canceled"
+    assert restored.read_model.status == "canceled"
+    assert restored_path == event_path
+    assert session_operations.session_metadata_path(tmp_path, session_id).is_file()
+
+
 def test_harness_run_submits_task_once_and_reports_completed_session(
     locked_harness: Path,
     monkeypatch: pytest.MonkeyPatch,

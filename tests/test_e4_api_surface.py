@@ -403,7 +403,7 @@ def test_legacy_routes_default_off_removes_unversioned_aliases(monkeypatch: pyte
     assert local_client.get("/health").status_code == 200
     assert local_client.get("/v1/status").status_code == 404
     assert local_client.get("/v1/features").status_code == 404
-    assert local_client.get("/v1/sessions").status_code == 200
+    assert local_client.get("/v1/system").status_code == 200
     assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 @pytest.mark.parametrize("flag_value", ["0", "false", "no", "off"])
@@ -422,7 +422,7 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
     assert local_client.get("/health").status_code == 200
     assert local_client.get("/v1/status").status_code == 404
     assert local_client.get("/v1/features").status_code == 404
-    assert local_client.get("/v1/sessions").status_code == 200
+    assert local_client.get("/v1/system").status_code == 200
     assert local_client.get("/v1/rl/runs/probe").status_code == 404
 
 

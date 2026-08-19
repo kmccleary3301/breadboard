@@ -1,0 +1,213 @@
+{
+  "artifact_listing_inspected": true,
+  "artifacts": {
+    "command": [
+      "session",
+      "artifacts"
+    ],
+    "data": {
+      "artifacts": [],
+      "session_id": "i1-final-installed-session-20260819"
+    },
+    "error": null,
+    "exit_code": 0,
+    "hashes": {},
+    "next_actions": [],
+    "ok": true,
+    "record_refs": [],
+    "schema_version": "bb.cli.result.v1",
+    "stage_outcomes": [
+      {
+        "next_action": null,
+        "report_ref": null,
+        "stage": "session.artifacts",
+        "status": "passed"
+      }
+    ],
+    "status": "ok",
+    "warnings": []
+  },
+  "clients_verified": {
+    "cli": {
+      "event_count": 2,
+      "status": "completed"
+    },
+    "python_sdk": {
+      "event_count": 2,
+      "status": "completed"
+    },
+    "tui_api_client": {
+      "artifact_count": 0,
+      "event_count": 2,
+      "status": "completed"
+    }
+  },
+  "environment": {
+    "invocation_cwd": "/tmp/breadboard-final-candidate",
+    "outside_source_checkout": true,
+    "python": "3.13.14",
+    "wheel_sha256": "sha256:fba8e46d5b6204cdfd4dc9c772780938d05f2c9004054451f427740e1f22a91d",
+    "wheel_size_bytes": 3020312
+  },
+  "events": [
+    {
+      "attempt_id": null,
+      "event_id": "session:i1-final-installed-session-20260819:1",
+      "kind": "session.started",
+      "parent_work_item_id": null,
+      "payload": {
+        "effective_lock_hash": "sha256:d8d48f6aade9cbfc14300fa32b42c963147c0bddfe6fb58f4ed613071cc6210d",
+        "task_hash": "sha256:8d2fac28b33ea330095fa1db2521fd5670518b126db987ef678c86b5b0520b69"
+      },
+      "payload_schema_version": "bb.session_event.v1",
+      "schema_version": "bb.kernel_event.v2",
+      "seq": 1,
+      "session_id": "i1-final-installed-session-20260819",
+      "span_id": null,
+      "timestamp": "2026-08-19T06:14:02.768202Z",
+      "visibility": {
+        "host_visible": true,
+        "model_visible": true,
+        "provider_visible": true,
+        "redaction_state": "none"
+      },
+      "work_item_id": null
+    },
+    {
+      "attempt_id": null,
+      "event_id": "session:i1-final-installed-session-20260819:2",
+      "kind": "session.completed",
+      "parent_work_item_id": null,
+      "payload": {
+        "outcome": "completed",
+        "summary": "completed"
+      },
+      "payload_schema_version": "bb.session_event.v1",
+      "schema_version": "bb.kernel_event.v2",
+      "seq": 2,
+      "session_id": "i1-final-installed-session-20260819",
+      "span_id": null,
+      "timestamp": "2026-08-19T06:14:05.154540Z",
+      "visibility": {
+        "host_visible": true,
+        "model_visible": true,
+        "provider_visible": true,
+        "redaction_state": "none"
+      },
+      "work_item_id": null
+    }
+  ],
+  "health": {
+    "command": [
+      "system",
+      "health"
+    ],
+    "data": {
+      "metadata_dir": ".breadboard",
+      "metadata_exists": false,
+      "python": "macosx-11.0-arm64",
+      "workspace": ".",
+      "workspace_exists": true
+    },
+    "error": null,
+    "exit_code": 0,
+    "hashes": {},
+    "next_actions": [],
+    "ok": true,
+    "record_refs": [],
+    "schema_version": "bb.cli.result.v1",
+    "stage_outcomes": [
+      {
+        "next_action": null,
+        "report_ref": null,
+        "stage": "system.health",
+        "status": "passed"
+      }
+    ],
+    "status": "ok",
+    "warnings": []
+  },
+  "lock_id": "minimal_harness.v2.yaml/minimal_harness.v2.lock.json",
+  "run_id": "i1-final-installed-product-journey-20260819",
+  "schema_version": "bb.north_star.i1.installed_product_journey.v3",
+  "session_id": "i1-final-installed-session-20260819",
+  "started": {
+    "command": [
+      "session",
+      "start"
+    ],
+    "data": {
+      "session": {
+        "effective_lock_hash": "sha256:d8d48f6aade9cbfc14300fa32b42c963147c0bddfe6fb58f4ed613071cc6210d",
+        "event_count": 1,
+        "pending_approval": null,
+        "schema_version": "bb.session.v1",
+        "session_id": "i1-final-installed-session-20260819",
+        "status": "running",
+        "task_hash": "sha256:8d2fac28b33ea330095fa1db2521fd5670518b126db987ef678c86b5b0520b69",
+        "terminal_outcome": null
+      }
+    },
+    "error": null,
+    "exit_code": 0,
+    "hashes": {
+      "lock": "sha256:d8d48f6aade9cbfc14300fa32b42c963147c0bddfe6fb58f4ed613071cc6210d",
+      "task": "sha256:8d2fac28b33ea330095fa1db2521fd5670518b126db987ef678c86b5b0520b69"
+    },
+    "next_actions": [],
+    "ok": true,
+    "record_refs": [],
+    "schema_version": "bb.cli.result.v1",
+    "stage_outcomes": [
+      {
+        "next_action": null,
+        "report_ref": null,
+        "stage": "session.start",
+        "status": "passed"
+      }
+    ],
+    "status": "ok",
+    "warnings": []
+  },
+  "terminal": {
+    "command": [
+      "session",
+      "get"
+    ],
+    "data": {
+      "session": {
+        "effective_lock_hash": "sha256:d8d48f6aade9cbfc14300fa32b42c963147c0bddfe6fb58f4ed613071cc6210d",
+        "event_count": 2,
+        "pending_approval": null,
+        "schema_version": "bb.session.v1",
+        "session_id": "i1-final-installed-session-20260819",
+        "status": "completed",
+        "task_hash": "sha256:8d2fac28b33ea330095fa1db2521fd5670518b126db987ef678c86b5b0520b69",
+        "terminal_outcome": {
+          "outcome": "completed",
+          "summary": "completed"
+        }
+      }
+    },
+    "error": null,
+    "exit_code": 0,
+    "hashes": {
+      "lock": "sha256:d8d48f6aade9cbfc14300fa32b42c963147c0bddfe6fb58f4ed613071cc6210d",
+      "task": "sha256:8d2fac28b33ea330095fa1db2521fd5670518b126db987ef678c86b5b0520b69"
+    },
+    "next_actions": [],
+    "ok": true,
+    "record_refs": [],
+    "schema_version": "bb.cli.result.v1",
+    "stage_outcomes": [
+      {
+        "next_action": null,
+        "report_ref": null,
+        "stage": "session.get",
+        "status": "passed"
+      }
+    ],
+    "status": "ok",
+    "warnings": []
+  }
+}

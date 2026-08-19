@@ -1,0 +1,32 @@
+[
+  {
+    "binding": {
+      "harness_lock_hash": "sha256:6bd6410a5486fdb938b0b4173dbb00c6da60a77475e7369625b5a7b8c92e5c1b",
+      "persisted_event_log_sha256": "sha256:21d0605ac86ee5e033fe10ad5e36ebe56f48649b62826a80a5819cbd7d5085c2",
+      "raw_capture_sha256": "sha256:938ef64cf9ae3f6ae75912c5c8ac240d4c18af18727de1bcd3427e77896c7a62",
+      "session_id": "x1-openai-gpt55-secured-20260819",
+      "task_hash": "sha256:8b058b1494f051a70ed87323977557682afd7c3d92314a8586759e05e6823593"
+    },
+    "role": "metadata",
+    "schema_version": "bb.north_star.x1.replay_binding.v1"
+  },
+  {
+    "parts": [
+      {
+        "text": "Reply with exactly BREADBOARD_X1_PROVIDER_OK. Do not call tools and do not add any other text.",
+        "type": "text"
+      }
+    ],
+    "role": "user"
+  },
+  {
+    "message_id": "x1-live-provider-turn-1",
+    "parts": [
+      {
+        "text": "BREADBOARD_X1_PROVIDER_OK",
+        "type": "text"
+      }
+    ],
+    "role": "assistant"
+  }
+]
