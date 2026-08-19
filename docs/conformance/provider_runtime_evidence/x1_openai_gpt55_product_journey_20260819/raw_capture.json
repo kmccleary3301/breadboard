@@ -3,7 +3,7 @@
   "installed_package": {
     "distribution": "breadboard-harness-cli",
     "version": "0.0.0",
-    "wheel_sha256": "sha256:d273b0e8a1e52d0d2872e747fe64a5d05a47f8573a4218f84717600af3e43f54"
+    "wheel_sha256": "sha256:29309d9ff5acfa1a82f34f1328085703892bafc061e75c25fc94bd4a51b5738e"
   },
   "product_operations": {
     "created": {
@@ -37,7 +37,7 @@
       "warnings": []
     },
     "events": {
-      "body": "id: 1\nevent: session.started\ndata: {\"attempt_id\":null,\"event_id\":\"session:x1-openai-gpt55-secured-20260819:1\",\"kind\":\"session.started\",\"parent_work_item_id\":null,\"payload\":{\"effective_lock_hash\":\"sha256:6bd6410a5486fdb938b0b4173dbb00c6da60a77475e7369625b5a7b8c92e5c1b\",\"task_hash\":\"sha256:8b058b1494f051a70ed87323977557682afd7c3d92314a8586759e05e6823593\"},\"payload_schema_version\":\"bb.session_event.v1\",\"schema_version\":\"bb.kernel_event.v2\",\"seq\":1,\"session_id\":\"x1-openai-gpt55-secured-20260819\",\"span_id\":null,\"timestamp\":\"2026-08-19T05:58:16.534152Z\",\"visibility\":{\"host_visible\":true,\"model_visible\":true,\"provider_visible\":true,\"redaction_state\":\"none\"},\"work_item_id\":null}\n\nid: 2\nevent: session.completed\ndata: {\"attempt_id\":null,\"event_id\":\"session:x1-openai-gpt55-secured-20260819:2\",\"kind\":\"session.completed\",\"parent_work_item_id\":null,\"payload\":{\"outcome\":\"completed\",\"summary\":\"completed\"},\"payload_schema_version\":\"bb.session_event.v1\",\"schema_version\":\"bb.kernel_event.v2\",\"seq\":2,\"session_id\":\"x1-openai-gpt55-secured-20260819\",\"span_id\":null,\"timestamp\":\"2026-08-19T05:58:25.692428Z\",\"visibility\":{\"host_visible\":true,\"model_visible\":true,\"provider_visible\":true,\"redaction_state\":\"none\"},\"work_item_id\":null}\n\n"
+      "body": "id: 1\nevent: session.started\ndata: {\"attempt_id\":null,\"event_id\":\"session:x1-openai-gpt55-secured-20260819-v2:1\",\"kind\":\"session.started\",\"parent_work_item_id\":null,\"payload\":{\"effective_lock_hash\":\"sha256:6bd6410a5486fdb938b0b4173dbb00c6da60a77475e7369625b5a7b8c92e5c1b\",\"task_hash\":\"sha256:8b058b1494f051a70ed87323977557682afd7c3d92314a8586759e05e6823593\"},\"payload_schema_version\":\"bb.session_event.v1\",\"schema_version\":\"bb.kernel_event.v2\",\"seq\":1,\"session_id\":\"x1-openai-gpt55-secured-20260819-v2\",\"span_id\":null,\"timestamp\":\"2026-08-19T07:02:14.557387Z\",\"visibility\":{\"host_visible\":true,\"model_visible\":true,\"provider_visible\":true,\"redaction_state\":\"none\"},\"work_item_id\":null}\n\nid: 2\nevent: session.completed\ndata: {\"attempt_id\":null,\"event_id\":\"session:x1-openai-gpt55-secured-20260819-v2:2\",\"kind\":\"session.completed\",\"parent_work_item_id\":null,\"payload\":{\"outcome\":\"completed\",\"summary\":\"completed\"},\"payload_schema_version\":\"bb.session_event.v1\",\"schema_version\":\"bb.kernel_event.v2\",\"seq\":2,\"session_id\":\"x1-openai-gpt55-secured-20260819-v2\",\"span_id\":null,\"timestamp\":\"2026-08-19T07:02:24.038910Z\",\"visibility\":{\"host_visible\":true,\"model_visible\":true,\"provider_visible\":true,\"redaction_state\":\"none\"},\"work_item_id\":null}\n\n"
     },
     "locked": {
       "command": [
@@ -84,7 +84,7 @@
           "event_count": 1,
           "pending_approval": null,
           "schema_version": "bb.session.v1",
-          "session_id": "x1-openai-gpt55-secured-20260819",
+          "session_id": "x1-openai-gpt55-secured-20260819-v2",
           "status": "running",
           "task_hash": "sha256:8b058b1494f051a70ed87323977557682afd7c3d92314a8586759e05e6823593",
           "terminal_outcome": null
@@ -122,7 +122,7 @@
           "event_count": 2,
           "pending_approval": null,
           "schema_version": "bb.session.v1",
-          "session_id": "x1-openai-gpt55-secured-20260819",
+          "session_id": "x1-openai-gpt55-secured-20260819-v2",
           "status": "completed",
           "task_hash": "sha256:8b058b1494f051a70ed87323977557682afd7c3d92314a8586759e05e6823593",
           "terminal_outcome": {
@@ -213,7 +213,7 @@
   },
   "product_session": {
     "event_count": 2,
-    "persisted_event_log_sha256": "sha256:21d0605ac86ee5e033fe10ad5e36ebe56f48649b62826a80a5819cbd7d5085c2",
+    "persisted_event_log_sha256": "sha256:ae2a597b6c4a53316a9320a0e2537d2bc7fcf09dab168e190c65660275b18915",
     "status": "completed",
     "terminal_outcome": {
       "outcome": "completed",
@@ -237,16 +237,16 @@
     "provider_metadata": {
       "provider_runtime_timing": {
         "client_cache_hit": false,
-        "client_initialize_seconds": 0.43161,
-        "client_ready_seconds": 1.938342,
-        "client_spawn_seconds": 0.0037,
-        "client_thread_start_seconds": 1.501673,
-        "first_final_answer_delta_seconds": 5.906047,
-        "first_notification_seconds": 1.943772,
-        "invoke_total_seconds": 7.595661,
+        "client_initialize_seconds": 0.285156,
+        "client_ready_seconds": 2.941613,
+        "client_spawn_seconds": 0.002879,
+        "client_thread_start_seconds": 2.652682,
+        "first_final_answer_delta_seconds": 7.243686,
+        "first_notification_seconds": 2.945857,
+        "invoke_total_seconds": 9.015024,
         "notification_count": 22,
-        "post_turn_wait_seconds": 5.655074,
-        "turn_start_seconds": 0.00225
+        "post_turn_wait_seconds": 6.071041,
+        "turn_start_seconds": 0.002383
       },
       "provider_turn_completed": true,
       "provider_turn_completion_method": "codex_app_server",
@@ -258,11 +258,11 @@
       "model": "gpt-5.5"
     }
   },
-  "run_id": "x1-openai-gpt55-secured-20260819",
+  "run_id": "x1-openai-gpt55-secured-20260819-v2",
   "runtime_id": "codex_app_server",
   "schema_version": "bb.north_star.x1.raw_provider_capture.v2",
   "source_provenance": {
-    "conversation_capture_sha256": "sha256:31d1a3b3882105dfb8e8eaa4779be9bf2a19d00016df19e4f958cf8d1365b259",
-    "product_result_sha256": "sha256:5e01372c091caf5f36b92b045fdfd6dc935a370c8f554c35482053f5f4c3dca7"
+    "conversation_capture_sha256": "sha256:68f9eed068822d50de76ea0e1eca2b95a654d8c09178da3ad5c0265fca777f6e",
+    "product_result_sha256": "sha256:9f09edede9040a328fcad853aa12667c507bb5317d0953c58bfcdaf0dfe8930b"
   }
 }
