@@ -8,6 +8,7 @@ import { createApiClient } from "../client.js"
 
 const repoRoot = fileURLToPath(new URL("../../../..", import.meta.url))
 const smokeServerScript = path.join(repoRoot, "tests", "test_sdk_v1_default_server_smoke.py")
+const productSmokeEnabled = process.env.BREADBOARD_TUI_PRODUCT_SMOKE !== "0"
 
 const startDefaultServer = async (): Promise<{
   baseUrl: string
@@ -46,7 +47,7 @@ const startDefaultServer = async (): Promise<{
 const data = (result: unknown): Record<string, unknown> =>
   (result as { data: Record<string, unknown> }).data
 
-describe("TUI product client default server", () => {
+describe.skipIf(!productSmokeEnabled)("TUI product client default server", () => {
   it("runs the product Session lifecycle without legacy routes", { timeout: 20_000 }, async () => {
     const { baseUrl, child } = await startDefaultServer()
     try {
