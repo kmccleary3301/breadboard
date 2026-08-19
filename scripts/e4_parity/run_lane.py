@@ -2,60 +2,67 @@
 from __future__ import annotations
 
 import argparse
-import json
 import importlib
+import json
 import os
+import shutil
 import subprocess
 import sys
-import shutil
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 try:
+    from breadboard.product.evidence.lane_lock import (
+        LaneLockError,
+        validate_before_capture,
+    )
+    from breadboard.product.evidence.lanes import (
+        LANE_SCHEMA_VERSION,
+        MANIFEST_SCHEMA_VERSION,
+        MutableReferenceError,
+        load_lane,
+    )
     from scripts.e4_parity.lane_definitions import (
         DEFAULT_LANE_DEF_DIR,
         lane_lock_sha256,
         load_lane_defs,
         record_builder_source_paths,
     )
-    from breadboard.product.evidence.lane_lock import (
-        LaneLockError,
-        LaneCompatibilityError,
-        validate_before_capture,
-    )
-    from breadboard.product.evidence.lanes import LANE_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION, MutableReferenceError, load_lane
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
-    from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
-    from scripts.e4_parity.tree_digest import digest_directory
-    from scripts.e4_parity.validators.registries import load_registry
     from scripts.e4_parity.path_refs import (
-        ReferenceResolutionError,
         resolve_declared_reference,
         workspace_root_for_checkout,
     )
+    from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
+    from scripts.e4_parity.tree_digest import digest_directory
+    from scripts.e4_parity.validators.registries import load_registry
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from breadboard.product.evidence.lane_lock import (
+        LaneLockError,
+        validate_before_capture,
+    )
+    from breadboard.product.evidence.lanes import (
+        LANE_SCHEMA_VERSION,
+        MANIFEST_SCHEMA_VERSION,
+        MutableReferenceError,
+        load_lane,
+    )
     from scripts.e4_parity.lane_definitions import (
         DEFAULT_LANE_DEF_DIR,
         lane_lock_sha256,
         load_lane_defs,
         record_builder_source_paths,
     )
-    from breadboard.product.evidence.lane_lock import (
-        LaneLockError,
-        LaneCompatibilityError,
-        validate_before_capture,
-    )
-    from breadboard.product.evidence.lanes import LANE_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION, MutableReferenceError, load_lane
     from scripts.e4_parity.lane_runtime import LANE_SHARED_READ_ONLY_PATHS, sha256_file
-    from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
-    from scripts.e4_parity.tree_digest import digest_directory
-    from scripts.e4_parity.validators.registries import load_registry
     from scripts.e4_parity.path_refs import (
-        ReferenceResolutionError,
         resolve_declared_reference,
         workspace_root_for_checkout,
     )
+    from scripts.e4_parity.stage_contracts import STAGES_BY_KIND, check_stage_report
+    from scripts.e4_parity.tree_digest import digest_directory
+    from scripts.e4_parity.validators.registries import load_registry
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_INVENTORY = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
@@ -733,8 +740,14 @@ def _refresh_promoted_bindings() -> dict[str, Any]:
     """Refresh deterministic artifacts whose hashes depend on promoted lane packets."""
     workspace_root = workspace_root_for_checkout(ROOT)
     try:
-        from scripts.e4_parity import build_artifact_catalog, build_e4_final_readiness_packet, seed_atomic_feature_ledger
-        from scripts.e4_parity.generate_support_claims import generate as generate_support_claims
+        from scripts.e4_parity import (
+            build_artifact_catalog,
+            build_e4_final_readiness_packet,
+            seed_atomic_feature_ledger,
+        )
+        from scripts.e4_parity.generate_support_claims import (
+            generate as generate_support_claims,
+        )
     except ModuleNotFoundError:  # pragma: no cover - direct script execution
         import build_artifact_catalog
         import build_e4_final_readiness_packet
@@ -851,7 +864,9 @@ def _run_isolated_capture(
         )
     else:
         try:
-            from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
+            from scripts.e4_parity.lane_acceptance_artifacts import (
+                build_lane_from_definition,
+            )
         except ModuleNotFoundError:  # pragma: no cover - direct script execution
             from lane_acceptance_artifacts import build_lane_from_definition
         row = build_lane_from_definition(lane_def, inventory_lane, output_root=scratch_root)
@@ -893,21 +908,80 @@ def run_lane(
     if unsupported:
         raise LaneRunError("unsupported stage(s): " + ", ".join(unsupported))
     if lane_def.get("schema_version") in (LANE_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION):
-        if "capture" in stages:
-            if "capture" not in lane_def.get("execute", ()):
-                raise LaneRunError("candidate lane does not declare capture for execution")
-            candidate_root = lane_def_dir.parent.parent if lane_def_dir.name == "lanes" and lane_def_dir.parent.name == ".breadboard" else ROOT
-            lock_path = lane_def_dir / f"{lane_id}.lock.json"
-            if not lock_path.exists(): lock_path = candidate_root / ".breadboard" / "lanes" / f"{lane_id}.lock.json"
-            if lock_path.is_symlink() or not lock_path.is_file(): raise LaneLockDriftError("candidate lane capture requires a real bb.e4.lane_lock.v2 lock")
-            manifest_path = next((path for path in sorted((*lane_def_dir.glob("*.manifest.json"), *lane_def_dir.glob("*.manifest.yaml"), *lane_def_dir.glob("*.manifest.yml"))) if load_lane(path).get("lane_id") == lane_id), None)
-            try:
-                preflight_candidate_capture(lane_def, _load_json(lock_path), root=candidate_root, manifest_path=manifest_path, adapter_resolver=adapter_resolver)
-            except LaneLockDriftError: raise
-            except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc: raise LaneLockDriftError(str(exc)) from exc
-            except LaneRunError: raise
-            except ValueError as exc: raise LaneLockDriftError(str(exc)) from exc
-        raise LaneRunError("candidate lane execution is inactive; validate and lock only")
+        if "capture" not in lane_def.get("execute", ()) and "capture" not in lane_def.get(
+            "reuse", ()
+        ):
+            raise LaneRunError(
+                "candidate lane must declare capture for execution or reuse"
+            )
+        candidate_root = (
+            lane_def_dir.parent.parent
+            if lane_def_dir.name == "lanes" and lane_def_dir.parent.name == ".breadboard"
+            else ROOT
+        )
+        lock_path = lane_def_dir / f"{lane_id}.lock.json"
+        if not lock_path.exists():
+            lock_path = (
+                candidate_root
+                / ".breadboard"
+                / "lanes"
+                / f"{lane_id}.lock.json"
+            )
+        if lock_path.is_symlink() or not lock_path.is_file():
+            raise LaneLockDriftError(
+                "candidate lane execution requires a real bb.e4.lane_lock.v2 lock"
+            )
+        manifest_path = next(
+            (
+                path
+                for path in sorted(
+                    (
+                        *lane_def_dir.glob("*.manifest.json"),
+                        *lane_def_dir.glob("*.manifest.yaml"),
+                        *lane_def_dir.glob("*.manifest.yml"),
+                    )
+                )
+                if load_lane(path).get("lane_id") == lane_id
+            ),
+            None,
+        )
+        try:
+            lock = _load_json(lock_path)
+            preflight_candidate_capture(
+                lane_def,
+                lock,
+                root=candidate_root,
+                manifest_path=manifest_path,
+                adapter_resolver=adapter_resolver,
+            )
+        except LaneLockDriftError:
+            raise
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise LaneLockDriftError(str(exc)) from exc
+        except LaneRunError:
+            raise
+        except ValueError as exc:
+            raise LaneLockDriftError(str(exc)) from exc
+        if out_dir is not None:
+            raise LaneRunError(
+                "candidate lane execution writes only to its .breadboard workspace"
+            )
+        try:
+            from scripts.e4_parity.candidate_journey import (
+                CandidateJourneyError,
+                run_candidate_journey,
+            )
+        except ModuleNotFoundError:  # pragma: no cover - direct script execution
+            from candidate_journey import CandidateJourneyError, run_candidate_journey
+        try:
+            return run_candidate_journey(
+                lane_def,
+                lock,
+                root=candidate_root,
+                stage=stage,
+            )
+        except CandidateJourneyError as exc:
+            raise LaneRunError(str(exc)) from exc
     lane_def["_lock_sha256"] = lane_lock_sha256(lane_id, lane_def_dir)
     inventory_lane = _inventory_lane(lane_id, inventory_path)
     if inventory_lane is not None and inventory_lane.get("config_id") != lane_def.get("config_id"):
@@ -1007,7 +1081,9 @@ def run_lane(
         argv = _command_stage_argv(stage_name, lane_def, inventory_lane)
         if argv is None and stage_name == "capture" and (promote_accepted or out_dir is not None):
             try:
-                from scripts.e4_parity.lane_acceptance_artifacts import build_lane_from_definition
+                from scripts.e4_parity.lane_acceptance_artifacts import (
+                    build_lane_from_definition,
+                )
             except ModuleNotFoundError:  # pragma: no cover - direct script execution
                 from lane_acceptance_artifacts import build_lane_from_definition
 
