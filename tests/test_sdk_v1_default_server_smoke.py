@@ -16,7 +16,7 @@ import uvicorn
 
 from agentic_coder_prototype.api.cli_bridge import app as app_module
 from breadboard.product.runtime.artifacts import ArtifactStore
-from breadboard_sdk import BreadBoardClient
+from breadboard_sdk import ApiError, BreadBoardClient
 
 
 @contextlib.contextmanager
@@ -167,11 +167,20 @@ def test_public_session_readback_survives_service_restart() -> None:
             listed = client.list_session()
             events = list(client.events_session(session_id))
             artifacts = client.artifacts_session(session_id)
-            orphaned_events = list(client.events_session(orphaned_session_id))
+            try:
+                list(client.events_session(orphaned_session_id))
+            except ApiError as error:
+                orphaned_status = error.status
+            else:
+                raise AssertionError("orphaned running session was exposed as resumable")
 
             assert recovered["data"]["session"]["status"] == "canceled"
             assert any(
                 row["session_id"] == session_id
+                for row in listed["data"]["sessions"]
+            )
+            assert all(
+                row["session_id"] != orphaned_session_id
                 for row in listed["data"]["sessions"]
             )
             assert events[-1]["kind"] == "session.canceled"
@@ -179,7 +188,7 @@ def test_public_session_readback_survives_service_restart() -> None:
             artifact = artifacts["data"]["artifacts"][0]
             assert artifact["name"] == attachment_id
             assert client.verify_artifact(artifact["digest"])["data"]["verified"] is True
-            assert [event["kind"] for event in orphaned_events] == ["session.started"]
+            assert orphaned_status == 409
 
 
 def _serve_for_node_smoke() -> None:

@@ -38,6 +38,7 @@ from .models import (
 )
 
 router = APIRouter(tags=["public-session"])
+_TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "canceled"})
 def _service(request: Request):
     return request.app.state.session_service
 async def _product_session(service, session_id: str):
@@ -55,7 +56,23 @@ async def _read_product_session(service, session_id: str, workspace: Path):
         if error.status_code != 404:
             raise
     session, _ = await run_in_threadpool(session_operations.load_session, workspace, session_id)
+    if session.read_model.status not in _TERMINAL_SESSION_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="session runtime state is unavailable after service restart",
+        )
     return None, session
+async def _require_live_product_session(service, session_id: str, workspace: Path):
+    try:
+        return await _product_session(service, session_id)
+    except HTTPException as error:
+        if error.status_code != 404:
+            raise
+    await run_in_threadpool(session_operations.load_session, workspace, session_id)
+    raise HTTPException(
+        status_code=409,
+        detail="session runtime state is unavailable after service restart",
+    )
 async def _session_result(service, session_id: str, command_name: str) -> CliResult:
     _, session = await _product_session(service, session_id)
     view = session.read_model
@@ -123,7 +140,11 @@ async def _list_result(service, workspace: Path) -> CliResult:
     durable = await run_in_threadpool(session_operations.list_sessions, SimpleNamespace(workspace=workspace))
     if not durable.ok:
         return durable
-    rows = {row["session_id"]: row for row in durable.data.get("sessions", [])}
+    rows = {
+        row["session_id"]: row
+        for row in durable.data.get("sessions", [])
+        if row.get("status") in _TERMINAL_SESSION_STATUSES
+    }
     for summary in await service.list_sessions():
         try:
             _, session = await _product_session(service, summary.session_id)
@@ -133,13 +154,16 @@ async def _list_result(service, workspace: Path) -> CliResult:
             continue
     ordered = [rows[session_id] for session_id in sorted(rows)]
     return CliResult.success(["session", "list"], {"sessions": ordered, "count": len(ordered)}, refs=durable.record_refs, stage="session.list")
-async def _send_result(service, session_id: str, content: str) -> CliResult:
+async def _send_result(service, session_id: str, content: str, workspace: Path) -> CliResult:
+    await _require_live_product_session(service, session_id, workspace)
     await service.send_input(session_id, BridgeSessionInputRequest(content=content))
     return await _session_result(service, session_id, "send-input")
-async def _command_result(service, session_id: str, command: str, payload: dict, command_name: str) -> CliResult:
+async def _command_result(service, session_id: str, command: str, payload: dict, command_name: str, workspace: Path) -> CliResult:
+    await _require_live_product_session(service, session_id, workspace)
     await service.execute_command(session_id, BridgeSessionCommandRequest(command=command, payload=payload))
     return await _session_result(service, session_id, command_name)
-async def _cancel_result(service, session_id: str, reason: str) -> CliResult:
+async def _cancel_result(service, session_id: str, reason: str, workspace: Path) -> CliResult:
+    await _require_live_product_session(service, session_id, workspace)
     await service.stop_session(session_id, reason=reason)
     return await _session_result(service, session_id, "cancel")
 async def _artifacts_result(service, session_id: str) -> CliResult:
@@ -153,6 +177,7 @@ async def _read_artifacts_result(service, session_id: str, workspace: Path) -> C
     except HTTPException as error:
         if error.status_code != 404:
             raise
+    await _read_product_session(service, session_id, workspace)
     return await run_in_threadpool(session_operations.artifacts, SimpleNamespace(workspace=workspace, SESSION_ID=session_id))
 def _kernel_event(event):
     session_id, sequence = str(event["session_id"]), int(event["sequence"])
@@ -195,7 +220,7 @@ async def send_input(session_id: str, request: SessionInputRequest, context: Req
         "session.send_input",
         idempotency_key,
         values,
-        lambda _workspace: _send_result(_service(context), session_id, request.content),
+        lambda workspace: _send_result(_service(context), session_id, request.content, workspace),
     )
 @router.post("/v1/sessions/{session_id}/approve", operation_id="session.approve", response_model=PublicResult, status_code=202)
 async def approve(session_id: str, request: SessionApprovalRequest, context: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
@@ -204,9 +229,9 @@ async def approve(session_id: str, request: SessionApprovalRequest, context: Req
         "session.approve",
         idempotency_key,
         values,
-        lambda _workspace: _command_result(
+        lambda workspace: _command_result(
             _service(context), session_id, "permission_response",
-            {"request_id": request.request_id, "response": request.decision}, "approve",
+            {"request_id": request.request_id, "response": request.decision}, "approve", workspace,
         ),
     )
 @router.post("/v1/sessions/{session_id}/resume", operation_id="session.resume", response_model=PublicResult, status_code=202)
@@ -215,7 +240,7 @@ async def resume(session_id: str, request: Request, idempotency_key: str | None 
         "session.resume",
         idempotency_key,
         {"session_id": session_id},
-        lambda _workspace: _command_result(_service(request), session_id, "resume", {}, "resume"),
+        lambda workspace: _command_result(_service(request), session_id, "resume", {}, "resume", workspace),
     )
 @router.post("/v1/sessions/{session_id}/cancel", operation_id="session.cancel", response_model=PublicResult, status_code=202)
 async def cancel(session_id: str, request: SessionCancelRequest, context: Request, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
@@ -224,7 +249,7 @@ async def cancel(session_id: str, request: SessionCancelRequest, context: Reques
         "session.cancel",
         idempotency_key,
         values,
-        lambda _workspace: _cancel_result(_service(context), session_id, request.reason),
+        lambda workspace: _cancel_result(_service(context), session_id, request.reason, workspace),
     )
 @router.get("/v1/sessions/{session_id}/events", operation_id="session.events")
 async def events(session_id: str, request: Request, resume_token: int | None = Query(default=None, ge=0), last_event_id: int | None = Header(default=None, alias="Last-Event-ID", ge=0), limit: int = Query(default=256, ge=1, le=1000)):
@@ -241,7 +266,7 @@ async def events(session_id: str, request: Request, resume_token: int | None = Q
         while emitted < limit:
             ready = await run_in_threadpool(lambda cursor=cursor: [event for event in session.events if event.sequence > cursor])
             if not ready:
-                if record is None or session.read_model.status in {"completed", "failed", "canceled"} or await request.is_disconnected():
+                if record is None or session.read_model.status in _TERMINAL_SESSION_STATUSES or await request.is_disconnected():
                     return
                 await asyncio.sleep(0.05)
                 continue

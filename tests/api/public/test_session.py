@@ -159,6 +159,65 @@ def test_durable_session_fallback_rejects_symlinked_metadata_root(monkeypatch, t
     assert "cross-boundary-secret" not in json.dumps(listing.as_dict(), sort_keys=True)
 
 
+def test_orphaned_running_session_is_not_exposed_as_resumable(monkeypatch, tmp_path: Path) -> None:
+    session_id = "orphaned-running"
+    event_directory = tmp_path / ".breadboard" / "sessions" / session_id
+    event_directory.mkdir(parents=True)
+    started = {
+        "schema_version": "bb.session_event.v1",
+        "session_id": session_id,
+        "sequence": 1,
+        "kind": "session.started",
+        "occurred_at": "2026-08-19T00:00:00Z",
+        "payload": {
+            "effective_lock_hash": "sha256:" + "1" * 64,
+            "task_hash": "sha256:" + "2" * 64,
+        },
+    }
+    (event_directory / "session_events.jsonl").write_text(
+        json.dumps(started, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
+    monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
+    monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
+    with TestClient(create_app(include_atp_routes=False)) as test_client:
+        listing = test_client.get("/v1/sessions")
+        assert listing.status_code == 200
+        assert listing.json()["data"]["sessions"] == []
+        requests = (
+            test_client.get(f"/v1/sessions/{session_id}"),
+            test_client.get(f"/v1/sessions/{session_id}/events"),
+            test_client.get(f"/v1/sessions/{session_id}/artifacts"),
+            test_client.post(
+                f"/v1/sessions/{session_id}/input",
+                json={"content": "cannot continue"},
+                headers={"Idempotency-Key": "orphaned-input"},
+            ),
+            test_client.post(
+                f"/v1/sessions/{session_id}/approve",
+                json={"request_id": "approval-1", "decision": "deny"},
+                headers={"Idempotency-Key": "orphaned-approve"},
+            ),
+            test_client.post(
+                f"/v1/sessions/{session_id}/resume",
+                headers={"Idempotency-Key": "orphaned-resume"},
+            ),
+            test_client.post(
+                f"/v1/sessions/{session_id}/cancel",
+                json={"reason": "cannot continue"},
+                headers={"Idempotency-Key": "orphaned-cancel"},
+            ),
+        )
+        for response in requests:
+            assert response.status_code == 409
+            assert response.json()["error"]["error_code"] == "invalid_state"
+            assert response.json()["error"]["message"] == (
+                "session runtime state is unavailable after service restart"
+            )
+
+
 def test_durable_session_fallback_rejects_symlinked_event_file(monkeypatch, tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     event_directory = workspace / ".breadboard" / "sessions" / "symlinked-file"
