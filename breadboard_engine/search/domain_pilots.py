@@ -178,7 +178,7 @@ def build_search_atp_boundary_control_packet() -> SearchDomainBoundaryControlPac
         external_surface_refs=[
             "scripts/run_bb_atp_adapter_slice_v1.py",
             "scripts/build_hilbert_bb_comparison_bundle_v1.py",
-            "agentic_coder_prototype/api/cli_bridge/atp_router.py",
+            "breadboard_engine/api/cli_bridge/atp_router.py",
         ],
         preserved_dag_truth=[
             "frontier_and_reopen_visibility",
@@ -270,8 +270,8 @@ def build_search_repair_loop_domain_pilot() -> Dict[str, object]:
         source_search_ids=[codetree["run"].search_id, repair_loop["run"].search_id],
         benchmark_manifest_refs=[codetree["recipe_manifest"].benchmark_packet],
         external_surface_refs=[
-            "agentic_coder_prototype/conductor/patching.py",
-            "agentic_coder_prototype/dialects/opencode_patch.py",
+            "breadboard_engine/conductor/patching.py",
+            "breadboard_engine/dialects/opencode_patch.py",
         ],
         preserved_dag_truth=[
             "workspace_ref_lineage",

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from agentic_coder_prototype.longrun.queue import FeatureFileQueue, TodoStoreQueue, build_work_queue
-from agentic_coder_prototype.todo.store import TodoDraft, TodoStore
+from breadboard_engine.longrun.queue import FeatureFileQueue, TodoStoreQueue, build_work_queue
+from breadboard_engine.todo.store import TodoDraft, TodoStore
 
 
 def test_todo_store_queue_claim_and_complete(tmp_path) -> None:

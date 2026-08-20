@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.action_budget import evaluate_action_budget
+from breadboard_engine.ctrees.action_budget import evaluate_action_budget
 
 
 def test_action_budget_marks_inspection_over_budget_without_write() -> None:

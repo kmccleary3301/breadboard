@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentic_coder_prototype.plugins.loader import discover_plugin_manifests, plugin_snapshot
+from breadboard_engine.plugins.loader import discover_plugin_manifests, plugin_snapshot
 
 
 def test_plugin_discovery_from_config_search_paths(tmp_path: Path) -> None:

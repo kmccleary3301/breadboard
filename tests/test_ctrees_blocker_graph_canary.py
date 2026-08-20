@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.blocker_graph_canary import evaluate_blocker_graph_canary
+from breadboard_engine.ctrees.blocker_graph_canary import evaluate_blocker_graph_canary
 
 
 def test_ctree_blocker_graph_canary_improves_over_non_graph_baseline() -> None:

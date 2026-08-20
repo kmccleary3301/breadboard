@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from agentic_coder_prototype.security import redaction
+from breadboard_engine.security import redaction
 
 
 MAX_TEXT_BYTES = 32768

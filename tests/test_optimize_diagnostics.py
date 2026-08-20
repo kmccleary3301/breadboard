@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.optimize import DiagnosticBundle, DiagnosticEntry
+from breadboard_engine.optimize import DiagnosticBundle, DiagnosticEntry
 
 
 def test_diagnostic_bundle_round_trip() -> None:

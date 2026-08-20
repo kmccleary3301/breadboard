@@ -95,9 +95,9 @@ def build_search_tool_planning_tree_control_packet() -> Dict[str, object]:
             repair["pilot_packet"].pilot_id,
         ],
         external_surface_refs=[
-            "agentic_coder_prototype/conductor/patching.py",
-            "agentic_coder_prototype/dialects/opencode_patch.py",
-            "agentic_coder_prototype/api/cli_bridge/session_runner.py",
+            "breadboard_engine/conductor/patching.py",
+            "breadboard_engine/dialects/opencode_patch.py",
+            "breadboard_engine/api/cli_bridge/session_runner.py",
         ],
         preserved_dag_truth=[
             "frontier_visibility",
@@ -166,8 +166,8 @@ def build_search_general_agent_control_packet() -> Dict[str, object]:
         ],
         external_surface_refs=[
             "scripts/run_bb_atp_adapter_slice_v1.py",
-            "agentic_coder_prototype/api/cli_bridge/atp_router.py",
-            "agentic_coder_prototype/conductor/patching.py",
+            "breadboard_engine/api/cli_bridge/atp_router.py",
+            "breadboard_engine/conductor/patching.py",
         ],
         preserved_dag_truth=[
             "consumer_handoff_visibility",
@@ -236,11 +236,11 @@ def build_search_ctrees_boundary_attribution_control_packet() -> Dict[str, objec
             "search.domain.repair_loop.pilot.v1",
         ],
         external_surface_refs=[
-            "agentic_coder_prototype/ctrees/phase_machine.py",
-            "agentic_coder_prototype/ctrees/branch_receipt_contract.py",
-            "agentic_coder_prototype/ctrees/finish_closure_contract.py",
-            "agentic_coder_prototype/ctrees/helper_rehydration.py",
-            "agentic_coder_prototype/ctrees/downstream_task_eval.py",
+            "breadboard_engine/ctrees/phase_machine.py",
+            "breadboard_engine/ctrees/branch_receipt_contract.py",
+            "breadboard_engine/ctrees/finish_closure_contract.py",
+            "breadboard_engine/ctrees/helper_rehydration.py",
+            "breadboard_engine/ctrees/downstream_task_eval.py",
         ],
         preserved_dag_truth=list(canary.preserved_dag_truth),
         control_question=(

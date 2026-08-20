@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from agentic_coder_prototype.optimize.optuna_config import load_optuna_config
+from breadboard_engine.optimize.optuna_config import load_optuna_config
 
 
 def _run_task_validator(tasks_path: Path) -> Dict[str, Any]:

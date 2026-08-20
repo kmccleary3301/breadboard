@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from breadboard.product.cli.result import CliResult, from_exception
 from breadboard.product.runtime.events import ProcessLock
 from breadboard.product.operation_catalog import product_operation_catalog
-from agentic_coder_prototype.security import redaction
+from breadboard_engine.security import redaction
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MAINTAINER_ROOTS = (_REPO_ROOT / "contracts", _REPO_ROOT / "docs", _REPO_ROOT.parent / "docs_tmp")
 _STATUS_BY_EXIT = {2: 422, 3: 404, 4: 500, 5: 409, 6: 409}

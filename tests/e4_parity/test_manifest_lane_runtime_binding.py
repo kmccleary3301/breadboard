@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.conformance import c4_chain
+from breadboard_engine.conformance import c4_chain
 from scripts.e4_parity import compile_lane_lock, lane_definitions
 from scripts.e4_parity.adapters import oh_my_pi_compiler_capture as adapter
 from scripts.e4_parity.lane_definitions import load_manifest_lane_def

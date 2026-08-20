@@ -1,6 +1,6 @@
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.ctrees.executor_contract import build_executor_contract
-from agentic_coder_prototype.ctrees.live_benchmark_adapter import build_phase14_executor_protocol_payload
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.ctrees.executor_contract import build_executor_contract
+from breadboard_engine.ctrees.live_benchmark_adapter import build_phase14_executor_protocol_payload
 
 
 def test_phase14_executor_contract_builds_candidate_a_variant() -> None:

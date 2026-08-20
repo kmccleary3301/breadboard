@@ -315,11 +315,11 @@ class SearchCrossExecutionNextLocusPacket:
 
 
 def build_search_cross_execution_matrix_packet() -> SearchCrossExecutionMatrixPacket:
-    from agentic_coder_prototype.optimize import (
+    from breadboard_engine.optimize import (
         build_next_frontier_optimize_cohort_packet,
         build_next_frontier_optimize_live_experiment_cell,
     )
-    from agentic_coder_prototype.rl import (
+    from breadboard_engine.rl import (
         build_next_frontier_rl_replay_live_parity_packet,
         build_next_frontier_rl_trainer_facing_export_packet,
     )

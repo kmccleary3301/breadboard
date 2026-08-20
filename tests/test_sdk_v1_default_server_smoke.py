@@ -14,7 +14,7 @@ from pathlib import Path
 import requests
 import uvicorn
 
-from agentic_coder_prototype.api.cli_bridge import app as app_module
+from breadboard_engine.api.cli_bridge import app as app_module
 from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard_sdk import ApiError, BreadBoardClient
 

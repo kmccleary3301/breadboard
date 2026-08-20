@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.ctrees.candidate_a_live_contract import (
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.ctrees.candidate_a_live_contract import (
     build_phase11_candidate_a_live_command,
     build_phase11_candidate_a_live_contract_status,
     execute_phase11_candidate_a_live_cell,
 )
-from agentic_coder_prototype.ctrees.live_benchmark_adapter import (
+from breadboard_engine.ctrees.live_benchmark_adapter import (
     build_phase11_live_protocol_payload,
     build_phase18_finish_closure_protocol_payload,
 )

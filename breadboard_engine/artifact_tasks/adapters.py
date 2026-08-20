@@ -3,11 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
-from agentic_coder_prototype.optimize.diagnostics import DiagnosticBundle, DiagnosticEntry
-from agentic_coder_prototype.optimize.evaluation import EvaluationRecord
-from agentic_coder_prototype.optimize.substrate import ArtifactRef
-from agentic_coder_prototype.optimize.trajectory_ir import TrajectoryEpisode, TrajectoryStep
-from agentic_coder_prototype.optimize.wrongness import WrongnessReport
+from breadboard_engine.optimize.diagnostics import DiagnosticBundle, DiagnosticEntry
+from breadboard_engine.optimize.evaluation import EvaluationRecord
+from breadboard_engine.optimize.substrate import ArtifactRef
+from breadboard_engine.optimize.trajectory_ir import TrajectoryEpisode, TrajectoryStep
+from breadboard_engine.optimize.wrongness import WrongnessReport
 
 from .evidence import utc_now
 from .contracts import hash_file

@@ -7,9 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.compilation.v2_loader import _config_resolution_base_dirs, load_agent_config
-from agentic_coder_prototype.provider.runtime import (
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.compilation.v2_loader import _config_resolution_base_dirs, load_agent_config
+from breadboard_engine.provider.runtime import (
     AnthropicMessagesRuntime,
     OpenAIChatRuntime,
     ProviderRuntime,

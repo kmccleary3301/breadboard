@@ -1,4 +1,4 @@
-from agentic_coder_prototype.monitoring.performance_monitor import (
+from breadboard_engine.monitoring.performance_monitor import (
 	PerformanceMonitor,
 	PerformanceDatabase,
 	PerformanceAnalyzer,

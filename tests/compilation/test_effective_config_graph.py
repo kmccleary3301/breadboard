@@ -8,8 +8,8 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-from agentic_coder_prototype.compilation import v2_loader
-from agentic_coder_prototype.compilation.effective_config_graph import compile_effective_config_graph, graph_content_hash
+from breadboard_engine.compilation import v2_loader
+from breadboard_engine.compilation.effective_config_graph import compile_effective_config_graph, graph_content_hash
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_PATH = ROOT / "contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json"

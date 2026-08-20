@@ -5,8 +5,8 @@ import logging
 import os
 from typing import Any, Mapping
 
-from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
-from agentic_coder_prototype.permissions.policy_pack import PolicyPack
+from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
+from breadboard_engine.permissions.policy_pack import PolicyPack
 
 SCHEMA_VERSION = "bb.effective_operation_policy.v1"
 _DEFAULT_GENERATED_AT_UTC = "1970-01-01T00:00:00Z"

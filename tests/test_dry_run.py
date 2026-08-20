@@ -4,7 +4,7 @@ import uuid
 
 import ray
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard.sandbox_factory import SandboxFactory, DeploymentMode
 from tool_calling.core import ToolDefinition, ToolParameter
 from tool_calling.pythonic02 import Pythonic02Dialect

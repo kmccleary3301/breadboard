@@ -3,7 +3,7 @@ import uuid
 import ray
 import pytest
 
-from agentic_coder_prototype.agent_session import OpenCodeAgent
+from breadboard_engine.agent_session import OpenCodeAgent
 
 
 @pytest.fixture(scope="module")

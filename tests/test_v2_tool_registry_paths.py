@@ -1,4 +1,4 @@
-from agentic_coder_prototype.conductor_components import initialize_yaml_tools, tool_defs_from_yaml
+from breadboard_engine.conductor_components import initialize_yaml_tools, tool_defs_from_yaml
 
 
 class _DummyConductor:

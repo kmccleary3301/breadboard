@@ -4,9 +4,9 @@ import os
 from pathlib import Path
 from fastapi.testclient import TestClient
 import pytest
-from agentic_coder_prototype.api.cli_bridge.app import create_app
+from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard.product.cli import system as system_operations
-from agentic_coder_prototype.api.public import models as public_models
+from breadboard_engine.api.public import models as public_models
 def _client(monkeypatch, workspace: Path, *, e4_flag: str = "0") -> TestClient:
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(workspace))
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", e4_flag)

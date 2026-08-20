@@ -105,7 +105,7 @@ def load_lock(p,w,*,explicit=False):
 @contextlib.contextmanager
 def _local_server(workspace:Path)->Iterator[str]:
     import uvicorn
-    from agentic_coder_prototype.api.cli_bridge.app import create_app
+    from breadboard_engine.api.cli_bridge.app import create_app
     settings={
         "BREADBOARD_LEGACY_ROUTES":"0",
         "BREADBOARD_ENABLE_PUBLIC_API":"1",

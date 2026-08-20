@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agentic_coder_prototype.longrun.controller import LongRunController
+from breadboard_engine.longrun.controller import LongRunController
 
 
 EpisodeResult = Dict[str, Any]

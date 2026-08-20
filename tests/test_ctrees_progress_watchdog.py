@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.progress_watchdog import evaluate_progress_watchdog
+from breadboard_engine.ctrees.progress_watchdog import evaluate_progress_watchdog
 
 
 def test_progress_watchdog_triggers_when_streak_meets_threshold() -> None:

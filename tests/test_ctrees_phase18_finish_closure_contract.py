@@ -7,9 +7,9 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.conductor_execution import (
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.conductor_execution import (
     execute_agent_calls,
     _force_failed_write_final_answer,
     _force_failed_verification_final_answer,
@@ -21,12 +21,12 @@ from agentic_coder_prototype.conductor_execution import (
     _shell_command_write_targets,
     summarize_execution_results,
 )
-from agentic_coder_prototype.conductor.components import (
+from breadboard_engine.conductor.components import (
     latest_real_user_prompt,
     session_requires_workspace_tool_usage,
     should_require_workspace_tool_usage,
 )
-from agentic_coder_prototype.conductor.execution import (
+from breadboard_engine.conductor.execution import (
     _ensure_tool_completion_final_message,
     _implementation_receipts_satisfied,
     _latest_prompt_requests_read_only_answer_after_observation,
@@ -40,17 +40,17 @@ from agentic_coder_prototype.conductor.execution import (
     _requested_write_targets,
     _run_subprocess_capture_with_group_timeout,
 )
-from agentic_coder_prototype.ctrees.branch_receipt_state import begin_branch_receipt_turn, record_branch_receipt_tool_result
-from agentic_coder_prototype.ctrees.finish_closure_contract import build_finish_closure_contract
-from agentic_coder_prototype.ctrees.finish_closure_state import (
+from breadboard_engine.ctrees.branch_receipt_state import begin_branch_receipt_turn, record_branch_receipt_tool_result
+from breadboard_engine.ctrees.finish_closure_contract import build_finish_closure_contract
+from breadboard_engine.ctrees.finish_closure_state import (
     begin_finish_closure_turn,
     current_finish_closure_allowlist,
     get_finish_closure_state,
     validate_finish_closure_request,
 )
-from agentic_coder_prototype.ctrees.live_benchmark_adapter import build_phase18_finish_closure_protocol_payload
-from agentic_coder_prototype.ctrees.phase18_finish_closure_audit import build_phase18_finish_closure_audit
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.ctrees.live_benchmark_adapter import build_phase18_finish_closure_protocol_payload
+from breadboard_engine.ctrees.phase18_finish_closure_audit import build_phase18_finish_closure_audit
+from breadboard_engine.state.session_state import SessionState
 
 
 def _config_path(rel_path: str) -> str:
@@ -1676,7 +1676,7 @@ def test_execute_agent_calls_rejects_unbounded_smoke_after_internal_retry_prompt
 
 
 def test_agent_executor_bypasses_enhanced_executor_for_patch_primitives() -> None:
-    from agentic_coder_prototype.execution.agent_executor import AgentToolExecutor
+    from breadboard_engine.execution.agent_executor import AgentToolExecutor
 
     executor = AgentToolExecutor({}, "/tmp")
 

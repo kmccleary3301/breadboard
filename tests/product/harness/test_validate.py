@@ -41,7 +41,7 @@ def test_public_schema_reuses_each_v2_property_grammar() -> None:
         if name not in {"schema_version", "version"}:
             assert property_schema == {"$ref": f"{V2_SCHEMA_ID}#/properties/{name}"}
     surface = json.dumps(schema, sort_keys=True).casefold()
-    assert not any(token in surface for token in ("implementations/", "import_path", "agentic_coder_prototype", "breadboard.product"))
+    assert not any(token in surface for token in ("implementations/", "import_path", "breadboard_engine", "breadboard.product"))
 @pytest.mark.parametrize(
     "source", [("bb.harness_definition.v1", 1), ("bb.agent_config_surface.v2", 2)]
 )

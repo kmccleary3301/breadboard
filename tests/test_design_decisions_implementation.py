@@ -17,7 +17,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from pathlib import Path
 
 # Import the modules we'll be testing/modifying
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 from tool_calling.composite import CompositeToolCaller
 from tool_calling.system_prompt_compiler import SystemPromptCompiler
 from breadboard.sandbox import DevSandboxV2

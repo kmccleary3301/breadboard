@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from agentic_coder_prototype.ctrees.phase13_floor_gate import build_phase13_floor_gate_summary
+from breadboard_engine.ctrees.phase13_floor_gate import build_phase13_floor_gate_summary
 
 
 def test_build_phase13_floor_gate_summary_uses_grounded_then_verified(tmp_path) -> None:

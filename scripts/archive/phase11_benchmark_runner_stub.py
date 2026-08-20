@@ -66,11 +66,11 @@ def _load_env(dotenv_path: Path) -> None:
 
 _load_env(_REPO_ROOT / ".env")
 
-from agentic_coder_prototype.agent import AgenticCoder
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.ctrees.branch_receipt_contract import branch_receipt_executor_enabled
-from agentic_coder_prototype.ctrees.finish_closure_contract import finish_closure_executor_enabled
-from agentic_coder_prototype.ctrees.live_benchmark_adapter import (
+from breadboard_engine.agent import AgenticCoder
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.ctrees.branch_receipt_contract import branch_receipt_executor_enabled
+from breadboard_engine.ctrees.finish_closure_contract import finish_closure_executor_enabled
+from breadboard_engine.ctrees.live_benchmark_adapter import (
     build_phase14_executor_context_metadata,
     build_phase14_executor_protocol_payload,
     build_phase18_finish_closure_context_metadata,
@@ -86,14 +86,14 @@ from agentic_coder_prototype.ctrees.live_benchmark_adapter import (
     build_phase11_live_context_metadata,
     build_phase11_live_protocol_payload,
 )
-from agentic_coder_prototype.ctrees.executor_contract import executor_enabled
-from agentic_coder_prototype.ctrees.invocation_first_contract import invocation_first_executor_enabled
-from agentic_coder_prototype.ctrees.runtime_policy_contract import runtime_policy_enabled
-from agentic_coder_prototype.ctrees.verifier_executor_contract import verifier_executor_enabled
-from agentic_coder_prototype.ctrees.action_budget import evaluate_action_budget
-from agentic_coder_prototype.ctrees.completion_gate import evaluate_completion_gate
-from agentic_coder_prototype.ctrees.live_grounding import summarize_live_run
-from agentic_coder_prototype.ctrees.progress_watchdog import evaluate_progress_watchdog
+from breadboard_engine.ctrees.executor_contract import executor_enabled
+from breadboard_engine.ctrees.invocation_first_contract import invocation_first_executor_enabled
+from breadboard_engine.ctrees.runtime_policy_contract import runtime_policy_enabled
+from breadboard_engine.ctrees.verifier_executor_contract import verifier_executor_enabled
+from breadboard_engine.ctrees.action_budget import evaluate_action_budget
+from breadboard_engine.ctrees.completion_gate import evaluate_completion_gate
+from breadboard_engine.ctrees.live_grounding import summarize_live_run
+from breadboard_engine.ctrees.progress_watchdog import evaluate_progress_watchdog
 
 
 def _load_tasks(path: Path) -> List[Dict[str, Any]]:

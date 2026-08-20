@@ -9,13 +9,13 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
-from agentic_coder_prototype.api.cli_bridge.models import (
+from breadboard_engine.api.cli_bridge.models import (
     SessionCommandRequest as BridgeSessionCommandRequest,
 )
-from agentic_coder_prototype.api.cli_bridge.models import (
+from breadboard_engine.api.cli_bridge.models import (
     SessionCreateRequest as BridgeSessionCreateRequest,
 )
-from agentic_coder_prototype.api.cli_bridge.models import (
+from breadboard_engine.api.cli_bridge.models import (
     SessionInputRequest as BridgeSessionInputRequest,
 )
 from breadboard.product.cli import harness as harness_operations

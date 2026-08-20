@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from agentic_coder_prototype.permission_broker import PermissionBroker, PermissionDeniedError
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.permission_broker import PermissionBroker, PermissionDeniedError
+from breadboard_engine.state.session_state import SessionState
 
 
 def test_permission_prompt_allows_and_records_wildcard() -> None:

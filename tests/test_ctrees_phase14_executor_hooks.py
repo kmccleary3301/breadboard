@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.ctrees.executor_hooks import filter_tool_defs_by_allowlist
-from agentic_coder_prototype.hooks.manager import build_hook_manager
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.ctrees.executor_hooks import filter_tool_defs_by_allowlist
+from breadboard_engine.hooks.manager import build_hook_manager
+from breadboard_engine.state.session_state import SessionState
 
 
 def test_phase14_hook_manager_emits_localize_allowlist_and_snapshot() -> None:

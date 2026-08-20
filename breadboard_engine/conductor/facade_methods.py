@@ -374,7 +374,7 @@ class OpenAIConductorFacadeMethods:
         attempted: List[Tuple[str, bool, Optional[str]]],
         last_error: Optional[Any],
     ) -> Optional[Any]:
-        openai_module = sys.modules.get("agentic_coder_prototype.agent_llm_openai")
+        openai_module = sys.modules.get("breadboard_engine.agent_llm_openai")
         active_provider_router = getattr(openai_module, "provider_router", provider_router)
         active_provider_registry = getattr(openai_module, "provider_registry", provider_registry)
         return retry_with_fallback(

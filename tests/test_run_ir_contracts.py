@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentic_coder_prototype.parity import (
+from breadboard_engine.parity import (
     EquivalenceLevel,
     RunIR,
     build_expected_run_ir,

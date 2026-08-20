@@ -3,12 +3,12 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentic_coder_prototype.checkpointing.checkpoint_manager import (
+from breadboard_engine.checkpointing.checkpoint_manager import (
     CheckpointManager,
     CheckpointSummary,
     build_checkpoint_metadata_record,
 )
-from agentic_coder_prototype.longrun.checkpoint import build_longrun_checkpoint_metadata_record
+from breadboard_engine.longrun.checkpoint import build_longrun_checkpoint_metadata_record
 
 
 def test_checkpoint_snapshot_roundtrip(tmp_path: Path) -> None:

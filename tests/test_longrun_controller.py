@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
-from agentic_coder_prototype.longrun.controller import LongRunController
+from breadboard_engine.longrun.controller import LongRunController
 
 
 class _FakeLogger:

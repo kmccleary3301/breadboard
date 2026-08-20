@@ -3,10 +3,10 @@ import sys
 import warnings
 
 warnings.warn(
-    "`agentic_coder_prototype.tool_prompt_planner` is deprecated; use "
-    "`agentic_coder_prototype.conductor.prompt_planner` instead.",
+    "`breadboard_engine.tool_prompt_planner` is deprecated; use "
+    "`breadboard_engine.conductor.prompt_planner` instead.",
     DeprecationWarning,
     stacklevel=2,
 )
 
-sys.modules[__name__] = import_module("agentic_coder_prototype.conductor.prompt_planner")
+sys.modules[__name__] = import_module("breadboard_engine.conductor.prompt_planner")

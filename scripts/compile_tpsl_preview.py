@@ -14,10 +14,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.compilation.system_prompt_compiler import get_compiler
-from agentic_coder_prototype.compilation.tool_yaml_loader import load_yaml_tools
-from agentic_coder_prototype.core.core import ToolDefinition, ToolParameter
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.compilation.system_prompt_compiler import get_compiler
+from breadboard_engine.compilation.tool_yaml_loader import load_yaml_tools
+from breadboard_engine.core.core import ToolDefinition, ToolParameter
 
 
 def _to_tool_defs_from_dirs(paths: List[str], include: List[str]) -> List[ToolDefinition]:

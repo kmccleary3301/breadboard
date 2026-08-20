@@ -10,7 +10,7 @@ import datetime
 import time
 from typing import Any, Dict, List, Optional
 
-from agentic_coder_prototype.security.redaction import scrub_headers
+from breadboard_engine.security.redaction import scrub_headers
 
 
 def _now_ms() -> int:

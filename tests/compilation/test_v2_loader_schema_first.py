@@ -7,7 +7,7 @@ from typing import Any, Callable
 import pytest
 import yaml
 
-from agentic_coder_prototype.compilation import v2_loader
+from breadboard_engine.compilation import v2_loader
 
 
 _DELETE = object()

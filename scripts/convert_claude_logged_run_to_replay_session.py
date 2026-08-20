@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Convert a claude-code-logged capture (provider_dumps + normalized turn files)
-into the replay session JSON schema consumed by agentic_coder_prototype.replay.
+into the replay session JSON schema consumed by breadboard_engine.replay.
 
 Key points:
 - Claude Code uses Anthropic streaming (SSE). We reconstruct tool_use blocks from

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.core.core import ToolDefinition
-from agentic_coder_prototype.dialects.bash_block import BashBlockDialect
+from breadboard_engine.core.core import ToolDefinition
+from breadboard_engine.dialects.bash_block import BashBlockDialect
 
 
 def test_bash_block_dialect_prefers_run_shell_when_available() -> None:

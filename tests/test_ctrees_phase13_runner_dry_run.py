@@ -57,8 +57,8 @@ def test_phase13_runner_dry_run_uses_runtime_payload(tmp_path: Path) -> None:
 
 def test_seed_workspace_from_task_copies_repo_subset(tmp_path: Path) -> None:
     seed = tmp_path / "seed"
-    (seed / "agentic_coder_prototype").mkdir(parents=True)
-    (seed / "agentic_coder_prototype" / "sample.py").write_text("print('ok')\n", encoding="utf-8")
+    (seed / "breadboard_engine").mkdir(parents=True)
+    (seed / "breadboard_engine" / "sample.py").write_text("print('ok')\n", encoding="utf-8")
     (seed / "logging").mkdir()
     (seed / "logging" / "drop.txt").write_text("ignore\n", encoding="utf-8")
     workspace = tmp_path / "workspace"
@@ -66,7 +66,7 @@ def test_seed_workspace_from_task_copies_repo_subset(tmp_path: Path) -> None:
     seeded = _seed_workspace_from_task(workspace, {"workspace_seed_path": str(seed)})
 
     assert seeded is True
-    assert (workspace / "agentic_coder_prototype" / "sample.py").exists()
+    assert (workspace / "breadboard_engine" / "sample.py").exists()
     assert not (workspace / "logging").exists()
 
 

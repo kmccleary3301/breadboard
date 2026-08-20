@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.execution.agent_executor import AgentToolExecutor
-from agentic_coder_prototype.execution.concurrency_validator import (
+from breadboard_engine.execution.agent_executor import AgentToolExecutor
+from breadboard_engine.execution.concurrency_validator import (
     ConcurrencyConfigError,
     validate_concurrency_config,
 )

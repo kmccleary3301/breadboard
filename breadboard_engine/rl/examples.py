@@ -60,23 +60,23 @@ def build_rl_v1_boundary_audit_packet() -> Dict[str, object]:
     return {
         "packet_id": "bb.rl.v1.boundary_audit.v1",
         "namespace_plan": {
-            "overlay_package": "agentic_coder_prototype.rl",
+            "overlay_package": "breadboard_engine.rl",
             "kernel_truth_owner": "search.SearchRun and related search records",
             "rl_owns_search_semantics": False,
         },
         "superseded_or_reframed_surfaces": [
             {
-                "surface": "agentic_coder_prototype/search/export.py::SearchTrajectoryExport",
+                "surface": "breadboard_engine/search/export.py::SearchTrajectoryExport",
                 "decision": "reframed_as_search_study_export_only",
                 "reason": "It is useful for search studies but is not the native RL truth surface.",
             },
             {
-                "surface": "agentic_coder_prototype/optimize/trajectory_ir.py",
+                "surface": "breadboard_engine/optimize/trajectory_ir.py",
                 "decision": "superseded_for_rl_truth",
                 "reason": "The linear stub episode shape is too shallow to be the canonical RL surface.",
             },
             {
-                "surface": "agentic_coder_prototype/rlm",
+                "surface": "breadboard_engine/rlm",
                 "decision": "unchanged_and_outside_rl_truth",
                 "reason": "RLM remains a tool/budget subsystem rather than a training-truth surface.",
             },

@@ -339,8 +339,8 @@ class SessionService:
                     workspace_dir = runner.get_workspace_dir() if runner else None
                     if workspace_dir:
                         try:
-                            from agentic_coder_prototype.todo import TodoStore
-                            from agentic_coder_prototype.todo.projection import project_store_snapshot_to_tui_envelope
+                            from breadboard_engine.todo import TodoStore
+                            from breadboard_engine.todo.projection import project_store_snapshot_to_tui_envelope
                             store = TodoStore(str(workspace_dir), load_existing=True)
                             envelope = project_store_snapshot_to_tui_envelope(store.snapshot(), scope_key="main", scope_label="main")
                         except Exception:

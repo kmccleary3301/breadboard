@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor, build_shell_timeout_diagnostic
+from breadboard_engine.agent_llm_openai import OpenAIConductor, build_shell_timeout_diagnostic
 
 
 def _make_conductor(config: dict) -> OpenAIConductor:

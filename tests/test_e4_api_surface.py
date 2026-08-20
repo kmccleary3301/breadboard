@@ -13,15 +13,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 
-from agentic_coder_prototype.api.cli_bridge import runtime_emission
-from agentic_coder_prototype.api.cli_bridge.app import create_app
-from agentic_coder_prototype.api.cli_bridge.runtime_emission import emit_session_start_records
-from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus
-from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord
-from agentic_coder_prototype.api.cli_bridge.service import SessionService
-from agentic_coder_prototype.api.e4 import create_e4_router
-from agentic_coder_prototype.api.e4.models import E4ApiError
-from agentic_coder_prototype.conformance.catalog_binding import (
+from breadboard_engine.api.cli_bridge import runtime_emission
+from breadboard_engine.api.cli_bridge.app import create_app
+from breadboard_engine.api.cli_bridge.runtime_emission import emit_session_start_records
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
+from breadboard_engine.api.cli_bridge.registry import SessionRecord
+from breadboard_engine.api.cli_bridge.service import SessionService
+from breadboard_engine.api.e4 import create_e4_router
+from breadboard_engine.api.e4.models import E4ApiError
+from breadboard_engine.conformance.catalog_binding import (
     catalog_segments,
     catalog_segments_hash,
     stable_entries_hash,
@@ -316,7 +316,7 @@ def reverify_fixture(
 ) -> dict[str, object]:
     from tests.test_e4_c4_chain_validation import _build_chain
 
-    from agentic_coder_prototype.api.e4 import router as e4_router
+    from breadboard_engine.api.e4 import router as e4_router
 
     chain = _build_chain(tmp_path, checkout_local_sources=True)
     claim_path = Path(chain["support_claim"])
@@ -369,7 +369,7 @@ def test_e4_mount_gate_accepts_only_documented_true_values(
 def test_default_app_import_does_not_load_e4_modules() -> None:
     env = os.environ.copy()
     env.pop("BREADBOARD_ENABLE_E4_API", None)
-    code = "import sys; import agentic_coder_prototype.api.cli_bridge.app; forbidden=('agentic_coder_prototype.api.e4','breadboard.product.evidence','scripts.e4_parity'); assert not any(any(name == root or name.startswith(root + '.') for root in forbidden) for name in sys.modules)"
+    code = "import sys; import breadboard_engine.api.cli_bridge.app; forbidden=('breadboard_engine.api.e4','breadboard.product.evidence','scripts.e4_parity'); assert not any(any(name == root or name.startswith(root + '.') for root in forbidden) for name in sys.modules)"
     result = subprocess.run([sys.executable, "-c", code], cwd=Path(__file__).parents[1], env=env, text=True, capture_output=True)
     assert result.returncode == 0, result.stderr
 
@@ -427,7 +427,7 @@ def test_legacy_routes_flag_off_removes_unversioned_aliases(
 
 
 def test_validate_e4_c4_chain_shim_reexports_public_conformance_functions() -> None:
-    from agentic_coder_prototype.conformance import c4_chain
+    from breadboard_engine.conformance import c4_chain
     from scripts.validate_e4_c4_chain import _diff_comparator_reports, validate_c4_chain
 
     assert validate_c4_chain is c4_chain.validate_c4_chain
@@ -896,7 +896,7 @@ def test_e4_claim_reverify_uses_support_claim_source_path_when_filename_differs_
         captured.update(kwargs)
         return {"ok": True, "errors": []}
 
-    monkeypatch.setattr("agentic_coder_prototype.api.e4.router.validate_c4_chain", _capture_validate_c4_chain)
+    monkeypatch.setattr("breadboard_engine.api.e4.router.validate_c4_chain", _capture_validate_c4_chain)
 
     response = _e4_client_for_claims_dir(repo_root, claims_dir, tmp_path / "runtime_records").post(
         f"/v1/e4/claims/{ACCEPTED_CLAIM_ID}/reverify",
@@ -950,8 +950,8 @@ def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyP
     monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
     monkeypatch.delenv("BREADBOARD_EMIT_PRIMITIVES", raising=False)
     monkeypatch.setenv("BREADBOARD_RUNTIME_RECORD_ROOT", str(tmp_path / "runtime_records"))
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.schedule_start", lambda _runner: None)
-    monkeypatch.setattr("agentic_coder_prototype.api.cli_bridge.service.SessionRunner.authorize_start", lambda _runner: None)
+    monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.SessionRunner.schedule_start", lambda _runner: None)
+    monkeypatch.setattr("breadboard_engine.api.cli_bridge.service.SessionRunner.authorize_start", lambda _runner: None)
 
     client = TestClient(create_app())
 

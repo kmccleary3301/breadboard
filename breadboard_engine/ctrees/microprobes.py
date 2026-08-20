@@ -77,7 +77,7 @@ def build_false_neighbor_store() -> CTreeStore:
             "parent_id": root_id,
             "targets": ["ctrees/policy.py"],
             "artifact_refs": ["retrieval_contract.md"],
-            "workspace_scope": ["agentic_coder_prototype/ctrees"],
+            "workspace_scope": ["breadboard_engine/ctrees"],
         },
         turn=2,
     )
@@ -88,7 +88,7 @@ def build_false_neighbor_store() -> CTreeStore:
             "parent_id": root_id,
             "targets": ["router/audit.py"],
             "artifact_refs": ["batch_router.md"],
-            "workspace_scope": ["agentic_coder_prototype/router"],
+            "workspace_scope": ["breadboard_engine/router"],
         },
         turn=3,
     )

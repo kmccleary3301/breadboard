@@ -54,9 +54,9 @@ from .models import (
 from .service import SessionService
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
-from agentic_coder_prototype.api.public import mount_public_routes
-from agentic_coder_prototype.api.public.models import is_public_operation_request, problem_response
-from agentic_coder_prototype.security import redaction
+from breadboard_engine.api.public import mount_public_routes
+from breadboard_engine.api.public.models import is_public_operation_request, problem_response
+from breadboard_engine.security import redaction
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
@@ -300,8 +300,8 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
     public_api_enabled = _env_flag_default("BREADBOARD_ENABLE_PUBLIC_API", default=True)
     if _env_flag("BREADBOARD_ENABLE_E4_API"):
-        from agentic_coder_prototype.api.e4 import create_e4_router
-        from agentic_coder_prototype.api.e4.models import E4ApiError
+        from breadboard_engine.api.e4 import create_e4_router
+        from breadboard_engine.api.e4.models import E4ApiError
 
         @app.exception_handler(E4ApiError)
         async def _e4_api_error_handler(_request: Request, exc: E4ApiError) -> JSONResponse:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-from agentic_coder_prototype.compilation.primitive_records import canonical_record_bytes, sha256_ref
+from breadboard_engine.compilation.primitive_records import canonical_record_bytes, sha256_ref
 
 CATALOG_PATH = "docs/conformance/e4_artifact_catalog.json"
 

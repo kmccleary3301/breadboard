@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from breadboard_engine.compilation.v2_loader import load_agent_config
 
 
 PATTERNS: Sequence[str] = (

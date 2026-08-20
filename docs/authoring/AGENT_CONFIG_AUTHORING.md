@@ -91,25 +91,25 @@ Keep capture output under `docs_tmp/`. Promotion into `docs/conformance/` still 
 
 | Field | Class | Runtime consumer | Public dossiers using it |
 |---|---|---|---:|
-| `completion` | operational | agentic_coder_prototype.agent_llm_openai | 4 |
-| `concurrency` | operational | agentic_coder_prototype.conductor.components | 2 |
-| `enhanced_tools` | operational | agentic_coder_prototype.conductor.components | 2 |
-| `features` | operational | agentic_coder_prototype.compilation.v2_loader | 4 |
-| `guardrails` | operational | agentic_coder_prototype.conductor.plan_bootstrapper | 2 |
-| `long_running` | operational | agentic_coder_prototype.compilation.v2_loader | 2 |
-| `loop` | operational | agentic_coder_prototype.agent_llm_openai | 4 |
-| `modes` | operational | agentic_coder_prototype.agent_llm_openai | 4 |
-| `multi_agent` | operational | agentic_coder_prototype.agent_llm_openai | 2 |
-| `permissions` | operational | agentic_coder_prototype.conductor.bootstrap | 2 |
-| `prompts` | operational | agentic_coder_prototype.compilation.system_prompt_compiler | 4 |
-| `provider_tools` | operational | agentic_coder_prototype.agent_llm_openai | 4 |
-| `providers` | operational | agentic_coder_prototype.agent | 4 |
-| `replay` | operational | agentic_coder_prototype.conductor.bootstrap | 3 |
-| `schema_version` | operational | agentic_coder_prototype.compilation.v2_loader | 0 |
-| `tools` | operational | agentic_coder_prototype.compilation.tool_registry | 4 |
-| `turn_strategy` | operational | agentic_coder_prototype.conductor.execution | 1 |
-| `version` | operational | agentic_coder_prototype.compilation.v2_loader | 4 |
-| `workspace` | operational | agentic_coder_prototype.agent | 4 |
+| `completion` | operational | breadboard_engine.agent_llm_openai | 4 |
+| `concurrency` | operational | breadboard_engine.conductor.components | 2 |
+| `enhanced_tools` | operational | breadboard_engine.conductor.components | 2 |
+| `features` | operational | breadboard_engine.compilation.v2_loader | 4 |
+| `guardrails` | operational | breadboard_engine.conductor.plan_bootstrapper | 2 |
+| `long_running` | operational | breadboard_engine.compilation.v2_loader | 2 |
+| `loop` | operational | breadboard_engine.agent_llm_openai | 4 |
+| `modes` | operational | breadboard_engine.agent_llm_openai | 4 |
+| `multi_agent` | operational | breadboard_engine.agent_llm_openai | 2 |
+| `permissions` | operational | breadboard_engine.conductor.bootstrap | 2 |
+| `prompts` | operational | breadboard_engine.compilation.system_prompt_compiler | 4 |
+| `provider_tools` | operational | breadboard_engine.agent_llm_openai | 4 |
+| `providers` | operational | breadboard_engine.agent | 4 |
+| `replay` | operational | breadboard_engine.conductor.bootstrap | 3 |
+| `schema_version` | operational | breadboard_engine.compilation.v2_loader | 0 |
+| `tools` | operational | breadboard_engine.compilation.tool_registry | 4 |
+| `turn_strategy` | operational | breadboard_engine.conductor.execution | 1 |
+| `version` | operational | breadboard_engine.compilation.v2_loader | 4 |
+| `workspace` | operational | breadboard_engine.agent | 4 |
 | `profile` | dossier_only | - | 4 |
 | `terminal_sessions` | dossier_only | - | 1 |
 | `tool_bindings` | dossier_only | - | 1 |

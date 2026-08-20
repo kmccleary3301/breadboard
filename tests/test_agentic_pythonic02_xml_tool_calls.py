@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.core.core import ToolDefinition, ToolParameter
-from agentic_coder_prototype.dialects.pythonic02 import Pythonic02Dialect
+from breadboard_engine.core.core import ToolDefinition, ToolParameter
+from breadboard_engine.dialects.pythonic02 import Pythonic02Dialect
 
 
 def test_pythonic02_parses_xml_tool_call_blocks() -> None:

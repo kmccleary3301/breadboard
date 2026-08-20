@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.agent import AgenticCoder
-from agentic_coder_prototype.utils.safe_delete import is_disposable_workspace_path, validate_workspace_path
+from breadboard_engine.agent import AgenticCoder
+from breadboard_engine.utils.safe_delete import is_disposable_workspace_path, validate_workspace_path
 
 
 def _write_temp_config(tmp_path: Path) -> Path:

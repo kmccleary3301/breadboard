@@ -1,6 +1,6 @@
 import json
 
-from agentic_coder_prototype.provider_ir import (
+from breadboard_engine.provider_ir import (
     convert_legacy_messages,
     IRPart,
     IRToolCall,
@@ -9,7 +9,7 @@ from agentic_coder_prototype.provider_ir import (
     IRDeltaEvent,
     IRFinish,
 )
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.state.session_state import SessionState
 
 
 def test_convert_legacy_messages_basic():

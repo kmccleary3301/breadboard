@@ -22,7 +22,7 @@ It is not another substrate expansion. It is the point where BreadBoard starts a
 
 ## New V1.5 records
 
-The first V1.5 methodology slice adds these records in `agentic_coder_prototype/optimize/benchmark.py`:
+The first V1.5 methodology slice adds these records in `breadboard_engine/optimize/benchmark.py`:
 
 - `BenchmarkSplit`
 - `BenchmarkRunManifest`
@@ -198,7 +198,7 @@ The first V1.5 methodology slice now includes three canonical pilot benchmark pa
 - tool description / tool-guidance optimization
 - bounded coding-harness overlay optimization
 
-The canonical builders are in `agentic_coder_prototype/optimize/examples.py`:
+The canonical builders are in `breadboard_engine/optimize/examples.py`:
 
 - `build_support_execution_benchmark_example`
 - `build_support_execution_benchmark_example_payload`

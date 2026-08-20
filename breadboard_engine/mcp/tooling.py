@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from agentic_coder_prototype.core.core import ToolDefinition, ToolParameter
+from breadboard_engine.core.core import ToolDefinition, ToolParameter
 
 
 def mcp_live_tools_enabled(config: Dict[str, Any]) -> bool:

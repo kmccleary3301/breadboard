@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.primitive_records import get_spec, validate_record
+from breadboard_engine.compilation.primitive_records import get_spec, validate_record
 from scripts.e4_parity.adapters import pi_p5_l2_capture as builder
 
 

@@ -30,7 +30,7 @@ These are still non-kernel optimization-layer artifacts.
 
 ## New V2 records
 
-The first V2 tranche adds these records in `agentic_coder_prototype/optimize/suites.py`:
+The first V2 tranche adds these records in `breadboard_engine/optimize/suites.py`:
 
 - `EvaluationSuiteManifest`
 - `ObjectiveSuiteManifest`
@@ -172,7 +172,7 @@ The first V2 tranche is not a new optimizer yet. It is the point where three rea
 
 ## Backend-only staged optimizer
 
-The next V2 tranche adds a backend-private staged optimizer in `agentic_coder_prototype/optimize/backend.py`:
+The next V2 tranche adds a backend-private staged optimizer in `breadboard_engine/optimize/backend.py`:
 
 - `StagePlanStep`
 - `StagedOptimizerRequest`

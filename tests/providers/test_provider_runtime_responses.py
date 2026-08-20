@@ -1,6 +1,6 @@
 import types
 
-from agentic_coder_prototype.provider_runtime import (
+from breadboard_engine.provider_runtime import (
     OpenAIResponsesRuntime,
     ProviderRuntimeContext,
     ProviderRuntimeError,
@@ -138,7 +138,7 @@ def test_responses_invoke_uses_converted_input(monkeypatch):
     try:
         # If OpenAI is not installed, this will raise ProviderRuntimeError via _require_openai
         monkeypatch.setattr(
-            "agentic_coder_prototype.provider_runtime.OpenAI",
+            "breadboard_engine.provider_runtime.OpenAI",
             FakeOpenAI,
         )
         client = runtime.create_client(api_key="test-key")
@@ -201,7 +201,7 @@ def test_openrouter_responses_does_not_force_store(monkeypatch):
 
     try:
         monkeypatch.setattr(
-            "agentic_coder_prototype.provider_runtime.OpenAI",
+            "breadboard_engine.provider_runtime.OpenAI",
             FakeOpenAI,
         )
         client = runtime.create_client(api_key="test-key")

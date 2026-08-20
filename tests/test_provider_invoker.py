@@ -5,15 +5,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from agentic_coder_prototype.provider import ProviderInvoker
-from agentic_coder_prototype.provider_runtime import (
+from breadboard_engine.provider import ProviderInvoker
+from breadboard_engine.provider_runtime import (
     ProviderMessage,
     ProviderResult,
     ProviderRuntimeContext,
     ProviderRuntimeError,
 )
-from agentic_coder_prototype.state.session_state import SessionState
-from agentic_coder_prototype.messaging.markdown_logger import MarkdownLogger
+from breadboard_engine.state.session_state import SessionState
+from breadboard_engine.messaging.markdown_logger import MarkdownLogger
 
 
 def _make_invoker(retry_with_fallback):

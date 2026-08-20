@@ -11,28 +11,28 @@ import uuid, tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Sequence, List, Tuple
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard.product.runtime.artifacts import _validate_artifact_name
-from agentic_coder_prototype.auth.enforcer import apply_dotted_overrides
-from agentic_coder_prototype.compilation.effective_operation_policy import policy_pack_for_config_authority
-from agentic_coder_prototype.checkpointing.checkpoint_manager import CheckpointManager
-from agentic_coder_prototype.skills.registry import (
+from breadboard_engine.auth.enforcer import apply_dotted_overrides
+from breadboard_engine.compilation.effective_operation_policy import policy_pack_for_config_authority
+from breadboard_engine.checkpointing.checkpoint_manager import CheckpointManager
+from breadboard_engine.skills.registry import (
     load_skills,
     build_skill_catalog,
     normalize_skill_selection,
     apply_skill_selection,
 )
-from agentic_coder_prototype.plugins.loader import discover_plugin_manifests, plugin_snapshot
-from agentic_coder_prototype.guardrail import GuardrailCoordinator
-from agentic_coder_prototype.permissions import (
+from breadboard_engine.plugins.loader import discover_plugin_manifests, plugin_snapshot
+from breadboard_engine.guardrail import GuardrailCoordinator
+from breadboard_engine.permissions import (
     build_permission_overrides,
     load_permission_rules,
     upsert_permission_rule,
 )
-from agentic_coder_prototype.permissions.broker import PermissionBroker
-from agentic_coder_prototype.todo import TodoStore
-from agentic_coder_prototype.todo.projection import project_store_snapshot_to_tui_envelope
-from agentic_coder_prototype.state.session_state import (
+from breadboard_engine.permissions.broker import PermissionBroker
+from breadboard_engine.todo import TodoStore
+from breadboard_engine.todo.projection import project_store_snapshot_to_tui_envelope
+from breadboard_engine.state.session_state import (
     AUDIT_ONLY_RUNTIME_EVENT_TYPES,
     CANONICAL_KERNEL_EVENT_TYPES,
     PROJECTION_ONLY_RUNTIME_EVENT_TYPES,
@@ -201,7 +201,7 @@ class SessionRunner:
         workspace_dir: Optional[str],
         overrides: Optional[Dict[str, Any]],
     ) -> Any:
-        from agentic_coder_prototype.agent import create_agent
+        from breadboard_engine.agent import create_agent
         metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         force_local_mode = bool(metadata.get("cli_force_local_mode", True))
         return create_agent(
@@ -716,7 +716,7 @@ class SessionRunner:
             return
         overrides = dict(self.request.overrides or {})
         try:
-            from agentic_coder_prototype.auth.store import DEFAULT_PROVIDER_AUTH_STORE
+            from breadboard_engine.auth.store import DEFAULT_PROVIDER_AUTH_STORE
             openai_auth = DEFAULT_PROVIDER_AUTH_STORE.get("openai")
             if openai_auth is not None:
                 if openai_auth.api_key:
@@ -1293,7 +1293,7 @@ class SessionRunner:
                     if config_plane_stream:
                         kernel_emitter_run_dir = str(Path(config_plane_stream).resolve().parents[1])
                 if kernel_emitter_run_dir:
-                    from agentic_coder_prototype.runtime.kernel_emitter import primitive_emission_mode
+                    from breadboard_engine.runtime.kernel_emitter import primitive_emission_mode
                     kernel_emitter_mode = primitive_emission_mode("strict")
             except Exception:
                 kernel_emitter_run_dir = None

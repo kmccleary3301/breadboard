@@ -1,6 +1,6 @@
 import types
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 
 
 def _make_conductor_with_logger():

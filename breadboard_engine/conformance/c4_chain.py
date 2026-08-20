@@ -47,7 +47,7 @@ SUPPORT_CLAIM_SCHEMA_PATHS = {
 }
 COMMON_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "contracts" / "kernel" / "schemas" / "bb.kernel.common.v1.schema.json"
 E4_COMMON_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "contracts" / "kernel" / "schemas" / "bb.e4.common.v1.schema.json"
-from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, catalog_stable_entries_hash, stable_entries, stable_entries_hash
+from breadboard_engine.conformance.catalog_binding import CATALOG_PATH, catalog_stable_entries_hash, stable_entries, stable_entries_hash
 
 
 

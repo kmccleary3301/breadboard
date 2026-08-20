@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agentic_coder_prototype.longrun.flags import resolve_episode_max_steps, resolve_longrun_policy_profile
+from breadboard_engine.longrun.flags import resolve_episode_max_steps, resolve_longrun_policy_profile
 
 
 

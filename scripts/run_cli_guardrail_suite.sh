@@ -115,7 +115,7 @@ assemble_guard_payload() {
   local run_dir="$1"
   python - "${run_dir}" <<'PY'
 import json, pathlib, sys
-from agentic_coder_prototype.parity import sanitize_guardrail_events
+from breadboard_engine.parity import sanitize_guardrail_events
 
 run_dir = pathlib.Path(sys.argv[1])
 summary_path = run_dir / "meta" / "run_summary.json"
@@ -169,7 +169,7 @@ run_cli_script() {
   echo "[cli-guardrail] Running ${scenario} via ${script_rel}"
   (cd "${CLI_DIR}" && npm run build >/dev/null)
 
-  python -m agentic_coder_prototype.api.cli_bridge.server >/tmp/cli_bridge.log 2>&1 &
+  python -m breadboard_engine.api.cli_bridge.server >/tmp/cli_bridge.log 2>&1 &
   local bridge_pid=$!
   trap 'kill ${bridge_pid} >/dev/null 2>&1 || true' INT TERM EXIT
   sleep 3

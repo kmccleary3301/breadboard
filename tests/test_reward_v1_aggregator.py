@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.reward.aggregator import aggregate_reward_v1, validate_reward_v1
+from breadboard_engine.reward.aggregator import aggregate_reward_v1, validate_reward_v1
 
 
 def test_reward_v1_normalizes_te_le_and_aggregates() -> None:

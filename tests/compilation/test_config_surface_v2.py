@@ -8,7 +8,7 @@ import pytest
 from jsonschema import Draft202012Validator
 import yaml
 
-from agentic_coder_prototype.compilation import v2_loader
+from breadboard_engine.compilation import v2_loader
 
 ROOT = Path(__file__).resolve().parents[2]
 V2_SCHEMA_PATH = ROOT / "contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json"

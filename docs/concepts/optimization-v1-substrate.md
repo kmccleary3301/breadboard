@@ -8,8 +8,8 @@ The point of the substrate is to make optimization **bounded, evidence-aware, an
 
 The Phase A substrate lives in:
 
-- `agentic_coder_prototype/optimize/substrate.py`
-- `agentic_coder_prototype/optimize/examples.py`
+- `breadboard_engine/optimize/substrate.py`
+- `breadboard_engine/optimize/examples.py`
 
 The core records are:
 
@@ -120,7 +120,7 @@ That lets later phases attach replay, conformance, and evaluation evidence witho
 
 ## Example flow
 
-The canonical Phase A example is the codex dossier example in `agentic_coder_prototype/optimize/examples.py`.
+The canonical Phase A example is the codex dossier example in `breadboard_engine/optimize/examples.py`.
 
 It models a target with two allowed loci:
 
@@ -132,7 +132,7 @@ And it shows a candidate that changes only those two loci while preserving the t
 Minimal usage:
 
 ```python
-from agentic_coder_prototype.optimize import build_codex_dossier_example
+from breadboard_engine.optimize import build_codex_dossier_example
 
 example = build_codex_dossier_example()
 target = example["target"]
@@ -146,7 +146,7 @@ assert materialized.support_envelope == target.support_envelope
 If you need a serialized shape for inspection or fixtures:
 
 ```python
-from agentic_coder_prototype.optimize import build_codex_dossier_example_payload
+from breadboard_engine.optimize import build_codex_dossier_example_payload
 
 payload = build_codex_dossier_example_payload()
 ```

@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from agentic_coder_prototype.parity import EquivalenceLevel
-from agentic_coder_prototype.parity_runner import run_parity_checks
+from breadboard_engine.parity import EquivalenceLevel
+from breadboard_engine.parity_runner import run_parity_checks
 
 
 def _write_json(path: Path, payload: object) -> None:

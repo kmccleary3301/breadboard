@@ -9,8 +9,8 @@ from typing import Any, Iterable, Mapping
 
 import pytest
 
-from agentic_coder_prototype.compilation.primitive_records import canonical_record_bytes, sha256_ref
-from agentic_coder_prototype.conformance.catalog_binding import catalog_segments, stable_entries_hash
+from breadboard_engine.compilation.primitive_records import canonical_record_bytes, sha256_ref
+from breadboard_engine.conformance.catalog_binding import catalog_segments, stable_entries_hash
 
 
 ROOT = Path(__file__).resolve().parents[2]

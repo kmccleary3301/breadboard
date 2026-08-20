@@ -9,8 +9,8 @@ from typing import Any, Iterable
 from fastapi import APIRouter, Body, Query
 from fastapi.responses import JSONResponse
 
-from agentic_coder_prototype.conformance.c4_chain import validate_c4_chain
-from agentic_coder_prototype.conformance.catalog_binding import catalog_segments, catalog_segments_hash, stable_entries_hash
+from breadboard_engine.conformance.c4_chain import validate_c4_chain
+from breadboard_engine.conformance.catalog_binding import catalog_segments, catalog_segments_hash, stable_entries_hash
 
 from .models import (
     E4ApiError,

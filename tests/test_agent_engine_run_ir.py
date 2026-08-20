@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.engine import create_engine
-from agentic_coder_prototype.parity import RunIR
+from breadboard_engine.engine import create_engine
+from breadboard_engine.parity import RunIR
 
 
 def test_agent_engine_builds_run_ir(tmp_path: Path) -> None:

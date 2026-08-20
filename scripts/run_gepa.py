@@ -23,7 +23,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from agentic_coder_prototype.optimize.gepa_guardrails import (
+from breadboard_engine.optimize.gepa_guardrails import (
     DEFAULT_OPT_START,
     DEFAULT_OPT_END,
     validate_prompt_mutation,

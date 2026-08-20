@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping
 
-from agentic_coder_prototype.longrun.verification import VerificationPolicy
+from breadboard_engine.longrun.verification import VerificationPolicy
 
 
 def test_verification_policy_hard_fail_short_circuits() -> None:

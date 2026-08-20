@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agentic_coder_prototype.guardrail import GuardrailCoordinator
+from breadboard_engine.guardrail import GuardrailCoordinator
 
 
 class DummyTodoManager:

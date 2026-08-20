@@ -11,7 +11,7 @@ from .concurrency_validator import (
     ConcurrencyConfigError,
     validate_concurrency_config,
 )
-from agentic_coder_prototype.compilation.tool_registry import registry_from_config
+from breadboard_engine.compilation.tool_registry import registry_from_config
 
 
 class AgentToolExecutor:

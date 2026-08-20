@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import time
 
-from agentic_coder_prototype.auth.material import EngineAuthMaterial, EmulationProfileRequirement
-from agentic_coder_prototype.auth.store import ProviderAuthStore
-from agentic_coder_prototype.auth.enforcer import compute_conformance_hash, check_conformance
+from breadboard_engine.auth.material import EngineAuthMaterial, EmulationProfileRequirement
+from breadboard_engine.auth.store import ProviderAuthStore
+from breadboard_engine.auth.enforcer import compute_conformance_hash, check_conformance
 
 
 def test_provider_auth_store_attach_detach_and_status_sanitizes() -> None:

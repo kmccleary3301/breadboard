@@ -1,5 +1,5 @@
 from pathlib import Path
-from agentic_coder_prototype.monitoring.telemetry import TelemetryLogger
+from breadboard_engine.monitoring.telemetry import TelemetryLogger
 
 def test_telemetry_jsonl(tmp_path):
     outp = tmp_path / 'telemetry.jsonl'

@@ -23,9 +23,9 @@ These names are drawn from current runtime behavior and the extension spine docs
 
 ## Current sources of truth
 
-- `agentic_coder_prototype/conductor/execution.py`
-- `agentic_coder_prototype/conductor_loop.py`
-- `agentic_coder_prototype/extensions/spine.py`
+- `breadboard_engine/conductor/execution.py`
+- `breadboard_engine/conductor_loop.py`
+- `breadboard_engine/extensions/spine.py`
 - `docs/EXTENSION_MIDDLEWARE_SPINE.md`
 
 ---

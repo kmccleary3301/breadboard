@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.microprobes import (
+from breadboard_engine.ctrees.microprobes import (
     run_blocker_clearance_probe,
     run_continuation_probe,
     run_dependency_lookup_probe,

@@ -492,7 +492,7 @@ def build_search_atp_boundary_control_v2() -> SearchDomainBoundaryControlPacket:
             "scripts/build_hilbert_bb_comparison_bundle_v1.py",
             "scripts/build_hilbert_comparison_packs_v2.py",
             "scripts/build_atp_hilbert_canonical_baselines_v1.py",
-            "agentic_coder_prototype/api/cli_bridge/atp_router.py",
+            "breadboard_engine/api/cli_bridge/atp_router.py",
         ],
         preserved_dag_truth=list(team.preserved_dag_truth)
         + [
@@ -714,13 +714,13 @@ def build_search_ctrees_boundary_canary() -> SearchCTreesBoundaryCanaryPacket:
         ),
         source_pilot_ids=(atp.source_pilot_id, repair.source_pilot_id),
         ctree_surface_refs=(
-            "agentic_coder_prototype/ctrees/schema.py",
-            "agentic_coder_prototype/ctrees/phase_machine.py",
-            "agentic_coder_prototype/ctrees/branch_receipt_contract.py",
-            "agentic_coder_prototype/ctrees/finish_closure_contract.py",
-            "agentic_coder_prototype/ctrees/helper_rehydration.py",
-            "agentic_coder_prototype/ctrees/live_benchmark_adapter.py",
-            "agentic_coder_prototype/ctrees/downstream_task_eval.py",
+            "breadboard_engine/ctrees/schema.py",
+            "breadboard_engine/ctrees/phase_machine.py",
+            "breadboard_engine/ctrees/branch_receipt_contract.py",
+            "breadboard_engine/ctrees/finish_closure_contract.py",
+            "breadboard_engine/ctrees/helper_rehydration.py",
+            "breadboard_engine/ctrees/live_benchmark_adapter.py",
+            "breadboard_engine/ctrees/downstream_task_eval.py",
         ),
         ctree_contract_refs=(
             "docs/contracts/cli_bridge/schemas/session_event_payload_ctree_node.schema.json",
@@ -749,7 +749,7 @@ def build_search_slice_packaging_hygiene_note() -> SearchSlicePackagingHygieneNo
         note_id="search.platform.slice_packaging_hygiene_note.v1",
         observed_import_gap=(
             "tracked research slice used for planner review omitted longrun while rl.examples imports "
-            "agentic_coder_prototype.longrun.checkpoint"
+            "breadboard_engine.longrun.checkpoint"
         ),
         classification="platform_local_packaging_hygiene_only",
         dag_kernel_relevance="none_detected",

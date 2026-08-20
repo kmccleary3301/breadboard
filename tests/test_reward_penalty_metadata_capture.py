@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agentic_coder_prototype.conductor_patching import record_diff_metrics
-from agentic_coder_prototype.monitoring.reward_metrics import RewardMetricsRecorder
+from breadboard_engine.conductor_patching import record_diff_metrics
+from breadboard_engine.monitoring.reward_metrics import RewardMetricsRecorder
 
 
 class _DummyProviderMetrics:

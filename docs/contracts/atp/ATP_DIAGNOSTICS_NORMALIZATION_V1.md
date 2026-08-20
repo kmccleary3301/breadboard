@@ -31,7 +31,7 @@ Schema:
 
 Runtime mapping module:
 
-- `agentic_coder_prototype/atp_diagnostics.py`
+- `breadboard_engine/atp_diagnostics.py`
 
 Primary interface:
 

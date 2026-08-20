@@ -3,10 +3,10 @@ import sys
 import warnings
 
 warnings.warn(
-    "`agentic_coder_prototype.tools` is deprecated; use "
-    "`agentic_coder_prototype.tool_calling.catalog` instead.",
+    "`breadboard_engine.tools` is deprecated; use "
+    "`breadboard_engine.tool_calling.catalog` instead.",
     DeprecationWarning,
     stacklevel=2,
 )
 
-sys.modules[__name__] = import_module("agentic_coder_prototype.tool_calling.catalog")
+sys.modules[__name__] = import_module("breadboard_engine.tool_calling.catalog")

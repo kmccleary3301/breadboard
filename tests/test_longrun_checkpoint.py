@@ -4,13 +4,13 @@ import json
 from pathlib import Path
 from typing import Any, Dict
 
-from agentic_coder_prototype.longrun.checkpoint import (
+from breadboard_engine.longrun.checkpoint import (
     LATEST_POINTER_REL,
     load_latest_checkpoint_pointer,
     load_state_from_latest_checkpoint,
     write_checkpoint,
 )
-from agentic_coder_prototype.longrun.controller import LongRunController
+from breadboard_engine.longrun.controller import LongRunController
 
 
 class _DiskLogger:

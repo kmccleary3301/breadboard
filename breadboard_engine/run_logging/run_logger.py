@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from agentic_coder_prototype.security import redaction
+from breadboard_engine.security import redaction
 
 
 class LoggerV2Manager:

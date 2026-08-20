@@ -4,9 +4,9 @@ import json
 import os
 from pathlib import Path
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.runtime_context import bind_session_state
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.runtime_context import bind_session_state
+from breadboard_engine.state.session_state import SessionState
 
 
 def test_task_tool_emits_streaming_events(tmp_path: Path) -> None:

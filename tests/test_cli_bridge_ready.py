@@ -3,8 +3,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from agentic_coder_prototype.api.cli_bridge.app import create_app
-from agentic_coder_prototype.api.cli_bridge.service import SessionService
+from breadboard_engine.api.cli_bridge.app import create_app
+from breadboard_engine.api.cli_bridge.service import SessionService
 
 
 @pytest.mark.asyncio

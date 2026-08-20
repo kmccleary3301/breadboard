@@ -5116,7 +5116,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 except Exception:
                     pass
                 try:
-                    from agentic_coder_prototype.permissions.policy_pack import PolicyPack
+                    from breadboard_engine.permissions.policy_pack import PolicyPack
 
                     self.permission_broker = PermissionBroker(
                         merged_permissions,

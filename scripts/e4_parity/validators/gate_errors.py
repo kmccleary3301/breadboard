@@ -7,7 +7,7 @@ from typing import Any, Iterable, Literal, Mapping, Sequence
 GateClass = Literal["pin_stale", "semantic"]
 
 _SHA_RE = re.compile(r"sha256:[0-9a-f]{64}")
-_PATH_RE = re.compile(r"(?:^|\s)(?P<path>(?:docs|docs_tmp|artifacts|contracts|config|agentic_coder_prototype|scripts|tui_skeleton|sdk)/[^\s,;:]+)")
+_PATH_RE = re.compile(r"(?:^|\s)(?P<path>(?:docs|docs_tmp|artifacts|contracts|config|breadboard_engine|scripts|tui_skeleton|sdk)/[^\s,;:]+)")
 _EXPECTED_GOT_RE = re.compile(r"expected (?P<expected>sha256:[0-9a-f]{64}|[^,]+), got (?P<got>sha256:[0-9a-f]{64}|[^,]+)")
 _NE_RE = re.compile(r"(?P<expected>sha256:[0-9a-f]{64}|[^\s]+)\s*!=\s*(?P<got>sha256:[0-9a-f]{64}|[^\s]+)")
 

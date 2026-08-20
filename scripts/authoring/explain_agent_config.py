@@ -12,14 +12,14 @@ from typing import Any
 import yaml
 
 try:
-    from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
-    from agentic_coder_prototype.compilation.tool_registry import load_tool_registry
-    from agentic_coder_prototype.compilation.v2_loader import load_agent_config_view
+    from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
+    from breadboard_engine.compilation.tool_registry import load_tool_registry
+    from breadboard_engine.compilation.v2_loader import load_agent_config_view
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from agentic_coder_prototype.compilation.primitive_records import finalize_record, get_spec
-    from agentic_coder_prototype.compilation.tool_registry import load_tool_registry
-    from agentic_coder_prototype.compilation.v2_loader import load_agent_config_view
+    from breadboard_engine.compilation.primitive_records import finalize_record, get_spec
+    from breadboard_engine.compilation.tool_registry import load_tool_registry
+    from breadboard_engine.compilation.v2_loader import load_agent_config_view
 
 SCHEMA_VERSION = "bb.config_explanation.v1"
 GENERATED_AT_UTC = "2026-07-09T00:00:00Z"

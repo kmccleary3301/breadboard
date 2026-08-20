@@ -1,6 +1,6 @@
 # Author an agent
 
-An agent config is a YAML file loaded by `agentic_coder_prototype.compilation.v2_loader.load_agent_config`. The loader now builds the same effective-config graph used by kernel config records, then returns a dict-compatible projection for existing runtime code.
+An agent config is a YAML file loaded by `breadboard_engine.compilation.v2_loader.load_agent_config`. The loader now builds the same effective-config graph used by kernel config records, then returns a dict-compatible projection for existing runtime code.
 
 Use this guide when adding a new agent config or converting an older one to the v2 surface.
 
@@ -53,7 +53,7 @@ The loader builds one graph layer for each file in the extends chain. Later laye
 `load_agent_config_view(path)` returns a read-only `ConfigView`. It behaves like a mapping for normal reads and exposes provenance for a dotted path:
 
 ```python
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config_view
+from breadboard_engine.compilation.v2_loader import load_agent_config_view
 
 view = load_agent_config_view("agent_configs/my_agent.yaml")
 assert view["workspace"]["root"]

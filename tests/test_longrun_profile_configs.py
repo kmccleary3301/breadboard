@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
+from breadboard_engine.compilation.v2_loader import load_agent_config
 
 
 def _load(rel_path: str) -> dict:

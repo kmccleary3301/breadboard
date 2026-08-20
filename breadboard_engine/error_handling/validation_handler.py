@@ -3,7 +3,7 @@ Validation handling for tool calls and constraints
 """
 
 from typing import Any, Dict, List, Optional
-from agentic_coder_prototype.compilation.tool_registry import load_tool_registry
+from breadboard_engine.compilation.tool_registry import load_tool_registry
 
 
 class ValidationHandler:

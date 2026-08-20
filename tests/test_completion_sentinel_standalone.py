@@ -10,7 +10,7 @@ runs:
    preamble) is treated as completion.
 """
 
-from agentic_coder_prototype.state.completion_detector import CompletionDetector
+from breadboard_engine.state.completion_detector import CompletionDetector
 
 
 def _detector(**completion_cfg):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from agentic_coder_prototype.security import redaction
+from breadboard_engine.security import redaction
 
 
 def _redact_payload(value: Any) -> Any:

@@ -5,7 +5,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/v2_loader.py"
+     "path": "breadboard_engine/compilation/v2_loader.py"
     }
    ],
    "disposition": "supersede",
@@ -18,7 +18,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/v2_loader.py"
+     "path": "breadboard_engine/compilation/v2_loader.py"
     }
    ],
    "disposition": "keep",
@@ -42,7 +42,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -54,7 +54,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -66,7 +66,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/checkpointing/checkpoint_manager.py"
+     "path": "breadboard_engine/checkpointing/checkpoint_manager.py"
     }
    ],
    "disposition": "keep",
@@ -96,7 +96,7 @@
   {
    "consumers": [],
    "disposition": "freeze",
-   "notes": "E6 reopen found only parity producers at scripts/e4_parity/adapters/oh_my_pi_p3_remaining_projections.py:54-58 and scripts/e4_parity/adapters/pi_p5_l1_capture.py:515-520; no product reader exists under agentic_coder_prototype, breadboard, or sdk.",
+   "notes": "E6 reopen found only parity producers at scripts/e4_parity/adapters/oh_my_pi_p3_remaining_projections.py:54-58 and scripts/e4_parity/adapters/pi_p5_l1_capture.py:515-520; no product reader exists under breadboard_engine, breadboard, or sdk.",
    "schema_id": "bb.context_resource_pack.v1",
    "tier": "config_algebra"
   },
@@ -201,7 +201,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/orchestration/coordination.py"
+     "path": "breadboard_engine/orchestration/coordination.py"
     }
    ],
    "disposition": "keep",
@@ -444,7 +444,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/compilation/effective_config_graph.py"
+     "path": "breadboard_engine/compilation/effective_config_graph.py"
     }
    ],
    "disposition": "keep",
@@ -456,7 +456,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/compilation/effective_operation_policy.py"
+     "path": "breadboard_engine/compilation/effective_operation_policy.py"
     }
    ],
    "disposition": "keep",
@@ -468,7 +468,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+     "path": "breadboard_engine/api/cli_bridge/runtime_emission.py"
     }
    ],
    "disposition": "keep",
@@ -530,7 +530,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -542,7 +542,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -554,7 +554,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/primitive_records.py"
+     "path": "breadboard_engine/compilation/primitive_records.py"
     }
    ],
    "disposition": "keep",
@@ -573,7 +573,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/state/session_state.py"
+     "path": "breadboard_engine/state/session_state.py"
     }
    ],
    "disposition": "keep",
@@ -596,7 +596,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -633,7 +633,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -657,7 +657,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -688,7 +688,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -700,7 +700,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -712,7 +712,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/orchestration/coordination.py"
+     "path": "breadboard_engine/orchestration/coordination.py"
     }
    ],
    "disposition": "keep",
@@ -791,7 +791,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/state/session_state.py"
+     "path": "breadboard_engine/state/session_state.py"
     }
    ],
    "disposition": "keep",
@@ -803,7 +803,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/compilation/helper_runtime_primitives.py"
+     "path": "breadboard_engine/compilation/helper_runtime_primitives.py"
     }
    ],
    "disposition": "keep",
@@ -815,7 +815,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/orchestration/coordination.py"
+     "path": "breadboard_engine/orchestration/coordination.py"
     }
    ],
    "disposition": "keep",
@@ -925,7 +925,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/state/session_state.py"
+     "path": "breadboard_engine/state/session_state.py"
     }
    ],
    "disposition": "keep",
@@ -944,7 +944,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/state/session_state.py"
+     "path": "breadboard_engine/state/session_state.py"
     }
    ],
    "disposition": "keep",
@@ -963,7 +963,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/state/session_state.py"
+     "path": "breadboard_engine/state/session_state.py"
     }
    ],
    "disposition": "keep",
@@ -1024,7 +1024,7 @@
    "consumers": [
     {
      "kind": "loader",
-     "path": "agentic_coder_prototype/orchestration/orchestrator.py"
+     "path": "breadboard_engine/orchestration/orchestrator.py"
     }
    ],
    "disposition": "keep",
@@ -1043,7 +1043,7 @@
    "consumers": [
     {
      "kind": "runtime_emission",
-     "path": "agentic_coder_prototype/api/cli_bridge/runtime_emission.py"
+     "path": "breadboard_engine/api/cli_bridge/runtime_emission.py"
     }
    ],
    "disposition": "keep",

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from agentic_coder_prototype.conductor.patching import apply_patch_operations_direct, normalize_patch_block
+from breadboard_engine.conductor.patching import apply_patch_operations_direct, normalize_patch_block
 from breadboard.opencode_patch import PatchParseError, parse_opencode_patch, apply_update_hunks
 
 

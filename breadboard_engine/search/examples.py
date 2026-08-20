@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Sequence
 
-from agentic_coder_prototype.optimize import (
+from breadboard_engine.optimize import (
     ArtifactRef,
     BenchmarkRunManifest,
     BenchmarkSplit,

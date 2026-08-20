@@ -1,4 +1,4 @@
-from agentic_coder_prototype.execution.dialect_manager import DialectManager
+from breadboard_engine.execution.dialect_manager import DialectManager
 
 
 def test_opencode_preferred_for_gpt5_nano():

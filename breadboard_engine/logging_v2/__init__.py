@@ -5,8 +5,8 @@ import warnings
 from ..run_logging import LoggerV2Manager
 
 warnings.warn(
-    "`agentic_coder_prototype.logging_v2` is deprecated; use "
-    "`agentic_coder_prototype.run_logging` instead.",
+    "`breadboard_engine.logging_v2` is deprecated; use "
+    "`breadboard_engine.run_logging` instead.",
     DeprecationWarning,
     stacklevel=2,
 )

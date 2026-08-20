@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.optimize import (
+from breadboard_engine.optimize import (
     CorrectnessRationale,
     GroundTruthPackage,
     OptimizationDataset,

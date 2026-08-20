@@ -5,8 +5,8 @@ import warnings
 from .enhanced_agent_integration import EnhancedAgentIntegrationV2
 
 warnings.warn(
-    "`agentic_coder_prototype.integration.enhanced_agent_integration_v2` is deprecated; use "
-    "`agentic_coder_prototype.integration.enhanced_agent_integration` instead.",
+    "`breadboard_engine.integration.enhanced_agent_integration_v2` is deprecated; use "
+    "`breadboard_engine.integration.enhanced_agent_integration` instead.",
     DeprecationWarning,
     stacklevel=2,
 )

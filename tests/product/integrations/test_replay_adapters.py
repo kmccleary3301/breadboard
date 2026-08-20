@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.provider.runtime import ProviderMessage, ProviderResult, ProviderToolCall
+from breadboard_engine.provider.runtime import ProviderMessage, ProviderResult, ProviderToolCall
 from breadboard.product.evidence.replay import ReplayManifest, ReplayManifestEntry, ReplayPlan
 from breadboard.product.integrations.host import SandboxHostAdapter
 from breadboard.product.integrations.replay import HostReplayWorker, ProviderReplayWorker, ToolReplayWorker

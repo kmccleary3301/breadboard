@@ -1,4 +1,4 @@
-from agentic_coder_prototype.ctrees.phase14_executor_probe import build_phase14_executor_probe_summary
+from breadboard_engine.ctrees.phase14_executor_probe import build_phase14_executor_probe_summary
 
 
 def test_phase14_executor_probe_summary_counts_grounded_wins() -> None:

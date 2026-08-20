@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.ctrees.practical_baseline_contract import (
+from breadboard_engine.ctrees.practical_baseline_contract import (
     build_phase11_practical_baseline_contract_status,
     build_phase11_practical_baseline_tasks_payload,
     execute_phase11_practical_baseline_cell,

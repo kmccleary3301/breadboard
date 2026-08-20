@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 DEFAULT_SCAN_ROOTS = (
-    "agentic_coder_prototype",
+    "breadboard_engine",
     "breadboard",
     "breadboard_sdk",
     "scripts",
