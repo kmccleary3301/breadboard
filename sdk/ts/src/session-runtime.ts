@@ -259,7 +259,7 @@ export type CheckpointListObservedEvent = LoggedEventBase<"checkpoint_list_obser
 export type CheckpointRestoredEvent = LoggedEventBase<"checkpoint_restored", CanonicalJsonObject>
 export type SkillsCatalogObservedEvent = LoggedEventBase<"skills_catalog_observed", CanonicalJsonObject>
 export type SkillsSelectionObservedEvent = LoggedEventBase<"skills_selection_observed", CanonicalJsonObject>
-export type CTreeNodeObservedEvent = TurnOwnedLoggedEvent<"ctree_node_observed", CanonicalJsonObject>
+export type CTreeNodeObservedEvent = LoggedEventBase<"ctree_node_observed", CanonicalJsonObject>
 export type CTreeSnapshotObservedEvent = LoggedEventBase<"ctree_snapshot_observed", CanonicalJsonObject>
 export type TaskEventObservedEvent = TurnOwnedLoggedEvent<"task_event_observed", TaskEventObservedPayload>
 export type WarningObservedEvent = TurnOwnedLoggedEvent<"warning_observed", CanonicalJsonObject>
@@ -854,7 +854,7 @@ export const decodeLoggedSessionEvent = (value: unknown): LoggedSessionEvent => 
     case "checkpoint_restored": return { ...base, kind: "checkpoint_restored", payload: jsonPayload("checkpoint_restored") }
     case "skills_catalog": return { ...base, kind: "skills_catalog_observed", payload: jsonPayload("skills_catalog_observed") }
     case "skills_selection": return { ...base, kind: "skills_selection_observed", payload: jsonPayload("skills_selection_observed") }
-    case "ctree_node": return { ...turnBase(), kind: "ctree_node_observed", payload: jsonPayload("ctree_node_observed") }
+    case "ctree_node": return { ...base, kind: "ctree_node_observed", payload: jsonPayload("ctree_node_observed") }
     case "ctree_snapshot": return { ...base, kind: "ctree_snapshot_observed", payload: jsonPayload("ctree_snapshot_observed") }
     case "task_event": return { ...turnBase(), kind: "task_event_observed", payload: parseTaskEventObserved(payload) }
     case "warning": return { ...turnBase(), kind: "warning_observed", payload: jsonPayload("warning_observed") }
