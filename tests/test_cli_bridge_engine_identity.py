@@ -34,6 +34,11 @@ from breadboard_engine.api.cli_bridge.engine_identity_config import (
 )
 from breadboard_engine.api.cli_bridge.models import EngineIdentityReadinessResponse
 from breadboard_engine.api.cli_bridge.service import SessionService
+@pytest.fixture(autouse=True)
+def _use_canonical_lifecycle_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+
+
 
 
 def _session_route(app, method: str, path: str) -> APIRoute:

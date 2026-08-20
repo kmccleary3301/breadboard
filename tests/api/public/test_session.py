@@ -16,7 +16,10 @@ from breadboard.product.cli import session as session_operations
 
 @pytest.fixture
 def client(monkeypatch, tmp_path: Path) -> Iterator[TestClient]:
+    monkeypatch.delenv("BREADBOARD_LEGACY_ROUTES", raising=False)
     monkeypatch.setenv("BREADBOARD_PUBLIC_WORKSPACE", str(tmp_path))
+    monkeypatch.setenv("BREADBOARD_SESSION_STATE_ROOT", str(tmp_path / "session-state"))
+    monkeypatch.setenv("BREADBOARD_SESSION_EVENT_ROOT", str(tmp_path / "session-events"))
     monkeypatch.setenv("BREADBOARD_ENABLE_E4_API", "0")
     monkeypatch.setenv("BREADBOARD_ENABLE_PUBLIC_API", "1")
     monkeypatch.setenv("RAY_SCE_LOCAL_MODE", "1")
@@ -36,7 +39,7 @@ def test_session_lifecycle_and_resumable_event_stream(client: TestClient, monkey
         json={"lock_id": lock_id, "task": "exercise public session", "session_id": "session-fixture"},
         headers={"Idempotency-Key": "start-fixture"},
     )
-    assert started.status_code == 202
+    assert started.status_code == 202, started.text
     assert started.json()["data"]["session"]["status"] == "running"
     lock = json.loads((tmp_path / lock_id).read_text(encoding="utf-8"))
     assert started.json()["hashes"]["lock"] == lock["graph_hash"]

@@ -55,6 +55,11 @@ from breadboard_engine.api.cli_bridge.registry import (
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 
+@pytest.fixture(autouse=True)
+def _use_canonical_lifecycle_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BREADBOARD_LEGACY_ROUTES", "1")
+
+
 
 BOOTSTRAP = "bootstrap-proof-material-000000000000000000"
 OWNER_SECRET = "owner-proof-material-0000000000000000000000"

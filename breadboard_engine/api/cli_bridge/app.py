@@ -149,7 +149,7 @@ def _drop_legacy_routes(app: FastAPI, *, drop_versioned: bool = False) -> None:
     hidden_operational = {"/health", "/ready", "/status"}
     legacy_exact = {"/models", "/features"}
     legacy_prefixes = ("/sessions", "/rl", "/atp", "/ext/evolake")
-    preserved_versioned = tuple(prefix for prefix, enabled in (("/v1/e4", _env_flag("BREADBOARD_ENABLE_E4_API")), ("/v1/engine", True), ("/v1/sessions", True)) if enabled)
+    preserved_versioned = tuple(prefix for prefix, enabled in (("/v1/e4", _env_flag("BREADBOARD_ENABLE_E4_API")), ("/v1/engine", True)) if enabled)
 
     def _route_path(route: Any) -> str:
         path = getattr(route, "path", None)
@@ -493,13 +493,14 @@ def _authority_credential_buffers(
 
 def create_app(service: SessionService | None = None, include_atp_routes: bool | None = None) -> FastAPI:
     engine_version = (os.environ.get("BREADBOARD_ENGINE_VERSION") or "0.1.0").strip() or "0.1.0"
+    legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
+    public_api_enabled = _env_flag_default("BREADBOARD_ENABLE_PUBLIC_API", default=True)
     app = FastAPI(title="BreadBoard CLI Bridge", version=engine_version)
     _service = service or SessionService()
     app.state.session_service = _service
     rl_service = LiveRLRunService(Path(os.environ.get("BREADBOARD_RL_RUN_STORE", ":memory:")))
     rl_router = create_phase3_rl_router(rl_service)
     app.include_router(rl_router, prefix="/v1/rl", tags=["rl"])
-    app.include_router(auth_router)
     app.include_router(rl_router, prefix="/rl", tags=["rl"])
 
     @app.exception_handler(LifecycleAuthorityError)
@@ -544,8 +545,6 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         )
 
     e4_repo_root = Path(__file__).resolve().parents[3]
-    legacy_routes_enabled = _env_flag_default("BREADBOARD_LEGACY_ROUTES", default=False)
-    public_api_enabled = _env_flag_default("BREADBOARD_ENABLE_PUBLIC_API", default=True)
     if _env_flag("BREADBOARD_ENABLE_E4_API"):
         from breadboard_engine.api.e4 import create_e4_router
         from breadboard_engine.api.e4.models import E4ApiError
@@ -1570,6 +1569,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         mount_public_routes(app)
     elif not legacy_routes_enabled:
         _drop_legacy_routes(app)
+    app.include_router(auth_router)
 
     app.state.p30_route_fingerprints = {
         id(route): _p30_route_fingerprint(route)
