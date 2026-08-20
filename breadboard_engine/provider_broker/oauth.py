@@ -8,6 +8,7 @@ import json
 import secrets
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
@@ -206,11 +207,13 @@ class OAuthFlowAdapter:
         return self._token_material(_json_body(status, raw))
 
     @staticmethod
-    def _token_material(data: Mapping[str, Any]) -> dict[str, Any]:
+    def _token_material(data: Mapping[str, Any], *, require_refresh: bool = True) -> dict[str, Any]:
         access, refresh, expires = data.get("access_token"), data.get("refresh_token"), data.get("expires_in")
-        if not isinstance(access, str) or not isinstance(refresh, str) or not isinstance(expires, (int, float)):
+        if not isinstance(access, str) or not isinstance(expires, (int, float)) or (require_refresh and not isinstance(refresh, str)):
             raise OAuthFlowError("oauth_invalid_response", "Token response missing access_token, refresh_token, or expires_in")
-        result: dict[str, Any] = {"access_token": access, "refresh_token": refresh, "token_type": data.get("token_type", "Bearer"), "expires_at_ms": int(time.time() * 1000 + float(expires) * 1000)}
+        result: dict[str, Any] = {"access_token": access, "token_type": data.get("token_type", "Bearer"), "expires_at_ms": int(time.time() * 1000 + float(expires) * 1000)}
+        if isinstance(refresh, str) and refresh:
+            result["refresh_token"] = refresh
         account_id = _jwt_claim(access, ("https://api.openai.com/auth", "chatgpt_account_id"))
         email = _jwt_claim(access, ("https://api.openai.com/profile", "email"))
         if account_id: result["provider_account_id"] = account_id
@@ -231,7 +234,7 @@ class OAuthFlowAdapter:
         status, _response_headers, raw = self.transport(self.spec.token_url, method="POST", headers=headers, body=body)
         if status < 200 or status >= 300:
             raise OAuthFlowError("oauth_refresh_failed", "OAuth token refresh failed", status=status)
-        result = self._token_material(_json_body(status, raw))
+        result = self._token_material(_json_body(status, raw), require_refresh=False)
         if not result.get("refresh_token"):
             result["refresh_token"] = refresh_token
         return result

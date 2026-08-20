@@ -116,3 +116,24 @@ def test_codex_device_flow_uses_source_endpoints(tmp_path):
         "https://auth.openai.com/api/accounts/deviceauth/token",
         "https://auth.openai.com/oauth/token",
     ]
+
+def test_refresh_response_without_rotated_refresh_token_preserves_stored_token(tmp_path):
+    transport, _calls = _transport_factory([
+        (200, {}, json.dumps({"access_token": "new-access", "expires_in": 3600}).encode()),
+    ])
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / "refresh.sqlite3"), oauth_transport=transport)
+    expires_at = int(time.time() * 1000) + 1000
+    credential = broker.store.put_oauth(
+        provider_id="anthropic",
+        auth_scheme_id="oauth2",
+        label="account",
+        material={"access_token": "old-access", "refresh_token": "stored-refresh"},
+        expires_at_ms=expires_at,
+    )
+    material = broker.issue_execution_material(
+        "anthropic",
+        account_selector={"account_id": credential["account_id"]},
+        minimum_validity_ms=5000,
+    )
+    assert material and material["api_key"] == "new-access"
+    assert material["refresh_token"] == "stored-refresh"

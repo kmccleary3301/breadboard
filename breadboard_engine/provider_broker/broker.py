@@ -312,39 +312,60 @@ class ProviderBroker:
         now = int(time.time() * 1000)
         if isinstance(expires_at, (int, float)) and expires_at <= now + max(0, int(minimum_validity_ms)) and isinstance(refresh_token, str):
             account_ref = str(material.get("account_id") or "")
-            refreshed_ok = False
+            old_version = int(material.get("secret_version") or 0)
             with self._lock:
                 refresh_lock = self._refresh_locks.setdefault(account_ref, threading.Lock())
             with refresh_lock:
-                try:
-                    adapter = self._oauth_adapter(str(material.get("provider_id") or provider_id))
-                    if adapter is not None:
-                        refreshed = adapter.refresh(material)
-                        refreshed_metadata = {key: material[key] for key in ("email", "provider_account_id", "project_id") if key in material}
-                        refreshed_view = self.store.put_oauth(
-                            provider_id=str(material.get("provider_id") or provider_id),
-                            auth_scheme_id=str(material.get("auth_scheme_id") or "oauth2"),
-                            label=str(material.get("label") or provider_id),
-                            account_id=account_ref,
-                            expires_at_ms=int(refreshed["expires_at_ms"]),
-                            material=refreshed,
-                            metadata=refreshed_metadata,
-                        )
-                        redaction.register_secret_value(refreshed.get("access_token"))
-                        redaction.register_secret_value(refreshed.get("refresh_token"))
-                        self._emit("provider_credential_refreshed", provider_id=provider_id, account_id=refreshed_view["account_id"], secret_version=refreshed_view["secret_version"])
-                        refreshed_ok = True
-                except OAuthFlowError as exc:
-                    self._emit("provider_credential_refresh_failed", provider_id=provider_id, account_id=account_ref, code=exc.code)
-            if refreshed_ok:
                 self.store.release_lease(str(material.get("lease_id") or ""))
-                material = self.store.acquire_lease(
+                latest = self.store.acquire_lease(
                     provider_id=provider_id,
                     session_id=session_id,
                     endpoint_id=endpoint_id,
                     account_id=account_ref,
-                    minimum_validity_ms=minimum_validity_ms,
+                    minimum_validity_ms=0,
                 )
+                latest_expires = latest.get("expires_at_ms") if latest else None
+                if latest is not None and int(latest.get("secret_version") or 0) > old_version and (
+                    not isinstance(latest_expires, (int, float))
+                    or latest_expires > int(time.time() * 1000) + max(0, int(minimum_validity_ms))
+                ):
+                    material = latest
+                else:
+                    if latest is not None:
+                        self.store.release_lease(str(latest.get("lease_id") or ""))
+                    try:
+                        adapter = self._oauth_adapter(str(material.get("provider_id") or provider_id))
+                        if adapter is not None:
+                            refreshed = adapter.refresh(material)
+                            refreshed_metadata = {key: material[key] for key in ("email", "provider_account_id", "project_id") if key in material}
+                            refreshed_view = self.store.put_oauth(
+                                provider_id=str(material.get("provider_id") or provider_id),
+                                auth_scheme_id=str(material.get("auth_scheme_id") or "oauth2"),
+                                label=str(material.get("label") or provider_id),
+                                account_id=account_ref,
+                                expires_at_ms=int(refreshed["expires_at_ms"]),
+                                material=refreshed,
+                                metadata=refreshed_metadata,
+                            )
+                            redaction.register_secret_value(refreshed.get("access_token"))
+                            redaction.register_secret_value(refreshed.get("refresh_token"))
+                            self._emit("provider_credential_refreshed", provider_id=provider_id, account_id=refreshed_view["account_id"], secret_version=refreshed_view["secret_version"])
+                            material = self.store.acquire_lease(
+                                provider_id=provider_id,
+                                session_id=session_id,
+                                endpoint_id=endpoint_id,
+                                account_id=account_ref,
+                                minimum_validity_ms=minimum_validity_ms,
+                            )
+                    except OAuthFlowError as exc:
+                        self._emit("provider_credential_refresh_failed", provider_id=provider_id, account_id=account_ref, code=exc.code)
+                        material = self.store.acquire_lease(
+                            provider_id=provider_id,
+                            session_id=session_id,
+                            endpoint_id=endpoint_id,
+                            account_id=account_ref,
+                            minimum_validity_ms=0,
+                        )
             redaction.register_secret_value(material.get("api_key"))
             redaction.register_secret_value(material.get("access_token"))
             redaction.register_secret_value(material.get("refresh_token"))
