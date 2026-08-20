@@ -149,7 +149,15 @@ def _work_item_snapshot_record(snapshot: WorkItemSnapshot) -> dict[str, Any]:
     return record
 
 def emit_session_start_records(
-    *, session_id: str, request: SessionCreateRequest, title: str | None = None, repo_root: Path | None = None, generated_at: str | None = None, output_root: Path | None = None, effective_runtime_config: Mapping[str, Any] | None = None,
+    *,
+    session_id: str,
+    request: SessionCreateRequest,
+    title: str | None = None,
+    repo_root: Path | None = None,
+    generated_at: str | None = None,
+    output_root: Path | None = None,
+    effective_runtime_config: Mapping[str, Any] | None = None,
+    model_role_lock: Any | None = None,
 ) -> dict[str, str]:
     """Emit validating session-start records, failing before partial evidence is written."""
     root = (repo_root or Path(__file__).resolve().parents[3]).resolve()
@@ -161,6 +169,10 @@ def emit_session_start_records(
         config = _sanitize_persisted_runtime_config(apply_dotted_overrides(base_config, dict(request.overrides or {})))
     else: config = _sanitize_persisted_runtime_config(effective_runtime_config)
     graph = compile_runtime_effective_config_graph(session_id, config, str(config_path), repo_root=root)
+    if model_role_lock is not None:
+        from ...model_roles import embed_model_role_lock
+
+        graph = embed_model_role_lock(graph, model_role_lock)
     registry = compile_capability_registry(
         registry_id=f"{session_id}_capability_registry", run_id=session_id,
         environment_id="cli_bridge_runtime",

@@ -219,8 +219,12 @@ class SessionService:
         try:
             if emit_primitives:
                 staged_paths = emit_session_start_records(
-                    session_id=session_id, request=request, title=session_title, output_root=staging_record_root,
+                    session_id=session_id,
+                    request=request,
+                    title=session_title,
+                    output_root=staging_record_root,
                     effective_runtime_config=runtime_config,
+                    model_role_lock=role_lock,
                 )
                 metadata.setdefault("runtime_records", {name: str(runtime_record_dir / Path(path).relative_to(staged_record_dir)) for name, path in staged_paths.items()})
             event_sink = JsonlEventSink(staged_event_dir / "session_events.jsonl")

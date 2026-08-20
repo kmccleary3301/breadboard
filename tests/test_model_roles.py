@@ -51,10 +51,24 @@ def test_role_chain_compiles_model_map_into_immutable_lock_with_account_identity
     assert "sk-role-secret" not in json.dumps(lock.as_dict())
     with pytest.raises(TypeError):
         lock["roles"]["default"]["primary"]["model_id"] = "changed"
+
     graph = {"schema_version": "bb.effective_config_graph.v1", "effective_values": [], "graph_hash": None}
     embedded = embed_model_role_lock(graph, lock)
     assert embedded["model_role_lock"]["lock_hash"] == lock.lock_hash
     assert embedded["graph_hash"] == sha256_json({**embedded, "graph_hash": None})
+
+    from breadboard_engine.api.cli_bridge.models import SessionCreateRequest
+    from breadboard_engine.api.cli_bridge.runtime_emission import emit_session_start_records
+
+    emit_session_start_records(
+        session_id="role-session",
+        request=SessionCreateRequest(config_path="config.yaml", task="role"),
+        output_root=tmp_path / "records",
+        effective_runtime_config={"providers": {"default_model": "openai/gpt-5.4-mini"}},
+        model_role_lock=lock,
+    )
+    persisted = json.loads((tmp_path / "records" / "role-session" / "effective_config_graph.json").read_text())
+    assert persisted["model_role_lock"]["lock_hash"] == lock.lock_hash
 
 
 def test_credential_rotation_does_not_change_role_lock_hash(tmp_path):
