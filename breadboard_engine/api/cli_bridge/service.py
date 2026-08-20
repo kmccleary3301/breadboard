@@ -321,6 +321,15 @@ class SessionService:
         session_title = request.task if request.task.strip() else DEFAULT_INTERACTIVE_SESSION_TITLE
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata); runner = SessionRunner(session=record, registry=self.registry, request=request)
         runtime_config = runner.prepare_runtime_config()
+        runtime_providers = runtime_config.get("providers") if isinstance(runtime_config, dict) else None
+        if not metadata.get("model"):
+            selected_model = (
+                runtime_providers.get("default_model") if isinstance(runtime_providers, dict) else None
+            ) or runtime_config.get("model")
+            if selected_model:
+                metadata["model"] = str(selected_model)
+        if not metadata.get("mode") and isinstance(runtime_config, dict) and runtime_config.get("mode"):
+            metadata["mode"] = str(runtime_config["mode"])
         persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config)
         runtime_graph = compile_runtime_effective_config_graph(
             session_id, persisted_runtime_config, request.config_path

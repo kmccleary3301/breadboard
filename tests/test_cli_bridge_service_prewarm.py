@@ -43,6 +43,12 @@ async def test_session_service_prewarms_supported_and_empty_sessions(monkeypatch
         assert work[-1]["record"]["title"] == title and record.product_session.events[0].payload["task_hash"] == "sha256:" + hashlib.sha256(title.encode()).hexdigest() and record.runner.request.task == "" and record.runner._input_queue.empty()
     await service.stop_session(response.session_id); await service.stop_session(response.session_id); assert (await service.registry.get(response.session_id)) is record and record.status is SessionStatus.STOPPED and type(record.product_session).restore(record.product_session.events).read_model.status == "canceled"; await _stop(record)
 @pytest.mark.asyncio
+async def test_session_summary_projects_effective_model(monkeypatch, tmp_path) -> None:
+    service, response, record = await _create(monkeypatch, tmp_path)
+    assert record.to_summary().model == record.runner.current_runtime_config()["providers"]["default_model"]
+    await service.stop_session(response.session_id)
+    await _stop(record)
+@pytest.mark.asyncio
 async def test_product_session_projects_bridge_status_and_exact_supplied_lock(monkeypatch, tmp_path) -> None:
     supplied_lock = EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "b" * 64})
     monkeypatch.setattr(RUNNER + "schedule_start", lambda _runner: None)
