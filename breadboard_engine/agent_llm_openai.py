@@ -335,6 +335,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         *,
         local_mode: bool = False,
         prompt_base_dirs: Optional[List[Path]] = None,
+        provider_lease_channel: Any | None = None,
     ) -> None:
         """Initialize conductor with workspace, image, and configuration."""
         bootstrap_conductor(
@@ -348,6 +349,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
         )
         self._prompt_base_dirs = list(prompt_base_dirs or [])
+        self._provider_lease_channel = provider_lease_channel
         # Stop requests are session-scoped and should only affect the current run.
         self._stop_requested = False
         # Runtime-only reference used for streaming task events (e.g., async subagent completions).
@@ -3266,7 +3268,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         timeout_seconds: float = 0.0,
     ) -> _RlmProviderSubcallExecution:
         runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
-        client_cfg = provider_router.create_client_config(model_route)
+        lease_channel = getattr(self, "_provider_lease_channel", None)
+        client_cfg = (
+            provider_router.create_client_config(
+                model_route,
+                lease_channel=lease_channel,
+            )
+            if lease_channel is not None
+            else provider_router.create_client_config(model_route)
+        )
         if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
             raise _RlmProviderApiKeyMissing(
                 f"Provider broker has no execution material for {runtime_descriptor.provider_id}."
@@ -4904,7 +4914,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         # Initialize runtime (ReplayRuntime if replay, else standard)
         provider_config, resolved_model, supports_native_tools_for_model = provider_router.get_provider_config(requested_route_id)
         runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(requested_route_id)
-        client_config = provider_router.create_client_config(requested_route_id)
+        lease_channel = getattr(self, "_provider_lease_channel", None)
+        client_config = (
+            provider_router.create_client_config(
+                requested_route_id,
+                lease_channel=lease_channel,
+            )
+            if lease_channel is not None
+            else provider_router.create_client_config(requested_route_id)
+        )
 
         # Fix for client_config usage in replay mode
         if runtime_descriptor.provider_id == "replay":

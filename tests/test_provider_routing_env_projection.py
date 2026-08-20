@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from types import SimpleNamespace
 
 import pytest
 
@@ -13,10 +14,17 @@ from breadboard_engine.provider.routing import ProviderRouter
 
 
 class _StubBroker:
-    def __init__(self, material: dict[str, Any] | None) -> None:
+    def __init__(
+        self,
+        material: dict[str, Any] | None,
+        *,
+        store_path: str = "/tmp/stub-credentials.sqlite3",
+    ) -> None:
         self.material = material
+        self.store = SimpleNamespace(path=store_path)
         self.calls: list[tuple[str, dict[str, Any]]] = []
         self.redeem_calls: list[tuple[str, dict[str, Any]]] = []
+        self.release_calls: list[str] = []
 
     def issue_execution_material(self, provider_id: str, **kwargs: Any) -> dict[str, Any] | None:
         self.calls.append((provider_id, dict(kwargs)))
@@ -27,6 +35,20 @@ class _StubBroker:
         if self.material is None or self.material.get("lease_id") != lease_id:
             return None
         return dict(self.material)
+
+    def release_execution_material(self, lease_id: str) -> bool:
+        self.release_calls.append(lease_id)
+        return True
+
+
+class _StubLeaseChannel:
+    def __init__(self, material: dict[str, Any] | None) -> None:
+        self.material = material
+        self.calls: list[dict[str, Any]] = []
+
+    def redeem(self, **kwargs: Any) -> dict[str, Any] | None:
+        self.calls.append(dict(kwargs))
+        return dict(self.material) if self.material is not None else None
 
 
 def _poison_local_auth(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -75,9 +97,9 @@ def test_openai_client_config_uses_only_broker_execution_material(monkeypatch, t
     ]
 
 
-def test_provider_router_redeems_exact_lease_channel_without_new_issuance(monkeypatch) -> None:
-    monkeypatch.setenv("BREADBOARD_PROVIDER_LEASE_ID", "bblease-channel")
-    broker = _StubBroker(
+def test_provider_router_redeems_exact_capability_without_new_issuance(monkeypatch) -> None:
+    broker = _StubBroker(None)
+    channel = _StubLeaseChannel(
         {
             "api_key": "broker-token",
             "lease_id": "bblease-channel",
@@ -85,39 +107,39 @@ def test_provider_router_redeems_exact_lease_channel_without_new_issuance(monkey
     )
     monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
 
-    client_config = ProviderRouter().create_client_config("openai/gpt-5.4-mini")
+    client_config = ProviderRouter().create_client_config(
+        "openai/gpt-5.4-mini",
+        lease_channel=channel,
+    )
 
     assert client_config["api_key"] == "broker-token"
     assert client_config["lease_id"] == "bblease-channel"
     assert broker.calls == []
-    assert broker.redeem_calls == [
-        (
-            "bblease-channel",
-            {
-                "provider_id": "openai",
-                "endpoint_id": "openai/gpt-5.4-mini",
-            },
-        )
+    assert channel.calls == [
+        {
+            "provider_id": "openai",
+            "endpoint_id": "openai/gpt-5.4-mini",
+        }
     ]
 
 
-def test_invalid_lease_channel_fails_closed_without_new_issuance(monkeypatch) -> None:
-    monkeypatch.setenv("BREADBOARD_PROVIDER_LEASE_ID", "bblease-invalid")
+def test_invalid_capability_fails_closed_without_new_issuance(monkeypatch) -> None:
     broker = _StubBroker(None)
+    channel = _StubLeaseChannel(None)
     monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
 
-    client_config = ProviderRouter().create_client_config("openai/gpt-5.4-mini")
+    client_config = ProviderRouter().create_client_config(
+        "openai/gpt-5.4-mini",
+        lease_channel=channel,
+    )
 
     assert client_config["api_key"] is None
     assert broker.calls == []
-    assert broker.redeem_calls == [
-        (
-            "bblease-invalid",
-            {
-                "provider_id": "openai",
-                "endpoint_id": "openai/gpt-5.4-mini",
-            },
-        )
+    assert channel.calls == [
+        {
+            "provider_id": "openai",
+            "endpoint_id": "openai/gpt-5.4-mini",
+        }
     ]
 
 
@@ -189,27 +211,66 @@ def test_conductor_startup_does_not_project_runtime_auth(monkeypatch, tmp_path: 
     )
 
 
-def test_ray_child_receives_only_the_broker_lease_channel(monkeypatch, tmp_path: Path) -> None:
+def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
     import breadboard_engine.agent as agent_module
 
     captured: dict[str, Any] = {}
+    channel = object()
 
-    class FakeRay:
+    class FakeAuthorityFactory:
+        @classmethod
+        def options(cls, **kwargs: Any) -> type[FakeAuthorityFactory]:
+            captured["authority_options"] = kwargs
+            return cls
+
         @staticmethod
-        def is_initialized() -> bool:
-            return True
+        def remote(**kwargs: Any) -> object:
+            captured["authority_kwargs"] = kwargs
+            return channel
+
+    class FakeRun:
+        @staticmethod
+        def remote(*args: Any, **kwargs: Any) -> str:
+            captured["run_args"] = args
+            captured["run_kwargs"] = kwargs
+            return "run-ref"
+
+    class FakeAgentHandle:
+        run_agentic_loop = FakeRun()
 
     class FakeRemote:
         @staticmethod
-        def remote(**kwargs: Any) -> object:
+        def remote(**kwargs: Any) -> FakeAgentHandle:
             captured["remote_kwargs"] = kwargs
-            return object()
+            return FakeAgentHandle()
 
     class FakeConductor:
         @staticmethod
         def options(**kwargs: Any) -> type[FakeRemote]:
             captured["options"] = kwargs
             return FakeRemote
+
+    class FakeRay:
+        @staticmethod
+        def is_initialized() -> bool:
+            return True
+
+        @staticmethod
+        def remote(authority: Any) -> type[FakeAuthorityFactory]:
+            captured["authority_class"] = authority
+            return FakeAuthorityFactory
+
+        @staticmethod
+        def get(reference: Any) -> dict[str, Any]:
+            assert reference == "run-ref"
+            return {"ok": True}
+
+        @staticmethod
+        def kill(handle: Any, *, no_restart: bool) -> None:
+            captured["killed"] = (handle, no_restart)
 
     for key in (
         "OPENAI_API_KEY",
@@ -225,7 +286,8 @@ def test_ray_child_receives_only_the_broker_lease_channel(monkeypatch, tmp_path:
         {
             "api_key": "broker-token",
             "lease_id": "bblease-child-channel",
-        }
+        },
+        store_path=str(tmp_path / "credentials.sqlite3"),
     )
     monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
 
@@ -236,13 +298,24 @@ def test_ray_child_receives_only_the_broker_lease_channel(monkeypatch, tmp_path:
     coder.agent = None
     coder._local_mode = False
     coder._provider_lease_id = None
+    coder._provider_lease_channel = None
+    coder._provider_worker_state_dir = None
     monkeypatch.setattr(coder, "_resolve_workspace_path", lambda: tmp_path / "workspace")
 
     coder.initialize()
+    worker_state_dir = Path(coder._provider_worker_state_dir or "")
 
-    assert captured["options"] == {
-        "runtime_env": {"env_vars": {"BREADBOARD_PROVIDER_LEASE_ID": "bblease-child-channel"}}
+    assert captured["authority_kwargs"] == {
+        "store_path": str(tmp_path / "credentials.sqlite3"),
+        "lease_id": "bblease-child-channel",
+        "provider_id": "openai",
+        "endpoint_id": "openai/gpt-5.4-mini",
     }
+    env_vars = captured["options"]["runtime_env"]["env_vars"]
+    assert env_vars["BREADBOARD_CREDENTIAL_STORE_PATH"] == ""
+    assert env_vars["BREADBOARD_CREDENTIAL_DB"] == ""
+    assert env_vars["BREADBOARD_STATE_DIR"] == str(worker_state_dir)
+    assert captured["remote_kwargs"]["provider_lease_channel"] is channel
     assert broker.calls == [
         (
             "openai",
@@ -253,8 +326,16 @@ def test_ray_child_receives_only_the_broker_lease_channel(monkeypatch, tmp_path:
             },
         )
     ]
-    assert broker.redeem_calls == []
+
+    assert coder.run_task("hello") == {"ok": True}
+
+    assert broker.release_calls == ["bblease-child-channel"]
+    assert captured["killed"] == (channel, True)
+    assert coder._provider_lease_id is None
+    assert coder._provider_lease_channel is None
+    assert not worker_state_dir.exists()
     serialized = repr(captured)
+    assert "broker-token" not in serialized
     assert "credential-poison" not in serialized
 
 

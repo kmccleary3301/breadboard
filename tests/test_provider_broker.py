@@ -7,6 +7,7 @@ import subprocess
 import sys
 
 from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore
+from breadboard_engine.provider_broker.broker import LeaseCapabilityAuthority
 
 
 def test_broker_nine_method_surface_and_plain_data(tmp_path):
@@ -96,6 +97,58 @@ def test_store_separates_secret_material_and_enforces_expiring_leases(tmp_path):
         )
         is None
     )
+
+
+def test_lease_capability_authority_is_bound_to_one_scope_and_releases(tmp_path):
+    db = tmp_path / "credentials.sqlite3"
+    broker = ProviderBroker(SQLiteCredentialStore(db))
+    broker.putApiKey(
+        {
+            "provider_id": "openai",
+            "account_label": "primary",
+            "api_key": "openai-authority-secret",
+        }
+    )
+    broker.putApiKey(
+        {
+            "provider_id": "anthropic",
+            "account_label": "other",
+            "api_key": "anthropic-authority-secret",
+        }
+    )
+    material = broker.issue_execution_material(
+        "openai",
+        session_id="session-authority",
+        endpoint_id="openai/gpt-5.4-mini",
+    )
+    assert material is not None
+    authority = LeaseCapabilityAuthority(
+        store_path=str(db),
+        lease_id=material["lease_id"],
+        provider_id="openai",
+        endpoint_id="openai/gpt-5.4-mini",
+    )
+
+    redeemed = authority.redeem(
+        provider_id="openai",
+        endpoint_id="openai/gpt-5.4-mini",
+    )
+    assert redeemed and redeemed["api_key"] == "openai-authority-secret"
+    assert authority.redeem(
+        provider_id="anthropic",
+        endpoint_id="openai/gpt-5.4-mini",
+    ) is None
+    assert authority.redeem(
+        provider_id="openai",
+        endpoint_id="openai/different",
+    ) is None
+    assert not hasattr(authority, "issue_execution_material")
+    assert authority.release() is True
+    assert authority.release() is False
+    assert authority.redeem(
+        provider_id="openai",
+        endpoint_id="openai/gpt-5.4-mini",
+    ) is None
 
 
 def test_session_start_child_inherits_no_credential_environment(tmp_path):

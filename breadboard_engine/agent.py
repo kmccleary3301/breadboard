@@ -81,6 +81,8 @@ class AgenticCoder:
         self.agent = None
         self._local_mode = force_local_mode or os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
         self._provider_lease_id: Optional[str] = None
+        self._provider_lease_channel: Any | None = None
+        self._provider_worker_state_dir: Optional[str] = None
         
     def _load_config(self) -> Dict[str, Any]:
         """Load and validate configuration (v2-aware)."""
@@ -235,25 +237,15 @@ class AgenticCoder:
                 workspace_path = _REPO_ROOT / "tmp" / workspace_path
         return validate_workspace_path(workspace_path, repo_root=_REPO_ROOT)
 
-    def _provider_lease_for_remote(self) -> Optional[str]:
+    def _provider_lease_for_remote(self, ray_mod: Any) -> Any | None:
         model_route = self._select_model()
         descriptor, _ = provider_router.get_runtime_descriptor(model_route)
         if descriptor.runtime_id in {"codex_app_server", "mock_chat", "replay"}:
             return None
         from .provider_broker import get_provider_broker
+        from .provider_broker.broker import LeaseCapabilityAuthority
 
         broker = get_provider_broker()
-        existing_lease_id = (os.environ.get("BREADBOARD_PROVIDER_LEASE_ID") or "").strip()
-        if existing_lease_id:
-            material = broker.redeem_execution_material(
-                existing_lease_id,
-                provider_id=descriptor.provider_id,
-                endpoint_id=model_route,
-            )
-            if material is None:
-                raise RuntimeError("Configured provider lease channel is invalid or expired.")
-            self._provider_lease_id = existing_lease_id
-            return existing_lease_id
         material = broker.issue_execution_material(
             descriptor.provider_id,
             session_id="agentic-coder",
@@ -264,8 +256,48 @@ class AgenticCoder:
             raise RuntimeError(
                 f"Provider broker has no execution material for {descriptor.provider_id}."
             )
-        self._provider_lease_id = str(material["lease_id"])
-        return self._provider_lease_id
+        lease_id = str(material["lease_id"])
+        store_path = str(getattr(getattr(broker, "store", None), "path", "") or "")
+        if not store_path or store_path == ":memory:":
+            broker.release_execution_material(lease_id)
+            raise RuntimeError("Provider broker store is not available to the lease authority.")
+        authority_class = ray_mod.remote(LeaseCapabilityAuthority)
+        try:
+            channel = authority_class.options(num_cpus=0).remote(
+                store_path=store_path,
+                lease_id=lease_id,
+                provider_id=descriptor.provider_id,
+                endpoint_id=model_route,
+            )
+        except Exception:
+            broker.release_execution_material(lease_id)
+            raise
+        self._provider_lease_id = lease_id
+        self._provider_lease_channel = channel
+        return channel
+
+    def _release_provider_lease(self) -> None:
+        lease_id = self._provider_lease_id
+        channel = self._provider_lease_channel
+        worker_state_dir = self._provider_worker_state_dir
+        self._provider_lease_id = None
+        self._provider_lease_channel = None
+        self._provider_worker_state_dir = None
+        try:
+            if lease_id:
+                from .provider_broker import get_provider_broker
+
+                get_provider_broker().release_execution_material(lease_id)
+        finally:
+            ray_mod = _get_ray()
+            if ray_mod is not None and channel is not None:
+                try:
+                    ray_mod.kill(channel, no_restart=True)
+                except Exception:
+                    pass
+            if worker_state_dir:
+                shutil.rmtree(worker_state_dir, ignore_errors=True)
+
 
     def initialize(self) -> None:
         """Initialize the agent with the loaded configuration."""
@@ -318,19 +350,28 @@ class AgenticCoder:
                 prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
             )
         else:
-            lease_id = self._provider_lease_for_remote()
+            ray_mod = _get_ray()
+            if ray_mod is None:
+                raise RuntimeError("Ray is unavailable for remote execution.")
+            lease_channel = self._provider_lease_for_remote(ray_mod)
+            self._provider_worker_state_dir = tempfile.mkdtemp(prefix="bb-provider-worker-")
             runtime_env = {
-                "env_vars": (
-                    {"BREADBOARD_PROVIDER_LEASE_ID": lease_id}
-                    if lease_id
-                    else {}
-                )
+                "env_vars": {
+                    "BREADBOARD_CREDENTIAL_STORE_PATH": "",
+                    "BREADBOARD_CREDENTIAL_DB": "",
+                    "BREADBOARD_STATE_DIR": self._provider_worker_state_dir,
+                }
             }
-            self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
-                workspace=self.workspace_dir,
-                config=self.config,
-                prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
-            )
+            try:
+                self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
+                    workspace=self.workspace_dir,
+                    config=self.config,
+                    prompt_base_dirs=list(_config_resolution_base_dirs(self.config_path)),
+                    provider_lease_channel=lease_channel,
+                )
+            except Exception:
+                self._release_provider_lease()
+                raise
     
     def run_task(
         self,
@@ -444,8 +485,12 @@ class AgenticCoder:
         )
         ray_mod = _get_ray()
         if ray_mod is None:
+            self._release_provider_lease()
             raise RuntimeError("Ray is unavailable for remote execution.")
-        return ray_mod.get(ref)
+        try:
+            return ray_mod.get(ref)
+        finally:
+            self._release_provider_lease()
     
     def interactive_session(self) -> None:
         """Start an interactive session with the agent."""

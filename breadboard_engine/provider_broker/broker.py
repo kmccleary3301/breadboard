@@ -418,6 +418,35 @@ class ProviderBroker:
     put_api_key = putApiKey
 
 
+class LeaseCapabilityAuthority:
+    """Broker-owned narrow authority for one already-issued execution lease."""
+
+    def __init__(
+        self,
+        *,
+        store_path: str,
+        lease_id: str,
+        provider_id: str,
+        endpoint_id: str,
+    ) -> None:
+        self._broker = ProviderBroker(SQLiteCredentialStore(store_path))
+        self._lease_id = lease_id
+        self._provider_id = provider_id
+        self._endpoint_id = endpoint_id
+
+    def redeem(self, *, provider_id: str, endpoint_id: str) -> dict[str, Any] | None:
+        if provider_id != self._provider_id or endpoint_id != self._endpoint_id:
+            return None
+        return self._broker.redeem_execution_material(
+            self._lease_id,
+            provider_id=provider_id,
+            endpoint_id=endpoint_id,
+        )
+
+    def release(self) -> bool:
+        return self._broker.release_execution_material(self._lease_id)
+
+
 _default_lock = threading.Lock()
 _default_broker: ProviderBroker | None = None
 
