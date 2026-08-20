@@ -52,6 +52,7 @@ from .models import (
     SessionSummary,
 )
 from .service import SessionService
+from .auth_routes import router as auth_router
 from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 from breadboard_engine.api.public import mount_public_routes
@@ -243,6 +244,7 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     rl_service = LiveRLRunService(Path(os.environ.get("BREADBOARD_RL_RUN_STORE", ":memory:")))
     rl_router = create_phase3_rl_router(rl_service)
     app.include_router(rl_router, prefix="/v1/rl", tags=["rl"])
+    app.include_router(auth_router)
     app.include_router(rl_router, prefix="/rl", tags=["rl"])
 
     @app.exception_handler(HTTPException)

@@ -285,6 +285,48 @@ export interface ProviderAuthDetachRequest { readonly provider_id: string; reado
 export interface ProviderAuthDetachResponse { readonly ok?: boolean }
 export interface ProviderAuthStatusItem { readonly provider_id: string; readonly alias?: string | null; readonly base_url?: string | null; readonly expires_at_ms?: number | null; readonly expires_in_ms?: number | null; readonly has_api_key?: boolean; readonly header_keys?: ReadonlyArray<string>; readonly is_subscription_plan?: boolean; readonly issued_at_ms?: number | null; readonly required_profile?: Record<string, unknown> | null; readonly routing_keys?: ReadonlyArray<string> }
 export interface ProviderAuthStatusResponse { readonly attached?: ReadonlyArray<ProviderAuthStatusItem> }
+export interface AuthProviderView { readonly provider_id: string; readonly display_name: string; readonly auth_schemes: ReadonlyArray<string>; readonly login_available?: boolean }
+export interface AuthCredentialView {
+  readonly account_id: string
+  readonly credential_id: string
+  readonly provider_id: string
+  readonly auth_scheme_id: string
+  readonly label: string
+  readonly alias?: string | null
+  readonly credential_kind?: string
+  readonly status: string
+  readonly source?: string
+  readonly secret_version: number
+  readonly created_at_ms: number
+  readonly updated_at_ms: number
+  readonly expires_at_ms?: number | null
+  readonly has_api_key?: boolean
+  readonly metadata?: Record<string, unknown>
+}
+export interface AuthLoginSession {
+  readonly login_session_id: string
+  readonly provider_id: string
+  readonly status: string
+  readonly created_at_ms?: number | null
+  readonly updated_at_ms?: number | null
+  readonly problem?: Record<string, unknown> | null
+}
+export interface BeginAuthLogin { readonly provider_id: string; readonly auth_scheme_id?: string | null }
+export interface CompleteAuthLogin { readonly authorization_code?: string | null; readonly state?: string | null; readonly callback_url?: string | null }
+export interface PutApiKeyInput {
+  readonly api_key: string
+  readonly auth_scheme_id?: string
+  readonly alias?: string | null
+  readonly headers?: Record<string, string>
+  readonly base_url?: string | null
+  readonly routing?: Record<string, unknown> | null
+  readonly expires_at_ms?: number | null
+  readonly ttl_seconds?: number | null
+  readonly metadata?: Record<string, unknown>
+}
+export interface AuthActionResponse { readonly ok: boolean; readonly detail?: Record<string, unknown> | null }
+export interface ModelRolesResolveInput { readonly model_roles: Record<string, unknown>; readonly role_overrides?: Record<string, unknown> | null; readonly session_started?: boolean }
+export interface ModelRolesResolveResponse { readonly lock: Record<string, unknown>; readonly lock_hash: string }
 
 export interface E4CatalogBindingSegment { readonly segment_id: string; readonly stable_entries_hash: string }
 export interface E4CatalogBinding { readonly catalog_path: string; readonly generated_at_utc?: string | null; readonly schema_version: string; readonly segments: ReadonlyArray<E4CatalogBindingSegment>; readonly segments_hash: string; readonly stable_entries_hash: string }

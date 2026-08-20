@@ -59,12 +59,7 @@ class SessionSummary(BaseModel):
 
 
 class ErrorEnvelope(BaseModel):
-    """Stable API error envelope.
-
-    Code taxonomy: unauthorized, not_found, conflict, invalid_request,
-    internal, gate_failed, unsupported_filter, and endpoint-specific stable
-    snake_case codes such as lane_not_found or schema_not_found.
-    """
+    """Stable API error envelope."""
 
     error: str
     detail: str | Dict[str, Any] | None = None
@@ -139,8 +134,6 @@ class SessionFileContent(BaseModel):
     content: str
     truncated: bool = Field(default=False)
     total_bytes: Optional[int] = None
-
-
 
 
 class ModelCatalogEntry(BaseModel):
@@ -343,3 +336,76 @@ class EvoLakeRunCampaignResponse(BaseModel):
     error_detail: Dict[str, Any] | None = None
     harness_diagnostic: Dict[str, Any] | None = None
     received: Dict[str, Any] | None = None
+
+
+class AuthProviderView(BaseModel):
+    provider_id: str
+    display_name: str
+    auth_schemes: List[str] = Field(default_factory=list)
+    login_available: bool = False
+
+
+class AuthCredentialView(BaseModel):
+    account_id: str
+    credential_id: str
+    provider_id: str
+    auth_scheme_id: str
+    label: str
+    alias: Optional[str] = None
+    credential_kind: str = "api_key"
+    status: str
+    source: str = "broker"
+    secret_version: int
+    created_at_ms: int
+    updated_at_ms: int
+    expires_at_ms: Optional[int] = None
+    has_api_key: bool = False
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AuthLoginSession(BaseModel):
+    login_session_id: str
+    provider_id: str
+    status: str
+    created_at_ms: Optional[int] = None
+    updated_at_ms: Optional[int] = None
+    problem: Dict[str, Any] | None = None
+
+
+class BeginAuthLoginRequest(BaseModel):
+    provider_id: str
+    auth_scheme_id: Optional[str] = None
+
+
+class CompleteAuthLoginRequest(BaseModel):
+    authorization_code: Optional[str] = None
+    state: Optional[str] = None
+    callback_url: Optional[str] = None
+
+
+class PutApiKeyRequest(BaseModel):
+    api_key: str
+    auth_scheme_id: str = "api_key"
+    alias: Optional[str] = None
+    headers: Dict[str, str] = Field(default_factory=dict)
+    base_url: Optional[str] = None
+    routing: Dict[str, Any] | None = None
+    expires_at_ms: Optional[int] = None
+    ttl_seconds: Optional[int] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class AuthActionResponse(BaseModel):
+    ok: bool
+    detail: Dict[str, Any] | None = None
+
+
+class ModelRolesResolveRequest(BaseModel):
+    model_roles: Dict[str, Any]
+    role_overrides: Dict[str, Any] | None = None
+    session_started: bool = False
+
+
+class ModelRolesResolveResponse(BaseModel):
+    lock: Dict[str, Any]
+    lock_hash: str
