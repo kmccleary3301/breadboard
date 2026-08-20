@@ -57,6 +57,7 @@ class RenameCodemod:
         new: str,
         root: Path,
         allow_stale: bool = False,
+        expect: set[str] | None = None,
     ) -> None:
         if old == new:
             raise ValueError("old and new names are identical; nothing to do")
@@ -64,6 +65,10 @@ class RenameCodemod:
         self.new = new
         self.root = root
         self.allow_stale = allow_stale
+        # Named rename-machinery artifacts allowed to retain the old name even
+        # though the manifest cannot carry them (post-move shim, binary pickle
+        # fixtures the text audit skips). Exact paths only - no globs.
+        self.expect = set(expect or ())
         self.approved: dict[str, dict] = {}
         self.denied: dict[str, str] = {}
         for entry in manifest["files"]:
@@ -152,9 +157,11 @@ class RenameCodemod:
         for res in results:
             by_status.setdefault(res["status"], []).append(res)
         remaining = self.remaining_old_references()
-        expected_paths = set(self.denied) | {
-            p.replace(self.old, self.new, 1) for p in self.denied
-        }
+        expected_paths = (
+            set(self.denied)
+            | {p.replace(self.old, self.new, 1) for p in self.denied}
+            | self.expect
+        )
         unexpected = {
             path: count
             for path, count in remaining.items()
@@ -174,6 +181,7 @@ class RenameCodemod:
             "preserved_problems": self.verify_preserved(),
             "remaining_old_reference_files": len(remaining),
             "unexpected_old_references": unexpected,
+            "expected_extra": sorted(self.expect),
         }
         report["ok"] = (
             not report["stale"]
@@ -193,6 +201,12 @@ def main() -> int:
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--allow-stale", action="store_true")
     parser.add_argument("--report", help="write JSON report here")
+    parser.add_argument(
+        "--expect",
+        action="append",
+        default=[],
+        help="exact path allowed to retain the old name (repeatable)",
+    )
     args = parser.parse_args()
 
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
@@ -202,6 +216,7 @@ def main() -> int:
         new=args.new,
         root=Path(args.root),
         allow_stale=args.allow_stale,
+        expect=set(args.expect),
     )
     report = codemod.run(apply=args.apply)
     text = json.dumps(report, indent=1, sort_keys=True)
