@@ -1501,7 +1501,10 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: tui_skeleton/package-lock.json
+          cache-dependency-path: |
+            tui_skeleton/package-lock.json
+            sdk/ts/package-lock.json
+            sdk/ts-kernel-contracts/package-lock.json
 
       - uses: actions/setup-python@v5
         if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -1512,6 +1515,12 @@ jobs:
 
       - name: Build kernel contracts package
         working-directory: sdk/ts-kernel-contracts
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build canonical SDK package
+        working-directory: sdk/ts
         run: |
           npm ci
           npm run build
