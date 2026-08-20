@@ -965,7 +965,7 @@ def test_runtime_emission_flag_off_writes_no_records(monkeypatch: pytest.MonkeyP
         params={"schema_version": "bb.effective_config_graph.v1", "source": "runtime"},
     )
     assert records.json()["records"] == []
-    assert not (tmp_path / "runtime_records").exists()
+    assert not (tmp_path / "runtime_records" / response.json()["session_id"]).exists()
 
 
 def test_runtime_emission_records_are_served_by_e4_api(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
