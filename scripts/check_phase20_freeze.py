@@ -51,6 +51,10 @@ ALLOWED_SCHEMA_IDS = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_def.v3.schema.json",  # NS08
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_lock.v2.schema.json",  # NS08
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.lane_manifest.v2.schema.json",  # NS08
+    # EXECUTION_MASTER_V1 §9.1 C-G0: provider-parity contract substrate adds
+    # the credential and model-role kernel contracts (owner-approved plan).
+    "https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json",  # C-G0
+    "https://breadboard.dev/contracts/kernel/schemas/bb.model_roles.v1.schema.json",  # C-G0
 }
 
 # FREEZE_POLICY.md permits plan-required tightening of an existing schema only
