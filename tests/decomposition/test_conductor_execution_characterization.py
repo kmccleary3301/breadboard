@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from breadboard_engine.conductor import execution as execution_module
+from breadboard_engine.conductor import model_output
 from breadboard_engine.conductor.execution import (
     ReplayToolOutputMismatchError,
     _force_failed_verification_final_answer,
@@ -88,8 +89,8 @@ def test_private_exports_are_identical_through_compat_wrapper() -> None:
 
 def test_process_model_output_preserves_text_and_native_dispatch_order(monkeypatch: pytest.MonkeyPatch) -> None:
     events: list[tuple[str, Any]] = []
-    monkeypatch.setattr(execution_module, "handle_text_tool_calls", lambda *args: events.append(("text", args[1].content)) or False)
-    monkeypatch.setattr(execution_module, "handle_native_tool_calls", lambda *args: events.append(("native", args[1].tool_calls[0].function.name)) or False)
+    monkeypatch.setattr(model_output, "handle_text_tool_calls", lambda *args: events.append(("text", args[1].content)) or False)
+    monkeypatch.setattr(model_output, "handle_native_tool_calls", lambda *args: events.append(("native", args[1].tool_calls[0].function.name)) or False)
     conductor = SimpleNamespace(config={})
     state = _session()
     text_message = ProviderMessage(role="assistant", content="describe", tool_calls=[], finish_reason="stop")
