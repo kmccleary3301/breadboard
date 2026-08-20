@@ -59,6 +59,11 @@ jobs:
       - name: Verify CLI bridge contract exports
         run: pytest -q tests/test_cli_bridge_contract_exports.py
 
+      - name: Verify generated TS SDK is current
+        run: |
+          python scripts/dev/generate_ts_sdk.py --check
+          pytest -q tests/test_ts_sdk_codegen.py
+
       - name: Enforce Phase 20 freeze
         run: python scripts/check_phase20_freeze.py
 
