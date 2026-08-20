@@ -564,7 +564,7 @@ def test_rlm_provider_execution_preserves_single_and_batch_results_and_context(
     ]
 
 
-def test_rlm_provider_execution_preserves_missing_key_errors_for_single_and_batch(
+def test_rlm_provider_execution_preserves_missing_broker_material_errors_for_single_and_batch(
     monkeypatch: Any,
     tmp_path: Path,
 ) -> None:
@@ -596,12 +596,12 @@ def test_rlm_provider_execution_preserves_missing_key_errors_for_single_and_batc
     batch_row = (batch.get("results") or [{}])[0]
 
     assert single["reason"] == "api_key_missing"
-    assert single["error"] == "RLM api_key_missing: STUB_API_KEY missing in environment."
+    assert single["error"] == "RLM api_key_missing: Provider broker has no execution material for stub."
     assert batch_row == {
         "request_index": 0,
         "status": "failed",
         "reason": "api_key_missing",
-        "error": "STUB_API_KEY missing in environment.",
+        "error": "Provider broker has no execution material for stub.",
         "branch_id": "root",
         "depth": 0,
         "lane": "tool_heavy",

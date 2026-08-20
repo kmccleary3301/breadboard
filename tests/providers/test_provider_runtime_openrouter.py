@@ -23,8 +23,17 @@ class _FakeChat:
         self.completions = _FakeCompletions()
 
 
+@pytest.fixture(autouse=True)
+def _broker_execution_material(monkeypatch):
+    class Broker:
+        @staticmethod
+        def issue_execution_material(_provider_id, **_kwargs):
+            return {"api_key": "test-key", "lease_id": "bblease-openrouter-test"}
+
+    monkeypatch.setattr("breadboard_engine.provider_broker.get_provider_broker", lambda: Broker())
+
+
 def test_openrouter_runtime_uses_openai_client(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(
         provider_router.providers["openrouter"],
         "default_headers",
@@ -80,7 +89,6 @@ def test_openrouter_gpt5_routes_through_responses_runtime_descriptor() -> None:
 
 
 def test_openrouter_gpt5_responses_injects_provider_routing_preferences(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(
         provider_router.providers["openrouter"],
         "default_headers",
@@ -150,7 +158,6 @@ def test_openrouter_gpt5_responses_injects_provider_routing_preferences(monkeypa
 
 
 def test_openrouter_runtime_injects_accept_headers_on_request(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(
         provider_router.providers["openrouter"],
         "default_headers",
@@ -239,7 +246,6 @@ def test_openrouter_runtime_injects_accept_headers_on_request(monkeypatch):
 
 
 def test_openrouter_runtime_parses_event_stream_response(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(
         provider_router.providers["openrouter"],
         "default_headers",
@@ -328,7 +334,6 @@ def test_openrouter_runtime_parses_event_stream_response(monkeypatch):
 
 
 def test_openrouter_runtime_event_stream_parse_failure_records_base64(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(
         provider_router.providers["openrouter"],
         "default_headers",
@@ -413,7 +418,6 @@ def test_openrouter_runtime_event_stream_parse_failure_records_base64(monkeypatc
 
 
 def test_openrouter_runtime_html_error_includes_base64(monkeypatch):
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
     monkeypatch.setattr(
         provider_router.providers["openrouter"],
         "default_headers",

@@ -10,17 +10,12 @@ Provides provider-specific tool schema translation and native tool calling detec
 """
 from typing import Dict, Any, List, Optional, Tuple
 import os
-import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
 
 from .capabilities import CAPABILITY_MATRIX, ProviderCapabilities
 
 
-_CODEX_AUTH_PATH = Path.home() / ".codex" / "auth.json"
-_OPENAI_AUTH_HEADERS_ENV = "BREADBOARD_OPENAI_AUTH_HEADERS_JSON"
-_OPENAI_AUTH_BASE_URL_ENV = "BREADBOARD_OPENAI_AUTH_BASE_URL"
 
 @dataclass
 class ProviderDescriptor:
@@ -356,90 +351,17 @@ class ProviderRouter:
         provider, _, _ = self.parse_model_id(model_id)
         return CAPABILITY_MATRIX.get(provider, CAPABILITY_MATRIX["openai"])
 
-    def _find_codex_token(self, value: Any, seen: Optional[set[int]] = None) -> Optional[str]:
-        if seen is None:
-            seen = set()
-        if value is None:
-            return None
-        marker = id(value)
-        if marker in seen:
-            return None
-        seen.add(marker)
-        if isinstance(value, dict):
-            for key in ("codex_access_token", "access_token", "id_token", "token", "auth_token"):
-                candidate = value.get(key)
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip()
-            for nested in value.values():
-                found = self._find_codex_token(nested, seen)
-                if found:
-                    return found
-        elif isinstance(value, list):
-            for nested in value:
-                found = self._find_codex_token(nested, seen)
-                if found:
-                    return found
-        return None
-
-    def _resolve_openai_fallback_auth(self) -> Tuple[Optional[str], Dict[str, str]]:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if api_key:
-            return api_key, {}
-        try:
-            if not _CODEX_AUTH_PATH.exists():
-                return None, {}
-            payload = json.loads(_CODEX_AUTH_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            return None, {}
-        if not isinstance(payload, dict):
-            return None, {}
-        auth_file_api_key = payload.get("OPENAI_API_KEY")
-        if isinstance(auth_file_api_key, str) and auth_file_api_key.strip():
-            return auth_file_api_key.strip(), {}
-        codex_token = self._find_codex_token(payload)
-        if codex_token:
-            return codex_token, {"Authorization": f"Bearer {codex_token}"}
-        return None, {}
-
-    def _resolve_openai_projected_env_overlay(self) -> Tuple[Optional[str], Optional[str], Dict[str, str]]:
-        api_key = os.getenv("OPENAI_API_KEY")
-        base_url = (os.getenv(_OPENAI_AUTH_BASE_URL_ENV) or "").strip() or None
-        headers: Dict[str, str] = {}
-        raw_headers = (os.getenv(_OPENAI_AUTH_HEADERS_ENV) or "").strip()
-        if raw_headers:
-            try:
-                parsed = json.loads(raw_headers)
-                if isinstance(parsed, dict):
-                    for key, value in parsed.items():
-                        if not key or value is None:
-                            continue
-                        headers[str(key)] = str(value)
-            except Exception:
-                pass
-        return api_key, base_url, headers
 
     def create_client_config(self, model_id: str) -> Dict[str, Any]:
         """Create client configuration for the given model"""
         config, actual_model, _ = self.get_provider_config(model_id)
 
-        api_key = os.getenv(config.api_key_env)
-        fallback_headers: Dict[str, str] = {}
-        projected_base_url: Optional[str] = None
-        projected_headers: Dict[str, str] = {}
-        if config.provider_id == "openai" and not api_key:
-            api_key, fallback_headers = self._resolve_openai_fallback_auth()
-        if config.provider_id == "openai":
-            projected_api_key, projected_base_url, projected_headers = self._resolve_openai_projected_env_overlay()
-            if not api_key and projected_api_key:
-                api_key = projected_api_key
+        api_key: Optional[str] = None
         if config.provider_id == "codex":
-            api_key = api_key or "codex"
-        if config.provider_id == "mock":
-            api_key = api_key or "mock"
+            api_key = "codex"
+        elif config.provider_id == "mock":
+            api_key = "mock"
 
-        # Runtime credentials come from the broker's narrow execution lease.
-        # Environment values remain a compatibility fallback for callers that
-        # explicitly launch the router outside a broker-managed session.
         try:
             from ..provider_broker import get_provider_broker
 
@@ -455,12 +377,6 @@ class ProviderRouter:
         headers: Dict[str, str] = {}
         if config.default_headers:
             headers.update({k: v for k, v in config.default_headers.items() if v})
-        if fallback_headers:
-            headers.update({k: v for k, v in fallback_headers.items() if v})
-        if projected_headers:
-            headers.update({k: v for k, v in projected_headers.items() if v})
-        if projected_base_url:
-            base_url = projected_base_url
         if overlay is not None:
             overlay_api_key = overlay.get("api_key")
             overlay_base_url = overlay.get("base_url")
@@ -485,9 +401,14 @@ class ProviderRouter:
         if headers:
             client_config["default_headers"] = headers
 
+        if overlay is not None:
+            client_config["credential_source"] = "broker_lease"
+            if overlay.get("lease_id"):
+                client_config["lease_id"] = str(overlay["lease_id"])
+
         if overlay is not None and isinstance(overlay.get("routing"), dict):
             client_config["routing"] = dict(overlay["routing"])
-        
+
         return client_config
 
 

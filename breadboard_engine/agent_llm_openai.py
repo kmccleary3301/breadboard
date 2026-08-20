@@ -337,7 +337,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         prompt_base_dirs: Optional[List[Path]] = None,
     ) -> None:
         """Initialize conductor with workspace, image, and configuration."""
-        self._bootstrap_openai_env_from_runtime_config(config if isinstance(config, dict) else None)
         bootstrap_conductor(
             self,
             workspace=workspace,
@@ -646,77 +645,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         except Exception:
             return None
         return None
-
-    @staticmethod
-    def _find_local_openai_bootstrap_token(value: Any, seen: Optional[set[int]] = None) -> Optional[str]:
-        if seen is None:
-            seen = set()
-        if value is None:
-            return None
-        marker = id(value)
-        if marker in seen:
-            return None
-        seen.add(marker)
-        if isinstance(value, dict):
-            for key in ("OPENAI_API_KEY", "codex_access_token", "access_token", "id_token", "token", "auth_token"):
-                candidate = value.get(key)
-                if isinstance(candidate, str) and candidate.strip():
-                    return candidate.strip()
-            for nested in value.values():
-                found = OpenAIConductor._find_local_openai_bootstrap_token(nested, seen)
-                if found:
-                    return found
-        elif isinstance(value, list):
-            for nested in value:
-                found = OpenAIConductor._find_local_openai_bootstrap_token(nested, seen)
-                if found:
-                    return found
-        return None
-
-    @staticmethod
-    def _bootstrap_local_openai_client_config(client_config: Dict[str, Any]) -> Dict[str, Any]:
-        if client_config.get("api_key"):
-            return client_config
-        try:
-            auth_path = Path.home() / ".codex" / "auth.json"
-            if not auth_path.exists():
-                return client_config
-            payload = json.loads(auth_path.read_text(encoding="utf-8"))
-            token = OpenAIConductor._find_local_openai_bootstrap_token(payload)
-            if not token:
-                return client_config
-            client_config["api_key"] = token
-            headers = dict(client_config.get("default_headers") or {})
-            headers.setdefault("Authorization", f"Bearer {token}")
-            client_config["default_headers"] = headers
-        except Exception:
-            return client_config
-        return client_config
-
-    @staticmethod
-    def _bootstrap_openai_env_from_runtime_config(config: Optional[Dict[str, Any]]) -> None:
-        if not isinstance(config, dict):
-            return
-        runtime_auth = config.get("provider_auth_runtime")
-        if not isinstance(runtime_auth, dict):
-            return
-        openai_auth = runtime_auth.get("openai")
-        if not isinstance(openai_auth, dict):
-            return
-        api_key = str(openai_auth.get("api_key") or "").strip()
-        if api_key:
-            os.environ["OPENAI_API_KEY"] = api_key
-        headers = openai_auth.get("headers")
-        if isinstance(headers, dict) and headers:
-            try:
-                os.environ["BREADBOARD_OPENAI_AUTH_HEADERS_JSON"] = json.dumps(
-                    {str(k): str(v) for k, v in headers.items() if k and v is not None}
-                )
-            except Exception:
-                pass
-        base_url = str(openai_auth.get("base_url") or "").strip()
-        if base_url:
-            os.environ["BREADBOARD_OPENAI_AUTH_BASE_URL"] = base_url
 
     @staticmethod
     def _extract_last_assistant_text(messages: Any) -> str:
@@ -3340,7 +3268,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(model_route)
         client_cfg = provider_router.create_client_config(model_route)
         if not client_cfg.get("api_key") and runtime_descriptor.provider_id != "replay":
-            raise _RlmProviderApiKeyMissing(f"{runtime_descriptor.api_key_env} missing in environment.")
+            raise _RlmProviderApiKeyMissing(
+                f"Provider broker has no execution material for {runtime_descriptor.provider_id}."
+            )
         runtime = provider_registry.create_runtime(runtime_descriptor)
         client = runtime.create_client(
             client_cfg.get("api_key"),
@@ -4975,8 +4905,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         provider_config, resolved_model, supports_native_tools_for_model = provider_router.get_provider_config(requested_route_id)
         runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(requested_route_id)
         client_config = provider_router.create_client_config(requested_route_id)
-        if runtime_descriptor.provider_id == "openai" and not client_config.get("api_key"):
-            client_config = self._bootstrap_local_openai_client_config(dict(client_config))
 
         # Fix for client_config usage in replay mode
         if runtime_descriptor.provider_id == "replay":
@@ -4993,7 +4921,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 runtime_descriptor.default_api_variant = "chat"
 
         if not client_config["api_key"] and runtime_descriptor.provider_id != "replay":
-            raise RuntimeError(f"{provider_config.api_key_env} missing in environment")
+            raise RuntimeError(
+                f"Provider broker has no execution material for {provider_config.provider_id}."
+            )
 
         runtime = provider_registry.create_runtime(runtime_descriptor)
 

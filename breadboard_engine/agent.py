@@ -34,7 +34,6 @@ def _get_ray():  # type: ignore[no-untyped-def]
     return _ray
 from .agent_llm_openai import OpenAIConductor
 from .compilation.v2_loader import _config_resolution_base_dirs, load_agent_config
-from .provider.routing import provider_router
 from .provider import provider_adapter_manager
 from .compilation.tool_yaml_loader import load_yaml_tools
 from .compilation.system_prompt_compiler import get_compiler
@@ -42,81 +41,6 @@ from .compilation.system_prompt_compiler import get_compiler
 
 logger = logging.getLogger(__name__)
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_PROVIDER_ENV_KEYS = (
-    "OPENAI_API_KEY",
-    "OPENROUTER_API_KEY",
-    "ANTHROPIC_API_KEY",
-    "GOOGLE_API_KEY",
-    "GEMINI_API_KEY",
-    "BREADBOARD_OPENAI_AUTH_HEADERS_JSON",
-    "BREADBOARD_OPENAI_AUTH_BASE_URL",
-)
-
-
-def _find_local_openai_bootstrap_token(value: Any, seen: Optional[set[int]] = None) -> Optional[str]:
-    if seen is None:
-        seen = set()
-    if value is None:
-        return None
-    marker = id(value)
-    if marker in seen:
-        return None
-    seen.add(marker)
-    if isinstance(value, dict):
-        for key in ("OPENAI_API_KEY", "codex_access_token", "access_token", "id_token", "token", "auth_token"):
-            candidate = value.get(key)
-            if isinstance(candidate, str) and candidate.strip():
-                return candidate.strip()
-        for nested in value.values():
-            found = _find_local_openai_bootstrap_token(nested, seen)
-            if found:
-                return found
-    elif isinstance(value, list):
-        for nested in value:
-            found = _find_local_openai_bootstrap_token(nested, seen)
-            if found:
-                return found
-    return None
-
-
-def _bootstrap_openai_env_from_local_codex_auth() -> None:
-    if os.environ.get("OPENAI_API_KEY"):
-        return
-    auth_path = Path.home() / ".codex" / "auth.json"
-    try:
-        if not auth_path.exists():
-            return
-        payload = json.loads(auth_path.read_text(encoding="utf-8"))
-        token = _find_local_openai_bootstrap_token(payload)
-        if token:
-            os.environ["OPENAI_API_KEY"] = token
-    except Exception:
-        return
-
-
-def _bootstrap_openai_env_from_runtime_config(config: Optional[Dict[str, Any]]) -> None:
-    if not isinstance(config, dict):
-        return
-    runtime_auth = config.get("provider_auth_runtime")
-    if not isinstance(runtime_auth, dict):
-        return
-    openai_auth = runtime_auth.get("openai")
-    if not isinstance(openai_auth, dict):
-        return
-    api_key = str(openai_auth.get("api_key") or "").strip()
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-    headers = openai_auth.get("headers")
-    if isinstance(headers, dict) and headers:
-        try:
-            os.environ["BREADBOARD_OPENAI_AUTH_HEADERS_JSON"] = json.dumps(
-                {str(k): str(v) for k, v in headers.items() if k and v is not None}
-            )
-        except Exception:
-            pass
-    base_url = str(openai_auth.get("base_url") or "").strip()
-    if base_url:
-        os.environ["BREADBOARD_OPENAI_AUTH_BASE_URL"] = base_url
 
 
 class AgenticCoder:
@@ -311,8 +235,7 @@ class AgenticCoder:
 
     def initialize(self) -> None:
         """Initialize the agent with the loaded configuration."""
-        _bootstrap_openai_env_from_local_codex_auth()
-        _bootstrap_openai_env_from_runtime_config(self.config if isinstance(self.config, dict) else None)
+
         workspace_path = self._resolve_workspace_path()
         self.workspace_dir = str(workspace_path)
         try:
@@ -362,11 +285,11 @@ class AgenticCoder:
             )
         else:
             runtime_env = {
-                "env_vars": {
-                    key: value
-                    for key in _PROVIDER_ENV_KEYS
-                    if (value := os.environ.get(key))
-                }
+                "env_vars": (
+                    {"BREADBOARD_PROVIDER_LEASE_ID": os.environ["BREADBOARD_PROVIDER_LEASE_ID"]}
+                    if os.environ.get("BREADBOARD_PROVIDER_LEASE_ID")
+                    else {}
+                )
             }
             self.agent = OpenAIConductor.options(runtime_env=runtime_env).remote(
                 workspace=self.workspace_dir,
