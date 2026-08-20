@@ -39,6 +39,8 @@ from .models import (
 
 router = APIRouter(tags=["public-session"])
 _TERMINAL_SESSION_STATUSES = frozenset({"completed", "failed", "canceled"})
+class _ProductSessionUnavailable(RuntimeError):
+    pass
 def _service(request: Request):
     return request.app.state.session_service
 async def _product_session(service, session_id: str):
@@ -47,11 +49,13 @@ async def _product_session(service, session_id: str):
     record = await service.ensure_session(session_id)
     session = getattr(record, "product_session", None)
     if session is None:
-        raise RuntimeError("session product state is unavailable")
+        raise _ProductSessionUnavailable("session product state is unavailable")
     return record, session
 async def _read_product_session(service, session_id: str, workspace: Path):
     try:
         return await _product_session(service, session_id)
+    except _ProductSessionUnavailable:
+        pass
     except HTTPException as error:
         if error.status_code != 404:
             raise
@@ -65,6 +69,8 @@ async def _read_product_session(service, session_id: str, workspace: Path):
 async def _require_live_product_session(service, session_id: str, workspace: Path):
     try:
         return await _product_session(service, session_id)
+    except _ProductSessionUnavailable:
+        pass
     except HTTPException as error:
         if error.status_code != 404:
             raise
@@ -174,6 +180,8 @@ async def _artifacts_result(service, session_id: str) -> CliResult:
 async def _read_artifacts_result(service, session_id: str, workspace: Path) -> CliResult:
     try:
         return await _artifacts_result(service, session_id)
+    except _ProductSessionUnavailable:
+        pass
     except HTTPException as error:
         if error.status_code != 404:
             raise
