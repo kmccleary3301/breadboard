@@ -88,7 +88,7 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
     },
     "https://breadboard.dev/contracts/kernel/schemas/bb.e4.fixed_point_report.v1.schema.json": {
         "packet": "bb-31n",
-        "sha256": "64bff2f1f55bba6216ecc71f0669a3eb4900253d07dfe3db3070c3217a325c02",
+        "sha256": "63aa96ffceb9983d7374065872613c5f335a74b0df257c147c9373be55a2f622",
         "class": "tightening",
     },
 }
