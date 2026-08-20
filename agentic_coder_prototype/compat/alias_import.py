@@ -70,6 +70,16 @@ def _enforce_policy(legacy_root: str, fullname: str) -> None:
         )
 
 
+def announce_root_import(legacy_root: str) -> None:
+    """Policy hook for the physical shim package's own import.
+
+    The root legacy package is found by the ordinary path finder (a real
+    directory), bypassing :class:`LegacyAliasFinder`; its ``__init__`` must
+    call this so ``error``/``warn`` policies apply to the root import too.
+    """
+    _enforce_policy(legacy_root, legacy_root)
+
+
 class LegacyAliasLoader(importlib.abc.Loader):
     _RESTORED_ATTRS = ("__name__", "__spec__", "__loader__", "__package__")
 

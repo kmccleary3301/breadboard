@@ -311,6 +311,85 @@ class TestPolicy:
         with pytest.raises(ValueError):
             alias_import.current_policy()
 
+    def _physical_shim_root(self, tmp_path):
+        """Simulate the post-rename layout: a physical legacy package whose
+        __init__ follows the shim template (announce + install + replace)."""
+        root = tmp_path / "physroot"
+        new_pkg = root / "phys_new"
+        new_pkg.mkdir(parents=True)
+        (new_pkg / "__init__.py").write_text("MARK = 'canonical'\n", encoding="utf-8")
+        old_pkg = root / "phys_old"
+        old_pkg.mkdir()
+        (old_pkg / "__init__.py").write_text(
+            textwrap.dedent(
+                """
+                import sys
+                from agentic_coder_prototype.compat.alias_import import (
+                    announce_root_import,
+                    install,
+                )
+                announce_root_import("phys_old")
+                install("phys_old", "phys_new")
+                import phys_new as _canonical
+                sys.modules[__name__] = _canonical
+                """
+            ),
+            encoding="utf-8",
+        )
+        return root
+
+    def _run_physical(self, root, code, policy=None):
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.pathsep.join([str(root), str(REPO_ROOT)])
+        env.pop(alias_import.POLICY_ENV, None)
+        if policy is not None:
+            env[alias_import.POLICY_ENV] = policy
+        return subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
+            cwd=root,
+        )
+
+    def test_physical_shim_error_rejects_root_import(self, tmp_path):
+        root = self._physical_shim_root(tmp_path)
+        proc = self._run_physical(
+            root,
+            "import phys_old",
+            policy="error",
+        )
+        assert proc.returncode != 0
+        assert "rejected" in proc.stderr
+
+    def test_physical_shim_warn_warns_on_root_import(self, tmp_path):
+        root = self._physical_shim_root(tmp_path)
+        proc = self._run_physical(
+            root,
+            "import warnings\n"
+            "with warnings.catch_warnings(record=True) as w:\n"
+            "    warnings.simplefilter('always')\n"
+            "    import phys_old\n"
+            "assert any('deprecated' in str(x.message) for x in w), w\n"
+            "print('WARNED_OK')",
+            policy="warn",
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "WARNED_OK" in proc.stdout
+
+    def test_physical_shim_default_identity(self, tmp_path):
+        root = self._physical_shim_root(tmp_path)
+        proc = self._run_physical(
+            root,
+            "import phys_old, phys_new\n"
+            "assert phys_old is phys_new, 'shim identity broken'\n"
+            "assert phys_old.MARK == 'canonical'\n"
+            "print('PHYS_OK')",
+        )
+        assert proc.returncode == 0, proc.stderr
+        assert "PHYS_OK" in proc.stdout
+
 
 class TestProcessModels:
     def test_multiprocessing_spawn(self, demo):
