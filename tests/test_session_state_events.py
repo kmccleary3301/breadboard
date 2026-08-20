@@ -508,6 +508,24 @@ def test_session_event_envelope_carries_visibility_contract() -> None:
     assert envelope["visibility"] == "transcript"
 
 
+def test_session_runner_recognizes_replay_after_injected_system_reminder(tmp_path) -> None:
+    fixture = tmp_path / "fixture.jsonl"
+    request = SessionCreateRequest(config_path="cfg.yaml", task="", stream=False)
+    runner = SessionRunner(
+        session=SessionRecord(session_id="sess-replay-reminder", status=SessionStatus.STARTING),
+        registry=SessionRegistry(),
+        request=request,
+    )
+    prompt = (
+        "<system-reminder>\n"
+        "Today: 2026-08-20; current working directory: '/tmp'.\n"
+        "</system-reminder>\n"
+        f"replay:{fixture}\n\n"
+        "Trailing compiled system prompt."
+    )
+    assert runner._parse_replay_path(prompt) == fixture.resolve()
+
+
 @pytest.mark.asyncio
 async def test_session_runner_replay_task_skips_agent_init(tmp_path) -> None:
     registry = SessionRegistry()

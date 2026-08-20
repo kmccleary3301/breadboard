@@ -722,11 +722,17 @@ class SessionRunner:
         text = (task_text or "").strip()
         if not text:
             return None
+        while text.startswith("<system-reminder>"):
+            closing = text.find("</system-reminder>")
+            if closing < 0:
+                return None
+            text = text[closing + len("</system-reminder>") :].lstrip()
         path_text: Optional[str] = None
         if text.startswith("replay:"):
-            path_text = text[len("replay:") :].strip()
+            path_text = text[len("replay:") :].splitlines()[0].strip()
         elif text.startswith("@replay") or text.startswith("/replay"):
-            parts = text.split(maxsplit=1)
+            command = text.splitlines()[0]
+            parts = command.split(maxsplit=1)
             if len(parts) == 2:
                 path_text = parts[1].strip()
         if not path_text:
