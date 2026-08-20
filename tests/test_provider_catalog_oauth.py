@@ -62,8 +62,16 @@ def test_codex_browser_login_and_exchange_use_exact_source_endpoints_without_lea
     assert params["client_id"] == ["app_EMoamEEZ73f0CkXaXp7hrann"]
     assert params["originator"] == ["pi"]
     flow = broker.store.get_login(started["login_session_id"], include_flow=True)["flow"]
-    completed = broker.completeLogin({"login_session_id": started["login_session_id"], "code": "auth-code", "state": flow["state"]})
+    completed = broker.completeLogin(
+        {
+            "login_session_id": started["login_session_id"],
+            "code": None,
+            "authorization_code": "auth-code",
+            "state": flow["state"],
+        }
+    )
     assert completed["status"] == "completed"
+    assert completed["credential"]["updated_at_ms"] > 0
     assert refresh not in json.dumps(completed)
     assert calls[0][0] == "https://auth.openai.com/oauth/token"
     assert b"grant_type=authorization_code" in calls[0][3]

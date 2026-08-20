@@ -55,15 +55,19 @@ class ProviderBroker:
             return default
         if isinstance(input_data, Mapping):
             for name in names:
-                if name in input_data:
-                    return input_data[name]
+                if name not in input_data:
+                    continue
+                value = input_data[name]
+                if value is not None and (not isinstance(value, str) or value.strip()):
+                    return value
             return default
         for name in names:
             try:
                 value = getattr(input_data, name)
             except AttributeError:
                 continue
-            return value
+            if value is not None and (not isinstance(value, str) or value.strip()):
+                return value
         return default
 
     @staticmethod

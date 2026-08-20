@@ -15,20 +15,61 @@ import requests
 import uvicorn
 
 from breadboard_engine.api.cli_bridge import app as app_module
+from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard_sdk import ApiError, BreadBoardClient
 
+
+def _hold_fixture_completion_until_input() -> tuple[object, object]:
+    original_execute = SessionRunner._execute_task
+    original_enqueue = SessionRunner.enqueue_input
+
+    def is_smoke_session(session) -> bool:
+        return str(getattr(session, "session_id", "")).endswith("smoke-session")
+
+    def gated_execute(self, *args, **kwargs):
+        if not is_smoke_session(self.session):
+            return original_execute(self, *args, **kwargs)
+        if not getattr(self, "_smoke_input_admitted", False):
+            gate = getattr(self, "_smoke_input_gate", None)
+            if gate is None:
+                gate = threading.Event()
+                self._smoke_input_gate = gate
+            if not gate.wait(timeout=10):
+                raise RuntimeError("default smoke input was not admitted before completion")
+        return original_execute(self, *args, **kwargs)
+
+    async def gated_enqueue(self, *args, **kwargs):
+        result = await original_enqueue(self, *args, **kwargs)
+        self._smoke_input_admitted = True
+        gate = getattr(self, "_smoke_input_gate", None)
+        if gate is not None:
+            gate.set()
+        return result
+
+    SessionRunner._execute_task = gated_execute
+    SessionRunner.enqueue_input = gated_enqueue
+    return original_execute, original_enqueue
 
 @contextlib.contextmanager
 def _running_default_server(workspace_path: str | None = None) -> Iterator[str]:
     os.environ.pop("BREADBOARD_LEGACY_ROUTES", None)
     os.environ["RAY_SCE_LOCAL_MODE"] = "1"
     previous_workspace = os.environ.get("BREADBOARD_PUBLIC_WORKSPACE")
+    root_env_names = (
+        "BREADBOARD_SESSION_STATE_ROOT",
+        "BREADBOARD_RUNTIME_RECORD_ROOT",
+        "BREADBOARD_SESSION_EVENT_ROOT",
+    )
+    previous_roots = {name: os.environ.get(name) for name in root_env_names}
     owned_workspace = tempfile.TemporaryDirectory() if workspace_path is None else None
-    active_workspace = workspace_path or owned_workspace.name
-    os.environ["BREADBOARD_PUBLIC_WORKSPACE"] = active_workspace
+    active_workspace = Path(workspace_path or owned_workspace.name)
+    os.environ["BREADBOARD_PUBLIC_WORKSPACE"] = str(active_workspace)
+    os.environ["BREADBOARD_SESSION_STATE_ROOT"] = str(active_workspace / ".breadboard/session_state")
+    os.environ["BREADBOARD_RUNTIME_RECORD_ROOT"] = str(active_workspace / ".breadboard/runtime_records")
+    os.environ["BREADBOARD_SESSION_EVENT_ROOT"] = str(active_workspace / ".breadboard/session_events")
+    original_execute, original_enqueue = _hold_fixture_completion_until_input()
     app = app_module.create_app()
-
     listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind(("127.0.0.1", 0))
@@ -58,12 +99,19 @@ def _running_default_server(workspace_path: str | None = None) -> Iterator[str]:
         server.should_exit = True
         thread.join(timeout=10)
         listener.close()
+        SessionRunner._execute_task = original_execute
+        SessionRunner.enqueue_input = original_enqueue
         if thread.is_alive():
             raise RuntimeError("default create_app server did not stop")
         if previous_workspace is None:
             os.environ.pop("BREADBOARD_PUBLIC_WORKSPACE", None)
         else:
             os.environ["BREADBOARD_PUBLIC_WORKSPACE"] = previous_workspace
+        for name, value in previous_roots.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         if owned_workspace is not None:
             owned_workspace.cleanup()
 
@@ -85,6 +133,13 @@ def test_python_sdk_readme_flow_against_default_server() -> None:
             idempotency_key="start-smoke",
         )
         session_id = started["data"]["session"]["session_id"]
+        deadline = time.monotonic() + 5
+        while True:
+            snapshot = client.get_session(session_id)
+            if snapshot["data"]["session"]["status"] == "running":
+                break
+            assert time.monotonic() < deadline, snapshot
+            time.sleep(0.01)
         sent = client.send_input_session(
             session_id, "Continue", idempotency_key="input-smoke"
         )

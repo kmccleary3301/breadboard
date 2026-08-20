@@ -169,10 +169,10 @@ class SQLiteCredentialStore:
             "source": row["source"],
             "secret_version": int(row["secret_version"]),
             "created_at_ms": int(row["created_at_ms"]),
+            "updated_at_ms": int(row["updated_at_ms"]),
             "has_api_key": str(row["kind"]) == "api_key",
             "expires_at_ms": row["expires_at_ms"],
             "metadata": SQLiteCredentialStore._decode_json(row["metadata_json"]),
-            "has_api_key": True,
         }
 
     def put_api_key(
