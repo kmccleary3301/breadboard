@@ -466,75 +466,77 @@ class AgenticCoder:
                 context=context,
             )
 
-        ref = self.agent.run_agentic_loop.remote(
-            "",
-            user_prompt,
-            model,
-            max_steps=steps,
-            output_json_path=None,
-            stream_responses=effective_stream,
-            output_md_path=None,
-            tool_prompt_mode=tool_prompt_mode,
-            event_emitter=effective_emitter,
-            event_queue=event_queue,
-            permission_queue=permission_queue,
-            control_queue=control_queue,
-            kernel_emitter_run_dir=kernel_emitter_run_dir,
-            kernel_emitter_mode=kernel_emitter_mode,
-            context=context,
-        )
-        ray_mod = _get_ray()
-        if ray_mod is None:
-            self._release_provider_lease()
-            raise RuntimeError("Ray is unavailable for remote execution.")
         try:
+            ref = self.agent.run_agentic_loop.remote(
+                "",
+                user_prompt,
+                model,
+                max_steps=steps,
+                output_json_path=None,
+                stream_responses=effective_stream,
+                output_md_path=None,
+                tool_prompt_mode=tool_prompt_mode,
+                event_emitter=effective_emitter,
+                event_queue=event_queue,
+                permission_queue=permission_queue,
+                control_queue=control_queue,
+                kernel_emitter_run_dir=kernel_emitter_run_dir,
+                kernel_emitter_mode=kernel_emitter_mode,
+                context=context,
+            )
+            ray_mod = _get_ray()
+            if ray_mod is None:
+                raise RuntimeError("Ray is unavailable for remote execution.")
             return ray_mod.get(ref)
         finally:
             self._release_provider_lease()
     
     def interactive_session(self) -> None:
         """Start an interactive session with the agent."""
-        if not self.agent:
-            self.initialize()
-        
-        print(f"Starting interactive session in {self.workspace_dir}")
-        print("Type 'exit' to quit")
-        
-        while True:
-            try:
-                user_input = input("\n> ")
-                if user_input.lower() in ['exit', 'quit']:
+        try:
+            if not self.agent:
+                self.initialize()
+
+            print(f"Starting interactive session in {self.workspace_dir}")
+            print("Type 'exit' to quit")
+
+            while True:
+                try:
+                    user_input = input("\n> ")
+                    if user_input.lower() in ["exit", "quit"]:
+                        break
+
+                    model = self._select_model()
+                    tool_prompt_mode = self._resolve_tool_prompt_mode() or "system_once"
+                    if self._local_mode:
+                        result = self.agent.run_agentic_loop(
+                            "",
+                            user_input,
+                            model,
+                            max_steps=5,
+                            tool_prompt_mode=tool_prompt_mode,
+                        )
+                    else:
+                        ref = self.agent.run_agentic_loop.remote(
+                            "",
+                            user_input,
+                            model,
+                            max_steps=5,
+                            tool_prompt_mode=tool_prompt_mode,
+                        )
+                        ray_mod = _get_ray()
+                        if ray_mod is None:
+                            raise RuntimeError("Ray is unavailable for remote execution.")
+                        result = ray_mod.get(ref)
+                    print(f"Agent completed with status: {result.get('completion_reason', 'unknown')}")
+
+                except KeyboardInterrupt:
+                    print("\nSession interrupted by user")
                     break
-                
-                model = self._select_model()
-                tool_prompt_mode = self._resolve_tool_prompt_mode() or "system_once"
-                if self._local_mode:
-                    result = self.agent.run_agentic_loop(
-                        "",
-                        user_input,
-                        model,
-                        max_steps=5,
-                        tool_prompt_mode=tool_prompt_mode,
-                    )
-                else:
-                    ref = self.agent.run_agentic_loop.remote(
-                        "",
-                        user_input,
-                        model,
-                        max_steps=5,
-                        tool_prompt_mode=tool_prompt_mode,
-                    )
-                    ray_mod = _get_ray()
-                    if ray_mod is None:
-                        raise RuntimeError("Ray is unavailable for remote execution.")
-                    result = ray_mod.get(ref)
-                print(f"Agent completed with status: {result.get('completion_reason', 'unknown')}")
-                
-            except KeyboardInterrupt:
-                print("\nSession interrupted by user")
-                break
-            except Exception as e:
-                print(f"Error: {e}")
+                except Exception as e:
+                    print(f"Error: {e}")
+        finally:
+            self._release_provider_lease()
     
     def get_workspace_files(self) -> List[str]:
         """Get list of files in the agent workspace."""

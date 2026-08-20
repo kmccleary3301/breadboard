@@ -32,6 +32,8 @@ class _StubBroker:
 
     def redeem_execution_material(self, lease_id: str, **kwargs: Any) -> dict[str, Any] | None:
         self.redeem_calls.append((lease_id, dict(kwargs)))
+        if lease_id in self.release_calls:
+            return None
         if self.material is None or self.material.get("lease_id") != lease_id:
             return None
         return dict(self.material)
@@ -338,6 +340,173 @@ def test_ray_child_receives_only_confined_lease_capability_and_releases_it(
     assert "broker-token" not in serialized
     assert "credential-poison" not in serialized
 
+
+def _active_remote_coder(
+    agent_module: Any,
+    tmp_path: Path,
+    remote_call: Any,
+) -> tuple[Any, Path, Any]:
+    worker_state_dir = tmp_path / "worker-state"
+    worker_state_dir.mkdir()
+    channel = object()
+    coder = object.__new__(agent_module.AgenticCoder)
+    coder.config = {"providers": {"default_model": "openai/gpt-5.4-mini"}}
+    coder.agent = SimpleNamespace(run_agentic_loop=SimpleNamespace(remote=remote_call))
+    coder._local_mode = False
+    coder._provider_lease_id = "bblease-lifecycle"
+    coder._provider_lease_channel = channel
+    coder._provider_worker_state_dir = str(worker_state_dir)
+    return coder, worker_state_dir, channel
+
+
+def _assert_exact_lease_released(
+    coder: Any,
+    worker_state_dir: Path,
+    broker: _StubBroker,
+    channel: Any,
+    killed: list[tuple[Any, bool]],
+) -> None:
+    assert broker.release_calls == ["bblease-lifecycle"]
+    assert broker.redeem_execution_material("bblease-lifecycle") is None
+    assert killed == [(channel, True)]
+    assert coder._provider_lease_id is None
+    assert coder._provider_lease_channel is None
+    assert coder._provider_worker_state_dir is None
+    assert not worker_state_dir.exists()
+    coder._release_provider_lease()
+    assert broker.release_calls == ["bblease-lifecycle"]
+    assert killed == [(channel, True)]
+
+
+@pytest.mark.parametrize(
+    "dispatch_error",
+    [RuntimeError("dispatch failed")],
+)
+def test_run_task_releases_exact_lease_when_remote_submission_fails(
+    monkeypatch,
+    tmp_path: Path,
+    dispatch_error: BaseException,
+) -> None:
+    import breadboard_engine.agent as agent_module
+
+    killed: list[tuple[Any, bool]] = []
+    broker = _StubBroker(
+        {"api_key": "broker-token", "lease_id": "bblease-lifecycle"},
+        store_path=str(tmp_path / "credentials.sqlite3"),
+    )
+
+    class FakeRay:
+        @staticmethod
+        def kill(handle: Any, *, no_restart: bool) -> None:
+            killed.append((handle, no_restart))
+
+    def fail_dispatch(*args: Any, **kwargs: Any) -> None:
+        raise dispatch_error
+
+    coder, worker_state_dir, channel = _active_remote_coder(agent_module, tmp_path, fail_dispatch)
+    monkeypatch.setattr(agent_module, "_get_ray", lambda: FakeRay())
+    monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
+
+    with pytest.raises(type(dispatch_error), match="dispatch failed"):
+        coder.run_task("hello")
+
+    _assert_exact_lease_released(coder, worker_state_dir, broker, channel, killed)
+
+
+@pytest.mark.parametrize(
+    "get_error",
+    [RuntimeError("get failed"), KeyboardInterrupt()],
+    ids=["ray-get-error", "ray-get-cancellation"],
+)
+def test_run_task_releases_exact_lease_when_remote_result_fails(
+    monkeypatch,
+    tmp_path: Path,
+    get_error: BaseException,
+) -> None:
+    import breadboard_engine.agent as agent_module
+
+    killed: list[tuple[Any, bool]] = []
+    broker = _StubBroker(
+        {"api_key": "broker-token", "lease_id": "bblease-lifecycle"},
+        store_path=str(tmp_path / "credentials.sqlite3"),
+    )
+
+    class FakeRay:
+        @staticmethod
+        def get(reference: Any) -> None:
+            assert reference == "run-ref"
+            raise get_error
+
+        @staticmethod
+        def kill(handle: Any, *, no_restart: bool) -> None:
+            killed.append((handle, no_restart))
+
+    coder, worker_state_dir, channel = _active_remote_coder(
+        agent_module,
+        tmp_path,
+        lambda *args, **kwargs: "run-ref",
+    )
+    monkeypatch.setattr(agent_module, "_get_ray", lambda: FakeRay())
+    monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
+
+    with pytest.raises(type(get_error), match="get failed" if isinstance(get_error, RuntimeError) else None):
+        coder.run_task("hello")
+
+    _assert_exact_lease_released(coder, worker_state_dir, broker, channel, killed)
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["normal-exit", "keyboard-interrupt", "handled-remote-error"],
+)
+def test_interactive_session_releases_exact_lease_on_every_exit(
+    monkeypatch,
+    tmp_path: Path,
+    scenario: str,
+) -> None:
+    import breadboard_engine.agent as agent_module
+
+    killed: list[tuple[Any, bool]] = []
+    broker = _StubBroker(
+        {"api_key": "broker-token", "lease_id": "bblease-lifecycle"},
+        store_path=str(tmp_path / "credentials.sqlite3"),
+    )
+
+    class FakeRay:
+        @staticmethod
+        def get(reference: Any) -> dict[str, Any]:
+            assert reference == "run-ref"
+            if scenario == "handled-remote-error":
+                raise RuntimeError("remote failed")
+            return {"completion_reason": "done"}
+
+        @staticmethod
+        def kill(handle: Any, *, no_restart: bool) -> None:
+            killed.append((handle, no_restart))
+
+    coder, worker_state_dir, channel = _active_remote_coder(
+        agent_module,
+        tmp_path,
+        lambda *args, **kwargs: "run-ref",
+    )
+    coder.workspace_dir = str(tmp_path / "workspace")
+    monkeypatch.setattr(agent_module, "_get_ray", lambda: FakeRay())
+    monkeypatch.setattr(broker_module, "get_provider_broker", lambda: broker)
+    if scenario == "normal-exit":
+        responses = iter(["exit"])
+        monkeypatch.setattr("builtins.input", lambda prompt: next(responses))
+    elif scenario == "keyboard-interrupt":
+        def interrupt(prompt: str) -> str:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("builtins.input", interrupt)
+    else:
+        responses = iter(["hello", "exit"])
+        monkeypatch.setattr("builtins.input", lambda prompt: next(responses))
+
+    coder.interactive_session()
+
+    _assert_exact_lease_released(coder, worker_state_dir, broker, channel, killed)
 
 @pytest.mark.asyncio
 async def test_session_runner_startup_observes_broker_source_and_secret_free_environment(
