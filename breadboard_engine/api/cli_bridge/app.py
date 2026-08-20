@@ -24,8 +24,8 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     load_dotenv = None
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 if load_dotenv is not None:
-    _REPO_ROOT = Path(__file__).resolve().parents[3]
     for _candidate in (_REPO_ROOT / ".env", _REPO_ROOT / ".env.local"):
         if _candidate.exists():
             load_dotenv(_candidate, override=False)
@@ -229,6 +229,16 @@ def _build_engine_identity(app: FastAPI) -> dict[str, Any]:
     }
 
 
+def _p30_route_fingerprint(route: APIRoute) -> tuple[Any, ...]:
+    return (
+        getattr(route.endpoint, "__name__", None),
+        route.status_code,
+        repr(route.response_model),
+        tuple(param.name for param in route.dependant.query_params),
+        tuple(repr(param.field_info.annotation) for param in route.dependant.body_params),
+    )
+
+
 def _p30_session_contract_descriptor(
     app: FastAPI,
     service: SessionService,
@@ -379,6 +389,16 @@ def _p30_session_contract_descriptor(
         and SessionEvent.asdict is _P30_SESSION_EVENT_ASDICT
         and SessionRecord.to_summary is _P30_SESSION_RECORD_TO_SUMMARY
         and P30_SESSION_EVENT_STREAM_CONTRACT == __import__("breadboard_engine.api.cli_bridge.engine_identity_config", fromlist=["P30_SESSION_EVENT_STREAM_CONTRACT"]).P30_SESSION_EVENT_STREAM_CONTRACT
+        and getattr(app.state, "p30_route_fingerprints", {}) == {
+            id(route): _p30_route_fingerprint(route)
+            for route in app.routes
+            if isinstance(route, APIRoute) and route.path in {
+                "/v1/sessions", "/v1/sessions/{session_id}",
+                "/v1/sessions/{session_id}/input",
+                "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
+                "/v1/sessions/{session_id}/events",
+            }
+        }
     )
     if baseline_shape:
         http_contract = P30_SESSION_BASELINE_HTTP
@@ -456,7 +476,10 @@ def _authority_credential_buffers(
                 credential = bytearray(raw, "ascii")
             except UnicodeEncodeError as exc:
                 raise LifecycleAuthorityError(error_code, "authority proof was rejected") from exc
-            if not credential:
+            if not 32 <= len(credential) <= 256 or any(
+                value not in b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-"
+                for value in credential
+            ):
                 raise LifecycleAuthorityError(error_code, "authority proof was rejected")
             buffers.append(credential)
         return tuple(buffers)
@@ -1547,6 +1570,16 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
     elif not legacy_routes_enabled:
         _drop_legacy_routes(app)
 
+    app.state.p30_route_fingerprints = {
+        id(route): _p30_route_fingerprint(route)
+        for route in app.routes
+        if isinstance(route, APIRoute) and route.path in {
+            "/v1/sessions", "/v1/sessions/{session_id}",
+            "/v1/sessions/{session_id}/input",
+            "/v1/sessions/{session_id}/turns/{turn_id}/cancel",
+            "/v1/sessions/{session_id}/events",
+        }
+    }
     return app
 
 

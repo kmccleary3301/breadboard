@@ -41,7 +41,7 @@ from breadboard_engine.state.session_state import (
 from .events import EventType, SessionEvent
 from .event_normalization import normalize_task_event_payload
 from .models import SessionCreateRequest, SessionStatus
-from .registry import SessionRecord, SessionRegistry
+from .registry import SessionRecord, SessionRegistry, TurnRecord, submission_body_digest, identity_digest
 logger = logging.getLogger(__name__)
 AgentFactory = Callable[[str, Optional[str], Optional[Dict[str, Any]]], Any]
 MAX_ATTACHMENT_BYTES = 16 * 1024
@@ -219,6 +219,32 @@ class SessionRunner:
         self._loop = loop
         self._task = loop.create_task(self._run_after_start_authority(), name=f"kyle-session-{self.session.session_id}")
 
+    async def prepare_start(self, *, admission_serialized: bool = False) -> None:
+        """Retain an initial turn before execution becomes runnable."""
+        if self._task:
+            raise RuntimeError("runner already started")
+        self._loop = asyncio.get_running_loop()
+        initial_task = (self.request.task or "").strip()
+        if not initial_task:
+            return
+        client_message_id = f"session-create:{self.session.session_id}"
+        input_id = f"input-{uuid.uuid4().hex}"
+        turn_id = f"turn-{uuid.uuid4().hex}"
+        attachments: tuple[str, ...] = ()
+        turn = TurnRecord(
+            input_id=input_id,
+            turn_id=turn_id,
+            client_message_id=client_message_id,
+            content=initial_task,
+            attachments=attachments,
+            original_disposition="started",
+            state="active",
+            body_digest=submission_body_digest(initial_task, attachments),
+        )
+        self.session.turns_by_id[turn_id] = turn
+        self.session.submissions_by_key[client_message_id] = turn
+        self.session.submissions_by_key_digest[identity_digest(client_message_id)] = turn
+        self.session.active_turn_id = turn_id
     def authorize_start(self) -> None:
         if not self._task:
             raise RuntimeError("runner is not scheduled")
@@ -1411,12 +1437,55 @@ class SessionRunner:
         if self._profile_timing_enabled:
             result_payload["bridge_timing"] = dict(completion_payload.get("bridge_timing") or {})
         return result_payload
+    async def _finish_turn(
+        self,
+        turn: TurnRecord,
+        outcome: str,
+        *,
+        reason: Optional[str] = None,
+        error_code: Optional[str] = None,
+    ) -> bool:
+        async with self.session.admission_lock:
+            if turn.terminal_outcome is not None:
+                return False
+            turn.terminal_outcome = outcome
+            turn.state = outcome
+        if outcome == "completed":
+            event_type, payload = EventType.TURN_COMPLETED, {}
+        elif outcome == "cancelled":
+            event_type, payload = EventType.TURN_CANCELLED, {"reason": reason or "user_requested"}
+        else:
+            event_type, payload = EventType.TURN_FAILED, {
+                "error": {"code": error_code or "turn_execution_failed"}
+            }
+        await self.publish_event_async(
+            event_type,
+            payload,
+            input_id=turn.input_id,
+            turn_id=turn.turn_id,
+        )
+        terminal_event = SessionEvent(
+            type=event_type,
+            session_id=self.session.session_id,
+            payload=payload,
+            input_id=turn.input_id,
+            turn_id=turn.turn_id,
+        )
+        try:
+            await self.registry.persist(self.session, terminal_event=terminal_event)
+        except Exception:
+            return True
+        await self.session.event_queue.put(None)
+        return True
+
     async def publish_event_async(
         self,
         event_type: EventType,
         payload: Dict[str, Any],
         *,
         turn: Optional[int] = None,
+        input_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
         classification: Optional[str] = None,
         family: Optional[str] = None,
         actor: Optional[str] = None,
@@ -1428,6 +1497,8 @@ class SessionRunner:
             session_id=self.session.session_id,
             payload=payload,
             turn=turn,
+            input_id=input_id,
+            turn_id=turn_id,
             classification=classification,
             family=family,
             actor=actor,

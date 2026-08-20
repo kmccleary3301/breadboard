@@ -1553,6 +1553,12 @@ class SessionRegistry:
         finally:
             self._wipe_credentials(owner_credential)
 
+    async def ensure_session_admission_open(self) -> None:
+        async with self._authority_lock:
+            self._try_rollback_control_drain(require_orphaned_requester=True)
+            if not self._session_admission_open:
+                raise LifecycleAuthorityError("admission_closed", "new session admission is closed")
+
     async def admit_session(self, record: SessionRecord, runner: Any) -> SessionRecord:
         async with self._authority_lock:
             self._try_rollback_control_drain(

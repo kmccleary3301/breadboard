@@ -32,7 +32,7 @@ class SessionCreateRequest(BaseModel):
     """Incoming payload for POST /sessions."""
 
     config_path: str = Field(..., description="Path to agent config YAML/JSON.")
-    task: str = Field(..., description="User prompt or path to task file.")
+    task: str = Field(default="", description="Optional initial task; omit for an idle session.")
     overrides: Dict[str, Any] | None = Field(default=None, description="Dotted-key override map.")
     metadata: Dict[str, Any] | None = Field(default=None, description="Opaque metadata for UX features.")
     workspace: Optional[str] = Field(default=None, description="Optional explicit workspace root.")

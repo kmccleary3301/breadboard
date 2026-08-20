@@ -314,6 +314,7 @@ class SessionService:
         runtime_root: Path | None = None,
         effective_lock: EffectiveHarnessLock | None = None,
     ) -> SessionCreateResponse:
+        await self.registry.ensure_session_admission_open()
         session_id, metadata = session_id or str(uuid.uuid4()), dict(request.metadata or {}); metadata.setdefault("config_path", request.config_path)
         if await self.registry.get(session_id) is not None: raise ValueError(f"session already exists: {session_id}")
         if self._bridge_chaos: metadata.setdefault("bridgeChaos", self._bridge_chaos)
@@ -564,6 +565,18 @@ class SessionService:
             if event is None:
                 break
             async with record.dispatch_lock:
+                if event.type in {
+                    EventType.TURN_COMPLETED,
+                    EventType.TURN_FAILED,
+                    EventType.TURN_CANCELLED,
+                }:
+                    try:
+                        await self.registry.persist(record, terminal_event=event)
+                    except Exception:
+                        # A terminal event without durable retention is not safe
+                        # to expose as resolved evidence.
+                        setattr(record, "_dispatcher_complete", True)
+                        break
                 record.event_seq += 1
                 if event.seq is None:
                     event.seq = record.event_seq
