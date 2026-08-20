@@ -131,10 +131,14 @@ class SQLiteCredentialStore:
                     status TEXT NOT NULL,
                     created_at_ms INTEGER NOT NULL,
                     updated_at_ms INTEGER NOT NULL,
-                    problem_json TEXT
+                    problem_json TEXT,
+                    flow_json TEXT
                 );
                 """
             )
+            columns = {str(row["name"]) for row in connection.execute("PRAGMA table_info(login_sessions)").fetchall()}
+            if "flow_json" not in columns:
+                connection.execute("ALTER TABLE login_sessions ADD COLUMN flow_json TEXT")
 
     @staticmethod
     def _json(value: Any) -> str:
@@ -165,7 +169,7 @@ class SQLiteCredentialStore:
             "source": row["source"],
             "secret_version": int(row["secret_version"]),
             "created_at_ms": int(row["created_at_ms"]),
-            "updated_at_ms": int(row["updated_at_ms"]),
+            "has_api_key": str(row["kind"]) == "api_key",
             "expires_at_ms": row["expires_at_ms"],
             "metadata": SQLiteCredentialStore._decode_json(row["metadata_json"]),
             "has_api_key": True,
@@ -268,6 +272,70 @@ class SQLiteCredentialStore:
                 connection.execute("SELECT * FROM accounts WHERE account_id = ?", (account_id,)).fetchone()
             )
 
+    def put_oauth(
+        self,
+        *,
+        provider_id: str,
+        auth_scheme_id: str,
+        label: str,
+        material: Mapping[str, Any],
+        alias: str = "",
+        account_id: str | None = None,
+        expires_at_ms: int | None = None,
+        metadata: Mapping[str, Any] | None = None,
+        source: str = "broker",
+    ) -> dict[str, Any]:
+        provider_id = str(provider_id).strip().lower()
+        auth_scheme_id = str(auth_scheme_id or "oauth2").strip().lower()
+        label = str(label or provider_id).strip()[:128]
+        alias = str(alias or "").strip()
+        if not provider_id or not label or not material.get("access_token") or not material.get("refresh_token"):
+            raise ValueError("provider_id, label, access_token, and refresh_token are required")
+        timestamp = now_ms()
+        with self._transaction() as connection:
+            row = None
+            if account_id:
+                row = connection.execute("SELECT * FROM accounts WHERE account_id = ?", (str(account_id),)).fetchone()
+            if row is None:
+                row = connection.execute(
+                    """SELECT * FROM accounts WHERE provider_id = ? AND label = ? AND alias = ?
+                       AND status != 'revoked' ORDER BY updated_at_ms DESC LIMIT 1""",
+                    (provider_id, label, alias),
+                ).fetchone()
+            if row is None:
+                account_id = _id("bbacct")
+                credential_id = _id("bbcred")
+                version = 1
+                connection.execute(
+                    """INSERT INTO accounts
+                       (account_id, credential_id, provider_id, auth_scheme_id, label, alias,
+                        kind, status, source, secret_version, created_at_ms, updated_at_ms,
+                        expires_at_ms, metadata_json)
+                       VALUES (?, ?, ?, ?, ?, ?, 'oauth2', 'active', ?, ?, ?, ?, ?, ?)""",
+                    (account_id, credential_id, provider_id, auth_scheme_id, label, alias, source,
+                     version, timestamp, timestamp, expires_at_ms, self._json(metadata)),
+                )
+            else:
+                account_id = str(row["account_id"])
+                credential_id = str(row["credential_id"])
+                version = int(row["secret_version"]) + 1
+                connection.execute(
+                    """UPDATE accounts SET auth_scheme_id = ?, kind = 'oauth2', status = 'active',
+                       source = ?, secret_version = ?, updated_at_ms = ?, expires_at_ms = ?, metadata_json = ?
+                       WHERE account_id = ?""",
+                    (auth_scheme_id, source, version, timestamp, expires_at_ms, self._json(metadata), account_id),
+                )
+                connection.execute(
+                    """UPDATE secrets SET revoked_at_ms = ? WHERE account_id = ? AND revoked_at_ms IS NULL""",
+                    (timestamp, account_id),
+                )
+            connection.execute(
+                """INSERT INTO secrets (secret_id, account_id, material, secret_version, created_at_ms)
+                   VALUES (?, ?, ?, ?, ?)""",
+                (_id("bbsecret"), account_id, self._json(material), version, timestamp),
+            )
+            return self._account_view(connection.execute("SELECT * FROM accounts WHERE account_id = ?", (account_id,)).fetchone())
+
     def list_accounts(self, provider_id: str | None = None) -> list[dict[str, Any]]:
         with self._transaction() as connection:
             if provider_id:
@@ -363,6 +431,8 @@ class SQLiteCredentialStore:
                 (lease_id, account["account_id"], str(session_id), str(endpoint_id), timestamp, lease_expiry),
             )
             material = self._decode_json(secret["material"])
+            if not material.get("api_key") and material.get("access_token"):
+                material["api_key"] = material["access_token"]
             material["lease_id"] = lease_id
             material["account_id"] = account["account_id"]
             material["credential_id"] = account["credential_id"]
@@ -456,15 +526,22 @@ class SQLiteCredentialStore:
             )
             return len(account_ids)
 
-    def create_login(self, provider_id: str, status: str, problem: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    def create_login(
+        self,
+        provider_id: str,
+        status: str,
+        problem: Mapping[str, Any] | None = None,
+        flow: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         timestamp = now_ms()
         login_session_id = _id("bblogin")
         with self._transaction() as connection:
             connection.execute(
                 """INSERT INTO login_sessions
-                   (login_session_id, provider_id, status, created_at_ms, updated_at_ms, problem_json)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (login_session_id, str(provider_id), str(status), timestamp, timestamp, self._json(problem)),
+                   (login_session_id, provider_id, status, created_at_ms, updated_at_ms, problem_json, flow_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (login_session_id, str(provider_id), str(status), timestamp, timestamp,
+                 self._json(problem), self._json(flow)),
             )
         return self.get_login(login_session_id) or {
             "login_session_id": login_session_id,
@@ -472,7 +549,7 @@ class SQLiteCredentialStore:
             "status": status,
         }
 
-    def get_login(self, login_session_id: str) -> dict[str, Any] | None:
+    def get_login(self, login_session_id: str, *, include_flow: bool = False) -> dict[str, Any] | None:
         with self._transaction() as connection:
             row = connection.execute(
                 "SELECT * FROM login_sessions WHERE login_session_id = ?", (str(login_session_id),)
@@ -480,7 +557,7 @@ class SQLiteCredentialStore:
             if row is None:
                 return None
             problem = self._decode_json(row["problem_json"]) if row["problem_json"] else None
-            return {
+            result: dict[str, Any] = {
                 "login_session_id": row["login_session_id"],
                 "provider_id": row["provider_id"],
                 "status": row["status"],
@@ -488,6 +565,23 @@ class SQLiteCredentialStore:
                 "updated_at_ms": int(row["updated_at_ms"]),
                 "problem": problem or None,
             }
+            if include_flow:
+                result["flow"] = self._decode_json(row["flow_json"]) if row["flow_json"] else {}
+            return result
+
+    def finish_login(
+        self,
+        login_session_id: str,
+        status: str,
+        problem: Mapping[str, Any] | None = None,
+    ) -> bool:
+        with self._transaction() as connection:
+            result = connection.execute(
+                """UPDATE login_sessions SET status = ?, updated_at_ms = ?, problem_json = ?
+                   WHERE login_session_id = ?""",
+                (str(status), now_ms(), self._json(problem), str(login_session_id)),
+            )
+            return result.rowcount > 0
 
     def cancel_login(self, login_session_id: str) -> bool:
         with self._transaction() as connection:

@@ -343,7 +343,10 @@ class AuthProviderView(BaseModel):
     display_name: str
     auth_schemes: List[str] = Field(default_factory=list)
     login_available: bool = False
-
+    oauth_flows: List[str] = Field(default_factory=list)
+    runtime_id: Optional[str] = None
+    compatible_protocol: Optional[str] = None
+    base_url: Optional[str] = None
 
 class AuthCredentialView(BaseModel):
     account_id: str
@@ -370,17 +373,28 @@ class AuthLoginSession(BaseModel):
     created_at_ms: Optional[int] = None
     updated_at_ms: Optional[int] = None
     problem: Dict[str, Any] | None = None
+    authorization_url: Optional[str] = None
+    redirect_uri: Optional[str] = None
+    flow_id: Optional[str] = None
+    flow_kind: Optional[str] = None
+    user_code: Optional[str] = None
+    instructions: Optional[str] = None
+    credential: AuthCredentialView | None = None
 
 
 class BeginAuthLoginRequest(BaseModel):
     provider_id: str
     auth_scheme_id: Optional[str] = None
+    flow: str = "browser"
 
 
 class CompleteAuthLoginRequest(BaseModel):
     authorization_code: Optional[str] = None
+    code: Optional[str] = None
     state: Optional[str] = None
     callback_url: Optional[str] = None
+    account_label: Optional[str] = None
+    alias: Optional[str] = None
 
 
 class PutApiKeyRequest(BaseModel):

@@ -285,7 +285,7 @@ export interface ProviderAuthDetachRequest { readonly provider_id: string; reado
 export interface ProviderAuthDetachResponse { readonly ok?: boolean }
 export interface ProviderAuthStatusItem { readonly provider_id: string; readonly alias?: string | null; readonly base_url?: string | null; readonly expires_at_ms?: number | null; readonly expires_in_ms?: number | null; readonly has_api_key?: boolean; readonly header_keys?: ReadonlyArray<string>; readonly is_subscription_plan?: boolean; readonly issued_at_ms?: number | null; readonly required_profile?: Record<string, unknown> | null; readonly routing_keys?: ReadonlyArray<string> }
 export interface ProviderAuthStatusResponse { readonly attached?: ReadonlyArray<ProviderAuthStatusItem> }
-export interface AuthProviderView { readonly provider_id: string; readonly display_name: string; readonly auth_schemes: ReadonlyArray<string>; readonly login_available?: boolean }
+export interface AuthProviderView { readonly provider_id: string; readonly display_name: string; readonly auth_schemes: ReadonlyArray<string>; readonly login_available?: boolean; readonly oauth_flows?: ReadonlyArray<string>; readonly runtime_id?: string | null; readonly compatible_protocol?: string | null; readonly base_url?: string | null }
 export interface AuthCredentialView {
   readonly account_id: string
   readonly credential_id: string
@@ -310,9 +310,16 @@ export interface AuthLoginSession {
   readonly created_at_ms?: number | null
   readonly updated_at_ms?: number | null
   readonly problem?: Record<string, unknown> | null
+  readonly authorization_url?: string | null
+  readonly redirect_uri?: string | null
+  readonly flow_id?: string | null
+  readonly flow_kind?: string | null
+  readonly user_code?: string | null
+  readonly instructions?: string | null
+  readonly credential?: AuthCredentialView | null
 }
-export interface BeginAuthLogin { readonly provider_id: string; readonly auth_scheme_id?: string | null }
-export interface CompleteAuthLogin { readonly authorization_code?: string | null; readonly state?: string | null; readonly callback_url?: string | null }
+export interface BeginAuthLogin { readonly provider_id: string; readonly auth_scheme_id?: string | null; readonly flow?: "browser" | "device" }
+export interface CompleteAuthLogin { readonly login_session_id: string; readonly authorization_code?: string | null; readonly code?: string | null; readonly state?: string | null; readonly callback_url?: string | null; readonly account_label?: string | null; readonly alias?: string | null }
 export interface PutApiKeyInput {
   readonly api_key: string
   readonly auth_scheme_id?: string
