@@ -98,6 +98,14 @@ BOOTSTRAP = textwrap.dedent(
 )
 
 
+@pytest.fixture(autouse=True)
+def _default_allow_policy(monkeypatch):
+    """Matrix tests exercise legacy imports by design; pin the default policy
+    so an ambient BREADBOARD_LEGACY_IMPORTS=error run doesn't reject them.
+    Policy-behavior tests override this via their own monkeypatch."""
+    monkeypatch.delenv(alias_import.POLICY_ENV, raising=False)
+
+
 @pytest.fixture(scope="module")
 def demo(tmp_path_factory):
     root = tmp_path_factory.mktemp("alias_demo")
