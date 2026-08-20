@@ -11,6 +11,7 @@ import breadboard_engine.provider_runtime as root_runtime
 from breadboard_engine.provider.routing import provider_router
 
 from breadboard_engine.provider.sdk_bindings import provider_sdk_bindings
+from breadboard_engine.provider.builtins import register_builtin_runtimes
 
 EXPECTED_EXPORTS = (
     "ProviderRuntime",
@@ -124,6 +125,12 @@ def test_registry_is_singleton_across_canonical_and_root_facades() -> None:
     assert runtime_module.provider_registry is root_runtime.provider_registry
     assert runtime_module.provider_registry is runtime_module.provider_registry
     assert root_runtime is runtime_module
+
+
+def test_builtin_registration_is_idempotent() -> None:
+    before = list(runtime_module.provider_registry._runtime_classes.items())
+    register_builtin_runtimes()
+    assert list(runtime_module.provider_registry._runtime_classes.items()) == before
 
 
 def test_optional_sdk_missing_errors_have_current_messages(monkeypatch: pytest.MonkeyPatch) -> None:
