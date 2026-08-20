@@ -45,6 +45,12 @@ PATH_RULES: list[tuple[str, str]] = [
     ("agent_configs/misc/oh_my_pi_p3_*.yaml", "preserve-byte"),
     # Frozen evidence and accepted history: never rewritten.
     ("docs/conformance/evidence_snapshots/*", "preserve-byte"),
+    ("docs/conformance/e4_recalibration_evidence/*", "preserve-byte"),
+    ("docs/conformance/provider_runtime_evidence/*", "preserve-byte"),
+    ("docs/conformance/session_runtime_evidence/*", "preserve-byte"),
+    ("docs/conformance/support_claims/v1_archive/*", "preserve-byte"),
+    ("docs/conformance/e4_artifact_catalog_*snapshot.json", "preserve-byte"),
+    ("config/e4_lanes/evidence_inputs/*", "preserve-byte"),
     ("docs_tmp/*", "preserve-byte"),
     ("*.patch", "preserve-byte"),
     ("*.diff", "preserve-byte"),
@@ -104,6 +110,39 @@ def classify(relpath: str, rules) -> str | None:
         if fnmatch.fnmatch(relpath, pattern):
             return disposition
     return None
+
+
+def sha_pinned_paths(root: Path, tracked: list[str]) -> set[str]:
+    """Repo-relative paths whose exact bytes are pinned by a sha256 recorded
+    in any tracked JSON file ({path, sha256} pairs or *_ref/*_sha256 keys).
+    Hash-pinned files are frozen surfaces (PROC-DISCOVERY 2026-08-19: the
+    codemod broke the p6_6 lane lock by rewriting pinned manifest bytes);
+    they keep legacy dotted references and resolve at runtime via the alias
+    layer (ruling A-3)."""
+    pinned: set[str] = set()
+    for rel in tracked:
+        if not rel.endswith(".json") or "node_modules" in rel:
+            continue
+        try:
+            doc = json.loads((root / rel).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        stack = [doc]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                path, sha = node.get("path"), node.get("sha256")
+                if isinstance(path, str) and isinstance(sha, str) and sha:
+                    pinned.add(path)
+                for key, value in node.items():
+                    if key.endswith("_sha256") and isinstance(value, str):
+                        ref = node.get(key.replace("_sha256", "_ref"))
+                        if isinstance(ref, str):
+                            pinned.add(ref)
+                    stack.append(value)
+            elif isinstance(node, list):
+                stack.extend(node)
+    return {p for p in pinned if (root / p).is_file()}
 
 
 def kind_for(relpath: str) -> str:
@@ -268,11 +307,15 @@ def main() -> int:
                          "(unclassified occurrences then fail the audit)")
     args = ap.parse_args()
 
+    root = Path(args.root).resolve()
     rules = list(PATH_RULES)
+    rules.extend(
+        (path, "preserve-byte")
+        for path in sorted(sha_pinned_paths(root, tracked_files(root, None)))
+    )
     if not args.no_catch_all:
         rules.append(CATCH_ALL)
 
-    root = Path(args.root).resolve()
     manifest = run_audit(root, rules, args.paths)
 
     out = Path(args.out)
