@@ -35,7 +35,7 @@ from .models import (
     OwnerLeaseRequest, OwnerLeaseResponse, SessionTurnCancelRequest, SessionTurnCancelResponse,
 )
 from .atp_diagnostics import build_atp_harness_diagnostic
-from .registry import SessionRecord, SessionRegistry, SubscriberState
+from .registry import SessionRecord, SessionRegistry, SubscriberState, TurnRecord, identity_digest, submission_body_digest
 from .engine_identity_config import (
     P30_SESSION_REPLAY_CONTRACT_DIGEST,
     P30_SESSION_SCHEMA_SHA256,
@@ -764,13 +764,67 @@ class SessionService:
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
         if not runner:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="session not active")
-        try:
-            await runner.enqueue_input(payload.content, attachments=list(payload.attachments or []))
-        except ValueError as exc:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-        except RuntimeError as exc:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-        return SessionInputResponse()
+        client_message_id = payload.client_message_id or uuid.uuid4().hex
+        attachments = tuple(payload.attachments or ())
+        body_digest = submission_body_digest(payload.content, attachments)
+
+        async def admit() -> SessionInputResponse:
+            async with record.admission_lock:
+                existing = record.submissions_by_key.get(client_message_id)
+                if existing is not None:
+                    if existing.body_digest != body_digest:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail={"code": "input_idempotency_conflict", "turn_id": existing.turn_id},
+                        )
+                    return SessionInputResponse(
+                        client_message_id=client_message_id,
+                        input_id=existing.input_id,
+                        turn_id=existing.turn_id,
+                        disposition="deduplicated",
+                        original_disposition=existing.original_disposition,
+                    )
+                try:
+                    accepted_content = await runner.enqueue_input(
+                        payload.content,
+                        attachments=list(attachments),
+                    )
+                except ValueError as exc:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+                except RuntimeError as exc:
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+                disposition = "started" if record.active_turn_id is None else "queued"
+                turn = TurnRecord(
+                    input_id=f"input-{uuid.uuid4().hex}",
+                    turn_id=f"turn-{uuid.uuid4().hex}",
+                    client_message_id=client_message_id,
+                    content=accepted_content,
+                    attachments=attachments,
+                    original_disposition=disposition,
+                    state="active" if disposition == "started" else "queued",
+                    body_digest=body_digest,
+                )
+                record.turns_by_id[turn.turn_id] = turn
+                record.submissions_by_key[client_message_id] = turn
+                record.submissions_by_key_digest[identity_digest(client_message_id)] = turn
+                if disposition == "started":
+                    record.active_turn_id = turn.turn_id
+                else:
+                    record.queued_turn_ids.append(turn.turn_id)
+                record.turn_admission = (
+                    record.turn_admission.__class__.ACTIVE
+                    if record.active_turn_id is not None
+                    else record.turn_admission.__class__.IDLE
+                )
+                return SessionInputResponse(
+                    client_message_id=client_message_id,
+                    input_id=turn.input_id,
+                    turn_id=turn.turn_id,
+                    disposition=disposition,
+                    original_disposition=disposition,
+                )
+
+        return await self.registry.admit_turn(admit)
     async def execute_command(self, session_id: str, payload: SessionCommandRequest) -> SessionCommandResponse:
         record = await self.ensure_session(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)

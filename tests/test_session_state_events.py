@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 
 from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
-from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionInputRequest, SessionStatus
 from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
 from breadboard_engine.api.cli_bridge.service import SessionService
 from breadboard_engine.api.cli_bridge.session_runner import (
@@ -524,6 +524,44 @@ def test_session_runner_recognizes_replay_after_injected_system_reminder(tmp_pat
         "Trailing compiled system prompt."
     )
     assert runner._parse_replay_path(prompt) == fixture.resolve()
+
+
+@pytest.mark.asyncio
+async def test_session_input_returns_canonical_idempotent_turn_receipt() -> None:
+    registry = SessionRegistry()
+    record = SessionRecord(session_id="sess-input-receipt", status=SessionStatus.RUNNING)
+
+    class Runner:
+        def __init__(self) -> None:
+            self.inputs: list[tuple[str, list[str]]] = []
+
+        async def enqueue_input(self, content: str, attachments: list[str]) -> str:
+            self.inputs.append((content, attachments))
+            return content
+
+    runner = Runner()
+    record.runner = runner
+    await registry.create(record)
+    service = SessionService(registry=registry)
+    request = SessionInputRequest(content="continue", client_message_id="client-1")
+
+    first = await service.send_input(record.session_id, request)
+    duplicate = await service.send_input(record.session_id, request)
+
+    assert first.model_dump() == {
+        "status": "accepted",
+        "client_message_id": "client-1",
+        "input_id": first.input_id,
+        "turn_id": first.turn_id,
+        "disposition": "started",
+        "original_disposition": "started",
+    }
+    assert duplicate.model_dump() == {
+        **first.model_dump(),
+        "disposition": "deduplicated",
+    }
+    assert runner.inputs == [("continue", [])]
+    assert record.active_turn_id == first.turn_id
 
 
 @pytest.mark.asyncio

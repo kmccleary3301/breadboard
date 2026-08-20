@@ -424,6 +424,7 @@ class AttachmentUploadResponse(BaseModel):
 class SessionInputRequest(BaseModel):
     content: str = Field(..., description="User supplied input text.")
     attachments: Optional[List[str]] = Field(default=None, description="Attachment IDs returned by /attachments.")
+    client_message_id: Optional[str] = Field(default=None, description="Stable client submission identity.")
 
     @validator("content")
     def _validate_content(cls, value: str) -> str:
@@ -437,9 +438,20 @@ class SessionInputRequest(BaseModel):
             raise ValueError("attachment IDs must not be empty")
         return value
 
+    @validator("client_message_id")
+    def _validate_client_message_id(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and not value.strip():
+            raise ValueError("client_message_id must not be empty")
+        return value.strip() if value is not None else None
+
 
 class SessionInputResponse(BaseModel):
-    status: str = Field(default="accepted")
+    status: Literal["accepted"] = "accepted"
+    client_message_id: Optional[str] = None
+    input_id: Optional[str] = None
+    turn_id: Optional[str] = None
+    disposition: Optional[Literal["started", "queued", "deduplicated"]] = None
+    original_disposition: Optional[Literal["started", "queued"]] = None
 
 
 class SessionTurnCancelRequest(BaseModel):
