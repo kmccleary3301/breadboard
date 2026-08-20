@@ -19,6 +19,11 @@ entries:
     owner: kmccleary3301
     callers: [docs/reference/ENGINE_RENAME_MIGRATION.md, docs/reference/REPOSITORY_ZONE_MODEL.md, scripts/SCRIPT_INDEX.yaml, scripts/check_zero_importer_advisory.py, scripts/dev/first_time_doctor.py, tests/decomposition/test_provider_runtime_import_direction.py]
     expiry: none (durable tooling)
+  - path: scripts/_cross_system_eval_v1.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
   - path: scripts/_inventory/python_scripts_inventory_20260401.csv
     class: live-owned
     owner: kmccleary3301
@@ -329,11 +334,61 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_build_darwin_stage3_component_transfer_v0.py, tests/test_build_darwin_stage3_precloseout_v0.py, tests/test_build_darwin_stage3_reports_v0.py]
     expiry: none (durable tooling)
+  - path: scripts/build_darwin_stage4_bounded_transfer_outcomes_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
+  - path: scripts/build_darwin_stage4_canonical_artifact_index_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
+  - path: scripts/build_darwin_stage4_comparative_bundle_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_deep_live_reports_v0.py
     class: live-wired
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_build_darwin_stage4_deep_live_reports_v0.py, tests/test_run_darwin_stage4_replay_checks_v0.py]
     expiry: none (durable tooling)
+  - path: scripts/build_darwin_stage4_failed_transfer_taxonomy_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
+  - path: scripts/build_darwin_stage4_family_candidates_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
+  - path: scripts/build_darwin_stage4_family_memo_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
+  - path: scripts/build_darwin_stage4_family_promotion_report_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
+  - path: scripts/build_darwin_stage4_family_registry_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
+  - path: scripts/build_darwin_stage4_family_scorecard_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
+  - path: scripts/build_darwin_stage4_family_verification_bundle_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_live_readiness_v0.py
     class: live-wired
     owner: kmccleary3301
@@ -349,6 +404,11 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/build_darwin_stage4_systems_ev_bundle_v0.py, tests/test_build_darwin_stage4_ev_reports_v0.py]
     expiry: none (durable tooling)
+  - path: scripts/build_darwin_stage4_second_family_decision_v0.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/_inventory/python_scripts_inventory_20260401.csv]
+    expiry: archive-when-campaign-closes
   - path: scripts/build_darwin_stage4_systems_ev_bundle_v0.py
     class: live-wired
     owner: kmccleary3301
