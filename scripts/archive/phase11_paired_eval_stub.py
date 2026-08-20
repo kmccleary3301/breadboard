@@ -26,8 +26,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 import random
 
-from agentic_coder_prototype.agent import AgenticCoder
-from agentic_coder_prototype.reward.aggregator import aggregate_reward_v1, validate_reward_v1
+from breadboard_engine.agent import AgenticCoder
+from breadboard_engine.reward.aggregator import aggregate_reward_v1, validate_reward_v1
 
 
 def _load_tasks(path: Path) -> List[Dict[str, Any]]:

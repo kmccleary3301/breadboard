@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.optimize.gepa_guardrails import validate_prompt_mutation
+from breadboard_engine.optimize.gepa_guardrails import validate_prompt_mutation
 
 
 BASE = """System prompt

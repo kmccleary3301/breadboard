@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from agentic_coder_prototype.provider.routing import ProviderRouter
+from breadboard_engine.provider.routing import ProviderRouter
 
 
 def test_openai_env_projection_overrides_base_url_and_headers(monkeypatch) -> None:

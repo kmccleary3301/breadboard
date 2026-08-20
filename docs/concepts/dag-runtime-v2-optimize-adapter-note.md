@@ -33,6 +33,6 @@ The DAG kernel does **not** grow:
 
 Any optimize adapter should remain:
 
-- outside `agentic_coder_prototype.search`
+- outside `breadboard_engine.search`
 - derivative of exported DAG artifacts
 - replaceable without changing the DAG truth surface

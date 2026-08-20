@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.artifact_tasks import (
+from breadboard_engine.artifact_tasks import (
     ArtifactContract,
     ArtifactRequirement,
     ArtifactTaskSpec,

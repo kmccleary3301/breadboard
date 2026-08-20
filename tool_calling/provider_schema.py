@@ -1,3 +1,3 @@
-from agentic_coder_prototype.compilation.provider_schema import *  # shim
+from breadboard_engine.compilation.provider_schema import *  # shim
 
 

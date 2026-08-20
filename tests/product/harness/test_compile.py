@@ -5,8 +5,8 @@ from typing import Any
 import pytest
 from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config_view
-from agentic_coder_prototype.compilation.effective_config_graph import finalize_effective_config_graph
+from breadboard_engine.compilation.v2_loader import load_agent_config_view
+from breadboard_engine.compilation.effective_config_graph import finalize_effective_config_graph
 from breadboard.product.harness.compile import (
     HarnessCompileError,
     compile_harness_definition,

@@ -75,7 +75,7 @@ const buildUrl = (baseUrl: string, pathPart: string): string => {
 export const resolveEngineRoot = (startDir: string): string | null => {
   let current = path.resolve(startDir)
   for (;;) {
-    if (fs.existsSync(path.join(current, "agentic_coder_prototype"))) return current
+    if (fs.existsSync(path.join(current, "breadboard_engine"))) return current
     const parent = path.dirname(current)
     if (parent === current) break
     current = parent
@@ -133,7 +133,7 @@ export const ensureBridge = async (options: {
 
   const engineRoot = options.engineRoot?.trim() || resolveEngineRoot(process.cwd())
   if (!engineRoot) {
-    throw new Error("Unable to locate engine root (expected agentic_coder_prototype/ upward from cwd).")
+    throw new Error("Unable to locate engine root (expected breadboard_engine/ upward from cwd).")
   }
 
   const host = "127.0.0.1"
@@ -143,7 +143,7 @@ export const ensureBridge = async (options: {
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     const port = await pickEphemeralPort(host)
     const baseUrl = `http://${host}:${port}`
-    const child = spawn(python, ["-m", "agentic_coder_prototype.api.cli_bridge.server"], {
+    const child = spawn(python, ["-m", "breadboard_engine.api.cli_bridge.server"], {
       cwd: engineRoot,
       env: {
         ...process.env,

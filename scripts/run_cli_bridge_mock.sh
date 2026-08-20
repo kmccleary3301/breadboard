@@ -79,4 +79,4 @@ echo "[cli-bridge] Logs -> ${LOG_FILE} (tail -f recommended)"
 BREADBOARD_CLI_LATENCY_MS="${LATENCY_MS}" \
 BREADBOARD_CLI_JITTER_MS="${JITTER_MS}" \
 BREADBOARD_CLI_DROP_RATE="${DROP_RATE}" \
-python -m agentic_coder_prototype.api.cli_bridge.server "$@" 2>&1 | tee -a "${LOG_FILE}"
+python -m breadboard_engine.api.cli_bridge.server "$@" 2>&1 | tee -a "${LOG_FILE}"

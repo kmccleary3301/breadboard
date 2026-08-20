@@ -3,7 +3,7 @@ name: TodoWrite
 description: Write or update the full todo checklist. Provide the entire ordered list with statuses so the user can track progress.
 type_id: python
 binding:
-  module: agentic_coder_prototype.tools.todo
+  module: breadboard_engine.tools.todo
   callable: write_board
 aliases:
   - todowrite

@@ -1,6 +1,6 @@
 import types
 
-from agentic_coder_prototype.provider_runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
+from breadboard_engine.provider_runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
 
 
 def test_call_with_raw_response_retries_on_rate_limit(monkeypatch) -> None:
@@ -38,7 +38,7 @@ def test_call_with_raw_response_retries_on_rate_limit(monkeypatch) -> None:
         with_raw_response = FakeWithRawResponse()
 
     # Avoid real sleeping in case fallback backoff kicks in.
-    monkeypatch.setattr("agentic_coder_prototype.provider_runtime.time.sleep", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("breadboard_engine.provider_runtime.time.sleep", lambda *_args, **_kwargs: None)
 
     context = ProviderRuntimeContext(session_state=types.SimpleNamespace(), agent_config={}, stream=False)
     result = runtime._call_with_raw_response(

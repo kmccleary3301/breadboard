@@ -1,5 +1,5 @@
-from agentic_coder_prototype.ctrees.closure_rule_registry import build_phase15_task_closure_rule_map
-from agentic_coder_prototype.ctrees.receipt_scoring import score_row_with_receipts
+from breadboard_engine.ctrees.closure_rule_registry import build_phase15_task_closure_rule_map
+from breadboard_engine.ctrees.receipt_scoring import score_row_with_receipts
 
 
 def test_phase15_probe_task_rules_are_present_in_registry() -> None:

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.compilation.v2_loader import load_agent_config
-from agentic_coder_prototype.ctrees.candidate_a_live_contract import execute_phase11_candidate_a_live_cell
-from agentic_coder_prototype.ctrees.live_benchmark_adapter import build_phase11_live_protocol_payload
+from breadboard_engine.compilation.v2_loader import load_agent_config
+from breadboard_engine.ctrees.candidate_a_live_contract import execute_phase11_candidate_a_live_cell
+from breadboard_engine.ctrees.live_benchmark_adapter import build_phase11_live_protocol_payload
 
 
 def test_candidate_a_live_workspace_root_is_decoupled_from_out_root(tmp_path: Path) -> None:

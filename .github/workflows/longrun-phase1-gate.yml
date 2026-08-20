@@ -3,9 +3,9 @@ name: LongRun Phase 1 Gate
 on:
   pull_request:
     paths:
-      - "agentic_coder_prototype/longrun/**"
-      - "agentic_coder_prototype/agent_llm_openai.py"
-      - "agentic_coder_prototype/compilation/v2_loader.py"
+      - "breadboard_engine/longrun/**"
+      - "breadboard_engine/agent_llm_openai.py"
+      - "breadboard_engine/compilation/v2_loader.py"
       - "agent_configs/**"
       - "docs/LONGRUN_*.md"
       - "scripts/audit_longrun_parity_disabled.py"
@@ -25,9 +25,9 @@ on:
       - ".github/workflows/longrun-phase1-gate.yml"
   push:
     paths:
-      - "agentic_coder_prototype/longrun/**"
-      - "agentic_coder_prototype/agent_llm_openai.py"
-      - "agentic_coder_prototype/compilation/v2_loader.py"
+      - "breadboard_engine/longrun/**"
+      - "breadboard_engine/agent_llm_openai.py"
+      - "breadboard_engine/compilation/v2_loader.py"
       - "agent_configs/**"
       - "docs/LONGRUN_*.md"
       - "scripts/audit_longrun_parity_disabled.py"

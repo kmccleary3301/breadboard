@@ -14,7 +14,8 @@ The goal is simple:
 | Root | Zone type | What it is | Canonical use |
 |---|---|---|---|
 | `breadboard/` | `public product surface` | core product-facing Python package for sandboxing and related host-visible runtime helpers | public-facing Python module area when the package already lives there |
-| `agentic_coder_prototype/` | `transitional internal runtime substrate` | the canonical internal engine and orchestration substrate currently carrying the majority of runtime authority | canonical home for new internal engine/runtime code during the current cleanup phase |
+| `breadboard_engine/` | `canonical internal engine` | the canonical internal engine and orchestration substrate carrying runtime authority (renamed from `agentic_coder_prototype/` at the R-1 freeze event) | canonical home for new internal engine/runtime code |
+| `agentic_coder_prototype/` | `temporary compat namespace` | legacy import shim: installs the prefix-wide alias finder and self-replaces with `breadboard_engine` (policy: `BREADBOARD_LEGACY_IMPORTS=allow\|warn\|error`) | never add code here; legacy imports only, removal tracked by the compat-removal issue |
 | `breadboard_sdk/` | `SDK surface` | Python SDK package area | stable SDK-facing code and interfaces |
 | `breadboard_ext/` | `extension space` | extension and experimental lane for non-core product surfaces | bounded extension work that should not claim canonical engine authority |
 | `sdk/` | `SDK and host surface` | TypeScript SDKs, host layers, transport adapters, and execution drivers | canonical home for TS, host, and driver work |
@@ -32,18 +33,29 @@ This is where product-facing Python helpers belong when they are already clearly
 part of the BreadBoard product identity, especially around sandboxing and
 related execution surfaces.
 
-### `agentic_coder_prototype/`
+### `breadboard_engine/`
 
-Treat `agentic_coder_prototype/` as the transitional internal runtime
-substrate.
+Treat `breadboard_engine/` as the canonical internal engine.
 
 That means:
 
-- it is still the canonical home for most internal runtime authority today
+- it is the canonical home for internal runtime authority
 - it is not the polished public brand we want to foreground
 - new internal engine/runtime code should prefer its canonical subpackages
-- a future mass rename is a separate migration event, not part of the current
-  cleanup tranche
+
+### `agentic_coder_prototype/`
+
+Temporary compatibility namespace left behind by the engine rename.
+
+The package contains exactly one file: a shim `__init__.py` (generated from
+`scripts/dev/shim_package_init.template.py`) that installs the prefix-wide
+`LegacyAliasFinder` and self-replaces with `breadboard_engine`. Legacy imports
+such as `import agentic_coder_prototype.x.y` resolve to the same module
+objects as `breadboard_engine.x.y`. Behavior is governed by
+`BREADBOARD_LEGACY_IMPORTS` (`allow` default, `warn`, `error`).
+
+Never add code here. Removal criteria are tracked by the compat-removal issue
+recorded in the rename migration guide.
 
 ### `breadboard_ext/`
 
@@ -68,7 +80,7 @@ internal runtime substrate just because that substrate already exists.
 This root is support/tooling surface, not the canonical internal runtime home
 for tool-call logic. The canonical internal home is now under:
 
-- `agentic_coder_prototype/tool_calling/`
+- `breadboard_engine/tool_calling/`
 
 ### `scripts/`
 

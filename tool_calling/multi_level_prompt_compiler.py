@@ -1,4 +1,4 @@
-from agentic_coder_prototype.compilation.multi_level_prompt_compiler import (
+from breadboard_engine.compilation.multi_level_prompt_compiler import (
 	MultiLevelPromptCompiler,
 	PromptCompilationConfig,
 	PromptLength,

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import yaml
 import pytest
-from agentic_coder_prototype.conformance.catalog_binding import CATALOG_PATH, stable_entries_hash
+from breadboard_engine.conformance.catalog_binding import CATALOG_PATH, stable_entries_hash
 
 
 @pytest.fixture(autouse=True)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.orchestration.coordination import build_directive, validate_directive
+from breadboard_engine.orchestration.coordination import build_directive, validate_directive
 
 
 def test_retry_directive_passes_validation() -> None:

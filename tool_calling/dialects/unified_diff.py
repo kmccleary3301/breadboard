@@ -1,3 +1,3 @@
-from agentic_coder_prototype.dialects.unified_diff import UnifiedDiffDialect  # shim
+from breadboard_engine.dialects.unified_diff import UnifiedDiffDialect  # shim
 
 

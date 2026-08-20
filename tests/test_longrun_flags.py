@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.longrun.flags import (
+from breadboard_engine.longrun.flags import (
     is_longrun_enabled,
     resolve_episode_max_steps,
     resolve_longrun_policy_profile,

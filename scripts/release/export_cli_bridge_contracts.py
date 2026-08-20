@@ -11,8 +11,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from agentic_coder_prototype.api.cli_bridge.app import create_app  # noqa: E402
-from agentic_coder_prototype.api.cli_bridge.models import (  # noqa: E402
+from breadboard_engine.api.cli_bridge.app import create_app  # noqa: E402
+from breadboard_engine.api.cli_bridge.models import (  # noqa: E402
     ProviderAuthAttachRequest,
     ProviderAuthAttachResponse,
     ProviderAuthDetachRequest,

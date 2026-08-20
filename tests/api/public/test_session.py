@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from agentic_coder_prototype.api.cli_bridge.app import create_app
+from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard.product.cli import session as session_operations
 
 

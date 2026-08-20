@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.compiler import compile_ctree
-from agentic_coder_prototype.ctrees.collapse import collapse_ctree
-from agentic_coder_prototype.ctrees.policy import (
+from breadboard_engine.ctrees.compiler import compile_ctree
+from breadboard_engine.ctrees.collapse import collapse_ctree
+from breadboard_engine.ctrees.policy import (
     build_rehydration_plan,
     build_retrieval_substrate,
     collapse_policy,
     resolve_retrieval_policy,
 )
-from agentic_coder_prototype.ctrees.store import CTreeStore
+from breadboard_engine.ctrees.store import CTreeStore
 
 
 def test_ctree_compiler_hashes_deterministic() -> None:
@@ -372,7 +372,7 @@ def test_ctree_helper_rehydration_is_opt_in_and_prunes_structural_spillover() ->
             "parent_id": root_id,
             "targets": ["ctrees/policy.py"],
             "artifact_refs": ["retrieval_contract.md"],
-            "workspace_scope": ["agentic_coder_prototype/ctrees"],
+            "workspace_scope": ["breadboard_engine/ctrees"],
         },
         turn=2,
     )
@@ -383,7 +383,7 @@ def test_ctree_helper_rehydration_is_opt_in_and_prunes_structural_spillover() ->
             "parent_id": root_id,
             "targets": ["router/audit.py"],
             "artifact_refs": ["batch_router.md"],
-            "workspace_scope": ["agentic_coder_prototype/router"],
+            "workspace_scope": ["breadboard_engine/router"],
         },
         turn=3,
     )

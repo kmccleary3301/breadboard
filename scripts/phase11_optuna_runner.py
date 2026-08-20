@@ -18,8 +18,8 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     ray = None
 
-from agentic_coder_prototype.agent import AgenticCoder
-from agentic_coder_prototype.optimize.optuna_config import load_optuna_config
+from breadboard_engine.agent import AgenticCoder
+from breadboard_engine.optimize.optuna_config import load_optuna_config
 
 
 def _load_tasks(path: Path) -> List[Dict[str, Any]]:

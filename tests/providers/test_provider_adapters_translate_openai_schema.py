@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.dialects.enhanced_base_dialect import (
+from breadboard_engine.dialects.enhanced_base_dialect import (
     EnhancedToolDefinition,
     EnhancedToolParameter,
 )
-from agentic_coder_prototype.compilation.tool_yaml_loader import load_yaml_tools
-from agentic_coder_prototype.provider_adapters import OpenAIAdapter
+from breadboard_engine.compilation.tool_yaml_loader import load_yaml_tools
+from breadboard_engine.provider_adapters import OpenAIAdapter
 
 
 def test_openai_adapter_translates_dataclass_params_with_default() -> None:

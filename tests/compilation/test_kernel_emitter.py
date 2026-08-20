@@ -7,12 +7,12 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.primitive_records import PrimitiveCompileError, SPEC_REGISTRY, finalize_record, get_spec, validate_record
-from agentic_coder_prototype.runtime.kernel_emitter import JsonlKernelEmitter
-from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest
-from agentic_coder_prototype.api.cli_bridge.runtime_emission import emit_session_start_records
-from agentic_coder_prototype.conductor.execution import build_exec_func, execute_agent_calls
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.compilation.primitive_records import PrimitiveCompileError, SPEC_REGISTRY, finalize_record, get_spec, validate_record
+from breadboard_engine.runtime.kernel_emitter import JsonlKernelEmitter
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest
+from breadboard_engine.api.cli_bridge.runtime_emission import emit_session_start_records
+from breadboard_engine.conductor.execution import build_exec_func, execute_agent_calls
+from breadboard_engine.state.session_state import SessionState
 
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA_DIR = ROOT / "contracts" / "kernel" / "schemas"
@@ -191,9 +191,9 @@ def test_runtime_emission_soak_report_covers_strict_sessions_and_flag_off_baseli
 def test_dev_ci_runtime_emission_mode_resolves_strict_when_unset_or_invalid(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from agentic_coder_prototype.api.cli_bridge.models import SessionStatus
-    from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry
-    from agentic_coder_prototype.api.cli_bridge.session_runner import SessionRunner
+    from breadboard_engine.api.cli_bridge.models import SessionStatus
+    from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+    from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 
     class FakeAgent:
         _local_mode = True

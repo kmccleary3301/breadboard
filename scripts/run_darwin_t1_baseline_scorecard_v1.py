@@ -30,7 +30,7 @@ PREREQUISITE_CHECKS: dict[str, dict[str, str]] = {
         "replay_bundle": "scripts/run_phase5_replay_reliability_bundle.sh",
     },
     "lane.systems": {
-        "compiler_or_runtime": "agentic_coder_prototype",
+        "compiler_or_runtime": "breadboard_engine",
         "benchmark_harness": "scripts/build_ink_publication_benchmark_pack.py",
         "budget_class_enforcement": "docs/contracts/policies/P3_SPEND_ATTRIBUTION_BASELINE_V1.md",
     },

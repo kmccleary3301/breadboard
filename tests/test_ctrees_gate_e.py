@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.gate_e import evaluate_gate_e
+from breadboard_engine.ctrees.gate_e import evaluate_gate_e
 
 
 def test_ctree_gate_e_shows_value_over_stripped_bundle() -> None:

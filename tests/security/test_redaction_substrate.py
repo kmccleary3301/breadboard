@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.security import redaction
+from breadboard_engine.security import redaction
 
 
 @pytest.fixture(autouse=True)

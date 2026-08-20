@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus
-from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry
-from agentic_coder_prototype.api.cli_bridge.service import SessionService
-from agentic_coder_prototype.api.cli_bridge.session_runner import SessionRunner
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
+from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+from breadboard_engine.api.cli_bridge.service import SessionService
+from breadboard_engine.api.cli_bridge.session_runner import SessionRunner
 
 
 def _write_config(path: Path, text: str) -> str:

@@ -167,7 +167,7 @@ def _eval_workspace(workspace: Path, *, out_dir: Path) -> Dict[str, Any]:
 
 
 def _build_manifest(workspace: Path) -> Dict[str, Any]:
-    from agentic_coder_prototype.run_logging.workspace_manifest import build_workspace_manifest
+    from breadboard_engine.run_logging.workspace_manifest import build_workspace_manifest
 
     return build_workspace_manifest(workspace)
 

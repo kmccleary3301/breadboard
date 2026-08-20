@@ -4,14 +4,14 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.orchestration.coordination import (
+from breadboard_engine.orchestration.coordination import (
     build_review_verdict,
     build_human_required_signal_proposal,
     validate_signal_proposal,
 )
-from agentic_coder_prototype.orchestration.orchestrator import MultiAgentOrchestrator
-from agentic_coder_prototype.orchestration.replay import load_event_log
-from agentic_coder_prototype.orchestration.schema import TeamConfig
+from breadboard_engine.orchestration.orchestrator import MultiAgentOrchestrator
+from breadboard_engine.orchestration.replay import load_event_log
+from breadboard_engine.orchestration.schema import TeamConfig
 
 
 def _make_team(

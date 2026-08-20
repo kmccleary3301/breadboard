@@ -1,5 +1,5 @@
-from agentic_coder_prototype.provider import normalize_provider_result
-from agentic_coder_prototype.provider_runtime import ProviderResult, ProviderMessage, ProviderToolCall
+from breadboard_engine.provider import normalize_provider_result
+from breadboard_engine.provider_runtime import ProviderResult, ProviderMessage, ProviderToolCall
 
 
 def test_normalize_provider_result_produces_events():

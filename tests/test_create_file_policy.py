@@ -1,7 +1,7 @@
 import ray
 import pytest
 
-from agentic_coder_prototype.execution.enhanced_executor import EnhancedToolExecutor
+from breadboard_engine.execution.enhanced_executor import EnhancedToolExecutor
 from breadboard.sandbox import DevSandboxV2
 
 

@@ -5,7 +5,7 @@ from typing import Iterable
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from agentic_coder_prototype.api.cli_bridge.models import (
+from breadboard_engine.api.cli_bridge.models import (
     ATPReplBatchRequest,
     ATPReplRequest,
     ATPReplResponse,
@@ -15,7 +15,7 @@ from agentic_coder_prototype.api.cli_bridge.models import (
     EvoLakeRunCampaignRequest,
     EvoLakeRunCampaignResponse,
 )
-from agentic_coder_prototype.api.cli_bridge.service import SessionService
+from breadboard_engine.api.cli_bridge.service import SessionService
 
 from breadboard.ext.interfaces import EndpointProvider
 

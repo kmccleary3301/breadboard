@@ -7,11 +7,11 @@ from typing import List
 import httpx
 import pytest
 
-from agentic_coder_prototype.api.cli_bridge.app import create_app
-from agentic_coder_prototype.api.cli_bridge.events import EventType, SessionEvent
-from agentic_coder_prototype.api.cli_bridge.models import SessionStatus
-from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry
-from agentic_coder_prototype.api.cli_bridge.service import SessionService
+from breadboard_engine.api.cli_bridge.app import create_app
+from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
+from breadboard_engine.api.cli_bridge.models import SessionStatus
+from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+from breadboard_engine.api.cli_bridge.service import SessionService
 
 
 @pytest.mark.asyncio

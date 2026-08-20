@@ -4,8 +4,8 @@ import types
 
 import pytest
 
-from agentic_coder_prototype.provider_routing import provider_router
-from agentic_coder_prototype.provider_runtime import (
+from breadboard_engine.provider_routing import provider_router
+from breadboard_engine.provider_runtime import (
     ProviderResult,
     ProviderRuntimeContext,
     ProviderRuntimeError,

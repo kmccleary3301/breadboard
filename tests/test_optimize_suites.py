@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.optimize import (
+from breadboard_engine.optimize import (
     EvaluationSuiteManifest,
     FamilyCompositionManifest,
     ObjectiveBreakdownResult,
@@ -43,11 +43,11 @@ from agentic_coder_prototype.optimize import (
     build_tool_guidance_benchmark_example,
     build_tool_guidance_benchmark_example_payload,
 )
-from agentic_coder_prototype.optimize.examples import (
+from breadboard_engine.optimize.examples import (
     build_coding_overlay_verifier_experiment_example,
     build_coding_overlay_verifier_experiment_example_payload,
 )
-from agentic_coder_prototype.optimize.suites import TransferSliceManifest, VerifierAugmentedExperimentResult
+from breadboard_engine.optimize.suites import TransferSliceManifest, VerifierAugmentedExperimentResult
 
 
 def test_support_execution_v2_suite_family_artifacts_round_trip() -> None:

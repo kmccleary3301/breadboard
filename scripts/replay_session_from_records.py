@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from agentic_coder_prototype.compilation.primitive_records import (
+from breadboard_engine.compilation.primitive_records import (
     PrimitiveCompileError,
     canonical_record_bytes,
     finalize_record,

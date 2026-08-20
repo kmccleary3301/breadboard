@@ -1,5 +1,5 @@
-from agentic_coder_prototype.compilation.system_prompt_compiler import get_compiler
-from agentic_coder_prototype.core.core import ToolDefinition, ToolParameter
+from breadboard_engine.compilation.system_prompt_compiler import get_compiler
+from breadboard_engine.core.core import ToolDefinition, ToolParameter
 
 
 def _mk_tools():

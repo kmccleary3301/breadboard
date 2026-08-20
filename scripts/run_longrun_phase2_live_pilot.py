@@ -20,7 +20,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 if TYPE_CHECKING:
-    from agentic_coder_prototype.agent import AgenticCoder
+    from breadboard_engine.agent import AgenticCoder
 
 
 SCHEMA_VERSION = "longrun_phase2_live_pilot_v1"
@@ -326,7 +326,7 @@ def _run_one(
             },
         }
 
-    from agentic_coder_prototype.agent import AgenticCoder
+    from breadboard_engine.agent import AgenticCoder
 
     run_started = time.perf_counter()
     runtime_overrides = _build_runtime_overrides(overrides or {}, model_override=model_override)

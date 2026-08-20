@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.provider import runtime_codex as runtime_codex_module
-from agentic_coder_prototype.provider_routing import provider_router
-from agentic_coder_prototype.provider_runtime import ProviderRuntimeContext, provider_registry
+from breadboard_engine.provider import runtime_codex as runtime_codex_module
+from breadboard_engine.provider_routing import provider_router
+from breadboard_engine.provider_runtime import ProviderRuntimeContext, provider_registry
 
 provider_registry.register_runtime("codex_app_server", runtime_codex_module.CodexAppServerRuntime)
 

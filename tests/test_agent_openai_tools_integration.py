@@ -12,18 +12,18 @@ TOOLS_ROOT = os.path.join(PROJECT_ROOT, "tool_calling")
 if TOOLS_ROOT not in sys.path:
     sys.path.insert(0, TOOLS_ROOT)
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
-from agentic_coder_prototype.provider.capability_probe import ProviderCapabilityProbeRunner
-from agentic_coder_prototype.provider.health import RouteHealthManager
-from agentic_coder_prototype.provider_runtime import (
+from breadboard_engine.agent_llm_openai import OpenAIConductor
+from breadboard_engine.provider.capability_probe import ProviderCapabilityProbeRunner
+from breadboard_engine.provider.health import RouteHealthManager
+from breadboard_engine.provider_runtime import (
     ProviderRuntimeContext,
     ProviderRuntimeError,
     ProviderResult,
     ProviderMessage,
 )
-from agentic_coder_prototype.provider_routing import ProviderDescriptor
-from agentic_coder_prototype.state.session_state import SessionState
-from agentic_coder_prototype.provider.metrics import ProviderMetricsCollector
+from breadboard_engine.provider_routing import ProviderDescriptor
+from breadboard_engine.state.session_state import SessionState
+from breadboard_engine.provider.metrics import ProviderMetricsCollector
 
 
 def test_provider_schema_names_roundtrip():
@@ -250,10 +250,10 @@ def test_retry_with_fallback_marks_degraded(monkeypatch):
     stub_router = StubRouter()
     stub_registry = StubRegistry()
 
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_router", stub_router)
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.provider_registry", stub_registry)
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.time.sleep", lambda _: None)
-    monkeypatch.setattr("agentic_coder_prototype.agent_llm_openai.random.uniform", lambda a, b: 0.0)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_router", stub_router)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.provider_registry", stub_registry)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.time.sleep", lambda _: None)
+    monkeypatch.setattr("breadboard_engine.agent_llm_openai.random.uniform", lambda a, b: 0.0)
 
     runtime_context = ProviderRuntimeContext(
         session_state=session_state,

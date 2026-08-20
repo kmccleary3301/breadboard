@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from agentic_coder_prototype.security import redaction
+from breadboard_engine.security import redaction
 
 CANARY_ATTACH_KEY = "canary-attach-key-4f9e7c21ab"
 CANARY_HEADER_TOKEN = "canary-header-token-8d2b6e90cd"
@@ -43,10 +43,10 @@ class TestPath1EnvironmentProjection:
     def test_attach_registers_secrets_and_public_scrub_is_env_independent(
         self, monkeypatch
     ):
-        from agentic_coder_prototype.api.cli_bridge.app import (
+        from breadboard_engine.api.cli_bridge.app import (
             _project_provider_auth_material_to_env,
         )
-        from agentic_coder_prototype.api.public.models import scrub_public
+        from breadboard_engine.api.public.models import scrub_public
 
         monkeypatch.setitem(os.environ, "OPENAI_API_KEY", "preexisting")
         monkeypatch.setitem(os.environ, "BREADBOARD_OPENAI_AUTH_HEADERS_JSON", "{}")
@@ -67,7 +67,7 @@ class TestPath1EnvironmentProjection:
         assert CANARY_HEADER_TOKEN not in json.dumps(scrubbed)
 
     def test_non_openai_material_still_registered(self):
-        from agentic_coder_prototype.api.cli_bridge.app import (
+        from breadboard_engine.api.cli_bridge.app import (
             _project_provider_auth_material_to_env,
         )
 
@@ -81,7 +81,7 @@ class TestPath2RawHeaders:
     """Leak path: rate-limit parser persisted nearly all raw headers."""
 
     def test_raw_headers_sanitized_at_source(self):
-        from agentic_coder_prototype.limits.parse_headers import (
+        from breadboard_engine.limits.parse_headers import (
             parse_rate_limit_headers,
         )
 
@@ -105,7 +105,7 @@ class TestPath3RunLoggerKeylists:
     """Leak path: run logger recognized only four key spellings."""
 
     def _logger(self, tmp_path: Path):
-        from agentic_coder_prototype.run_logging.run_logger import LoggerV2Manager
+        from breadboard_engine.run_logging.run_logger import LoggerV2Manager
 
         manager = LoggerV2Manager({"logging": {"root_dir": str(tmp_path / "logs")}})
         manager.start_run("canary-session")
@@ -139,7 +139,7 @@ class TestPath4RecorderAndProviderDump:
     """Leak paths: API recorder and provider dump had drifting deny-lists."""
 
     def test_api_recorder_wide_coverage(self):
-        from agentic_coder_prototype.run_logging.api_recorder import _redact_payload
+        from breadboard_engine.run_logging.api_recorder import _redact_payload
 
         sanitized = _redact_payload(
             {"headers": {"x-goog-api-key": CANARY_LOG_VALUE}, "body": "ok"}
@@ -148,7 +148,7 @@ class TestPath4RecorderAndProviderDump:
         assert sanitized["body"] == "ok"
 
     def test_provider_dump_wide_coverage(self):
-        from agentic_coder_prototype.logging.provider_dump import _scrub
+        from breadboard_engine.logging.provider_dump import _scrub
 
         sanitized = _scrub(
             {"set-cookie": CANARY_LOG_VALUE, "detail": f"Bearer {CANARY_RAW_HEADER}"}
@@ -162,15 +162,15 @@ class TestCanarySweep:
     then a byte sweep across all durable artifacts produced."""
 
     def test_end_to_end_zero_occurrences(self, tmp_path, monkeypatch):
-        from agentic_coder_prototype.api.cli_bridge.app import (
+        from breadboard_engine.api.cli_bridge.app import (
             _project_provider_auth_material_to_env,
         )
-        from agentic_coder_prototype.api.public.models import scrub_public
-        from agentic_coder_prototype.limits.parse_headers import (
+        from breadboard_engine.api.public.models import scrub_public
+        from breadboard_engine.limits.parse_headers import (
             parse_rate_limit_headers,
         )
-        from agentic_coder_prototype.run_logging.api_recorder import APIRequestRecorder
-        from agentic_coder_prototype.run_logging.run_logger import LoggerV2Manager
+        from breadboard_engine.run_logging.api_recorder import APIRequestRecorder
+        from breadboard_engine.run_logging.run_logger import LoggerV2Manager
 
         monkeypatch.setitem(os.environ, "OPENAI_API_KEY", "preexisting")
         monkeypatch.setitem(os.environ, "BREADBOARD_OPENAI_AUTH_HEADERS_JSON", "{}")

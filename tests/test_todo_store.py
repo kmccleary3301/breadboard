@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from agentic_coder_prototype.todo import TodoDraft, TodoManager, TodoPatch, TodoStore
+from breadboard_engine.todo import TodoDraft, TodoManager, TodoPatch, TodoStore
 
 
 def make_workspace(tmp_path: Path) -> Path:

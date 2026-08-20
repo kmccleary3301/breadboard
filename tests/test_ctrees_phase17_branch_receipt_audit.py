@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from agentic_coder_prototype.ctrees.phase17_branch_receipt_audit import summarize_phase17_branch_receipt_audit
+from breadboard_engine.ctrees.phase17_branch_receipt_audit import summarize_phase17_branch_receipt_audit
 
 
 def test_phase17_branch_receipt_audit_flags_shell_branch_proxy_and_missing_receipts(tmp_path) -> None:

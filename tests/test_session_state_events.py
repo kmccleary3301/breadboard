@@ -8,17 +8,17 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import pytest
 
-from agentic_coder_prototype.api.cli_bridge.events import EventType, SessionEvent
-from agentic_coder_prototype.api.cli_bridge.models import SessionCreateRequest, SessionStatus
-from agentic_coder_prototype.api.cli_bridge.registry import SessionRecord, SessionRegistry
-from agentic_coder_prototype.api.cli_bridge.service import SessionService
-from agentic_coder_prototype.api.cli_bridge.session_runner import (
+from breadboard_engine.api.cli_bridge.events import EventType, SessionEvent
+from breadboard_engine.api.cli_bridge.models import SessionCreateRequest, SessionStatus
+from breadboard_engine.api.cli_bridge.registry import SessionRecord, SessionRegistry
+from breadboard_engine.api.cli_bridge.service import SessionService
+from breadboard_engine.api.cli_bridge.session_runner import (
     BRIDGE_HOST_ONLY_RUNTIME_EVENT_TYPES,
     BRIDGE_STREAM_ONLY_RUNTIME_EVENT_TYPES,
     KERNEL_PASSTHROUGH_RUNTIME_EVENT_TYPES,
     SessionRunner,
 )
-from agentic_coder_prototype.state.session_state import SessionState
+from breadboard_engine.state.session_state import SessionState
 
 
 class EventCollector:

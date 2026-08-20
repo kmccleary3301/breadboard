@@ -8,8 +8,8 @@ This backend is intentionally small, typed, and bounded. It is not a campaign ru
 
 The Phase D records live in:
 
-- `agentic_coder_prototype/optimize/backend.py`
-- `agentic_coder_prototype/optimize/examples.py`
+- `breadboard_engine/optimize/backend.py`
+- `breadboard_engine/optimize/examples.py`
 
 The main records are:
 
@@ -111,7 +111,7 @@ Candidates also fail validation if they:
 
 ## Canonical example
 
-The canonical Phase D example is the codex dossier backend example in `agentic_coder_prototype/optimize/examples.py`.
+The canonical Phase D example is the codex dossier backend example in `breadboard_engine/optimize/examples.py`.
 
 It uses the existing substrate, dataset, and evaluation example path to run one reflective backend pass. The example produces:
 
@@ -123,7 +123,7 @@ It uses the existing substrate, dataset, and evaluation example path to run one 
 Minimal usage:
 
 ```python
-from agentic_coder_prototype.optimize import build_codex_dossier_backend_example
+from breadboard_engine.optimize import build_codex_dossier_backend_example
 
 example = build_codex_dossier_backend_example()
 request = example["request"]
@@ -137,7 +137,7 @@ assert len(result.proposals) == 2
 If you want serialized payloads:
 
 ```python
-from agentic_coder_prototype.optimize import build_codex_dossier_backend_example_payload
+from breadboard_engine.optimize import build_codex_dossier_backend_example_payload
 
 payload = build_codex_dossier_backend_example_payload()
 ```

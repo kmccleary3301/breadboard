@@ -8,7 +8,7 @@ from typing import Any, Mapping
 import pytest
 import yaml
 
-from agentic_coder_prototype.conformance import c4_chain
+from breadboard_engine.conformance import c4_chain
 from scripts.e4_parity import generate_support_claims, run_lane
 from scripts.e4_parity.lane_definitions import load_lane_defs
 from scripts.e4_parity.validators.registries import schema_generation_default

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_coder_prototype.compilation.system_prompt_compiler import SystemPromptCompiler
+from breadboard_engine.compilation.system_prompt_compiler import SystemPromptCompiler
 
 
 def test_compile_v2_prompts_resolves_pack_path_from_explicit_base_dir_without_decorating_config(

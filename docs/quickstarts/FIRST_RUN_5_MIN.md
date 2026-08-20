@@ -79,7 +79,7 @@ breadboard harness run ./harness/minimal_harness.v2.yaml \
 Start a local product API in one shell:
 
 ```bash
-./.venv/bin/python -m agentic_coder_prototype.api.cli_bridge.server
+./.venv/bin/python -m breadboard_engine.api.cli_bridge.server
 ```
 
 Verify its catalog-backed system endpoint:

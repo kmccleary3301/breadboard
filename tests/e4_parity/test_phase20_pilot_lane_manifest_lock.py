@@ -578,7 +578,7 @@ def test_am14_am16_manifest_inventory_is_source_only_and_lock_pinned() -> None:
     assert inputs.count(payload_ref) == 1
     assert inputs.count(CANONICAL_LEDGER_REF) == 1
     allowed_source_prefixes = (
-        "agentic_coder_prototype/compilation/",
+        "breadboard_engine/compilation/",
         "config/",
         "contracts/kernel/schemas/",
         "scripts/e4_parity/",

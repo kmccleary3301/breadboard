@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.primitive_records import sha256_ref
+from breadboard_engine.compilation.primitive_records import sha256_ref
 from scripts.e4_parity import catalog_refs
 
 

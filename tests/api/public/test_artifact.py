@@ -4,7 +4,7 @@ import pytest
 from pathlib import Path
 from types import SimpleNamespace
 from fastapi.testclient import TestClient
-from agentic_coder_prototype.api.cli_bridge.app import create_app
+from breadboard_engine.api.cli_bridge.app import create_app
 from breadboard.product.cli import artifact as artifact_operations
 from breadboard.product.runtime.artifacts import ArtifactStore
 def _client(monkeypatch, workspace: Path) -> TestClient:

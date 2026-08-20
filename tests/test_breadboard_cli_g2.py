@@ -249,7 +249,7 @@ def test_pyproject_installs_cli_and_runtime_import_packages() -> None:
     assert set(package_find["include"]) >= {
         "scripts*",
         "breadboard*",
-        "agentic_coder_prototype*",
+        "breadboard_engine*",
         "conformance*",
     }
     assert package_find["namespaces"] is True

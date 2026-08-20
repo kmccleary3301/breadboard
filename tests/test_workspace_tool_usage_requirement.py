@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from agentic_coder_prototype.conductor.components import (
+from breadboard_engine.conductor.components import (
     assistant_claims_workspace_tool_usage,
     latest_real_user_prompt,
     session_requires_workspace_tool_usage,
     should_require_workspace_tool_usage,
 )
-from agentic_coder_prototype.guardrail.orchestrator import GuardrailOrchestrator
-from agentic_coder_prototype.conductor.execution import (
+from breadboard_engine.guardrail.orchestrator import GuardrailOrchestrator
+from breadboard_engine.conductor.execution import (
     _async_result_task_id_from_activity,
     _is_allowed_async_result_followup,
     _required_final_answer_marker,

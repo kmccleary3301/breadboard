@@ -8,13 +8,13 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.primitive_records import (
+from breadboard_engine.compilation.primitive_records import (
     canonical_record_bytes,
     finalize_record,
     get_spec,
     sha256_ref,
 )
-from agentic_coder_prototype.conformance.catalog_binding import catalog_segments, stable_entries_hash
+from breadboard_engine.conformance.catalog_binding import catalog_segments, stable_entries_hash
 from scripts.e4_parity import build_artifact_catalog as builder
 
 

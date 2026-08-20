@@ -1,45 +1,26 @@
+"""Compatibility shim: the engine package is now ``breadboard_engine``.
+
+This file is the exact ``agentic_coder_prototype/__init__.py`` installed at
+R-1 (the rename freeze event). Importing the legacy name:
+
+1. applies the legacy-import policy to the root import itself (the physical
+   package bypasses the alias finder, so the policy must fire here),
+2. installs the prefix-wide alias finder (every ``agentic_coder_prototype.*``
+   import resolves to the one canonical module object), and
+3. self-replaces this package's ``sys.modules`` entry with the canonical
+   package - the wrapper pattern proven by the R-0C matrix.
+
+Policy: set ``BREADBOARD_LEGACY_IMPORTS=warn`` to deprecation-warn once per
+process, or ``error`` to reject legacy imports outright.
 """
-Agentic Coder Prototype Module
 
-A simplified, modular implementation of the agentic coding system.
-This module abstracts complex implementation details and provides
-a clean interface for agent-based code generation and manipulation.
-"""
+import sys
 
-from typing import TYPE_CHECKING
+from breadboard_engine.compat.alias_import import announce_root_import, install
 
-__all__ = [
-    "AgenticCoder",
-    "create_agent",
-    "OpenAIConductor",
-    "provider_router",
-    "provider_adapter_manager",
-]
+announce_root_import("agentic_coder_prototype")
+install("agentic_coder_prototype", "breadboard_engine")
 
+import breadboard_engine as _canonical  # noqa: E402
 
-if TYPE_CHECKING:  # pragma: no cover - typing-only imports
-    from .agent import AgenticCoder, create_agent  # noqa: F401
-    from .agent_llm_openai import OpenAIConductor  # noqa: F401
-    from .provider.routing import provider_router  # noqa: F401
-    from .provider import provider_adapter_manager  # noqa: F401
-
-
-def __getattr__(name: str):
-    """Lazy-import heavy modules to keep lightweight entrypoints fast/robust."""
-    if name in {"AgenticCoder", "create_agent"}:
-        from .agent import AgenticCoder, create_agent
-
-        return {"AgenticCoder": AgenticCoder, "create_agent": create_agent}[name]
-    if name == "OpenAIConductor":
-        from .agent_llm_openai import OpenAIConductor
-
-        return OpenAIConductor
-    if name == "provider_router":
-        from .provider.routing import provider_router
-
-        return provider_router
-    if name == "provider_adapter_manager":
-        from .provider import provider_adapter_manager
-
-        return provider_adapter_manager
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+sys.modules[__name__] = _canonical

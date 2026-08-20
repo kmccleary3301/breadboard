@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
-from agentic_coder_prototype.conductor_components import initialize_yaml_tools
+from breadboard_engine.conductor_components import initialize_yaml_tools
 
 
 def _names(conductor: SimpleNamespace) -> set[str]:

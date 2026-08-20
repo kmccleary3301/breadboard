@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from agentic_coder_prototype.compilation.primitive_records import get_spec, validate_record
+from breadboard_engine.compilation.primitive_records import get_spec, validate_record
 from scripts.e4_parity import run_lane
 from scripts.e4_parity.lane_definitions import load_lane_def
 from scripts.e4_parity.adapters import oh_my_pi_compiler_capture as compiler

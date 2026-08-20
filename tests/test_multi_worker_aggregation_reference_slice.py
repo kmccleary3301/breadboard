@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.orchestration.coordination import (
+from breadboard_engine.orchestration.coordination import (
     build_blocked_signal_proposal,
     build_signal_proposal,
     validate_signal_proposal,
 )
-from agentic_coder_prototype.orchestration.orchestrator import MultiAgentOrchestrator
-from agentic_coder_prototype.orchestration.schema import TeamConfig
+from breadboard_engine.orchestration.orchestrator import MultiAgentOrchestrator
+from breadboard_engine.orchestration.schema import TeamConfig
 
 
 def _make_team() -> TeamConfig:

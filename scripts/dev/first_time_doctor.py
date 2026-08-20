@@ -48,13 +48,13 @@ def _build_checks(effective_profile: str) -> list[DoctorCheck]:
         DoctorCheck("makefile_present", (ROOT_DIR / "Makefile").exists(), "Makefile"),
         DoctorCheck(
             "cli_bridge_server_present",
-            (ROOT_DIR / "agentic_coder_prototype" / "api" / "cli_bridge" / "server.py").exists(),
-            "agentic_coder_prototype/api/cli_bridge/server.py",
+            (ROOT_DIR / "breadboard_engine" / "api" / "cli_bridge" / "server.py").exists(),
+            "breadboard_engine/api/cli_bridge/server.py",
         ),
         DoctorCheck(
             "artifact_tasks_package_present",
-            (ROOT_DIR / "agentic_coder_prototype" / "artifact_tasks" / "__init__.py").exists(),
-            "agentic_coder_prototype/artifact_tasks/__init__.py",
+            (ROOT_DIR / "breadboard_engine" / "artifact_tasks" / "__init__.py").exists(),
+            "breadboard_engine/artifact_tasks/__init__.py",
         ),
         DoctorCheck(
             "artifact_task_smoke_present",

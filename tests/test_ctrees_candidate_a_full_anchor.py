@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.candidate_a_full_anchor import run_candidate_a_full_anchor
+from breadboard_engine.ctrees.candidate_a_full_anchor import run_candidate_a_full_anchor
 
 
 def test_candidate_a_full_anchor_now_clears_registered_gate() -> None:

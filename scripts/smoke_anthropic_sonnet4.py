@@ -32,8 +32,8 @@ def load_env(dotenv_path: Path) -> None:
 def run_smoke(model_id: str, prompt: str, max_tokens: int, temperature: float) -> None:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-    from agentic_coder_prototype.provider.routing import provider_router
-    from agentic_coder_prototype.provider.runtime import (
+    from breadboard_engine.provider.routing import provider_router
+    from breadboard_engine.provider.runtime import (
         ProviderRuntimeContext,
         ProviderRuntimeError,
         provider_registry,

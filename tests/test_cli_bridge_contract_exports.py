@@ -120,7 +120,7 @@ def _ts_export_fields(types_path: Path, export_name: str) -> dict[str, dict[str,
 
 def test_session_file_dtos_do_not_drift_between_python_and_ts_contracts() -> None:
     root = Path(__file__).resolve().parents[1]
-    python_fields = _python_bridge_model_fields(root / "agentic_coder_prototype" / "api" / "cli_bridge" / "models.py")
+    python_fields = _python_bridge_model_fields(root / "breadboard_engine" / "api" / "cli_bridge" / "models.py")
     for model_name, expected_fields in SESSION_FILE_DTO_FIELDS.items():
         assert python_fields[model_name] == expected_fields
         for types_path in (root / "sdk" / "ts" / "src" / "types.ts", root / "tui_skeleton" / "src" / "api" / "types.ts"):

@@ -70,10 +70,10 @@ We standardize around four themes:
 
 ### 2.1 Where provider behavior plugs in
 
-- `agentic_coder_prototype/provider/routing.py`: Parses model IDs (e.g., `openrouter/openai/gpt-5-nano`) and returns provider config, base URL, headers, and whether native tools are supported.
-- `agentic_coder_prototype/provider/adapters.py`: Translates our internal tool definitions into provider-native schema and normalizes provider responses (OpenAI-like functions, Anthropic `tool_use`).
-- `agentic_coder_prototype/execution/dialect_manager.py` + `execution/composite.py`: Text-based tools (pythonic, bash blocks, unified diffs) when native tools are disabled or not supported.
-- `agentic_coder_prototype/execution/enhanced_executor.py`: Policy application (permissions, path normalization, edit-before-bash), LSP feedback, and workspace state tracking.
+- `breadboard_engine/provider/routing.py`: Parses model IDs (e.g., `openrouter/openai/gpt-5-nano`) and returns provider config, base URL, headers, and whether native tools are supported.
+- `breadboard_engine/provider/adapters.py`: Translates our internal tool definitions into provider-native schema and normalizes provider responses (OpenAI-like functions, Anthropic `tool_use`).
+- `breadboard_engine/execution/dialect_manager.py` + `execution/composite.py`: Text-based tools (pythonic, bash blocks, unified diffs) when native tools are disabled or not supported.
+- `breadboard_engine/execution/enhanced_executor.py`: Policy application (permissions, path normalization, edit-before-bash), LSP feedback, and workspace state tracking.
 
 ### 2.2 Text vs provider-native tools
 

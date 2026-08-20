@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.helper_rehydration_canary import evaluate_helper_rehydration_canary
+from breadboard_engine.ctrees.helper_rehydration_canary import evaluate_helper_rehydration_canary
 
 
 def test_ctree_helper_rehydration_canary_improves_over_non_helper_baseline() -> None:

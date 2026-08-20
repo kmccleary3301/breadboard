@@ -1,4 +1,4 @@
-from agentic_coder_prototype.dialects.opencode_patch import OpenCodePatchDialect  # shim
+from breadboard_engine.dialects.opencode_patch import OpenCodePatchDialect  # shim
 
 
 

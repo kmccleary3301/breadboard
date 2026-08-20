@@ -2,7 +2,7 @@ import os
 import ray
 import pytest
 
-from agentic_coder_prototype.agent_llm_openai import OpenAIConductor
+from breadboard_engine.agent_llm_openai import OpenAIConductor
 
 
 @pytest.mark.skipif('OPENAI_API_KEY' not in os.environ, reason="requires provider key")

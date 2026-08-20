@@ -3,7 +3,7 @@ name: list_dir
 description: List files in a directory; supports optional depth for tree view
 type_id: python
 binding:
-  module: agentic_coder_prototype.tools.files
+  module: breadboard_engine.tools.files
   callable: list_dir
 aliases:
   - list

@@ -143,7 +143,7 @@ fi
 
 echo "[phase4 replay target] launching cli_bridge"
 cd "$repo_root"
-python -m agentic_coder_prototype.api.cli_bridge.server >"$log_dir/cli_bridge.log" 2>&1 &
+python -m breadboard_engine.api.cli_bridge.server >"$log_dir/cli_bridge.log" 2>&1 &
 server_pid=$!
 
 cleanup() {

@@ -3,8 +3,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any, Dict
 
-from agentic_coder_prototype.dialects.json_block import JSONBlockDialect
-from agentic_coder_prototype.tool_call_ir import ToolCallIR, as_simplenamespace, to_tool_call_ir
+from breadboard_engine.dialects.json_block import JSONBlockDialect
+from breadboard_engine.tool_call_ir import ToolCallIR, as_simplenamespace, to_tool_call_ir
 
 
 def test_to_tool_call_ir_from_parsed_tool_call() -> None:

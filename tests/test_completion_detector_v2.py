@@ -1,4 +1,4 @@
-from agentic_coder_prototype.state.completion_detector import CompletionDetector
+from breadboard_engine.state.completion_detector import CompletionDetector
 
 
 def test_completion_detector_text_sentinel_boost():

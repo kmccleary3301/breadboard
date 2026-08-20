@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_coder_prototype.optimize import WrongnessReport
+from breadboard_engine.optimize import WrongnessReport
 
 
 def test_wrongness_report_round_trip() -> None:

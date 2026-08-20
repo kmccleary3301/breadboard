@@ -67,14 +67,14 @@ Today the most important ones are:
 
 These are not kernel replacements. They are typed subsystems layered over kernel/runtime truth.
 
-- `agentic_coder_prototype.optimize`
+- `breadboard_engine.optimize`
   - GEPA-like bounded optimization substrate
   - evaluation/objective/search-space/family structures
   - promotion and transfer/generalization evidence
-- `agentic_coder_prototype.search`
+- `breadboard_engine.search`
   - DAG-shaped search runtime and assessment-bearing search truth
   - paper-fidelity helper layer for RSA, PaCoRe, and related study packets
-- `agentic_coder_prototype.rl`
+- `breadboard_engine.rl`
   - graph-native RL overlay
   - replay/live parity, dataset export units, fidelity/conformance manifests, and adapter probe surfaces
 
@@ -82,7 +82,7 @@ These are not kernel replacements. They are typed subsystems layered over kernel
 
 These are broader experiment and control systems that sit above the lower-level substrates.
 
-- `agentic_coder_prototype.ctrees`
+- `breadboard_engine.ctrees`
   - conversation-tree and structured reasoning/control research machinery
 - `breadboard_ext.darwin`
   - outer-loop evolutionary program layer for campaigns, lanes, evidence, claims, and policy progression

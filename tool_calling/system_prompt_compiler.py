@@ -1,3 +1,3 @@
-from agentic_coder_prototype.compilation.system_prompt_compiler import SystemPromptCompiler  # shim
+from breadboard_engine.compilation.system_prompt_compiler import SystemPromptCompiler  # shim
 
 

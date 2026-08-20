@@ -1,3 +1,3 @@
-from agentic_coder_prototype.dialects.pythonic_inline import PythonicInlineDialect  # shim
+from breadboard_engine.dialects.pythonic_inline import PythonicInlineDialect  # shim
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_coder_prototype.ctrees.helper_subtree_summary_canary import evaluate_helper_subtree_summary_canary
+from breadboard_engine.ctrees.helper_subtree_summary_canary import evaluate_helper_subtree_summary_canary
 
 
 def test_ctree_helper_subtree_summary_canary_improves_over_baseline() -> None:
