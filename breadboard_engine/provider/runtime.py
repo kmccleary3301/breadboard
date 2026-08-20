@@ -8,10 +8,9 @@ import json
 import os
 import random
 import re
-from dataclasses import dataclass, field
 import time
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple
 import textwrap
 
 try:  # pragma: no cover - import guard exercised in runtime
@@ -32,6 +31,15 @@ except ImportError:  # pragma: no cover - covered via error path tests
     AnthropicOverloadedError = None  # type: ignore[assignment]
 
 from .routing import ProviderDescriptor
+from .contracts import (
+    ProviderMessage,
+    ProviderResult,
+    ProviderRuntime,
+    ProviderRuntimeContext,
+    ProviderRuntimeError,
+    ProviderToolCall,
+)
+from .registry import ProviderRuntimeRegistry, provider_registry
 from ..logging.provider_dump import provider_dump_logger
 
 
@@ -40,120 +48,6 @@ from ..logging.provider_dump import provider_dump_logger
 # ---------------------------------------------------------------------------
 
 
-@dataclass
-class ProviderToolCall:
-    """Normalized representation of a provider tool call."""
-
-    id: Optional[str]
-    name: Optional[str]
-    arguments: str
-    type: str = "function"
-    raw: Any = None
-
-
-@dataclass
-class ProviderMessage:
-    """Normalized assistant message returned from a provider."""
-
-    role: str
-    content: Optional[str]
-    tool_calls: List[ProviderToolCall] = field(default_factory=list)
-    finish_reason: Optional[str] = None
-    index: Optional[int] = None
-    raw_message: Any = None
-    raw_choice: Any = None
-    reasoning: Optional[Any] = None
-    annotations: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ProviderResult:
-    """Result object returned from a provider runtime invocation."""
-
-    messages: List[ProviderMessage]
-    raw_response: Any
-    usage: Optional[Dict[str, Any]] = None
-    encrypted_reasoning: Optional[List[Any]] = None
-    reasoning_summaries: Optional[List[str]] = None
-    model: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ProviderRuntimeContext:
-    """Context object passed to provider runtimes."""
-
-    session_state: Any
-    agent_config: Dict[str, Any]
-    stream: bool = False
-    extra: Dict[str, Any] = field(default_factory=dict)
-
-
-class ProviderRuntimeError(RuntimeError):
-    """Raised when a provider runtime encounters a fatal error."""
-
-    def __init__(self, message: str, *, details: Optional[Dict[str, Any]] = None) -> None:
-        super().__init__(message)
-        self.details: Dict[str, Any] = details or {}
-
-
-# ---------------------------------------------------------------------------
-# Base runtime + registry
-# ---------------------------------------------------------------------------
-
-
-class ProviderRuntime:
-    """Interface for provider runtimes."""
-
-    def __init__(self, descriptor: ProviderDescriptor) -> None:
-        self.descriptor = descriptor
-
-    def create_client(
-        self,
-        api_key: str,
-        *,
-        base_url: Optional[str] = None,
-        default_headers: Optional[Dict[str, str]] = None,
-    ) -> Any:
-        raise NotImplementedError
-
-    def invoke(
-        self,
-        *,
-        client: Any,
-        model: str,
-        messages: List[Dict[str, Any]],
-        tools: Optional[List[Dict[str, Any]]],
-        stream: bool,
-        context: ProviderRuntimeContext,
-    ) -> ProviderResult:
-        raise NotImplementedError
-
-
-class ProviderRuntimeRegistry:
-    """Registry that maps runtime identifiers to implementation classes."""
-
-    def __init__(self) -> None:
-        self._runtime_classes: Dict[str, Type[ProviderRuntime]] = {}
-
-    def register_runtime(self, runtime_id: str, runtime_cls: Type[ProviderRuntime]) -> None:
-        if not issubclass(runtime_cls, ProviderRuntime):  # defensive guard
-            raise TypeError(f"Runtime {runtime_cls!r} must inherit ProviderRuntime")
-        self._runtime_classes[runtime_id] = runtime_cls
-
-    def get_runtime_class(self, runtime_id: str) -> Optional[Type[ProviderRuntime]]:
-        return self._runtime_classes.get(runtime_id)
-
-    def create_runtime(self, descriptor: ProviderDescriptor) -> ProviderRuntime:
-        runtime_cls = self.get_runtime_class(descriptor.runtime_id)
-        if runtime_cls is None:
-            raise ProviderRuntimeError(
-                f"Unknown provider runtime '{descriptor.runtime_id}' for provider '{descriptor.provider_id}'"
-            )
-        return runtime_cls(descriptor)
-
-
-provider_registry = ProviderRuntimeRegistry()
 
 
 # ---------------------------------------------------------------------------
