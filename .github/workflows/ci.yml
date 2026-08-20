@@ -64,6 +64,11 @@ jobs:
           python scripts/dev/generate_ts_sdk.py --check
           pytest -q tests/test_ts_sdk_codegen.py
 
+      - name: Script index guard (live-count report, not a cap)
+        run: |
+          python scripts/dev/build_script_index.py --check
+          pytest -q tests/test_script_index_guard.py
+
       - name: Enforce Phase 20 freeze
         run: python scripts/check_phase20_freeze.py
 
