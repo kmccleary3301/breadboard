@@ -527,6 +527,40 @@ def test_session_runner_recognizes_replay_after_injected_system_reminder(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_replay_events_preserve_active_turn_correlation(tmp_path) -> None:
+    fixture = tmp_path / "fixture.jsonl"
+    fixture.write_text(
+        json.dumps({"type": "assistant_message", "payload": {"text": "done"}, "turn": 1}) + "\n",
+        encoding="utf-8",
+    )
+    record = SessionRecord(session_id="sess-replay-correlation", status=SessionStatus.RUNNING)
+    record.active_turn_id = "turn-1"
+    record.turns_by_id["turn-1"] = type(
+        "Turn",
+        (),
+        {"input_id": "input-1", "turn_id": "turn-1"},
+    )()
+    runner = SessionRunner(
+        session=record,
+        registry=SessionRegistry(),
+        request=SessionCreateRequest(config_path="cfg.yaml", task="", stream=False),
+    )
+    published: list[tuple[EventType, dict[str, Any]]] = []
+
+    async def capture(event_type: EventType, _payload: Dict[str, Any], **kwargs: Any) -> None:
+        published.append((event_type, kwargs))
+
+    runner.publish_event_async = capture  # type: ignore[method-assign]
+    await runner._execute_replay_task(
+        "<system-reminder>\ncontext\n</system-reminder>\n"
+        f"replay:{fixture}\n\ncompiled prompt"
+    )
+    assistant = next(kwargs for event_type, kwargs in published if event_type is EventType.ASSISTANT_MESSAGE)
+    assert assistant["input_id"] == "input-1"
+    assert assistant["turn_id"] == "turn-1"
+
+
+@pytest.mark.asyncio
 async def test_session_runner_replay_task_skips_agent_init(tmp_path) -> None:
     registry = SessionRegistry()
     record = SessionRecord(session_id="sess-replay", status=SessionStatus.STARTING)

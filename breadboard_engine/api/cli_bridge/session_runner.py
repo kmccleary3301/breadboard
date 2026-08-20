@@ -801,6 +801,12 @@ class SessionRunner:
         published_events = 0
         metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
+        active_turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
+        correlation = (
+            {"input_id": active_turn.input_id, "turn_id": active_turn.turn_id}
+            if active_turn is not None
+            else {}
+        )
         terminal_events: list[TranslatedRuntimeEvent] = []
         with replay_path.open("r", encoding="utf-8") as f:
             for raw_line in f:
@@ -844,9 +850,9 @@ class SessionRunner:
                         except Exception:
                             pass
                 if one_shot and evt_type in {EventType.COMPLETION, EventType.RUN_FINISHED}:
-                    terminal_events.append((evt_type, payload, turn, {}))
+                    terminal_events.append((evt_type, payload, turn, dict(correlation)))
                 else:
-                    await self.publish_event_async(evt_type, payload, turn=turn)
+                    await self.publish_event_async(evt_type, payload, turn=turn, **correlation)
                 published_events += 1
                 if evt_type is EventType.COMPLETION:
                     published_completion = True
@@ -855,11 +861,11 @@ class SessionRunner:
         completion_summary: Dict[str, Any] = {"completed": True, "reason": "replay"}
         if not published_completion:
             payload = {"summary": completion_summary, "mode": self._mode}
-            terminal_events.append((EventType.COMPLETION, payload, None, {})) if one_shot else await self.publish_event_async(EventType.COMPLETION, payload)
+            terminal_events.append((EventType.COMPLETION, payload, None, dict(correlation))) if one_shot else await self.publish_event_async(EventType.COMPLETION, payload, **correlation)
             published_events += 1
         if not published_run_finished:
             payload = {"eventCount": published_events, "completed": True, "reason": "replay", "logging_dir": None}
-            terminal_events.append((EventType.RUN_FINISHED, payload, None, {})) if one_shot else await self.publish_event_async(EventType.RUN_FINISHED, payload)
+            terminal_events.append((EventType.RUN_FINISHED, payload, None, dict(correlation))) if one_shot else await self.publish_event_async(EventType.RUN_FINISHED, payload, **correlation)
         return {
             "completion_summary": completion_summary,
             "reward_metrics": None,
@@ -961,7 +967,7 @@ class SessionRunner:
                         reward_summary=result.get("reward_metrics"), logging_dir=result.get("logging_dir"), metadata=self.session.metadata,
                     )
                     for event_type, event_payload, event_turn, event_contract in result.pop("_terminal_events", ()):
-                        await self.publish_event_async(event_type, event_payload, turn=event_turn, classification=event_contract.get("classification"), family=event_contract.get("family"), actor=event_contract.get("actor"), visibility=event_contract.get("visibility"))
+                        await self.publish_event_async(event_type, event_payload, turn=event_turn, input_id=event_contract.get("input_id"), turn_id=event_contract.get("turn_id"), classification=event_contract.get("classification"), family=event_contract.get("family"), actor=event_contract.get("actor"), visibility=event_contract.get("visibility"))
                 after_registry_update_at = time.monotonic()
                 if self._profile_timing_enabled and isinstance(result, dict):
                     timing = result.setdefault("bridge_timing", {})
