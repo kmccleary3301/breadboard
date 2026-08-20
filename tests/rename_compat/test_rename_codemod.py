@@ -116,6 +116,8 @@ def test_real_manifest_loads_and_partitions():
     manifest_path = (
         REPO_ROOT.parent / "docs_tmp/bb_direction_assessment/evidence/R0A/rename_manifest.json"
     )
+    if not manifest_path.exists():
+        pytest.skip("audit evidence tree not adjacent to this checkout")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     codemod = RenameCodemod(
         manifest, old="agentic_coder_prototype", new="breadboard_engine", root=REPO_ROOT

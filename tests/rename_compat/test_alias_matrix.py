@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from agentic_coder_prototype.compat import alias_import
+from agentic_coder_prototype.compat import legacy_names as ln
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OLD = "bb_alias_demo_old"
@@ -264,10 +265,14 @@ class TestMachinery:
         assert sys.modules[f"{NEW}.wrapper"] is core
 
     def test_engine_root_wrapper_composition(self, demo):
-        # R-0C4 on the real engine surface (identity epoch pre-rename).
+        # R-0C4 on the real engine surface (epoch-aware): the self-replacing
+        # wrapper parks the canonical module under the canonical key, and the
+        # legacy dotted path resolves to the same object in every epoch.
         import agentic_coder_prototype.provider_runtime as pr
 
-        assert pr is sys.modules["agentic_coder_prototype.provider.runtime"]
+        assert pr is sys.modules[f"{ln.CANONICAL_PACKAGE}.provider.runtime"]
+        via_old = importlib.import_module("agentic_coder_prototype.provider.runtime")
+        assert via_old is pr
 
 
 class TestPolicy:

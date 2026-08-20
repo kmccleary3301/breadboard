@@ -50,6 +50,9 @@ PATH_RULES: list[tuple[str, str]] = [
     ("*.diff", "preserve-byte"),
     ("*frozen_public_surface.v1.json", "preserve-byte"),
     ("*e4_immutable_inputs.v1.zip", "preserve-byte"),
+    # Pinned artifacts (R-0B5/R-0B8 fixtures assert byte-identity forever).
+    ("config/e4_lanes/evidence_inputs/e4_immutable_inputs.v1.manifest.json", "preserve-byte"),
+    ("docs/plans/phase_20_right_shape/SCOUT_FACTS.json", "preserve-byte"),
     # Historical fixtures loaded through the legacy resolver at runtime.
     ("tests/fixtures/*", "compat-resolve"),
     # Rename machinery itself: legacy-name literals are load-bearing (epoch
