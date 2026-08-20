@@ -42,6 +42,12 @@ CURRENT_MONKEYPATCH_PATHS = (
     "breadboard_engine.provider_runtime.OpenAI",
     "breadboard_engine.provider_runtime.time.sleep",
 )
+EXPECTED_MOVED_RUNTIME_MODULES = {
+    "OpenAIBaseRuntime": "breadboard_engine.provider.runtimes.openai",
+    "OpenAIChatRuntime": "breadboard_engine.provider.runtimes.openai",
+    "OpenAIResponsesRuntime": "breadboard_engine.provider.runtimes.openai",
+    "AnthropicMessagesRuntime": "breadboard_engine.provider.runtimes.anthropic",
+}
 
 
 class _SessionState:
@@ -96,6 +102,9 @@ def test_complete_export_set_and_direct_runtime_names() -> None:
     for name in EXPECTED_DIRECT_RUNTIME_NAMES:
         assert hasattr(runtime_module, name), name
 
+def test_d_p4_moved_runtime_pickle_modules_are_intentional() -> None:
+    for name, module_name in EXPECTED_MOVED_RUNTIME_MODULES.items():
+        assert getattr(runtime_module, name).__module__ == module_name
 
 def test_builtin_registry_keys_and_registration_order() -> None:
     assert list(runtime_module.provider_registry._runtime_classes) == [
