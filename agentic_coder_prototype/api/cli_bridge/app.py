@@ -56,6 +56,7 @@ from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 from agentic_coder_prototype.api.public import mount_public_routes
 from agentic_coder_prototype.api.public.models import is_public_operation_request, problem_response
+from agentic_coder_prototype.security import redaction
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
@@ -78,6 +79,12 @@ def _project_provider_auth_material_to_env(
     headers: dict[str, str] | None,
     base_url: str | None,
 ) -> None:
+    # C-G0d: every attached secret is registered with the redaction substrate
+    # before (and regardless of) env projection, so scrubbing no longer
+    # depends on secrets living in marker-named environment variables.
+    redaction.register_secret_value(api_key)
+    for header_value in (headers or {}).values():
+        redaction.register_secret_value(header_value)
     if (provider_id or "").strip().lower() != "openai":
         return
     if api_key:

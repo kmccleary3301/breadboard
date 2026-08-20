@@ -10,6 +10,8 @@ import datetime
 import time
 from typing import Any, Dict, List, Optional
 
+from agentic_coder_prototype.security.redaction import scrub_headers
+
 
 def _now_ms() -> int:
     return int(time.time() * 1000)
@@ -124,12 +126,13 @@ def parse_rate_limit_headers(headers: Dict[str, str], *, provider: str) -> Dict[
     if not buckets and retry_after_ms is None:
         return None
 
-    # raw_headers are included but should be sanitized by downstream log/event tooling.
+    # raw_headers are sanitized at the source (C-G0d): secret-named keys are
+    # redacted and remaining values are pattern/registry-scrubbed.
     return {
         "provider": str(provider),
         "observed_at_ms": observed_at_ms,
         "buckets": buckets,
         "retry_after_ms": retry_after_ms,
-        "raw_headers": {k: v for k, v in normalized.items() if k != "authorization"},
+        "raw_headers": scrub_headers(normalized),
     }
 

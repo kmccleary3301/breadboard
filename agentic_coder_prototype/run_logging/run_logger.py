@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from agentic_coder_prototype.security import redaction
+
 
 class LoggerV2Manager:
     """Orchestrates v2 logging: directory creation, manifests, redaction hook.
@@ -36,23 +38,20 @@ class LoggerV2Manager:
         if not self.redact_enabled:
             return data
         try:
-            # Simple key-based redaction
-            secret_keys = {"api_key", "authorization", "openai_api_key", "openrouter_api_key"}
-            def _rec(obj):
-                if isinstance(obj, dict):
-                    out = {}
-                    for k, v in obj.items():
-                        if str(k).lower() in secret_keys:
-                            out[k] = "***REDACTED***"
-                        else:
-                            out[k] = _rec(v)
-                    return out
-                if isinstance(obj, list):
-                    return [_rec(x) for x in obj]
-                return obj
-            return _rec(data)
+            # C-G0d: central substrate (key registry + value patterns +
+            # registered attach-time secrets) replaces the local keylist.
+            scrubbed, _problems = redaction.scrub_structure(data)
+            return scrubbed
         except Exception:
             return data
+
+    def _redact_text(self, content: str) -> str:
+        if not self.redact_enabled or not isinstance(content, str):
+            return content
+        try:
+            return redaction.scrub_text(content)
+        except Exception:
+            return content
 
     def start_run(self, session_id: str) -> str:
         if not self.enabled:
@@ -167,7 +166,7 @@ class LoggerV2Manager:
         path = (self.run_dir / rel_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            path.write_text(content, encoding="utf-8")
+            path.write_text(self._redact_text(content), encoding="utf-8")
             return str(path)
         except Exception:
             return ""
@@ -179,7 +178,7 @@ class LoggerV2Manager:
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
             with path.open("a", encoding="utf-8") as f:
-                f.write(content)
+                f.write(self._redact_text(content))
             return str(path)
         except Exception:
             return ""

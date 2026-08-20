@@ -8,34 +8,17 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from agentic_coder_prototype.security import redaction
 
-SENSITIVE_KEYS = {
-    "api_key",
-    "apikey",
-    "auth",
-    "authorization",
-    "x-api-key",
-    "x_client_api_key",
-    "x-client-api-key",
-    "bearer",
-}
+
 MAX_TEXT_BYTES = 32768
 MAX_BASE64_BYTES = 65536
 
 
 def _scrub(value: Any) -> Any:
-    if isinstance(value, dict):
-        result: Dict[str, Any] = {}
-        for key, item in value.items():
-            lowered = str(key).lower()
-            if lowered in SENSITIVE_KEYS and isinstance(item, str):
-                result[key] = "[redacted]"
-            else:
-                result[key] = _scrub(item)
-        return result
-    if isinstance(value, list):
-        return [_scrub(item) for item in value]
-    return value
+    # C-G0d: central substrate replaces the local eight-key deny-list.
+    scrubbed, _problems = redaction.scrub_structure(value)
+    return scrubbed
 
 
 def _now_iso() -> str:

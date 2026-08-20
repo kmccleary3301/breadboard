@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from breadboard.product.cli.result import CliResult, from_exception
 from breadboard.product.runtime.events import ProcessLock
 from breadboard.product.operation_catalog import product_operation_catalog
+from agentic_coder_prototype.security import redaction
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _MAINTAINER_ROOTS = (_REPO_ROOT / "contracts", _REPO_ROOT / "docs", _REPO_ROOT.parent / "docs_tmp")
 _STATUS_BY_EXIT = {2: 422, 3: 404, 4: 500, 5: 409, 6: 409}
@@ -109,14 +110,19 @@ def workspace_path(reference: str, workspace: Path) -> Path:
         raise PermissionError("public operations cannot address maintainer evidence trees")
     return resolved
 def _secret_values() -> tuple[str, ...]:
+    # C-G0d: the substrate registry (fed at auth-attach time) is the primary
+    # source; env markers remain a secondary defense only. The scrubber no
+    # longer depends on secrets being projected into marker-named env vars.
+    registered = redaction.iter_registered_secret_values()
     markers = ("SECRET", "TOKEN", "PASSWORD", "API_KEY", "CREDENTIAL")
-    return tuple(value for name, value in os.environ.items() if value and any(marker in name.upper() for marker in markers))
+    from_env = tuple(value for name, value in os.environ.items() if value and any(marker in name.upper() for marker in markers))
+    return registered + tuple(value for value in from_env if value not in registered)
 def _scrub(value: Any, workspace: Path | None, secrets: Sequence[str]) -> Any:
     if isinstance(value, str):
         text = value.replace(str(workspace), ".") if workspace is not None else value
         for secret in secrets:
             text = text.replace(secret, "<redacted>") if len(secret) >= 4 else re.sub(rf"(?<!\w){re.escape(secret)}(?!\w)", "<redacted>", text)
-        return text
+        return redaction.scrub_text(text)
     if isinstance(value, Mapping):
         return {str(key): _scrub(item, workspace, secrets) for key, item in value.items()}
     if isinstance(value, list):

@@ -2,31 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-
-_SENSITIVE_KEYS = {
-    "authorization",
-    "api-key",
-    "api_key",
-    "x-api-key",
-    "proxy-authorization",
-}
+from agentic_coder_prototype.security import redaction
 
 
 def _redact_payload(value: Any) -> Any:
-    if isinstance(value, dict):
-        redacted: Dict[str, Any] = {}
-        for key, item in value.items():
-            key_text = str(key)
-            if key_text.lower() in _SENSITIVE_KEYS:
-                redacted[key_text] = "***REDACTED***"
-            else:
-                redacted[key_text] = _redact_payload(item)
-        return redacted
-    if isinstance(value, list):
-        return [_redact_payload(item) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_redact_payload(item) for item in value)
-    return value
+    # C-G0d: central substrate replaces the local five-key deny-list.
+    scrubbed, _problems = redaction.scrub_structure(value)
+    return scrubbed
 
 
 class APIRequestRecorder:
