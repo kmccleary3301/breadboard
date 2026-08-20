@@ -15,7 +15,6 @@
     "preflight:snapshot": "node --import tsx scripts/preflight_integrity_check.ts --snapshot",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify:generated": "node --import tsx scripts/generate_api_client.ts --check",
     "runtime:gate:jitter": "node --import tsx scripts/runtime_jitter_gate.ts",
     "runtime:gate:jitter:matrix": "node --import tsx scripts/runtime_jitter_matrix.ts",
     "runtime:gate:noise": "node --import tsx scripts/runtime_transcript_noise_gate.ts",
