@@ -665,6 +665,11 @@ async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_pat
             Path(self.workspace_dir).mkdir(parents=True, exist_ok=True)
 
         def run_task(self, task_text: str, **kwargs) -> Dict[str, Any]:
+            kwargs["event_emitter"]("turn_start", {"turn": 1, "seq": 8}, turn=1)
+            kwargs["event_emitter"](
+                "user_message",
+                {"message": {"role": "user", "content": task_text}},
+            )
             return {
                 "completion_summary": {"completed": True, "reason": "test"},
                 "reward_metrics_payload": {},
@@ -677,7 +682,11 @@ async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_pat
         return FakeAgent()
 
     runner = SessionRunner(session=record, registry=registry, request=request, agent_factory=agent_factory)
-    await runner.start()
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+    await runner.prepare_start()
+    runner.schedule_start()
+    runner.authorize_start()
+    correlated_events: List[SessionEvent] = []
 
     # Expect the runner to publish at least completion + run_finished.
     seen_finished = False
@@ -685,6 +694,14 @@ async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_pat
         evt = await asyncio.wait_for(record.event_queue.get(), timeout=2.0)
         if evt is None:
             break
+        if evt.type in {
+            EventType.TURN_START,
+            EventType.USER_MESSAGE,
+            EventType.ASSISTANT_MESSAGE,
+            EventType.COMPLETION,
+            EventType.RUN_FINISHED,
+        }:
+            correlated_events.append(evt)
         if evt.type is EventType.RUN_FINISHED:
             seen_finished = True
             break
@@ -693,6 +710,17 @@ async def test_session_runner_lazy_init_initializes_agent_for_non_replay(tmp_pat
     assert called["count"] == 1
     assert runner._agent is not None
     assert seen_finished
+    assert {event.type for event in correlated_events} == {
+        EventType.TURN_START,
+        EventType.USER_MESSAGE,
+        EventType.ASSISTANT_MESSAGE,
+        EventType.COMPLETION,
+        EventType.RUN_FINISHED,
+    }
+    correlations = {(event.input_id, event.turn_id) for event in correlated_events}
+    assert len(correlations) == 1
+    assert next(event for event in correlated_events if event.type is EventType.TURN_START).payload == {}
+    assert all(correlation is not None for correlation in next(iter(correlations)))
 
 
 @pytest.mark.asyncio
@@ -727,6 +755,7 @@ async def test_session_runner_emits_completion_final_message_when_agent_has_no_a
         request=request,
         agent_factory=lambda config_path, workspace_dir, overrides: FakeAgent(),
     )
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
     await runner.start()
 
     seen_assistant = None

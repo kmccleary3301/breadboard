@@ -20,7 +20,8 @@ class CompletionDetector:
         completion_sentinel: Optional[str] = None,
     ) -> None:
         cfg = config or {}
-        completion_cfg = (cfg.get("completion", {}) or {}) if isinstance(cfg, dict) else {}
+        nested_completion_cfg = cfg.get("completion") if isinstance(cfg, dict) else None
+        completion_cfg = nested_completion_cfg if isinstance(nested_completion_cfg, dict) else cfg
         try:
             threshold = float(
                 completion_cfg.get("threshold", cfg.get("confidence_threshold", 0.6)) or 0.6

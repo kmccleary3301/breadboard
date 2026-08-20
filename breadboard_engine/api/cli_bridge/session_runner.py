@@ -881,7 +881,8 @@ class SessionRunner:
             # sandboxes; for a Claude Code-style experience we must preserve the user's
             # working directory unless explicitly overridden by the caller.
             os.environ.setdefault("PRESERVE_SEEDED_WORKSPACE", "1")
-            base_cfg = self.prepare_runtime_config()
+            initial_task = (self.request.task or "").strip()
+            base_cfg = {} if self._parse_replay_path(initial_task) is not None else self.prepare_runtime_config()
             try:
                 todo_cfg = GuardrailCoordinator(base_cfg).todo_config()
             except Exception:
@@ -902,7 +903,6 @@ class SessionRunner:
                     await self.publish_event_async(EventType.SKILLS_SELECTION, {"selection": selection})
             except Exception:
                 pass
-            initial_task = (self.request.task or "").strip()
             if initial_task:
                 self._accepted_task_texts.append(initial_task)
                 self._input_queue.put_nowait({"content": initial_task, "attachments": []})
@@ -1185,6 +1185,12 @@ class SessionRunner:
         self._published_events = 0
         metadata = self.session.metadata if isinstance(self.session.metadata, dict) else {}
         one_shot = bool(metadata.get("non_interactive_cli_session") or metadata.get("cli_session_kind") == "oneshot")
+        active_turn = self.session.turns_by_id.get(self.session.active_turn_id or "")
+        correlation = (
+            {"input_id": active_turn.input_id, "turn_id": active_turn.turn_id}
+            if active_turn is not None
+            else {}
+        )
         terminal_events: list[TranslatedRuntimeEvent] = []; terminal_lock = threading.Lock()
         is_local_agent = bool(getattr(self._agent, "_local_mode", False))
         event_queue = permission_queue = control_queue = queue_stop = queue_thread = None
@@ -1192,8 +1198,21 @@ class SessionRunner:
             with terminal_lock:
                 if emitted_flags[evt_type]: return
                 emitted_flags[evt_type] = True
-                if one_shot: terminal_events.append((evt_type, evt_payload, evt_turn, evt_contract))
-                else: self.publish_event(evt_type, evt_payload, turn=evt_turn, classification=evt_contract.get("classification"), family=evt_contract.get("family"), actor=evt_contract.get("actor"), visibility=evt_contract.get("visibility"))
+                event_contract = {**evt_contract, **correlation}
+                if one_shot:
+                    terminal_events.append((evt_type, evt_payload, evt_turn, event_contract))
+                else:
+                    self.publish_event(
+                        evt_type,
+                        evt_payload,
+                        turn=evt_turn,
+                        input_id=event_contract.get("input_id"),
+                        turn_id=event_contract.get("turn_id"),
+                        classification=event_contract.get("classification"),
+                        family=event_contract.get("family"),
+                        actor=event_contract.get("actor"),
+                        visibility=event_contract.get("visibility"),
+                    )
         def handle_runtime_event(event_type: str, payload: Dict[str, Any], *, turn: Optional[int] = None) -> None:
             if event_type == "ctree_node":
                 try:
@@ -1233,6 +1252,7 @@ class SessionRunner:
                 evt_type,
                 evt_payload,
                 turn=evt_turn,
+                **correlation,
                 classification=evt_contract.get("classification"),
                 family=evt_contract.get("family"),
                 actor=evt_contract.get("actor"),
@@ -1374,6 +1394,7 @@ class SessionRunner:
                     self.publish_event(
                         EventType.ASSISTANT_MESSAGE,
                         {"text": text, "message": entry, "source": "fallback"},
+                        **correlation,
                     )
                     fallback_assistant_emitted = True
                     break
@@ -1387,6 +1408,7 @@ class SessionRunner:
                         "message": {"role": "assistant", "content": final_message, "source": "completion_summary"},
                         "source": "completion_summary",
                     },
+                    **correlation,
                     visibility="transcript",
                 )
         after_fallback_emit_at = time.monotonic()
@@ -1416,9 +1438,9 @@ class SessionRunner:
         claim_terminal(EventType.COMPLETION, completion_payload, None, {})
         after_completion_publish_at = time.monotonic()
         if reward:
-            self.publish_event(EventType.REWARD_UPDATE, {"summary": reward})
+            self.publish_event(EventType.REWARD_UPDATE, {"summary": reward}, **correlation)
         if logging_dir:
-            self.publish_event(EventType.LOG_LINK, {"url": f"file://{logging_dir}"})
+            self.publish_event(EventType.LOG_LINK, {"url": f"file://{logging_dir}"}, **correlation)
         logger.info(
             "session(%s) task complete events=%s logging_dir=%s",
             self.session.session_id,
@@ -1523,6 +1545,8 @@ class SessionRunner:
         payload: Dict[str, Any],
         *,
         turn: Optional[int] = None,
+        input_id: Optional[str] = None,
+        turn_id: Optional[str] = None,
         classification: Optional[str] = None,
         family: Optional[str] = None,
         actor: Optional[str] = None,
@@ -1534,6 +1558,8 @@ class SessionRunner:
             session_id=self.session.session_id,
             payload=payload,
             turn=turn,
+            input_id=input_id,
+            turn_id=turn_id,
             classification=classification,
             family=family,
             actor=actor,
@@ -1974,8 +2000,7 @@ class SessionRunner:
             except Exception:
                 pass
         if evt is EventType.TURN_START:
-            if "mode" not in normalized_payload and self._mode:
-                normalized_payload["mode"] = self._mode
+            normalized_payload = {}
         elif evt is EventType.ASSISTANT_MESSAGE:
             message = normalized_payload.get("message")
             text = normalized_payload.get("text")
