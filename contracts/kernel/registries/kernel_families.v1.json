@@ -185,6 +185,16 @@
       "status": "active"
     },
     {
+      "description": "coordination_verification_result contract family.",
+      "id": "coordination_verification_result",
+      "metadata": {
+        "schema_versions": [
+          "bb.coordination_verification_result.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
       "description": "Candidate-only Coordination View projection family.",
       "id": "coordination_view",
       "metadata": {
@@ -196,11 +206,11 @@
       "status": "active"
     },
     {
-      "description": "coordination_verification_result contract family.",
-      "id": "coordination_verification_result",
+      "description": "credentials contract family.",
+      "id": "credentials",
       "metadata": {
         "schema_versions": [
-          "bb.coordination_verification_result.v1"
+          "bb.credentials.v1"
         ]
       },
       "status": "active"
@@ -495,6 +505,16 @@
       "metadata": {
         "schema_versions": [
           "bb.extension_hook_execution.v1"
+        ]
+      },
+      "status": "active"
+    },
+    {
+      "description": "model_roles contract family.",
+      "id": "model_roles",
+      "metadata": {
+        "schema_versions": [
+          "bb.model_roles.v1"
         ]
       },
       "status": "active"

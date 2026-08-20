@@ -86,14 +86,19 @@
       "schema_version": "bb.coordination_slice.v2"
     },
     {
+      "example_path": "contracts/kernel/examples/coordination_verification_result_v1_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json",
+      "schema_version": "bb.coordination_verification_result.v1"
+    },
+    {
       "example_path": "contracts/kernel/examples/coordination_view_v1_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.coordination_view.v1.schema.json",
       "schema_version": "bb.coordination_view.v1"
     },
     {
-      "example_path": "contracts/kernel/examples/coordination_verification_result_v1_minimal.json",
-      "schema_path": "contracts/kernel/schemas/bb.coordination_verification_result.v1.schema.json",
-      "schema_version": "bb.coordination_verification_result.v1"
+      "example_path": "contracts/kernel/examples/credentials_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.credentials.v1.schema.json",
+      "schema_version": "bb.credentials.v1"
     },
     {
       "example_path": "contracts/kernel/examples/directive_retry_minimal.json",
@@ -294,6 +299,11 @@
       "example_path": "contracts/kernel/examples/memory_compaction_plan_minimal.json",
       "schema_path": "contracts/kernel/schemas/bb.memory_compaction_plan.v1.schema.json",
       "schema_version": "bb.memory_compaction_plan.v1"
+    },
+    {
+      "example_path": "contracts/kernel/examples/model_roles_minimal.json",
+      "schema_path": "contracts/kernel/schemas/bb.model_roles.v1.schema.json",
+      "schema_version": "bb.model_roles.v1"
     },
     {
       "example_path": "contracts/kernel/examples/permission_minimal.json",

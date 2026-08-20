@@ -1,0 +1,405 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.model_roles.v1.schema.json",
+  "title": "BreadBoard model roles V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "defaults",
+    "roles",
+    "dispatch"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "bb.model_roles.v1",
+      "description": "Contract version discriminator for this record."
+    },
+    "defaults": {
+      "$ref": "#/$defs/defaults"
+    },
+    "roles": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9._-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/role_binding"
+      },
+      "minProperties": 1
+    },
+    "dispatch": {
+      "$ref": "#/$defs/dispatch"
+    },
+    "policy": {
+      "$ref": "#/$defs/policy"
+    }
+  },
+  "$defs": {
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "known_but_unbound_role",
+        "unknown_role"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        },
+        "known_but_unbound_role": {
+          "enum": [
+            "error",
+            "use_default"
+          ]
+        },
+        "unknown_role": {
+          "const": "error"
+        }
+      }
+    },
+    "role_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary",
+        "fallbacks",
+        "fallback_on"
+      ],
+      "properties": {
+        "primary": {
+          "$ref": "#/$defs/model_target"
+        },
+        "fallbacks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/model_target"
+          }
+        },
+        "fallback_on": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "provider_unavailable",
+              "rate_limited",
+              "model_unavailable",
+              "capability_drift",
+              "timeout_before_output"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "reasoning": {
+          "$ref": "#/$defs/reasoning"
+        },
+        "generation": {
+          "$ref": "#/$defs/generation"
+        },
+        "requires": {
+          "$ref": "#/$defs/capabilities"
+        },
+        "service_tier": {
+          "enum": [
+            "default",
+            "flex",
+            "priority",
+            "batch",
+            "free",
+            "enterprise"
+          ]
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "model_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_id",
+        "model_id"
+      ],
+      "properties": {
+        "provider_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        },
+        "model_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model_revision": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "endpoint_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        },
+        "auth_scheme_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-z][a-z0-9._-]*$"
+        },
+        "account_selector": {
+          "$ref": "#/$defs/account_selector"
+        }
+      }
+    },
+    "account_selector": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "pin"
+          ],
+          "properties": {
+            "mode": {
+              "const": "default"
+            },
+            "pin": {
+              "enum": [
+                "session",
+                "lock"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "alias",
+            "pin"
+          ],
+          "properties": {
+            "mode": {
+              "const": "alias"
+            },
+            "alias": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "pin": {
+              "enum": [
+                "session",
+                "lock"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "pin"
+          ],
+          "properties": {
+            "mode": {
+              "const": "none"
+            },
+            "pin": {
+              "const": "session"
+            }
+          }
+        }
+      ]
+    },
+    "reasoning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "inherit",
+            "disabled",
+            "effort",
+            "budget"
+          ]
+        },
+        "effort": {
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "max"
+          ]
+        },
+        "budget_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expose_summary": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "effort"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "effort"
+            ],
+            "not": {
+              "required": [
+                "budget_tokens"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "budget"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "budget_tokens"
+            ],
+            "not": {
+              "required": [
+                "effort"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "temperature": {
+          "type": "number",
+          "minimum": 0
+        },
+        "top_p": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "seed": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "type": "boolean"
+        },
+        "parallel_tools": {
+          "type": "boolean"
+        },
+        "vision": {
+          "type": "boolean"
+        },
+        "streaming": {
+          "type": "boolean"
+        },
+        "structured_output": {
+          "type": "boolean"
+        },
+        "prompt_cache": {
+          "type": "boolean"
+        }
+      }
+    },
+    "dispatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subagents",
+        "lanes"
+      ],
+      "properties": {
+        "subagents": {
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          }
+        },
+        "lanes": {
+          "type": "object",
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9._-]*$"
+          }
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow_environment_overrides": {
+          "type": "boolean"
+        },
+        "cross_provider_fallback": {
+          "enum": [
+            "forbidden",
+            "explicit_only"
+          ]
+        },
+        "account_failover": {
+          "enum": [
+            "forbidden",
+            "explicit_only"
+          ]
+        }
+      }
+    }
+  }
+}

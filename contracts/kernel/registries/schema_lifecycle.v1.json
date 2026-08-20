@@ -128,6 +128,13 @@
       "superseded_by": null
     },
     {
+      "default_for_generation": true,
+      "family": "coordination_verification_result",
+      "lifecycle": "active_production",
+      "schema_id": "bb.coordination_verification_result.v1",
+      "superseded_by": null
+    },
+    {
       "default_for_generation": false,
       "family": "coordination_view",
       "lifecycle": "validate_only",
@@ -137,9 +144,10 @@
     },
     {
       "default_for_generation": true,
-      "family": "coordination_verification_result",
-      "lifecycle": "active_production",
-      "schema_id": "bb.coordination_verification_result.v1",
+      "family": "credentials",
+      "lifecycle": "active",
+      "notes": "Current active version.",
+      "schema_id": "bb.credentials.v1",
       "superseded_by": null
     },
     {
@@ -255,18 +263,18 @@
       "superseded_by": null
     },
     {
+      "default_for_generation": true,
+      "family": "e4_lane_manifest",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.lane_manifest.v1",
+      "superseded_by": null
+    },
+    {
       "default_for_generation": false,
       "family": "e4_lane_manifest",
       "lifecycle": "validate_only",
       "notes": "NS08 inactive candidate authoring manifest; no runtime producer.",
       "schema_id": "bb.e4.lane_manifest.v2",
-      "superseded_by": null
-    },
-    {
-      "default_for_generation": true,
-      "family": "e4_lane_manifest",
-      "lifecycle": "active_production",
-      "schema_id": "bb.e4.lane_manifest.v1",
       "superseded_by": null
     },
     {
@@ -281,6 +289,37 @@
       "family": "e4_regen_plan",
       "lifecycle": "active_production",
       "schema_id": "bb.e4.regen_plan.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": false,
+      "family": "support_claim",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.support_claim.v1",
+      "superseded_by": "bb.e4.support_claim.v4"
+    },
+    {
+      "default_for_generation": false,
+      "family": "support_claim",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.support_claim.v2",
+      "superseded_by": "bb.e4.support_claim.v4"
+    },
+    {
+      "default_for_generation": false,
+      "family": "support_claim",
+      "lifecycle": "frozen_accepted_evidence",
+      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
+      "schema_id": "bb.e4.support_claim.v3",
+      "superseded_by": "bb.e4.support_claim.v4"
+    },
+    {
+      "default_for_generation": true,
+      "family": "support_claim",
+      "lifecycle": "active_production",
+      "schema_id": "bb.e4.support_claim.v4",
       "superseded_by": null
     },
     {
@@ -357,6 +396,13 @@
     },
     {
       "default_for_generation": true,
+      "family": "middleware_hook_lifecycle",
+      "lifecycle": "active_production",
+      "schema_id": "bb.extension_hook_execution.v1",
+      "superseded_by": null
+    },
+    {
+      "default_for_generation": true,
       "family": "external_protocol_session",
       "lifecycle": "active_production",
       "schema_id": "bb.external_protocol_session.v1",
@@ -401,9 +447,10 @@
     },
     {
       "default_for_generation": true,
-      "family": "middleware_hook_lifecycle",
-      "lifecycle": "active_production",
-      "schema_id": "bb.extension_hook_execution.v1",
+      "family": "model_roles",
+      "lifecycle": "active",
+      "notes": "Current active version.",
+      "schema_id": "bb.model_roles.v1",
       "superseded_by": null
     },
     {
@@ -532,37 +579,6 @@
       "family": "signal",
       "lifecycle": "active_production",
       "schema_id": "bb.signal.v1",
-      "superseded_by": null
-    },
-    {
-      "default_for_generation": false,
-      "family": "support_claim",
-      "lifecycle": "frozen_accepted_evidence",
-      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
-      "schema_id": "bb.e4.support_claim.v1",
-      "superseded_by": "bb.e4.support_claim.v4"
-    },
-    {
-      "default_for_generation": false,
-      "family": "support_claim",
-      "lifecycle": "frozen_accepted_evidence",
-      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
-      "schema_id": "bb.e4.support_claim.v2",
-      "superseded_by": "bb.e4.support_claim.v4"
-    },
-    {
-      "default_for_generation": false,
-      "family": "support_claim",
-      "lifecycle": "frozen_accepted_evidence",
-      "notes": "Frozen for accepted evidence; producers must not emit for new artifacts.",
-      "schema_id": "bb.e4.support_claim.v3",
-      "superseded_by": "bb.e4.support_claim.v4"
-    },
-    {
-      "default_for_generation": true,
-      "family": "support_claim",
-      "lifecycle": "active_production",
-      "schema_id": "bb.e4.support_claim.v4",
       "superseded_by": null
     },
     {

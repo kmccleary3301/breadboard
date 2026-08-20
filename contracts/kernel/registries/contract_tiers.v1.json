@@ -166,13 +166,6 @@
       "tier": "frozen_legacy"
     },
     {
-      "consumers": [],
-      "disposition": "freeze",
-      "notes": "NS05A validate-only candidate; no production producer or public surface.",
-      "schema_id": "bb.coordination_view.v1",
-      "tier": "runtime_protocol"
-    },
-    {
       "consumers": [
         {
           "kind": "evidence_machinery",
@@ -183,6 +176,26 @@
       "notes": "S5a confidence high.",
       "schema_id": "bb.coordination_verification_result.v1",
       "tier": "evidence"
+    },
+    {
+      "consumers": [],
+      "disposition": "freeze",
+      "notes": "NS05A validate-only candidate; no production producer or public surface.",
+      "schema_id": "bb.coordination_view.v1",
+      "tier": "runtime_protocol"
+    },
+    {
+      "consumers": [
+        {
+          "kind": "engine",
+          "path": "agentic_coder_prototype/provider/auth.py"
+        }
+      ],
+      "disposition": "keep",
+      "notes": "Credential model and redaction contract.",
+      "schema_id": "bb.credentials.v1",
+      "superseded_by": null,
+      "tier": "host_protocol"
     },
     {
       "consumers": [
@@ -589,6 +602,19 @@
       "disposition": "keep",
       "notes": "S5a confidence high.",
       "schema_id": "bb.memory_compaction_plan.v1",
+      "tier": "host_protocol"
+    },
+    {
+      "consumers": [
+        {
+          "kind": "engine",
+          "path": "agentic_coder_prototype/provider/model_roles.py"
+        }
+      ],
+      "disposition": "keep",
+      "notes": "Model role mappings and capabilities contract.",
+      "schema_id": "bb.model_roles.v1",
+      "superseded_by": null,
       "tier": "host_protocol"
     },
     {
