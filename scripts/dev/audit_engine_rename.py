@@ -68,6 +68,9 @@ PATH_RULES: list[tuple[str, str]] = [
     ("agentic_coder_prototype/compat/alias_import.py", "compat-resolve"),
     ("breadboard_engine/compat/legacy_names.py", "compat-resolve"),
     ("breadboard_engine/compat/alias_import.py", "compat-resolve"),
+    # Post-rename compat shim package: its only file intentionally names both
+    # packages; never a rewrite target.
+    ("agentic_coder_prototype/__init__.py", "compat-resolve"),
     ("tests/rename_compat/*", "compat-resolve"),
     ("scripts/dev/rename_codemod.py", "compat-resolve"),
     ("scripts/dev/make_rename_compat_fixtures.py", "compat-resolve"),
