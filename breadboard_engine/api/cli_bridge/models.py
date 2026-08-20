@@ -6,7 +6,9 @@ import enum
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, validator
+
+from .events import replay_configuration_digest
 
 
 class SessionStatus(str, enum.Enum):
@@ -17,6 +19,13 @@ class SessionStatus(str, enum.Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     STOPPED = "stopped"
+
+
+class TurnAdmission(str, enum.Enum):
+    """Whether a session can start a newly admitted turn immediately."""
+
+    IDLE = "idle"
+    ACTIVE = "active"
 
 
 class SessionCreateRequest(BaseModel):
@@ -56,6 +65,20 @@ class SessionSummary(BaseModel):
     reward_summary: Dict[str, Any] | None = None
     logging_dir: Optional[str] = None
     metadata: Dict[str, Any] | None = None
+    turn_admission: TurnAdmission = TurnAdmission.IDLE
+    active_turn_id: Optional[str] = None
+    queued_turn_count: int = 0
+    replay_retention: Dict[str, Any] = Field(default_factory=dict, alias="replayRetention")
+    earliest_retained_sequence: Optional[int] = Field(default=None, alias="earliestRetainedSequence")
+    earliest_retained_event_id: Optional[str] = Field(default=None, alias="earliestRetainedEventId")
+    head_sequence: int = Field(default=0, alias="headSequence")
+    head_event_id: Optional[str] = Field(default=None, alias="headEventId")
+    retained_history: Literal["complete", "partial"] = Field(default="complete", alias="retainedHistory")
+    session_replay_contract_digest: str = Field(default="", alias="sessionReplayContractDigest")
+    terminal_turns: List[Dict[str, Any]] = Field(default_factory=list, alias="terminalTurns")
+    terminal_event_envelopes: List[Dict[str, Any]] = Field(default_factory=list, alias="terminalEventEnvelopes")
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ErrorEnvelope(BaseModel):
@@ -70,6 +93,319 @@ class ErrorResponse(ErrorEnvelope):
     """Backward-compatible OpenAPI name for legacy response declarations."""
 
     pass
+
+
+class _StrictEngineIdentityModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+class EngineLiveness(_StrictEngineIdentityModel):
+    status: Literal["live"] = "live"
+
+
+class EngineProcessStart(_StrictEngineIdentityModel):
+    engine_instance_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    engine_boot_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    os_process_start_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]*$",
+    )
+    started_at: datetime
+    started_at_unix: float = Field(..., ge=0)
+    pid: int = Field(..., ge=1)
+
+
+class EngineLaunchIdentity(_StrictEngineIdentityModel):
+    launch_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    source: Literal["supervisor", "external_unmanaged"]
+
+
+class EngineArtifactRevision(_StrictEngineIdentityModel):
+    engine_artifact_sha256: str = Field(..., pattern=r"^sha256:[0-9a-f]{64}$")
+    served_backend_commit: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{40}$")
+    served_backend_dirty: Optional[bool] = None
+
+
+class EngineProtocolIdentity(_StrictEngineIdentityModel):
+    protocol_version: Literal["1.0"] = "1.0"
+
+
+class EngineSessionContractIdentity(_StrictEngineIdentityModel):
+    contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
+    schema_sha256: Literal[
+        "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    ] = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    session_replay_contract_digest: str = Field(
+        ...,
+        alias="sessionReplayContractDigest",
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+    compatibility: Literal["compatible", "incompatible"]
+
+
+class EngineSessionReadiness(_StrictEngineIdentityModel):
+    ready: bool
+    reason: Literal["ready", "session_contract_missing", "session_contract_mismatch"]
+
+    @model_validator(mode="after")
+    def _validate_readiness_reason(self) -> "EngineSessionReadiness":
+        if self.ready != (self.reason == "ready"):
+            raise ValueError("session readiness and reason are inconsistent")
+        return self
+
+
+class EngineIdentityReadinessResponse(_StrictEngineIdentityModel):
+    schema_version: Literal["bb.engine_identity.v1"] = "bb.engine_identity.v1"
+    liveness: EngineLiveness
+    process: EngineProcessStart
+    launch: EngineLaunchIdentity
+    artifact_revision: EngineArtifactRevision
+    protocol: EngineProtocolIdentity
+    session_contract: EngineSessionContractIdentity
+    session_readiness: EngineSessionReadiness
+
+    @model_validator(mode="after")
+    def _validate_contract_state(self) -> "EngineIdentityReadinessResponse":
+        compatible = self.session_contract.compatibility == "compatible"
+        if compatible != self.session_readiness.ready:
+            raise ValueError("session compatibility and readiness are inconsistent")
+        if (
+            compatible
+            and self.session_contract.session_replay_contract_digest
+            != replay_configuration_digest()
+        ):
+            raise ValueError("session replay contract identity does not match")
+        return self
+
+
+class _StrictLifecycleModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class EngineAuthorityBinding(_StrictLifecycleModel):
+    engine_instance_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    engine_boot_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    launch_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+
+class BootstrapChallengeRequest(EngineAuthorityBinding):
+    pass
+
+
+class BootstrapChallengeResponse(EngineAuthorityBinding):
+    schema_version: Literal["bb.engine_bootstrap_challenge.v1"] = "bb.engine_bootstrap_challenge.v1"
+    challenge_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    challenge: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    expires_at_unix: float = Field(..., ge=0)
+
+
+
+
+class OwnerAcquireRequest(EngineAuthorityBinding):
+    expected_owner_generation: int = Field(..., ge=0)
+    bootstrap_challenge_id: str | None = Field(default=None, min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    bootstrap_proof_sha256: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def _validate_bootstrap_proof(self) -> "OwnerAcquireRequest":
+        has_proof = self.bootstrap_challenge_id is not None and self.bootstrap_proof_sha256 is not None
+        if (self.bootstrap_challenge_id is None) != (self.bootstrap_proof_sha256 is None):
+            raise ValueError("bootstrap challenge and proof must be supplied together")
+        if (self.expected_owner_generation == 0) != has_proof:
+            raise ValueError("bootstrap proof is valid only for generation zero")
+        return self
+
+
+class OwnerLeaseRequest(EngineAuthorityBinding):
+    owner_generation: int = Field(..., ge=1)
+
+
+class OwnerLeaseResponse(EngineAuthorityBinding):
+    schema_version: Literal["bb.engine_owner.v1"] = "bb.engine_owner.v1"
+    result: Literal["acquired", "renewed", "released", "already_released"]
+    owner_generation: int = Field(..., ge=1)
+    expires_at_unix: float | None = Field(default=None, ge=0)
+    lease_ttl_seconds: Literal[30] = 30
+    renewal_interval_seconds: Literal[10] = 10
+
+    @model_validator(mode="after")
+    def _validate_result_expiry(self) -> "OwnerLeaseResponse":
+        has_live_lease = self.result in {"acquired", "renewed"}
+        if has_live_lease != (self.expires_at_unix is not None):
+            raise ValueError("owner result and expiry are contradictory")
+        return self
+
+
+class ClientRegisterRequest(_StrictLifecycleModel):
+    engine_instance_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    client_instance_id: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    workspace_id: str = Field(..., pattern=r"^workspace:v1:sha256:[0-9a-f]{64}$")
+    lifecycle_mode: Literal["local-owned", "local-external", "remote", "off"]
+    first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
+    first_slice_schema_sha256: Literal[
+        "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    ] = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+
+
+class ClientLeaseRequest(_StrictLifecycleModel):
+    engine_instance_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    registration_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    registration_generation: int = Field(..., ge=1)
+    client_instance_id: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+
+
+class ClientRegistrationResponse(_StrictLifecycleModel):
+    schema_version: Literal["bb.engine_client_registration.v1"] = "bb.engine_client_registration.v1"
+    result: Literal["registered", "renewed", "detached", "already_detached"]
+    engine_instance_id: str
+    registration_id: str
+    registration_generation: int = Field(..., ge=1)
+    client_instance_id: str
+    workspace_id: str
+    lifecycle_mode: Literal["local-owned", "local-external", "remote"]
+    first_slice_contract_id: Literal["p30-e4-session-v1"] = "p30-e4-session-v1"
+    first_slice_schema_sha256: Literal[
+        "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    ] = "sha256:5757652c22d6aa2eb7a1cc8be1a40021d3f6a15df18d69ca22dc1916a400dbd4"
+    registered_at_unix: float = Field(..., ge=0)
+    expires_at_unix: float | None = Field(default=None, ge=0)
+    admission_epoch: int = Field(..., ge=0)
+    lease_ttl_seconds: Literal[30] = 30
+    renewal_interval_seconds: Literal[10] = 10
+
+    @model_validator(mode="after")
+    def _validate_result_expiry(self) -> "ClientRegistrationResponse":
+        has_live_registration = self.result in {"registered", "renewed"}
+        if has_live_registration != (self.expires_at_unix is not None):
+            raise ValueError("client registration result and expiry are contradictory")
+        return self
+
+
+class BeginControlDrainRequest(EngineAuthorityBinding):
+    owner_generation: int = Field(..., ge=1)
+    control_request_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    registration_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    requester_registration_generation: int = Field(..., ge=1)
+    requester_client_instance_id: str = Field(..., min_length=16, max_length=128, pattern=r"^[A-Za-z0-9_.:-]+$")
+    expected_admission_epoch: int = Field(..., ge=0)
+
+
+class DrainControlRequest(EngineAuthorityBinding):
+    owner_generation: int = Field(..., ge=1)
+    drain_generation: int = Field(..., ge=1)
+
+
+class GracefulControlResultRequest(DrainControlRequest):
+    outcome: Literal["accepted", "definitive_rejection", "timeout", "uncertain"]
+
+
+class HardSignalPrepareRequest(DrainControlRequest):
+    pid: int = Field(..., ge=1)
+    os_process_start_token: str = Field(
+        ...,
+        min_length=1,
+        max_length=256,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]*$",
+    )
+
+
+class HardSignalCommitRequest(HardSignalPrepareRequest):
+    authorization_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+
+
+class HardSignalPreparationResponse(EngineAuthorityBinding):
+    schema_version: Literal[
+        "bb.engine_hard_signal_preparation.v1"
+    ] = "bb.engine_hard_signal_preparation.v1"
+    result: Literal["prepared"] = "prepared"
+    owner_generation: int = Field(..., ge=1)
+    drain_generation: int = Field(..., ge=1)
+    authorization_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    expires_at_unix: float = Field(..., ge=0)
+    signal_permitted: Literal[False] = False
+
+
+class HardSignalPermitResponse(EngineAuthorityBinding):
+    schema_version: Literal[
+        "bb.engine_hard_signal_permit.v1"
+    ] = "bb.engine_hard_signal_permit.v1"
+    result: Literal["signal_permitted"] = "signal_permitted"
+    owner_generation: int = Field(..., ge=1)
+    drain_generation: int = Field(..., ge=1)
+    authorization_id: str = Field(
+        ...,
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    expires_at_unix: float = Field(..., ge=0)
+    signal_permitted: Literal[True] = True
+
+
+class HardSignalOutcomeRequest(DrainControlRequest):
+    authorization_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    outcome: Literal["sent", "abandoned", "process_exited"]
+
+
+class DrainControlResponse(EngineAuthorityBinding):
+    schema_version: Literal["bb.engine_drain_control.v1"] = "bb.engine_drain_control.v1"
+    control_request_id: str = Field(..., min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]{43}$")
+    result: Literal[
+        "draining",
+        "shutdown_started",
+        "rollback_permitted",
+        "hard_signal_decision_pending",
+        "signal_sent",
+        "process_exited",
+        "rolled_back",
+    ]
+    drain_generation: int = Field(..., ge=1)
+    admission_epoch: int = Field(..., ge=0)
+    session_admission_open: bool
+    turn_admission_open: bool
+    registrations_open: bool
+    signal_permitted: bool
+
+    @model_validator(mode="after")
+    def _validate_result_state(self) -> "DrainControlResponse":
+        admission_open = (
+            self.session_admission_open,
+            self.turn_admission_open,
+            self.registrations_open,
+        )
+        expected_open = self.result == "rolled_back"
+        if any(value != expected_open for value in admission_open):
+            raise ValueError("drain result and admission state are contradictory")
+        if self.signal_permitted:
+            raise ValueError("drain response cannot grant signal permission")
+        return self
+
 
 
 class AttachmentHandle(BaseModel):
@@ -104,6 +440,28 @@ class SessionInputRequest(BaseModel):
 
 class SessionInputResponse(BaseModel):
     status: str = Field(default="accepted")
+
+
+class SessionTurnCancelRequest(BaseModel):
+    cancellation_request_key: str = Field(..., description="Stable idempotency key for this cancellation.")
+    reason: Literal["user_requested", "timeout", "superseded"] = "user_requested"
+
+    @validator("cancellation_request_key")
+    def _validate_cancellation_request_key(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("cancellation_request_key must not be empty")
+        return value.strip()
+
+
+class SessionTurnCancelResponse(BaseModel):
+    status: Literal["accepted"] = "accepted"
+    cancellation_request_id: str
+    cancellation_request_key: str
+    input_id: str
+    turn_id: str
+    disposition: Literal["cancellation_requested", "queued_cancelled", "deduplicated"]
+    original_disposition: Literal["cancellation_requested", "queued_cancelled"]
+
 
 
 class SessionCommandRequest(BaseModel):

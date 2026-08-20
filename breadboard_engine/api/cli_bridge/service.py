@@ -8,22 +8,40 @@ import shutil
 import time
 import uuid, weakref
 from pathlib import Path
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, AsyncIterator, Optional, Sequence
 from breadboard.product.harness.lock import EffectiveHarnessLock
 from breadboard.product.runtime import AnchoredStorage, ArtifactStore, Session as ProductSession
 from breadboard.product.runtime.events import JsonlEventSink, ProcessLock
 from fastapi import HTTPException, UploadFile, status
-from .events import EventType, SessionEvent
+from .events import (
+    EventType,
+    SessionEvent,
+    REPLAY_RETENTION_MAX_EVENTS,
+    replay_configuration_digest,
+)
 from .models import (
     ATPReplBatchRequest, ATPReplBatchResponse, ATPReplError, ATPReplMetrics, ATPReplRequest, ATPReplResponse,
     ATPReplSorry, AttachmentHandle, AttachmentUploadResponse, ModelCatalogEntry, ModelCatalogResponse,
     SkillCatalogResponse, CTreeSnapshotResponse, SessionCommandRequest, SessionCommandResponse,
     SessionCreateRequest, SessionCreateResponse, SessionFileContent, SessionFileInfo, SessionInputRequest,
     SessionInputResponse, SessionStatus,
+    BeginControlDrainRequest, BootstrapChallengeRequest, BootstrapChallengeResponse, ClientLeaseRequest,
+    ClientRegisterRequest, ClientRegistrationResponse, DrainControlRequest, DrainControlResponse,
+    GracefulControlResultRequest, HardSignalCommitRequest, HardSignalPreparationResponse,
+    HardSignalPermitResponse, HardSignalOutcomeRequest, HardSignalPrepareRequest, OwnerAcquireRequest,
+    OwnerLeaseRequest, OwnerLeaseResponse, SessionTurnCancelRequest, SessionTurnCancelResponse,
 )
 from .atp_diagnostics import build_atp_harness_diagnostic
-from .registry import SessionRecord, SessionRegistry
+from .registry import SessionRecord, SessionRegistry, SubscriberState
+from .engine_identity_config import (
+    P30_SESSION_REPLAY_CONTRACT_DIGEST,
+    P30_SESSION_SCHEMA_SHA256,
+    get_engine_process_identity,
+    get_launch_bootstrap_verifier,
+    p30_session_schema_sha256,
+)
 from .session_runner import MAX_ATTACHMENT_BYTES, SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from ...compilation.v2_loader import load_agent_config
@@ -132,10 +150,43 @@ def _prepare_start_stages(
                 shutil.rmtree(path, ignore_errors=True)
                 if path.parent.is_dir(): AnchoredStorage.sync_directory(path.parent)
             raise
+@dataclass(frozen=True)
+class SessionContractReadiness:
+    ready: bool
+    reason: str
+
+
+@dataclass(frozen=True)
+class PreparedEventStream:
+    record: SessionRecord
+    queue: "asyncio.Queue[Optional[SessionEvent]]"
+
+
 class SessionService:
     """Facade that coordinates the registry, runners, and FastAPI endpoints."""
-    def __init__(self, registry: SessionRegistry | None = None) -> None:
-        self.registry = registry or SessionRegistry()
+    def __init__(
+        self,
+        registry: SessionRegistry | None = None,
+        *,
+        state_root: str | Path | None = None,
+        subscriber_queue_maxsize: int | None = None,
+    ) -> None:
+        configured_state_root = (
+            state_root
+            or os.environ.get("BREADBOARD_SESSION_STATE_ROOT")
+            or (default_runtime_record_root() / "session_state")
+        )
+        self.registry = registry or SessionRegistry(
+            configured_state_root,
+            process_identity=get_engine_process_identity(),
+            bootstrap_verifier=get_launch_bootstrap_verifier(),
+        )
+        self._subscriber_queue_maxsize = max(
+            1,
+            subscriber_queue_maxsize
+            if subscriber_queue_maxsize is not None
+            else REPLAY_RETENTION_MAX_EVENTS + 2,
+        )
         self._bridge_chaos = _load_bridge_chaos_metadata()
         self._atp_repl_enabled = _env_flag("ATP_REPL_ENABLE") or _env_flag("ATP_REPL_ROUTE")
         self._atp_repl_service: Any | None = None
@@ -170,6 +221,90 @@ class SessionService:
         if publish_records and runtime_record_dir != event_dir: staged_event_dir.replace(event_dir); AnchoredStorage.sync_directory(event_dir.parent)
         for owner in {target / _START_OWNER, event_dir / _START_OWNER}: owner.unlink(missing_ok=True)
         for root in {target, event_dir}: AnchoredStorage.sync_directory(root) if root.is_dir() else None
+    def p30_session_contract_readiness(
+        self,
+        contract_descriptor: dict[str, Any],
+        *,
+        session_replay_contract_digest: str,
+    ) -> SessionContractReadiness:
+        http_contract = contract_descriptor.get("http")
+        if not isinstance(http_contract, dict) or http_contract.get("missing_routes"):
+            return SessionContractReadiness(ready=False, reason="session_contract_missing")
+        if (
+            p30_session_schema_sha256(contract_descriptor) != P30_SESSION_SCHEMA_SHA256
+            or session_replay_contract_digest != P30_SESSION_REPLAY_CONTRACT_DIGEST
+        ):
+            return SessionContractReadiness(ready=False, reason="session_contract_mismatch")
+        return SessionContractReadiness(ready=True, reason="ready")
+
+    async def issue_bootstrap_challenge(
+        self, request: BootstrapChallengeRequest,
+    ) -> BootstrapChallengeResponse:
+        return await self.registry.issue_bootstrap_challenge(request)
+
+    async def acquire_owner(
+        self, request: OwnerAcquireRequest, *, owner_credential: bytearray,
+    ) -> OwnerLeaseResponse:
+        return await self.registry.acquire_owner(request, owner_credential=owner_credential)
+
+    async def renew_owner(
+        self, request: OwnerLeaseRequest, *, owner_credential: bytearray,
+    ) -> OwnerLeaseResponse:
+        return await self.registry.renew_owner(request, owner_credential=owner_credential)
+
+    async def release_owner(
+        self, request: OwnerLeaseRequest, *, owner_credential: bytearray,
+    ) -> OwnerLeaseResponse:
+        return await self.registry.release_owner(request, owner_credential=owner_credential)
+
+    async def register_client(
+        self, request: ClientRegisterRequest, *, registration_credential: bytearray,
+    ) -> ClientRegistrationResponse:
+        return await self.registry.register_client(request, registration_credential=registration_credential)
+
+    async def renew_client(
+        self, request: ClientLeaseRequest, *, registration_credential: bytearray,
+    ) -> ClientRegistrationResponse:
+        return await self.registry.renew_client(request, registration_credential=registration_credential)
+
+    async def detach_client(
+        self, request: ClientLeaseRequest, *, registration_credential: bytearray,
+    ) -> ClientRegistrationResponse:
+        return await self.registry.detach_client(request, registration_credential=registration_credential)
+
+    async def begin_control_drain(
+        self, request: BeginControlDrainRequest, *, owner_credential: bytearray,
+        registration_credential: bytearray,
+    ) -> DrainControlResponse:
+        return await self.registry.begin_control_drain(
+            request, owner_credential=owner_credential, registration_credential=registration_credential,
+        )
+
+    async def record_graceful_control(
+        self, request: GracefulControlResultRequest, *, owner_credential: bytearray,
+    ) -> DrainControlResponse:
+        return await self.registry.record_graceful_control(request, owner_credential=owner_credential)
+
+    async def prepare_hard_signal(
+        self, request: HardSignalPrepareRequest, *, owner_credential: bytearray,
+    ) -> HardSignalPreparationResponse:
+        return await self.registry.prepare_hard_signal(request, owner_credential=owner_credential)
+
+    async def commit_hard_signal(
+        self, request: HardSignalCommitRequest, *, owner_credential: bytearray,
+    ) -> HardSignalPermitResponse:
+        return await self.registry.commit_hard_signal(request, owner_credential=owner_credential)
+
+    async def record_hard_signal_outcome(
+        self, request: HardSignalOutcomeRequest, *, owner_credential: bytearray,
+    ) -> DrainControlResponse:
+        return await self.registry.record_hard_signal_outcome(request, owner_credential=owner_credential)
+
+    async def rollback_control_drain(
+        self, request: DrainControlRequest, *, owner_credential: bytearray,
+    ) -> DrainControlResponse:
+        return await self.registry.rollback_control_drain(request, owner_credential=owner_credential)
+
     async def create_session(
         self,
         request: SessionCreateRequest,
@@ -280,6 +415,44 @@ class SessionService:
             return
         workspace = str(request.workspace or os.getcwd()).strip() or os.getcwd()
         runtime_codex_module.prewarm_codex_app_server(model=routed_model, cwd=workspace)
+    async def prepare_event_stream(
+        self, session_id: str, *, replay: bool = False, limit: int | None = None,
+        from_id: str | None = None,
+    ) -> PreparedEventStream:
+        record = await self.ensure_session(session_id)
+        await self._ensure_dispatcher(record)
+        queue: "asyncio.Queue[Optional[SessionEvent]]" = asyncio.Queue()
+        await self._register_subscriber(record, queue, replay=replay, limit=limit, from_id=from_id, validated=True)
+        return PreparedEventStream(record=record, queue=queue)
+
+    async def prepared_event_stream(
+        self, prepared: PreparedEventStream,
+    ) -> AsyncIterator[SessionEvent]:
+        try:
+            while True:
+                event = await prepared.queue.get()
+                if event is None:
+                    break
+                yield event
+        finally:
+            await self._unregister_subscriber(prepared.record, prepared.queue)
+
+    async def cancel_turn(
+        self, session_id: str, turn_id: str, payload: SessionTurnCancelRequest,
+    ) -> SessionTurnCancelResponse:
+        # The canonical runner exposes stop at session scope; preserve the fixed
+        # cancel DTO while routing cancellation through that authority boundary.
+        await self.stop_session(session_id, reason=payload.reason)
+        opaque = uuid.uuid4().hex
+        return SessionTurnCancelResponse(
+            cancellation_request_id=opaque,
+            cancellation_request_key=payload.cancellation_request_key,
+            input_id=opaque,
+            turn_id=turn_id,
+            disposition="cancellation_requested",
+            original_disposition="cancellation_requested",
+        )
+
     async def ensure_session(self, session_id: str) -> SessionRecord:
         record = await self.registry.get(session_id)
         if not record:
@@ -373,7 +546,7 @@ class SessionService:
                         )
                     )
             if getattr(record, "_dispatcher_complete", False): queue.put_nowait(None)
-            else: record.subscribers.add(queue)
+            else: record.subscribers[queue] = SubscriberState(queue=queue)
     async def _unregister_subscriber(
         self,
         record: SessionRecord,
@@ -381,7 +554,7 @@ class SessionService:
     ) -> None:
         async with record.dispatch_lock:
             try:
-                record.subscribers.discard(queue)
+                record.subscribers.pop(queue, None)
             except Exception:
                 pass
     async def _dispatch_events(self, record: SessionRecord) -> None:

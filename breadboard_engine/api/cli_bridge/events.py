@@ -3,18 +3,73 @@
 from __future__ import annotations
 
 import enum
+import hashlib
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional
 
 PROTOCOL_VERSION = "1.0"
+
+REPLAY_RETENTION_MAX_EVENTS = 1000
+REPLAY_RETENTION_MAX_AGE_MS = 24 * 60 * 60 * 1000
+REPLAY_CONTRACT_SCHEMA_VERSION = "bb.cli_bridge.session_replay.v1"
+SNAPSHOT_RECOVERY_ACTION = "fetch_session_snapshot_then_reconnect_without_cursor"
+OVERFLOW_RECOVERY_ACTION = "reconnect_from_last_safely_delivered_cursor_or_fetch_session_snapshot"
+
+
+def _stable_digest(payload: Dict[str, Any]) -> str:
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def replay_configuration_digest() -> str:
+    return _stable_digest(
+        {
+            "schemaVersion": REPLAY_CONTRACT_SCHEMA_VERSION,
+            "maxEvents": REPLAY_RETENTION_MAX_EVENTS,
+            "maxAgeMs": REPLAY_RETENTION_MAX_AGE_MS,
+        }
+    )
+
+
+def replay_retention_facts(
+    events: Iterable["SessionEvent"],
+    *,
+    head_sequence: int,
+    retained_history_partial: bool,
+) -> Dict[str, Any]:
+    retained = [event for event in events if event.stable_cursor and event.seq is not None]
+    first = retained[0] if retained else None
+    head = retained[-1] if retained and retained[-1].seq == head_sequence else None
+    retained_history = "partial" if retained_history_partial or (head_sequence and first is None) else "complete"
+    facts: Dict[str, Any] = {
+        "replayRetention": {
+            "maxEvents": REPLAY_RETENTION_MAX_EVENTS,
+            "maxAgeMs": REPLAY_RETENTION_MAX_AGE_MS,
+            "configurationDigest": replay_configuration_digest(),
+        },
+        "earliestRetainedSequence": first.seq if first is not None else None,
+        "earliestRetainedEventId": first.event_id if first is not None else None,
+        "headSequence": head_sequence,
+        "headEventId": head.event_id if head is not None else None,
+        "retainedHistory": retained_history,
+    }
+    facts["sessionReplayContractDigest"] = _stable_digest(
+        {
+            "schemaVersion": REPLAY_CONTRACT_SCHEMA_VERSION,
+            **facts,
+        }
+    )
+    return facts
 
 class EventType(str, enum.Enum):
     """Canonical event types exposed over the streaming endpoint."""
 
     TURN_START = "turn_start"
     STREAM_GAP = "stream.gap"
+    STREAM_OPEN = "stream.open"
     CONVERSATION_COMPACTION_START = "conversation.compaction.start"
     CONVERSATION_COMPACTION_END = "conversation.compaction.end"
     ASSISTANT_MESSAGE_START = "assistant.message.start"
@@ -48,6 +103,9 @@ class EventType(str, enum.Enum):
     LOG_LINK = "log_link"
     ERROR = "error"
     RUN_FINISHED = "run_finished"
+    TURN_COMPLETED = "turn_completed"
+    TURN_FAILED = "turn_failed"
+    TURN_CANCELLED = "turn_cancelled"
 
 
 def _now_ms() -> int:
@@ -65,16 +123,18 @@ class SessionEvent:
     created_at: int = field(default_factory=_now_ms)
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     seq: Optional[int] = None
+    stable_cursor: bool = True
     classification: Optional[str] = None
     family: Optional[str] = None
     actor: Optional[str] = None
     visibility: Optional[str] = None
+    input_id: Optional[str] = None
+    turn_id: Optional[str] = None
 
     def asdict(self) -> Dict[str, Any]:
         timestamp_ms = int(self.created_at)
         envelope = {
-            "id": self.event_id,
-            "seq": self.seq,
+            "stable_cursor": self.stable_cursor,
             "type": self.type.value,
             "session_id": self.session_id,
             "turn": self.turn,
@@ -83,6 +143,13 @@ class SessionEvent:
             "protocol_version": PROTOCOL_VERSION,
             "payload": self.payload,
         }
+        if self.stable_cursor:
+            envelope["id"] = self.event_id
+            envelope["seq"] = self.seq
+        if self.input_id is not None:
+            envelope["input_id"] = self.input_id
+        if self.turn_id is not None:
+            envelope["turn_id"] = self.turn_id
         if self.classification:
             envelope["classification"] = self.classification
         if self.family:
