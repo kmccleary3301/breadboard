@@ -20,6 +20,7 @@ from .events import (
     SessionEvent,
     REPLAY_RETENTION_MAX_EVENTS,
     replay_configuration_digest,
+    replay_retention_facts,
 )
 from .models import (
     ATPReplBatchRequest, ATPReplBatchResponse, ATPReplError, ATPReplMetrics, ATPReplRequest, ATPReplResponse,
@@ -425,6 +426,18 @@ class SessionService:
             return
         workspace = str(request.workspace or os.getcwd()).strip() or os.getcwd()
         runtime_codex_module.prewarm_codex_app_server(model=routed_model, cwd=workspace)
+    @staticmethod
+    def _stream_open_event(record: SessionRecord) -> SessionEvent:
+        return SessionEvent(
+            type=EventType.STREAM_OPEN,
+            session_id=record.session_id,
+            payload=replay_retention_facts(
+                record.event_log,
+                head_sequence=record.event_seq,
+                retained_history_partial=record.replay_history_partial,
+            ),
+            stable_cursor=False,
+        )
     async def prepare_event_stream(
         self, session_id: str, *, replay: bool = False, limit: int | None = None,
         from_id: str | None = None,
@@ -432,6 +445,7 @@ class SessionService:
         record = await self.ensure_session(session_id)
         await self._ensure_dispatcher(record)
         queue: "asyncio.Queue[Optional[SessionEvent]]" = asyncio.Queue()
+        queue.put_nowait(self._stream_open_event(record))
         await self._register_subscriber(record, queue, replay=replay, limit=limit, from_id=from_id, validated=True)
         return PreparedEventStream(record=record, queue=queue)
 

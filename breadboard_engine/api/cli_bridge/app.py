@@ -663,8 +663,9 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                 if extra_delay > 0:
                     await asyncio.sleep(extra_delay / 1000.0)
             payload = json.dumps(event.asdict(), separators=(",", ":"))
-            event_id = event.seq if event.seq is not None else event.event_id
-            yield f"id: {event_id}\n".encode("utf-8")
+            if event.stable_cursor:
+                event_id = event.seq if event.seq is not None else event.event_id
+                yield f"id: {event_id}\n".encode("utf-8")
             yield f"data: {payload}\n\n".encode("utf-8")
 
     def _registry_payloads() -> list[tuple[Path, dict[str, Any]]]:
@@ -1204,13 +1205,13 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                 from_id = request.headers.get("last-event-id") or request.headers.get("Last-Event-ID")
             if from_id:
                 await svc.validate_event_stream(session_id, from_id=from_id, replay=replay)
-            generator = svc.event_stream(
+            prepared = await svc.prepare_event_stream(
                 session_id,
                 replay=replay,
                 limit=limit,
                 from_id=from_id,
-                validated=True,
             )
+            generator = svc.prepared_event_stream(prepared)
         except HTTPException as exc:
             raise exc
 
