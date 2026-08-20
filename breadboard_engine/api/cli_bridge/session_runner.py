@@ -15,6 +15,7 @@ from breadboard_engine.compilation.v2_loader import load_agent_config
 from breadboard.product.runtime.artifacts import _validate_artifact_name
 from breadboard_engine.auth.enforcer import apply_dotted_overrides
 from breadboard_engine.compilation.effective_operation_policy import policy_pack_for_config_authority
+from breadboard_engine.model_roles import ModelRoleProblem, ModelRoleResolutionError
 from breadboard_engine.checkpointing.checkpoint_manager import CheckpointManager
 from breadboard_engine.skills.registry import (
     load_skills,
@@ -338,6 +339,17 @@ class SessionRunner:
     ) -> Dict[str, Any]:
         if self._closed:
             raise RuntimeError("session is closed")
+        if command in {"set_role", "set_model_role"} or (
+            command == "set_model" and self.session.metadata.get("model_role_lock_hash")
+        ):
+            raise ModelRoleResolutionError(
+                ModelRoleProblem(
+                    "lock_immutable",
+                    "model-role and model overrides are rejected after session.start",
+                    "$.role_overrides",
+                    {"lock_hash": self.session.metadata.get("model_role_lock_hash")},
+                )
+            )
         payload = payload or {}
         match command:
             case "list_checkpoints":
@@ -714,6 +726,7 @@ class SessionRunner:
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
             return
+        overrides = dict(self.request.overrides or {})
         frozen = self.current_runtime_config()
         descriptor, snapshot = tempfile.mkstemp(suffix=".json")
         try:

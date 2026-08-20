@@ -28,6 +28,7 @@ from .session_runner import MAX_ATTACHMENT_BYTES, SessionRunner
 from .tail_index import _TAIL_LINE_INDEX_CACHE
 from ...compilation.v2_loader import load_agent_config
 from ...compilation.effective_operation_policy import policy_pack_for_config_authority
+from ...model_roles import ModelRoleResolutionError
 from .runtime_emission import DEFAULT_INTERACTIVE_SESSION_TITLE, _sanitize_persisted_runtime_config, compile_runtime_effective_config_graph, default_runtime_record_root, emit_session_start_records, primitive_emission_enabled
 from ...provider import runtime_codex as runtime_codex_module
 from ...provider_routing import provider_router
@@ -183,8 +184,22 @@ class SessionService:
         if self._bridge_chaos: metadata.setdefault("bridgeChaos", self._bridge_chaos)
         session_title = request.task if request.task.strip() else DEFAULT_INTERACTIVE_SESSION_TITLE
         record = SessionRecord(session_id=session_id, status=SessionStatus.STARTING, metadata=metadata); runner = SessionRunner(session=record, registry=self.registry, request=request)
-        runtime_config = runner.prepare_runtime_config(); persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config); runtime_graph = compile_runtime_effective_config_graph(session_id, persisted_runtime_config, request.config_path)
-        if effective_lock is not None and not isinstance(effective_lock, EffectiveHarnessLock): raise TypeError("effective_lock must be an EffectiveHarnessLock")
+        runtime_config = runner.prepare_runtime_config()
+        persisted_runtime_config = _sanitize_persisted_runtime_config(runtime_config)
+        runtime_graph = compile_runtime_effective_config_graph(
+            session_id, persisted_runtime_config, request.config_path
+        )
+        role_lock = None
+        role_document = runtime_config.get("model_roles") if isinstance(runtime_config, dict) else None
+        if isinstance(role_document, dict) and role_document.get("schema_version") == "bb.model_roles.v1":
+            from ...model_roles import compile_model_roles, embed_model_role_lock
+
+            role_lock = compile_model_roles(role_document)
+            runtime_graph = embed_model_role_lock(runtime_graph, role_lock)
+            metadata["model_role_lock_hash"] = role_lock.lock_hash
+            metadata["model_role_default"] = role_lock["defaults"]["role"]
+        if effective_lock is not None and not isinstance(effective_lock, EffectiveHarnessLock):
+            raise TypeError("effective_lock must be an EffectiveHarnessLock")
         runtime_lock = effective_lock if effective_lock is not None else EffectiveHarnessLock._from_record(runtime_graph)
         emit_primitives = primitive_emission_enabled(); runtime_record_dir, event_dir = (runtime_root or default_runtime_record_root()) / session_id, (event_root or _event_root()) / session_id
         staging_record_root = runtime_record_dir.parent / f".{session_id}.records.starting"
@@ -558,6 +573,8 @@ class SessionService:
                 payload.payload,
                 durable_reconfigure=durable_reconfigure if payload.command in {"set_model", "set_mode", "set_skills"} else None,
             )
+        except ModelRoleResolutionError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=exc.problem.to_dict()) from exc
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
         except NotImplementedError as exc:
