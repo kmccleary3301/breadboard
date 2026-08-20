@@ -56,13 +56,10 @@ from breadboard.rl.phase3.api_router import create_phase3_rl_router
 from breadboard.rl.phase3.service_live import LiveRLRunService
 from breadboard_engine.api.public import mount_public_routes
 from breadboard_engine.api.public.models import is_public_operation_request, problem_response
-from breadboard_engine.security import redaction
 
 logger = logging.getLogger(__name__)
 ENGINE_STARTED_AT = time.time()
 ENGINE_STARTED_AT_ISO = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ENGINE_STARTED_AT))
-_OPENAI_AUTH_HEADERS_ENV = "BREADBOARD_OPENAI_AUTH_HEADERS_JSON"
-_OPENAI_AUTH_BASE_URL_ENV = "BREADBOARD_OPENAI_AUTH_BASE_URL"
 
 
 def _is_loopback_host(host: str | None) -> bool:
@@ -71,31 +68,6 @@ def _is_loopback_host(host: str | None) -> bool:
     host = str(host).strip().lower()
     return host in {"127.0.0.1", "localhost", "::1"}
 
-
-def _project_provider_auth_material_to_env(
-    provider_id: str,
-    *,
-    api_key: str | None,
-    headers: dict[str, str] | None,
-    base_url: str | None,
-) -> None:
-    # C-G0d: every attached secret is registered with the redaction substrate
-    # before (and regardless of) env projection, so scrubbing no longer
-    # depends on secrets living in marker-named environment variables.
-    redaction.register_secret_value(api_key)
-    for header_value in (headers or {}).values():
-        redaction.register_secret_value(header_value)
-    if (provider_id or "").strip().lower() != "openai":
-        return
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-    if headers:
-        try:
-            os.environ[_OPENAI_AUTH_HEADERS_ENV] = json.dumps(headers)
-        except Exception:
-            pass
-    if base_url:
-        os.environ[_OPENAI_AUTH_BASE_URL_ENV] = base_url
 
 
 def _load_chaos_config() -> Dict[str, float] | None:
@@ -534,12 +506,13 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         },
     )
     async def attach_provider_auth(payload: ProviderAuthAttachRequest, request: Request):
-        """Attach short-lived provider auth material to the in-memory engine store."""
+        """Attach provider auth material through the process-local broker."""
 
         from ...auth.enforcer import apply_dotted_overrides, check_conformance
-        from ...auth.material import EngineAuthMaterial, EmulationProfileRequirement
-        from ...auth.store import DEFAULT_PROVIDER_AUTH_STORE
         from ...compilation.v2_loader import load_agent_config
+        from ...provider_broker import get_provider_broker
+
+        broker = get_provider_broker()
 
         client_host = getattr(getattr(request, "client", None), "host", None)
         if payload.material.is_subscription_plan and not _is_loopback_host(client_host):
@@ -577,11 +550,11 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
                         "details": result.details,
                     },
                 )
-            required_profile = EmulationProfileRequirement(
-                profile_id=payload.required_profile.profile_id,
-                conformance_hash=payload.required_profile.conformance_hash,
-                locked_json_pointers=tuple(locked),
-            )
+            required_profile = {
+                "profile_id": payload.required_profile.profile_id,
+                "conformance_hash": payload.required_profile.conformance_hash,
+                "locked_json_pointers": locked,
+            }
 
         api_key = payload.material.api_key
         if not api_key:
@@ -589,36 +562,34 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
             auth = (payload.material.headers or {}).get("Authorization") or (payload.material.headers or {}).get("authorization")
             if isinstance(auth, str) and auth.strip():
                 value = auth.strip()
-                if value.lower().startswith("bearer "):
-                    api_key = value[7:].strip()
-                else:
-                    api_key = value
+                api_key = value[7:].strip() if value.lower().startswith("bearer ") else value
 
-        material = EngineAuthMaterial(
-            provider_id=payload.material.provider_id,
-            alias=(payload.material.alias or "").strip(),
-            api_key=api_key,
-            headers=dict(payload.material.headers or {}),
-            base_url=payload.material.base_url,
-            routing=dict(payload.material.routing or {}) if isinstance(payload.material.routing, dict) else None,
-            issued_at_ms=payload.material.issued_at_ms,
-            expires_at_ms=payload.material.expires_at_ms,
-            is_subscription_plan=bool(payload.material.is_subscription_plan),
-            required_profile=required_profile,
-        )
+        if not api_key:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"message": "provider auth material must include api_key or Authorization"},
+            )
 
-        DEFAULT_PROVIDER_AUTH_STORE.attach(
-            material,
-            ttl_seconds=payload.material.ttl_seconds,
-            required_profile=required_profile,
+        detail = broker.putApiKey(
+            {
+                "provider_id": payload.material.provider_id,
+                "alias": (payload.material.alias or "").strip(),
+                "api_key": api_key,
+                "headers": dict(payload.material.headers or {}),
+                "base_url": payload.material.base_url,
+                "routing": dict(payload.material.routing or {}) if isinstance(payload.material.routing, dict) else {},
+                "expires_at_ms": payload.material.expires_at_ms,
+                "ttl_seconds": payload.material.ttl_seconds,
+                "account_label": (payload.material.alias or payload.material.provider_id).strip(),
+                "metadata": {
+                    "header_keys": sorted(str(key) for key in (payload.material.headers or {}) if key),
+                    "issued_at_ms": payload.material.issued_at_ms,
+                    "is_subscription_plan": bool(payload.material.is_subscription_plan),
+                    "required_profile": required_profile,
+                },
+            }
         )
-        _project_provider_auth_material_to_env(
-            material.provider_id,
-            api_key=material.api_key,
-            headers=material.headers or {},
-            base_url=material.base_url,
-        )
-        return ProviderAuthAttachResponse(ok=True, detail={"attached": True})
+        return ProviderAuthAttachResponse(ok=True, detail={"attached": True, "credential": detail})
 
     @app.post(
         "/v1/provider-auth/detach",
@@ -626,19 +597,21 @@ def create_app(service: SessionService | None = None, include_atp_routes: bool |
         responses={400: {"model": ErrorResponse}},
     )
     async def detach_provider_auth(payload: ProviderAuthDetachRequest):
-        from ...auth.store import DEFAULT_PROVIDER_AUTH_STORE
+        from ...provider_broker import get_provider_broker
 
-        ok = DEFAULT_PROVIDER_AUTH_STORE.detach(payload.provider_id, alias=(payload.alias or "").strip())
-        return ProviderAuthDetachResponse(ok=ok)
+        result = get_provider_broker().logout(
+            {"provider_id": payload.provider_id, "label": (payload.alias or "").strip() or None}
+        )
+        return ProviderAuthDetachResponse(ok=bool(result.get("ok")))
 
     @app.get(
         "/v1/provider-auth/status",
         response_model=ProviderAuthStatusResponse,
     )
     async def provider_auth_status():
-        from ...auth.store import DEFAULT_PROVIDER_AUTH_STORE
+        from ...provider_broker import get_provider_broker
 
-        items = DEFAULT_PROVIDER_AUTH_STORE.status()
+        items = get_provider_broker().listCredentials()
         return ProviderAuthStatusResponse(attached=items)
 
     @app.get(

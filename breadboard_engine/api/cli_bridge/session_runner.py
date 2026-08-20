@@ -714,21 +714,6 @@ class SessionRunner:
     async def _ensure_agent_initialized(self) -> None:
         if self._agent is not None:
             return
-        overrides = dict(self.request.overrides or {})
-        try:
-            from breadboard_engine.auth.store import DEFAULT_PROVIDER_AUTH_STORE
-            openai_auth = DEFAULT_PROVIDER_AUTH_STORE.get("openai")
-            if openai_auth is not None:
-                if openai_auth.api_key:
-                    overrides["provider_auth_runtime.openai.api_key"] = openai_auth.api_key
-                if openai_auth.base_url:
-                    overrides["provider_auth_runtime.openai.base_url"] = openai_auth.base_url
-                for header_key, header_value in dict(openai_auth.headers or {}).items():
-                    if not header_key or header_value is None:
-                        continue
-                    overrides[f"provider_auth_runtime.openai.headers.{header_key}"] = str(header_value)
-        except Exception:
-            pass
         frozen = self.current_runtime_config()
         descriptor, snapshot = tempfile.mkstemp(suffix=".json")
         try:

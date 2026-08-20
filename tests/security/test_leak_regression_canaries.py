@@ -1,8 +1,4 @@
-"""C-G0d/C-G0e: per-path closure tests plus canary leak-regression suite.
-
-Each historic leak path gets a distinctive canary secret injected at its
-source; the test asserts zero occurrences in every durable output produced.
-"""
+"""C-G0d/C-G0e: per-path closure tests plus canary leak-regression suite."""
 
 from __future__ import annotations
 
@@ -21,6 +17,27 @@ CANARY_LOG_VALUE = "canary-logvalue-6e0d9b42aa"
 CANARY_TEXT_VALUE = "sk-canarytextvalue123456"
 
 
+def _attach_via_broker(
+    tmp_path: Path,
+    provider_id: str,
+    *,
+    api_key: str,
+    headers: dict[str, str] | None = None,
+):
+    from breadboard_engine.provider_broker import ProviderBroker, SQLiteCredentialStore
+
+    broker = ProviderBroker(SQLiteCredentialStore(tmp_path / f"{provider_id}.sqlite3"))
+    return broker.putApiKey(
+        {
+            "provider_id": provider_id,
+            "account_label": f"canary-{provider_id}",
+            "api_key": api_key,
+            "headers": headers or {},
+            "base_url": "https://example.invalid" if provider_id == "openai" else None,
+        }
+    )
+
+
 @pytest.fixture(autouse=True)
 def _clean_registry():
     redaction.clear_registered_secret_values()
@@ -37,28 +54,23 @@ def _assert_tree_clean(root: Path, *canaries: str) -> None:
             assert canary not in content, f"canary leaked into {path}"
 
 
-class TestPath1EnvironmentProjection:
-    """Leak path 1: env projection no longer feeds the scrubber alone."""
+class TestPath1BrokerCredentialBoundary:
+    """Leak path 1: broker credentials never need process environment projection."""
 
     def test_attach_registers_secrets_and_public_scrub_is_env_independent(
-        self, monkeypatch
+        self, tmp_path: Path, monkeypatch
     ):
-        from breadboard_engine.api.cli_bridge.app import (
-            _project_provider_auth_material_to_env,
-        )
         from breadboard_engine.api.public.models import scrub_public
 
         monkeypatch.setitem(os.environ, "OPENAI_API_KEY", "preexisting")
         monkeypatch.setitem(os.environ, "BREADBOARD_OPENAI_AUTH_HEADERS_JSON", "{}")
         monkeypatch.setitem(os.environ, "BREADBOARD_OPENAI_AUTH_BASE_URL", "")
-        _project_provider_auth_material_to_env(
+        _attach_via_broker(
+            tmp_path,
             "openai",
             api_key=CANARY_ATTACH_KEY,
             headers={"chatgpt-account-id": CANARY_HEADER_TOKEN},
-            base_url="https://example.invalid",
         )
-        # Header material lives in an env var whose NAME carries no secret
-        # marker; before C-G0d the marker-scan scrubber missed it entirely.
         assert CANARY_HEADER_TOKEN in redaction.iter_registered_secret_values()
         scrubbed = scrub_public(
             {"detail": f"boom {CANARY_ATTACH_KEY} and {CANARY_HEADER_TOKEN}"}
@@ -66,14 +78,8 @@ class TestPath1EnvironmentProjection:
         assert CANARY_ATTACH_KEY not in json.dumps(scrubbed)
         assert CANARY_HEADER_TOKEN not in json.dumps(scrubbed)
 
-    def test_non_openai_material_still_registered(self):
-        from breadboard_engine.api.cli_bridge.app import (
-            _project_provider_auth_material_to_env,
-        )
-
-        _project_provider_auth_material_to_env(
-            "anthropic", api_key="anthropic-canary-key-77aa", headers=None, base_url=None
-        )
+    def test_non_openai_material_still_registered(self, tmp_path: Path):
+        _attach_via_broker(tmp_path, "anthropic", api_key="anthropic-canary-key-77aa")
         assert "anthropic-canary-key-77aa" in redaction.iter_registered_secret_values()
 
 
@@ -81,9 +87,7 @@ class TestPath2RawHeaders:
     """Leak path: rate-limit parser persisted nearly all raw headers."""
 
     def test_raw_headers_sanitized_at_source(self):
-        from breadboard_engine.limits.parse_headers import (
-            parse_rate_limit_headers,
-        )
+        from breadboard_engine.limits.parse_headers import parse_rate_limit_headers
 
         snapshot = parse_rate_limit_headers(
             {
@@ -158,17 +162,11 @@ class TestPath4RecorderAndProviderDump:
 
 
 class TestCanarySweep:
-    """C-G0e: one combined run injecting canaries through every historic path,
-    then a byte sweep across all durable artifacts produced."""
+    """C-G0e: one combined run injecting canaries through every historic path."""
 
     def test_end_to_end_zero_occurrences(self, tmp_path, monkeypatch):
-        from breadboard_engine.api.cli_bridge.app import (
-            _project_provider_auth_material_to_env,
-        )
         from breadboard_engine.api.public.models import scrub_public
-        from breadboard_engine.limits.parse_headers import (
-            parse_rate_limit_headers,
-        )
+        from breadboard_engine.limits.parse_headers import parse_rate_limit_headers
         from breadboard_engine.run_logging.api_recorder import APIRequestRecorder
         from breadboard_engine.run_logging.run_logger import LoggerV2Manager
 
@@ -183,19 +181,16 @@ class TestCanarySweep:
             CANARY_TEXT_VALUE,
         )
 
-        # Path 1: attach/projection.
-        _project_provider_auth_material_to_env(
+        _attach_via_broker(
+            tmp_path,
             "openai",
             api_key=CANARY_ATTACH_KEY,
             headers={"chatgpt-account-id": CANARY_HEADER_TOKEN},
-            base_url="https://example.invalid",
         )
 
         manager = LoggerV2Manager({"logging": {"root_dir": str(tmp_path / "logs")}})
         manager.start_run("canary-e2e")
         recorder = APIRequestRecorder(manager)
-
-        # Paths 2/3/4: rate-limit snapshot, structured logs, text logs, recorder.
         snapshot = parse_rate_limit_headers(
             {
                 "x-ratelimit-limit-requests": "10",
@@ -213,11 +208,7 @@ class TestCanarySweep:
         recorder.save_request(1, {"headers": {"authorization": CANARY_RAW_HEADER}})
         recorder.save_response(1, {"cookie": CANARY_LOG_VALUE})
 
-        # Public API scrub: registered (attach-time) values and credential
-        # shapes are scrubbed by value. Key-borne canaries (raw header / log
-        # values) are closed at their key sites, covered by the tree sweep.
         value_scrub_canaries = (CANARY_ATTACH_KEY, CANARY_HEADER_TOKEN, CANARY_TEXT_VALUE)
         public = scrub_public({"blob": " ".join(canaries)})
         assert not any(canary in json.dumps(public) for canary in value_scrub_canaries)
-
         _assert_tree_clean(Path(manager.run_dir), *canaries)
